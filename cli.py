@@ -14,7 +14,7 @@ import click
 
 from .main import LG_SOTFApplication
 from .src.lg_sotf.core.config.manager import ConfigManager
-from .src.lg_sotf.exceptions import LG_SOTFError
+from .src.lg_sotf.core.exceptions import LG_SOTFError
 
 
 @click.group()
