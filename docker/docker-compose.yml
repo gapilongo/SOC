@@ -1,1 +1,112 @@
- 
+# docker/docker-compose.yaml
+version: '3.8'
+
+services:
+  lg-sotf:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: lg-sotf
+    ports:
+      - "8000:8000"
+      - "8090:8090"  # Metrics
+      - "8081:8081"  # Health checks
+    environment:
+      - LG_SOTF_ENV=development
+      - DATABASE_CONNECTION_STRING=postgresql://lg_sotf:lg_sotf_dev_password@postgres:5432/lg_sotf_dev
+      - REDIS_CONNECTION_STRING=redis://redis:6379/0
+      - ENCRYPTION_KEY=dev_encryption_key_32_bytes_long___
+      - JWT_SECRET=dev_jwt_secret_32_bytes_long______
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../logs:/var/log/lg_sotf
+      - ../configs:/app/configs
+      - ../models:/app/models
+      - ../playbooks:/app/playbooks
+    restart: unless-stopped
+    networks:
+      - lg-sotf-network
+
+  postgres:
+    image: postgres:15
+    container_name: lg-sotf-postgres
+    environment:
+      - POSTGRES_DB=lg_sotf_dev
+      - POSTGRES_USER=lg_sotf
+      - POSTGRES_PASSWORD=lg_sotf_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lg_sotf -d lg_sotf_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - lg-sotf-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: lg-sotf-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - lg-sotf-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lg-sotf-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - lg-sotf-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: lg-sotf-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+    networks:
+      - lg-sotf-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  lg-sotf-network:
+    driver: bridge

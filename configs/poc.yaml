@@ -1,0 +1,94 @@
+# configs/poc.yaml
+# POC configuration for LG-SOTF
+
+# Database configuration
+database:
+  host: localhost
+  port: 5432
+  database: lg_sotf_poc
+  username: lg_sotf
+  password: lg_sotf_poc_password
+  pool_size: 5
+  max_overflow: 10
+
+# Redis configuration
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  max_connections: 5
+
+# Agent configuration (simplified for POC)
+agents:
+  ingestion:
+    batch_size: 10
+    polling_interval: 30
+    max_concurrent_alerts: 3
+  
+  triage:
+    confidence_threshold: 60
+    enable_ml_scoring: false
+  
+  analysis:
+    max_iterations: 2
+    timeout_seconds: 30
+  
+  human_loop:
+    escalation_threshold: 40
+
+# Tool configuration (mock for POC)
+tools:
+  siem:
+    mock:
+      enabled: true
+      alert_count: 100
+  
+  intel:
+    mock:
+      enabled: true
+  
+  sandbox:
+    mock:
+      enabled: true
+  
+  edr:
+    mock:
+      enabled: true
+
+# Storage configuration
+storage:
+  backend: "postgresql"
+  connection_string: "postgresql://lg_sotf:lg_sotf_poc_password@localhost:5432/lg_sotf_poc"
+  
+  redis:
+    connection_string: "redis://localhost:6379/0"
+    default_ttl: 1800
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "logs/lg_sotf_poc.log"
+  max_file_size: "10MB"
+  backup_count: 3
+
+# Security configuration
+security:
+  encryption_key: "poc_encryption_key_32_bytes_long___"
+  jwt_secret: "poc_jwt_secret_32_bytes_long______"
+  session_timeout: 3600
+
+# Monitoring configuration
+monitoring:
+  metrics_enabled: true
+  metrics_port: 8090
+  tracing_enabled: false
+
+# POC settings
+poc:
+  debug_mode: true
+  mock_external_services: true
+  test_data_path: "tests/fixtures/poc"
+  max_processing_time: 300  # 5 minutes
+  enable_verbose_logging: true

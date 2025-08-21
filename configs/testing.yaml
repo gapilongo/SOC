@@ -1,1 +1,113 @@
- 
+# Testing configuration for LG-SOTF
+
+# Database configuration (use test database)
+database:
+  host: localhost
+  port: 5432
+  database: lg_sotf_test
+  username: lg_sotf_test
+  password: lg_sotf_test_password
+  pool_size: 2
+  max_overflow: 5
+
+# Redis configuration (use test database)
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 1
+  max_connections: 2
+
+# Agent configuration (minimal for testing)
+agents:
+  ingestion:
+    batch_size: 5
+    polling_interval: 10
+    max_concurrent_alerts: 2
+  
+  triage:
+    confidence_threshold: 50
+    enable_ml_scoring: false
+  
+  analysis:
+    max_iterations: 2
+    timeout_seconds: 10
+    enable_tool_caching: false
+  
+  human_loop:
+    escalation_threshold: 30
+    max_escalation_level: 2
+    response_timeout_hours: 1
+
+# Tool configuration (mock for testing)
+tools:
+  siem:
+    splunk:
+      base_url: "https://splunk-test.example.com:8089"
+      token: "test_token"
+      index: "security_test"
+      search_timeout: 10
+    
+    qradar:
+      base_url: "https://qradar-test.example.com"
+      token: "test_token"
+      timeout: 10
+  
+  intel:
+    virustotal:
+      api_key: "test_virustotal_key"
+      timeout: 5
+      rate_limit: 2
+  
+  sandbox:
+    joe_sandbox:
+      base_url: "https://joesandbox-test.example.com"
+      api_key: "test_joe_sandbox_key"
+      timeout: 60
+  
+  edr:
+    crowdstrike:
+      base_url: "https://api.crowdstrike.com"
+      client_id: "test_client_id"
+      client_secret: "test_client_secret"
+      timeout: 15
+
+# Storage configuration
+storage:
+  backend: "postgresql"
+  connection_string: "postgresql://lg_sotf_test:lg_sotf_test_password@localhost:5432/lg_sotf_test"
+  
+  redis:
+    connection_string: "redis://localhost:6379/1"
+    default_ttl: 300  # 5 minutes
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "logs/lg_sotf_test.log"
+  max_file_size: "5MB"
+  backup_count: 2
+
+# Security configuration
+security:
+  encryption_key: "test_encryption_key_32_bytes_long___"
+  jwt_secret: "test_jwt_secret_32_bytes_long______"
+  session_timeout: 1800
+  max_login_attempts: 3
+
+# Monitoring configuration
+monitoring:
+  metrics_enabled: true
+  metrics_port: 8091
+  tracing_enabled: true
+  tracing_sampling_rate: 1.0
+
+# Testing settings
+testing:
+  debug_mode: true
+  auto_reload: false
+  mock_external_services: true
+  test_data_path: "tests/fixtures"
+  cleanup_after_test: true
+  parallel_test_execution: true

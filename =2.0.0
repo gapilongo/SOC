@@ -1,0 +1,6 @@
+Collecting aioredis
+  Using cached aioredis-2.0.1-py3-none-any.whl (71 kB)
+Requirement already satisfied: async-timeout in ./venv/lib/python3.10/site-packages (from aioredis) (5.0.1)
+Requirement already satisfied: typing-extensions in ./venv/lib/python3.10/site-packages (from aioredis) (4.14.1)
+Installing collected packages: aioredis
+Successfully installed aioredis-2.0.1

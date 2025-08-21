@@ -1,1 +1,214 @@
- 
+# Production configuration for LG-SOTF
+
+# Database configuration
+database:
+  host: ${DB_HOST}
+  port: ${DB_PORT}
+  database: ${DB_NAME}
+  username: ${DB_USER}
+  password: ${DB_PASSWORD}
+  pool_size: 20
+  max_overflow: 30
+  ssl_mode: require
+
+# Redis configuration
+redis:
+  host: ${REDIS_HOST}
+  port: ${REDIS_PORT}
+  password: ${REDIS_PASSWORD}
+  db: ${REDIS_DB}
+  max_connections: 20
+  ssl: true
+
+# Agent configuration
+agents:
+  ingestion:
+    batch_size: 100
+    polling_interval: 60
+    max_concurrent_alerts: 50
+    enable_deduplication: true
+    deduplication_window: 3600  # 1 hour
+  
+  triage:
+    confidence_threshold: 80
+    enable_ml_scoring: true
+    ml_model_path: "/models/triage_model.pkl"
+    model_version: "1.0.0"
+    enable_rule_engine: true
+    rule_engine_path: "/rules/triage_rules.yaml"
+  
+  analysis:
+    max_iterations: 5
+    timeout_seconds: 120
+    enable_tool_caching: true
+    cache_ttl: 1800  # 30 minutes
+    enable_parallel_execution: true
+    max_parallel_tools: 3
+  
+  human_loop:
+    escalation_threshold: 60
+    max_escalation_level: 5
+    response_timeout_hours: 8
+    enable_notification: true
+    notification_channels: ["email", "slack", "pagerduty"]
+  
+  response:
+    enable_playbooks: true
+    playbook_path: "/playbooks/"
+    enable_approval_workflow: true
+    approval_levels: 2
+    enable_rollback: true
+  
+  learning:
+    enable_feedback_learning: true
+    enable_model_retraining: true
+    retraining_interval: 86400  # 24 hours
+    model_performance_threshold: 0.85
+
+# Tool configuration
+tools:
+  siem:
+    splunk:
+      base_url: ${SPLUNK_BASE_URL}
+      token: ${SPLUNK_TOKEN}
+      index: ${SPLUNK_INDEX}
+      search_timeout: 60
+      verify_ssl: true
+      connection_pool_size: 10
+    
+    qradar:
+      base_url: ${QRADAR_BASE_URL}
+      token: ${QRADAR_TOKEN}
+      timeout: 60
+      verify_ssl: true
+      connection_pool_size: 10
+  
+  intel:
+    virustotal:
+      api_key: ${VIRUSTOTAL_API_KEY}
+      timeout: 15
+      rate_limit: 4
+      verify_ssl: true
+    
+    recorded_future:
+      api_key: ${RECORDED_FUTURE_API_KEY}
+      timeout: 30
+      verify_ssl: true
+  
+  sandbox:
+    joe_sandbox:
+      base_url: ${JOE_SANDBOX_BASE_URL}
+      api_key: ${JOE_SANDBOX_API_KEY}
+      timeout: 600  # 10 minutes
+      verify_ssl: true
+      priority: "normal"
+    
+    any_run:
+      base_url: ${ANY_RUN_BASE_URL}
+      api_key: ${ANY_RUN_API_KEY}
+      timeout: 600
+      verify_ssl: true
+  
+  edr:
+    crowdstrike:
+      base_url: ${CROWDSTRIKE_BASE_URL}
+      client_id: ${CROWDSTRIKE_CLIENT_ID}
+      client_secret: ${CROWDSTRIKE_CLIENT_SECRET}
+      timeout: 60
+      verify_ssl: true
+      connection_pool_size: 10
+
+# Storage configuration
+storage:
+  backend: "postgresql"
+  connection_string: ${DATABASE_CONNECTION_STRING}
+  
+  redis:
+    connection_string: ${REDIS_CONNECTION_STRING}
+    default_ttl: 3600  # 1 hour
+  
+  vector_db:
+    backend: "chroma"
+    connection_string: ${VECTOR_DB_CONNECTION_STRING}
+    collection_name: "lg_sotf_embeddings"
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "/var/log/lg_sotf/lg_sotf.log"
+  max_file_size: "100MB"
+  backup_count: 10
+  enable_log_rotation: true
+  enable_log_shipping: true
+  log_shipper: "fluentd"
+  log_shipper_config: "/etc/lg_sotf/fluentd.conf"
+
+# Security configuration
+security:
+  encryption_key: ${ENCRYPTION_KEY}
+  jwt_secret: ${JWT_SECRET}
+  session_timeout: 3600
+  max_login_attempts: 5
+  enable_mfa: true
+  mfa_expiry: 86400  # 24 hours
+  enable_audit_logging: true
+  audit_log_retention: 7776000  # 90 days
+  enable_data_encryption: true
+  encryption_algorithm: "AES-256-GCM"
+
+# Monitoring configuration
+monitoring:
+  metrics_enabled: true
+  metrics_port: 8090
+  metrics_path: "/metrics"
+  tracing_enabled: true
+  tracing_sampling_rate: 0.1
+  tracing_exporter: "jaeger"
+  jaeger_endpoint: ${JAEGER_ENDPOINT}
+  enable_health_checks: true
+  health_check_port: 8081
+  health_check_path: "/health"
+
+# Performance configuration
+performance:
+  max_concurrent_workflows: 1000
+  workflow_timeout: 3600  # 1 hour
+  enable_caching: true
+  cache_ttl: 1800  # 30 minutes
+  enable_rate_limiting: true
+  rate_limit_requests: 1000
+  rate_limit_window: 60  # 1 minute
+
+# High availability configuration
+high_availability:
+  enabled: true
+  enable_load_balancing: true
+  load_balancer: "nginx"
+  enable_auto_scaling: true
+  min_instances: 3
+  max_instances: 10
+  scaling_metric: "cpu"
+  scaling_target: 70
+  scaling_cooldown: 300  # 5 minutes
+
+# Backup configuration
+backup:
+  enabled: true
+  backup_schedule: "0 2 * * *"  # Daily at 2 AM
+  backup_retention: 30  # days
+  backup_compression: true
+  backup_encryption: true
+  backup_storage: "s3"
+  s3_bucket: ${BACKUP_S3_BUCKET}
+  s3_region: ${BACKUP_S3_REGION}
+
+# Disaster recovery configuration
+disaster_recovery:
+  enabled: true
+  dr_region: ${DR_REGION}
+  rpo: 300  # 5 minutes Recovery Point Objective
+  rto: 1800  # 30 minutes Recovery Time Objective
+  enable_cross_region_replication: true
+  enable_failover: true
+  failover_threshold: 3  # number of failures before failover

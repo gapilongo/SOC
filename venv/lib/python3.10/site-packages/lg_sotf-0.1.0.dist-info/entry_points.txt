@@ -1,0 +1,2 @@
+[console_scripts]
+lg-sotf = lg_sotf.cli:main
