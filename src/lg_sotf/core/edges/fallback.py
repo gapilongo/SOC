@@ -155,7 +155,7 @@ class FallbackHandler:
                     await asyncio.sleep(backoff_seconds * (2 ** attempt))
                 
                 # Try to get and execute agent
-                from ..agents.registry import agent_registry
+                from ...agents.registry import agent_registry
                 agent = agent_registry.get_agent(agent_name)
                 result = await agent.execute(state.dict())
                 

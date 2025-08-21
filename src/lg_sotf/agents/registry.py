@@ -8,6 +8,7 @@ allowing for dynamic agent discovery and instantiation.
 from typing import Any, Dict, Optional, Type
 
 from ..core.exceptions import AgentError
+from .base import BaseAgent
 
 
 class AgentRegistry:
