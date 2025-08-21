@@ -10,11 +10,12 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ...audit.logger import AuditLogger
+from lg_sotf.audit.logger import AuditLogger
 
-# from ...audit.tracer import DistributedTracer
-from ...storage.base import StorageBackend
-from ..exceptions import StateError
+# from lg_sotf.audit.tracer import DistributedTracer
+from lg_sotf.core.exceptions import StateError
+from lg_sotf.storage.base import StorageBackend
+
 from .model import AgentExecution, SOCState, StateVersion, WorkflowNodeHistory
 from .serialization import StateSerializer
 
@@ -65,11 +66,12 @@ class StateManager:
             raise StateError(f"Failed to create state: {str(e)}")
     
     async def update_state(self, state: SOCState, updates: Dict[str, Any],
-                          author_type: str, author_id: str,
-                          changes_summary: str) -> SOCState:
+                        author_type: str, author_id: str,
+                        changes_summary: str) -> SOCState:
         """Update state with versioning."""
         try:
             # Create new version
+            from .model import StateVersion
             new_version = StateVersion(
                 version=state.state_version + 1,
                 timestamp=datetime.utcnow(),
@@ -87,11 +89,11 @@ class StateManager:
             # Add version to history
             state.add_version(new_version)
             
-            # Persist state
+            # Persist state (with proper serialization now working)
             await self._persist_state(state)
             
             # Log state update
-            self.audit_logger.log_state_update(state, old_state_hash)
+            self.audit_logger.log_state_update(state.dict(), old_state_hash)
             
             return state
             
@@ -185,26 +187,53 @@ class StateManager:
         """Create hash of state for change detection."""
         try:
             state_dict = state.dict()
-            state_str = json.dumps(state_dict, sort_keys=True)
+            # Use the custom JSON serializer to handle datetime objects
+            state_str = json.dumps(state_dict, sort_keys=True, default=self._json_datetime_serializer)
             
             return hashlib.sha256(state_str.encode()).hexdigest()
             
         except Exception as e:
             raise StateError(f"Failed to hash state: {str(e)}")
     
+    def _json_datetime_serializer(self, obj):
+        """Custom JSON serializer for datetime objects in hashing."""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        elif hasattr(obj, 'dict'):  # Pydantic models
+            return obj.dict()
+        elif hasattr(obj, '__dict__'):  # Other objects
+            return obj.__dict__
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+    
     def _apply_updates(self, state: SOCState, updates: Dict[str, Any]):
-        """Apply updates to state."""
+        """Apply updates to state using proper Pydantic model methods."""
         try:
+            # Create a new state with updates applied
+            # Get current state as dict
+            current_dict = state.dict()
+            
+            # Apply updates
             for key, value in updates.items():
-                if hasattr(state, key):
-                    setattr(state, key, value)
-                else:
+                if '.' in key:
                     # Handle nested updates
-                    if '.' in key:
-                        parts = key.split('.')
-                        obj = state
-                        for part in parts[:-1]:
-                            obj = getattr(obj, part)
-                        setattr(obj, parts[-1], value)
+                    parts = key.split('.')
+                    nested_dict = current_dict
+                    for part in parts[:-1]:
+                        if part not in nested_dict:
+                            nested_dict[part] = {}
+                        nested_dict = nested_dict[part]
+                    nested_dict[parts[-1]] = value
+                else:
+                    # Direct field update
+                    current_dict[key] = value
+            
+            # Update the state object fields
+            for field_name, field_value in current_dict.items():
+                if hasattr(state, field_name):
+                    setattr(state, field_name, field_value)
+            
+            # Update last_updated timestamp
+            state.last_updated = datetime.utcnow()
+            
         except Exception as e:
             raise StateError(f"Failed to apply updates: {str(e)}")

@@ -10,14 +10,15 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .src.lg_sotf.audit.logger import AuditLogger
-from .src.lg_sotf.audit.metrics import MetricsCollector
-from .src.lg_sotf.core.config.manager import ConfigManager
-from .src.lg_sotf.core.exceptions import LG_SOTFError
-from .src.lg_sotf.core.state.manager import StateManager
-from .src.lg_sotf.core.workflow import WorkflowEngine
-from .src.lg_sotf.storage.postgres import PostgreSQLStorage
-from .src.lg_sotf.storage.redis import RedisStorage
+# Fixed imports - remove .src prefix
+from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.metrics import MetricsCollector
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.exceptions import LG_SOTFError
+from lg_sotf.core.state.manager import StateManager
+from lg_sotf.core.workflow import WorkflowEngine
+from lg_sotf.storage.postgres import PostgreSQLStorage
+from lg_sotf.storage.redis import RedisStorage
 
 
 class LG_SOTFApplication:
@@ -52,9 +53,9 @@ class LG_SOTFApplication:
             # Load configuration
             self.config_manager = ConfigManager(self.config_path)
             
-            # Initialize audit and metrics
+            # Initialize audit and metrics - fixed constructor
             self.audit_logger = AuditLogger()
-            self.metrics = MetricsCollector()
+            self.metrics = MetricsCollector(self.config_manager)
             
             # Initialize storage
             db_config = self.config_manager.get_database_config()
@@ -68,7 +69,7 @@ class LG_SOTFApplication:
             
             redis_config = self.config_manager.get_redis_config()
             redis_connection_string = (
-                f"redis://:{redis_config.password}@{redis_config.host}:{redis_config.port}/{redis_config.db}"
+                f"redis://:{redis_config.password or ''}@{redis_config.host}:{redis_config.port}/{redis_config.db}"
             )
             
             redis_storage = RedisStorage(redis_connection_string)
@@ -81,7 +82,7 @@ class LG_SOTFApplication:
             self.workflow_engine = WorkflowEngine(self.config_manager, self.state_manager)
             await self.workflow_engine.initialize()
             
-            # Log application start
+            # Log application start - fixed method call
             self.audit_logger.log_application_start(
                 config_path=self.config_path,
                 version="0.1.0"
@@ -125,6 +126,9 @@ class LG_SOTFApplication:
         # In Sprint 1, this would be replaced with actual alert ingestion and processing
         pass
     
+
+    # Update the shutdown method in src/lg_sotf/main.py to properly handle async cleanup:
+
     async def shutdown(self):
         """Shutdown the application gracefully."""
         try:
@@ -134,25 +138,44 @@ class LG_SOTFApplication:
             if self.audit_logger:
                 self.audit_logger.log_application_shutdown()
             
-            # Shutdown workflow engine
+            # Shutdown workflow engine first
             if self.workflow_engine:
-                # Workflow engine will handle agent cleanup
+                # Workflow engine cleanup if needed
                 pass
             
-            # Close storage connections
-            if self.state_manager:
-                # State manager will close storage connections
-                pass
+            # Close storage connections properly
+            storage_tasks = []
+            
+            if self.state_manager and hasattr(self.state_manager, 'storage'):
+                try:
+                    storage_tasks.append(self.state_manager.storage.close())
+                except Exception as e:
+                    logging.warning(f"Error scheduling storage close: {e}")
+            
+            # Wait for storage cleanup with timeout
+            if storage_tasks:
+                try:
+                    await asyncio.wait_for(
+                        asyncio.gather(*storage_tasks, return_exceptions=True),
+                        timeout=2.0
+                    )
+                except asyncio.TimeoutError:
+                    logging.warning("Storage cleanup timed out")
+                except Exception as e:
+                    logging.warning(f"Error during storage cleanup: {e}")
             
             # Shutdown metrics collection
             if self.metrics:
-                self.metrics.shutdown()
+                try:
+                    self.metrics.shutdown()
+                except Exception as e:
+                    logging.warning(f"Error shutting down metrics: {e}")
             
             logging.info("LG-SOTF application shutdown completed")
             
         except Exception as e:
             logging.error(f"Error during shutdown: {e}")
-    
+            
     async def health_check(self) -> bool:
         """Perform application health check."""
         try:
@@ -182,7 +205,7 @@ class LG_SOTFApplication:
             # Check Redis connection
             redis_config = self.config_manager.get_redis_config()
             redis_connection_string = (
-                f"redis://:{redis_config.password}@{redis_config.host}:{redis_config.port}/{redis_config.db}"
+                f"redis://:{redis_config.password or ''}@{redis_config.host}:{redis_config.port}/{redis_config.db}"
             )
             
             redis_storage = RedisStorage(redis_connection_string)

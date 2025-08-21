@@ -1,4 +1,4 @@
-# src/lg_sotf/cli.py
+# cli.py - fixed import paths
 """
 Command-line interface for LG-SOTF.
 
@@ -12,9 +12,12 @@ from typing import Optional
 
 import click
 
-from .main import LG_SOTFApplication
-from .src.lg_sotf.core.config.manager import ConfigManager
-from .src.lg_sotf.core.exceptions import LG_SOTFError
+# Add src to Python path
+sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.exceptions import LG_SOTFError
+from lg_sotf.main import LG_SOTFApplication
 
 
 @click.group()
@@ -116,10 +119,10 @@ def process_alert(ctx, alert_id, alert_data):
         # Load alert data
         if alert_data:
             with open(alert_data, 'r') as f:
-                alert_data = json.load(f)
+                alert_data_dict = json.load(f)
         else:
             # Use sample alert data
-            alert_data = {
+            alert_data_dict = {
                 "id": alert_id,
                 "source": "test",
                 "timestamp": "2024-01-01T00:00:00Z",
@@ -128,7 +131,7 @@ def process_alert(ctx, alert_id, alert_data):
             }
         
         # Process alert through workflow
-        result = await app.workflow_engine.execute_workflow(alert_id, alert_data)
+        result = await app.workflow_engine.execute_workflow(alert_id, alert_data_dict)
         
         click.echo(f"✅ Alert {alert_id} processed successfully")
         click.echo(f"Result: {result}")
@@ -147,10 +150,12 @@ def process_alert(ctx, alert_id, alert_data):
 @click.pass_context
 def setup_db(ctx):
     """Set up the database schema."""
-    from scripts.setup_db import setup_database
+    async def _setup_db():
+        from scripts.setup_db import setup_database
+        return await setup_database()
     
     try:
-        success = asyncio.run(setup_database())
+        success = asyncio.run(_setup_db())
         if success:
             click.echo("✅ Database setup completed successfully")
             sys.exit(0)
@@ -169,6 +174,11 @@ def version(ctx):
     click.echo("LG-SOTF v0.1.0")
     click.echo("LangGraph SOC Triage & Orchestration Framework")
     click.echo("© 2024 LG-SOTF Team")
+
+
+def main():
+    """CLI entry point."""
+    cli()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
-Name: lg-sotf
+Name: lg_sotf
 Version: 0.1.0
 Summary: LangGraph SOC Triage & Orchestration Framework
 Author-email: LG-SOTF Team <team@lg-sotf.org>
@@ -18,13 +18,14 @@ Classifier: Topic :: Security
 Classifier: Topic :: System :: Monitoring
 Requires-Python: >=3.10
 Description-Content-Type: text/markdown
-Requires-Dist: langgraph>=0.0.40
+Requires-Dist: langgraph
 Requires-Dist: pydantic>=2.0.0
 Requires-Dist: pydantic-settings>=2.0.0
 Requires-Dist: asyncio-mqtt>=0.13.0
 Requires-Dist: aiohttp>=3.8.0
 Requires-Dist: asyncpg>=0.28.0
 Requires-Dist: redis>=4.5.0
+Requires-Dist: aioredis
 Requires-Dist: structlog>=23.1.0
 Requires-Dist: click>=8.1.0
 Requires-Dist: pyyaml>=6.0

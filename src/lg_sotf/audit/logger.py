@@ -45,29 +45,54 @@ class AuditLogger:
             cache_logger_on_first_use=True,
         )
     
-    def log_state_creation(self, state: Dict[str, Any]) -> None:
+    def log_state_creation(self, state) -> None:
         """Log state creation."""
+        # Handle both dict and Pydantic model
+        if hasattr(state, 'dict'):
+            # It's a Pydantic model
+            state_dict = state.dict()
+            alert_id = state.alert_id
+            workflow_instance_id = state.workflow_instance_id
+        else:
+            # It's a dict
+            state_dict = state
+            alert_id = state.get('alert_id')
+            workflow_instance_id = state.get('workflow_instance_id')
+        
         self.logger.info(
             "state_created",
-            alert_id=state.get('alert_id'),
-            workflow_instance_id=state.get('workflow_instance_id'),
+            alert_id=alert_id,
+            workflow_instance_id=workflow_instance_id,
             timestamp=datetime.utcnow().isoformat(),
-            state=state
+            event_type="state_creation"
         )
-    
-    def log_state_update(self, state: Dict[str, Any], old_state_hash: str) -> None:
+
+    def log_state_update(self, state, old_state_hash: str) -> None:
         """Log state update."""
+        # Handle both dict and Pydantic model
+        if hasattr(state, 'dict'):
+            # It's a Pydantic model
+            state_dict = state.dict()
+            alert_id = state.alert_id
+            workflow_instance_id = state.workflow_instance_id
+            state_version = state.state_version
+        else:
+            # It's a dict
+            state_dict = state
+            alert_id = state.get('alert_id')
+            workflow_instance_id = state.get('workflow_instance_id')
+            state_version = state.get('state_version')
+        
         self.logger.info(
             "state_updated",
-            alert_id=state.get('alert_id'),
-            workflow_instance_id=state.get('workflow_instance_id'),
-            version=state.get('state_version'),
+            alert_id=alert_id,
+            workflow_instance_id=workflow_instance_id,
+            version=state_version,
             old_state_hash=old_state_hash,
-            new_state_hash=self._hash_state(state),
             timestamp=datetime.utcnow().isoformat(),
-            state=state
+            event_type="state_update"
         )
-    
+        
     def log_node_execution_start(self, node_name: str, execution_id: str, 
                                 start_time: datetime, input_state: Dict[str, Any]) -> None:
         """Log node execution start."""
@@ -184,3 +209,19 @@ class AuditLogger:
         import hashlib
         state_str = json.dumps(state, sort_keys=True)
         return hashlib.sha256(state_str.encode()).hexdigest()
+    
+    def log_application_start(self, config_path: Optional[str] = None, version: Optional[str] = None) -> None:
+        """Log application start."""
+        self.logger.info(
+            "application_started",
+            config_path=config_path,
+            version=version,
+            timestamp=datetime.utcnow().isoformat()
+        )
+
+    def log_application_shutdown(self) -> None:
+        """Log application shutdown."""
+        self.logger.info(
+            "application_shutdown",
+            timestamp=datetime.utcnow().isoformat()
+        )

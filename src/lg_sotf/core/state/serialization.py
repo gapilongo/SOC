@@ -19,7 +19,13 @@ class StateSerializer:
     def serialize(self, state: SOCState) -> Dict[str, Any]:
         """Serialize state object to dictionary."""
         try:
-            return state.dict()
+            import json
+
+            # Convert to dict first, then serialize/deserialize to handle datetime objects
+            state_dict = state.dict()
+            # Use custom JSON serializer to handle datetime objects
+            json_str = json.dumps(state_dict, default=self._json_serializer)
+            return json.loads(json_str)
         except Exception as e:
             raise StateError(f"Failed to serialize state: {str(e)}")
     
@@ -49,4 +55,8 @@ class StateSerializer:
         """Custom JSON serializer for special types."""
         if isinstance(obj, datetime):
             return obj.isoformat()
+        elif hasattr(obj, 'dict'):  # Pydantic models
+            return obj.dict()
+        elif hasattr(obj, '__dict__'):  # Other objects with __dict__
+            return obj.__dict__
         raise TypeError(f"Object of type {type(obj)} is not JSON serializable")

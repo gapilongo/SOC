@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lg-sotf"
+name = "lg_sotf"
 version = "0.1.0"
 description = "LangGraph SOC Triage & Orchestration Framework"
 readme = "README.md"
@@ -30,7 +30,7 @@ dependencies = [
     "aiohttp>=3.8.0",
     "asyncpg>=0.28.0",
     "redis>=4.5.0",
-    "aioredis"
+    "aioredis",
     "structlog>=23.1.0",
     "click>=8.1.0",
     "pyyaml>=6.0",
@@ -64,6 +64,7 @@ Issues = "https://github.com/gapilongo/SOC/issues"
 
 [project.scripts]
 lg-sotf = "lg_sotf.cli:main"
+lg-sotf-poc = "scripts.run_poc:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -130,7 +131,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src"]
+source = ["src/lg_sotf"]
 omit = [
     "*/tests/*",
     "*/test_*",
@@ -151,6 +152,3 @@ exclude_lines = [
     "@(abc\\.)?abstractmethod",
 ]
 
-[project.scripts]
-lg-sotf = "lg_sotf.cli:main"
-lg-sotf-poc = "scripts.run_poc:main"

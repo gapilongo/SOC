@@ -99,14 +99,23 @@ class PostgreSQLStorage(StorageBackend):
                 '''
                 version = await conn.fetchval(version_query, alert_id, workflow_instance_id)
                 
+                # Serialize state data with proper datetime handling
+                serialized_data = json.dumps(state_data, default=self._json_serializer)
+                
                 # Insert new version
                 await conn.execute('''
                     INSERT INTO states (alert_id, workflow_instance_id, state_data, version)
                     VALUES ($1, $2, $3, $4)
-                ''', alert_id, workflow_instance_id, json.dumps(state_data), version)
+                ''', alert_id, workflow_instance_id, serialized_data, version)
                 
         except Exception as e:
             raise StorageError(f"Failed to save state: {str(e)}")
+
+    def _json_serializer(self, obj):
+        """JSON serializer for datetime objects."""
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
     
     async def get_state(self, alert_id: str, workflow_instance_id: str) -> Optional[Dict[str, Any]]:
         """Get state data."""

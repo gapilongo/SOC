@@ -1,4 +1,3 @@
-# src/lg_sotf/audit/metrics.py
 """
 Metrics collection for LG-SOTF.
 
@@ -47,9 +46,13 @@ class SummaryStats:
 class MetricsCollector:
     """Collects and manages metrics for the LG-SOTF framework."""
     
-    def __init__(self, config_manager: ConfigManager):
-        self.config = config_manager
-        self.metrics_config = config_manager.get('monitoring', {}).get('metrics', {})
+    def __init__(self, config_manager: ConfigManager = None):
+        if config_manager:
+            self.config = config_manager
+            self.metrics_config = config_manager.get('monitoring', {}).get('metrics', {})
+        else:
+            self.config = None
+            self.metrics_config = {}
         
         # Storage for metrics
         self.counters: Dict[str, float] = defaultdict(float)

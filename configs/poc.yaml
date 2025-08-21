@@ -5,9 +5,9 @@
 database:
   host: localhost
   port: 5432
-  database: lg_sotf_poc
+  database: lg_sotf_dev
   username: lg_sotf
-  password: lg_sotf_poc_password
+  password: lg_sotf_dev_password
   pool_size: 5
   max_overflow: 10
 
@@ -59,7 +59,7 @@ tools:
 # Storage configuration
 storage:
   backend: "postgresql"
-  connection_string: "postgresql://lg_sotf:lg_sotf_poc_password@localhost:5432/lg_sotf_poc"
+  connection_string: "postgresql://lg_sotf:lg_sotf_dev_password@localhost:5432/lg_sotf_dev"
   
   redis:
     connection_string: "redis://localhost:6379/0"
