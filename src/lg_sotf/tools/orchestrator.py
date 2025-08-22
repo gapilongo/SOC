@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional, Type
 
 from ..audit.logger import AuditLogger
 from ..audit.metrics import MetricsCollector
-from ..config.manager import ConfigManager
-from ..exceptions import ToolError
+from ..core.config.manager import ConfigManager
+from ..core.exceptions import ToolError
 from .registry import ToolRegistry
 from .strategies.async_execution import AsyncExecutionStrategy
 from .strategies.caching import CachingStrategy

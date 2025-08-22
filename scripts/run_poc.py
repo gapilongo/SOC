@@ -1,4 +1,3 @@
-# scripts/run_poc.py
 """
 POC runner script for LG-SOTF.
 
