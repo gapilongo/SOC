@@ -8,7 +8,7 @@ ensuring consistent interface across different storage implementations.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from ..core.exceptions import StorageError
+from lg_sotf.core.exceptions import StorageError
 
 
 class StorageBackend(ABC):

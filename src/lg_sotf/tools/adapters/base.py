@@ -7,7 +7,7 @@ This module provides the abstract base class for all tool adapters.
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from ...core.exceptions import ToolError
+from lg_sotf.core.exceptions import ToolError
 
 
 class BaseToolAdapter(ABC):

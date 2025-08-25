@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import structlog
 
-from ..core.config.manager import ConfigManager
+from lg_sotf.core.config.manager import ConfigManager
 
 
 class AuditLogger:

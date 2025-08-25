@@ -13,7 +13,7 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
-from ..exceptions import ConfigError
+from lg_sotf.core.exceptions import ConfigError
 
 
 class DatabaseConfig(BaseSettings):

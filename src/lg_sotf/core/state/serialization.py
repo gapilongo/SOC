@@ -9,8 +9,8 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
-from ..exceptions import StateError
-from .model import SOCState
+from lg_sotf.core.exceptions import StateError
+from lg_sotf.core.state.model import SOCState
 
 
 class StateSerializer:

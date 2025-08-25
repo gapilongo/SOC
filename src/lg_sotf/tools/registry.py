@@ -6,7 +6,7 @@ This module provides a registry for managing tool types and instances.
 
 from typing import Any, Dict, Type
 
-from ..core.exceptions import ToolError
+from lg_sotf.core.exceptions import ToolError
 
 
 class ToolRegistry:

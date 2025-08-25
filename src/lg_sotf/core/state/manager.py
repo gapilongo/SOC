@@ -16,8 +16,8 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.exceptions import StateError
 from lg_sotf.storage.base import StorageBackend
 
-from .model import AgentExecution, SOCState, StateVersion, WorkflowNodeHistory
-from .serialization import StateSerializer
+from lg_sotf.core.state.model import AgentExecution, SOCState, StateVersion, WorkflowNodeHistory
+from lg_sotf.core.state.serialization import StateSerializer
 
 
 class StateManager:

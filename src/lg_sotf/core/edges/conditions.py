@@ -9,9 +9,9 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List
 
-from ..config.manager import ConfigManager
-from ..exceptions import RoutingError
-from ..state.model import SOCState, TriageStatus
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.exceptions import RoutingError
+from lg_sotf.core.state.model import SOCState, TriageStatus
 
 
 class RoutingConditions:

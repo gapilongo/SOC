@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional
 
 import asyncpg
 
-from ..core.exceptions import StorageError
-from .base import StorageBackend
+from lg_sotf.core.exceptions import StorageError
+from lg_sotf.storage.base import StorageBackend
 
 
 class PostgreSQLStorage(StorageBackend):
