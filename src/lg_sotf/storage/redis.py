@@ -12,8 +12,8 @@ from typing import Any, Dict, List, Optional, Union
 
 import aioredis
 
-from ..core.exceptions import StorageError
-from .base import StorageBackend
+from lg_sotf.core.exceptions import StorageError
+from lg_sotf.storage.base import StorageBackend
 
 
 class RedisStorage(StorageBackend):

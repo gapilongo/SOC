@@ -8,9 +8,9 @@ including version tracking and change analysis.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from ...storage.base import StorageBackend
-from ..exceptions import StateError
-from .model import SOCState, StateVersion
+from lg_sotf.storage.base import StorageBackend
+from lg_sotf.core.exceptions import StateError
+from lg_sotf.core.state.model import SOCState, StateVersion
 
 
 class StateHistoryManager:

@@ -14,8 +14,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from ..core.config.manager import ConfigManager
-from ..core.exceptions import TracingError
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.exceptions import TracingError
 
 
 class SpanStatus(Enum):
