@@ -1,0 +1,75 @@
+MIT License
+
+Copyright (c) 2025 LangGraph SOC Triage & Orchestration Framework (AegisGraph)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Third-Party Dependencies
+
+This software includes the following third-party components with their respective licenses:
+
+### LangGraph & LangChain
+- **License**: MIT License
+- **Copyright**: LangChain, Inc.
+- **URL**: https://github.com/langchain-ai/langgraph
+
+### Pydantic
+- **License**: MIT License  
+- **Copyright**: Samuel Colvin and other contributors
+- **URL**: https://github.com/pydantic/pydantic
+
+### FastAPI (if used)
+- **License**: MIT License
+- **Copyright**: Sebastián Ramírez
+- **URL**: https://github.com/tiangolo/fastapi
+
+### Other Dependencies
+See requirements.txt for a complete list of dependencies and their respective licenses.
+
+---
+
+## Security Considerations
+
+This software is designed for security operations and may handle sensitive data. Users are responsible for:
+
+1. **Data Protection**: Ensuring proper encryption and access controls for sensitive security data
+2. **Compliance**: Meeting relevant regulatory requirements (GDPR, HIPAA, SOX, etc.)
+3. **Security Hardening**: Implementing appropriate security controls in production environments
+4. **Audit Logging**: Maintaining proper audit trails for security operations
+
+---
+
+## Disclaimer
+
+This software is provided for security operations purposes. Users should:
+
+- Test thoroughly in non-production environments
+- Follow security best practices when deploying
+- Comply with all applicable laws and regulations
+- Use responsibly and ethically in security operations
+
+The authors disclaim any responsibility for misuse of this software or any security incidents that may occur from its use.
+
+---
+
+## Contributing
+
+By contributing to this project, you agree that your contributions will be licensed under the same MIT License.
