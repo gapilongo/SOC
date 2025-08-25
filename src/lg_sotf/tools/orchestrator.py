@@ -9,15 +9,15 @@ import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Type
 
-from ..audit.logger import AuditLogger
-from ..audit.metrics import MetricsCollector
-from ..core.config.manager import ConfigManager
-from ..core.exceptions import ToolError
-from .registry import ToolRegistry
-from .strategies.async_execution import AsyncExecutionStrategy
-from .strategies.caching import CachingStrategy
-from .strategies.fallback import FallbackStrategy
-from .strategies.retry import RetryStrategy
+from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.metrics import MetricsCollector
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.exceptions import ToolError
+from lg_sotf.tools.registry import ToolRegistry
+from lg_sotf.tools.strategies.async_execution import AsyncExecutionStrategy
+from lg_sotf.tools.strategies.caching import CachingStrategy
+from lg_sotf.tools.strategies.fallback import FallbackStrategy
+from lg_sotf.tools.strategies.retry import RetryStrategy
 
 
 class ToolOrchestrator:
