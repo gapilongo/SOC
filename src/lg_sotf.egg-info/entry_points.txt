@@ -1,3 +1,0 @@
-[console_scripts]
-lg-sotf = lg_sotf.cli:main
-lg-sotf-poc = scripts.run_poc:main
