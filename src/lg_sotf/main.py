@@ -1,5 +1,5 @@
 """
-Main application entry point for LG-SOTF - Updated with proper agent initialization.
+Main application entry point for LG-SOTF - Fixed agent initialization.
 """
 
 import asyncio
@@ -68,14 +68,18 @@ class LG_SOTFApplication:
             self.state_manager = StateManager(self.postgres_storage)
             logging.info("State manager initialized")
             
-            # Initialize and register agents
-            await self._initialize_agents()
-            logging.info("Agents initialized and registered")
+            # ✅ REMOVED: Duplicate agent initialization
+            # The WorkflowEngine will handle all agent setup
             
-            # Initialize workflow engine
+            # Initialize workflow engine (this will setup agents)
             self.workflow_engine = WorkflowEngine(self.config_manager, self.state_manager)
             await self.workflow_engine.initialize()
             logging.info("Workflow engine initialized")
+            
+            # Get agent registry stats AFTER workflow engine initialization
+            from lg_sotf.agents.registry import agent_registry
+            stats = agent_registry.get_registry_stats()
+            logging.info(f"Agent registry stats: {stats}")
             
             # Log application start
             self.audit_logger.log_application_start(
@@ -117,42 +121,8 @@ class LG_SOTFApplication:
             logging.error(f"Failed to initialize storage: {e}")
             raise
     
-    async def _initialize_agents(self):
-        """Initialize and register all agents."""
-        try:
-            from lg_sotf.agents.registry import agent_registry
-            from lg_sotf.agents.triage.base import TriageAgent
-            
-            logging.info("Registering agent types...")
-            
-            # Register triage agent type
-            triage_config = self.config_manager.get_agent_config("triage")
-            agent_registry.register_agent_type(
-                name="triage",
-                agent_class=TriageAgent,
-                config=triage_config
-            )
-            logging.info("Triage agent type registered")
-            
-            # Create triage agent instance
-            agent_registry.create_agent(
-                name="triage",
-                agent_type="triage",
-                config=triage_config
-            )
-            logging.info("Triage agent instance created")
-            
-            # Initialize all agents
-            await agent_registry.initialize_all_agents()
-            logging.info("All agents initialized")
-            
-            # Log registry stats
-            stats = agent_registry.get_registry_stats()
-            logging.info(f"Agent registry stats: {stats}")
-            
-        except Exception as e:
-            logging.error(f"Failed to initialize agents: {e}")
-            raise
+    # ✅ REMOVED: _initialize_agents method entirely
+    # Let WorkflowEngine handle all agent initialization
     
     async def run(self):
         """Run the application."""
@@ -220,7 +190,7 @@ class LG_SOTFApplication:
             if self.audit_logger:
                 self.audit_logger.log_application_shutdown()
             
-            # Shutdown agents first
+            # Shutdown agents (through workflow engine)
             await self._shutdown_agents()
             
             # Shutdown workflow engine
@@ -323,8 +293,8 @@ class LG_SOTFApplication:
                 from lg_sotf.agents.registry import agent_registry
 
                 # Check if triage agent is healthy
-                if agent_registry.agent_exists("triage"):
-                    triage_agent = agent_registry.get_agent("triage")
+                if agent_registry.agent_exists("triage_instance"):  # ✅ Use correct agent name
+                    triage_agent = agent_registry.get_agent("triage_instance")
                     if hasattr(triage_agent, 'health_check'):
                         health_results['agents'] = await triage_agent.health_check()
                     else:

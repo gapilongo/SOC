@@ -7,6 +7,8 @@ from typing import Any, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from lg_sotf.agents.registry import agent_registry
+from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.core.config.manager import ConfigManager
 from lg_sotf.core.exceptions import WorkflowError
 from lg_sotf.core.state.manager import StateManager
@@ -58,8 +60,7 @@ class WorkflowEngine:
     
     async def _setup_agents(self):
         """Setup all required agents."""
-        from lg_sotf.agents.registry import agent_registry
-        from lg_sotf.agents.triage.base import TriageAgent
+
 
         # Register and create triage agent
         if "triage" not in agent_registry.list_agent_types():
