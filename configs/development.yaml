@@ -24,17 +24,17 @@ agents:
     batch_size: 10
     polling_interval: 30
     max_concurrent_alerts: 5
-  
+
   triage:
     confidence_threshold: 70
     enable_ml_scoring: true
     ml_model_path: "models/triage_model.pkl"
-  
+
   analysis:
     max_iterations: 3
     timeout_seconds: 30
     enable_tool_caching: true
-  
+
   human_loop:
     escalation_threshold: 40
     max_escalation_level: 3
@@ -48,28 +48,28 @@ tools:
       token: "dev_token"
       index: "security"
       search_timeout: 30
-    
+
     qradar:
       base_url: "https://qradar-dev.example.com"
       token: "dev_token"
       timeout: 30
-  
+
   intel:
     virustotal:
       api_key: "dev_virustotal_key"
       timeout: 10
       rate_limit: 4  # requests per minute
-    
+
     recorded_future:
       api_key: "dev_recorded_future_key"
       timeout: 15
-  
+
   sandbox:
     joe_sandbox:
       base_url: "https://joesandbox-dev.example.com"
       api_key: "dev_joe_sandbox_key"
       timeout: 300  # 5 minutes
-  
+
   edr:
     crowdstrike:
       base_url: "https://api.crowdstrike.com"
@@ -81,7 +81,7 @@ tools:
 storage:
   backend: "postgresql"
   connection_string: "postgresql://lg_sotf:lg_sotf_dev_password@localhost:5432/lg_sotf_dev"
-  
+
   redis:
     connection_string: "redis://localhost:6379/0"
     default_ttl: 3600  # 1 hour
@@ -114,3 +114,12 @@ development:
   auto_reload: true
   mock_external_services: true
   test_data_path: "tests/fixtures"
+
+# LLM configuration
+llm:
+  provider: "gemini"
+  api_key: "key"
+  model: "gemini-2.5-pro"
+  temperature: 0.3
+  max_tokens: 1000
+  timeout: 30
