@@ -118,7 +118,7 @@ development:
 # LLM configuration
 llm:
   provider: "gemini"
-  api_key: "key"
+  api_key: "AIzaSyD_wYwfHsNLRth3PtL2udlzSALrEiKtB9s"
   model: "gemini-2.5-pro"
   temperature: 0.3
   max_tokens: 1000
