@@ -29,11 +29,25 @@ agents:
     confidence_threshold: 70
     enable_ml_scoring: true
     ml_model_path: "models/triage_model.pkl"
+  
+  correlation:
+    correlation_window_minutes: 60
+    similarity_threshold: 0.7
+    max_correlations: 10
+    enable_llm_correlation: true
+    llm_weight: 0.3
 
   analysis:
-    max_iterations: 3
-    timeout_seconds: 30
-    enable_tool_caching: true
+    max_iterations: 5
+    min_confidence_threshold: 60
+    max_confidence_threshold: 90
+    enable_tool_orchestration: true
+    enable_llm_reasoning: true
+    react_temperature: 0.3
+    max_reasoning_tokens: 1000
+    parallel_tool_execution: true
+    max_parallel_tools: 3
+    tool_timeout: 30
 
   human_loop:
     escalation_threshold: 40
@@ -118,8 +132,9 @@ development:
 # LLM configuration
 llm:
   provider: "gemini"
-  api_key: "AIzaSyD_wYwfHsNLRth3PtL2udlzSALrEiKtB9s"
-  model: "gemini-2.5-pro"
+  api_key: "key"
+  # model: "gemini-2.5-pro"
+  model: "gemini-2.5-flash"
   temperature: 0.3
   max_tokens: 1000
   timeout: 30
