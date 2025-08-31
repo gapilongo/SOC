@@ -7,6 +7,7 @@ from typing import Any, Dict, List, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from lg_sotf.agents.analysis.base import AnalysisAgent
 from lg_sotf.agents.correlation.base import CorrelationAgent
 from lg_sotf.agents.registry import agent_registry
 from lg_sotf.agents.triage.base import TriageAgent
@@ -33,6 +34,9 @@ class WorkflowState(TypedDict):
     processing_notes: List[str]
     correlations: List[Dict[str, Any]]
     correlation_score: int
+    analysis_conclusion: str
+    threat_score: int
+    recommended_actions: List[str]
 
 
 class WorkflowEngine:
@@ -72,35 +76,46 @@ class WorkflowEngine:
             agent_registry.register_agent_type(
                 "triage", TriageAgent, self.config.get_agent_config("triage")
             )
-
+        
         if "triage_instance" not in agent_registry.list_agent_instances():
             agent_registry.create_agent(
                 "triage_instance", "triage", self.config.get_agent_config("triage")
             )
 
         # Register and create correlation agent
-
+        
         if "correlation" not in agent_registry.list_agent_types():
             agent_registry.register_agent_type(
-                "correlation",
-                CorrelationAgent,
-                self.config.get_agent_config("correlation"),
+                "correlation", CorrelationAgent, self.config.get_agent_config("correlation")
             )
-
+        
         if "correlation_instance" not in agent_registry.list_agent_instances():
             agent_registry.create_agent(
-                "correlation_instance",
-                "correlation",
-                self.config.get_agent_config("correlation"),
+                "correlation_instance", "correlation", self.config.get_agent_config("correlation")
             )
 
+        # Register and create analysis agent
+        
+        if "analysis" not in agent_registry.list_agent_types():
+            agent_registry.register_agent_type(
+                "analysis", AnalysisAgent, self.config.get_agent_config("analysis")
+            )
+        
+        if "analysis_instance" not in agent_registry.list_agent_instances():
+            agent_registry.create_agent(
+                "analysis_instance", "analysis", self.config.get_agent_config("analysis")
+            )
+        
         # Initialize and store agent references
-        self.agents["triage"] = agent_registry.get_agent("triage_instance")
-        await self.agents["triage"].initialize()
-
-        # Initialize correlation agent
-        self.agents["correlation"] = agent_registry.get_agent("correlation_instance")
-        await self.agents["correlation"].initialize()
+        self.agents['triage'] = agent_registry.get_agent("triage_instance")
+        await self.agents['triage'].initialize()
+        
+        self.agents['correlation'] = agent_registry.get_agent("correlation_instance")
+        await self.agents['correlation'].initialize()
+        
+        # Initialize analysis agent
+        self.agents['analysis'] = agent_registry.get_agent("analysis_instance")
+        await self.agents['analysis'].initialize()
 
         # TODO: Add other agents (correlation, analysis, etc.) when implemented
         # For now, we'll use placeholder agents for non-implemented nodes
@@ -129,6 +144,9 @@ class WorkflowEngine:
                 processing_notes=[],
                 correlations=[],
                 correlation_score=0,
+                analysis_conclusion="",
+                threat_score=0,
+                recommended_actions=[]
             )
 
             # Execute through LangGraph
@@ -165,6 +183,10 @@ class WorkflowEngine:
                     # Include correlation data in metadata
                     "correlations": workflow_state.get("correlations", []),
                     "correlation_score": workflow_state.get("correlation_score", 0),
+                    # Include analysis data in metadata
+                    "analysis_conclusion": workflow_state.get("analysis_conclusion", ""),
+                    "threat_score": workflow_state.get("threat_score", 0),
+                    "recommended_actions": workflow_state.get("recommended_actions", [])
                 },
             )
 
@@ -414,12 +436,67 @@ class WorkflowEngine:
             return state
 
     async def _execute_analysis(self, state: WorkflowState) -> WorkflowState:
-        """Execute analysis - placeholder."""
-        # Simple confidence adjustment
-        if len(state["tp_indicators"]) > len(state["fp_indicators"]):
-            state["confidence_score"] = min(100, state["confidence_score"] + 10)
-        else:
-            state["confidence_score"] = max(0, state["confidence_score"] - 10)
+        """Execute analysis using the analysis agent."""
+        try:
+            if 'analysis' not in self.agents:
+                # Fallback to placeholder if agent not available
+                state['confidence_score'] = min(100, state['confidence_score'] + 10)
+                state['current_node'] = "analysis"
+                state['triage_status'] = "analyzed"
+                state['last_updated'] = datetime.utcnow().isoformat()
+                state['processing_notes'].append("Analysis completed (placeholder - agent not available)")
+                return state
+            
+            # Convert state to agent format
+            agent_input = {
+                'alert_id': state['alert_id'],
+                'raw_alert': state['raw_alert'],
+                'triage_status': state['triage_status'],
+                'confidence_score': state['confidence_score'],
+                'fp_indicators': state['fp_indicators'],
+                'tp_indicators': state['tp_indicators'],
+                'priority_level': state['priority_level'],
+                'enriched_data': state['enriched_data'],
+                'correlations': state.get('correlations', []),
+                'correlation_score': state.get('correlation_score', 0),
+                'metadata': {'processing_notes': state['processing_notes']}
+            }
+            
+            # Execute analysis agent
+            agent_result = await self.agents['analysis'].execute(agent_input)
+            
+            # Update state with analysis results
+            state['confidence_score'] = agent_result.get('confidence_score', state['confidence_score'])
+            state['triage_status'] = agent_result.get('triage_status', 'analyzed')
+            state['enriched_data'].update(agent_result.get('enriched_data', {}))
+            
+            # Add analysis-specific data
+            state['analysis_conclusion'] = agent_result.get('analysis_conclusion', '')
+            state['threat_score'] = agent_result.get('threat_score', 0)
+            state['recommended_actions'] = agent_result.get('recommended_actions', [])
+            
+            # Add agent processing notes
+            agent_notes = agent_result.get('metadata', {}).get('processing_notes', [])
+            state['processing_notes'].extend(agent_notes)
+            
+            state['current_node'] = "analysis"
+            state['last_updated'] = datetime.utcnow().isoformat()
+            
+            # Add summary note
+            analysis_iterations = agent_result.get('metadata', {}).get('analysis_iterations', 0)
+            final_confidence = state['confidence_score']
+            state['processing_notes'].append(
+                f"Analysis completed - {analysis_iterations} reasoning iterations, final confidence: {final_confidence}%"
+            )
+            
+            return state
+            
+        except Exception as e:
+            state['processing_notes'].append(f"Analysis error: {str(e)}")
+            state['current_node'] = "analysis"
+            state['triage_status'] = "analysis_failed"
+            state['last_updated'] = datetime.utcnow().isoformat()
+            return state
 
         state["current_node"] = "analysis"
         state["triage_status"] = "analyzed"
@@ -506,11 +583,26 @@ class WorkflowEngine:
             return "analysis"
 
     def _route_after_analysis(self, state: WorkflowState) -> str:
+        """Route after analysis node."""
         confidence = state["confidence_score"]
-        if confidence > 80:
+        threat_score = state.get("threat_score", 0)
+        analysis_conclusion = state.get("analysis_conclusion", "")
+        
+        # If analysis indicates high threat, route to response
+        if threat_score >= 80 or confidence >= 90:
             return "response"
-        elif confidence < 30:
+        
+        # If analysis indicates low threat/false positive, close
+        elif threat_score <= 30 or confidence <= 25:
             return "close"
+        
+        # If analysis is uncertain or moderate threat, escalate to human
+        elif "uncertain" in analysis_conclusion.lower() or 40 <= confidence <= 70:
+            return "human_loop"
+        
+        # Default routing based on confidence
+        elif confidence >= 75:
+            return "response"
         else:
             return "human_loop"
 
