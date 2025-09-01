@@ -543,17 +543,6 @@ class WorkflowEngine:
         return "close" if not state["raw_alert"] else "triage"
 
     def _route_after_triage(self, state: WorkflowState) -> str:
-        confidence = state["confidence_score"]
-        if confidence < 20:
-            return "close"
-        elif confidence > 80:
-            return "response"
-        elif confidence < 50:
-            return "human_loop"
-        else:
-            return "analysis"
-
-    def _route_after_triage(self, state: WorkflowState) -> str:
         """Route after triage node - FIXED to include correlation."""
         confidence = state["confidence_score"]
 
