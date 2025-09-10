@@ -19,8 +19,6 @@ class StateSerializer:
     def serialize(self, state: SOCState) -> Dict[str, Any]:
         """Serialize state object to dictionary."""
         try:
-            import json
-
             # Convert to dict first, then serialize/deserialize to handle datetime objects
             state_dict = state.dict()
             # Use custom JSON serializer to handle datetime objects
