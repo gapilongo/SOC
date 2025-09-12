@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from lg_sotf.agents.base import BaseAgent
 from lg_sotf.utils.llm import get_llm_client
@@ -109,7 +109,7 @@ class TriageAgent(BaseAgent):
         pass
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute triage logic."""
+        """Execute triage logic with single LLM call optimization."""
         try:
             self.logger.info(
                 f"Executing triage for alert {state.get('alert_id', 'unknown')}"
@@ -124,13 +124,19 @@ class TriageAgent(BaseAgent):
             if not alert:
                 raise ValueError("No raw alert data provided")
 
-            # Perform triage analysis
-            confidence_score = await self._calculate_confidence_score(alert, state)
-            fp_indicators, tp_indicators = await self._analyze_indicators(alert, state)
+            # OPTIMIZATION: Single comprehensive LLM analysis
+            llm_analysis = None
+            if self.enable_llm_scoring and self.llm_client:
+                llm_analysis = await self._analyze_alert_with_llm(alert)
+                self.logger.info("Single LLM analysis completed - using results for all triage components")
+
+            # Perform triage analysis using cached LLM results
+            confidence_score = await self._calculate_confidence_score(alert, state, llm_analysis)
+            fp_indicators, tp_indicators = await self._analyze_indicators(alert, state, llm_analysis)
             priority_level = await self._determine_priority(alert, confidence_score)
 
-            # Create enriched data
-            enriched_data = await self._enrich_alert_data(alert, state)
+            # Create enriched data using cached LLM results
+            enriched_data = await self._enrich_alert_data(alert, state, llm_analysis)
 
             # Build result state
             result_state = state.copy()
@@ -151,6 +157,7 @@ class TriageAgent(BaseAgent):
                         "triage_method": self._get_triage_method(),
                         "triage_timestamp": datetime.utcnow().isoformat(),
                         "triage_agent_version": "1.0.0",
+                        "optimization": "single_llm_call",  # Track optimization
                     },
                 }
             )
@@ -192,7 +199,8 @@ class TriageAgent(BaseAgent):
             return "rule_based"
 
     async def _calculate_confidence_score(
-        self, alert: Dict[str, Any], state: Dict[str, Any]
+        self, alert: Dict[str, Any], state: Dict[str, Any], 
+        llm_analysis: Optional[Dict[str, Any]]
     ) -> int:
         """Calculate confidence score for the alert."""
         try:
@@ -202,10 +210,11 @@ class TriageAgent(BaseAgent):
             else:
                 base_score = await self._rule_based_confidence_score(alert, state)
 
-            # Integrate LLM analysis if available
-            if self.enable_llm_scoring and self.llm_client:
-                llm_score = await self._llm_confidence_score(alert, state)
-                # Weighted combination
+            # Use cached LLM analysis if available
+            if llm_analysis:
+                llm_score = llm_analysis.get("confidence_score", 50)
+                
+                # Weighted combination (no additional LLM call)
                 final_score = int(
                     (base_score * (1 - self.llm_weight)) + (llm_score * self.llm_weight)
                 )
@@ -213,26 +222,18 @@ class TriageAgent(BaseAgent):
 
                 # Log scoring details
                 self.logger.info(f"Confidence Scoring Breakdown:")
-                self.logger.info(
-                    f"  Rule-based Score: {base_score} (weight: {1-self.llm_weight:.1%})"
-                )
-                self.logger.info(
-                    f"  LLM Score: {llm_score} (weight: {self.llm_weight:.1%})"
-                )
+                self.logger.info(f"  Rule-based Score: {base_score} (weight: {1-self.llm_weight:.1%})")
+                self.logger.info(f"  LLM Score: {llm_score} (weight: {self.llm_weight:.1%})")
                 self.logger.info(f"  Final Combined Score: {final_score}")
 
                 return final_score
 
-            self.logger.info(
-                f"Rule-based Confidence Score: {base_score} (LLM disabled)"
-            )
+            self.logger.info(f"Rule-based Confidence Score: {base_score} (LLM disabled)")
             return base_score
 
         except Exception as e:
-            self.logger.warning(
-                f"Error calculating confidence score: {e}, using default"
-            )
-            return 50  # Default neutral score
+            self.logger.warning(f"Error calculating confidence score: {e}, using default")
+            return 50
 
     async def _llm_confidence_score(
         self, alert: Dict[str, Any], state: Dict[str, Any]
@@ -479,7 +480,8 @@ Focus on:
             return 0
 
     async def _analyze_indicators(
-        self, alert: Dict[str, Any], state: Dict[str, Any]
+        self, alert: Dict[str, Any], state: Dict[str, Any],
+        llm_analysis: Optional[Dict[str, Any]]
     ) -> tuple:
         """Analyze alert for false positive and true positive indicators."""
         fp_indicators = []
@@ -487,13 +489,10 @@ Focus on:
 
         try:
             # Get base indicators from rules
-            fp_indicators, tp_indicators = await self._rule_based_indicators(
-                alert, state
-            )
+            fp_indicators, tp_indicators = await self._rule_based_indicators(alert, state)
 
-            # Integrate LLM indicators if available
-            if self.enable_llm_scoring and self.llm_client:
-                llm_analysis = await self._analyze_alert_with_llm(alert)
+            # Use cached LLM indicators if available (no additional LLM call)
+            if llm_analysis:
                 llm_fp = llm_analysis.get("false_positive_indicators", [])
                 llm_tp = llm_analysis.get("true_positive_indicators", [])
 
@@ -506,24 +505,15 @@ Focus on:
 
                 # Log indicator analysis
                 self.logger.info(f"Indicator Analysis Summary:")
-                self.logger.info(
-                    f"  Rule-based FP: {len(fp_indicators) - len(added_fp)}, TP: {len(tp_indicators) - len(added_tp)}"
-                )
-                self.logger.info(
-                    f"  LLM Added FP: {len(added_fp)}, TP: {len(added_tp)}"
-                )
-                self.logger.info(
-                    f"  Total FP: {len(fp_indicators)}, Total TP: {len(tp_indicators)}"
-                )
+                self.logger.info(f"  Rule-based FP: {len(fp_indicators) - len(added_fp)}, TP: {len(tp_indicators) - len(added_tp)}")
+                self.logger.info(f"  LLM Added FP: {len(added_fp)}, TP: {len(added_tp)}")
+                self.logger.info(f"  Total FP: {len(fp_indicators)}, Total TP: {len(tp_indicators)}")
                 if added_fp:
                     self.logger.info(f"  New FP Indicators: {added_fp}")
                 if added_tp:
                     self.logger.info(f"  New TP Indicators: {added_tp}")
 
-            self.logger.debug(
-                f"Identified {len(fp_indicators)} FP and {len(tp_indicators)} TP indicators"
-            )
-
+            self.logger.debug(f"Identified {len(fp_indicators)} FP and {len(tp_indicators)} TP indicators")
             return fp_indicators, tp_indicators
 
         except Exception as e:
@@ -681,10 +671,10 @@ Focus on:
             self.logger.warning(f"Error determining priority: {e}")
             return 3  # Default to medium priority
 
-    async def _enrich_alert_data(
-        self, alert: Dict[str, Any], state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Enrich alert data with additional context."""
+    async def _enrich_alert_data(self, alert: Dict[str, Any], 
+                                        state: Dict[str, Any],
+                                        llm_analysis: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """Enrich alert data using cached LLM analysis."""
         enriched = {}
 
         try:
@@ -693,6 +683,7 @@ Focus on:
                 "analysis_timestamp": datetime.utcnow().isoformat(),
                 "analysis_method": self._get_triage_method(),
                 "agent_version": "1.0.0",
+                "optimization_used": "single_llm_call",
             }
 
             # Add source analysis
@@ -708,20 +699,14 @@ Focus on:
             # Add temporal analysis
             enriched["temporal_analysis"] = await self._analyze_temporal_context(alert)
 
-            # Add LLM insights if available
-            if self.enable_llm_scoring and self.llm_client:
-                try:
-                    llm_analysis = await self._analyze_alert_with_llm(alert)
-                    enriched["llm_insights"] = {
-                        "threat_assessment": llm_analysis.get("threat_assessment"),
-                        "threat_categories": llm_analysis.get("threat_categories", []),
-                        "recommended_actions": llm_analysis.get(
-                            "recommended_actions", []
-                        ),
-                        "analysis_reasoning": llm_analysis.get("analysis_reasoning"),
-                    }
-                except Exception as e:
-                    self.logger.debug(f"LLM enrichment failed: {e}")
+            # Use cached LLM insights if available (no additional LLM call)
+            if llm_analysis:
+                enriched["llm_insights"] = {
+                    "threat_assessment": llm_analysis.get("threat_assessment"),
+                    "threat_categories": llm_analysis.get("threat_categories", []),
+                    "recommended_actions": llm_analysis.get("recommended_actions", []),
+                    "analysis_reasoning": llm_analysis.get("analysis_reasoning"),
+                }
 
             return enriched
 
