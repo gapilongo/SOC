@@ -1,9 +1,11 @@
 """
-ReAct reasoning implementation for analysis agent.
+ReAct reasoning implementation for analysis agent - PRODUCTION FIXED VERSION.
+Addresses premature termination, fragile parsing, and tool scaling issues.
 """
 
 import json
 import logging
+import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lg_sotf.core.config.manager import ConfigManager
@@ -11,7 +13,7 @@ from lg_sotf.utils.llm import get_llm_client
 
 
 class ReActReasoner:
-    """Implements ReAct (Reasoning and Acting) pattern for threat analysis."""
+    """Implements ReAct (Reasoning and Acting) pattern for threat analysis - PRODUCTION HARDENED."""
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -23,107 +25,628 @@ class ReActReasoner:
         self.reasoning_temperature = config.get("reasoning_temperature", 0.3)
         self.action_temperature = config.get("action_temperature", 0.1)
         
+        # PRODUCTION HARDENING: Enhanced retry and resilience settings
+        self.max_action_retries = config.get("max_action_retries", 3)
+        self.enable_fallback_analysis = config.get("enable_fallback_analysis", True)
+        self.min_iterations_before_stop = config.get("min_iterations_before_stop", 2)
+        self.confidence_stop_threshold = config.get("confidence_stop_threshold", 95)
+        
     async def initialize(self):
         """Initialize ReAct reasoner."""
         try:
             config_manager = ConfigManager()
             self.llm_client = get_llm_client(config_manager)
-            self.logger.info("ReAct reasoner initialized")
+            self.logger.info("ReAct reasoner initialized with production hardening")
         except Exception as e:
             self.logger.error(f"ReAct reasoner initialization failed: {e}")
             raise
     
     async def reason_and_act(self, context: Dict[str, Any], available_tools: List[str],
                              execute_action_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Execute ReAct reasoning loop."""
+        """Execute ReAct reasoning loop - PRODUCTION HARDENED VERSION."""
         
         thoughts = []
         actions = []
         observations = []
         action_results = {}
+        consecutive_failures = 0
+        successful_iterations = 0
+        
+        # PRODUCTION FIX: Ensure we always have some tools available
+        effective_tools = self._ensure_minimum_tools(available_tools)
         
         for iteration in range(self.max_iterations):
-            # Reasoning step
-            thought = await self._generate_thought(context, thoughts, actions, observations, available_tools)
-            thoughts.append({"iteration": iteration + 1, "thought": thought})
+            iteration_success = False
             
-            # Action step
-            action = await self._generate_action(thought, available_tools, context)
-            if not action:
-                break
+            try:
+                # Reasoning step - with error handling
+                thought = await self._generate_thought_with_retry(
+                    context, thoughts, actions, observations, effective_tools
+                )
+                thoughts.append({"iteration": iteration + 1, "thought": thought})
                 
-            actions.append({"iteration": iteration + 1, "action": action})
-            
-           # Observation step: Execute action if callback provided
-            if execute_action_callback:
-                try:
-                    observation = await execute_action_callback(action, context.get("alert", {}), context.get("state", {}))
-                    observations.append({"iteration": iteration + 1, "observation": observation})
-                    action_results[f"action_{iteration}"] = observation  # Store result
-                except Exception as e:
-                    observation = {"error": str(e)}
-                    observations.append({"iteration": iteration + 1, "observation": observation})
-            else:
-                observation = f"Action {action['tool']} completed with target {action.get('target', 'N/A')}"
+                # PRODUCTION FIX: Robust action generation with multiple fallbacks
+                action = await self._generate_action_with_fallbacks(
+                    thought, effective_tools, context, iteration
+                )
+                
+                # PRODUCTION FIX: Always continue, even without action
+                if action:
+                    actions.append({"iteration": iteration + 1, "action": action})
+                    consecutive_failures = 0
+                    iteration_success = True
+                else:
+                    # Create a rule-based analysis action instead of stopping
+                    action = self._create_fallback_action(thought, context, iteration)
+                    actions.append({"iteration": iteration + 1, "action": action, "fallback": True})
+                    consecutive_failures += 1
+                
+                # Observation step with enhanced error handling
+                observation = await self._execute_observation_with_retry(
+                    action, execute_action_callback, context, iteration
+                )
                 observations.append({"iteration": iteration + 1, "observation": observation})
-            
-            # Check if we should continue
-            if await self._should_stop_reasoning(thought, action, observation):
-                break
+                
+                # Store results
+                action_results[f"action_{iteration}"] = observation
+                
+                if iteration_success:
+                    successful_iterations += 1
+                
+                # PRODUCTION FIX: Improved stopping logic
+                should_stop = await self._should_stop_reasoning_enhanced(
+                    thought, action, observation, context, iteration, 
+                    consecutive_failures, successful_iterations
+                )
+                
+                if should_stop:
+                    self.logger.info(f"ReAct reasoning completed after {iteration + 1} iterations")
+                    break
+                    
+            except Exception as e:
+                self.logger.error(f"ReAct iteration {iteration} failed: {e}")
+                consecutive_failures += 1
+                
+                # Add error observation
+                error_observation = {"error": str(e), "iteration_failed": True}
+                observations.append({"iteration": iteration + 1, "observation": error_observation})
+                
+                # Continue unless too many consecutive failures
+                if consecutive_failures >= self.max_action_retries:
+                    self.logger.warning(f"Too many consecutive failures ({consecutive_failures}), but continuing with rule-based analysis")
+                    # Reset and continue with simplified approach
+                    consecutive_failures = 0
+                    effective_tools = ["rule_based_analysis"]
         
         return {
             "thoughts": thoughts,
-            "actions": actions, 
+            "actions": actions,
             "observations": observations,
-            "action_results": action_results,  # New: Return executed results
+            "action_results": action_results,
             "final_reasoning": thoughts[-1]["thought"] if thoughts else "No reasoning completed",
-            "iterations_completed": len(thoughts)
+            "iterations_completed": len(thoughts),
+            "successful_iterations": successful_iterations,
+            "total_failures": sum(1 for obs in observations if isinstance(obs.get("observation"), dict) and obs["observation"].get("error"))
         }
     
+    def _ensure_minimum_tools(self, available_tools: List[str]) -> List[str]:
+        """PRODUCTION FIX: Ensure we always have minimum viable tools."""
+        if not available_tools:
+            self.logger.warning("No tools available, using built-in analysis tools")
+            return [
+                "rule_based_analysis",
+                "confidence_assessment", 
+                "pattern_matching",
+                "threat_classification"
+            ]
+        
+        # Ensure rule-based fallback is always available
+        if "rule_based_analysis" not in available_tools:
+            available_tools.append("rule_based_analysis")
+        
+        return available_tools
+    
+    async def _generate_thought_with_retry(self, context: Dict[str, Any], thoughts: List[Dict], 
+                                         actions: List[Dict], observations: List[Dict], 
+                                         available_tools: List[str]) -> str:
+        """Generate reasoning thought with retry logic."""
+        
+        for attempt in range(self.max_action_retries):
+            try:
+                prompt = self._build_thought_prompt(context, thoughts, actions, observations, available_tools)
+                response = await self.llm_client.ainvoke(prompt)
+                
+                thought = response.content.strip()
+                if thought and len(thought) > 10:  # Basic validation
+                    return thought
+                    
+            except Exception as e:
+                self.logger.warning(f"LLM thought generation attempt {attempt + 1} failed: {e}")
+                if attempt == self.max_action_retries - 1:
+                    # Final fallback
+                    return self._generate_fallback_thought(context, len(thoughts))
+        
+        return self._generate_fallback_thought(context, len(thoughts))
+    
+    async def _generate_action_with_fallbacks(self, thought: str, available_tools: List[str], 
+                                            context: Dict[str, Any], iteration: int) -> Optional[Dict[str, Any]]:
+        """PRODUCTION FIX: Generate action with multiple fallback strategies."""
+        
+        # Attempt 1: Standard LLM action generation
+        action = await self._generate_action_standard(thought, available_tools, context)
+        if action and self._validate_action_enhanced(action, available_tools):
+            return action
+        
+        # Attempt 2: Simplified prompt with fewer tools
+        simplified_tools = available_tools[:3] if len(available_tools) > 3 else available_tools
+        action = await self._generate_action_simplified(thought, simplified_tools, context)
+        if action and self._validate_action_enhanced(action, simplified_tools):
+            return action
+        
+        # Attempt 3: Pattern-based action extraction from thought
+        action = self._extract_action_from_thought(thought, available_tools)
+        if action and self._validate_action_enhanced(action, available_tools):
+            return action
+        
+        # Attempt 4: Heuristic action based on context
+        action = self._generate_heuristic_action(thought, available_tools, context, iteration)
+        if action and self._validate_action_enhanced(action, available_tools):
+            return action
+        
+        # All attempts failed - this is handled by caller
+        self.logger.warning(f"All action generation attempts failed for iteration {iteration}")
+        return None
+    
+    async def _generate_action_standard(self, thought: str, available_tools: List[str], 
+                                      context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Standard action generation with robust parsing."""
+        try:
+            prompt = self._build_action_prompt(thought, available_tools, context)
+            response = await self.llm_client.ainvoke(prompt)
+            return self._parse_action_robust(response.content, available_tools)
+        except Exception as e:
+            self.logger.debug(f"Standard action generation failed: {e}")
+            return None
+    
+    async def _generate_action_simplified(self, thought: str, available_tools: List[str], 
+                                        context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Simplified action generation for when standard fails."""
+        try:
+            # Simplified prompt focusing on just tool selection
+            simplified_prompt = f"""
+Based on this analysis: "{thought}"
+
+Available tools: {', '.join(available_tools)}
+
+Choose the most appropriate tool and target. Respond with just:
+Tool: [tool_name]
+Target: [what_to_analyze]
+"""
+            response = await self.llm_client.ainvoke(simplified_prompt)
+            return self._parse_simple_action(response.content, available_tools)
+        except Exception as e:
+            self.logger.debug(f"Simplified action generation failed: {e}")
+            return None
+    
+    def _extract_action_from_thought(self, thought: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """PRODUCTION FIX: Extract action hints from thought text."""
+        thought_lower = thought.lower()
+        
+        # Look for tool mentions in thought
+        for tool in available_tools:
+            if tool.lower() in thought_lower or tool.replace('_', ' ').lower() in thought_lower:
+                # Extract potential target from thought
+                target = self._extract_target_from_thought(thought, tool)
+                return {
+                    "tool": tool,
+                    "target": target,
+                    "reason": f"Inferred from thought analysis mentioning {tool}",
+                    "extracted": True
+                }
+        
+        return None
+    
+    def _generate_heuristic_action(self, thought: str, available_tools: List[str], 
+                                 context: Dict[str, Any], iteration: int) -> Optional[Dict[str, Any]]:
+        """PRODUCTION FIX: Generate action based on context heuristics."""
+        
+        # Get alert data for heuristics
+        alert = context.get("alert", {})
+        raw_data = alert.get("raw_data", {})
+        
+        # Priority-based tool selection
+        if "ip_analysis" in available_tools and (raw_data.get("source_ip") or raw_data.get("destination_ip")):
+            return {
+                "tool": "ip_analysis",
+                "target": raw_data.get("source_ip") or raw_data.get("destination_ip"),
+                "reason": "IP address detected in alert data",
+                "heuristic": True
+            }
+        
+        if "hash_analysis" in available_tools and raw_data.get("file_hash"):
+            return {
+                "tool": "hash_analysis", 
+                "target": raw_data.get("file_hash"),
+                "reason": "File hash detected in alert data",
+                "heuristic": True
+            }
+        
+        if "process_analysis" in available_tools and raw_data.get("process_name"):
+            return {
+                "tool": "process_analysis",
+                "target": raw_data.get("process_name"),
+                "reason": "Process name detected in alert data", 
+                "heuristic": True
+            }
+        
+        # Fallback to rule-based analysis
+        if "rule_based_analysis" in available_tools:
+            return {
+                "tool": "rule_based_analysis",
+                "target": "comprehensive_analysis",
+                "reason": f"Heuristic fallback at iteration {iteration}",
+                "heuristic": True
+            }
+        
+        return None
+    
+    def _create_fallback_action(self, thought: str, context: Dict[str, Any], iteration: int) -> Dict[str, Any]:
+        """Create a fallback action when all generation methods fail."""
+        return {
+            "tool": "rule_based_analysis",
+            "target": "fallback_analysis",
+            "reason": f"Fallback action for iteration {iteration} after generation failures",
+            "fallback": True
+        }
+    
+    async def _execute_observation_with_retry(self, action: Dict[str, Any], 
+                                            execute_action_callback: Optional[Callable],
+                                            context: Dict[str, Any], iteration: int) -> Any:
+        """Execute observation with retry logic."""
+        
+        if not execute_action_callback:
+            return f"Action {action.get('tool', 'unknown')} completed with target {action.get('target', 'N/A')}"
+        
+        # Try executing the action with retries
+        for attempt in range(self.max_action_retries):
+            try:
+                observation = await execute_action_callback(
+                    action, context.get("alert", {}), context.get("state", {})
+                )
+                
+                # Validate observation
+                if observation is not None:
+                    return observation
+                    
+            except Exception as e:
+                self.logger.warning(f"Action execution attempt {attempt + 1} failed: {e}")
+                if attempt == self.max_action_retries - 1:
+                    # Return error observation instead of failing
+                    return {
+                        "error": str(e),
+                        "action": action,
+                        "iteration": iteration,
+                        "fallback_executed": True
+                    }
+        
+        # Fallback observation
+        return {
+            "message": f"Action {action.get('tool')} completed with fallback handling",
+            "tool": action.get('tool'),
+            "target": action.get('target'),
+            "iteration": iteration
+        }
+    
+    def _parse_action_robust(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """PRODUCTION FIX: Robust action parsing with multiple strategies."""
+        
+        # Strategy 1: Standard JSON parsing
+        action = self._parse_action_standard(response, available_tools)
+        if action:
+            return action
+        
+        # Strategy 2: Extract JSON from markdown blocks
+        action = self._parse_action_from_markdown(response, available_tools)
+        if action:
+            return action
+        
+        # Strategy 3: Key-value pair extraction
+        action = self._parse_action_key_value(response, available_tools)
+        if action:
+            return action
+        
+        # Strategy 4: Regex-based extraction
+        action = self._parse_action_regex(response, available_tools)
+        if action:
+            return action
+        
+        return None
+    
+    def _parse_action_standard(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Standard JSON parsing with cleanup."""
+        try:
+            # Clean response
+            content = response.strip()
+            
+            # Remove common markdown formatting
+            if content.startswith("```json"):
+                content = content[7:]
+            elif content.startswith("```"):
+                content = content[3:]
+            if content.endswith("```"):
+                content = content[:-3]
+            
+            content = content.strip()
+            
+            # Parse JSON
+            action = json.loads(content)
+            
+            if isinstance(action, dict) and "tool" in action:
+                if action.get("tool") == "none":
+                    return None
+                if action.get("tool") in available_tools:
+                    return action
+                    
+        except Exception as e:
+            self.logger.debug(f"Standard JSON parsing failed: {e}")
+        
+        return None
+    
+    def _parse_action_from_markdown(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Extract JSON from markdown code blocks."""
+        try:
+            # Look for JSON in various markdown formats
+            json_patterns = [
+                r'```json\s*(\{.*?\})\s*```',
+                r'```\s*(\{.*?\})\s*```',
+                r'`(\{.*?\})`',
+                r'(\{[^}]*"tool"[^}]*\})'
+            ]
+            
+            for pattern in json_patterns:
+                matches = re.findall(pattern, response, re.DOTALL | re.IGNORECASE)
+                for match in matches:
+                    try:
+                        action = json.loads(match.strip())
+                        if isinstance(action, dict) and action.get("tool") in available_tools:
+                            return action
+                    except:
+                        continue
+                        
+        except Exception as e:
+            self.logger.debug(f"Markdown parsing failed: {e}")
+        
+        return None
+    
+    def _parse_action_key_value(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Parse action from key-value format."""
+        try:
+            action = {}
+            lines = response.strip().split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip().strip('"\'')
+                    
+                    if key in ['tool', 'target', 'reason']:
+                        action[key] = value
+            
+            if action.get("tool") in available_tools:
+                return action
+                
+        except Exception as e:
+            self.logger.debug(f"Key-value parsing failed: {e}")
+        
+        return None
+    
+    def _parse_action_regex(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Extract action using regex patterns."""
+        try:
+            # Look for tool mentions
+            for tool in available_tools:
+                # Pattern: "use X tool" or "run X analysis"
+                pattern = rf'\b(?:use|run|execute|perform)\s+({re.escape(tool)}|{re.escape(tool.replace("_", " "))})'
+                match = re.search(pattern, response, re.IGNORECASE)
+                
+                if match:
+                    # Look for target nearby
+                    target_patterns = [
+                        rf'(?:on|for|with|target)\s+([^\s\.,;]+)',
+                        rf'target[:\s]+([^\s\.,;]+)',
+                        rf'analyze\s+([^\s\.,;]+)'
+                    ]
+                    
+                    target = "default_target"
+                    for target_pattern in target_patterns:
+                        target_match = re.search(target_pattern, response, re.IGNORECASE)
+                        if target_match:
+                            target = target_match.group(1)
+                            break
+                    
+                    return {
+                        "tool": tool,
+                        "target": target,
+                        "reason": "Extracted from regex pattern matching",
+                        "regex_extracted": True
+                    }
+                    
+        except Exception as e:
+            self.logger.debug(f"Regex parsing failed: {e}")
+        
+        return None
+    
+    def _parse_simple_action(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Parse simple Tool:/Target: format."""
+        try:
+            action = {}
+            lines = response.strip().split('\n')
+            
+            for line in lines:
+                line = line.strip()
+                if line.startswith('Tool:'):
+                    tool = line.replace('Tool:', '').strip()
+                    if tool in available_tools:
+                        action['tool'] = tool
+                elif line.startswith('Target:'):
+                    action['target'] = line.replace('Target:', '').strip()
+            
+            if 'tool' in action:
+                action.setdefault('target', 'default_target')
+                action['reason'] = 'Parsed from simplified format'
+                return action
+                
+        except Exception as e:
+            self.logger.debug(f"Simple parsing failed: {e}")
+        
+        return None
+    
+    def _validate_action_enhanced(self, action: Dict[str, Any], available_tools: List[str]) -> bool:
+        """PRODUCTION FIX: Enhanced action validation."""
+        if not isinstance(action, dict):
+            return False
+        
+        tool = action.get("tool")
+        if not tool or not isinstance(tool, str):
+            return False
+        
+        # Exact match first
+        if tool in available_tools:
+            return True
+        
+        # Fuzzy matching for minor variations
+        tool_lower = tool.lower().replace('-', '_').replace(' ', '_')
+        for available_tool in available_tools:
+            available_lower = available_tool.lower().replace('-', '_').replace(' ', '_')
+            if tool_lower == available_lower:
+                # Update action with correct tool name
+                action["tool"] = available_tool
+                return True
+        
+        return False
+    
+    def _extract_target_from_thought(self, thought: str, tool: str) -> str:
+        """Extract analysis target from thought text."""
+        # Look for common patterns
+        patterns = [
+            r'(?:analyze|check|investigate|examine)\s+([^\s\.,;]+)',
+            r'(?:IP|hash|process|file)\s+([^\s\.,;]+)',
+            r'([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})',  # IP addresses
+            r'([a-fA-F0-9]{32,64})',  # Hashes
+            r'([a-zA-Z0-9_.-]+\.exe)',  # Executables
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, thought, re.IGNORECASE)
+            if match:
+                return match.group(1)
+        
+        return "inferred_target"
+    
+    async def _should_stop_reasoning_enhanced(self, thought: str, action: Optional[Dict], 
+                                           observation: Any, context: Optional[Dict],
+                                           iteration: int, consecutive_failures: int,
+                                           successful_iterations: int) -> bool:
+        """PRODUCTION FIX: Enhanced stopping logic for security analysis."""
+        
+        # Never stop before minimum iterations (unless critical error)
+        if iteration < self.min_iterations_before_stop and consecutive_failures < self.max_action_retries:
+            return False
+        
+        # Stop if too many consecutive failures and we've tried enough
+        if consecutive_failures >= self.max_action_retries and iteration >= 2:
+            self.logger.warning("Stopping due to consecutive failures")
+            return True
+        
+        # Stop at max iterations
+        if iteration >= self.max_iterations - 1:
+            return True
+        
+        thought_lower = thought.lower() if thought else ""
+        
+        # PRODUCTION FIX: Much more restrictive confidence-based stopping  
+        context_conf = context.get("confidence_score", None) if context else None
+        if context_conf is not None:
+            if context_conf >= self.confidence_stop_threshold:  # Default 95%
+                self.logger.info(f"Stopping reasoning: very high confidence ({context_conf}%)")
+                return True
+            if context_conf <= 2:  # Much lower threshold
+                self.logger.info(f"Stopping reasoning: extremely low confidence ({context_conf}%)")
+                return True
+        
+        # PRODUCTION FIX: Only stop on very definitive completion phrases
+        definitive_completion_triggers = [
+            "analysis complete and no further investigation needed",
+            "investigation concluded with final determination",
+            "threat assessment finalized",
+            "security analysis complete with high confidence"
+        ]
+        
+        if any(phrase in thought_lower for phrase in definitive_completion_triggers):
+            self.logger.info(f"Stopping reasoning: definitive completion phrase detected")
+            return True
+        
+        # PRODUCTION FIX: Observation-based stopping (more restrictive)
+        if isinstance(observation, dict):
+            if observation.get("analysis_complete") and observation.get("confidence", 0) > 90:
+                return True
+        
+        # Continue by default - let the reasoner work
+        return False
+    
+    def _generate_fallback_thought(self, context: Dict[str, Any], iteration: int) -> str:
+        """Generate fallback thought when LLM fails."""
+        confidence = context.get("state", {}).get("confidence_score", 50)
+        
+        if iteration == 0:
+            return f"Beginning security analysis with {confidence}% initial confidence. Investigating key indicators to determine threat level."
+        else:
+            return f"Continuing analysis to resolve uncertainties. Current assessment requires additional evidence gathering at iteration {iteration + 1}."
+    
+    # Keep original method signatures for compatibility
     async def _generate_thought(self, context: Dict[str, Any], thoughts: List[Dict], 
                                actions: List[Dict], observations: List[Dict], 
                                available_tools: List[str]) -> str:
-        """Generate reasoning thought."""
-        
-        prompt = self._build_thought_prompt(context, thoughts, actions, observations, available_tools)
-        
-        try:
-            response = await self.llm_client.ainvoke(prompt)
-            return response.content.strip()
-        except Exception as e:
-            self.logger.warning(f"LLM thought generation failed: {e}")
-            return self._fallback_thought(context, len(thoughts))
+        """Generate reasoning thought - delegates to robust version."""
+        return await self._generate_thought_with_retry(context, thoughts, actions, observations, available_tools)
     
     async def _generate_action(self, thought: str, available_tools: List[str], 
                              context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Generate action based on thought."""
-        
-        prompt = self._build_action_prompt(thought, available_tools, context)
-        
-        try:
-            response = await self.llm_client.ainvoke(prompt)
-            return self._parse_action(response.content, available_tools)
-        except Exception as e:
-            self.logger.warning(f"LLM action generation failed: {e}")
-            return self._fallback_action(available_tools, context)
+        """Generate action - delegates to robust version."""
+        return await self._generate_action_with_fallbacks(thought, available_tools, context, 0)
     
+    def _parse_action(self, response_content: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
+        """Parse action - delegates to robust version."""
+        return self._parse_action_robust(response_content, available_tools)
+    
+    async def _should_stop_reasoning(self, thought: str, action: Optional[Dict], 
+                                   observation: Any, context: Optional[Dict] = None) -> bool:
+        """Stop reasoning check - delegates to enhanced version."""
+        return await self._should_stop_reasoning_enhanced(
+            thought, action, observation, context, 0, 0, 1
+        )
+    
+    # Keep existing prompt building methods unchanged
     def _build_thought_prompt(self, context: Dict[str, Any], thoughts: List[Dict], 
                              actions: List[Dict], observations: List[Dict], 
                              available_tools: List[str]) -> str:
-        """Build prompt for thought generation."""
+        """Build reasoning prompt for LLM."""
         
         previous_context = ""
         if thoughts:
-            previous_context = "\n\nPrevious reasoning:\n"
+            previous_context = "\n\nPREVIOUS REASONING:\n"
             for i, (thought, action, obs) in enumerate(zip(thoughts, actions, observations)):
                 previous_context += f"Iteration {i+1}:\n"
                 previous_context += f"Thought: {thought['thought']}\n"
-                previous_context += f"Action: {action['action']}\n"
+                if action:
+                    previous_context += f"Action: {action['action']}\n"
                 previous_context += f"Observation: {obs['observation']}\n\n"
-        
-        return f"""You are analyzing a security alert using the ReAct (Reasoning and Acting) framework.
 
-ALERT CONTEXT:
+        return f"""You are a cybersecurity analyst performing deep threat analysis. Based on the current evidence, reason about what this alert represents and what additional investigation is needed.
+
+CURRENT ALERT:
 {json.dumps(context, indent=2)}
 
 AVAILABLE TOOLS:
@@ -131,18 +654,17 @@ AVAILABLE TOOLS:
 
 {previous_context}
 
-Based on the context and any previous analysis, what do you think about this alert? 
-Consider:
-1. What type of threat this might be
-2. What evidence supports or contradicts this hypothesis  
-3. What additional information would be helpful
-4. Your confidence level in the current assessment
+Based on all available evidence, provide your reasoning about:
+1. What type of threat this likely represents
+2. Key evidence supporting or refuting the threat hypothesis
+3. What additional information would help confirm or deny the threat
+4. Confidence level in current assessment
 
-Provide your reasoning in 2-3 sentences focusing on the most important aspects."""
-    
+Keep your reasoning concise but thorough. Focus on evidence-based analysis."""
+
     def _build_action_prompt(self, thought: str, available_tools: List[str], 
                            context: Dict[str, Any]) -> str:
-        """Build prompt for action generation."""
+        """Build action prompt for LLM."""
         
         return f"""Based on your reasoning: "{thought}"
 
@@ -158,106 +680,3 @@ What tool should be used next to gather more information? Respond in JSON format
 }}
 
 If no further analysis is needed, respond with: {{"tool": "none", "reason": "analysis complete"}}"""
-    
-    def _parse_action(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
-        """Parse action from LLM response."""
-        try:
-            # Clean response
-            content = response.strip()
-            if content.startswith("```json"):
-                content = content[7:]
-            if content.endswith("```"):
-                content = content[:-3]
-            
-            action = json.loads(content)
-            
-            if action.get("tool") == "none":
-                return None
-                
-            if action.get("tool") not in available_tools:
-                return None
-                
-            return action
-            
-        except Exception as e:
-            self.logger.warning(f"Failed to parse action: {e}")
-            return None
-    
-    def _fallback_thought(self, context: Dict[str, Any], iteration: int) -> str:
-        """Fallback thought generation."""
-        confidence = context.get("confidence_score", 50)
-        
-        if iteration == 0:
-            return f"Initial assessment shows {confidence}% confidence. Need to investigate key indicators."
-        else:
-            return f"Continuing analysis to resolve remaining uncertainties in threat assessment."
-    
-    def _fallback_action(self, available_tools: List[str], context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Fallback action generation."""
-        raw_data = context.get("raw_alert", {}).get("raw_data", {})
-        
-        # Simple heuristics for tool selection
-        if "ip_analysis" in available_tools and (raw_data.get("source_ip") or raw_data.get("destination_ip")):
-            return {
-                "tool": "ip_analysis",
-                "target": raw_data.get("source_ip") or raw_data.get("destination_ip"),
-                "reason": "Analyze IP reputation"
-            }
-        elif "hash_analysis" in available_tools and raw_data.get("file_hash"):
-            return {
-                "tool": "hash_analysis", 
-                "target": raw_data.get("file_hash"),
-                "reason": "Check file hash reputation"
-            }
-        
-        return None
-    
-    async def _should_stop_reasoning(
-        self, thought: str, action: Optional[Dict], observation: Any, context: Optional[Dict] = None
-    ) -> bool:
-        """Determine if reasoning should stop with improved logic."""
-        
-        if not action:
-            self.logger.info("Stopping reasoning: no action generated")
-            return True
-
-        thought_lower = thought.lower()
-        context_conf = context.get("confidence_score", None) if context else None
-
-        # 1. Confidence-based stopping
-        if context_conf is not None:
-            if context_conf >= 95:
-                self.logger.info(f"Stopping reasoning: high numeric confidence ({context_conf}%)")
-                return True
-            if context_conf <= 10:
-                self.logger.info(f"Stopping reasoning: very low numeric confidence ({context_conf}%)")
-                return True
-
-        # 2. Text-based reasoning with negation check
-        high_conf_triggers = ["high confidence", "certain", "definitely"]
-        low_conf_triggers = ["false positive", "benign", "no threat"]
-
-        if any(phrase in thought_lower for phrase in high_conf_triggers):
-            self.logger.info(f"Stopping reasoning: high confidence phrase in thought -> {thought}")
-            return True
-
-        for phrase in low_conf_triggers:
-            if phrase in thought_lower:
-                # Negation-aware: ignore "not a false positive" etc.
-                if any(neg in thought_lower for neg in ["not", "unlikely", "improbable"]):
-                    self.logger.debug(f"Ignoring negated low-confidence phrase '{phrase}' in thought -> {thought}")
-                    continue
-                self.logger.info(f"Stopping reasoning: low confidence/benign phrase in thought -> {thought}")
-                return True
-
-        # 3. Observation-based stopping
-        if isinstance(observation, str) and any(
-            kw in observation.lower() for kw in ["analysis complete", "no threat found", "no further action"]
-        ):
-            self.logger.info(f"Stopping reasoning: observation indicates completion -> {observation}")
-            return True
-
-        self.logger.debug("Continuing reasoning: no stop condition met")
-        return False
-
-
