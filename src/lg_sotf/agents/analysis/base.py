@@ -1,6 +1,5 @@
 """
-Production-grade Analysis Agent implementation with hardened ReAct integration.
-Key fixes: Robust ReAct integration, enhanced error handling, tool orchestrator resilience.
+Analysis Agent implementation with ReAct integration.
 """
 
 import asyncio
@@ -25,7 +24,7 @@ from lg_sotf.utils.llm import get_llm_client
 
 
 class AnalysisAgent(BaseAgent):
-    """Production-grade analysis agent implementing ReAct reasoning pattern - HARDENED VERSION."""
+    """Analysis agent implementing ReAct reasoning pattern"""
 
     def __init__(self, config: Dict[str, Any]):
         """Initialize the analysis agent."""
@@ -67,9 +66,9 @@ class AnalysisAgent(BaseAgent):
         self.tool_failure_count = 0
 
     async def initialize(self):
-        """Initialize the analysis agent with enhanced error handling."""
+        """Initialize the analysis agent."""
         try:
-            self.logger.info("Initializing production-hardened analysis agent")
+            self.logger.info("Initializing analysis agent")
 
             # Initialize LLM client
             if self.enable_llm_reasoning:
@@ -86,11 +85,11 @@ class AnalysisAgent(BaseAgent):
             await self._load_analysis_rules()
 
             self.initialized = True
-            self.logger.info("Production-hardened analysis agent initialized successfully")
+            self.logger.info("Analysis agent initialized successfully")
 
         except Exception as e:
             self.logger.error(f"Failed to initialize analysis agent: {e}")
-            # PRODUCTION FIX: Don't raise, continue with degraded mode
+            # Don't raise, continue with degraded mode
             self.logger.warning("Continuing in degraded mode with limited functionality")
             self.initialized = True
             self.enable_tool_orchestration = False
@@ -109,7 +108,7 @@ class AnalysisAgent(BaseAgent):
             self.enable_llm_reasoning = False
 
     async def _initialize_tool_orchestrator_resilient(self):
-        """PRODUCTION FIX: Initialize tool orchestrator with resilience."""
+        """Initialize tool orchestrator with resilience."""
         try:
             config_manager = ConfigManager()
             self.tool_orchestrator = ToolOrchestrator(config_manager)
@@ -120,12 +119,12 @@ class AnalysisAgent(BaseAgent):
             self.logger.info("Tool orchestrator initialized with resilience")
         except Exception as e:
             self.logger.warning(f"Tool orchestrator initialization failed: {e}")
-            # PRODUCTION FIX: Create minimal fallback orchestrator
+            # Create minimal fallback orchestrator
             self.tool_orchestrator = self._create_fallback_orchestrator()
             self.logger.info("Using fallback tool orchestrator")
 
     async def _initialize_react_reasoner(self):
-        """Initialize ReAct reasoner with production configuration."""
+        """Initialize ReAct reasoner"""
         try:
             # Enhanced ReAct config for production
             react_config = {
@@ -138,7 +137,7 @@ class AnalysisAgent(BaseAgent):
             
             self.react_reasoner = ReActReasoner(react_config)
             await self.react_reasoner.initialize()
-            self.logger.info("Production-hardened ReAct reasoner initialized")
+            self.logger.info("ReAct reasoner initialized")
         except Exception as e:
             self.logger.warning(f"ReAct reasoner initialization failed: {e}")
             # Continue without ReAct - will use rule-based analysis
@@ -166,7 +165,7 @@ class AnalysisAgent(BaseAgent):
         self.logger.info(f"Successfully registered {registered_count}/{len(tools_to_register)} analysis tools")
 
     def _create_fallback_orchestrator(self):
-        """PRODUCTION FIX: Create minimal fallback orchestrator."""
+        """Create minimal fallback orchestrator."""
         class FallbackOrchestrator:
             def __init__(self):
                 self.tools = ["rule_based_analysis", "confidence_assessment", "pattern_matching"]
@@ -210,9 +209,9 @@ class AnalysisAgent(BaseAgent):
         self.logger.info("Analysis rules loaded")
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute analysis using hardened ReAct reasoning pattern."""
+        """Execute analysis using ReAct reasoning pattern."""
         try:
-            self.logger.info(f"Executing hardened analysis for alert {state.get('alert_id', 'unknown')}")
+            self.logger.info(f"Executing analysis for alert {state.get('alert_id', 'unknown')}")
 
             # Validate input
             if not await self.validate_input(state):
@@ -226,7 +225,7 @@ class AnalysisAgent(BaseAgent):
             correlations = state.get("correlations", [])
             enriched_data = state.get("enriched_data", {})
 
-            # PRODUCTION FIX: Perform analysis with multiple fallback strategies
+            # Perform analysis with multiple fallback strategies
             analysis_result = await self._perform_analysis_with_fallbacks(alert, correlations, enriched_data, state)
 
             # Build result state
@@ -248,7 +247,7 @@ class AnalysisAgent(BaseAgent):
                     **state.get("metadata", {}),
                     "analysis_iterations": self.current_iteration,
                     "analysis_timestamp": datetime.utcnow().isoformat(),
-                    "analysis_agent_version": "1.0.0-hardened",
+                    "analysis_agent_version": "1.0.0",
                     "analysis_method": analysis_result.get("method", "unknown"),
                     "tool_failures": self.tool_failure_count
                 }
@@ -260,7 +259,7 @@ class AnalysisAgent(BaseAgent):
                 return await self._create_fallback_result(state)
 
             self.logger.info(
-                f"Hardened analysis completed for alert {state.get('alert_id')} "
+                f"Analysis completed for alert {state.get('alert_id')} "
                 f"after {self.current_iteration} iterations with "
                 f"{analysis_result['confidence_score']}% confidence"
             )
@@ -269,12 +268,12 @@ class AnalysisAgent(BaseAgent):
 
         except Exception as e:
             self.logger.error(f"Analysis execution failed: {e}")
-            # PRODUCTION FIX: Return graceful fallback instead of error state
+            # Return graceful fallback instead of error state
             return await self._create_fallback_result(state, error=str(e))
 
     async def _perform_analysis_with_fallbacks(self, alert: Dict[str, Any], correlations: List[Dict[str, Any]], 
                                              enriched_data: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
-        """PRODUCTION FIX: Perform analysis with multiple fallback strategies."""
+        """Perform analysis with multiple fallback strategies."""
         
         # Strategy 1: Full ReAct analysis (preferred)
         if self.enable_llm_reasoning and self.react_reasoner and self.tool_orchestrator:
@@ -303,7 +302,7 @@ class AnalysisAgent(BaseAgent):
 
     async def _perform_react_analysis_resilient(self, alert: Dict[str, Any], correlations: List[Dict[str, Any]], 
                                               enriched_data: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
-        """PRODUCTION FIX: Perform ReAct analysis with resilience enhancements."""
+        """Perform ReAct analysis with resilience enhancements."""
         
         # Initial assessment
         initial_confidence = state.get("confidence_score", 50)
@@ -322,7 +321,7 @@ class AnalysisAgent(BaseAgent):
             "confidence_score": initial_confidence
         }
         
-        # PRODUCTION FIX: Get available tools with fallback
+        # Get available tools with fallback
         available_tools = await self._get_available_tools_resilient()
         
         # Run ReAct reasoning with resilience
@@ -330,13 +329,13 @@ class AnalysisAgent(BaseAgent):
             context, available_tools, execute_action_callback=self._execute_single_action_resilient
         )
         
-        # PRODUCTION FIX: Validate and enhance ReAct results
+        # Validate and enhance ReAct results
         validated_result = await self._validate_and_enhance_react_result(react_result, initial_confidence, context)
         
         return validated_result
 
     async def _get_available_tools_resilient(self) -> List[str]:
-        """PRODUCTION FIX: Get available tools with fallback."""
+        """Get available tools with fallback."""
         try:
             if self.tool_orchestrator:
                 tools = self.tool_orchestrator.list_tools()
@@ -357,7 +356,7 @@ class AnalysisAgent(BaseAgent):
 
     async def _execute_single_action_resilient(self, action: Dict[str, str], alert: Dict[str, Any], 
                                              state: Dict[str, Any]) -> Dict[str, Any]:
-        """PRODUCTION FIX: Execute a single analysis action with resilience."""
+        """Execute a single analysis action with resilience."""
         
         tool_name = action.get("tool", "unknown")
         target = action.get("target", "default")
@@ -371,7 +370,7 @@ class AnalysisAgent(BaseAgent):
             "state_context": state
         }
         
-        # PRODUCTION FIX: Execute with multiple fallback strategies
+        # Execute with multiple fallback strategies
         for attempt in range(self.tool_retry_attempts + 1):
             try:
                 # Try tool orchestrator first
@@ -441,7 +440,7 @@ class AnalysisAgent(BaseAgent):
 
     async def _validate_and_enhance_react_result(self, react_result: Dict[str, Any], 
                                                initial_confidence: int, context: Dict[str, Any]) -> Dict[str, Any]:
-        """PRODUCTION FIX: Validate and enhance ReAct results."""
+        """Validate and enhance ReAct results."""
         
         # Sync iteration count
         self.current_iteration = max(
@@ -473,7 +472,7 @@ class AnalysisAgent(BaseAgent):
     async def _calculate_enhanced_confidence(self, base_confidence: int, 
                                           tool_results: Dict[str, Dict[str, Any]],
                                           react_result: Dict[str, Any]) -> int:
-        """PRODUCTION FIX: Enhanced confidence calculation."""
+        """Enhanced confidence calculation."""
         
         if not tool_results:
             return base_confidence
@@ -992,7 +991,7 @@ class AnalysisAgent(BaseAgent):
             "reasoning_steps": len(self.reasoning_history),
             "confidence_progression": self.confidence_progression,
             "analysis_timestamp": datetime.utcnow().isoformat(),
-            "agent_version": "1.0.0-hardened"
+            "agent_version": "1.0.0"
         }
         
         return {
@@ -1039,7 +1038,7 @@ class AnalysisAgent(BaseAgent):
         return list(dict.fromkeys(actions))
 
     async def _create_fallback_result(self, state: Dict[str, Any], error: str = None) -> Dict[str, Any]:
-        """PRODUCTION FIX: Create graceful fallback result."""
+        """Create graceful fallback result."""
         
         fallback_confidence = max(30, state.get("confidence_score", 50) - 20)
         
@@ -1115,7 +1114,7 @@ class AnalysisAgent(BaseAgent):
     async def cleanup(self):
         """Cleanup analysis agent resources."""
         try:
-            self.logger.info("Cleaning up production-hardened analysis agent")
+            self.logger.info("Cleaning up analysis agent")
 
             if self.tool_orchestrator:
                 # Tool orchestrator cleanup if needed
@@ -1128,7 +1127,7 @@ class AnalysisAgent(BaseAgent):
                 # ReAct reasoner cleanup if needed
                 pass
 
-            self.logger.info("Production-hardened analysis agent cleanup completed")
+            self.logger.info("Analysis agent cleanup completed")
 
         except Exception as e:
             self.logger.error(f"Error during analysis agent cleanup: {e}")
@@ -1186,7 +1185,7 @@ class AnalysisAgent(BaseAgent):
             "tools_executed": len(self.tool_results),
             "tool_failure_count": self.tool_failure_count,
             "confidence_progression_steps": len(self.confidence_progression),
-            "production_hardened": True,
+            "production": True,
             "fallback_analysis_enabled": self.enable_fallback_analysis
         }
 

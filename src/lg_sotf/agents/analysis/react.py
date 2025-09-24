@@ -1,6 +1,5 @@
 """
-ReAct reasoning implementation for analysis agent - PRODUCTION FIXED VERSION.
-Addresses premature termination, fragile parsing, and tool scaling issues.
+ReAct reasoning implementation for analysis agent.
 """
 
 import json
@@ -13,7 +12,7 @@ from lg_sotf.utils.llm import get_llm_client
 
 
 class ReActReasoner:
-    """Implements ReAct (Reasoning and Acting) pattern for threat analysis - PRODUCTION HARDENED."""
+    """Implements ReAct (Reasoning and Acting) pattern for threat analysis"""
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -25,7 +24,7 @@ class ReActReasoner:
         self.reasoning_temperature = config.get("reasoning_temperature", 0.3)
         self.action_temperature = config.get("action_temperature", 0.1)
         
-        # PRODUCTION HARDENING: Enhanced retry and resilience settings
+        # Enhanced retry and resilience settings
         self.max_action_retries = config.get("max_action_retries", 3)
         self.enable_fallback_analysis = config.get("enable_fallback_analysis", True)
         self.min_iterations_before_stop = config.get("min_iterations_before_stop", 2)
@@ -36,14 +35,14 @@ class ReActReasoner:
         try:
             config_manager = ConfigManager()
             self.llm_client = get_llm_client(config_manager)
-            self.logger.info("ReAct reasoner initialized with production hardening")
+            self.logger.info("ReAct reasoner initialized")
         except Exception as e:
             self.logger.error(f"ReAct reasoner initialization failed: {e}")
             raise
     
     async def reason_and_act(self, context: Dict[str, Any], available_tools: List[str],
                              execute_action_callback: Optional[Callable] = None) -> Dict[str, Any]:
-        """Execute ReAct reasoning loop - PRODUCTION HARDENED VERSION."""
+        """Execute ReAct reasoning loop"""
         
         thoughts = []
         actions = []
@@ -52,7 +51,7 @@ class ReActReasoner:
         consecutive_failures = 0
         successful_iterations = 0
         
-        # PRODUCTION FIX: Ensure we always have some tools available
+        # Ensure we always have some tools available
         effective_tools = self._ensure_minimum_tools(available_tools)
         
         for iteration in range(self.max_iterations):
@@ -65,12 +64,12 @@ class ReActReasoner:
                 )
                 thoughts.append({"iteration": iteration + 1, "thought": thought})
                 
-                # PRODUCTION FIX: Robust action generation with multiple fallbacks
+                # Robust action generation with multiple fallbacks
                 action = await self._generate_action_with_fallbacks(
                     thought, effective_tools, context, iteration
                 )
                 
-                # PRODUCTION FIX: Always continue, even without action
+                # Always continue, even without action
                 if action:
                     actions.append({"iteration": iteration + 1, "action": action})
                     consecutive_failures = 0
@@ -93,7 +92,7 @@ class ReActReasoner:
                 if iteration_success:
                     successful_iterations += 1
                 
-                # PRODUCTION FIX: Improved stopping logic
+                # Improved stopping logic
                 should_stop = await self._should_stop_reasoning_enhanced(
                     thought, action, observation, context, iteration, 
                     consecutive_failures, successful_iterations
@@ -130,7 +129,7 @@ class ReActReasoner:
         }
     
     def _ensure_minimum_tools(self, available_tools: List[str]) -> List[str]:
-        """PRODUCTION FIX: Ensure we always have minimum viable tools."""
+        """Ensure we always have minimum viable tools."""
         if not available_tools:
             self.logger.warning("No tools available, using built-in analysis tools")
             return [
@@ -170,7 +169,7 @@ class ReActReasoner:
     
     async def _generate_action_with_fallbacks(self, thought: str, available_tools: List[str], 
                                             context: Dict[str, Any], iteration: int) -> Optional[Dict[str, Any]]:
-        """PRODUCTION FIX: Generate action with multiple fallback strategies."""
+        """Generate action with multiple fallback strategies."""
         
         # Attempt 1: Standard LLM action generation
         action = await self._generate_action_standard(thought, available_tools, context)
@@ -229,7 +228,7 @@ Target: [what_to_analyze]
             return None
     
     def _extract_action_from_thought(self, thought: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
-        """PRODUCTION FIX: Extract action hints from thought text."""
+        """Extract action hints from thought text."""
         thought_lower = thought.lower()
         
         # Look for tool mentions in thought
@@ -248,7 +247,7 @@ Target: [what_to_analyze]
     
     def _generate_heuristic_action(self, thought: str, available_tools: List[str], 
                                  context: Dict[str, Any], iteration: int) -> Optional[Dict[str, Any]]:
-        """PRODUCTION FIX: Generate action based on context heuristics."""
+        """Generate action based on context heuristics."""
         
         # Get alert data for heuristics
         alert = context.get("alert", {})
@@ -338,7 +337,7 @@ Target: [what_to_analyze]
         }
     
     def _parse_action_robust(self, response: str, available_tools: List[str]) -> Optional[Dict[str, Any]]:
-        """PRODUCTION FIX: Robust action parsing with multiple strategies."""
+        """Robust action parsing with multiple strategies."""
         
         # Strategy 1: Standard JSON parsing
         action = self._parse_action_standard(response, available_tools)
@@ -504,7 +503,7 @@ Target: [what_to_analyze]
         return None
     
     def _validate_action_enhanced(self, action: Dict[str, Any], available_tools: List[str]) -> bool:
-        """PRODUCTION FIX: Enhanced action validation."""
+        """Enhanced action validation."""
         if not isinstance(action, dict):
             return False
         
@@ -549,7 +548,7 @@ Target: [what_to_analyze]
                                            observation: Any, context: Optional[Dict],
                                            iteration: int, consecutive_failures: int,
                                            successful_iterations: int) -> bool:
-        """PRODUCTION FIX: Enhanced stopping logic for security analysis."""
+        """Enhanced stopping logic for security analysis."""
         
         # Never stop before minimum iterations (unless critical error)
         if iteration < self.min_iterations_before_stop and consecutive_failures < self.max_action_retries:
@@ -566,7 +565,7 @@ Target: [what_to_analyze]
         
         thought_lower = thought.lower() if thought else ""
         
-        # PRODUCTION FIX: Much more restrictive confidence-based stopping  
+        # Much more restrictive confidence-based stopping  
         context_conf = context.get("confidence_score", None) if context else None
         if context_conf is not None:
             if context_conf >= self.confidence_stop_threshold:  # Default 95%
@@ -576,7 +575,7 @@ Target: [what_to_analyze]
                 self.logger.info(f"Stopping reasoning: extremely low confidence ({context_conf}%)")
                 return True
         
-        # PRODUCTION FIX: Only stop on very definitive completion phrases
+        # Only stop on very definitive completion phrases
         definitive_completion_triggers = [
             "analysis complete and no further investigation needed",
             "investigation concluded with final determination",
@@ -588,7 +587,7 @@ Target: [what_to_analyze]
             self.logger.info(f"Stopping reasoning: definitive completion phrase detected")
             return True
         
-        # PRODUCTION FIX: Observation-based stopping (more restrictive)
+        # Observation-based stopping (more restrictive)
         if isinstance(observation, dict):
             if observation.get("analysis_complete") and observation.get("confidence", 0) > 90:
                 return True
