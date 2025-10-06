@@ -749,13 +749,25 @@ class WorkflowEngine:
     # ===============================
 
     async def execute_workflow(self, alert_id: str, initial_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the  workflow."""
+        """Execute the workflow."""
         try:
             # Create execution context
             execution_context = self._create_execution_context(alert_id)
             workflow_instance_id = f"{alert_id}_{execution_context.execution_id}"
 
-            # Create initial  state
+            # ✅ CREATE INITIAL STATE IN DATABASE FIRST
+            await self.state_manager.create_state(
+                alert_id=alert_id,
+                raw_alert=initial_state,
+                workflow_instance_id=workflow_instance_id,
+                initial_node="ingestion",
+                author_type="system",
+                author_id="workflow_engine"
+            )
+            
+            self.logger.info(f"Created initial state in database for {alert_id}")
+
+            # Create initial workflow state for LangGraph
             workflow_state = WorkflowState(
                 alert_id=alert_id,
                 workflow_instance_id=workflow_instance_id,
@@ -778,34 +790,31 @@ class WorkflowEngine:
                 recommended_actions=[],
                 analysis_reasoning=[],
                 tool_results={},
-                processing_notes=["🔄  workflow started"],
+                processing_notes=["🔄 workflow started"],
                 last_updated=datetime.utcnow().isoformat(),
                 agent_executions={},
                 state_version=1
             )
 
-            # Execute through  LangGraph
-            self.logger.info(f"🚀 Starting  workflow for {alert_id}")
+            # Execute through LangGraph
+            self.logger.info(f"🚀 Starting workflow for {alert_id}")
             result_state = await self.compiled_graph.ainvoke(workflow_state)
 
             # Cleanup execution context
             if alert_id in self._execution_contexts:
                 del self._execution_contexts[alert_id]
 
-            # Persist final state
+            # ✅ UPDATE final state (now it exists!)
             await self._persist_final_state(result_state)
 
-            self.logger.info(f"✅  workflow completed for {alert_id}")
+            self.logger.info(f"✅ workflow completed for {alert_id}")
             return result_state
 
         except Exception as e:
-            self.logger.error(f"❌  workflow failed for {alert_id}: {e}")
-            # Cleanup on error
+            self.logger.error(f"❌ workflow failed for {alert_id}: {e}")
             if alert_id in self._execution_contexts:
                 del self._execution_contexts[alert_id]
-            raise WorkflowError(f" workflow execution failed: {str(e)}")
-
-    # ... (rest of the helper methods remain similar but with proper synchronization)
+            raise WorkflowError(f"workflow execution failed: {str(e)}")
 
     # Placeholder methods for completeness
     async def _execute_ingestion(self, state: WorkflowState) -> WorkflowState:
@@ -872,21 +881,28 @@ class WorkflowEngine:
                 any("unusual" in note.lower() for note in state["processing_notes"]))
 
     async def _persist_final_state(self, workflow_state: WorkflowState):
-        """Persist the final  workflow state."""
+        """Persist the final workflow state."""
         try:
-            # Convert to SOCState for persistence with all  data
-            soc_state = SOCState(
-                alert_id=workflow_state["alert_id"],
-                raw_alert=workflow_state["raw_alert"],
-                enriched_data=workflow_state["enriched_data"],
-                triage_status=TriageStatus(workflow_state["triage_status"]),
-                confidence_score=workflow_state["confidence_score"],
-                fp_indicators=workflow_state["fp_indicators"],
-                tp_indicators=workflow_state["tp_indicators"],
-                workflow_instance_id=workflow_state["workflow_instance_id"],
-                current_node=workflow_state["current_node"],
-                priority_level=workflow_state["priority_level"],
-                metadata={
+            # Get existing state (should always exist now)
+            existing_state = await self.state_manager.get_state(
+                workflow_state["alert_id"], 
+                workflow_state["workflow_instance_id"]
+            )
+            
+            if not existing_state:
+                self.logger.error(f"No existing state found for {workflow_state['alert_id']} - this should not happen!")
+                return
+            
+            # Prepare updates with all workflow results
+            updates = {
+                "triage_status": workflow_state["triage_status"],
+                "confidence_score": workflow_state["confidence_score"],
+                "current_node": workflow_state["current_node"],
+                "fp_indicators": workflow_state["fp_indicators"],
+                "tp_indicators": workflow_state["tp_indicators"],
+                "priority_level": workflow_state["priority_level"],
+                "enriched_data": workflow_state["enriched_data"],
+                "metadata": {
                     "processing_notes": workflow_state["processing_notes"],
                     "correlations": workflow_state.get("correlations", []),
                     "correlation_score": workflow_state.get("correlation_score", 0),
@@ -897,39 +913,23 @@ class WorkflowEngine:
                     "tool_results": workflow_state.get("tool_results", {}),
                     "agent_executions": workflow_state.get("agent_executions", {}),
                     "execution_context": workflow_state.get("execution_context", {}),
-                    "state_version": workflow_state["state_version"],
-                    "routing_system": "_routing"
-                },
+                    "state_version": workflow_state["state_version"]
+                }
+            }
+            
+            # Update the existing state
+            await self.state_manager.update_state(
+                existing_state,
+                updates,
+                author_type="system",
+                author_id="workflow_engine",
+                changes_summary=f"Workflow completed: {workflow_state['current_node']} (confidence: {workflow_state['confidence_score']}%)"
             )
-
-            # Persist with proper state management
-            try:
-                existing_state = await self.state_manager.get_state(
-                    workflow_state["alert_id"], workflow_state["workflow_instance_id"]
-                )
-
-                if existing_state:
-                    await self.state_manager.update_state(
-                        existing_state,
-                        soc_state.dict(exclude={"alert_id", "workflow_instance_id"}),
-                        author_type="system",
-                        author_id="_workflow_engine",
-                        changes_summary=" workflow execution completed",
-                    )
-                else:
-                    await self.state_manager.create_state(
-                        alert_id=workflow_state["alert_id"],
-                        raw_alert=workflow_state["raw_alert"],
-                        workflow_instance_id=workflow_state["workflow_instance_id"],
-                        initial_node="ingestion",
-                        author_type="system",
-                        author_id="_workflow_engine",
-                    )
-            except Exception as persist_error:
-                self.logger.warning(f"Failed to persist  state: {persist_error}")
-
+            
+            self.logger.info(f"✅ Persisted final state for {workflow_state['alert_id']}: confidence={workflow_state['confidence_score']}%, status={workflow_state['triage_status']}")
+                
         except Exception as e:
-            self.logger.error(f"Error persisting  final state: {e}")
+            self.logger.error(f"Error persisting final state: {e}", exc_info=True)
 
     def get_workflow_metrics(self) -> Dict[str, Any]:
         """Get  workflow metrics."""
