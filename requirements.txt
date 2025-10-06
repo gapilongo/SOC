@@ -16,3 +16,6 @@ aioredis>=2.0.1
 langchain-anthropic>=0.3.19
 langchain-google-genai>=2.1.10
 langchain-openai>=0.3.32
+fastapi >=0.117.1
+uvicorn>=0.37.0
+websockets>=15.0.1
