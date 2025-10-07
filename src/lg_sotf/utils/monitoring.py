@@ -752,6 +752,29 @@ async def run_soc_dashboard_api(
     finally:
         await lg_sotf_app.shutdown()
 
+def get_application():
+    """Factory to create application instance for uvicorn."""
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    
+    lg_sotf = LG_SOTFApplication(config_path="configs/poc.yaml")
+    dashboard = SOCDashboardAPI(lg_sotf)
+    
+    @dashboard.app.on_event("startup")
+    async def startup():
+        await lg_sotf.initialize()
+    
+    @dashboard.app.on_event("shutdown") 
+    async def shutdown():
+        await lg_sotf.shutdown()
+    
+    return dashboard.app
+
+# Export app instance for uvicorn
+app = get_application()
 
 if __name__ == "__main__":
     import argparse
