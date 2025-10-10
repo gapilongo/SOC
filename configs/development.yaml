@@ -216,7 +216,7 @@ development:
 # LLM configuration
 llm:
   provider: "gemini"
-  api_key: "AIzaSyDCKdw6ChNUUsqEkXKLX-7HJdA-P_rahTg"
+  api_key: ""
   # model: "gemini-2.5-pro"
   model: "gemini-2.5-flash"
   temperature: 0.3
