@@ -18,12 +18,84 @@ redis:
   db: 0
   max_connections: 5
 
-# Agent configuration
 agents:
   ingestion:
-    batch_size: 10
+    batch_size: 100
     polling_interval: 30
-    max_concurrent_alerts: 5
+    max_concurrent_alerts: 50
+    enable_deduplication: true
+    deduplication_window_hours: 24
+    alert_retention_days: 90
+    rate_limit_enabled: true
+    max_alerts_per_minute: 1000
+    max_alerts_per_source_minute: 100
+    
+    source_priorities:
+      file: 1
+      webhook: 2
+      crowdstrike: 3
+      splunk: 4
+    
+    sources:
+      # ========================================
+      # FILE SOURCE
+      # ========================================
+      file:
+        enabled: true
+        watch_directory: "tests/fixtures/alerts"
+        file_patterns:
+          - "*.json"
+          - "*.csv"
+        delete_after_read: false
+        move_to_processed: true
+        processed_directory: "tests/fixtures/alerts/processed"
+        
+        csv_delimiter: ","
+        csv_has_header: true
+        csv_field_mapping:
+          # Firewall CSV: event_id,timestamp,severity,event_type,source_ip,destination_ip...
+          event_id: id
+          timestamp: timestamp
+          severity: severity
+          event_type: category
+          rule_name: title
+          source_ip: source_ip
+          destination_ip: destination_ip
+          destination_port: destination_port
+          protocol: protocol
+          user: user
+          device_name: host
+          country: country
+          bytes_transferred: bytes_transferred
+          action: action
+      
+      # ========================================
+      # WEBHOOK SOURCE (sibling, not child!)
+      # ========================================
+      webhook:
+        enabled: false
+        port: 8080
+        path: "/webhook/alerts"
+        auth_token: "poc_webhook_token"
+      
+      # ========================================
+      # SPLUNK SOURCE
+      # ========================================
+      splunk:
+        enabled: false
+        base_url: "https://splunk-poc.example.com:8089"
+        token: "poc_token"
+        index: "security"
+      
+      # ========================================
+      # CROWDSTRIKE SOURCE
+      # ========================================
+      crowdstrike:
+        enabled: false
+        base_url: "https://api.crowdstrike.com"
+        client_id: "poc_client_id"
+        client_secret: "poc_client_secret"
+        
 
   triage:
     confidence_threshold: 70
@@ -67,6 +139,12 @@ tools:
       base_url: "https://qradar-dev.example.com"
       token: "dev_token"
       timeout: 30
+
+    wazuh:
+      enabled: true
+      base_url: "https://localhost:55000"
+      username: "wazuh"
+      password: "wazuh"
 
   intel:
     virustotal:
@@ -122,6 +200,12 @@ monitoring:
   tracing_enabled: true
   tracing_sampling_rate: 0.1
 
+# POC settings
+poc:
+  mode: "file"  # file | direct | webhook
+  auto_process: true
+  alerts_directory: "tests/fixtures/alerts"
+
 # Development settings
 development:
   debug_mode: true
@@ -132,7 +216,7 @@ development:
 # LLM configuration
 llm:
   provider: "gemini"
-  api_key: "key"
+  api_key: "AIzaSyDCKdw6ChNUUsqEkXKLX-7HJdA-P_rahTg"
   # model: "gemini-2.5-pro"
   model: "gemini-2.5-flash"
   temperature: 0.3

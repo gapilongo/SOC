@@ -19,3 +19,4 @@ langchain-openai>=0.3.32
 fastapi >=0.117.1
 uvicorn>=0.37.0
 websockets>=15.0.1
+aiofiles>=25.1.0

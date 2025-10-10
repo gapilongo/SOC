@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 import yaml
+from dotenv import load_dotenv
 from pydantic import Field
 from pydantic_settings import BaseSettings
 
 from lg_sotf.core.exceptions import ConfigError
 
-
+load_dotenv()
 class DatabaseConfig(BaseSettings):
     """Database configuration."""
 
@@ -43,7 +44,7 @@ class AgentConfig(BaseSettings):
 
     ingestion_batch_size: int = Field(default=100, env="INGESTION_BATCH_SIZE")
     ingestion_polling_interval: int = Field(
-        default=60, env="INGESTION_POLLING_INTERVAL"
+        default=30, env="INGESTION_POLLING_INTERVAL"
     )
     triage_confidence_threshold: int = Field(
         default=70, env="TRIAGE_CONFIDENCE_THRESHOLD"
@@ -168,7 +169,10 @@ class ConfigManager:
 
     def get_agent_config(self, agent_name: str) -> Dict[str, Any]:
         """Get configuration for a specific agent."""
-        return self.get(f"agents.{agent_name}", {})
+        yaml_config = self.get(f"agents.{agent_name}", {})
+        if agent_name == "ingestion":
+            yaml_config.setdefault("polling_interval", self._agent_config.ingestion_polling_interval)
+        return yaml_config
 
     def get_tool_config(self, tool_name: str) -> Dict[str, Any]:
         """Get configuration for a specific tool."""
@@ -228,4 +232,5 @@ class ConfigManager:
             return True
 
         except Exception as e:
+            raise ConfigError(f"Configuration validation failed: {str(e)}")
             raise ConfigError(f"Configuration validation failed: {str(e)}")
