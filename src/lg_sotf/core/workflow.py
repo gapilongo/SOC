@@ -14,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 
 from lg_sotf.agents.analysis.base import AnalysisAgent
 from lg_sotf.agents.correlation.base import CorrelationAgent
+from lg_sotf.agents.ingestion.base import IngestionAgent
 from lg_sotf.agents.registry import agent_registry
 from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.core.config.manager import ConfigManager
@@ -114,6 +115,7 @@ class WorkflowEngine:
     async def _setup_agents(self):
         """Setup all required agents with proper synchronization."""
         agents_config = [
+            ("ingestion", IngestionAgent, "ingestion_instance"),
             ("triage", TriageAgent, "triage_instance"),
             ("correlation", CorrelationAgent, "correlation_instance"),
             ("analysis", AnalysisAgent, "analysis_instance"),
@@ -818,10 +820,91 @@ class WorkflowEngine:
 
     # Placeholder methods for completeness
     async def _execute_ingestion(self, state: WorkflowState) -> WorkflowState:
-        """Execute ingestion - simple validation."""
-        state["triage_status"] = "ingested" 
-        state["current_node"] = "ingestion"
-        return state
+        """Execute ingestion using the IngestionAgent."""
+        try:
+            # Get ingestion agent
+            if "ingestion" not in self.agents:
+                # Register and initialize ingestion agent if not exists
+
+                
+                if "ingestion" not in agent_registry.list_agent_types():
+                    agent_registry.register_agent_type(
+                        "ingestion",
+                        IngestionAgent,
+                        self.config.get_agent_config("ingestion")
+                    )
+                
+                if "ingestion_instance" not in agent_registry.list_agent_instances():
+                    agent_registry.create_agent(
+                        "ingestion_instance",
+                        "ingestion",
+                        self.config.get_agent_config("ingestion")
+                    )
+                
+                ingestion_agent = agent_registry.get_agent("ingestion_instance")
+                await ingestion_agent.initialize()
+                self.agents["ingestion"] = ingestion_agent
+                self._agent_locks["ingestion"] = asyncio.Lock()
+            
+            # Execute ingestion
+            async with self._agent_locks['ingestion']:
+                agent_exec_key = f"ingestion_{state['alert_id']}"
+                
+                if agent_exec_key in state.get("agent_executions", {}):
+                    self.logger.warning(f"Ingestion already executed for {state['alert_id']}")
+                    return state
+                
+                self.logger.info(f"🔍 Executing ingestion for {state['alert_id']}")
+                
+                # Convert state to agent format
+                agent_input = {
+                    "alert_id": state["alert_id"],
+                    "raw_alert": state.get("raw_alert", {}),
+                    "source": state.get("raw_alert", {}).get("source", "unknown"),
+                    "workflow_instance_id": state["workflow_instance_id"]
+                }
+                
+                # Execute ingestion agent
+                agent_result = await self.agents["ingestion"].execute(agent_input)
+                
+                # Update state with ingestion results
+                with self._state_lock:
+                    # Update raw_alert with normalized version
+                    if agent_result.get("ingestion_status") == "success":
+                        state["raw_alert"] = agent_result.get("raw_alert", state["raw_alert"])
+                        state["triage_status"] = "ingested"
+                    elif agent_result.get("ingestion_status") == "duplicate":
+                        state["triage_status"] = "duplicate"
+                        state["processing_notes"].append("Alert is a duplicate, skipping processing")
+                    else:
+                        state["triage_status"] = "ingestion_error"
+                    
+                    # Merge enriched data
+                    state["enriched_data"].update(agent_result.get("enriched_data", {}))
+                    
+                    # Track execution
+                    if "agent_executions" not in state:
+                        state["agent_executions"] = {}
+                    state["agent_executions"][agent_exec_key] = {
+                        "executed_at": datetime.utcnow().isoformat(),
+                        "status": agent_result.get("ingestion_status", "unknown"),
+                        "source": agent_result.get("raw_alert", {}).get("source", "unknown")
+                    }
+                    
+                    state["current_node"] = "ingestion"
+                    state["processing_notes"].append(
+                        f"Ingestion: status={agent_result.get('ingestion_status')}, "
+                        f"source={agent_result.get('raw_alert', {}).get('source', 'unknown')}"
+                    )
+                
+                return state
+                
+        except Exception as e:
+            self.logger.error(f"Ingestion execution failed: {e}")
+            state["processing_notes"].append(f"Ingestion error: {str(e)}")
+            state["current_node"] = "ingestion"
+            state["triage_status"] = "ingestion_error"
+            return state
 
     def _route_after_ingestion(self, state: WorkflowState) -> str:
         return "triage" if state["raw_alert"] else "close"

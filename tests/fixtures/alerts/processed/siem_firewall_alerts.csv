@@ -1,0 +1,11 @@
+event_id,timestamp,severity,event_type,source_ip,destination_ip,destination_port,protocol,action,bytes_transferred,device_name,rule_name,user,country
+FW-2025-001,2025-01-09T10:15:23Z,high,blocked_connection,45.133.1.87,192.168.1.105,3389,TCP,DENY,0,firewall-perimeter-01,Block-RDP-External,N/A,Russia
+FW-2025-002,2025-01-09T10:22:45Z,medium,port_scan,185.220.101.44,192.168.1.0/24,1-65535,TCP,ALERT,15234,firewall-perimeter-01,Detect-Port-Scan,N/A,Netherlands
+FW-2025-003,2025-01-09T10:45:12Z,critical,malware_callback,192.168.10.50,23.95.97.18,8080,TCP,ALLOW,524288,firewall-internal-02,Alert-Known-Bad-IP,john.smith,United States
+FW-2025-004,2025-01-09T11:03:56Z,low,outbound_connection,192.168.5.123,8.8.8.8,53,UDP,ALLOW,512,firewall-internal-01,Allow-DNS,sarah.jones,United States
+FW-2025-005,2025-01-09T11:28:34Z,high,sql_injection_attempt,104.21.45.89,192.168.20.10,1433,TCP,DENY,2048,firewall-dmz-01,Block-SQL-Attack,N/A,United States
+FW-2025-006,2025-01-09T11:52:18Z,medium,brute_force_attack,89.248.172.16,192.168.1.100,22,TCP,DENY,0,firewall-perimeter-01,Block-SSH-Brute-Force,N/A,Germany
+FW-2025-007,2025-01-09T12:15:47Z,critical,command_and_control,192.168.15.88,194.88.105.123,4444,TCP,ALERT,1048576,firewall-internal-02,Alert-C2-Traffic,michael.brown,Ukraine
+FW-2025-008,2025-01-09T12:40:22Z,high,data_exfiltration,192.168.8.45,23.227.38.65,443,HTTPS,ALLOW,104857600,firewall-internal-01,Alert-Large-Upload,emily.davis,United States
+FW-2025-009,2025-01-09T13:05:55Z,medium,suspicious_dns_query,192.168.12.77,1.1.1.1,53,UDP,ALLOW,256,firewall-internal-02,Alert-DGA-Domain,robert.wilson,United States
+FW-2025-010,2025-01-09T13:30:10Z,high,lateral_movement,192.168.5.100,192.168.10.50,445,TCP,ALLOW,32768,firewall-internal-01,Alert-Internal-SMB,admin_user,Internal
