@@ -5,9 +5,9 @@ This module provides the storage backend implementations
 for persisting state, configuration, and other data.
 """
 
-from .base import StorageBackend
-from .postgres import PostgreSQLStorage
-from .redis import RedisStorage
+from lg_sotf.storage.base import StorageBackend
+from lg_sotf.storage.postgres import PostgreSQLStorage
+from lg_sotf.storage.redis import RedisStorage
 
 # from .vector_db import VectorDBStorage
 
