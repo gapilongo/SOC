@@ -5,10 +5,10 @@ This module provides comprehensive state management including versioning,
 persistence, and history tracking for SOC alert processing.
 """
 
-from .history import StateHistoryManager
-from .manager import StateManager
-from .model import AgentExecution, SOCState, StateVersion, WorkflowNodeHistory
-from .serialization import StateSerializer
+from lg_sotf.core.state.history import StateHistoryManager
+from lg_sotf.core.state.manager import StateManager
+from lg_sotf.core.state.model import AgentExecution, SOCState, StateVersion, WorkflowNodeHistory
+from lg_sotf.core.state.serialization import StateSerializer
 
 __all__ = [
     "StateManager",
