@@ -9,9 +9,9 @@ __version__ = "0.1.0"
 __author__ = "LG-SOTF Team"
 __email__ = "team@lg-sotf.org"
 
-from .core.config.manager import ConfigManager
-from .core.state.manager import StateManager
-from .core.workflow import WorkflowEngine
+from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core.state.manager import StateManager
+from lg_sotf.core.workflow import WorkflowEngine
 
 __all__ = [
     "WorkflowEngine",

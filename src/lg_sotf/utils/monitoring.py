@@ -313,35 +313,94 @@ class SOCDashboardAPI:
             except Exception as e:
                 self.logger.error(f"Agent status retrieval failed: {e}")
                 raise HTTPException(status_code=500, detail=str(e))
-        
         @self.app.websocket("/ws/{client_id}")
         async def websocket_endpoint(websocket: WebSocket, client_id: str):
+            # Connect via manager
             await self.websocket_manager.connect(websocket, client_id)
-            
+
+            heartbeat_task = None
             try:
+                # Send initial connection message (manager knows how to send)
+                await self.websocket_manager.send_personal_message({
+                    "type": "connection",
+                    "status": "connected",
+                    "client_id": client_id,
+                    "server_time": datetime.utcnow().isoformat()
+                }, client_id)
+
+                # Per-connection heartbeat coroutine — use self.websocket_manager and websocket param
+                async def heartbeat():
+                    try:
+                        while True:
+                            await asyncio.sleep(30)  # every 30s
+                            # Use manager to send so disconnected clients are cleaned
+                            await self.websocket_manager.send_personal_message({
+                                "type": "heartbeat",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }, client_id)
+                    except asyncio.CancelledError:
+                        # normal cancellation path
+                        return
+                    except Exception as e:
+                        logging.error(f"Heartbeat error for {client_id}: {e}")
+
+                # Start heartbeat task and keep reference to cancel later
+                heartbeat_task = asyncio.create_task(heartbeat())
+
+                # Listen for incoming messages
                 while True:
-                    data = await websocket.receive_text()
-                    message = json.loads(data)
-                    
-                    if message.get("type") == "subscribe":
-                        subscriptions = message.get("subscriptions", [])
-                        self.websocket_manager.client_subscriptions[client_id] = subscriptions
-                        
-                        await self.websocket_manager.send_personal_message({
-                            "type": "subscription_confirmed",
-                            "subscriptions": subscriptions
-                        }, client_id)
-                        
-                    elif message.get("type") == "ping":
-                        await self.websocket_manager.send_personal_message({
-                            "type": "pong",
-                            "timestamp": datetime.utcnow().isoformat()
-                        }, client_id)
-                        
+                    try:
+                        data = await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+                        message = json.loads(data)
+
+                        if message.get("type") == "subscribe":
+                            subscriptions = message.get("subscriptions", [])
+                            self.websocket_manager.client_subscriptions[client_id] = subscriptions
+
+                            await self.websocket_manager.send_personal_message({
+                                "type": "subscription_confirmed",
+                                "subscriptions": subscriptions
+                            }, client_id)
+
+                        elif message.get("type") == "ping":
+                            await self.websocket_manager.send_personal_message({
+                                "type": "pong",
+                                "timestamp": datetime.utcnow().isoformat()
+                            }, client_id)
+
+                        # handle other message types here...
+
+                    except asyncio.TimeoutError:
+                        # no data received within timeout, send a ping to client to check liveness
+                        try:
+                            await websocket.send_json({"type": "ping"})
+                        except Exception:
+                            # client not responding / closed socket -> break outer loop to cleanup
+                            break
+                    except WebSocketDisconnect:
+                        # client closed the connection
+                        break
+                    except Exception as e:
+                        logging.error(f"Error processing message from {client_id}: {e}", exc_info=True)
+                        break
+
             except WebSocketDisconnect:
-                self.websocket_manager.disconnect(client_id)
-                self.logger.info(f"Client {client_id} disconnected")
-        
+                logging.info(f"Client {client_id} disconnected during setup")
+            except Exception as e:
+                logging.error(f"WebSocket error for {client_id}: {e}", exc_info=True)
+            finally:
+                # Cancel per-connection heartbeat task if created
+                if heartbeat_task is not None:
+                    heartbeat_task.cancel()
+                    try:
+                        await heartbeat_task
+                    except asyncio.CancelledError:
+                        pass
+
+                # Remove client from manager and cleanup
+                #self.websocket_manager.disconnect(client_id)
+                self.logger.info(f"Client {client_id} cleaned up")
+
         @self.app.get("/api/v1/health")
         async def health_check():
             try:
