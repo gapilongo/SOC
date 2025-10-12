@@ -31,6 +31,26 @@ from lg_sotf.agents.registry import agent_registry
 from lg_sotf.main import LG_SOTFApplication
 
 
+class IngestionStatusResponse(BaseModel):
+    is_active: bool
+    last_poll_time: Optional[str]
+    next_poll_time: Optional[str]
+    polling_interval: int
+    sources_enabled: List[str]
+    sources_stats: Dict[str, Dict[str, int]]
+    total_ingested: int
+    total_deduplicated: int
+    total_errors: int
+
+class IngestionControlRequest(BaseModel):
+    action: str  # "start", "stop", "trigger_poll"
+    sources: Optional[List[str]] = None
+
+class SourceConfigRequest(BaseModel):
+    source_name: str
+    enabled: bool
+    config: Optional[Dict[str, Any]] = None
+    
 class AlertRequest(BaseModel):
     alert_data: Dict[str, Any]
     priority: Optional[str] = "normal"
@@ -366,9 +386,171 @@ class SOCDashboardAPI:
                         "timestamp": datetime.utcnow().isoformat()
                     }
                 )
+            
+        @self.app.get("/api/v1/ingestion/status", response_model=IngestionStatusResponse)
+        async def get_ingestion_status():
+            """Get current ingestion status and metrics."""
+            try:
+                if not self.lg_sotf_app.workflow_engine or "ingestion" not in self.lg_sotf_app.workflow_engine.agents:
+                    raise HTTPException(status_code=503, detail="Ingestion agent not available")
+                
+                ingestion_agent = (
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or 
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion")
+                )
+                ingestion_config = self.lg_sotf_app.config_manager.get_agent_config("ingestion")
+                
+                # Calculate next poll time
+                next_poll = None
+                if self.lg_sotf_app._last_ingestion_poll:
+                    polling_interval = ingestion_config.get("polling_interval", 60)
+                    next_poll = (self.lg_sotf_app._last_ingestion_poll + timedelta(seconds=polling_interval)).isoformat()
+                
+                return IngestionStatusResponse(
+                    is_active=self.lg_sotf_app.running and ingestion_agent.initialized,
+                    last_poll_time=self.lg_sotf_app._last_ingestion_poll.isoformat() if self.lg_sotf_app._last_ingestion_poll else None,
+                    next_poll_time=next_poll,
+                    polling_interval=ingestion_config.get("polling_interval", 60),
+                    sources_enabled=ingestion_agent.enabled_sources,
+                    sources_stats=ingestion_agent.get_source_stats()["by_source"],
+                    total_ingested=ingestion_agent.ingestion_stats["total_ingested"],
+                    total_deduplicated=ingestion_agent.ingestion_stats["total_deduplicated"],
+                    total_errors=ingestion_agent.ingestion_stats["total_errors"]
+                )
+                
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Ingestion status retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.post("/api/v1/ingestion/control")
+        async def control_ingestion(request: IngestionControlRequest):
+            """Control ingestion process (trigger poll, etc)."""
+            try:
+                ingestion_agent = (
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or 
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion")
+                )
+                
+                if not ingestion_agent:
+                    raise HTTPException(status_code=503, detail="Ingestion agent not available")
+                
+                if request.action == "trigger_poll":
+                    # ✅ ACTUALLY POLL - don't just reset the timer
+                    self.logger.info("Manual ingestion poll triggered")
+                    
+                    try:
+                        # Call poll_sources directly
+                        new_alerts = await ingestion_agent.poll_sources()
+                        
+                        self.logger.info(f"Manual poll found {len(new_alerts)} alerts")
+                        
+                        # Broadcast ingestion triggered event
+                        await self.websocket_manager.broadcast({
+                            "type": "ingestion_triggered",
+                            "timestamp": datetime.utcnow().isoformat(),
+                            "sources": request.sources or ingestion_agent.enabled_sources,
+                            "alerts_found": len(new_alerts)
+                        }, "ingestion_updates")
+                        
+                        # Process each alert through workflow
+                        for alert in new_alerts:
+                            try:
+                                # Broadcast that alert was ingested
+                                await self.websocket_manager.broadcast({
+                                    "type": "new_alert",
+                                    "alert_id": alert["id"],
+                                    "severity": alert.get("severity", "unknown"),
+                                    "source": alert.get("source", "unknown"),
+                                    "timestamp": datetime.utcnow().isoformat()
+                                }, "new_alerts")
+                                
+                                # Process alert in background
+                                asyncio.create_task(
+                                    self._process_alert_background(alert["id"], alert)
+                                )
+                                
+                            except Exception as e:
+                                self.logger.error(f"Error processing alert {alert.get('id')}: {e}")
+                        
+                        return {
+                            "status": "success",
+                            "message": f"Ingestion poll completed - found {len(new_alerts)} alerts",
+                            "alerts_found": len(new_alerts),
+                            "timestamp": datetime.utcnow().isoformat()
+                        }
+                        
+                    except Exception as e:
+                        self.logger.error(f"Manual poll failed: {e}", exc_info=True)
+                        raise HTTPException(status_code=500, detail=f"Poll failed: {str(e)}")
+                
+                elif request.action == "get_stats":
+                    return ingestion_agent.get_source_stats()
+                
+                else:
+                    raise HTTPException(status_code=400, detail=f"Unknown action: {request.action}")
+                    
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Ingestion control failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+        
+        @self.app.get("/api/v1/ingestion/sources")
+        async def get_ingestion_sources():
+            """Get all configured ingestion sources and their status."""
+            try:
+                if not self.lg_sotf_app.workflow_engine or "ingestion" not in self.lg_sotf_app.workflow_engine.agents:
+                    return {"sources": []}
+                
+                ingestion_agent = (
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or 
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion")
+                )
+                sources_info = []
+                
+                for source_name, plugin in ingestion_agent.plugins.items():
+                    try:
+                        is_healthy = await plugin.health_check()
+                        metrics = plugin.get_metrics()
+                        
+                        sources_info.append({
+                            "name": source_name,
+                            "enabled": plugin.enabled,
+                            "healthy": is_healthy,
+                            "initialized": plugin.initialized,
+                            "fetch_count": metrics["fetch_count"],
+                            "error_count": metrics["error_count"],
+                            "last_fetch": metrics["last_fetch_time"]
+                        })
+                    except Exception as e:
+                        self.logger.warning(f"Error getting info for source {source_name}: {e}")
+                        sources_info.append({
+                            "name": source_name,
+                            "enabled": False,
+                            "healthy": False,
+                            "error": str(e)
+                        })
+                
+                return {"sources": sources_info}
+                
+            except Exception as e:
+                self.logger.error(f"Sources retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
     
     async def _process_alert_background(self, alert_id: str, alert_data: Dict[str, Any]):
         try:
+            await self.websocket_manager.broadcast({
+                "type": "ingestion_event",
+                "event": "alert_ingested",
+                "alert_id": alert_id,
+                "source": alert_data.get("source", "unknown"),
+                "severity": alert_data.get("severity", "unknown"),
+                "timestamp": datetime.utcnow().isoformat()
+            }, "ingestion_updates")
+                
             await self.websocket_manager.broadcast({
                 "type": "alert_update",
                 "alert_id": alert_id,
@@ -711,9 +893,43 @@ class SOCDashboardAPI:
                     
                 except Exception as e:
                     self.logger.error(f"Metrics updater error: {e}")
+
+        async def ingestion_monitor():
+            """Monitor ingestion activity and broadcast updates."""
+            while True:
+                try:
+                    await asyncio.sleep(5)  # Check every 5 seconds
+                    
+                    if not self.lg_sotf_app.workflow_engine:
+                        continue
+
+                    ingestion_agent = (
+                        self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or 
+                        self.lg_sotf_app.workflow_engine.agents.get("ingestion")
+                    )
+
+                    if not ingestion_agent:
+                        continue
+                    
+                    # Broadcast ingestion stats
+                    await self.websocket_manager.broadcast({
+                        "type": "ingestion_stats",
+                        "data": {
+                            "total_ingested": ingestion_agent.ingestion_stats["total_ingested"],
+                            "total_deduplicated": ingestion_agent.ingestion_stats["total_deduplicated"],
+                            "total_errors": ingestion_agent.ingestion_stats["total_errors"],
+                            "by_source": dict(ingestion_agent.ingestion_stats["by_source"]),
+                            "enabled_sources": ingestion_agent.enabled_sources,
+                            "last_poll": self.lg_sotf_app._last_ingestion_poll.isoformat() if self.lg_sotf_app._last_ingestion_poll else None
+                        }
+                    }, "ingestion_updates")
+                    
+                except Exception as e:
+                    self.logger.error(f"Ingestion monitor error: {e}")
         
         asyncio.create_task(self.websocket_manager.heartbeat_loop())
         asyncio.create_task(metrics_updater())
+        asyncio.create_task(ingestion_monitor())
 
 
 async def run_soc_dashboard_api(
@@ -760,7 +976,7 @@ def get_application():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     
-    lg_sotf = LG_SOTFApplication(config_path="configs/poc.yaml")
+    lg_sotf = LG_SOTFApplication()
     dashboard = SOCDashboardAPI(lg_sotf)
     
     @dashboard.app.on_event("startup")
