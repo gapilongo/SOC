@@ -7,7 +7,7 @@ import { useAlerts } from '../../contexts/AlertContext';
 const TopBar = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { connected } = useAlerts();
+  const { connected, alerts } = useAlerts();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [showUserMenu, setShowUserMenu] = useState(false);
 
@@ -20,6 +20,13 @@ const TopBar = ({ onMenuClick }) => {
     logout();
     navigate('/login');
   };
+
+  // Count unread alerts (new alerts in last 5 minutes)
+  const recentAlerts = alerts.filter(alert => {
+    const alertTime = new Date(alert.timestamp);
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    return alertTime > fiveMinutesAgo;
+  });
 
   return (
     <header className="h-16 bg-dark-900/80 backdrop-blur-xl border-b border-dark-800 sticky top-0 z-40">
@@ -43,15 +50,22 @@ const TopBar = ({ onMenuClick }) => {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Real-time Clock */}
           <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-dark-800/50 rounded-lg border border-dark-700">
-            <span className="text-sm font-mono text-blue-400">
-              {currentTime.toLocaleTimeString('en-US', { hour12: false })}
+            <span className="text-sm font-mono text-blue-400 font-semibold">
+              {currentTime.toLocaleTimeString('en-US', { 
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+              })}
             </span>
           </div>
 
-          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold text-xs ${
+          {/* WebSocket Connection Status */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg font-semibold text-xs shadow-lg transition-all ${
             connected
-              ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+              ? 'bg-green-500/10 text-green-400 border border-green-500/20 animate-pulse'
               : 'bg-red-500/10 text-red-400 border border-red-500/20'
           }`}>
             {connected ? (
@@ -67,11 +81,20 @@ const TopBar = ({ onMenuClick }) => {
             )}
           </div>
 
+          {/* Notification Bell with Badge */}
           <button className="relative p-2 hover:bg-dark-800 rounded-lg transition-colors">
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+            {recentAlerts.length > 0 && (
+              <>
+                <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                <span className="absolute top-0 right-0 -mt-1 -mr-1 px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full min-w-[20px] text-center">
+                  {recentAlerts.length > 9 ? '9+' : recentAlerts.length}
+                </span>
+              </>
+            )}
           </button>
 
+          {/* User Menu */}
           <div className="relative">
             <button
               onClick={() => setShowUserMenu(!showUserMenu)}
@@ -81,16 +104,20 @@ const TopBar = ({ onMenuClick }) => {
                 <User className="w-5 h-5 text-white" />
               </div>
               <div className="hidden md:block text-left">
-                <p className="text-sm font-semibold text-white">{user?.username || 'Demo'}</p>
-                <p className="text-xs text-dark-400">{user?.role || 'Analyst'}</p>
+                <p className="text-sm font-semibold text-white">{user?.username || 'Demo User'}</p>
+                <p className="text-xs text-dark-400">{user?.role || 'SOC Analyst'}</p>
               </div>
             </button>
 
             {showUserMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-dark-800 border border-dark-700 rounded-lg shadow-xl py-2 animate-fadeIn">
+              <div className="absolute right-0 mt-2 w-48 bg-dark-800 border border-dark-700 rounded-lg shadow-xl py-2 animate-fadeIn z-50">
+                <div className="px-4 py-2 border-b border-dark-700">
+                  <p className="text-sm font-semibold text-white">{user?.username || 'Demo User'}</p>
+                  <p className="text-xs text-dark-500">{user?.email || 'demo@lg-sotf.com'}</p>
+                </div>
                 <button
                   onClick={handleLogout}
-                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2"
+                  className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-dark-700 flex items-center gap-2 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Logout
