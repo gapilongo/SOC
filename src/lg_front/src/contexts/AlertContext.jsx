@@ -1,111 +1,135 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { alertsAPI } from '../services/api';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import useWebSocket from '../hooks/useWebSocket';
+import { alertsAPI } from '../services/api';
 
-const AlertContext = createContext(null);
+const AlertContext = createContext();
 
-export const useAlerts = () => {
-  const context = useContext(AlertContext);
-  if (!context) {
-    throw new Error('useAlerts must be used within AlertProvider');
-  }
-  return context;
-};
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 export const AlertProvider = ({ children }) => {
   const [alerts, setAlerts] = useState([]);
-  const [metrics, setMetrics] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [metrics, setMetrics] = useState({
+    alerts_processed_today: 0,
+    alerts_in_progress: 0,
+    average_processing_time: 0,
+    success_rate: 0,
+    agent_health: {}
+  });
+  const [dashboardStats, setDashboardStats] = useState(null);
 
+  // Fetch initial data - EXACTLY like HTML fetchData()
+  const fetchData = async () => {
+    try {
+      const [alertsResponse, statsResponse] = await Promise.all([
+        fetch(`${API_BASE}/alerts?limit=10`),
+        fetch(`${API_BASE}/dashboard/stats`)
+      ]);
+
+      const alertsData = await alertsResponse.json();
+      const stats = await statsResponse.json();
+
+      // EXACTLY like HTML: map alerts
+      const mappedAlerts = alertsData.map(x => ({
+        id: x.alert_id,
+        severity: 'high',
+        timestamp: new Date(x.created_at),
+        status: x.status,
+        confidence: x.confidence_score,
+        description: 'Security alert from database'
+      }));
+
+      setAlerts(mappedAlerts);
+      setDashboardStats(stats);
+
+      console.log('✅ Fetched', alertsData.length, 'alerts');
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    }
+  };
+
+  // Handle WebSocket messages - EXACTLY like HTML handleMessage(d)
+  const handleMessage = (d) => {
+    if (d.type === 'new_alert') {
+      // EXACTLY like HTML: unshift new alert, pop if > 15
+      setAlerts(prev => {
+        const newAlerts = [{
+          id: d.alert_id,
+          severity: d.severity || 'medium',
+          timestamp: new Date(d.timestamp),
+          status: 'processing',
+          description: 'Security event detected'
+        }, ...prev];
+        
+        if (newAlerts.length > 15) {
+          newAlerts.pop();
+        }
+        
+        return newAlerts;
+      });
+    } 
+    else if (d.type === 'alert_update') {
+      // EXACTLY like HTML: find and update alert
+      setAlerts(prev => prev.map(a => {
+        if (a.id === d.alert_id) {
+          return {
+            ...a,
+            status: d.status,
+            confidence: d.result?.confidence_score
+          };
+        }
+        return a;
+      }));
+    } 
+    else if (d.type === 'system_metrics') {
+      // EXACTLY like HTML: update metrics
+      setMetrics(d.data);
+    }
+  };
+
+  // Initialize WebSocket
   const { connected, sendMessage } = useWebSocket({
-    onMessage: handleWebSocketMessage
+    onMessage: handleMessage,
+    onConnect: () => {
+      console.log('WebSocket connected - fetching data');
+      fetchData();
+    },
+    onDisconnect: () => {
+      console.log('WebSocket disconnected');
+    }
   });
 
-  function handleWebSocketMessage(data) {
-    switch (data.type) {
-      case 'new_alert':
-        setAlerts(prev => [{
-          id: data.alert_id,
-          severity: data.severity || 'medium',
-          timestamp: new Date(data.timestamp),
-          status: 'processing',
-          description: 'Security event detected',
-          confidence: 0
-        }, ...prev].slice(0, 100));
-        break;
-
-      case 'alert_update':
-        setAlerts(prev => prev.map(alert =>
-          alert.id === data.alert_id
-            ? { ...alert, status: data.status, confidence: data.result?.confidence_score || alert.confidence }
-            : alert
-        ));
-        break;
-
-      case 'system_metrics':
-        setMetrics(data.data);
-        break;
-
-      default:
-        break;
-    }
-  }
-
-  const fetchAlerts = useCallback(async (params = {}) => {
-    try {
-      setLoading(true);
-      const data = await alertsAPI.getAlerts(params);
-      setAlerts(data.map(a => ({
-        id: a.alert_id,
-        severity: 'medium',
-        timestamp: new Date(a.created_at),
-        status: a.status,
-        confidence: a.confidence_score,
-        description: 'Security alert from database'
-      })));
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-      console.error('Failed to fetch alerts:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const submitAlert = useCallback(async (alertData) => {
-    try {
-      const response = await alertsAPI.submitAlert(alertData);
-      return response;
-    } catch (err) {
-      console.error('Failed to submit alert:', err);
-      throw err;
-    }
-  }, []);
-
-  const getAlertDetails = useCallback(async (alertId) => {
-    try {
-      const data = await alertsAPI.getAlertStatus(alertId);
-      return data;
-    } catch (err) {
-      console.error('Failed to get alert details:', err);
-      throw err;
-    }
-  }, []);
-
+  // Periodic data fetch - EXACTLY like HTML: setInterval(fetchData, 30000)
   useEffect(() => {
-    fetchAlerts({ limit: 50 });
-  }, [fetchAlerts]);
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Submit alert function - Using ORIGINAL API format from your documents
+  const submitAlert = async (alertData) => {
+    try {
+           const response = await alertsAPI.submitAlert(alertData);
+
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('✅ Alert submitted successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('❌ Failed to submit alert:', error);
+      throw error;
+    }
+  };
 
   const value = {
     alerts,
     metrics,
-    loading,
-    error,
+    dashboardStats,
     connected,
-    fetchAlerts,
     submitAlert,
-    getAlertDetails,
     sendMessage
   };
 
@@ -115,3 +139,13 @@ export const AlertProvider = ({ children }) => {
     </AlertContext.Provider>
   );
 };
+
+export const useAlerts = () => {
+  const context = useContext(AlertContext);
+  if (!context) {
+    throw new Error('useAlerts must be used within AlertProvider');
+  }
+  return context;
+};
+
+export default AlertContext;
