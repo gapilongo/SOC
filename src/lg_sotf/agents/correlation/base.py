@@ -10,21 +10,32 @@ from typing import Any, Dict, List
 
 from lg_sotf.agents.base import BaseAgent
 from lg_sotf.utils.llm import get_llm_client
+from lg_sotf.core.config.manager import ConfigManager
 
 
 class CorrelationAgent(BaseAgent):
     """Production-grade correlation agent for SOC alert processing with integrated LLM capabilities."""
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], state_manager=None, redis_storage=None, tool_orchestrator=None):
         """Initialize the correlation agent."""
         super().__init__(config)
         self.logger = logging.getLogger(__name__)
+
+        # Dependency injection for real data sources
+        self.state_manager = state_manager
+        self.redis_storage = redis_storage
+        self.tool_orchestrator = tool_orchestrator
 
         # Core correlation configuration
         self.correlation_window = self.get_config("correlation_window_minutes", 60)
         self.similarity_threshold = self.get_config("similarity_threshold", 0.7)
         self.max_correlations = self.get_config("max_correlations", 10)
         self.enable_llm_correlation = self.get_config("enable_llm_correlation", True)
+
+        # External enrichment configuration
+        self.enable_threat_intel = self.get_config("enable_threat_intel", True)
+        self.enable_siem_queries = self.get_config("enable_siem_queries", True)
+        self.enable_burst_detection = self.get_config("enable_burst_detection", True)
 
         # LLM integration
         self.llm_client = None
@@ -41,6 +52,16 @@ class CorrelationAgent(BaseAgent):
         """Initialize the correlation agent."""
         try:
             self.logger.info("Initializing correlation agent")
+
+            # Validate dependencies
+            if not self.state_manager:
+                self.logger.warning("StateManager not provided - historical queries disabled")
+
+            if not self.redis_storage:
+                self.logger.warning("RedisStorage not provided - pattern detection disabled")
+
+            if not self.tool_orchestrator:
+                self.logger.warning("ToolOrchestrator not provided - external enrichment disabled")
 
             # Initialize LLM client
             if self.enable_llm_correlation:
@@ -59,7 +80,7 @@ class CorrelationAgent(BaseAgent):
     async def _initialize_llm_client(self):
         """Initialize LLM client for correlation analysis."""
         try:
-            from lg_sotf.core.config.manager import ConfigManager
+            
 
             config_manager = ConfigManager()
             self.llm_client = get_llm_client(config_manager)
@@ -200,37 +221,54 @@ class CorrelationAgent(BaseAgent):
     async def _find_rule_based_correlations(
         self, alert: Dict[str, Any], state: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Find correlations using rule-based analysis."""
+        """Find correlations using rule-based analysis with real data sources."""
         correlations = []
 
         try:
             raw_data = alert.get("raw_data", {})
 
-            # IP-based correlations
-            if raw_data.get("source_ip") or raw_data.get("destination_ip"):
-                ip_correlations = await self._find_ip_correlations(raw_data, alert)
-                correlations.extend(ip_correlations)
+            # Stage 1: Historical database correlations (if available)
+            if self.state_manager:
+                historical_correlations = await self._find_historical_correlations(raw_data, alert)
+                correlations.extend(historical_correlations)
 
-            # Hash-based correlations
-            if raw_data.get("file_hash"):
-                hash_correlations = await self._find_hash_correlations(raw_data, alert)
-                correlations.extend(hash_correlations)
+            # Stage 2: Real-time pattern detection (if available)
+            if self.redis_storage:
+                pattern_correlations = await self._find_pattern_correlations(raw_data, alert)
+                correlations.extend(pattern_correlations)
 
-            # User-based correlations
-            if raw_data.get("user") or raw_data.get("username"):
-                user_correlations = await self._find_user_correlations(raw_data, alert)
-                correlations.extend(user_correlations)
+            # Stage 3: External tool enrichment (if available)
+            if self.tool_orchestrator:
+                external_correlations = await self._find_external_correlations(raw_data, alert)
+                correlations.extend(external_correlations)
 
-            # Process-based correlations
-            if raw_data.get("process_name"):
-                process_correlations = await self._find_process_correlations(
-                    raw_data, alert
-                )
-                correlations.extend(process_correlations)
+            # Fallback: Mock correlations if no data sources available
+            if not self.state_manager and not self.redis_storage and not self.tool_orchestrator:
+                # IP-based correlations (mock)
+                if raw_data.get("source_ip") or raw_data.get("destination_ip"):
+                    ip_correlations = await self._find_ip_correlations(raw_data, alert)
+                    correlations.extend(ip_correlations)
 
-            # Temporal correlations
-            temporal_correlations = await self._find_temporal_correlations(alert, state)
-            correlations.extend(temporal_correlations)
+                # Hash-based correlations (mock)
+                if raw_data.get("file_hash"):
+                    hash_correlations = await self._find_hash_correlations(raw_data, alert)
+                    correlations.extend(hash_correlations)
+
+                # User-based correlations (mock)
+                if raw_data.get("user") or raw_data.get("username"):
+                    user_correlations = await self._find_user_correlations(raw_data, alert)
+                    correlations.extend(user_correlations)
+
+                # Process-based correlations (mock)
+                if raw_data.get("process_name"):
+                    process_correlations = await self._find_process_correlations(
+                        raw_data, alert
+                    )
+                    correlations.extend(process_correlations)
+
+                # Temporal correlations (mock)
+                temporal_correlations = await self._find_temporal_correlations(alert, state)
+                correlations.extend(temporal_correlations)
 
             self.logger.debug(f"Found {len(correlations)} rule-based correlations")
             return correlations
@@ -404,7 +442,371 @@ Focus on:
             "correlation_reasoning": "LLM analysis unavailable, using rule-based correlation only",
         }
 
-    # Rule-based correlation methods
+    # ==========================================
+    # REAL DATA SOURCE CORRELATION METHODS
+    # ==========================================
+
+    async def _find_historical_correlations(
+        self,
+        raw_data: Dict[str, Any],
+        alert: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Find correlations from historical alerts in database."""
+        correlations = []
+
+        try:
+            indicator_types = ['source_ip', 'destination_ip', 'file_hash', 'user', 'username']
+
+            for indicator_type in indicator_types:
+                indicator_value = raw_data.get(indicator_type)
+                if not indicator_value:
+                    continue
+
+                # Query historical alerts
+                historical_alerts = await self.state_manager.query_alerts_by_indicator(
+                    indicator_type=indicator_type,
+                    indicator_value=indicator_value,
+                    time_window_minutes=self.correlation_window,
+                    limit=20
+                )
+
+                if historical_alerts:
+                    # Get frequency stats
+                    freq_stats = await self.state_manager.get_alert_frequency(
+                        indicator_type=indicator_type,
+                        indicator_value=indicator_value,
+                        time_window_minutes=self.correlation_window
+                    )
+
+                    correlations.append({
+                        "type": f"{indicator_type}_historical",
+                        "indicator": indicator_value,
+                        "description": f"Found {len(historical_alerts)} historical alerts with {indicator_type}={indicator_value}",
+                        "confidence": min(90, 50 + len(historical_alerts) * 5),
+                        "weight": self._get_indicator_weight(indicator_type),
+                        "threat_level": self._assess_threat_from_frequency(freq_stats),
+                        "historical_count": len(historical_alerts),
+                        "frequency_stats": freq_stats
+                    })
+
+            return correlations
+
+        except Exception as e:
+            self.logger.warning(f"Error in historical correlation: {e}")
+            return []
+
+    async def _find_pattern_correlations(
+        self,
+        raw_data: Dict[str, Any],
+        alert: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Find correlations from real-time patterns in Redis - dynamically extracts ALL indicators."""
+        correlations = []
+
+        try:
+            alert_id = alert.get("id", "unknown")
+            alert_timestamp = alert.get("timestamp")
+
+            # DEBUG: Check dependencies
+            self.logger.debug(f"Pattern correlation for {alert_id}")
+            self.logger.debug(f"Redis storage available: {self.redis_storage is not None}")
+            self.logger.debug(f"Burst detection enabled: {self.enable_burst_detection}")
+            self.logger.debug(f"Alert timestamp: {alert_timestamp}")
+
+            # Dynamically extract ALL fields from BOTH raw_data AND top-level alert fields
+            # This handles both JSON alerts (data in raw_data) and CSV alerts (data at top level)
+            ignore_fields = {'id', 'timestamp', 'created_at', 'updated_at', 'metadata', 'description', 'title', 'source', 'severity', 'category', 'entities', 'alert_hash'}
+
+            extracted_indicators = []
+
+            # First, try raw_data (for JSON alerts)
+            if raw_data:
+                for field_name, field_value in raw_data.items():
+                    if field_name in ignore_fields:
+                        continue
+                    if not field_value or field_value == "":
+                        continue
+                    # Only track string/number values, not complex objects
+                    if isinstance(field_value, (str, int, float)):
+                        extracted_indicators.append({
+                            'field_name': field_name,
+                            'field_value': str(field_value)
+                        })
+
+            # Then, extract from top-level alert fields (for CSV alerts)
+            # Common correlatable fields after CSV normalization
+            correlatable_fields = ['source_ip', 'destination_ip', 'user', 'username', 'host', 'device_name',
+                                  'source_address', 'destination_address', 'protocol', 'port', 'destination_port',
+                                  'action', 'country', 'process_name', 'file_hash', 'domain', 'url']
+
+            for field in correlatable_fields:
+                if field in alert and alert[field]:
+                    field_value = alert[field]
+                    if field_value and field_value != "" and field_value != "N/A":
+                        # Avoid duplicates from raw_data
+                        if not any(i['field_name'] == field for i in extracted_indicators):
+                            if isinstance(field_value, (str, int, float)):
+                                extracted_indicators.append({
+                                    'field_name': field,
+                                    'field_value': str(field_value)
+                                })
+
+            indicator_list = [f"{i['field_name']}={i['field_value']}" for i in extracted_indicators]
+            self.logger.debug(f"Extracted {len(extracted_indicators)} indicators from alert {alert_id}: {indicator_list}")
+
+            # Process each extracted indicator
+            for idx, indicator in enumerate(extracted_indicators):
+                field_name = indicator['field_name']
+                field_value = indicator['field_value']
+
+                self.logger.debug(f"Processing indicator {idx+1}/{len(extracted_indicators)}: {field_name}={field_value}")
+
+                # Calculate consistent TTL for all indicator tracking
+                # Use 24 hours for production (86400 seconds) to maintain correlation context
+                indicator_ttl = 86400  # 24 hours - consistent across count, timeline, and pairs
+
+                # Increment counter and get count
+                try:
+                    count = await self.redis_storage.increment_indicator_count(
+                        indicator_type=field_name,
+                        indicator_value=field_value,
+                        window_seconds=indicator_ttl,
+                        alert_id=alert_id  # Pass alert_id for tracking
+                    )
+                    self.logger.debug(f"Incremented count for {field_name}={field_value}, new count: {count}, alert_id: {alert_id}")
+                except Exception as e:
+                    self.logger.error(f"Failed to increment count: {e}")
+                    continue
+
+                # Record timestamp for burst detection
+                self.logger.debug(f"Checking burst detection: enabled={self.enable_burst_detection}")
+                if self.enable_burst_detection:
+                    try:
+                        parsed_timestamp = None
+                        use_current_time = False
+
+                        if alert_timestamp:
+                            parsed_timestamp = datetime.fromisoformat(alert_timestamp.replace("Z", "+00:00"))
+                            self.logger.debug(f"Parsed timestamp: {parsed_timestamp}")
+
+                            # Check if timestamp is historical (older than 1 hour)
+                            time_diff = datetime.utcnow() - parsed_timestamp.replace(tzinfo=None)
+                            if time_diff.total_seconds() > 3600:  # More than 1 hour old
+                                self.logger.debug(f"Alert is historical (age: {time_diff.days} days, {time_diff.seconds//3600} hours) - using current time for burst detection")
+                                use_current_time = True
+                            else:
+                                self.logger.debug(f"Alert is recent - using alert timestamp for burst detection")
+                        else:
+                            self.logger.warning(f"Alert timestamp is None, using current time")
+                            use_current_time = True
+
+                        # Use current time for historical alerts, alert time for recent alerts
+                        tracking_timestamp = datetime.utcnow() if use_current_time else parsed_timestamp.replace(tzinfo=None)
+
+                        await self.redis_storage.record_alert_timestamp(
+                            indicator_type=field_name,
+                            indicator_value=field_value,
+                            timestamp=tracking_timestamp,
+                            ttl=indicator_ttl,
+                            alert_id=alert_id  # Pass alert_id for tracking
+                        )
+                        self.logger.debug(f"Recorded timestamp for {field_name}={field_value} (timestamp: {tracking_timestamp}, historical: {use_current_time}, alert_id: {alert_id})")
+
+                        # Get burst statistics
+                        burst_stats = await self.redis_storage.get_alert_burst_stats(
+                            indicator_type=field_name,
+                            indicator_value=field_value,
+                            time_window_minutes=self.correlation_window
+                        )
+                        self.logger.debug(f"Burst stats: {burst_stats}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to record timestamp: {e}")
+                        burst_stats = {'is_burst': False}
+
+                    # If burst detected, add correlation
+                    if burst_stats['is_burst']:
+                        correlations.append({
+                            "type": f"{field_name}_burst",
+                            "indicator": field_value,
+                            "description": f"Burst detected: {burst_stats['events_per_minute']} events/min for {field_name}={field_value}",
+                            "confidence": min(95, 60 + int(burst_stats['events_per_minute'] * 2)),
+                            "weight": self._get_indicator_weight(field_name) + 10,
+                            "threat_level": burst_stats['burst_severity'],
+                            "burst_stats": burst_stats
+                        })
+
+                # Track indicator pairs for relationship detection
+                self.logger.debug(f"Tracking indicator pairs for {field_name}={field_value}")
+                pair_count = 0
+                for other_indicator in extracted_indicators:
+                    if other_indicator['field_name'] != field_name:
+                        try:
+                            await self.redis_storage.track_indicator_pair(
+                                field_name, field_value,
+                                other_indicator['field_name'], other_indicator['field_value'],
+                                ttl=indicator_ttl
+                            )
+                            pair_count += 1
+                        except Exception as e:
+                            self.logger.error(f"Failed to track pair {field_name}={field_value} <-> {other_indicator['field_name']}={other_indicator['field_value']}: {e}")
+                self.logger.debug(f"Tracked {pair_count} indicator pairs")
+
+                # Get related indicators
+                related = await self.redis_storage.get_related_indicators(
+                    indicator_type=field_name,
+                    indicator_value=field_value,
+                    min_count=2
+                )
+
+                for rel in related:
+                    correlations.append({
+                        "type": "indicator_relationship",
+                        "indicator": field_value,
+                        "description": f"{field_name}={field_value} frequently seen with {rel['related_indicator_type']}={rel['related_indicator_value']} ({rel['co_occurrence_count']} times)",
+                        "confidence": min(80, 40 + rel['co_occurrence_count'] * 10),
+                        "weight": 15,
+                        "threat_level": "medium",
+                        "related_indicator": rel
+                    })
+
+            return correlations
+
+        except Exception as e:
+            self.logger.warning(f"Error in pattern correlation: {e}")
+            return []
+
+    async def _find_external_correlations(
+        self,
+        raw_data: Dict[str, Any],
+        alert: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Find correlations from external tools (SIEM, threat intel)."""
+        correlations = []
+
+        try:
+            # Build parallel tool queries
+            tool_queries = []
+
+            # IP-based queries
+            source_ip = raw_data.get("source_ip")
+            if source_ip and self.enable_threat_intel:
+                tool_queries.append({
+                    "tool_name": "virustotal_ip",
+                    "tool_args": {"ip": source_ip}
+                })
+
+            # Hash-based queries
+            file_hash = raw_data.get("file_hash")
+            if file_hash and self.enable_threat_intel:
+                tool_queries.append({
+                    "tool_name": "virustotal_hash",
+                    "tool_args": {"hash": file_hash}
+                })
+
+            # SIEM queries for context
+            if self.enable_siem_queries and (source_ip or file_hash):
+                tool_queries.append({
+                    "tool_name": "splunk_search",
+                    "tool_args": {
+                        "query": f"source_ip={source_ip}" if source_ip else f"file_hash={file_hash}",
+                        "time_range": f"{self.correlation_window}m"
+                    }
+                })
+
+            # Execute tools in parallel if available
+            if tool_queries:
+                results = await self.tool_orchestrator.execute_tools_parallel(
+                    tool_queries,
+                    context={"alert_id": alert.get("id")}
+                )
+
+                # Process results into correlations
+                for result in results:
+                    if result.get('success'):
+                        correlations.extend(
+                            self._process_tool_result_to_correlations(result)
+                        )
+
+            return correlations
+
+        except Exception as e:
+            self.logger.warning(f"Error in external correlation: {e}")
+            return []
+
+    def _process_tool_result_to_correlations(
+        self,
+        tool_result: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Process tool results into correlation format."""
+        correlations = []
+
+        try:
+            tool_name = tool_result.get('tool_name', 'unknown')
+            data = tool_result.get('result', {})
+
+            # Process based on tool type
+            if 'virustotal' in tool_name:
+                # Process VirusTotal results
+                if data.get('malicious'):
+                    correlations.append({
+                        "type": "threat_intel_match",
+                        "indicator": data.get('indicator'),
+                        "description": f"VirusTotal: {data.get('positives', 0)}/{data.get('total', 0)} engines flagged as malicious",
+                        "confidence": min(95, 50 + (data.get('positives', 0) * 5)),
+                        "weight": 35,
+                        "threat_level": "high" if data.get('positives', 0) > 10 else "medium",
+                        "external_data": data
+                    })
+
+            elif 'splunk' in tool_name:
+                # Process SIEM results
+                event_count = data.get('event_count', 0)
+                if event_count > 0:
+                    correlations.append({
+                        "type": "siem_correlation",
+                        "indicator": data.get('query'),
+                        "description": f"SIEM found {event_count} related events in last {self.correlation_window} minutes",
+                        "confidence": min(85, 40 + event_count * 3),
+                        "weight": 25,
+                        "threat_level": "medium" if event_count > 10 else "low",
+                        "external_data": data
+                    })
+
+            return correlations
+
+        except Exception as e:
+            self.logger.warning(f"Error processing tool result: {e}")
+            return []
+
+    def _get_indicator_weight(self, indicator_type: str) -> int:
+        """Get weight for indicator type."""
+        weights = {
+            'source_ip': self.ip_correlation_weight,
+            'destination_ip': self.ip_correlation_weight,
+            'file_hash': self.hash_correlation_weight,
+            'user': self.user_correlation_weight,
+            'username': self.user_correlation_weight,
+            'process_name': self.behavioral_correlation_weight
+        }
+        return weights.get(indicator_type, 10)
+
+    def _assess_threat_from_frequency(self, freq_stats: Dict[str, Any]) -> str:
+        """Assess threat level from frequency statistics."""
+        alerts_per_hour = freq_stats.get('alerts_per_hour', 0)
+
+        if alerts_per_hour > 50:
+            return 'critical'
+        elif alerts_per_hour > 20:
+            return 'high'
+        elif alerts_per_hour > 5:
+            return 'medium'
+        else:
+            return 'low'
+
+    # ==========================================
+    # MOCK CORRELATION METHODS (FALLBACK)
+    # ==========================================
+
     async def _find_ip_correlations(
         self, raw_data: Dict[str, Any], alert: Dict[str, Any]
     ) -> List[Dict[str, Any]]:

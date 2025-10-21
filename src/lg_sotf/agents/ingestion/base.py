@@ -273,8 +273,12 @@ class AlertNormalizer:
     @staticmethod
     def _extract_raw_data(alert: Dict[str, Any], source: str) -> Dict[str, Any]:
         """Extract relevant raw data fields."""
+        # If alert is already normalized and has raw_data, return it as-is
+        if "raw_data" in alert and isinstance(alert["raw_data"], dict) and alert["raw_data"]:
+            return alert["raw_data"]
+
         raw_data = {}
-        
+
         # Network fields
         network_fields = [
             "source_ip", "src_ip", "sourceIP", "destination_ip", "dst_ip", "destinationIP",
@@ -309,7 +313,7 @@ class AlertNormalizer:
         for field in all_fields:
             if field in alert and alert[field]:
                 raw_data[field] = alert[field]
-        
+
         # Source-specific extractions
         if source == "crowdstrike" and "event" in alert:
             event = alert["event"]

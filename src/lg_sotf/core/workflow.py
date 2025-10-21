@@ -21,6 +21,7 @@ from lg_sotf.core.config.manager import ConfigManager
 from lg_sotf.core.exceptions import WorkflowError
 from lg_sotf.core.state.manager import StateManager
 from lg_sotf.core.state.model import SOCState, TriageStatus
+from lg_sotf.utils.llm import get_llm_client
 
 
 @dataclass
@@ -76,17 +77,30 @@ class WorkflowState(TypedDict):
 class WorkflowEngine:
     """ workflow engine with atomic state management."""
 
-    def __init__(self, config_manager: ConfigManager, state_manager: StateManager):
+    def __init__(self, config_manager: ConfigManager, state_manager: StateManager, redis_storage=None, tool_orchestrator=None):
         self.config = config_manager
         self.state_manager = state_manager
+        self.redis_storage = redis_storage
+        self.tool_orchestrator = tool_orchestrator
         self.agents = {}
         self.logger = logging.getLogger(__name__)
-        
+
+        # LLM client for intelligent routing
+        self.llm_client = None
+        self.enable_llm_routing = config_manager.get('workflow.enable_llm_routing', True)
+        try:
+            if self.enable_llm_routing:
+                self.llm_client = get_llm_client(config_manager)
+                self.logger.info("LLM client initialized for intelligent routing")
+        except Exception as e:
+            self.logger.warning(f"LLM routing disabled: {e}")
+            self.enable_llm_routing = False
+
         # Synchronization primitives
         self._state_lock = RLock()  # Protects state updates
         self._execution_contexts = {}  # Track active executions
         self._agent_locks = {}  # Per-agent execution locks
-        
+
         # Routing configuration
         self.routing_config = {
             'max_alert_age_hours': config_manager.get('routing.max_alert_age_hours', 72),
@@ -120,29 +134,64 @@ class WorkflowEngine:
             ("correlation", CorrelationAgent, "correlation_instance"),
             ("analysis", AnalysisAgent, "analysis_instance"),
         ]
-        
+
         for agent_type, agent_class, instance_name in agents_config:
             # Register agent type if not exists
             if agent_type not in agent_registry.list_agent_types():
                 agent_registry.register_agent_type(
                     agent_type, agent_class, self.config.get_agent_config(agent_type)
                 )
-            
-            # Create instance if not exists
+
+            # Create instance with special handling for correlation agent
             if instance_name not in agent_registry.list_agent_instances():
-                agent_registry.create_agent(
-                    instance_name, agent_type, self.config.get_agent_config(agent_type)
-                )
-            
+                if agent_type == "correlation":
+                    # Create correlation agent with dependencies
+                    config = self.config.get_agent_config(agent_type)
+                    agent_instance = CorrelationAgent(
+                        config,
+                        state_manager=self.state_manager,
+                        redis_storage=self._get_redis_storage(),
+                        tool_orchestrator=self._get_tool_orchestrator()
+                    )
+                    # Register the instance manually
+                    agent_registry._agent_instances[instance_name] = agent_instance
+                    self.logger.info(f"Created correlation agent with dependencies")
+                else:
+                    agent_registry.create_agent(
+                        instance_name, agent_type, self.config.get_agent_config(agent_type)
+                    )
+
             # Get and initialize agent
             agent = agent_registry.get_agent(instance_name)
             await agent.initialize()
-            
+
             # Store reference and create lock
             self.agents[agent_type] = agent
             self._agent_locks[agent_type] = asyncio.Lock()
-        
+
         self.logger.info(f"Initialized {len(self.agents)} agents with synchronization")
+
+    def _get_redis_storage(self):
+        """Get Redis storage instance from application context."""
+        if self.redis_storage:
+            return self.redis_storage
+        else:
+            self.logger.warning("Redis storage not available for correlation agent")
+            return None
+
+    def _get_tool_orchestrator(self):
+        """Get Tool orchestrator instance."""
+        if self.tool_orchestrator:
+            return self.tool_orchestrator
+        else:
+            # Try to create tool orchestrator if not exists
+            try:
+                from lg_sotf.tools.orchestrator import ToolOrchestrator
+                self.tool_orchestrator = ToolOrchestrator(self.config)
+                return self.tool_orchestrator
+            except Exception as e:
+                self.logger.warning(f"Could not create tool orchestrator: {e}")
+                return None
 
     def _create_execution_context(self, alert_id: str) -> ExecutionContext:
         """Create execution context with proper tracking."""
@@ -637,9 +686,10 @@ class WorkflowEngine:
 
     def _convert_to_agent_format(self, state: WorkflowState) -> Dict[str, Any]:
         """Convert workflow state to agent input format."""
+        import copy
         return {
             "alert_id": state["alert_id"],
-            "raw_alert": state["raw_alert"].copy(),  # Immutable copy
+            "raw_alert": copy.deepcopy(state["raw_alert"]),  # Deep copy to preserve nested dicts like raw_data
             "triage_status": state["triage_status"],
             "confidence_score": state["confidence_score"],
             "fp_indicators": state["fp_indicators"].copy(),
@@ -662,40 +712,40 @@ class WorkflowEngine:
     # ===============================
 
     def _route_after_triage(self, state: WorkflowState) -> str:
-        """Improved routing after triage with detailed logging."""
+        """LLM-powered routing after triage with fallback to rule-based logic."""
         confidence = state["confidence_score"]
         fp_count = len(state["fp_indicators"])
         tp_count = len(state["tp_indicators"])
-        
+
         self.logger.info(f"🛤️ Routing after triage: confidence={confidence}%, FP={fp_count}, TP={tp_count}")
-        
-        # Close conditions
+
+        # Critical obvious cases - don't waste LLM call
         if confidence <= 10 and fp_count >= 2:
             state["processing_notes"].append(f"Routing: Close (low confidence {confidence}% + {fp_count} FP indicators)")
             return "close"
-        
-        if fp_count > tp_count and confidence <= 30:
-            state["processing_notes"].append(f"Routing: Close (more FP {fp_count} than TP {tp_count})")
-            return "close"
-        
-        # High confidence direct response
+
         if confidence >= 85 and tp_count >= 3:
             state["processing_notes"].append(f"Routing: Response (high confidence {confidence}% + {tp_count} TP indicators)")
             return "response"
-        
-        # Correlation needed
-        if self._needs_correlation(state):
-            state["processing_notes"].append("Routing: Correlation (network/user indicators detected)")
-            return "correlation"
-        
-        # Analysis needed
-        if confidence < 60 or self._needs_analysis(state):
-            state["processing_notes"].append(f"Routing: Analysis (confidence {confidence}% needs investigation)")
-            return "analysis"
-        
-        # Default to human review
-        state["processing_notes"].append(f"Routing: Human review (uncertain case)")
-        return "human_loop"
+
+        # For everything else - use LLM to decide intelligently
+        # Note: This is a synchronous wrapper that will be called by LangGraph
+        # We need to handle the async call properly
+        import asyncio
+        try:
+            # Get or create event loop
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            # Run async LLM decision
+            decision = loop.run_until_complete(self._llm_decide_next_step(state, "triage"))
+            return decision
+        except Exception as e:
+            self.logger.error(f"Error in LLM routing: {e}, using fallback")
+            return self._fallback_routing(state, "triage")
 
     def _route_after_correlation(self, state: WorkflowState) -> str:
         """Improved routing after correlation."""
@@ -946,17 +996,91 @@ class WorkflowEngine:
         state["triage_status"] = "closed"
         return state
 
-    def _needs_correlation(self, state: WorkflowState) -> bool:
-        """Check if correlation is needed."""
-        raw_data = state["raw_alert"].get("raw_data", {})
-        return any(field in raw_data for field in 
-                  ["source_ip", "destination_ip", "user", "username", "account"])
+    async def _llm_decide_next_step(self, state: WorkflowState, after_node: str) -> str:
+        """Use LLM to intelligently decide the next routing step."""
+        if not self.enable_llm_routing or not self.llm_client:
+            # Fallback to simple logic
+            return self._fallback_routing(state, after_node)
 
-    def _needs_analysis(self, state: WorkflowState) -> bool:
-        """Check if analysis is needed."""
-        raw_data = state["raw_alert"].get("raw_data", {})
-        return any(field in raw_data for field in 
-                  ["file_hash", "process_name", "command_line", "pid"])
+        try:
+            # Prepare context for LLM
+            alert_summary = {
+                "alert_id": state["alert_id"],
+                "severity": state["raw_alert"].get("severity", "unknown"),
+                "category": state["raw_alert"].get("category", "unknown"),
+                "title": state["raw_alert"].get("title", "unknown"),
+                "confidence_score": state["confidence_score"],
+                "fp_indicators": len(state["fp_indicators"]),
+                "tp_indicators": len(state["tp_indicators"]),
+                "available_fields": list(state["raw_alert"].get("raw_data", {}).keys())
+            }
+
+            # Create routing prompt
+            prompt = f"""You are a SOC workflow routing assistant. Based on the alert information below, decide the next processing step.
+
+Alert Information:
+- Alert ID: {alert_summary['alert_id']}
+- Severity: {alert_summary['severity']}
+- Category: {alert_summary['category']}
+- Title: {alert_summary['title']}
+- Triage Confidence: {alert_summary['confidence_score']}%
+- False Positive Indicators: {alert_summary['fp_indicators']}
+- True Positive Indicators: {alert_summary['tp_indicators']}
+- Available Data Fields: {', '.join(alert_summary['available_fields'][:10])}
+
+Current Stage: After {after_node}
+
+Available Next Steps:
+1. "correlation" - Find related alerts, historical patterns, and connections (useful when alert has network indicators, user accounts, IP addresses, hostnames, or any data that could correlate with other alerts)
+2. "analysis" - Deep investigation using tools and reasoning (useful for complex threats, malware, or uncertain situations)
+3. "response" - Take immediate action (useful for high-confidence threats)
+4. "human_loop" - Escalate to human analyst (useful for uncertain cases)
+5. "close" - Close the alert (useful for clear false positives or very low confidence)
+
+Decision Rules:
+- If alert has IP addresses, usernames, hostnames, or network indicators → consider "correlation"
+- If alert is complex, has malware indicators, or needs investigation → consider "analysis"
+- If confidence >= 85% and TP indicators >= 3 → consider "response"
+- If confidence <= 10% and FP indicators >= 2 → consider "close"
+- If uncertain → consider "human_loop"
+
+Respond with ONLY ONE WORD - the next step name (correlation/analysis/response/human_loop/close).
+Your answer:"""
+
+            # Get LLM decision
+            response = await self.llm_client.ainvoke(prompt)
+            decision = response.content.strip().lower()
+
+            # Validate decision
+            valid_decisions = ["correlation", "analysis", "response", "human_loop", "close"]
+            if decision in valid_decisions:
+                self.logger.info(f"🤖 LLM routing decision for {state['alert_id']}: {decision}")
+                state["processing_notes"].append(f"Routing: {decision} (LLM-decided)")
+                return decision
+            else:
+                self.logger.warning(f"Invalid LLM routing decision '{decision}', using fallback")
+                return self._fallback_routing(state, after_node)
+
+        except Exception as e:
+            self.logger.error(f"LLM routing failed: {e}, using fallback")
+            return self._fallback_routing(state, after_node)
+
+    def _fallback_routing(self, state: WorkflowState, after_node: str) -> str:
+        """Fallback routing logic when LLM is unavailable."""
+        confidence = state["confidence_score"]
+        fp_count = len(state["fp_indicators"])
+        tp_count = len(state["tp_indicators"])
+
+        if after_node == "triage":
+            # Simple fallback rules
+            if confidence <= 10 and fp_count >= 2:
+                return "close"
+            if confidence >= 85 and tp_count >= 3:
+                return "response"
+            # Default: try correlation for most alerts
+            return "correlation"
+
+        return "close"
 
     def _should_learn(self, state: WorkflowState) -> bool:
         """Check if learning is beneficial."""
