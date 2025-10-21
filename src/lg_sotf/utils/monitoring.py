@@ -503,18 +503,18 @@ class SOCDashboardAPI:
             try:
                 if not self.lg_sotf_app.workflow_engine or "ingestion" not in self.lg_sotf_app.workflow_engine.agents:
                     return {"sources": []}
-                
+
                 ingestion_agent = (
-                    self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or 
+                    self.lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or
                     self.lg_sotf_app.workflow_engine.agents.get("ingestion")
                 )
                 sources_info = []
-                
+
                 for source_name, plugin in ingestion_agent.plugins.items():
                     try:
                         is_healthy = await plugin.health_check()
                         metrics = plugin.get_metrics()
-                        
+
                         sources_info.append({
                             "name": source_name,
                             "enabled": plugin.enabled,
@@ -532,11 +532,33 @@ class SOCDashboardAPI:
                             "healthy": False,
                             "error": str(e)
                         })
-                
+
                 return {"sources": sources_info}
-                
+
             except Exception as e:
                 self.logger.error(f"Sources retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/v1/correlations/metrics")
+        async def get_correlation_metrics():
+            """Get real-time correlation metrics from Redis."""
+            try:
+                metrics = await self._get_correlation_metrics()
+                return metrics
+
+            except Exception as e:
+                self.logger.error(f"Correlation metrics retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/v1/correlations/network")
+        async def get_correlation_network(limit: int = 50):
+            """Get correlation network graph data showing alert relationships."""
+            try:
+                network_data = await self._get_correlation_network(limit)
+                return network_data
+
+            except Exception as e:
+                self.logger.error(f"Correlation network retrieval failed: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
     
@@ -578,11 +600,11 @@ class SOCDashboardAPI:
             }, "alert_updates")
     
     async def _get_alert_correlations(self, alert_id: str) -> CorrelationResponse:
-        """Get correlations for a specific alert."""
+        """Get correlations for a specific alert with Redis integration."""
         try:
             # Get the alert state
             state = await self._get_alert_state(alert_id)
-            
+
             if not state:
                 return CorrelationResponse(
                     alert_id=alert_id,
@@ -591,18 +613,30 @@ class SOCDashboardAPI:
                     attack_campaign_indicators=[],
                     threat_actor_patterns=[]
                 )
-            
-            # Extract correlation data from metadata
+
+            # Extract correlation data from metadata (workflow-generated correlations)
             metadata = state.get("metadata", {}) if isinstance(state, dict) else {}
-            
+            base_correlations = metadata.get("correlations", [])
+
+            # NEW: Get Redis-based real-time correlations
+            redis_correlations = await self._get_redis_correlations(alert_id)
+
+            # Merge both sources (deduplicate by indicator)
+            all_correlations = base_correlations.copy()
+            existing_indicators = {c.get('indicator') for c in base_correlations}
+
+            for redis_corr in redis_correlations:
+                if redis_corr.get('indicator') not in existing_indicators:
+                    all_correlations.append(redis_corr)
+
             return CorrelationResponse(
                 alert_id=alert_id,
-                correlations=metadata.get("correlations", []),
+                correlations=all_correlations,
                 correlation_score=metadata.get("correlation_score", 0),
                 attack_campaign_indicators=metadata.get("attack_campaign_indicators", []),
                 threat_actor_patterns=metadata.get("threat_actor_patterns", [])
             )
-            
+
         except Exception as e:
             self.logger.error(f"Correlation retrieval error: {e}")
             return CorrelationResponse(
@@ -612,6 +646,123 @@ class SOCDashboardAPI:
                 attack_campaign_indicators=[],
                 threat_actor_patterns=[]
             )
+
+    async def _get_redis_correlations(self, alert_id: str) -> List[Dict[str, Any]]:
+        """Get real-time correlations from Redis."""
+        correlations = []
+
+        try:
+            redis_storage = self.lg_sotf_app.redis_storage
+            if not redis_storage or not redis_storage.redis_client:
+                return correlations
+
+            # Get all indicators for this alert
+            indicators_key = f"alert:{alert_id}:indicators"
+            indicators_raw = await redis_storage.redis_client.smembers(indicators_key)
+
+            if not indicators_raw:
+                return correlations
+
+            # Decode and parse indicators
+            indicators = []
+            for ind in indicators_raw:
+                ind_str = ind.decode('utf-8') if isinstance(ind, bytes) else str(ind)
+                parts = ind_str.split(":", 1)
+                if len(parts) == 2:
+                    indicators.append({
+                        'type': parts[0],
+                        'value': parts[1]
+                    })
+
+            # For each indicator, find related alerts and co-occurrences
+            seen_alerts = set()
+
+            for indicator in indicators:
+                indicator_type = indicator['type']
+                indicator_value = indicator['value']
+
+                # 1. Get related alerts sharing this indicator
+                alerts_key = f"indicator:{indicator_type}:{indicator_value}:alerts"
+                related_alerts_raw = await redis_storage.redis_client.smembers(alerts_key)
+
+                related_alerts = []
+                for alert_raw in related_alerts_raw:
+                    related_alert_id = alert_raw.decode('utf-8') if isinstance(alert_raw, bytes) else str(alert_raw)
+                    if related_alert_id != alert_id and related_alert_id not in seen_alerts:
+                        related_alerts.append(related_alert_id)
+                        seen_alerts.add(related_alert_id)
+
+                if related_alerts:
+                    correlations.append({
+                        "type": "shared_indicator",
+                        "indicator": f"{indicator_type}:{indicator_value}",
+                        "indicator_type": indicator_type,
+                        "indicator_value": indicator_value,
+                        "description": f"Indicator {indicator_type}={indicator_value} shared with {len(related_alerts)} other alert(s)",
+                        "confidence": min(90, 50 + len(related_alerts) * 10),
+                        "weight": 30,
+                        "threat_level": "high" if len(related_alerts) > 3 else "medium" if len(related_alerts) > 1 else "low",
+                        "related_alerts": related_alerts[:5],  # Top 5
+                        "total_related": len(related_alerts)
+                    })
+
+                # 2. Get co-occurring indicators
+                cooccur_key = f"indicator:{indicator_type}:{indicator_value}:cooccur"
+                cooccur_raw = await redis_storage.redis_client.zrevrange(
+                    cooccur_key, 0, 4, withscores=True  # Top 5
+                )
+
+                if cooccur_raw:
+                    cooccurring = []
+                    for i in range(0, len(cooccur_raw), 2):
+                        member = cooccur_raw[i].decode('utf-8') if isinstance(cooccur_raw[i], bytes) else str(cooccur_raw[i])
+                        score = int(cooccur_raw[i + 1]) if i + 1 < len(cooccur_raw) else 0
+                        cooccurring.append({
+                            'indicator': member,
+                            'count': score
+                        })
+
+                    if cooccurring:
+                        correlations.append({
+                            "type": "co_occurrence",
+                            "indicator": f"{indicator_type}:{indicator_value}",
+                            "description": f"Frequently co-occurs with {len(cooccurring)} other indicator(s)",
+                            "confidence": 70,
+                            "weight": 20,
+                            "threat_level": "medium",
+                            "co_occurring_indicators": cooccurring
+                        })
+
+                # 3. Get indicator metadata (count, first/last seen)
+                metadata_key = f"indicator:{indicator_type}:{indicator_value}"
+                metadata_raw = await redis_storage.redis_client.hgetall(metadata_key)
+
+                if metadata_raw:
+                    metadata = {}
+                    for key, value in metadata_raw.items():
+                        key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+                        value_str = value.decode('utf-8') if isinstance(value, bytes) else str(value)
+                        metadata[key_str] = value_str
+
+                    count = int(metadata.get('count', 0))
+                    if count > 1:
+                        correlations.append({
+                            "type": "frequency",
+                            "indicator": f"{indicator_type}:{indicator_value}",
+                            "description": f"Seen {count} times (first: {metadata.get('first_seen', 'unknown')}, last: {metadata.get('last_seen', 'unknown')})",
+                            "confidence": min(80, 40 + count * 10),
+                            "weight": 15,
+                            "threat_level": "high" if count > 5 else "medium" if count > 2 else "low",
+                            "frequency_count": count,
+                            "first_seen": metadata.get('first_seen'),
+                            "last_seen": metadata.get('last_seen')
+                        })
+
+            return correlations
+
+        except Exception as e:
+            self.logger.error(f"Redis correlation retrieval error: {e}", exc_info=True)
+            return []
 
     
     async def _get_alert_state(self, alert_id: str) -> Optional[Dict[str, Any]]:
@@ -837,17 +988,16 @@ class SOCDashboardAPI:
             
             alerts_by_status = {row['status']: row['count'] for row in status_results if row['status']}
             alerts_by_severity = {row['severity']: row['count'] for row in severity_results if row['severity']}
-            
+
+            # NEW: Get top threat indicators from Redis
+            top_threat_indicators = await self._get_top_threat_indicators()
+
             return DashboardStatsResponse(
                 total_alerts_today=total_alerts or 0,
                 high_priority_alerts=high_priority or 0,
                 alerts_by_status=alerts_by_status,
                 alerts_by_severity=alerts_by_severity,
-                top_threat_indicators=[
-                    {"indicator": "malware_detection", "count": 15},
-                    {"indicator": "suspicious_network_activity", "count": 12},
-                    {"indicator": "privilege_escalation", "count": 8}
-                ],
+                top_threat_indicators=top_threat_indicators,
                 recent_escalations=[],
                 processing_time_avg=125.0
             )
@@ -863,7 +1013,251 @@ class SOCDashboardAPI:
                 recent_escalations=[],
                 processing_time_avg=0.0
             )
-    
+
+    async def _get_top_threat_indicators(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get top threat indicators from Redis based on frequency and correlation."""
+        try:
+            redis_storage = self.lg_sotf_app.redis_storage
+            if not redis_storage or not redis_storage.redis_client:
+                return []
+
+            indicators_data = []
+
+            # Scan all indicator alert sets
+            async for key in redis_storage.redis_client.scan_iter(match="indicator:*:alerts"):
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+
+                # Extract indicator type and value from key
+                # Format: indicator:{type}:{value}:alerts
+                parts = key_str.split(":")
+                if len(parts) >= 3:
+                    indicator_type = parts[1]
+                    indicator_value = ":".join(parts[2:-1])  # Handle values with colons
+
+                    # Get count of alerts with this indicator
+                    alert_count = await redis_storage.redis_client.scard(key)
+
+                    if alert_count > 0:
+                        # Get metadata for additional context
+                        metadata_key = f"indicator:{indicator_type}:{indicator_value}"
+                        metadata_raw = await redis_storage.redis_client.hgetall(metadata_key)
+
+                        metadata = {}
+                        if metadata_raw:
+                            for k, v in metadata_raw.items():
+                                k_str = k.decode('utf-8') if isinstance(k, bytes) else str(k)
+                                v_str = v.decode('utf-8') if isinstance(v, bytes) else str(v)
+                                metadata[k_str] = v_str
+
+                        # Calculate threat score based on frequency and recency
+                        frequency_count = int(metadata.get('count', alert_count))
+                        threat_score = alert_count * 10  # Base score from alert count
+
+                        # Boost score for high-risk indicator types
+                        risk_multipliers = {
+                            'file_hash': 2.0,
+                            'destination_ip': 1.5,
+                            'user': 1.3,
+                            'username': 1.3,
+                            'source_ip': 1.2
+                        }
+                        threat_score *= risk_multipliers.get(indicator_type, 1.0)
+
+                        indicators_data.append({
+                            'indicator': f"{indicator_type}:{indicator_value}",
+                            'indicator_type': indicator_type,
+                            'indicator_value': indicator_value,
+                            'count': alert_count,
+                            'frequency': frequency_count,
+                            'threat_score': int(threat_score),
+                            'first_seen': metadata.get('first_seen'),
+                            'last_seen': metadata.get('last_seen')
+                        })
+
+            # Sort by threat score descending
+            indicators_data.sort(key=lambda x: x['threat_score'], reverse=True)
+
+            # Return top N with formatted output
+            top_indicators = []
+            for ind in indicators_data[:limit]:
+                top_indicators.append({
+                    'indicator': ind['indicator'],
+                    'indicator_type': ind['indicator_type'],
+                    'indicator_value': ind['indicator_value'],
+                    'count': ind['count'],
+                    'threat_level': 'high' if ind['threat_score'] > 50 else 'medium' if ind['threat_score'] > 20 else 'low',
+                    'first_seen': ind['first_seen'],
+                    'last_seen': ind['last_seen']
+                })
+
+            return top_indicators
+
+        except Exception as e:
+            self.logger.error(f"Top threat indicators error: {e}", exc_info=True)
+            return []
+
+    async def _get_correlation_metrics(self) -> Dict[str, Any]:
+        """Get comprehensive correlation metrics from Redis."""
+        try:
+            redis_storage = self.lg_sotf_app.redis_storage
+            if not redis_storage or not redis_storage.redis_client:
+                return {
+                    "total_indicators": 0,
+                    "total_alerts": 0,
+                    "correlation_patterns": {},
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+
+            # Count total unique indicators
+            indicator_count = 0
+            alert_ids = set()
+            indicator_types = {}
+
+            async for key in redis_storage.redis_client.scan_iter(match="indicator:*:alerts"):
+                indicator_count += 1
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+
+                # Extract indicator type
+                parts = key_str.split(":")
+                if len(parts) >= 2:
+                    indicator_type = parts[1]
+                    indicator_types[indicator_type] = indicator_types.get(indicator_type, 0) + 1
+
+                # Get alerts for this indicator
+                alerts_raw = await redis_storage.redis_client.smembers(key)
+                for alert in alerts_raw:
+                    alert_str = alert.decode('utf-8') if isinstance(alert, bytes) else str(alert)
+                    alert_ids.add(alert_str)
+
+            # Count total unique alerts
+            total_alerts = len(alert_ids)
+
+            # Calculate correlation patterns
+            shared_indicators = 0
+            async for key in redis_storage.redis_client.scan_iter(match="indicator:*:alerts"):
+                count = await redis_storage.redis_client.scard(key)
+                if count > 1:
+                    shared_indicators += 1
+
+            return {
+                "total_indicators": indicator_count,
+                "total_alerts": total_alerts,
+                "shared_indicators": shared_indicators,
+                "correlation_rate": round((shared_indicators / indicator_count * 100) if indicator_count > 0 else 0, 2),
+                "indicator_types": indicator_types,
+                "avg_indicators_per_alert": round(indicator_count / total_alerts, 2) if total_alerts > 0 else 0,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            self.logger.error(f"Correlation metrics error: {e}", exc_info=True)
+            return {
+                "total_indicators": 0,
+                "total_alerts": 0,
+                "correlation_patterns": {},
+                "error": str(e),
+                "timestamp": datetime.utcnow().isoformat()
+            }
+
+    async def _get_correlation_network(self, limit: int = 50) -> Dict[str, Any]:
+        """Build correlation network graph showing alert relationships."""
+        try:
+            redis_storage = self.lg_sotf_app.redis_storage
+            if not redis_storage or not redis_storage.redis_client:
+                return {"nodes": [], "edges": []}
+
+            nodes = []  # Alerts
+            edges = []  # Relationships via shared indicators
+            alert_indicators = {}  # Track which indicators each alert has
+
+            # Get all alerts
+            alert_keys = []
+            async for key in redis_storage.redis_client.scan_iter(match="alert:*:indicators"):
+                key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
+                alert_id = key_str.split(":")[1]
+                alert_keys.append((alert_id, key_str))
+
+            # Limit to most recent alerts
+            alert_keys = alert_keys[:limit]
+
+            # Build nodes and collect indicators
+            for alert_id, key in alert_keys:
+                # Get indicators for this alert
+                indicators_raw = await redis_storage.redis_client.smembers(key)
+                indicators = []
+                for ind in indicators_raw:
+                    ind_str = ind.decode('utf-8') if isinstance(ind, bytes) else str(ind)
+                    indicators.append(ind_str)
+
+                alert_indicators[alert_id] = set(indicators)
+
+                # Get alert metadata from PostgreSQL if available
+                alert_state = await self._get_alert_state(alert_id)
+                severity = "unknown"
+                status = "unknown"
+
+                if alert_state:
+                    raw_alert = alert_state.get("raw_alert", {}) if isinstance(alert_state, dict) else {}
+                    if isinstance(raw_alert, dict):
+                        severity = raw_alert.get("severity", "unknown")
+                    status = alert_state.get("triage_status", "unknown")
+
+                nodes.append({
+                    "id": alert_id,
+                    "type": "alert",
+                    "label": alert_id,
+                    "severity": severity,
+                    "status": status,
+                    "indicator_count": len(indicators)
+                })
+
+            # Build edges (connections via shared indicators)
+            edge_id = 0
+            processed_pairs = set()
+
+            for alert1_id, indicators1 in alert_indicators.items():
+                for alert2_id, indicators2 in alert_indicators.items():
+                    if alert1_id >= alert2_id:  # Skip self and duplicates
+                        continue
+
+                    # Check if already processed
+                    pair = tuple(sorted([alert1_id, alert2_id]))
+                    if pair in processed_pairs:
+                        continue
+
+                    # Find shared indicators
+                    shared = indicators1.intersection(indicators2)
+
+                    if shared:
+                        processed_pairs.add(pair)
+                        edges.append({
+                            "id": f"edge_{edge_id}",
+                            "source": alert1_id,
+                            "target": alert2_id,
+                            "shared_indicators": list(shared),
+                            "shared_count": len(shared),
+                            "weight": len(shared)  # For graph visualization
+                        })
+                        edge_id += 1
+
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "summary": {
+                    "total_alerts": len(nodes),
+                    "total_connections": len(edges),
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            }
+
+        except Exception as e:
+            self.logger.error(f"Correlation network error: {e}", exc_info=True)
+            return {
+                "nodes": [],
+                "edges": [],
+                "error": str(e)
+            }
+
     def _calculate_progress(self, state: Dict[str, Any]) -> int:
         node_progress = {
             "ingestion": 10,
