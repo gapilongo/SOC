@@ -21,3 +21,9 @@ build/
 # OS files
 .DS_Store
 Thumbs.db
+
+#claude
+CLAUDE.md
+
+#package files
+package-lock.json
