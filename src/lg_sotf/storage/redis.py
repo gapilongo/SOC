@@ -419,13 +419,420 @@ class RedisStorage(StorageBackend):
         """Get Redis connection statistics."""
         try:
             info = await self.redis_client.info('clients')
-            
+
             return {
                 'connected_clients': info.get('connected_clients', 0),
                 'blocked_clients': info.get('blocked_clients', 0),
                 'client_longest_output_list': info.get('client_longest_output_list', 0),
                 'client_biggest_input_buf': info.get('client_biggest_input_buf', 0)
             }
-            
+
         except Exception as e:
             raise StorageError(f"Failed to get Redis connection stats: {str(e)}")
+
+    # ==========================================
+    # CORRELATION-SPECIFIC PATTERN DETECTION
+    # ==========================================
+
+    async def increment_indicator_count(
+        self,
+        indicator_type: str,
+        indicator_value: str,
+        window_seconds: int = 3600,
+        alert_id: str = None
+    ) -> int:
+        """Increment and get count for an indicator using improved data model.
+
+        Uses Redis Hash for metadata and Set for alert tracking.
+
+        Args:
+            indicator_type: Type of indicator (e.g., 'ip', 'hash', 'user')
+            indicator_value: Value of the indicator
+            window_seconds: Time window in seconds (for TTL)
+            alert_id: Optional alert ID to track relationship
+
+        Returns:
+            Current count within the window
+        """
+        try:
+            # Main indicator key (HASH for metadata)
+            indicator_key = f"indicator:{indicator_type}:{indicator_value}"
+
+            # Increment count in hash
+            count = await self.redis_client.hincrby(indicator_key, 'count', 1)
+
+            # Set first_seen if this is the first occurrence
+            if count == 1:
+                from datetime import datetime
+                now = datetime.utcnow().isoformat()
+                await self.redis_client.hset(indicator_key, 'first_seen', now)
+                await self.redis_client.hset(indicator_key, 'type', indicator_type)
+
+            # Always update last_seen
+            from datetime import datetime
+            await self.redis_client.hset(indicator_key, 'last_seen', datetime.utcnow().isoformat())
+
+            # Set TTL on the hash
+            await self.redis_client.expire(indicator_key, window_seconds)
+
+            # If alert_id provided, track the relationship
+            if alert_id:
+                # Add alert to indicator's alert set
+                alerts_key = f"indicator:{indicator_type}:{indicator_value}:alerts"
+                await self.redis_client.sadd(alerts_key, alert_id)
+                await self.redis_client.expire(alerts_key, window_seconds)
+
+                # Add indicator to alert's indicator set (bidirectional)
+                alert_indicators_key = f"alert:{alert_id}:indicators"
+                indicator_ref = f"{indicator_type}:{indicator_value}"
+                await self.redis_client.sadd(alert_indicators_key, indicator_ref)
+                await self.redis_client.expire(alert_indicators_key, window_seconds)
+
+            return count
+
+        except Exception as e:
+            raise StorageError(f"Failed to increment indicator count: {str(e)}")
+
+    async def get_indicator_count(
+        self,
+        indicator_type: str,
+        indicator_value: str
+    ) -> int:
+        """Get current count for an indicator from Hash.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+
+        Returns:
+            Current count
+        """
+        try:
+            indicator_key = f"indicator:{indicator_type}:{indicator_value}"
+            count = await self.redis_client.hget(indicator_key, 'count')
+
+            if count is None:
+                return 0
+
+            if isinstance(count, bytes):
+                count = count.decode('utf-8')
+
+            return int(count)
+
+        except Exception as e:
+            raise StorageError(f"Failed to get indicator count: {str(e)}")
+
+    async def get_indicator_metadata(
+        self,
+        indicator_type: str,
+        indicator_value: str
+    ) -> Dict[str, Any]:
+        """Get all metadata for an indicator.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+
+        Returns:
+            Dictionary with count, first_seen, last_seen, etc.
+        """
+        try:
+            indicator_key = f"indicator:{indicator_type}:{indicator_value}"
+            metadata = await self.redis_client.hgetall(indicator_key)
+
+            if not metadata:
+                return {}
+
+            # Decode bytes keys and values
+            decoded_metadata = {}
+            for key, value in metadata.items():
+                if isinstance(key, bytes):
+                    key = key.decode('utf-8')
+                if isinstance(value, bytes):
+                    value = value.decode('utf-8')
+
+                # Convert count to int
+                if key == 'count':
+                    value = int(value)
+
+                decoded_metadata[key] = value
+
+            return decoded_metadata
+
+        except Exception as e:
+            raise StorageError(f"Failed to get indicator metadata: {str(e)}")
+
+    async def record_alert_timestamp(
+        self,
+        indicator_type: str,
+        indicator_value: str,
+        timestamp: Optional[datetime] = None,
+        ttl: int = 86400,
+        alert_id: str = None
+    ) -> None:
+        """Record an alert timestamp for burst detection with alert ID context.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+            timestamp: Timestamp to record (defaults to now)
+            ttl: Time to live in seconds (default 24 hours)
+            alert_id: Optional alert ID to track which alert triggered this
+        """
+        try:
+            if timestamp is None:
+                timestamp = datetime.utcnow()
+
+            key = f"indicator:{indicator_type}:{indicator_value}:timeline"
+            score = timestamp.timestamp()
+
+            # Store alert_id as member (or timestamp if no alert_id)
+            member = alert_id if alert_id else timestamp.isoformat()
+
+            # Add to sorted set with timestamp as score
+            await self.redis_client.zadd(key, {member: score})
+
+            # Keep only entries within TTL window
+            cutoff = (datetime.utcnow() - timedelta(seconds=ttl)).timestamp()
+            await self.redis_client.zremrangebyscore(key, '-inf', cutoff)
+
+            # Set expiry - use the same TTL for consistency
+            await self.redis_client.expire(key, ttl)
+
+        except Exception as e:
+            raise StorageError(f"Failed to record alert timestamp: {str(e)}")
+
+    async def get_alert_burst_stats(
+        self,
+        indicator_type: str,
+        indicator_value: str,
+        time_window_minutes: int = 60
+    ) -> Dict[str, Any]:
+        """Get burst statistics for an indicator with alert IDs.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+            time_window_minutes: Time window to analyze
+
+        Returns:
+            Dictionary with burst statistics including alert IDs
+        """
+        try:
+            key = f"indicator:{indicator_type}:{indicator_value}:timeline"
+
+            # Calculate time range
+            end_time = datetime.utcnow()
+            start_time = end_time - timedelta(minutes=time_window_minutes)
+
+            # Get events in time window with scores
+            events = await self.redis_client.zrangebyscore(
+                key,
+                start_time.timestamp(),
+                end_time.timestamp(),
+                withscores=True
+            )
+
+            count = len(events)
+
+            # Extract alert IDs (members)
+            alert_ids = []
+            for member, score in events:
+                if isinstance(member, bytes):
+                    member = member.decode('utf-8')
+                alert_ids.append(member)
+
+            # Calculate events per minute
+            events_per_minute = count / time_window_minutes if time_window_minutes > 0 else 0
+
+            # Determine if this is a burst (more than 5 events per minute)
+            is_burst = events_per_minute > 5
+
+            return {
+                'indicator_type': indicator_type,
+                'indicator_value': indicator_value,
+                'time_window_minutes': time_window_minutes,
+                'total_events': count,
+                'events_per_minute': round(events_per_minute, 2),
+                'is_burst': is_burst,
+                'burst_severity': self._calculate_burst_severity(events_per_minute),
+                'alert_ids': alert_ids  # NEW: Include which alerts contributed
+            }
+
+        except Exception as e:
+            raise StorageError(f"Failed to get burst stats: {str(e)}")
+
+    def _calculate_burst_severity(self, events_per_minute: float) -> str:
+        """Calculate burst severity based on event frequency."""
+        if events_per_minute < 5:
+            return 'normal'
+        elif events_per_minute < 10:
+            return 'low'
+        elif events_per_minute < 20:
+            return 'medium'
+        elif events_per_minute < 50:
+            return 'high'
+        else:
+            return 'critical'
+
+    async def cache_correlation_result(
+        self,
+        indicator_type: str,
+        indicator_value: str,
+        correlation_data: Dict[str, Any],
+        ttl: int = 300  # 5 minutes default
+    ) -> None:
+        """Cache correlation results for quick retrieval.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+            correlation_data: Correlation data to cache
+            ttl: Time to live in seconds
+        """
+        try:
+            key = f"correlation_cache:{indicator_type}:{indicator_value}"
+
+            # Serialize correlation data
+            data_json = json.dumps(correlation_data, default=self._json_serializer)
+
+            # Cache with TTL
+            await self.redis_client.setex(key, ttl, data_json)
+
+        except Exception as e:
+            raise StorageError(f"Failed to cache correlation result: {str(e)}")
+
+    async def get_cached_correlation(
+        self,
+        indicator_type: str,
+        indicator_value: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached correlation results.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+
+        Returns:
+            Cached correlation data or None
+        """
+        try:
+            key = f"correlation_cache:{indicator_type}:{indicator_value}"
+
+            # Get cached data
+            data_json = await self.redis_client.get(key)
+
+            if data_json is None:
+                return None
+
+            # Handle bytes response
+            if isinstance(data_json, bytes):
+                data_json = data_json.decode('utf-8')
+
+            # Deserialize and return
+            return json.loads(data_json)
+
+        except Exception as e:
+            raise StorageError(f"Failed to get cached correlation: {str(e)}")
+
+    async def track_indicator_pair(
+        self,
+        indicator1_type: str,
+        indicator1_value: str,
+        indicator2_type: str,
+        indicator2_value: str,
+        ttl: int = 3600
+    ) -> int:
+        """Track co-occurrence using Sorted Set (score = co-occurrence count).
+
+        Uses single-direction storage with ZINCRBY to avoid duplication.
+
+        Args:
+            indicator1_type: Type of first indicator
+            indicator1_value: Value of first indicator
+            indicator2_type: Type of second indicator
+            indicator2_value: Value of second indicator
+            ttl: Time to live in seconds
+
+        Returns:
+            Co-occurrence count
+        """
+        try:
+            # Create co-occurrence key for indicator1
+            cooccur_key = f"indicator:{indicator1_type}:{indicator1_value}:cooccur"
+
+            # Member is the related indicator
+            member = f"{indicator2_type}:{indicator2_value}"
+
+            # Increment score (co-occurrence count) using ZINCRBY
+            count = await self.redis_client.zincrby(cooccur_key, 1, member)
+
+            # Set TTL
+            await self.redis_client.expire(cooccur_key, ttl)
+
+            # Also track reverse direction for bidirectional queries
+            reverse_cooccur_key = f"indicator:{indicator2_type}:{indicator2_value}:cooccur"
+            reverse_member = f"{indicator1_type}:{indicator1_value}"
+            await self.redis_client.zincrby(reverse_cooccur_key, 1, reverse_member)
+            await self.redis_client.expire(reverse_cooccur_key, ttl)
+
+            return int(count)
+
+        except Exception as e:
+            raise StorageError(f"Failed to track indicator pair: {str(e)}")
+
+    async def get_related_indicators(
+        self,
+        indicator_type: str,
+        indicator_value: str,
+        min_count: int = 2,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """Get indicators that frequently co-occur with the given indicator.
+
+        Uses Sorted Set with scores as co-occurrence counts.
+
+        Args:
+            indicator_type: Type of indicator
+            indicator_value: Value of the indicator
+            min_count: Minimum co-occurrence count
+            limit: Maximum number of results to return
+
+        Returns:
+            List of related indicators with counts (sorted by count DESC)
+        """
+        try:
+            cooccur_key = f"indicator:{indicator_type}:{indicator_value}:cooccur"
+
+            # Get top related indicators (sorted by score DESC)
+            related_with_scores = await self.redis_client.zrevrange(
+                cooccur_key,
+                0,
+                limit - 1,
+                withscores=True
+            )
+
+            # Parse results
+            related = []
+            for member, score in related_with_scores:
+                if isinstance(member, bytes):
+                    member = member.decode('utf-8')
+
+                count = int(score)
+
+                # Only include if meets minimum
+                if count >= min_count:
+                    # Parse member (format: "type:value")
+                    parts = member.split(':', 1)
+                    if len(parts) == 2:
+                        related.append({
+                            'related_indicator_type': parts[0],
+                            'related_indicator_value': parts[1],
+                            'co_occurrence_count': count
+                        })
+
+            # Already sorted by score DESC from ZREVRANGE
+            return related
+
+        except Exception as e:
+            raise StorageError(f"Failed to get related indicators: {str(e)}")

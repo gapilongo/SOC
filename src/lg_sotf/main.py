@@ -100,9 +100,15 @@ class LG_SOTFApplication:
             # Initialize state manager
             self.state_manager = StateManager(self.postgres_storage)
             logging.info("✓ State manager initialized")
-            
+
             # Initialize workflow engine (handles agent initialization)
-            self.workflow_engine = WorkflowEngine(self.config_manager, self.state_manager)
+            # Pass Redis storage and let the workflow engine create the tool orchestrator
+            self.workflow_engine = WorkflowEngine(
+                self.config_manager,
+                self.state_manager,
+                redis_storage=self.redis_storage,
+                tool_orchestrator=None  # Created internally by workflow engine
+            )
             await self.workflow_engine.initialize()
             logging.info("✓ Workflow engine initialized")
             
