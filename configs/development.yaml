@@ -108,6 +108,11 @@ agents:
     max_correlations: 10
     enable_llm_correlation: true
     llm_weight: 0.3
+    # New: External enrichment configuration
+    enable_threat_intel: true
+    enable_siem_queries: true
+    enable_burst_detection: true
+    burst_threshold_per_minute: 5
 
   analysis:
     max_iterations: 5
@@ -222,3 +227,17 @@ llm:
   temperature: 0.3
   max_tokens: 1000
   timeout: 30
+
+# Workflow configuration
+workflow:
+  # LLM-based routing configuration (LangGraph best practices)
+  enable_llm_routing: true  # Use LLM for intelligent routing decisions
+  llm_routing_threshold_min: 20  # Use LLM only for confidence >= this value
+  llm_routing_threshold_max: 80  # Use LLM only for confidence <= this value
+
+  # LLM model settings for routing
+  # model: "gemini-2.5-pro"
+  model: "gemini-2.5-flash"
+  temperature: 0.3  # Lower = more deterministic routing
+  max_tokens: 500  # Routing needs less tokens than analysis
+  timeout: 15  # Fast routing decisions

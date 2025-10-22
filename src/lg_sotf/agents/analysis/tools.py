@@ -487,24 +487,32 @@ class NetworkAnalysisTool(BaseToolAdapter):
     
     def _analyze_traffic_patterns(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze network traffic patterns."""
-        
-        bytes_transferred = raw_data.get("bytes_transferred", 0)
-        duration = raw_data.get("duration_seconds", 0)
-        
+
+        # Ensure numeric types - convert strings to integers
+        try:
+            bytes_transferred = int(raw_data.get("bytes_transferred", 0))
+        except (ValueError, TypeError):
+            bytes_transferred = 0
+
+        try:
+            duration = int(raw_data.get("duration_seconds", 0))
+        except (ValueError, TypeError):
+            duration = 0
+
         # Traffic volume analysis
         volume_category = "low"
         if bytes_transferred > 10000000:  # > 10MB
             volume_category = "high"
         elif bytes_transferred > 1000000:  # > 1MB
             volume_category = "medium"
-        
+
         # Duration analysis
         duration_category = "short"
         if duration > 300:  # > 5 minutes
             duration_category = "long"
         elif duration > 60:  # > 1 minute
             duration_category = "medium"
-        
+
         return {
             "bytes_transferred": bytes_transferred,
             "duration_seconds": duration,
@@ -513,24 +521,29 @@ class NetworkAnalysisTool(BaseToolAdapter):
             "is_bulk_transfer": bytes_transferred > 5000000,  # > 5MB
             "is_persistent_connection": duration > 180  # > 3 minutes
         }
-    
+
     def _analyze_protocol_indicators(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """Analyze protocol-level indicators."""
-        
+
         indicators = []
-        
+
         # Check for encrypted traffic
         if raw_data.get("encryption") == "enabled":
             indicators.append("encrypted_traffic")
-        
+
         # Check for beaconing patterns
         if raw_data.get("pattern") == "regular":
             indicators.append("regular_beaconing")
-        
-        # Check for data exfiltration indicators
-        if raw_data.get("bytes_transferred", 0) > 1000000:  # > 1MB
+
+        # Check for data exfiltration indicators - ensure numeric type
+        try:
+            bytes_transferred = int(raw_data.get("bytes_transferred", 0))
+        except (ValueError, TypeError):
+            bytes_transferred = 0
+
+        if bytes_transferred > 1000000:  # > 1MB
             indicators.append("large_data_transfer")
-        
+
         return {
             "protocol_indicators": indicators,
             "has_encryption": "encrypted_traffic" in indicators,

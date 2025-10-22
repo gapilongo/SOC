@@ -1075,6 +1075,298 @@
             margin: 0 auto 20px;
         }
 
+        /* Escalation Queue Styles */
+        .escalation-queue {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .escalation-item {
+            background: rgba(26, 34, 53, 0.4);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .escalation-item:hover {
+            background: rgba(26, 34, 53, 0.7);
+            border-color: var(--primary);
+            transform: translateY(-2px);
+        }
+
+        .escalation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .escalation-id {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .escalation-badges {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .priority-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .priority-critical { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .priority-high { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .priority-medium { background: rgba(59, 130, 246, 0.2); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+
+        .level-badge {
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .escalation-summary {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        .escalation-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .escalation-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .sla-warning {
+            color: var(--warning);
+            font-weight: 600;
+        }
+
+        .sla-critical {
+            color: var(--danger);
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        /* Review Modal Styles */
+        .review-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(8px);
+            z-index: 10000;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .review-modal.active {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .review-modal-content {
+            background: linear-gradient(145deg, #1a2235 0%, #0f1419 100%);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            max-width: 900px;
+            width: 100%;
+            margin: 40px auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .review-modal-header {
+            padding: 24px 28px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .review-modal-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .review-close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .review-close-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .review-modal-body {
+            padding: 28px;
+            max-height: calc(100vh - 250px);
+            overflow-y: auto;
+        }
+
+        .review-section {
+            margin-bottom: 24px;
+        }
+
+        .review-section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .review-form-group {
+            margin-bottom: 20px;
+        }
+
+        .review-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+        }
+
+        .review-select,
+        .review-textarea,
+        .review-input {
+            width: 100%;
+            background: rgba(26, 34, 53, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-family: 'Inter', sans-serif;
+            transition: all 0.2s;
+        }
+
+        .review-select:focus,
+        .review-textarea:focus,
+        .review-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            background: rgba(26, 34, 53, 0.9);
+        }
+
+        .review-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .review-checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .review-checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .review-checkbox {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--primary);
+        }
+
+        .review-modal-footer {
+            padding: 20px 28px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .review-btn {
+            padding: 10px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .review-btn-primary {
+            background: linear-gradient(135deg, var(--primary), var(--purple));
+            color: white;
+        }
+
+        .review-btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+        }
+
+        .review-btn-secondary {
+            background: rgba(148, 163, 184, 0.1);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+
+        .review-btn-secondary:hover {
+            background: rgba(148, 163, 184, 0.2);
+        }
+
         @media (max-width: 1400px) {
             .content-grid { grid-template-columns: 1fr; }
         }
@@ -1260,6 +1552,20 @@
             <div class="card">
                 <div class="card-header"><div class="card-title">⏰ Response Time</div></div>
                 <div class="chart-container"><canvas id="responseChart"></canvas></div>
+            </div>
+        </div>
+
+        <!-- Escalation Queue -->
+        <div class="card" style="margin-top: 20px;">
+            <div class="card-header">
+                <div class="card-title">🚨 Human Review Queue</div>
+                <div class="card-badge" id="escalationCount">0</div>
+            </div>
+            <div class="escalation-queue" id="escalationQueue">
+                <div class="empty-state">
+                    <div class="empty-state-icon">✅</div>
+                    <div class="empty-state-text">No pending escalations</div>
+                </div>
             </div>
         </div>
 
@@ -1692,20 +1998,23 @@
         async function fetchData() {
             try {
                 const [a, s] = await Promise.all([
-                    fetch(`${API_BASE}/alerts?limit=10`),
+                    fetch(`${API_BASE}/alerts?limit=15&hours=2`),
                     fetch(`${API_BASE}/dashboard/stats`)
                 ]);
                 const alertsData = await a.json();
                 const stats = await s.json();
 
+                console.log('Fetched alerts:', alertsData);
+
                 alerts = alertsData.map(x => ({
                     id: x.alert_id,
-                    severity: 'high',
+                    severity: x.severity || 'medium',
                     timestamp: new Date(x.created_at),
                     status: x.status,
                     confidence: x.confidence_score,
-                    description: 'Security alert from database'
+                    description: x.description || 'Security alert'
                 }));
+                console.log('Mapped alerts:', alerts);
                 renderAlerts();
 
                 if (stats.alerts_by_severity) {
@@ -2186,7 +2495,10 @@
             // Node circles
             node.append('circle')
                 .attr('r', 18)
-                .attr('fill', d => severityColor[d.severity] || severityColor.unknown)
+                .attr('fill', d => {
+                    console.log('Node:', d.id, 'Severity:', d.severity, 'Color:', severityColor[d.severity] || severityColor.unknown);
+                    return severityColor[d.severity] || severityColor.unknown;
+                })
                 .attr('stroke', '#fff')
                 .attr('stroke-width', 3)
                 .style('filter', 'drop-shadow(0 0 8px rgba(0,0,0,0.5))');
@@ -2260,15 +2572,337 @@
             fetchNetworkData();
         }
 
+        // ===== Escalation Queue Functions =====
+
+        let currentEscalation = null;
+
+        async function fetchEscalations() {
+            try {
+                console.log('Fetching escalations from:', `${API_BASE}/escalations`);
+                const response = await fetch(`${API_BASE}/escalations`);
+                if (!response.ok) throw new Error('Failed to fetch escalations');
+
+                const data = await response.json();
+                console.log('Escalations received:', data);
+                renderEscalations(data.escalations || []);
+
+                document.getElementById('escalationCount').textContent = data.count || 0;
+            } catch (error) {
+                console.error('Error fetching escalations:', error);
+            }
+        }
+
+        function renderEscalations(escalations) {
+            console.log('Rendering escalations:', escalations.length, 'items');
+            const container = document.getElementById('escalationQueue');
+
+            if (escalations.length === 0) {
+                console.log('No escalations to display');
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">✅</div>
+                        <div class="empty-state-text">No pending escalations</div>
+                    </div>
+                `;
+                return;
+            }
+
+            console.log('Building escalation HTML for', escalations.length, 'items');
+
+            container.innerHTML = escalations.map(esc => {
+                const priorityClass = esc.priority >= 9 ? 'priority-critical' :
+                                     esc.priority >= 7 ? 'priority-high' : 'priority-medium';
+
+                const createdDate = new Date(esc.created_at);
+                const slaDate = esc.sla_deadline ? new Date(esc.sla_deadline) : null;
+                const timeRemaining = slaDate ? Math.floor((slaDate - new Date()) / 1000 / 60) : null;
+
+                let slaClass = '';
+                let slaText = '';
+                if (timeRemaining !== null) {
+                    if (timeRemaining < 10) {
+                        slaClass = 'sla-critical';
+                        slaText = `⏰ ${timeRemaining}m`;
+                    } else if (timeRemaining < 30) {
+                        slaClass = 'sla-warning';
+                        slaText = `⏰ ${timeRemaining}m`;
+                    } else {
+                        slaText = `⏰ ${timeRemaining}m`;
+                    }
+                }
+
+                return `
+                    <div class="escalation-item" onclick="openReviewModal('${esc.escalation_id}')">
+                        <div class="escalation-header">
+                            <div class="escalation-id">${esc.escalation_id}</div>
+                            <div class="escalation-badges">
+                                <span class="priority-badge ${priorityClass}">P${esc.priority}</span>
+                                <span class="level-badge">${esc.level}</span>
+                            </div>
+                        </div>
+                        <div class="escalation-summary">${esc.alert_summary.replace(/\n/g, '<br>')}</div>
+                        <div class="escalation-meta">
+                            <div class="escalation-meta-item">📌 ${esc.reason.replace(/_/g, ' ')}</div>
+                            <div class="escalation-meta-item">🎯 Threat: ${esc.threat_score.toFixed(1)}</div>
+                            <div class="escalation-meta-item">🔗 Corr: ${esc.correlations_count}</div>
+                            <div class="escalation-meta-item ${slaClass}">${slaText}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function openReviewModal(escalationId) {
+            try {
+                // Fetch escalation details
+                const response = await fetch(`${API_BASE}/escalations`);
+                if (!response.ok) throw new Error('Failed to fetch escalation');
+
+                const data = await response.json();
+                const escalation = data.escalations.find(e => e.escalation_id === escalationId);
+
+                if (!escalation) {
+                    console.error('Escalation not found');
+                    return;
+                }
+
+                currentEscalation = escalation;
+
+                // Populate modal
+                document.getElementById('reviewModalTitle').textContent = `Review Alert - ${escalation.escalation_id}`;
+                document.getElementById('reviewAlertSummary').textContent = escalation.alert_summary;
+
+                // Show modal
+                document.getElementById('reviewModal').classList.add('active');
+            } catch (error) {
+                console.error('Error opening review modal:', error);
+                alert('Failed to load escalation details');
+            }
+        }
+
+        function closeReviewModal() {
+            document.getElementById('reviewModal').classList.remove('active');
+            currentEscalation = null;
+
+            // Reset form
+            document.getElementById('analystUsername').value = '';
+            document.getElementById('analystDecision').value = '';
+            document.getElementById('analystConfidence').value = '';
+            document.getElementById('analystNotes').value = '';
+            document.querySelectorAll('input[name="actionsTaken"]').forEach(cb => cb.checked = false);
+            document.getElementById('triageCorrect').checked = false;
+            document.getElementById('correlationHelpful').checked = false;
+            document.getElementById('analysisAccurate').checked = false;
+        }
+
+        async function submitReview() {
+            if (!currentEscalation) {
+                alert('No escalation selected');
+                return;
+            }
+
+            // Validate required fields
+            const username = document.getElementById('analystUsername').value.trim();
+            const decision = document.getElementById('analystDecision').value;
+            const confidence = parseInt(document.getElementById('analystConfidence').value);
+            const notes = document.getElementById('analystNotes').value.trim();
+
+            if (!username) {
+                alert('Please enter your username');
+                return;
+            }
+
+            if (!decision) {
+                alert('Please select a decision');
+                return;
+            }
+
+            if (!confidence || confidence < 1 || confidence > 10) {
+                alert('Please enter a confidence value between 1 and 10');
+                return;
+            }
+
+            if (!notes) {
+                alert('Please provide notes explaining your decision');
+                return;
+            }
+
+            // Get actions taken
+            const actionsTaken = Array.from(document.querySelectorAll('input[name="actionsTaken"]:checked'))
+                .map(cb => cb.value);
+
+            // Get feedback
+            const triageCorrect = document.getElementById('triageCorrect').checked ? true : null;
+            const correlationHelpful = document.getElementById('correlationHelpful').checked ? true : null;
+            const analysisAccurate = document.getElementById('analysisAccurate').checked ? true : null;
+
+            try {
+                const payload = {
+                    analyst_username: username,
+                    decision: decision,
+                    confidence: confidence,
+                    notes: notes,
+                    actions_taken: actionsTaken,
+                    triage_correct: triageCorrect,
+                    correlation_helpful: correlationHelpful,
+                    analysis_accurate: analysisAccurate
+                };
+
+                const response = await fetch(
+                    `${API_BASE}/escalations/${currentEscalation.escalation_id}/feedback`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }
+                );
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to submit feedback');
+                }
+
+                alert('✅ Decision submitted successfully!');
+                closeReviewModal();
+                fetchEscalations(); // Refresh the queue
+            } catch (error) {
+                console.error('Error submitting feedback:', error);
+                alert('❌ Failed to submit decision: ' + error.message);
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('reviewModal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeReviewModal();
+            }
+        });
+
         // Initialize
         initCharts();
         initNetwork();
         connect();
+
+        // Initial data fetch
+        fetchEscalations();
+        fetchCorrelationMetrics();
+        fetchNetworkData();
+
+        // Set up intervals
         setInterval(fetchData, 30000);
         setInterval(fetchIngestionStatus, 10000);
         setInterval(fetchIngestionSources, 30000);
         setInterval(fetchCorrelationMetrics, 15000);
-        setInterval(fetchNetworkData, 20000);  // NEW: Fetch network data every 20s
+        setInterval(fetchNetworkData, 20000);
+        setInterval(fetchEscalations, 15000); // Fetch escalations every 15s
     </script>
+
+    <!-- Analyst Review Modal -->
+    <div class="review-modal" id="reviewModal">
+        <div class="review-modal-content">
+            <div class="review-modal-header">
+                <div class="review-modal-title" id="reviewModalTitle">Review Alert</div>
+                <button class="review-close-btn" onclick="closeReviewModal()">&times;</button>
+            </div>
+            <div class="review-modal-body">
+                <!-- Alert Summary -->
+                <div class="review-section">
+                    <div class="review-section-title">📋 Alert Summary</div>
+                    <div id="reviewAlertSummary" style="white-space: pre-wrap; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6;"></div>
+                </div>
+
+                <!-- Decision Form -->
+                <div class="review-section">
+                    <div class="review-section-title">✅ Your Decision</div>
+
+                    <div class="review-form-group">
+                        <label class="review-label">Analyst Username</label>
+                        <input type="text" class="review-input" id="analystUsername" placeholder="e.g., john.doe" required>
+                    </div>
+
+                    <div class="review-form-group">
+                        <label class="review-label">Decision *</label>
+                        <select class="review-select" id="analystDecision" required>
+                            <option value="">-- Select Decision --</option>
+                            <option value="true_positive">✅ True Positive - Confirmed Threat</option>
+                            <option value="false_positive">❌ False Positive - Benign Activity</option>
+                            <option value="needs_response">🚨 Needs Response - Requires Action</option>
+                            <option value="needs_investigation">🔍 Needs Investigation - More Analysis</option>
+                            <option value="benign_anomaly">⚠️ Benign Anomaly - Unusual but Safe</option>
+                            <option value="policy_violation">📋 Policy Violation - Not a Threat</option>
+                        </select>
+                    </div>
+
+                    <div class="review-form-group">
+                        <label class="review-label">Confidence (1-10) *</label>
+                        <input type="number" class="review-input" id="analystConfidence" min="1" max="10" placeholder="1-10" required>
+                    </div>
+
+                    <div class="review-form-group">
+                        <label class="review-label">Notes *</label>
+                        <textarea class="review-textarea" id="analystNotes" placeholder="Explain your reasoning..." required></textarea>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="review-section">
+                    <div class="review-section-title">🔧 Actions</div>
+
+                    <div class="review-form-group">
+                        <label class="review-label">Actions Taken</label>
+                        <div class="review-checkbox-group">
+                            <label class="review-checkbox-item">
+                                <input type="checkbox" class="review-checkbox" name="actionsTaken" value="isolate_host">
+                                <span>Isolate Host</span>
+                            </label>
+                            <label class="review-checkbox-item">
+                                <input type="checkbox" class="review-checkbox" name="actionsTaken" value="disable_account">
+                                <span>Disable Account</span>
+                            </label>
+                            <label class="review-checkbox-item">
+                                <input type="checkbox" class="review-checkbox" name="actionsTaken" value="block_ip">
+                                <span>Block IP</span>
+                            </label>
+                            <label class="review-checkbox-item">
+                                <input type="checkbox" class="review-checkbox" name="actionsTaken" value="reset_password">
+                                <span>Reset Password</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feedback -->
+                <div class="review-section">
+                    <div class="review-section-title">💡 System Feedback (Optional)</div>
+
+                    <div class="review-form-group">
+                        <label class="review-checkbox-item">
+                            <input type="checkbox" class="review-checkbox" id="triageCorrect">
+                            <span>Triage assessment was correct</span>
+                        </label>
+                    </div>
+
+                    <div class="review-form-group">
+                        <label class="review-checkbox-item">
+                            <input type="checkbox" class="review-checkbox" id="correlationHelpful">
+                            <span>Correlations were helpful</span>
+                        </label>
+                    </div>
+
+                    <div class="review-form-group">
+                        <label class="review-checkbox-item">
+                            <input type="checkbox" class="review-checkbox" id="analysisAccurate">
+                            <span>Analysis conclusion was accurate</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="review-modal-footer">
+                <button class="review-btn review-btn-secondary" onclick="closeReviewModal()">Cancel</button>
+                <button class="review-btn review-btn-primary" onclick="submitReview()">Submit Decision</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 </html>

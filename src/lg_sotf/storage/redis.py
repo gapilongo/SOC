@@ -836,3 +836,138 @@ class RedisStorage(StorageBackend):
 
         except Exception as e:
             raise StorageError(f"Failed to get related indicators: {str(e)}")
+
+    # ===============================
+    # ALERT DEDUPLICATION METHODS
+    # ===============================
+
+    async def is_duplicate_alert(self, alert_hash: str, ttl_hours: int = 24) -> bool:
+        """Check if alert hash exists (for deduplication).
+
+        Args:
+            alert_hash: SHA256 hash of alert for deduplication
+            ttl_hours: Time-to-live in hours for deduplication window
+
+        Returns:
+            True if alert is a duplicate, False otherwise
+        """
+        try:
+            key = f"alert:dedup:{alert_hash}"
+            exists = await self.redis_client.exists(key)
+            return bool(exists)
+
+        except Exception as e:
+            raise StorageError(f"Failed to check duplicate alert: {str(e)}")
+
+    async def track_alert_hash(self, alert_hash: str, alert_id: str, ttl_hours: int = 24):
+        """Track alert hash for deduplication with automatic expiration.
+
+        Args:
+            alert_hash: SHA256 hash of alert
+            alert_id: Alert identifier for tracking
+            ttl_hours: Time-to-live in hours (deduplication window)
+        """
+        try:
+            key = f"alert:dedup:{alert_hash}"
+            ttl_seconds = ttl_hours * 3600
+
+            # Store alert_id as value for potential lookup
+            await self.redis_client.setex(key, ttl_seconds, alert_id)
+
+        except Exception as e:
+            raise StorageError(f"Failed to track alert hash: {str(e)}")
+
+    # ===============================
+    # RATE LIMITING METHODS
+    # ===============================
+
+    async def check_rate_limit(
+        self,
+        source: str,
+        max_per_minute: int,
+        window_seconds: int = 60
+    ) -> bool:
+        """Distributed rate limiting using Redis sorted sets.
+
+        Args:
+            source: Source identifier (e.g., source name)
+            max_per_minute: Maximum alerts allowed per minute
+            window_seconds: Time window in seconds (default 60)
+
+        Returns:
+            True if request is allowed, False if rate limit exceeded
+        """
+        try:
+            import time
+
+            key = f"ratelimit:source:{source}"
+            now = time.time()
+            window_start = now - window_seconds
+
+            # Start pipeline for atomic operations
+            pipeline = self.redis_client.pipeline()
+
+            # Remove old entries outside the window
+            pipeline.zremrangebyscore(key, 0, window_start)
+
+            # Count current entries in window
+            pipeline.zcard(key)
+
+            # Execute pipeline
+            results = await pipeline.execute()
+            current_count = results[1]  # Result of ZCARD
+
+            # Check if limit exceeded
+            if current_count >= max_per_minute:
+                return False
+
+            # Add current timestamp
+            await self.redis_client.zadd(key, {str(now): now})
+
+            # Set expiration on key
+            await self.redis_client.expire(key, window_seconds * 2)
+
+            return True
+
+        except Exception as e:
+            raise StorageError(f"Failed to check rate limit: {str(e)}")
+
+    async def get_rate_limit_stats(
+        self,
+        source: str,
+        window_seconds: int = 60
+    ) -> Dict[str, Any]:
+        """Get current rate limit statistics for a source.
+
+        Args:
+            source: Source identifier
+            window_seconds: Time window in seconds
+
+        Returns:
+            Dict with count and timestamps
+        """
+        try:
+            import time
+
+            key = f"ratelimit:source:{source}"
+            now = time.time()
+            window_start = now - window_seconds
+
+            # Remove expired entries
+            await self.redis_client.zremrangebyscore(key, 0, window_start)
+
+            # Get count
+            count = await self.redis_client.zcard(key)
+
+            # Get all timestamps in window
+            timestamps = await self.redis_client.zrange(key, 0, -1, withscores=True)
+
+            return {
+                "source": source,
+                "count_in_window": count,
+                "window_seconds": window_seconds,
+                "timestamps": [float(score) for _, score in timestamps] if timestamps else []
+            }
+
+        except Exception as e:
+            raise StorageError(f"Failed to get rate limit stats: {str(e)}")

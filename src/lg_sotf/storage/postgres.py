@@ -74,16 +74,96 @@ class PostgreSQLStorage(StorageBackend):
                     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
-            
+
+            # Create escalations table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS escalations (
+                    escalation_id VARCHAR(255) PRIMARY KEY,
+                    alert_id VARCHAR(255) NOT NULL,
+                    workflow_instance_id VARCHAR(255) NOT NULL,
+                    level VARCHAR(10) NOT NULL,
+                    status VARCHAR(50) NOT NULL,
+                    reason VARCHAR(100) NOT NULL,
+                    priority INTEGER NOT NULL,
+                    alert_summary TEXT NOT NULL,
+                    triage_confidence FLOAT NOT NULL,
+                    threat_score FLOAT NOT NULL,
+                    correlations_count INTEGER NOT NULL,
+                    analysis_notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    assigned_at TIMESTAMP WITH TIME ZONE,
+                    reviewed_at TIMESTAMP WITH TIME ZONE,
+                    decided_at TIMESTAMP WITH TIME ZONE,
+                    sla_deadline TIMESTAMP WITH TIME ZONE,
+                    assigned_to VARCHAR(255),
+                    assigned_tier VARCHAR(10),
+                    analyst_decision VARCHAR(50),
+                    analyst_notes TEXT,
+                    escalated_from VARCHAR(255),
+                    escalation_count INTEGER DEFAULT 0
+                )
+            ''')
+
+            # Create analyst_feedback table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS analyst_feedback (
+                    feedback_id VARCHAR(255) PRIMARY KEY,
+                    escalation_id VARCHAR(255) NOT NULL,
+                    alert_id VARCHAR(255) NOT NULL,
+                    analyst_username VARCHAR(255) NOT NULL,
+                    decision VARCHAR(50) NOT NULL,
+                    confidence INTEGER NOT NULL,
+                    notes TEXT NOT NULL,
+                    actions_taken TEXT[],
+                    actions_recommended TEXT[],
+                    review_duration_seconds INTEGER,
+                    triage_correct BOOLEAN,
+                    correlation_helpful BOOLEAN,
+                    analysis_accurate BOOLEAN,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (escalation_id) REFERENCES escalations(escalation_id)
+                )
+            ''')
+
             # Create indexes
             await conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_states_alert_id 
+                CREATE INDEX IF NOT EXISTS idx_states_alert_id
                 ON states (alert_id)
             ''')
-            
+
             await conn.execute('''
-                CREATE INDEX IF NOT EXISTS idx_states_created_at 
+                CREATE INDEX IF NOT EXISTS idx_states_created_at
                 ON states (created_at)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_escalations_alert_id
+                ON escalations (alert_id)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_escalations_status
+                ON escalations (status)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_escalations_level
+                ON escalations (level)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_escalations_created_at
+                ON escalations (created_at)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_feedback_alert_id
+                ON analyst_feedback (alert_id)
+            ''')
+
+            await conn.execute('''
+                CREATE INDEX IF NOT EXISTS idx_feedback_analyst
+                ON analyst_feedback (analyst_username)
             ''')
     
     async def save_state(self, alert_id: str, workflow_instance_id: str, 

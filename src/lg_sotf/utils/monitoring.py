@@ -97,6 +97,17 @@ class CorrelationResponse(BaseModel):
     attack_campaign_indicators: List[str]
     threat_actor_patterns: List[str]
 
+class FeedbackRequest(BaseModel):
+    analyst_username: str
+    decision: str
+    confidence: int = Field(ge=1, le=10)
+    notes: str
+    actions_taken: Optional[List[str]] = None
+    actions_recommended: Optional[List[str]] = None
+    triage_correct: Optional[bool] = None
+    correlation_helpful: Optional[bool] = None
+    analysis_accurate: Optional[bool] = None
+
 class AgentStatusResponse(BaseModel):
     agent_name: str
     status: str
@@ -561,7 +572,105 @@ class SOCDashboardAPI:
                 self.logger.error(f"Correlation network retrieval failed: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=str(e))
 
-    
+        # ===== Escalation Management Endpoints =====
+
+        @self.app.get("/api/v1/escalations")
+        async def get_pending_escalations(level: Optional[str] = None, limit: int = 50):
+            """Get pending escalations from queue."""
+            try:
+                human_loop_agent = self.lg_sotf_app.workflow_engine.agents.get("human_loop")
+                if not human_loop_agent:
+                    raise HTTPException(status_code=503, detail="Human loop agent not available")
+
+                escalations = await human_loop_agent.get_pending_escalations(level=level, limit=limit)
+                return {"escalations": escalations, "count": len(escalations)}
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Escalation retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/v1/escalations/{escalation_id}/assign")
+        async def assign_escalation(escalation_id: str, analyst_username: str):
+            """Assign escalation to analyst."""
+            try:
+                human_loop_agent = self.lg_sotf_app.workflow_engine.agents.get("human_loop")
+                if not human_loop_agent:
+                    raise HTTPException(status_code=503, detail="Human loop agent not available")
+
+                result = await human_loop_agent.assign_escalation(
+                    escalation_id=escalation_id,
+                    analyst_username=analyst_username
+                )
+                return result
+
+            except HTTPException:
+                raise
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Escalation assignment failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.post("/api/v1/escalations/{escalation_id}/feedback")
+        async def submit_feedback(
+            escalation_id: str,
+            feedback: FeedbackRequest
+        ):
+            """Submit analyst feedback for escalation."""
+            try:
+                human_loop_agent = self.lg_sotf_app.workflow_engine.agents.get("human_loop")
+                if not human_loop_agent:
+                    raise HTTPException(status_code=503, detail="Human loop agent not available")
+
+                result = await human_loop_agent.submit_feedback(
+                    escalation_id=escalation_id,
+                    analyst_username=feedback.analyst_username,
+                    decision=feedback.decision,
+                    confidence=feedback.confidence,
+                    notes=feedback.notes,
+                    actions_taken=feedback.actions_taken,
+                    actions_recommended=feedback.actions_recommended,
+                    triage_correct=feedback.triage_correct,
+                    correlation_helpful=feedback.correlation_helpful,
+                    analysis_accurate=feedback.analysis_accurate
+                )
+                return result
+
+            except HTTPException:
+                raise
+            except ValueError as e:
+                raise HTTPException(status_code=404, detail=str(e))
+            except Exception as e:
+                self.logger.error(f"Feedback submission failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+        @self.app.get("/api/v1/escalations/stats")
+        async def get_escalation_stats():
+            """Get escalation queue statistics."""
+            try:
+                human_loop_agent = self.lg_sotf_app.workflow_engine.agents.get("human_loop")
+                if not human_loop_agent:
+                    raise HTTPException(status_code=503, detail="Human loop agent not available")
+
+                queue_stats = await human_loop_agent.get_queue_stats()
+                decision_stats = await human_loop_agent.get_decision_stats()
+                triage_accuracy = await human_loop_agent.get_triage_accuracy()
+
+                return {
+                    "queue": queue_stats,
+                    "decisions": decision_stats,
+                    "triage_accuracy": triage_accuracy
+                }
+
+            except HTTPException:
+                raise
+            except Exception as e:
+                self.logger.error(f"Escalation stats retrieval failed: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=str(e))
+
+
     async def _process_alert_background(self, alert_id: str, alert_data: Dict[str, Any]):
         try:
             await self.websocket_manager.broadcast({
@@ -812,11 +921,12 @@ class SOCDashboardAPI:
                     "triage_status": triage_status,
                     "confidence_score": int(state_data.get("confidence_score", 0)),
                     "processing_notes": metadata.get("processing_notes", []),
-                    "last_updated": result['created_at'].isoformat()
+                    "last_updated": result['created_at'].isoformat(),
+                    "raw_alert": state_data.get("raw_alert", {})
                 }
-                
+
                 self.logger.info(f"Returning merged state: confidence={merged_state['confidence_score']}, status={merged_state['triage_status']}")
-                
+
                 return merged_state
                 
         except Exception as e:
@@ -830,12 +940,15 @@ class SOCDashboardAPI:
             
             if status:
                 query = """
-                    SELECT DISTINCT ON (alert_id) 
+                    SELECT DISTINCT ON (alert_id)
                         alert_id,
                         state_data->>'workflow_instance_id' as workflow_instance_id,
                         state_data->>'triage_status' as status,
                         state_data->>'current_node' as current_node,
                         (state_data->>'confidence_score')::int as confidence_score,
+                        state_data->'raw_alert'->>'severity' as severity,
+                        state_data->'raw_alert'->>'description' as description,
+                        state_data->'raw_alert'->>'title' as title,
                         created_at
                     FROM states
                     WHERE created_at >= $1
@@ -843,7 +956,7 @@ class SOCDashboardAPI:
                     ORDER BY alert_id, version DESC
                     LIMIT $3
                 """
-                
+
                 async with storage.pool.acquire() as conn:
                     results = await conn.fetch(query, cutoff_time, status, limit)
             else:
@@ -854,13 +967,16 @@ class SOCDashboardAPI:
                         state_data->>'triage_status' as status,
                         state_data->>'current_node' as current_node,
                         (state_data->>'confidence_score')::int as confidence_score,
+                        state_data->'raw_alert'->>'severity' as severity,
+                        state_data->'raw_alert'->>'description' as description,
+                        state_data->'raw_alert'->>'title' as title,
                         created_at
                     FROM states
                     WHERE created_at >= $1
                     ORDER BY alert_id, version DESC
                     LIMIT $2
                 """
-                
+
                 async with storage.pool.acquire() as conn:
                     results = await conn.fetch(query, cutoff_time, limit)
             
@@ -872,6 +988,8 @@ class SOCDashboardAPI:
                     "status": row['status'],
                     "current_node": row['current_node'],
                     "confidence_score": row['confidence_score'],
+                    "severity": row['severity'] or 'medium',
+                    "description": row['description'] or row['title'] or 'Security alert',
                     "created_at": row['created_at'].isoformat()
                 })
             
@@ -894,7 +1012,7 @@ class SOCDashboardAPI:
                     FROM states
                     WHERE created_at >= $1
                 """, cutoff_time)
-                
+
                 alerts_in_progress = await conn.fetchval("""
                     SELECT COUNT(DISTINCT s1.alert_id)
                     FROM states s1
@@ -905,7 +1023,38 @@ class SOCDashboardAPI:
                     ) s2 ON s1.alert_id = s2.alert_id AND s1.version = s2.max_version
                     WHERE state_data->>'triage_status' IN ('processing', 'triaged', 'correlated', 'analyzed')
                 """)
-            
+
+                # Calculate average processing time (from first state to last state)
+                avg_processing_time = await conn.fetchval("""
+                    WITH alert_times AS (
+                        SELECT
+                            alert_id,
+                            MIN(created_at) as first_state,
+                            MAX(created_at) as last_state
+                        FROM states
+                        WHERE created_at >= $1
+                        GROUP BY alert_id
+                    )
+                    SELECT AVG(EXTRACT(EPOCH FROM (last_state - first_state)))
+                    FROM alert_times
+                    WHERE EXTRACT(EPOCH FROM (last_state - first_state)) > 0
+                """, cutoff_time)
+
+                # Calculate success rate (closed or responded / total)
+                total_completed = await conn.fetchval("""
+                    SELECT COUNT(DISTINCT s1.alert_id)
+                    FROM states s1
+                    INNER JOIN (
+                        SELECT alert_id, MAX(version) as max_version
+                        FROM states
+                        WHERE created_at >= $1
+                        GROUP BY alert_id
+                    ) s2 ON s1.alert_id = s2.alert_id AND s1.version = s2.max_version
+                    WHERE state_data->>'triage_status' IN ('closed', 'responded')
+                """, cutoff_time)
+
+                success_rate = (total_completed / alerts_today) if alerts_today and alerts_today > 0 else 0.0
+
             agent_health = {}
             stats = agent_registry.get_registry_stats()
             for agent_name in stats.get("agent_instances", []):
@@ -914,15 +1063,15 @@ class SOCDashboardAPI:
                     agent_health[agent_name] = await agent.health_check() if hasattr(agent, 'health_check') else agent.initialized
                 except Exception:
                     agent_health[agent_name] = False
-            
+
             system_health = app_status.get("running", False) and app_status.get("initialized", False)
-            
+
             return MetricsResponse(
                 timestamp=datetime.utcnow().isoformat(),
                 alerts_processed_today=alerts_today or 0,
                 alerts_in_progress=alerts_in_progress or 0,
-                average_processing_time=120.0,
-                success_rate=0.95,
+                average_processing_time=float(avg_processing_time) if avg_processing_time else 0.0,
+                success_rate=float(success_rate),
                 agent_health=agent_health,
                 system_health=system_health
             )
