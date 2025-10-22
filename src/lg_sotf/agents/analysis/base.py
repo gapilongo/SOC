@@ -267,7 +267,10 @@ class AnalysisAgent(BaseAgent):
         self.logger.info("Analysis rules loaded")
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute analysis using ReAct reasoning pattern."""
+        """Execute analysis using ReAct reasoning pattern.
+
+        Returns only state updates, following LangGraph best practices.
+        """
         try:
             self.logger.info(
                 f"Executing analysis for alert {state.get('alert_id', 'unknown')}"
@@ -290,37 +293,34 @@ class AnalysisAgent(BaseAgent):
                 alert, correlations, enriched_data, state
             )
 
-            # Build result state
-            result_state = state.copy()
-            result_state.update(
-                {
-                    "confidence_score": analysis_result["confidence_score"],
-                    "analysis_conclusion": analysis_result["conclusion"],
-                    "analysis_reasoning": analysis_result["reasoning_history"],
-                    "tool_results": analysis_result["tool_results"],
-                    "threat_score": analysis_result["threat_score"],
-                    "recommended_actions": analysis_result["recommended_actions"],
-                    "triage_status": "analyzed",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "enriched_data": {
-                        **state.get("enriched_data", {}),
-                        "analysis_metadata": analysis_result["metadata"],
-                    },
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "analysis_iterations": self.current_iteration,
-                        "analysis_timestamp": datetime.utcnow().isoformat(),
-                        "analysis_agent_version": "1.0.0",
-                        "analysis_method": analysis_result.get("method", "unknown"),
-                        "tool_failures": self.tool_failure_count,
-                    },
+            # Build updates dict (return only changes, not full state)
+            updates = {
+                "confidence_score": analysis_result["confidence_score"],
+                "analysis_conclusion": analysis_result["conclusion"],
+                "analysis_reasoning": analysis_result["reasoning_history"],
+                "tool_results": analysis_result["tool_results"],
+                "threat_score": analysis_result["threat_score"],
+                "recommended_actions": analysis_result["recommended_actions"],
+                "triage_status": "analyzed",
+                "last_updated": datetime.utcnow().isoformat(),
+                "enriched_data": {
+                    "analysis_metadata": analysis_result["metadata"]
+                },
+                "metadata": {
+                    "analysis_iterations": self.current_iteration,
+                    "analysis_timestamp": datetime.utcnow().isoformat(),
+                    "analysis_agent_version": "1.0.0",
+                    "analysis_method": analysis_result.get("method", "unknown"),
+                    "tool_failures": self.tool_failure_count,
                 }
-            )
+            }
 
             # Validate output
-            if not await self.validate_output(result_state):
+            if not await self.validate_output({**state, **updates}):
                 self.logger.warning("Output validation failed, using fallback result")
-                return await self._create_fallback_result(state)
+                fallback = await self._create_fallback_result(state)
+                # Extract only updates from fallback
+                return {k: v for k, v in fallback.items() if k not in ["alert_id", "workflow_instance_id", "raw_alert"]}
 
             self.logger.info(
                 f"Analysis completed for alert {state.get('alert_id')} "
@@ -328,12 +328,14 @@ class AnalysisAgent(BaseAgent):
                 f"{analysis_result['confidence_score']}% confidence"
             )
 
-            return result_state
+            return updates
 
         except Exception as e:
             self.logger.error(f"Analysis execution failed: {e}")
             # Return graceful fallback instead of error state
-            return await self._create_fallback_result(state, error=str(e))
+            fallback = await self._create_fallback_result(state, error=str(e))
+            # Extract only updates from fallback
+            return {k: v for k, v in fallback.items() if k not in ["alert_id", "workflow_instance_id", "raw_alert"]}
 
     async def _perform_analysis_with_fallbacks(
         self,

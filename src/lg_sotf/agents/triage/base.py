@@ -109,7 +109,10 @@ class TriageAgent(BaseAgent):
         pass
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute triage logic with single LLM call optimization."""
+        """Execute triage logic with single LLM call optimization.
+
+        Returns only state updates, following LangGraph best practices.
+        """
         try:
             self.logger.info(
                 f"Executing triage for alert {state.get('alert_id', 'unknown')}"
@@ -138,56 +141,44 @@ class TriageAgent(BaseAgent):
             # Create enriched data using cached LLM results
             enriched_data = await self._enrich_alert_data(alert, state, llm_analysis)
 
-            # Build result state
-            result_state = state.copy()
-            result_state.update(
-                {
-                    "confidence_score": confidence_score,
-                    "fp_indicators": fp_indicators,
-                    "tp_indicators": tp_indicators,
-                    "priority_level": priority_level,
-                    "triage_status": "triaged",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "enriched_data": {
-                        **state.get("enriched_data", {}),
-                        **enriched_data,
-                    },
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "triage_method": self._get_triage_method(),
-                        "triage_timestamp": datetime.utcnow().isoformat(),
-                        "triage_agent_version": "1.0.0",
-                        "optimization": "single_llm_call",  # Track optimization
-                    },
+            # Build updates dict (return only changes, not full state)
+            updates = {
+                "confidence_score": confidence_score,
+                "fp_indicators": fp_indicators,
+                "tp_indicators": tp_indicators,
+                "priority_level": priority_level,
+                "triage_status": "triaged",
+                "last_updated": datetime.utcnow().isoformat(),
+                "enriched_data": enriched_data,  # Only new enriched data
+                "metadata": {
+                    "triage_method": self._get_triage_method(),
+                    "triage_timestamp": datetime.utcnow().isoformat(),
+                    "triage_agent_version": "1.0.0",
+                    "optimization": "single_llm_call",
                 }
-            )
+            }
 
             # Validate output
-            if not await self.validate_output(result_state):
+            if not await self.validate_output({**state, **updates}):
                 raise ValueError("Invalid output state from triage")
 
             self.logger.info(
                 f"Triage completed for alert {state.get('alert_id')} with confidence {confidence_score}"
             )
 
-            return result_state
+            return updates
 
         except Exception as e:
             self.logger.error(f"Triage execution failed: {e}")
-            # Return state with error information
-            error_state = state.copy()
-            error_state.update(
-                {
-                    "triage_status": "triage_failed",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "triage_error": str(e),
-                        "triage_timestamp": datetime.utcnow().isoformat(),
-                    },
+            # Return only error updates
+            return {
+                "triage_status": "triage_failed",
+                "last_updated": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "triage_error": str(e),
+                    "triage_timestamp": datetime.utcnow().isoformat(),
                 }
-            )
-            return error_state
+            }
 
     def _get_triage_method(self) -> str:
         """Get the active triage method."""

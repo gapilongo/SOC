@@ -100,7 +100,10 @@ class CorrelationAgent(BaseAgent):
         pass
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute correlation logic."""
+        """Execute correlation logic.
+
+        Returns only state updates, following LangGraph best practices.
+        """
         try:
             self.logger.info(
                 f"Executing correlation for alert {state.get('alert_id', 'unknown')}"
@@ -129,55 +132,43 @@ class CorrelationAgent(BaseAgent):
                 state.get("confidence_score", 0), correlations, state
             )
 
-            # Build result state
-            result_state = state.copy()
-            result_state.update(
-                {
-                    "correlations": correlations,
-                    "correlation_score": correlation_score,
-                    "confidence_score": updated_confidence,
-                    "triage_status": "correlated",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "enriched_data": {
-                        **state.get("enriched_data", {}),
-                        **enriched_data,
-                    },
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "correlation_method": self._get_correlation_method(),
-                        "correlation_timestamp": datetime.utcnow().isoformat(),
-                        "correlation_agent_version": "1.0.0",
-                        "correlations_found": len(correlations),
-                    },
+            # Build updates dict (return only changes, not full state)
+            updates = {
+                "correlations": correlations,
+                "correlation_score": correlation_score,
+                "confidence_score": updated_confidence,
+                "triage_status": "correlated",
+                "last_updated": datetime.utcnow().isoformat(),
+                "enriched_data": enriched_data,  # Only new enriched data
+                "metadata": {
+                    "correlation_method": self._get_correlation_method(),
+                    "correlation_timestamp": datetime.utcnow().isoformat(),
+                    "correlation_agent_version": "1.0.0",
+                    "correlations_found": len(correlations),
                 }
-            )
+            }
 
             # Validate output
-            if not await self.validate_output(result_state):
+            if not await self.validate_output({**state, **updates}):
                 raise ValueError("Invalid output state from correlation")
 
             self.logger.info(
                 f"Correlation completed for alert {state.get('alert_id')} with {len(correlations)} correlations found"
             )
 
-            return result_state
+            return updates
 
         except Exception as e:
             self.logger.error(f"Correlation execution failed: {e}")
-            # Return state with error information
-            error_state = state.copy()
-            error_state.update(
-                {
-                    "triage_status": "correlation_failed",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "metadata": {
-                        **state.get("metadata", {}),
-                        "correlation_error": str(e),
-                        "correlation_timestamp": datetime.utcnow().isoformat(),
-                    },
+            # Return only error updates
+            return {
+                "triage_status": "correlation_failed",
+                "last_updated": datetime.utcnow().isoformat(),
+                "metadata": {
+                    "correlation_error": str(e),
+                    "correlation_timestamp": datetime.utcnow().isoformat(),
                 }
-            )
-            return error_state
+            }
 
     def _get_correlation_method(self) -> str:
         """Get the active correlation method."""

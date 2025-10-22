@@ -33,7 +33,9 @@ class AlertNormalizer:
         Returns:
             Normalized alert dictionary
         """
-        source = AlertNormalizer._extract_source_from_filename(raw_alert, source)
+        # Extract filename from alert metadata if available
+        filename = raw_alert.get("_metadata", {}).get("filename") or raw_alert.get("filename")
+        source = AlertNormalizer._extract_source_from_filename(raw_alert, source, filename)
         
         # Extract common fields with source-specific mappings
         normalized = {
@@ -147,24 +149,36 @@ class AlertNormalizer:
 
     @staticmethod
     def _parse_timestamp(ts: Any) -> str:
-        """Parse various timestamp formats."""
+        """Parse various timestamp formats.
+
+        Returns current time as fallback if parsing fails.
+        """
         if isinstance(ts, str):
             try:
                 # Try ISO format
                 dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
                 return dt.isoformat()
-            except:
-                pass
+            except (ValueError, AttributeError) as e:
+                # Log failed parse but don't raise - continue to fallback
+                import logging
+                logging.getLogger(__name__).debug(
+                    f"Failed to parse timestamp string '{ts}': {e}"
+                )
         elif isinstance(ts, (int, float)):
             # Unix timestamp
             try:
                 dt = datetime.utcfromtimestamp(ts)
                 return dt.isoformat()
-            except:
-                pass
+            except (ValueError, OSError, OverflowError) as e:
+                # Unix timestamp out of range or invalid
+                import logging
+                logging.getLogger(__name__).debug(
+                    f"Failed to parse unix timestamp {ts}: {e}"
+                )
         elif isinstance(ts, datetime):
             return ts.isoformat()
-        
+
+        # Fallback to current time if all parsing attempts failed
         return datetime.utcnow().isoformat()
 
     @staticmethod
@@ -399,8 +413,13 @@ class AlertNormalizer:
 class IngestionAgent(BaseAgent):
     """Ingestion agent for pulling alerts from various sources."""
 
-    def __init__(self, config: Dict[str, Any]):
-        """Initialize the ingestion agent."""
+    def __init__(self, config: Dict[str, Any], redis_storage=None):
+        """Initialize the ingestion agent.
+
+        Args:
+            config: Agent configuration
+            redis_storage: Optional RedisStorage instance for distributed dedup/rate limiting
+        """
         super().__init__(config)
         self.logger = logging.getLogger(__name__)
 
@@ -415,17 +434,20 @@ class IngestionAgent(BaseAgent):
         # Source configuration
         self.enabled_sources = self.get_config("enabled_sources", [])
         self.source_priorities = self.get_config("source_priorities", {})
-        
+
         # Rate limiting
         self.rate_limit_enabled = self.get_config("rate_limit_enabled", True)
         self.max_alerts_per_minute = self.get_config("max_alerts_per_minute", 1000)
         self.max_alerts_per_source_minute = self.get_config("max_alerts_per_source_minute", 100)
 
+        # Redis for distributed deduplication and rate limiting (production-ready)
+        self.redis_storage = redis_storage
+
         # Components
         self.plugins: Dict[str, IngestionPlugin] = {}
         self.normalizer = AlertNormalizer()
-        
-        # State tracking
+
+        # State tracking (fallback when Redis unavailable)
         self.seen_alert_hashes: Set[str] = set()
         self.alert_rate_tracker: Dict[str, List[datetime]] = defaultdict(list)
         self.ingestion_stats = {
@@ -438,7 +460,7 @@ class IngestionAgent(BaseAgent):
                 "errors": 0
             })
         }
-        
+
         # Last successful poll times
         self.last_poll_times: Dict[str, datetime] = {}
 
@@ -554,51 +576,49 @@ class IngestionAgent(BaseAgent):
             return await self._create_error_state(state, str(e))
 
     async def _ingest_single_alert(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Ingest a single alert."""
+        """Ingest a single alert.
+
+        Returns only state updates, following LangGraph best practices.
+        """
         raw_alert = state["raw_alert"]
         source = state.get("source", "unknown")
-        
+
         try:
             # Normalize alert
             normalized_alert = self.normalizer.normalize(raw_alert, source)
-            
+
             # Check deduplication
             if self.enable_deduplication:
-                if self._is_duplicate(normalized_alert):
+                if await self._is_duplicate(normalized_alert):
                     self.logger.info(f"Duplicate alert detected: {normalized_alert['id']}")
                     self.ingestion_stats["total_deduplicated"] += 1
                     self.ingestion_stats["by_source"][source]["deduplicated"] += 1
-                    
-                    # Return state indicating duplicate
-                    result_state = state.copy()
-                    result_state.update({
+
+                    # Return only updates (not full state)
+                    return {
                         "ingestion_status": "duplicate",
                         "triage_status": "ingested",
                         "current_node": "ingestion",
                         "metadata": {
-                            **state.get("metadata", {}),
                             "duplicate_detected": True,
                             "original_hash": normalized_alert["alert_hash"]
                         }
-                    })
-                    return result_state
-            
+                    }
+
             # Track as seen
-            self._track_alert(normalized_alert)
-            
+            await self._track_alert(normalized_alert)
+
             # Update stats
             self.ingestion_stats["total_ingested"] += 1
             self.ingestion_stats["by_source"][source]["ingested"] += 1
-            
-            # Build result state
-            result_state = state.copy()
-            result_state.update({
+
+            # Return only updates (not full state)
+            return {
                 "raw_alert": normalized_alert,
                 "ingestion_status": "success",
                 "triage_status": "ingested",
                 "current_node": "ingestion",
                 "enriched_data": {
-                    **state.get("enriched_data", {}),
                     "ingestion_metadata": {
                         "source": source,
                         "ingestion_time": datetime.utcnow().isoformat(),
@@ -607,106 +627,112 @@ class IngestionAgent(BaseAgent):
                     }
                 },
                 "metadata": {
-                    **state.get("metadata", {}),
                     "ingestion_timestamp": datetime.utcnow().isoformat(),
                     "source_system": source
                 }
-            })
-            
-            self.logger.info(f"Successfully ingested alert {normalized_alert['id']} from {source}")
-            return result_state
-            
+            }
+
         except Exception as e:
             self.logger.error(f"Failed to ingest single alert: {e}")
             self.ingestion_stats["total_errors"] += 1
             self.ingestion_stats["by_source"][source]["errors"] += 1
-            return await self._create_error_state(state, str(e))
+            return {
+                "ingestion_status": "error",
+                "triage_status": "ingestion_failed",
+                "current_node": "ingestion",
+                "ingestion_error": str(e),
+                "metadata": {
+                    "ingestion_error": str(e),
+                    "ingestion_timestamp": datetime.utcnow().isoformat()
+                }
+            }
 
     async def _ingest_batch(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Ingest batch of alerts from all sources."""
+        """Ingest batch of alerts from all sources.
+
+        Returns only state updates, following LangGraph best practices.
+        """
         try:
             all_alerts = []
             source_results = {}
-            
+
             # Poll each source
             for source_name, plugin in self.plugins.items():
                 try:
                     # Check rate limits
-                    if not self._check_rate_limit(source_name):
+                    if not await self._check_rate_limit(source_name):
                         self.logger.warning(f"Rate limit exceeded for {source_name}, skipping")
                         continue
-                    
+
                     # Get time range for polling
                     since_time = self._get_last_poll_time(source_name)
-                    
+
                     # Fetch alerts from source
                     self.logger.debug(f"Polling {source_name} for alerts since {since_time}")
                     raw_alerts = await plugin.fetch_alerts(
                         since=since_time,
                         limit=self.batch_size
                     )
-                    
+
                     # Normalize alerts
                     normalized_alerts = []
                     deduplicated_count = 0
-                    
+
                     for raw_alert in raw_alerts:
                         try:
                             normalized = self.normalizer.normalize(raw_alert, source_name)
-                            
+
                             # Check deduplication
-                            if self.enable_deduplication and self._is_duplicate(normalized):
+                            if self.enable_deduplication and await self._is_duplicate(normalized):
                                 deduplicated_count += 1
                                 continue
-                            
+
                             # Track and add
-                            self._track_alert(normalized)
+                            await self._track_alert(normalized)
                             normalized_alerts.append(normalized)
-                            
+
                         except Exception as e:
                             self.logger.error(f"Failed to normalize alert from {source_name}: {e}")
                             self.ingestion_stats["by_source"][source_name]["errors"] += 1
-                    
+
                     # Update stats
                     self.ingestion_stats["total_ingested"] += len(normalized_alerts)
                     self.ingestion_stats["total_deduplicated"] += deduplicated_count
                     self.ingestion_stats["by_source"][source_name]["ingested"] += len(normalized_alerts)
                     self.ingestion_stats["by_source"][source_name]["deduplicated"] += deduplicated_count
-                    
+
                     # Store results
                     source_results[source_name] = {
                         "fetched": len(raw_alerts),
                         "normalized": len(normalized_alerts),
                         "deduplicated": deduplicated_count
                     }
-                    
+
                     all_alerts.extend(normalized_alerts)
-                    
+
                     # Update last poll time
                     self.last_poll_times[source_name] = datetime.utcnow()
-                    
+
                     self.logger.info(
                         f"Polled {source_name}: {len(raw_alerts)} fetched, "
                         f"{len(normalized_alerts)} ingested, {deduplicated_count} deduplicated"
                     )
-                    
+
                 except Exception as e:
                     self.logger.error(f"Failed to poll {source_name}: {e}")
                     self.ingestion_stats["by_source"][source_name]["errors"] += 1
                     source_results[source_name] = {"error": str(e)}
-            
-            # Sort by priority and timestamp
+
+            # Sort by priority and timestamp (FIXED: proper sorting)
             all_alerts.sort(
                 key=lambda a: (
-                    self.source_priorities.get(a["source"], 999),
-                    a["timestamp"]
-                ),
-                reverse=True
+                    self.source_priorities.get(a["source"], 999),  # Lower priority = process first
+                    -self._timestamp_to_unix(a["timestamp"])  # Negative for newest first
+                )
             )
-            
-            # Build result state
-            result_state = state.copy()
-            result_state.update({
+
+            # Return only updates (not full state)
+            return {
                 "ingestion_status": "batch_complete",
                 "triage_status": "ingested",
                 "current_node": "ingestion",
@@ -718,44 +744,87 @@ class IngestionAgent(BaseAgent):
                 },
                 "ingested_alerts": all_alerts[:self.max_concurrent_alerts],  # Limit concurrent processing
                 "metadata": {
-                    **state.get("metadata", {}),
                     "batch_ingestion": True,
                     "ingestion_stats": self.ingestion_stats
                 }
-            })
-            
-            self.logger.info(
-                f"Batch ingestion complete: {len(all_alerts)} alerts from "
-                f"{len(source_results)} sources"
-            )
-            
-            return result_state
-            
+            }
+
         except Exception as e:
             self.logger.error(f"Batch ingestion failed: {e}")
             self.ingestion_stats["total_errors"] += 1
-            return await self._create_error_state(state, str(e))
+            return {
+                "ingestion_status": "error",
+                "triage_status": "ingestion_failed",
+                "current_node": "ingestion",
+                "ingestion_error": str(e),
+                "metadata": {
+                    "ingestion_error": str(e),
+                    "ingestion_timestamp": datetime.utcnow().isoformat()
+                }
+            }
 
-    def _is_duplicate(self, alert: Dict[str, Any]) -> bool:
-        """Check if alert is a duplicate."""
+    async def _is_duplicate(self, alert: Dict[str, Any]) -> bool:
+        """Check if alert is a duplicate using Redis (distributed) or in-memory (fallback).
+
+        Args:
+            alert: Normalized alert dictionary with alert_hash
+
+        Returns:
+            True if alert is duplicate, False otherwise
+        """
         alert_hash = alert.get("alert_hash", "")
         if not alert_hash:
             return False
-        
+
+        # Use Redis if available (production-ready, distributed)
+        if self.redis_storage:
+            try:
+                return await self.redis_storage.is_duplicate_alert(
+                    alert_hash,
+                    ttl_hours=self.deduplication_window_hours
+                )
+            except Exception as e:
+                self.logger.warning(f"Redis deduplication check failed, using fallback: {e}")
+                # Fall through to in-memory check
+
+        # Fallback to in-memory (for development/testing)
         return alert_hash in self.seen_alert_hashes
 
-    def _track_alert(self, alert: Dict[str, Any]):
-        """Track alert for deduplication."""
+    async def _track_alert(self, alert: Dict[str, Any]):
+        """Track alert for deduplication using Redis (distributed) or in-memory (fallback).
+
+        Args:
+            alert: Normalized alert dictionary with alert_hash
+        """
         alert_hash = alert.get("alert_hash", "")
-        if alert_hash:
-            self.seen_alert_hashes.add(alert_hash)
-            
-            # Track for rate limiting
-            source = alert.get("source", "unknown")
-            self.alert_rate_tracker[source].append(datetime.utcnow())
-            
-            # Cleanup old entries (beyond deduplication window)
-            self._cleanup_tracking()
+        alert_id = alert.get("id", "unknown")
+
+        if not alert_hash:
+            return
+
+        # Use Redis if available (production-ready, distributed)
+        if self.redis_storage:
+            try:
+                await self.redis_storage.track_alert_hash(
+                    alert_hash,
+                    alert_id,
+                    ttl_hours=self.deduplication_window_hours
+                )
+                # No need for manual cleanup - Redis handles TTL automatically
+                return
+            except Exception as e:
+                self.logger.warning(f"Redis alert tracking failed, using fallback: {e}")
+                # Fall through to in-memory tracking
+
+        # Fallback to in-memory (for development/testing)
+        self.seen_alert_hashes.add(alert_hash)
+
+        # Track for rate limiting
+        source = alert.get("source", "unknown")
+        self.alert_rate_tracker[source].append(datetime.utcnow())
+
+        # Cleanup old entries (beyond deduplication window)
+        self._cleanup_tracking()
 
     def _cleanup_tracking(self):
         """Cleanup old tracking data."""
@@ -770,51 +839,94 @@ class IngestionAgent(BaseAgent):
             if not self.alert_rate_tracker[source]:
                 del self.alert_rate_tracker[source]
 
-    def _check_rate_limit(self, source: str) -> bool:
-        """Check if rate limit allows ingestion."""
+    async def _check_rate_limit(self, source: str) -> bool:
+        """Check if rate limit allows ingestion using Redis (distributed) or in-memory (fallback).
+
+        Returns True if ingestion is allowed, False if rate limit exceeded.
+        """
         if not self.rate_limit_enabled:
             return True
-        
+
+        # Use Redis if available (production-ready, distributed)
+        if self.redis_storage:
+            try:
+                # Check source-specific rate limit
+                source_allowed = await self.redis_storage.check_rate_limit(
+                    source=source,
+                    max_per_minute=self.max_alerts_per_source_minute,
+                    window_seconds=60
+                )
+
+                if not source_allowed:
+                    self.logger.warning(
+                        f"Source rate limit exceeded for {source}: "
+                        f"max {self.max_alerts_per_source_minute}/min"
+                    )
+                    return False
+
+                # Check global rate limit
+                global_allowed = await self.redis_storage.check_rate_limit(
+                    source="global",
+                    max_per_minute=self.max_alerts_per_minute,
+                    window_seconds=60
+                )
+
+                if not global_allowed:
+                    self.logger.warning(
+                        f"Global rate limit exceeded: max {self.max_alerts_per_minute}/min"
+                    )
+                    return False
+
+                return True
+
+            except Exception as e:
+                self.logger.warning(f"Redis rate limit check failed, using fallback: {e}")
+                # Fall through to in-memory fallback
+
+        # Fallback to in-memory rate limiting (for development/testing)
         now = datetime.utcnow()
         one_minute_ago = now - timedelta(minutes=1)
-        
+
         # Count alerts in last minute
         recent_alerts = [
             ts for ts in self.alert_rate_tracker.get(source, [])
             if ts > one_minute_ago
         ]
-        
+
         # Check source-specific limit
         if len(recent_alerts) >= self.max_alerts_per_source_minute:
+            self.logger.warning(
+                f"[Fallback] Source rate limit exceeded for {source}: "
+                f"{len(recent_alerts)}/{self.max_alerts_per_source_minute} per minute"
+            )
             return False
-        
+
         # Check global limit
         total_recent = sum(
             len([ts for ts in timestamps if ts > one_minute_ago])
             for timestamps in self.alert_rate_tracker.values()
         )
-        
-        return total_recent < self.max_alerts_per_minute
+
+        if total_recent >= self.max_alerts_per_minute:
+            self.logger.warning(
+                f"[Fallback] Global rate limit exceeded: "
+                f"{total_recent}/{self.max_alerts_per_minute} per minute"
+            )
+            return False
+
+        return True
 
     def _get_last_poll_time(self, source: str) -> Optional[datetime]:
         """Get last successful poll time for source."""
         return self.last_poll_times.get(source)
 
-    async def _create_error_state(self, state: Dict[str, Any], error: str) -> Dict[str, Any]:
-        """Create error state."""
-        result_state = state.copy()
-        result_state.update({
-            "ingestion_status": "error",
-            "triage_status": "ingested",
-            "current_node": "ingestion",
-            "ingestion_error": error,
-            "metadata": {
-                **state.get("metadata", {}),
-                "ingestion_error": error,
-                "ingestion_timestamp": datetime.utcnow().isoformat()
-            }
-        })
-        return result_state
+    def _timestamp_to_unix(self, timestamp_str: str) -> float:
+        """Convert ISO timestamp string to unix timestamp for sorting."""
+        try:
+            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            return dt.timestamp()
+        except (ValueError, AttributeError):
+            return 0.0
 
     async def validate_input(self, state: Dict[str, Any]) -> bool:
         """Validate input state."""
@@ -862,25 +974,55 @@ class IngestionAgent(BaseAgent):
             self.logger.error(f"Error during ingestion agent cleanup: {e}")
 
     async def health_check(self) -> bool:
-        """Health check for ingestion agent."""
+        """Enhanced health check for ingestion agent with detailed status reporting.
+
+        Returns True if at least one plugin is healthy, False otherwise.
+        Logs detailed status for each component.
+        """
         try:
             if not self.initialized:
+                self.logger.warning("Ingestion agent health check: not initialized")
                 return False
 
-            # Check if we have any healthy plugins
+            # Check if we have any healthy plugins with detailed status
             healthy_count = 0
-            for plugin in self.plugins.values():
+            total_count = len(self.plugins)
+            plugin_statuses = {}
+
+            for plugin_name, plugin in self.plugins.items():
                 try:
-                    if await plugin.health_check():
+                    is_healthy = await plugin.health_check()
+                    plugin_statuses[plugin_name] = "healthy" if is_healthy else "unhealthy"
+                    if is_healthy:
                         healthy_count += 1
-                except:
-                    pass
+                except Exception as e:
+                    # Log but continue checking other plugins
+                    plugin_statuses[plugin_name] = f"error: {str(e)}"
+                    self.logger.debug(
+                        f"Plugin '{plugin_name}' health check failed: {e}"
+                    )
+
+            # Log detailed status
+            is_healthy = healthy_count > 0
+            self.logger.info(
+                f"Ingestion agent health check: {healthy_count}/{total_count} plugins healthy - "
+                f"Status: {'HEALTHY' if is_healthy else 'UNHEALTHY'} | "
+                f"Details: {plugin_statuses}"
+            )
+
+            # Additional diagnostics
+            if self.redis_storage:
+                try:
+                    redis_healthy = await self.redis_storage.health_check()
+                    self.logger.debug(f"Redis storage: {'HEALTHY' if redis_healthy else 'UNHEALTHY'}")
+                except Exception as e:
+                    self.logger.debug(f"Redis storage health check failed: {e}")
 
             # Consider healthy if at least one plugin is working
-            return healthy_count > 0
+            return is_healthy
 
         except Exception as e:
-            self.logger.error(f"Health check failed: {e}")
+            self.logger.error(f"Health check failed with exception: {e}")
             return False
 
     def get_metrics(self) -> Dict[str, Any]:
