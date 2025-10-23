@@ -21,7 +21,7 @@ export const AlertProvider = ({ children }) => {
   const fetchData = async () => {
     try {
       const [alertsResponse, statsResponse] = await Promise.all([
-        fetch(`${API_BASE}/alerts?limit=10`),
+        fetch(`${API_BASE}/alerts?limit=100`),
         fetch(`${API_BASE}/dashboard/stats`)
       ]);
 
@@ -31,11 +31,11 @@ export const AlertProvider = ({ children }) => {
       // EXACTLY like HTML: map alerts
       const mappedAlerts = alertsData.map(x => ({
         id: x.alert_id,
-        severity: 'high',
+        severity: x.severity || 'high',
         timestamp: new Date(x.created_at),
         status: x.status,
         confidence: x.confidence_score,
-        description: 'Security alert from database'
+        description: x.description || 'Security alert'
       }));
 
       setAlerts(mappedAlerts);
