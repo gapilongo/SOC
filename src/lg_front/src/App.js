@@ -8,6 +8,7 @@ import ProtectedRoute from './components/common/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Alerts from './pages/Alerts';
+import Escalations from './pages/Escalations';
 import Analytics from './pages/Analytics';
 import Agents from './pages/Agents';
 import Settings from './pages/Settings';
@@ -36,6 +37,7 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="alerts" element={<Alerts />} />
+              <Route path="escalations" element={<Escalations />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="agents" element={<Agents />} />
               <Route path="settings" element={<Settings />} />

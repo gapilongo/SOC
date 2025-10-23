@@ -1,11 +1,12 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  AlertCircle, 
-  BarChart3, 
-  Cpu, 
-  Settings, 
+import {
+  LayoutDashboard,
+  AlertCircle,
+  AlertTriangle,
+  BarChart3,
+  Cpu,
+  Settings,
   Shield,
   ChevronLeft,
   ChevronRight
@@ -15,6 +16,7 @@ const Sidebar = ({ isOpen, onToggle }) => {
   const menuItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, badge: null },
     { name: 'Alerts', path: '/alerts', icon: AlertCircle, badge: 'live' },
+    { name: 'Escalations', path: '/escalations', icon: AlertTriangle, badge: 'P1' },
     { name: 'Analytics', path: '/analytics', icon: BarChart3, badge: null },
     { name: 'Agents', path: '/agents', icon: Cpu, badge: null },
     { name: 'Settings', path: '/settings', icon: Settings, badge: null }
