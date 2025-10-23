@@ -213,6 +213,39 @@ export const analyticsAPI = {
 };
 
 // ============================================
+// INGESTION API
+// ============================================
+export const ingestionAPI = {
+  /**
+   * Get ingestion status and statistics
+   */
+  getStatus: () => {
+    return apiClient.get('/ingestion/status');
+  },
+
+  /**
+   * Trigger manual ingestion poll
+   */
+  triggerPoll: () => {
+    return apiClient.post('/ingestion/control', { action: 'trigger_poll' });
+  },
+
+  /**
+   * Get ingestion sources
+   */
+  getSources: () => {
+    return apiClient.get('/ingestion/sources');
+  },
+
+  /**
+   * Get ingestion statistics
+   */
+  getStats: () => {
+    return apiClient.get('/ingestion/stats');
+  },
+};
+
+// ============================================
 // HEALTH API
 // ============================================
 export const healthAPI = {
