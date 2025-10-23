@@ -20,6 +20,7 @@ from lg_sotf.agents.correlation.base import CorrelationAgent
 from lg_sotf.agents.human_loop.base import HumanLoopAgent
 from lg_sotf.agents.ingestion.base import IngestionAgent
 from lg_sotf.agents.registry import agent_registry
+from lg_sotf.agents.response.base import ResponseAgent
 from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.core.config.manager import ConfigManager
 from lg_sotf.core.exceptions import WorkflowError
@@ -156,6 +157,7 @@ class WorkflowEngine:
             ("correlation", CorrelationAgent, "correlation_instance"),
             ("analysis", AnalysisAgent, "analysis_instance"),
             ("human_loop", HumanLoopAgent, "human_loop_instance"),
+            ("response", ResponseAgent, "response_instance"),
         ]
 
         for agent_type, agent_class, instance_name in agents_config:
@@ -193,6 +195,16 @@ class WorkflowEngine:
                     # Register the instance manually
                     agent_registry._agent_instances[instance_name] = agent_instance
                     self.logger.info(f"Created human loop agent with dependencies")
+                elif agent_type == "response":
+                    # Create response agent with tool orchestrator dependency
+                    config = self.config.get_agent_config(agent_type)
+                    agent_instance = ResponseAgent(
+                        config=config,
+                        tool_orchestrator=self._get_tool_orchestrator()
+                    )
+                    # Register the instance manually
+                    agent_registry._agent_instances[instance_name] = agent_instance
+                    self.logger.info(f"Created response agent with tool orchestrator")
                 else:
                     agent_registry.create_agent(
                         instance_name, agent_type, self.config.get_agent_config(agent_type)
@@ -1085,18 +1097,55 @@ class WorkflowEngine:
             }
 
     async def _execute_response(self, state: WorkflowState) -> Dict[str, Any]:
-        """Execute response - placeholder.
+        """Execute automated response actions.
 
         Returns only state updates, following LangGraph best practices.
         """
-        return {
-            "enriched_data": {
-                **state["enriched_data"],
-                "response_actions": ["quarantine", "block_ip"]
-            },
-            "current_node": "response",
-            "triage_status": "responded"
-        }
+        try:
+            # Prevent duplicate execution with agent-specific lock
+            async with self._agent_locks['response']:
+                agent_exec_key = f"response_{state['alert_id']}"
+
+                # Check if already executed in this workflow
+                if state.get("agent_executions", {}).get(agent_exec_key, {}).get("status") == "completed":
+                    self.logger.info(f"Response already executed for {state['alert_id']}")
+                    return {}
+
+                # Execute response agent
+                agent = self.agents.get("response")
+                if not agent:
+                    self.logger.warning("Response agent not available")
+                    return {
+                        "processing_notes": ["Response agent not available"],
+                        "current_node": "response",
+                        "triage_status": "response_skipped"
+                    }
+
+                # Convert state to agent format
+                agent_input = self._convert_to_agent_format(state)
+
+                # Execute agent
+                agent_result = await agent.execute(agent_input)
+
+                # Return updates with execution tracking
+                return {
+                    **agent_result,
+                    "agent_executions": {
+                        **state.get("agent_executions", {}),
+                        agent_exec_key: {
+                            "executed_at": datetime.utcnow().isoformat(),
+                            "status": "completed"
+                        }
+                    }
+                }
+
+        except Exception as e:
+            self.logger.error(f"Response execution failed: {e}", exc_info=True)
+            return {
+                "processing_notes": [f"Response execution failed: {str(e)}"],
+                "current_node": "response",
+                "triage_status": "response_failed"
+            }
 
     async def _execute_learning(self, state: WorkflowState) -> Dict[str, Any]:
         """Execute learning - placeholder.

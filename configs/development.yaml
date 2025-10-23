@@ -131,6 +131,18 @@ agents:
     max_escalation_level: 3
     response_timeout_hours: 24
 
+  response:
+    enabled: true
+    dry_run_mode: true  # Set to false in production to execute real actions
+    auto_approve_low_risk: true
+    auto_approve_medium_risk: false  # Require approval for medium risk actions
+    auto_approve_high_risk: false  # Require approval for high risk actions
+    max_parallel_actions: 3
+    action_timeout: 60
+    execution_timeout: 120
+    max_retries: 3
+    retry_delay: 2.0
+
 # Tool configuration
 tools:
   siem:
