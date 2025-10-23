@@ -353,33 +353,44 @@ class FeedbackHandler:
         }
 
     async def get_triage_accuracy(self) -> Dict[str, Any]:
-        """Get triage accuracy statistics.
+        """Get triage accuracy statistics from PostgreSQL.
 
         Returns:
             Triage accuracy stats
         """
-        triage_key = "triage_accuracy"
-        stats_raw = await self.redis_storage.redis_client.hgetall(triage_key)
+        # Query PostgreSQL for feedback counts
+        query = """
+        SELECT
+            COUNT(*) FILTER (WHERE triage_correct = true) as correct,
+            COUNT(*) FILTER (WHERE triage_correct = false) as incorrect,
+            COUNT(*) as total
+        FROM analyst_feedback
+        WHERE triage_correct IS NOT NULL
+        """
 
-        correct = 0
-        incorrect = 0
+        row = await self.state_manager.storage.pool.fetchrow(query)
 
-        for field_bytes, count_bytes in stats_raw.items():
-            field = field_bytes.decode('utf-8')
-            count = int(count_bytes.decode('utf-8'))
-            if field == "correct":
-                correct = count
-            elif field == "incorrect":
-                incorrect = count
+        if not row or row['total'] == 0:
+            return {
+                "total_assessments": 0,
+                "correct": 0,
+                "incorrect": 0,
+                "accuracy_percentage": 0,
+                "accuracy_rate": None
+            }
 
-        total = correct + incorrect
-        accuracy = round((correct / total) * 100, 2) if total > 0 else 0
+        correct = row['correct']
+        incorrect = row['incorrect']
+        total = row['total']
+        accuracy_percentage = round((correct / total) * 100, 2) if total > 0 else 0
+        accuracy_rate = correct / total if total > 0 else 0
 
         return {
             "total_assessments": total,
             "correct": correct,
             "incorrect": incorrect,
-            "accuracy_percentage": accuracy,
+            "accuracy_percentage": accuracy_percentage,
+            "accuracy_rate": accuracy_rate
         }
 
     async def get_analyst_performance(self, analyst_username: str) -> Dict[str, Any]:

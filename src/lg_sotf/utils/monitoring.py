@@ -670,15 +670,19 @@ class SOCDashboardAPI:
                 if not human_loop_agent:
                     raise HTTPException(status_code=503, detail="Human loop agent not available")
 
+                # Get queue stats from PostgreSQL
                 queue_stats = await human_loop_agent.get_queue_stats()
-                decision_stats = await human_loop_agent.get_decision_stats()
-                triage_accuracy = await human_loop_agent.get_triage_accuracy()
 
-                return {
-                    "queue": queue_stats,
-                    "decisions": decision_stats,
-                    "triage_accuracy": triage_accuracy
-                }
+                # Try to get decision stats and accuracy, but don't fail if not available
+                try:
+                    decision_stats = await human_loop_agent.get_decision_stats()
+                    triage_accuracy = await human_loop_agent.get_triage_accuracy()
+                    if triage_accuracy and 'accuracy_rate' in triage_accuracy:
+                        queue_stats['accuracy_rate'] = triage_accuracy['accuracy_rate']
+                except Exception as e:
+                    self.logger.warning(f"Could not get decision stats: {e}")
+
+                return queue_stats
 
             except HTTPException:
                 raise

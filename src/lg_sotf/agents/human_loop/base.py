@@ -319,12 +319,15 @@ class HumanLoopAgent(BaseAgent):
                 "escalation_id": e.escalation_id,
                 "alert_id": e.alert_id,
                 "level": e.level.value,
+                "status": e.status.value,
                 "priority": e.priority,
                 "reason": e.reason.value,
                 "alert_summary": e.alert_summary,
                 "threat_score": e.threat_score,
                 "correlations_count": e.correlations_count,
                 "created_at": e.created_at.isoformat(),
+                "assigned_to": e.assigned_to,
+                "assigned_at": e.assigned_at.isoformat() if e.assigned_at else None,
                 "sla_deadline": e.sla_deadline.isoformat() if e.sla_deadline else None,
             }
             for e in escalations

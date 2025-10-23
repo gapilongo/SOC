@@ -9,6 +9,7 @@ This module handles:
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
@@ -122,6 +123,7 @@ class EscalationManager:
         self.state_manager = state_manager
         self.redis_storage = redis_storage
         self.audit_logger = audit_logger
+        self.logger = logging.getLogger(__name__)
 
     async def create_escalation(
         self,
@@ -365,33 +367,81 @@ class EscalationManager:
             limit: Maximum number to return
 
         Returns:
-            List of pending escalations (sorted by priority descending)
+            List of active escalations (sorted by priority descending)
         """
+        # Query PostgreSQL directly for all active escalations
+        # Show PENDING, ASSIGNED, ESCALATED, and EXPIRED (not RESOLVED or CANCELLED)
         if level:
-            levels = [level]
+            query = """
+            SELECT
+                escalation_id, alert_id, workflow_instance_id,
+                level, status, reason, priority,
+                alert_summary, triage_confidence, threat_score,
+                correlations_count, analysis_notes,
+                created_at, assigned_at, reviewed_at, decided_at, sla_deadline,
+                assigned_to, assigned_tier,
+                analyst_decision, analyst_notes,
+                escalated_from, escalation_count
+            FROM escalations
+            WHERE status IN ('pending', 'assigned', 'escalated', 'expired', 'in_review')
+                AND level = $1
+            ORDER BY priority DESC, created_at ASC
+            LIMIT $2
+            """
+            rows = await self.state_manager.storage.pool.fetch(query, level.value, limit)
         else:
-            levels = [EscalationLevel.L1, EscalationLevel.L2, EscalationLevel.L3]
+            query = """
+            SELECT
+                escalation_id, alert_id, workflow_instance_id,
+                level, status, reason, priority,
+                alert_summary, triage_confidence, threat_score,
+                correlations_count, analysis_notes,
+                created_at, assigned_at, reviewed_at, decided_at, sla_deadline,
+                assigned_to, assigned_tier,
+                analyst_decision, analyst_notes,
+                escalated_from, escalation_count
+            FROM escalations
+            WHERE status IN ('pending', 'assigned', 'escalated', 'expired', 'in_review')
+            ORDER BY priority DESC, created_at ASC
+            LIMIT $1
+            """
+            rows = await self.state_manager.storage.pool.fetch(query, limit)
 
         escalations = []
+        for row in rows:
+            try:
+                escalation = Escalation(
+                    escalation_id=row['escalation_id'],
+                    alert_id=row['alert_id'],
+                    workflow_instance_id=row['workflow_instance_id'],
+                    level=EscalationLevel(row['level']),
+                    status=EscalationStatus(row['status']),
+                    reason=EscalationReason(row['reason']),
+                    priority=row['priority'],
+                    alert_summary=row['alert_summary'],
+                    triage_confidence=row['triage_confidence'],
+                    threat_score=row['threat_score'],
+                    correlations_count=row['correlations_count'],
+                    enrichment_data={},  # Load separately if needed
+                    analysis_notes=row['analysis_notes'],
+                    created_at=row['created_at'],
+                    assigned_at=row['assigned_at'],
+                    reviewed_at=row['reviewed_at'],
+                    decided_at=row['decided_at'],
+                    sla_deadline=row['sla_deadline'],
+                    assigned_to=row['assigned_to'],
+                    assigned_tier=EscalationLevel(row['assigned_tier']) if row['assigned_tier'] else None,
+                    analyst_decision=row['analyst_decision'],
+                    analyst_notes=row['analyst_notes'],
+                    escalated_from=row['escalated_from'],
+                    escalation_count=row['escalation_count'],
+                )
+                escalations.append(escalation)
+            except Exception as e:
+                self.logger.error(f"Failed to parse escalation {row['escalation_id']}: {e}")
+                continue
 
-        for lvl in levels:
-            queue_key = f"escalation_queue:{lvl.value}"
-
-            # Get top N escalation IDs from queue (highest priority first)
-            escalation_ids = await self.redis_storage.redis_client.zrevrange(
-                queue_key, 0, limit - 1
-            )
-
-            for esc_id_bytes in escalation_ids:
-                esc_id = esc_id_bytes.decode('utf-8')
-                escalation = await self._load_escalation(esc_id)
-                if escalation and escalation.status == EscalationStatus.PENDING:
-                    escalations.append(escalation)
-
-        # Sort by priority descending
-        escalations.sort(key=lambda e: e.priority, reverse=True)
-
-        return escalations[:limit]
+        return escalations
 
     async def _load_escalation(self, escalation_id: str) -> Optional[Escalation]:
         """Load escalation from PostgreSQL.
@@ -588,20 +638,84 @@ class EscalationManager:
         await self._update_escalation_status(escalation)
 
     async def get_queue_stats(self) -> Dict[str, Any]:
-        """Get queue statistics.
+        """Get queue statistics from PostgreSQL.
 
         Returns:
-            Queue stats by level
+            Queue stats by status with additional metrics
         """
-        stats = {}
+        # Query PostgreSQL for actual counts by status
+        query_active = """
+        SELECT
+            status,
+            COUNT(*) as count
+        FROM escalations
+        WHERE status IN ('pending', 'assigned', 'escalated', 'expired', 'in_review')
+        GROUP BY status
+        """
 
-        for level in [EscalationLevel.L1, EscalationLevel.L2, EscalationLevel.L3]:
-            queue_key = f"escalation_queue:{level.value}"
-            count = await self.redis_storage.redis_client.zcard(queue_key)
+        rows = await self.state_manager.storage.pool.fetch(query_active)
 
-            stats[level.value] = {
-                "pending_count": count,
-                "sla_minutes": self.SLA_DEADLINES[level],
-            }
+        # Count by status
+        pending_count = 0
+        assigned_count = 0
+        in_review_count = 0
+        escalated_count = 0
+        expired_count = 0
 
-        return stats
+        for row in rows:
+            if row['status'] == 'pending':
+                pending_count = row['count']
+            elif row['status'] == 'assigned':
+                assigned_count = row['count']
+            elif row['status'] == 'in_review':
+                in_review_count = row['count']
+            elif row['status'] == 'escalated':
+                escalated_count = row['count']
+            elif row['status'] == 'expired':
+                expired_count = row['count']
+
+        # Count resolved today
+        query_resolved = """
+        SELECT COUNT(*) as count
+        FROM escalations
+        WHERE status IN ('resolved', 'cancelled')
+            AND decided_at >= CURRENT_DATE
+        """
+        resolved_row = await self.state_manager.storage.pool.fetchrow(query_resolved)
+        resolved_today = resolved_row['count'] if resolved_row else 0
+
+        # Calculate average response time (time from created to assigned)
+        query_response_time = """
+        SELECT AVG(EXTRACT(EPOCH FROM (assigned_at - created_at)) / 60) as avg_minutes
+        FROM escalations
+        WHERE assigned_at IS NOT NULL
+            AND assigned_at >= CURRENT_DATE - INTERVAL '7 days'
+        """
+        response_row = await self.state_manager.storage.pool.fetchrow(query_response_time)
+        avg_response_time = float(response_row['avg_minutes']) if response_row and response_row['avg_minutes'] else None
+
+        # Query for escalations with assigned analyst (regardless of status)
+        query_assigned_to_analyst = """
+        SELECT COUNT(*) as count
+        FROM escalations
+        WHERE assigned_to IS NOT NULL
+            AND status NOT IN ('resolved', 'cancelled', 'decided')
+        """
+        assigned_to_analyst_row = await self.state_manager.storage.pool.fetchrow(query_assigned_to_analyst)
+        total_assigned_to_analyst = assigned_to_analyst_row['count'] if assigned_to_analyst_row else 0
+
+        # Calculate total needing attention (pending + escalated + expired without assignment)
+        expired_unassigned = expired_count - total_assigned_to_analyst if expired_count > total_assigned_to_analyst else 0
+        needs_attention = pending_count + escalated_count + expired_unassigned
+        # Total in review = all escalations currently assigned to an analyst
+        total_in_review = total_assigned_to_analyst
+
+        return {
+            "total_pending": needs_attention,  # All unclaimed (pending + escalated + expired)
+            "total_in_review": total_in_review,  # Claimed and being worked on (assigned + in_review)
+            "total_escalated": escalated_count,  # Moved to higher tier
+            "total_expired": expired_count,  # SLA exceeded
+            "resolved_today": resolved_today,
+            "avg_response_time": avg_response_time,
+            "accuracy_rate": None  # Will be calculated from feedback data
+        }
