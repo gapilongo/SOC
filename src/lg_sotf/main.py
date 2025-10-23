@@ -29,11 +29,12 @@ from lg_sotf.storage.redis import RedisStorage
 class LG_SOTFApplication:
     """Main application class for LG-SOTF."""
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, setup_signal_handlers: bool = True):
         """Initialize the application.
-        
+
         Args:
             config_path: Path to configuration file
+            setup_signal_handlers: Whether to setup signal handlers (disable when running under uvicorn)
         """
         self.config_path = config_path
         self.config_manager = None
@@ -43,22 +44,23 @@ class LG_SOTFApplication:
         self.metrics = None
         self.postgres_storage = None
         self.redis_storage = None
-        
+
         # Application state
         self.running = False
         self.initialized = False
-        
+
         # Task tracking for graceful shutdown
         self._active_tasks: Set[asyncio.Task] = set()
         self._shutdown_event = asyncio.Event()
-        
+
         # Ingestion tracking
         self._last_ingestion_poll: Optional[datetime] = None
         self._last_health_check: Optional[datetime] = None
         self._ingestion_lock = asyncio.Lock()
-        
-        # Setup signal handlers
-        self._setup_signal_handlers()
+
+        # Setup signal handlers (only when not running under uvicorn)
+        if setup_signal_handlers:
+            self._setup_signal_handlers()
     
     def _setup_signal_handlers(self):
         """Setup signal handlers for graceful shutdown."""
@@ -66,8 +68,14 @@ class LG_SOTFApplication:
             """Handle shutdown signals."""
             logging.info(f"Received signal {signum}, initiating graceful shutdown...")
             self.running = False
-            self._shutdown_event.set()
-        
+            # Use call_soon_threadsafe to safely set the event from signal handler
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(self._shutdown_event.set)
+            except RuntimeError:
+                # If no loop is running, just set it directly (shouldn't happen in normal flow)
+                self._shutdown_event.set()
+
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
     
@@ -226,8 +234,9 @@ class LG_SOTFApplication:
     
     async def _health_check_loop(self):
         """Periodic health check loop.
-        
+
         Performs system health checks at regular intervals.
+        Responsive to shutdown signals.
         """
         try:
             while self.running:
@@ -238,10 +247,16 @@ class LG_SOTFApplication:
                 except Exception as e:
                     logging.error(f"Error in health check loop: {e}", exc_info=True)
                     self.metrics.increment_counter("health_check_errors")
-                
-                # Wait before next health check
-                await asyncio.sleep(60)
-                
+
+                # Wait before next health check, but wake up on shutdown
+                try:
+                    await asyncio.wait_for(self._shutdown_event.wait(), timeout=60)
+                    # If we get here, shutdown was triggered
+                    break
+                except asyncio.TimeoutError:
+                    # Timeout is normal, continue to next health check
+                    pass
+
         except asyncio.CancelledError:
             logging.info("Health check loop cancelled")
     

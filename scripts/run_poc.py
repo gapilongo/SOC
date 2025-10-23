@@ -45,17 +45,17 @@ class POCRunner:
 
         # Get ingestion agent
         ingestion_agent = self.app.workflow_engine.agents.get("ingestion")
-        
+
         if not ingestion_agent:
             print("❌ Ingestion agent not initialized")
             return
-        
+
         # Poll for alerts
         print("\n📥 Polling for alerts...")
         ingested_alerts = await ingestion_agent.poll_sources()
-        
+
         print(f"✅ Found {len(ingested_alerts)} alerts to process\n")
-        
+
         # Process each alert through workflow
         for i, alert in enumerate(ingested_alerts, 1):
             print(f"{'='*60}")
@@ -65,25 +65,34 @@ class POCRunner:
             print(f"   Source: {alert['source']}")
             print(f"   Severity: {alert['severity']}")
             print(f"   Title: {alert.get('title', 'N/A')}")
-            
+
             try:
-                # Process through workflow
-                result = await self.app.workflow_engine.execute_workflow(
-                    alert["id"],
-                    alert
+                # Process through workflow with timeout to allow cancellation
+                result = await asyncio.wait_for(
+                    self.app.workflow_engine.execute_workflow(
+                        alert["id"],
+                        alert
+                    ),
+                    timeout=300  # 5 minute timeout per alert
                 )
-                
+
                 await self._display_results(alert['id'], result)
-                
+
+            except asyncio.TimeoutError:
+                print(f"⏱️  Alert {alert['id']} processing timed out")
+                continue
+            except asyncio.CancelledError:
+                print(f"\n⏹️  Alert {alert['id']} processing cancelled")
+                raise  # Re-raise to propagate cancellation
             except Exception as e:
                 print(f"❌ Failed to process alert {alert['id']}: {e}")
                 import traceback
                 traceback.print_exc()
                 continue
-        
+
         print(f"\n{'='*60}")
         print("🎉 POC completed!")
-        
+
         # Show summary
         await self._show_summary(len(ingested_alerts))
 
@@ -175,6 +184,7 @@ class POCRunner:
 async def main():
     """Main POC runner."""
     import argparse
+    import signal
 
     parser = argparse.ArgumentParser(description="LG-SOTF POC Runner")
     parser.add_argument(
@@ -202,9 +212,24 @@ async def main():
     # Create and run POC
     poc_runner = POCRunner(config_path=args.config)
 
+    # Setup signal handling to cancel tasks properly
+    loop = asyncio.get_running_loop()
+    main_task = asyncio.current_task()
+
+    def signal_handler(signum):
+        print(f"\n⏹️  Received interrupt signal, shutting down gracefully...")
+        if main_task:
+            main_task.cancel()
+
+    # Add signal handlers
+    loop.add_signal_handler(signal.SIGINT, lambda: signal_handler(signal.SIGINT))
+    loop.add_signal_handler(signal.SIGTERM, lambda: signal_handler(signal.SIGTERM))
+
     try:
         await poc_runner.initialize()
         await poc_runner.run_poc()
+    except asyncio.CancelledError:
+        print("\n⏹️  POC cancelled by user")
     except KeyboardInterrupt:
         print("\n⏹️  POC interrupted by user")
     except Exception as e:
@@ -213,6 +238,9 @@ async def main():
         traceback.print_exc()
         return False
     finally:
+        # Remove signal handlers
+        loop.remove_signal_handler(signal.SIGINT)
+        loop.remove_signal_handler(signal.SIGTERM)
         await poc_runner.cleanup()
 
     return True

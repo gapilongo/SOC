@@ -190,12 +190,15 @@ class WebSocketManager:
 
 
 class SOCDashboardAPI:
-    
+
     def __init__(self, lg_sotf_app: LG_SOTFApplication):
         self.lg_sotf_app = lg_sotf_app
         self.websocket_manager = WebSocketManager()
         self.logger = logging.getLogger(__name__)
-        
+
+        # Track background tasks for proper shutdown
+        self.background_tasks: List[asyncio.Task] = []
+
         # Initialize FastAPI
         self.app = FastAPI(
             title="LG-SOTF Dashboard API",
@@ -416,9 +419,14 @@ class SOCDashboardAPI:
                 if self.lg_sotf_app._last_ingestion_poll:
                     polling_interval = ingestion_config.get("polling_interval", 60)
                     next_poll = (self.lg_sotf_app._last_ingestion_poll + timedelta(seconds=polling_interval)).isoformat()
-                
+
+                # Check if ingestion is active (agent is initialized and has sources)
+                # Note: We check initialized + enabled sources instead of self.running
+                # because the app can run in API-only mode without the continuous loop
+                is_active = ingestion_agent.initialized and len(ingestion_agent.enabled_sources) > 0
+
                 return IngestionStatusResponse(
-                    is_active=self.lg_sotf_app.running and ingestion_agent.initialized,
+                    is_active=is_active,
                     last_poll_time=self.lg_sotf_app._last_ingestion_poll.isoformat() if self.lg_sotf_app._last_ingestion_poll else None,
                     next_poll_time=next_poll,
                     polling_interval=ingestion_config.get("polling_interval", 60),
@@ -454,9 +462,12 @@ class SOCDashboardAPI:
                     try:
                         # Call poll_sources directly
                         new_alerts = await ingestion_agent.poll_sources()
-                        
+
+                        # Update last poll timestamp
+                        self.lg_sotf_app._last_ingestion_poll = datetime.utcnow()
+
                         self.logger.info(f"Manual poll found {len(new_alerts)} alerts")
-                        
+
                         # Broadcast ingestion triggered event
                         await self.websocket_manager.broadcast({
                             "type": "ingestion_triggered",
@@ -466,6 +477,11 @@ class SOCDashboardAPI:
                         }, "ingestion_updates")
                         
                         # Process each alert through workflow
+                        # NOTE: Manual trigger processes alerts immediately. If automatic polling
+                        # is also running, the same alerts might be processed twice. This is by design
+                        # for now - deduplication happens at the ingestion level, but alerts can still
+                        # be processed multiple times if they arrive close together.
+                        # The workflow engine should handle this gracefully via state versioning.
                         for alert in new_alerts:
                             try:
                                 # Broadcast that alert was ingested
@@ -476,7 +492,7 @@ class SOCDashboardAPI:
                                     "source": alert.get("source", "unknown"),
                                     "timestamp": datetime.utcnow().isoformat()
                                 }, "new_alerts")
-                                
+
                                 # Process alert in background
                                 asyncio.create_task(
                                     self._process_alert_background(alert["id"], alert)
@@ -1426,14 +1442,17 @@ class SOCDashboardAPI:
             while True:
                 try:
                     await asyncio.sleep(10)
-                    
+
                     metrics = await self._collect_system_metrics()
-                    
+
                     await self.websocket_manager.broadcast({
                         "type": "system_metrics",
                         "data": metrics.model_dump()
                     }, "system_metrics")
-                    
+
+                except asyncio.CancelledError:
+                    self.logger.info("Metrics updater cancelled")
+                    break
                 except Exception as e:
                     self.logger.error(f"Metrics updater error: {e}")
 
@@ -1467,12 +1486,16 @@ class SOCDashboardAPI:
                         }
                     }, "ingestion_updates")
                     
+                except asyncio.CancelledError:
+                    self.logger.info("Ingestion monitor cancelled")
+                    break
                 except Exception as e:
                     self.logger.error(f"Ingestion monitor error: {e}")
-        
-        asyncio.create_task(self.websocket_manager.heartbeat_loop())
-        asyncio.create_task(metrics_updater())
-        asyncio.create_task(ingestion_monitor())
+
+        # Create and track background tasks
+        self.background_tasks.append(asyncio.create_task(self.websocket_manager.heartbeat_loop()))
+        self.background_tasks.append(asyncio.create_task(metrics_updater()))
+        self.background_tasks.append(asyncio.create_task(ingestion_monitor()))
 
 
 async def run_soc_dashboard_api(
@@ -1519,16 +1542,51 @@ def get_application():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     
-    lg_sotf = LG_SOTFApplication()
+    # Create app without signal handlers (uvicorn handles signals)
+    lg_sotf = LG_SOTFApplication(setup_signal_handlers=False)
     dashboard = SOCDashboardAPI(lg_sotf)
-    
+
     @dashboard.app.on_event("startup")
     async def startup():
         await lg_sotf.initialize()
     
-    @dashboard.app.on_event("shutdown") 
+    @dashboard.app.on_event("shutdown")
     async def shutdown():
+        print("\n🛑 Shutting down API server...")
+
+        # Close all WebSocket connections
+        if dashboard.websocket_manager.active_connections:
+            print(f"Closing {len(dashboard.websocket_manager.active_connections)} WebSocket connections...")
+            # Make a copy of the list to avoid modification during iteration
+            connections = list(dashboard.websocket_manager.active_connections.values())
+            for ws in connections:
+                try:
+                    await ws.close()
+                except Exception as e:
+                    print(f"Error closing WebSocket: {e}")
+            dashboard.websocket_manager.active_connections.clear()
+            print("✓ WebSocket connections closed")
+
+        # Cancel background tasks
+        if dashboard.background_tasks:
+            print(f"Cancelling {len(dashboard.background_tasks)} background tasks...")
+            for task in dashboard.background_tasks:
+                if not task.done():
+                    task.cancel()
+
+            # Wait for tasks to complete with timeout
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*dashboard.background_tasks, return_exceptions=True),
+                    timeout=5.0
+                )
+                print("✓ Background tasks cancelled")
+            except asyncio.TimeoutError:
+                print("⚠ Some background tasks did not complete within timeout")
+
+        # Shutdown LG-SOTF application
         await lg_sotf.shutdown()
+        print("✅ Shutdown complete")
     
     return dashboard.app
 
