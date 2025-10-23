@@ -292,6 +292,46 @@ export const settingsAPI = {
 };
 
 // ============================================
+// ESCALATIONS API
+// ============================================
+export const escalationsAPI = {
+  /**
+   * Get pending escalations
+   * @param {Object} params - Query parameters (level, limit)
+   */
+  getEscalations: (params = {}) => {
+    return apiClient.get('/escalations', { params });
+  },
+
+  /**
+   * Assign escalation to analyst
+   * @param {string} escalationId - Escalation ID
+   * @param {string} analystUsername - Analyst username
+   */
+  assignEscalation: (escalationId, analystUsername) => {
+    return apiClient.post(`/escalations/${escalationId}/assign`, null, {
+      params: { analyst_username: analystUsername }
+    });
+  },
+
+  /**
+   * Submit feedback for escalation
+   * @param {string} escalationId - Escalation ID
+   * @param {Object} feedbackData - Feedback data
+   */
+  submitFeedback: (escalationId, feedbackData) => {
+    return apiClient.post(`/escalations/${escalationId}/feedback`, feedbackData);
+  },
+
+  /**
+   * Get escalation statistics
+   */
+  getStats: () => {
+    return apiClient.get('/escalations/stats');
+  },
+};
+
+// ============================================
 // EXPORT API CLIENT
 // ============================================
 export default apiClient;
