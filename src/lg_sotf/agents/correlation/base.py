@@ -152,6 +152,69 @@ class CorrelationAgent(BaseAgent):
             if not await self.validate_output({**state, **updates}):
                 raise ValueError("Invalid output state from correlation")
 
+            # Cache correlation results to Redis for fast retrieval (BOTH per-alert AND per-indicator)
+            if self.redis_storage and correlations:
+                try:
+                    # 1. Cache full correlation result for the alert (for dashboard/API quick retrieval)
+                    await self.redis_storage.cache_correlation_result(
+                        indicator_type="alert",
+                        indicator_value=state.get('alert_id'),
+                        correlation_data={
+                            "correlations": correlations,
+                            "correlation_score": correlation_score,
+                            "confidence_score": updated_confidence,
+                            "cached_at": datetime.utcnow().isoformat(),
+                            "enriched_data": enriched_data
+                        },
+                        ttl=3600  # Cache for 1 hour
+                    )
+                    self.logger.debug(f"Cached full correlation results for alert {state.get('alert_id')}")
+
+                    # 2. Cache per-indicator correlations (for threat intel lookups and reuse across alerts)
+                    raw_data = alert.get("raw_data", {})
+                    indicator_cache_ttl = 86400  # 24 hours for indicator-level cache
+
+                    # Cache correlations for each key indicator in the alert
+                    indicator_fields = [
+                        ("source_ip", raw_data.get("source_ip") or alert.get("source_ip")),
+                        ("destination_ip", raw_data.get("destination_ip") or alert.get("destination_ip")),
+                        ("user", raw_data.get("user") or alert.get("user")),
+                        ("username", raw_data.get("username") or alert.get("username")),
+                        ("file_hash", raw_data.get("file_hash") or alert.get("file_hash")),
+                        ("domain", raw_data.get("domain") or alert.get("domain")),
+                        ("process_name", raw_data.get("process_name") or alert.get("process_name"))
+                    ]
+
+                    for indicator_type, indicator_value in indicator_fields:
+                        if indicator_value and indicator_value not in ["N/A", "", None]:
+                            # Filter correlations relevant to this indicator
+                            relevant_correlations = [
+                                corr for corr in correlations
+                                if str(indicator_value) in str(corr.get("indicator", ""))
+                            ]
+
+                            if relevant_correlations:
+                                await self.redis_storage.cache_correlation_result(
+                                    indicator_type=indicator_type,
+                                    indicator_value=str(indicator_value),
+                                    correlation_data={
+                                        "correlations": relevant_correlations,
+                                        "indicator_type": indicator_type,
+                                        "indicator_value": str(indicator_value),
+                                        "cached_at": datetime.utcnow().isoformat(),
+                                        "source_alert_id": state.get('alert_id')
+                                    },
+                                    ttl=indicator_cache_ttl
+                                )
+                                self.logger.debug(
+                                    f"Cached {len(relevant_correlations)} correlations for "
+                                    f"{indicator_type}={indicator_value}"
+                                )
+
+                except Exception as e:
+                    # Don't fail the correlation if caching fails
+                    self.logger.warning(f"Failed to cache correlation results to Redis: {e}")
+
             self.logger.info(
                 f"Correlation completed for alert {state.get('alert_id')} with {len(correlations)} correlations found"
             )

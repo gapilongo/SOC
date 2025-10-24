@@ -753,9 +753,15 @@ class WorkflowEngine:
         Following LangGraph best practices:
         - Async function for LLM calls
         - Literal type hints for graph visualization
-        - Rule-based shortcuts for obvious cases
-        - LLM for grey-zone decisions
-        - Always has fallback logic
+        - ALWAYS route through correlation for threat intelligence building
+        - Fast-track obvious FPs to close
+        - All other alerts go through correlation
+
+        IMPORTANT: Correlation MUST run for ALL non-FP alerts to:
+        - Populate Redis with threat indicators
+        - Build threat intelligence over time
+        - Enable "Top Threats" dashboard
+        - Support future alert correlation
         """
         confidence = state["confidence_score"]
         fp_count = len(state["fp_indicators"])
@@ -763,39 +769,21 @@ class WorkflowEngine:
 
         self.logger.info(f"🛤️ Routing after triage: confidence={confidence}%, FP={fp_count}, TP={tp_count}")
 
-        # Rule-based shortcuts for obvious cases (fast path)
+        # ONLY obvious false positives skip correlation and go directly to close
         if confidence <= 10 and fp_count >= 2:
-            self.logger.info("Rule-based routing: close (low confidence + FP indicators)")
+            self.logger.info("Rule-based routing: close (obvious FP: low confidence + multiple FP indicators)")
             return "close"
 
-        if fp_count > tp_count and confidence <= 30:
-            self.logger.info("Rule-based routing: close (more FP than TP)")
+        if fp_count > tp_count and fp_count >= 3 and confidence <= 20:
+            self.logger.info("Rule-based routing: close (obvious FP: more FP than TP + very low confidence)")
             return "close"
 
-        if confidence >= 85 and tp_count >= 3:
-            self.logger.info("Rule-based routing: response (high confidence + TP indicators)")
-            return "response"
-
-        # Use LLM for grey-zone decisions (20-80% confidence)
-        if self.enable_llm_routing and self.llm_client and 20 <= confidence <= 80:
-            try:
-                decision = await self._llm_decide_routing(state, "triage")
-                self.logger.info(f"LLM routing decision: {decision}")
-                return decision
-            except Exception as e:
-                self.logger.warning(f"LLM routing failed: {e}, using rule-based fallback")
-
-        # Fallback to heuristic rules
-        if self._needs_correlation(state):
-            self.logger.info("Rule-based routing: correlation (network/user indicators)")
-            return "correlation"
-
-        if confidence < 60 or self._needs_analysis(state):
-            self.logger.info("Rule-based routing: analysis (needs investigation)")
-            return "analysis"
-
-        self.logger.info("Rule-based routing: human_loop (uncertain case)")
-        return "human_loop"
+        # ALL other alerts MUST go through correlation first to build threat intelligence
+        # Correlation agent will then route to appropriate next step (analysis/response/human_loop)
+        self.logger.info(
+            "Routing to correlation (builds threat intel + enriches alert with historical context)"
+        )
+        return "correlation"
 
     def _route_after_correlation(self, state: WorkflowState) -> str:
         """Routing after correlation."""
@@ -920,24 +908,52 @@ class WorkflowEngine:
     # WORKFLOW EXECUTION
     # ===============================
 
-    async def execute_workflow(self, alert_id: str, initial_state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the workflow."""
+    async def execute_workflow(self, alert_id: str, initial_state: Dict[str, Any], skip_ingestion: bool = False) -> Dict[str, Any]:
+        """Execute the workflow.
+
+        Args:
+            alert_id: Alert identifier
+            initial_state: Initial alert data
+            skip_ingestion: If True, skip ingestion node (alert already ingested)
+        """
         try:
             # Create execution context
             execution_context = self._create_execution_context(alert_id)
             workflow_instance_id = f"{alert_id}_{execution_context.execution_id}"
+
+            # Determine initial node based on whether ingestion was already done
+            initial_node = "triage" if skip_ingestion else "ingestion"
 
             # ✅ CREATE INITIAL STATE IN DATABASE FIRST
             await self.state_manager.create_state(
                 alert_id=alert_id,
                 raw_alert=initial_state,
                 workflow_instance_id=workflow_instance_id,
-                initial_node="ingestion",
+                initial_node=initial_node,
                 author_type="system",
                 author_id="workflow_engine"
             )
-            
-            self.logger.info(f"Created initial state in database for {alert_id}")
+
+            self.logger.info(f"Created initial state in database for {alert_id} (starting at: {initial_node})")
+
+            # Mark ingestion as already executed if skipping
+            if skip_ingestion:
+                execution_context.node_executions["ingestion"] = True
+                agent_executions = {
+                    "ingestion_" + alert_id: {
+                        "executed_at": datetime.utcnow().isoformat(),
+                        "status": "skipped",
+                        "note": "Alert already ingested by polling loop"
+                    }
+                }
+                processing_notes = ["🔄 workflow started", "⏭️ Ingestion skipped (already done by polling)"]
+                current_node = "triage"
+                triage_status = "ingested"
+            else:
+                agent_executions = {}
+                processing_notes = ["🔄 workflow started"]
+                current_node = "ingestion"
+                triage_status = "new"
 
             # Create initial workflow state for LangGraph
             workflow_state: WorkflowState = {
@@ -947,14 +963,14 @@ class WorkflowEngine:
                     "execution_id": execution_context.execution_id,
                     "started_at": execution_context.started_at.isoformat(),
                     "last_node": "start",
-                    "executed_nodes": [],
+                    "executed_nodes": ["ingestion"] if skip_ingestion else [],
                     "execution_time": datetime.utcnow().isoformat()
                 },
                 "raw_alert": initial_state,
                 "enriched_data": {},
-                "triage_status": "new",
+                "triage_status": triage_status,
                 "confidence_score": 0,
-                "current_node": "ingestion",
+                "current_node": current_node,
                 "priority_level": 3,
                 "fp_indicators": [],
                 "tp_indicators": [],
@@ -965,9 +981,9 @@ class WorkflowEngine:
                 "recommended_actions": [],
                 "analysis_reasoning": [],
                 "tool_results": {},
-                "processing_notes": ["🔄 workflow started"],
+                "processing_notes": processing_notes,
                 "last_updated": datetime.utcnow().isoformat(),
-                "agent_executions": {},
+                "agent_executions": agent_executions,
                 "state_version": 1
             }
 
@@ -998,6 +1014,14 @@ class WorkflowEngine:
         Returns only state updates, following LangGraph best practices.
         """
         try:
+            # Check if ingestion was already done (by polling loop)
+            agent_exec_key = f"ingestion_{state['alert_id']}"
+            if agent_exec_key in state.get("agent_executions", {}):
+                existing_exec = state["agent_executions"][agent_exec_key]
+                if existing_exec.get("status") == "skipped":
+                    self.logger.info(f"⏭️ Ingestion already done for {state['alert_id']}, skipping workflow ingestion node")
+                    return {}  # Return empty updates, proceed to next node
+
             # Get ingestion agent
             if "ingestion" not in self.agents:
                 # Register and initialize ingestion agent if not exists

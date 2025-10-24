@@ -73,6 +73,14 @@ class WorkflowStatusResponse(BaseModel):
     enriched_data: Optional[Dict[str, Any]] = {}
     escalation_info: Optional[Dict[str, Any]] = None
     response_execution: Optional[Dict[str, Any]] = None
+    # FP/TP indicators from triage
+    fp_indicators: Optional[List[str]] = []
+    tp_indicators: Optional[List[str]] = []
+    # Correlation and analysis data
+    correlations: Optional[List[Dict[str, Any]]] = []
+    correlation_score: Optional[int] = 0
+    analysis_conclusion: Optional[str] = None
+    recommended_actions: Optional[List[str]] = []
     last_updated: str
     progress_percentage: int
 
@@ -277,7 +285,15 @@ class SOCDashboardAPI:
                     processing_notes=state.get("processing_notes", []),
                     enriched_data=enriched_data,
                     escalation_info=enriched_data.get("escalation_info"),
-                    response_execution=enriched_data.get("response_execution"),
+                    response_execution=state.get("response_execution"),
+                    # FP/TP indicators from triage
+                    fp_indicators=state.get("fp_indicators", []),
+                    tp_indicators=state.get("tp_indicators", []),
+                    # Correlation and analysis data
+                    correlations=state.get("correlations", []),
+                    correlation_score=state.get("correlation_score", 0),
+                    analysis_conclusion=state.get("analysis_conclusion"),
+                    recommended_actions=state.get("recommended_actions", []),
                     last_updated=state.get("last_updated", datetime.utcnow().isoformat()),
                     progress_percentage=self._calculate_progress(state)
                 )
@@ -945,6 +961,9 @@ class SOCDashboardAPI:
                     triage_status = str(triage_status).replace("TriageStatus.", "").replace("_", " ").lower()
                 
                 # Build the response with correct field extraction
+                enriched_data = state_data.get("enriched_data", {})
+                llm_insights = enriched_data.get("llm_insights", {})
+
                 merged_state = {
                     "alert_id": alert_id,
                     "workflow_instance_id": state_data.get("workflow_instance_id", ""),
@@ -953,11 +972,16 @@ class SOCDashboardAPI:
                     "confidence_score": int(state_data.get("confidence_score", 0)),
                     "threat_score": int(state_data.get("threat_score", 0)),
                     "processing_notes": metadata.get("processing_notes", []),
-                    "enriched_data": state_data.get("enriched_data", {}),
+                    "enriched_data": enriched_data,
                     "correlations": state_data.get("correlations", []),
                     "correlation_score": int(state_data.get("correlation_score", 0)),
                     "analysis_conclusion": state_data.get("analysis_conclusion", ""),
                     "recommended_actions": state_data.get("recommended_actions", []),
+                    # Extract FP/TP indicators to top level for easy access
+                    "fp_indicators": state_data.get("fp_indicators", llm_insights.get("fp_indicators", [])),
+                    "tp_indicators": state_data.get("tp_indicators", llm_insights.get("tp_indicators", [])),
+                    # Extract response execution to top level
+                    "response_execution": enriched_data.get("response_execution"),
                     "last_updated": result['created_at'].isoformat(),
                     "raw_alert": state_data.get("raw_alert", {})
                 }

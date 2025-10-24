@@ -360,17 +360,22 @@ class LG_SOTFApplication:
     
     async def _process_single_workflow(self, alert_id: str, alert_data: dict):
         """Process a single alert through the workflow.
-        
+
         Args:
             alert_id: Alert identifier
-            alert_data: Alert data dictionary
+            alert_data: Alert data dictionary (already ingested by polling loop)
         """
         start_time = datetime.utcnow()
-        
+
         try:
             logging.debug(f"Processing workflow for alert {alert_id}")
-            
-            result = await self.workflow_engine.execute_workflow(alert_id, alert_data)
+
+            # Skip ingestion node since alert is already ingested by the polling loop
+            result = await self.workflow_engine.execute_workflow(
+                alert_id,
+                alert_data,
+                skip_ingestion=True  # Alert already normalized by ingestion agent polling
+            )
             
             # Calculate processing time
             processing_time = (datetime.utcnow() - start_time).total_seconds()

@@ -101,16 +101,16 @@ const Escalations = () => {
 
   const handleViewDetails = async (escalation) => {
     setSelectedEscalation(escalation);
+    setShowFeedbackModal(true);
 
-    // Fetch full alert details
+    // Fetch full alert details AFTER opening modal
     try {
       const details = await alertsAPI.getAlertStatus(escalation.alert_id);
+      console.log('📊 Fetched alert details:', details);
       setAlertDetails(details);
     } catch (error) {
       console.error('Failed to fetch alert details:', error);
     }
-
-    setShowFeedbackModal(true);
   };
 
   const handleSubmitFeedback = async () => {
@@ -507,6 +507,11 @@ const Escalations = () => {
                               {/* Agent Assessment Timeline */}
                               <div>
                                 <div className="text-xs font-bold text-blue-400 mb-2">📊 Agent Assessment Timeline</div>
+                                {!alertDetails && (
+                                  <div className="text-xs text-dark-400 italic py-2">
+                                    Loading detailed assessment...
+                                  </div>
+                                )}
                                 <div className="space-y-2">
                                   {/* Triage Agent */}
                                   {confidenceMatch && (
@@ -518,41 +523,55 @@ const Escalations = () => {
                                           <div>├─ LLM Assessment: <span className="text-purple-400 capitalize">{llmMatch[1].replace(/_/g, ' ')}</span></div>
                                         )}
                                         {(() => {
-                                          const threatScore = threatScoreMatch ? parseFloat(threatScoreMatch[1]) : 0;
-                                          const llmAssessment = llmMatch ? llmMatch[1] : null;
+                                          // Extract from notes first, then from API data
+                                          const fpMatch = selectedEscalation.notes?.match(/(\d+)\s+false\s+positive\s+indicators/i);
+                                          const tpMatch = selectedEscalation.notes?.match(/(\d+)\s+threat\s+indicators/i);
 
-                                          const preliminaryScoreMap = {
-                                            'confirmed_threat': 90,
-                                            'likely_threat': 70,
-                                            'possible_threat': 50,
-                                            'suspicious': 50,
-                                            'unlikely_threat': 30,
-                                            'benign': 10
-                                          };
+                                          // API now returns these at top level
+                                          const fpCount = fpMatch ? parseInt(fpMatch[1]) : (alertDetails?.fp_indicators?.length || 0);
+                                          const tpCount = tpMatch ? parseInt(tpMatch[1]) : (alertDetails?.tp_indicators?.length || 0);
 
-                                          const preliminaryScore = llmAssessment ? preliminaryScoreMap[llmAssessment] || 0 : 0;
-                                          const displayScore = threatScore > 0 ? threatScore : preliminaryScore;
-                                          const isPreliminary = threatScore === 0 && preliminaryScore > 0;
-
-                                          if (displayScore > 0) {
-                                            return (
-                                              <div>
-                                                └─ {isPreliminary ? 'Preliminary Threat' : 'Threat Score'}:
-                                                <span className={`font-semibold ml-1 ${
-                                                  displayScore >= 70 ? 'text-red-400' :
-                                                  displayScore >= 40 ? 'text-orange-400' :
-                                                  'text-yellow-400'
-                                                }`}>
-                                                  {displayScore}%
-                                                </span>
-                                                {isPreliminary && (
-                                                  <span className="text-xs text-dark-500 ml-1">(LLM)</span>
-                                                )}
-                                              </div>
-                                            );
-                                          }
-                                          return <div>└─ No threat score</div>;
+                                          return (
+                                            <>
+                                              <div>├─ False Positive Indicators: <span className="text-red-400">{fpCount}</span></div>
+                                              <div>└─ True Positive Indicators: <span className="text-green-400">{tpCount}</span></div>
+                                            </>
+                                          );
                                         })()}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Correlation Agent */}
+                                  {alertDetails && (alertDetails.correlations?.length > 0 || alertDetails.correlation_score > 0) && (
+                                    <div className="text-xs text-dark-300">
+                                      <div className="font-semibold text-cyan-400">🔗 Correlation Agent</div>
+                                      <div className="pl-3 mt-1 space-y-0.5">
+                                        <div>├─ Correlations Found: <span className="text-cyan-400 font-semibold">{alertDetails.correlations?.length || 0}</span></div>
+                                        {alertDetails.correlation_score > 0 && (
+                                          <div>├─ Correlation Score: <span className="text-cyan-400 font-semibold">{alertDetails.correlation_score}%</span></div>
+                                        )}
+                                        {alertDetails.correlations?.length > 0 && (
+                                          <div>└─ Related Alerts: <span className="text-dark-400">{alertDetails.correlations.slice(0, 3).map(c => c.alert_id || c.id || 'unknown').join(', ')}{alertDetails.correlations.length > 3 ? '...' : ''}</span></div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Analysis Agent */}
+                                  {alertDetails && (alertDetails.threat_score > 0 || alertDetails.analysis_conclusion) && (
+                                    <div className="text-xs text-dark-300">
+                                      <div className="font-semibold text-green-400">🧠 Analysis Agent</div>
+                                      <div className="pl-3 mt-1 space-y-0.5">
+                                        {alertDetails.threat_score > 0 && (
+                                          <div>├─ Threat Score: <span className={`font-semibold ${alertDetails.threat_score >= 70 ? 'text-red-400' : alertDetails.threat_score >= 40 ? 'text-orange-400' : 'text-yellow-400'}`}>{alertDetails.threat_score}%</span></div>
+                                        )}
+                                        {alertDetails.analysis_conclusion && (
+                                          <div>├─ Conclusion: <span className="text-green-400">{alertDetails.analysis_conclusion.substring(0, 80)}{alertDetails.analysis_conclusion.length > 80 ? '...' : ''}</span></div>
+                                        )}
+                                        {alertDetails.recommended_actions?.length > 0 && (
+                                          <div>└─ Recommended Actions: <span className="text-dark-400">{alertDetails.recommended_actions.length} actions</span></div>
+                                        )}
                                       </div>
                                     </div>
                                   )}
@@ -564,6 +583,18 @@ const Escalations = () => {
                                       <div>└─ Escalated for L{selectedEscalation.level || 1} analyst review</div>
                                     </div>
                                   </div>
+
+                                  {/* Response Agent */}
+                                  {alertDetails?.response_execution && (
+                                    <div className="text-xs text-dark-300">
+                                      <div className="font-semibold text-red-400">⚡ Response Agent</div>
+                                      <div className="pl-3 mt-1 space-y-0.5">
+                                        <div>├─ Playbook: <span className="text-red-400">{alertDetails.response_execution.playbook_name || 'Unknown'}</span></div>
+                                        <div>├─ Actions Succeeded: <span className="text-green-400">{alertDetails.response_execution.actions_succeeded || 0}/{alertDetails.response_execution.actions_attempted || 0}</span></div>
+                                        <div>└─ Actions Failed: <span className="text-red-400">{alertDetails.response_execution.actions_failed || 0}</span></div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 

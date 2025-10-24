@@ -8,7 +8,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 seconds
+  timeout: 180000, // 180 seconds (3 minutes) - extended for LLM semantic parsing
 });
 
 // Request interceptor - Add auth token to all requests
