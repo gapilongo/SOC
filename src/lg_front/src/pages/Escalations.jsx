@@ -504,19 +504,66 @@ const Escalations = () => {
 
                           return (
                             <>
-                              {/* Triage Assessment */}
+                              {/* Agent Assessment Timeline */}
                               <div>
-                                <div className="text-xs font-bold text-blue-400 mb-1">🎯 Triage Assessment</div>
-                                <div className="text-xs text-dark-300 space-y-1">
+                                <div className="text-xs font-bold text-blue-400 mb-2">📊 Agent Assessment Timeline</div>
+                                <div className="space-y-2">
+                                  {/* Triage Agent */}
                                   {confidenceMatch && (
-                                    <div>Confidence: <span className="text-yellow-400 font-semibold">{confidenceMatch[1]}%</span></div>
+                                    <div className="text-xs text-dark-300">
+                                      <div className="font-semibold text-yellow-400">🎯 Triage Agent</div>
+                                      <div className="pl-3 mt-1 space-y-0.5">
+                                        <div>├─ Confidence: <span className="text-yellow-400 font-semibold">{confidenceMatch[1]}%</span></div>
+                                        {llmMatch && (
+                                          <div>├─ LLM Assessment: <span className="text-purple-400 capitalize">{llmMatch[1].replace(/_/g, ' ')}</span></div>
+                                        )}
+                                        {(() => {
+                                          const threatScore = threatScoreMatch ? parseFloat(threatScoreMatch[1]) : 0;
+                                          const llmAssessment = llmMatch ? llmMatch[1] : null;
+
+                                          const preliminaryScoreMap = {
+                                            'confirmed_threat': 90,
+                                            'likely_threat': 70,
+                                            'possible_threat': 50,
+                                            'suspicious': 50,
+                                            'unlikely_threat': 30,
+                                            'benign': 10
+                                          };
+
+                                          const preliminaryScore = llmAssessment ? preliminaryScoreMap[llmAssessment] || 0 : 0;
+                                          const displayScore = threatScore > 0 ? threatScore : preliminaryScore;
+                                          const isPreliminary = threatScore === 0 && preliminaryScore > 0;
+
+                                          if (displayScore > 0) {
+                                            return (
+                                              <div>
+                                                └─ {isPreliminary ? 'Preliminary Threat' : 'Threat Score'}:
+                                                <span className={`font-semibold ml-1 ${
+                                                  displayScore >= 70 ? 'text-red-400' :
+                                                  displayScore >= 40 ? 'text-orange-400' :
+                                                  'text-yellow-400'
+                                                }`}>
+                                                  {displayScore}%
+                                                </span>
+                                                {isPreliminary && (
+                                                  <span className="text-xs text-dark-500 ml-1">(LLM)</span>
+                                                )}
+                                              </div>
+                                            );
+                                          }
+                                          return <div>└─ No threat score</div>;
+                                        })()}
+                                      </div>
+                                    </div>
                                   )}
-                                  {threatScoreMatch && (
-                                    <div>Threat Score: <span className="text-red-400 font-semibold">{threatScoreMatch[1]}</span></div>
-                                  )}
-                                  {llmMatch && (
-                                    <div>AI Assessment: <span className="text-purple-400 font-semibold capitalize">{llmMatch[1].replace(/_/g, ' ')}</span></div>
-                                  )}
+
+                                  {/* Escalation Status */}
+                                  <div className="text-xs text-dark-300">
+                                    <div className="font-semibold text-orange-400">👤 Human Review</div>
+                                    <div className="pl-3 mt-1">
+                                      <div>└─ Escalated for L{selectedEscalation.level || 1} analyst review</div>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
 

@@ -188,7 +188,12 @@ class ReActReasoner:
                 )
                 response = await self.llm_client.ainvoke(prompt)
 
-                thought = response.content.strip()
+                # Handle both string and list responses (Gemini can return lists)
+                if isinstance(response.content, list):
+                    thought = " ".join(str(item) for item in response.content).strip()
+                else:
+                    thought = response.content.strip()
+
                 if thought and len(thought) > 10:  # Basic validation
                     return thought
 
@@ -251,7 +256,13 @@ class ReActReasoner:
         try:
             prompt = self._build_action_prompt(thought, available_tools, context)
             response = await self.llm_client.ainvoke(prompt)
-            return self._parse_action_robust(response.content, available_tools)
+
+            # Handle both string and list responses
+            content = response.content
+            if isinstance(content, list):
+                content = " ".join(str(item) for item in content)
+
+            return self._parse_action_robust(content, available_tools)
         except Exception as e:
             self.logger.debug(f"Standard action generation failed: {e}")
             return None
@@ -272,7 +283,13 @@ Tool: [tool_name]
 Target: [what_to_analyze]
 """
             response = await self.llm_client.ainvoke(simplified_prompt)
-            return self._parse_simple_action(response.content, available_tools)
+
+            # Handle both string and list responses
+            content = response.content
+            if isinstance(content, list):
+                content = " ".join(str(item) for item in content)
+
+            return self._parse_simple_action(content, available_tools)
         except Exception as e:
             self.logger.debug(f"Simplified action generation failed: {e}")
             return None
@@ -797,19 +814,79 @@ Keep your reasoning concise but thorough. Focus on evidence-based analysis."""
     def _build_action_prompt(
         self, thought: str, available_tools: List[str], context: Dict[str, Any]
     ) -> str:
-        """Build action prompt for LLM."""
+        """Build action prompt with detailed tool descriptions."""
 
-        return f"""Based on your reasoning: "{thought}"
+        # Tool descriptions to guide LLM
+        tool_guide = {
+            "ip_analysis": "Analyze IP addresses (source_ip, destination_ip) for reputation, geolocation, and threat intelligence. Use when you see IP addresses in the alert.",
+            "hash_analysis": "Check file hashes (MD5, SHA1, SHA256) against malware databases. Use when you see file_hash or checksum in the alert.",
+            "process_analysis": "Analyze process behavior and command lines. Use when you see process_name, command_line, or executable paths.",
+            "network_analysis": "Analyze network connections, traffic volume, and beaconing patterns. Use when investigating C2 communication or data exfiltration.",
+            "temporal_analysis": "Find related events before/after this alert. Use to establish attack timeline, find precursor events, or identify follow-up actions."
+        }
 
-Available tools: {', '.join(available_tools)}
+        # Build tool list with descriptions
+        tools_with_desc = []
+        for tool in available_tools:
+            desc = tool_guide.get(tool, f"Tool: {tool}")
+            tools_with_desc.append(f"  - {tool}: {desc}")
 
-Context: {json.dumps(context, indent=2)}
+        tools_formatted = "\n".join(tools_with_desc)
 
-What tool should be used next to gather more information? Respond in JSON format:
+        # Extract alert details for context
+        alert_id = context.get("id", "unknown")
+        alert_title = context.get("title", "")
+        alert_category = context.get("category", "")
+
+        return f"""You are analyzing security alert: {alert_id}
+Title: {alert_title}
+Category: {alert_category}
+
+Your reasoning: "{thought}"
+
+Available Tools:
+{tools_formatted}
+
+Alert Data Summary:
+{self._summarize_alert_data(context)}
+
+Think step-by-step:
+1. What specific information am I missing to assess this threat?
+2. Which tool provides that information?
+3. What should I ask the tool to analyze?
+
+Respond in JSON format:
 {{
     "tool": "tool_name",
-    "target": "what to analyze",
-    "reason": "why this tool/target"
+    "target": "what to analyze (IP, hash, username, etc.)",
+    "reason": "why this tool will help"
 }}
 
-If no further analysis is needed, respond with: {{"tool": "none", "reason": "analysis complete"}}"""
+If analysis is complete: {{"tool": "none", "reason": "sufficient evidence collected"}}
+
+Examples:
+- If you see suspicious IP 23.95.97.18 → {{"tool": "ip_analysis", "target": "23.95.97.18", "reason": "Check IP reputation"}}
+- If you see concurrent logins → {{"tool": "temporal_analysis", "target": {{"username": "john", "timestamp": "...", "time_window_minutes": 60}}, "reason": "Find related authentication events"}}
+- If you see unknown process.exe → {{"tool": "process_analysis", "target": "process.exe", "reason": "Analyze process behavior"}}"""
+
+    def _summarize_alert_data(self, context: Dict[str, Any]) -> str:
+        """Summarize key alert data for LLM."""
+        summary_parts = []
+
+        raw_data = context.get("raw_data", {})
+        entities = context.get("entities", [])
+
+        # Extract key indicators
+        if raw_data:
+            for key in ["source_ip", "destination_ip", "username", "process_name", "file_hash"]:
+                if key in raw_data and raw_data[key]:
+                    summary_parts.append(f"  - {key}: {raw_data[key]}")
+
+        # Add entities
+        for entity in entities[:5]:  # First 5 entities
+            entity_type = entity.get("type", "unknown")
+            entity_value = entity.get("value", "")
+            if entity_value:
+                summary_parts.append(f"  - {entity_type}: {entity_value}")
+
+        return "\n".join(summary_parts) if summary_parts else "  (no specific indicators extracted)"

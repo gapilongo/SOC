@@ -137,14 +137,14 @@ class AuditLogger:
             timestamp=datetime.utcnow().isoformat()
         )
     
-    def log_tool_execution_start(self, tool_name: str, execution_id: str, 
+    def log_tool_execution_start(self, tool_name: str, execution_id: str,
                                 tool_args: Dict[str, Any], context: Dict[str, Any]) -> None:
         """Log tool execution start."""
+        # Don't log tool_args - they can contain massive state objects
         self.logger.info(
             "tool_execution_started",
             tool_name=tool_name,
             execution_id=execution_id,
-            tool_args=tool_args,
             context=context,
             timestamp=datetime.utcnow().isoformat()
         )
