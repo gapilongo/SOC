@@ -443,12 +443,54 @@ class NetworkAnalysisTool(BaseToolAdapter):
                 "analysis_type": args.get("analysis_type", "unknown")
             }
     
-    def _parse_target(self, target: str) -> tuple:
-        """Parse IP:port target."""
-        parts = target.split(":")
-        ip = parts[0] if parts else ""
-        port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
-        return ip, port
+    def _parse_target(self, target) -> tuple:
+        """Parse IP:port target from string or dict (handle LLM output variations).
+
+        The LLM may return target in different formats:
+        - String: "192.168.1.1:445"
+        - Dict: {"ip": "192.168.1.1", "port": 445}
+        - Dict with alternative keys: {"source_ip": "...", "destination_port": ...}
+        """
+        # Handle dict input from LLM or alert context
+        if isinstance(target, dict):
+            # Try common field names for IP
+            ip = (
+                target.get("ip") or
+                target.get("source_ip") or
+                target.get("destination_ip") or
+                target.get("host") or
+                ""
+            )
+            # Try common field names for port
+            port = (
+                target.get("port") or
+                target.get("destination_port") or
+                target.get("source_port")
+            )
+            # Normalize port to int
+            if port:
+                if isinstance(port, str) and port.isdigit():
+                    port = int(port)
+                elif not isinstance(port, int):
+                    port = None
+
+            return str(ip) if ip else "", port if isinstance(port, int) else None
+
+        # Handle string input (IP:port format)
+        if isinstance(target, str):
+            if not target:
+                return "", None
+            if ":" in target:
+                parts = target.split(":")
+                ip = parts[0]
+                port = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+                return ip, port
+            # Just IP, no port
+            return target, None
+
+        # Fallback for unexpected types
+        self.logger.warning(f"Unexpected target type: {type(target)}, value: {target}")
+        return str(target) if target else "", None
     
     def _analyze_port(self, port: int) -> Dict[str, Any]:
         """Analyze port characteristics."""

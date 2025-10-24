@@ -31,12 +31,16 @@ class EntityExtraction(BaseModel):
 
 
 class SemanticAlertParsing(BaseModel):
-    """LLM-parsed structured alert output."""
+    """LLM-parsed structured alert output for normalization only.
+
+    NOTE: This model is ONLY for data extraction and normalization.
+    Threat assessment (confidence, FP/TP analysis) is done by Triage Agent.
+    """
     severity: Literal["critical", "high", "medium", "low", "info"] = Field(
-        description="Normalized severity level"
+        description="Normalized severity level from source (not threat assessment)"
     )
     title: str = Field(
-        description="Clear, concise alert title describing the threat/event"
+        description="Clear, concise alert title describing the event"
     )
     description: str = Field(
         description="Detailed description of what happened, including context"
@@ -47,13 +51,6 @@ class SemanticAlertParsing(BaseModel):
     entities: List[EntityExtraction] = Field(
         default=[],
         description="Extracted IOCs and entities (IPs, files, users, hosts, etc.)"
-    )
-    confidence: int = Field(
-        ge=0, le=100,
-        description="Confidence that this is a real security event (0-100)"
-    )
-    reasoning: str = Field(
-        description="Brief explanation of the alert analysis and why it's significant"
     )
 
 
@@ -94,18 +91,22 @@ class AlertNormalizer:
             parser_llm = self.llm_client.with_structured_output(SemanticAlertParsing)
 
             # Build semantic parsing prompt
-            prompt = f"""You are a security alert parser. Analyze this raw alert from {source} and extract structured information.
+            prompt = f"""You are a security alert parser. Your job is to NORMALIZE and EXTRACT data from raw alerts.
+
+DO NOT assess if this is a threat or false positive - that's the Triage Agent's job.
+Your role: Extract and structure the data so downstream agents can analyze it.
 
 Raw Alert Data:
 {json.dumps(raw_alert, indent=2)}
 
 Instructions:
-1. **Severity Normalization**: Map any severity format to standard levels:
+1. **Severity Normalization**: Map the SOURCE severity to our standard levels:
    - Numeric scales (0-10, 1-5, etc.) → critical/high/medium/low/info
    - CrowdStrike Severity 4-5 → high/critical
    - CrowdStrike Severity 3 → medium
    - CrowdStrike Severity 1-2 → low/info
    - Text values (severe, warning, etc.) → appropriate level
+   - Just normalize what the source says, don't re-assess the threat
 
 2. **Title Extraction**: Create clear, actionable title from event name/detection name.
    - Use DetectName, EventName, or AlertName if available
@@ -113,15 +114,16 @@ Instructions:
 
 3. **Description**: Write detailed description explaining:
    - What happened (the security event)
-   - Why it matters (threat significance)
    - Key context (user, host, tools involved)
+   - Include relevant technical details
    - NOT just technical IDs or hashes
 
-4. **Category Identification**: Classify the threat type:
+4. **Category Identification**: Classify the event type based on what happened:
    - lateral_movement, malware, credential_access, data_exfiltration, privilege_escalation, etc.
    - Infer from tool names (PSExec → lateral_movement), file types, command lines
+   - This is event classification, not threat assessment
 
-5. **Entity Extraction**: Extract ALL security-relevant indicators:
+5. **Entity Extraction**: Extract ALL security-relevant indicators of compromise (IOCs):
    - IPs (source, destination)
    - File hashes (MD5, SHA256, etc.)
    - File names and paths
@@ -131,19 +133,10 @@ Instructions:
    - Domains and URLs
    - Include context for each (e.g., "destination IP for lateral movement")
 
-6. **Confidence Assessment**: Rate 0-100 how confident you are this is a real security event:
-   - 80-100: Clear threat with strong indicators
-   - 50-79: Suspicious activity needing investigation
-   - 20-49: Grey zone, could be legitimate or misconfigured
-   - 0-19: Likely false positive or test data
-
-7. **Reasoning**: Explain your analysis briefly:
-   - Why this severity level?
-   - What makes this suspicious/malicious?
-   - What indicators support your confidence score?
-
-IMPORTANT: Handle ANY format - nested JSON, flat structures, arrays, etc.
-Extract maximum useful security information from whatever fields are available."""
+IMPORTANT:
+- Handle ANY format - nested JSON, flat structures, arrays, etc.
+- Extract maximum useful security information from whatever fields are available
+- DO NOT make threat assessments or confidence judgments - just extract and normalize the data"""
 
             # Get structured parsing from LLM
             self.logger.debug(f"Invoking LLM semantic parser for {source} alert")
@@ -171,8 +164,6 @@ Extract maximum useful security information from whatever fields are available."
                     "source_system": source,
                     "ingestion_timestamp": datetime.utcnow().isoformat(),
                     "parser": "llm_semantic",
-                    "llm_confidence": result.confidence,
-                    "llm_reasoning": result.reasoning,
                     "normalization_version": "2.0.0"  # Semantic parsing version
                 }
             }
@@ -182,7 +173,7 @@ Extract maximum useful security information from whatever fields are available."
 
             self.logger.info(
                 f"✨ LLM semantic parsing successful: {result.title} "
-                f"(severity: {result.severity}, confidence: {result.confidence}%, "
+                f"(severity: {result.severity}, category: {result.category}, "
                 f"entities: {len(result.entities)})"
             )
 
