@@ -35,6 +35,7 @@ export const AlertProvider = ({ children }) => {
         timestamp: new Date(x.created_at),
         status: x.status,
         confidence: x.confidence_score,
+        threat_score: x.threat_score || 0,
         description: x.description || 'Security alert'
       }));
 

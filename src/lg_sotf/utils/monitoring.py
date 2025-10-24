@@ -68,7 +68,11 @@ class WorkflowStatusResponse(BaseModel):
     current_node: str
     triage_status: str
     confidence_score: int
+    threat_score: Optional[int] = 0
     processing_notes: List[str]
+    enriched_data: Optional[Dict[str, Any]] = {}
+    escalation_info: Optional[Dict[str, Any]] = None
+    response_execution: Optional[Dict[str, Any]] = None
     last_updated: str
     progress_percentage: int
 
@@ -260,13 +264,20 @@ class SOCDashboardAPI:
                 if not state:
                     raise HTTPException(status_code=404, detail="Alert not found")
                 
+                # Extract enriched data
+                enriched_data = state.get("enriched_data", {})
+
                 return WorkflowStatusResponse(
                     alert_id=alert_id,
                     workflow_instance_id=state.get("workflow_instance_id", ""),
                     current_node=state.get("current_node", "unknown"),
                     triage_status=state.get("triage_status", "unknown"),
                     confidence_score=state.get("confidence_score", 0),
+                    threat_score=state.get("threat_score", 0),
                     processing_notes=state.get("processing_notes", []),
+                    enriched_data=enriched_data,
+                    escalation_info=enriched_data.get("escalation_info"),
+                    response_execution=enriched_data.get("response_execution"),
                     last_updated=state.get("last_updated", datetime.utcnow().isoformat()),
                     progress_percentage=self._calculate_progress(state)
                 )
@@ -916,7 +927,7 @@ class SOCDashboardAPI:
                 state_data = json.loads(state_json) if isinstance(state_json, str) else state_json
                 
                 # Debug logging
-                self.logger.info(f"State data for {alert_id}: triage_status={state_data.get('triage_status')}, confidence={state_data.get('confidence_score')}")
+                self.logger.info(f"State data for {alert_id}: triage_status={state_data.get('triage_status')}, confidence={state_data.get('confidence_score')}, threat_score={state_data.get('threat_score', 0)}")
                 
                 # Extract metadata
                 metadata = state_data.get("metadata", {})
@@ -940,12 +951,18 @@ class SOCDashboardAPI:
                     "current_node": state_data.get("current_node", "unknown"),
                     "triage_status": triage_status,
                     "confidence_score": int(state_data.get("confidence_score", 0)),
+                    "threat_score": int(state_data.get("threat_score", 0)),
                     "processing_notes": metadata.get("processing_notes", []),
+                    "enriched_data": state_data.get("enriched_data", {}),
+                    "correlations": state_data.get("correlations", []),
+                    "correlation_score": int(state_data.get("correlation_score", 0)),
+                    "analysis_conclusion": state_data.get("analysis_conclusion", ""),
+                    "recommended_actions": state_data.get("recommended_actions", []),
                     "last_updated": result['created_at'].isoformat(),
                     "raw_alert": state_data.get("raw_alert", {})
                 }
 
-                self.logger.info(f"Returning merged state: confidence={merged_state['confidence_score']}, status={merged_state['triage_status']}")
+                self.logger.info(f"Returning merged state: confidence={merged_state['confidence_score']}, threat_score={merged_state['threat_score']}, status={merged_state['triage_status']}")
 
                 return merged_state
                 
@@ -966,6 +983,7 @@ class SOCDashboardAPI:
                         state_data->>'triage_status' as status,
                         state_data->>'current_node' as current_node,
                         (state_data->>'confidence_score')::int as confidence_score,
+                        COALESCE((state_data->>'threat_score')::int, 0) as threat_score,
                         state_data->'raw_alert'->>'severity' as severity,
                         state_data->'raw_alert'->>'description' as description,
                         state_data->'raw_alert'->>'title' as title,
@@ -987,6 +1005,7 @@ class SOCDashboardAPI:
                         state_data->>'triage_status' as status,
                         state_data->>'current_node' as current_node,
                         (state_data->>'confidence_score')::int as confidence_score,
+                        COALESCE((state_data->>'threat_score')::int, 0) as threat_score,
                         state_data->'raw_alert'->>'severity' as severity,
                         state_data->'raw_alert'->>'description' as description,
                         state_data->'raw_alert'->>'title' as title,
@@ -1008,6 +1027,7 @@ class SOCDashboardAPI:
                     "status": row['status'],
                     "current_node": row['current_node'],
                     "confidence_score": row['confidence_score'],
+                    "threat_score": row['threat_score'],
                     "severity": row['severity'] or 'medium',
                     "description": row['description'] or row['title'] or 'Security alert',
                     "created_at": row['created_at'].isoformat()

@@ -254,8 +254,11 @@ class TriageAgent(BaseAgent):
                 except Exception as metrics_error:
                     self.logger.debug(f"Metrics recording failed: {metrics_error}")
 
-            # Parse LLM response
-            analysis_result = self._parse_llm_response(response.content)
+            # Parse LLM response (handle both string and list from Gemini)
+            content = response.content
+            if isinstance(content, list):
+                content = " ".join(str(item) for item in content)
+            analysis_result = self._parse_llm_response(content)
 
             # Log detailed LLM results
             self.logger.info(

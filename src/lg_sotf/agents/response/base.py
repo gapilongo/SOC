@@ -221,13 +221,33 @@ class ResponseAgent(BaseAgent):
 
         except Exception as e:
             self.logger.error(f"Response execution failed: {e}", exc_info=True)
+
+            # Build detailed escalation message for analysts
+            escalation_reason = (
+                f"⚠️ Automated response failed - Manual intervention required\n\n"
+                f"**Reason**: {str(e)}\n"
+                f"**Alert ID**: {alert_id}\n"
+                f"**Recommended Action**: Review alert details and execute manual response"
+            )
+
             return {
-                "triage_status": "response_failed",
+                "triage_status": "escalated",  # Escalate for manual intervention
                 "last_updated": datetime.utcnow().isoformat(),
                 "current_node": "response",
-                "processing_notes": [f"Response error: {str(e)}"],
+                "processing_notes": [
+                    f"❌ Response execution failed: {str(e)}",
+                    f"Escalated to L1/L2 analyst for manual intervention",
+                    f"Review required: Automated response could not be executed"
+                ],
                 "enriched_data": {
                     **state.get("enriched_data", {}),
+                    "escalation_info": {
+                        "reason": "response_execution_failed",
+                        "error_message": str(e),
+                        "escalation_reason": escalation_reason,
+                        "requires_manual_response": True,
+                        "timestamp": datetime.utcnow().isoformat()
+                    },
                     "response_error": {
                         "error": str(e),
                         "timestamp": datetime.utcnow().isoformat()
@@ -354,13 +374,24 @@ class ResponseAgent(BaseAgent):
 
             execution_time = (datetime.utcnow() - start_time).total_seconds()
 
-            # Determine final status
+            # Determine final status and add context for analysts
             if actions_failed == 0:
                 status = "responded"
+                processing_notes.append(f"✅ All {actions_succeeded} response actions completed successfully")
             elif actions_succeeded > 0:
-                status = "partially_responded"
+                status = "responded"  # Partial success still counts as responded
+                processing_notes.append(
+                    f"⚠️ Partial success: {actions_succeeded}/{actions_attempted} actions succeeded, "
+                    f"{actions_failed} failed - Review failed actions"
+                )
             else:
-                status = "response_failed"
+                status = "escalated"  # All failed - escalate for manual intervention
+                processing_notes.append(
+                    f"❌ All {actions_failed} response actions failed - Manual intervention required"
+                )
+                processing_notes.append(
+                    f"Escalated to L1/L2 analyst: Review playbook '{playbook.name}' and execute manually"
+                )
 
             return {
                 "status": status,
@@ -375,15 +406,31 @@ class ResponseAgent(BaseAgent):
 
         except Exception as e:
             self.logger.error(f"Playbook execution failed: {e}", exc_info=True)
+
+            # Add detailed error information for analysts
+            error_notes = processing_notes + [
+                f"❌ Playbook execution error: {str(e)}",
+                f"Playbook: {playbook.name}",
+                f"Actions attempted before failure: {actions_attempted}",
+                f"Actions succeeded: {actions_succeeded}",
+                f"⚠️ Manual intervention required - Review failed actions and execute manually"
+            ]
+
             return {
-                "status": "response_failed",
+                "status": "escalated",  # Escalate for manual intervention
                 "actions_attempted": actions_attempted,
                 "actions_succeeded": actions_succeeded,
                 "actions_failed": actions_failed + 1,
-                "processing_notes": processing_notes + [f"Playbook error: {str(e)}"],
+                "processing_notes": error_notes,
                 "action_results": action_results,
                 "execution_time": (datetime.utcnow() - start_time).total_seconds(),
-                "recommended_actions": []
+                "recommended_actions": [
+                    {
+                        "action": "review_failed_playbook",
+                        "description": f"Review and manually execute playbook: {playbook.name}",
+                        "priority": "high"
+                    }
+                ]
             }
 
     async def _execute_actions_sequential(
@@ -682,7 +729,7 @@ class ResponseAgent(BaseAgent):
         self.logger.info(f"Playbook '{playbook.name}' requires approval - escalating to human review")
 
         return {
-            "triage_status": "pending_approval",
+            "triage_status": "escalated",  # Escalated for approval
             "last_updated": datetime.utcnow().isoformat(),
             "current_node": "response",
             "processing_notes": [

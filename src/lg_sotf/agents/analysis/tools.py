@@ -553,50 +553,68 @@ class NetworkAnalysisTool(BaseToolAdapter):
 
 
 class TemporalAnalysisTool(BaseToolAdapter):
-    """Tool for temporal pattern analysis."""
-    
+    """Tool for temporal pattern analysis and historical event correlation.
+
+    Analyzes events before/after an alert to establish timeline and find
+    related activity (precursor events, follow-up actions, etc.)
+    """
+
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
         self.logger = logging.getLogger(__name__)
+        self.state_manager = None  # Will be injected if available
     
     async def execute(self, args: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
-        """Execute temporal analysis."""
+        """Execute temporal analysis - find events before/after alert."""
         try:
-            timestamp = args.get("target", "")
-            analysis_type = args.get("analysis_type", "timing_analysis")
-            
-            if not timestamp:
-                return {
-                    "success": False,
-                    "error": "No timestamp provided",
-                    "analysis_type": analysis_type
-                }
-            
+            # Extract parameters flexibly
+            target = args.get("target", {})
+            analysis_type = args.get("analysis_type", "general")
+
+            # Handle different input formats
+            if isinstance(target, dict):
+                timestamp = target.get("timestamp")
+                username = target.get("username")
+                time_window = target.get("time_window_minutes", 60)
+            elif isinstance(target, str):
+                # String format: "username, timestamp" or just timestamp
+                parts = [p.strip() for p in target.split(',')]
+                if len(parts) == 2:
+                    username = parts[0]
+                    timestamp = parts[1]
+                else:
+                    username = None
+                    timestamp = target
+                time_window = 60
+            else:
+                username = args.get("username")
+                timestamp = args.get("timestamp")
+                time_window = args.get("time_window_minutes", 60)
+
+            # Parse timestamp
+            parsed_time = self._parse_timestamp(timestamp) if timestamp else None
+
             result = {
                 "success": True,
-                "timestamp": timestamp,
                 "analysis_type": analysis_type,
                 "timestamp_analyzed": datetime.utcnow().isoformat()
             }
-            
-            # Parse timestamp
-            parsed_time = self._parse_timestamp(timestamp)
-            if not parsed_time:
-                return {
-                    "success": False,
-                    "error": f"Invalid timestamp format: {timestamp}",
-                    "analysis_type": analysis_type
-                }
-            
-            # Temporal analysis
-            result.update(self._analyze_timing(parsed_time))
-            
-            # Business hours analysis
-            result.update(self._analyze_business_hours(parsed_time))
-            
-            # Pattern analysis
-            result.update(self._analyze_temporal_patterns(parsed_time))
-            
+
+            # If we have state_manager, query historical events
+            if self.state_manager and parsed_time:
+                historical_events = await self._query_historical_events(
+                    parsed_time, username, time_window
+                )
+                result["historical_events"] = historical_events
+                result["events_found"] = len(historical_events)
+
+            # Basic timing analysis
+            if parsed_time:
+                result.update(self._analyze_timing(parsed_time))
+                result.update(self._analyze_business_hours(parsed_time))
+            else:
+                result["warning"] = "No valid timestamp provided for timing analysis"
+
             return result
             
         except Exception as e:
@@ -607,6 +625,58 @@ class TemporalAnalysisTool(BaseToolAdapter):
                 "analysis_type": args.get("analysis_type", "unknown")
             }
     
+    async def _query_historical_events(self, timestamp: datetime, username: Optional[str], time_window_minutes: int) -> List[Dict[str, Any]]:
+        """Query database for events around the given timestamp."""
+        if not self.state_manager:
+            return []
+
+        try:
+            from datetime import timedelta
+
+            # Calculate time range
+            start_time = timestamp - timedelta(minutes=time_window_minutes)
+            end_time = timestamp + timedelta(minutes=time_window_minutes)
+
+            # Query database (using state_manager's connection)
+            # This is a simplified version - adapt to your actual state_manager API
+            events = []
+
+            # Try to get connection from state_manager
+            if hasattr(self.state_manager, 'db_pool') and self.state_manager.db_pool:
+                async with self.state_manager.db_pool.acquire() as conn:
+                    query = """
+                        SELECT
+                            alert_id,
+                            state_data->>'timestamp' as timestamp,
+                            state_data->'raw_alert'->>'title' as title,
+                            state_data->'raw_alert'->>'severity' as severity,
+                            state_data->'raw_alert'->>'category' as category,
+                            created_at
+                        FROM states
+                        WHERE state_data->'raw_alert'->>'timestamp' BETWEEN $1 AND $2
+                    """
+
+                    if username:
+                        query += " AND state_data->'raw_alert'->'raw_data'->>'username' = $3"
+                        rows = await conn.fetch(query, start_time.isoformat(), end_time.isoformat(), username)
+                    else:
+                        rows = await conn.fetch(query, start_time.isoformat(), end_time.isoformat())
+
+                    for row in rows:
+                        events.append({
+                            "alert_id": row['alert_id'],
+                            "timestamp": row['timestamp'],
+                            "title": row['title'],
+                            "severity": row['severity'],
+                            "category": row['category']
+                        })
+
+            return events[:20]  # Limit to 20 events
+
+        except Exception as e:
+            self.logger.warning(f"Failed to query historical events: {e}")
+            return []
+
     def _parse_timestamp(self, timestamp: str) -> Optional[datetime]:
         """Parse timestamp string."""
         try:

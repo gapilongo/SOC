@@ -8,35 +8,214 @@ Supports plugin architecture for easy extensibility.
 
 import asyncio
 import hashlib
+import json
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Literal
+
+from pydantic import BaseModel, Field
 
 from lg_sotf.agents.base import BaseAgent
 from lg_sotf.agents.ingestion.plugins.base import IngestionPlugin
 from lg_sotf.agents.ingestion.plugins.registry import plugin_registry
 from lg_sotf.core.exceptions import AgentError
+from lg_sotf.utils.llm import get_llm_client
+
+
+class EntityExtraction(BaseModel):
+    """Extracted entity from alert."""
+    type: Literal["ip", "domain", "url", "file_hash", "file_name", "user", "host", "process", "email", "other"]
+    value: str
+    context: Optional[str] = None
+
+
+class SemanticAlertParsing(BaseModel):
+    """LLM-parsed structured alert output."""
+    severity: Literal["critical", "high", "medium", "low", "info"] = Field(
+        description="Normalized severity level"
+    )
+    title: str = Field(
+        description="Clear, concise alert title describing the threat/event"
+    )
+    description: str = Field(
+        description="Detailed description of what happened, including context"
+    )
+    category: str = Field(
+        description="Alert category (e.g., malware, lateral_movement, data_exfiltration, credential_access, etc.)"
+    )
+    entities: List[EntityExtraction] = Field(
+        default=[],
+        description="Extracted IOCs and entities (IPs, files, users, hosts, etc.)"
+    )
+    confidence: int = Field(
+        ge=0, le=100,
+        description="Confidence that this is a real security event (0-100)"
+    )
+    reasoning: str = Field(
+        description="Brief explanation of the alert analysis and why it's significant"
+    )
 
 
 class AlertNormalizer:
-    """Normalizes alerts from different sources into common format."""
+    """Normalizes alerts from different sources into common format with LLM semantic parsing."""
 
-    @staticmethod
-    def normalize(raw_alert: Dict[str, Any], source: str) -> Dict[str, Any]:
-        """Normalize alert to common format.
-        
+    def __init__(self, enable_llm_parsing: bool = True):
+        """Initialize normalizer with optional LLM semantic parsing."""
+        self.logger = logging.getLogger(__name__)
+        self.enable_llm_parsing = enable_llm_parsing
+        self.llm_client = None
+
+        if enable_llm_parsing:
+            try:
+                from lg_sotf.core.config.manager import ConfigManager
+                config_manager = ConfigManager()
+                self.llm_client = get_llm_client(config_manager)
+                self.logger.info("LLM semantic parser initialized for alert normalization")
+            except Exception as e:
+                self.logger.warning(f"LLM semantic parsing disabled: {e}")
+                self.enable_llm_parsing = False
+
+    async def _semantic_parse(self, raw_alert: Dict[str, Any], source: str) -> Optional[Dict[str, Any]]:
+        """Parse alert using LLM semantic understanding.
+
+        This allows the system to handle ANY alert format dynamically without
+        hardcoded parsers, making it resilient to format changes and new sources.
+
+        Args:
+            raw_alert: Raw alert data from source (any format)
+            source: Source system name
+
+        Returns:
+            Normalized alert dict or None if parsing fails
+        """
+        try:
+            # Create LLM with structured output for type-safe parsing
+            parser_llm = self.llm_client.with_structured_output(SemanticAlertParsing)
+
+            # Build semantic parsing prompt
+            prompt = f"""You are a security alert parser. Analyze this raw alert from {source} and extract structured information.
+
+Raw Alert Data:
+{json.dumps(raw_alert, indent=2)}
+
+Instructions:
+1. **Severity Normalization**: Map any severity format to standard levels:
+   - Numeric scales (0-10, 1-5, etc.) → critical/high/medium/low/info
+   - CrowdStrike Severity 4-5 → high/critical
+   - CrowdStrike Severity 3 → medium
+   - CrowdStrike Severity 1-2 → low/info
+   - Text values (severe, warning, etc.) → appropriate level
+
+2. **Title Extraction**: Create clear, actionable title from event name/detection name.
+   - Use DetectName, EventName, or AlertName if available
+   - Make it descriptive (e.g., "Lateral Movement Detected", not "Event 12345")
+
+3. **Description**: Write detailed description explaining:
+   - What happened (the security event)
+   - Why it matters (threat significance)
+   - Key context (user, host, tools involved)
+   - NOT just technical IDs or hashes
+
+4. **Category Identification**: Classify the threat type:
+   - lateral_movement, malware, credential_access, data_exfiltration, privilege_escalation, etc.
+   - Infer from tool names (PSExec → lateral_movement), file types, command lines
+
+5. **Entity Extraction**: Extract ALL security-relevant indicators:
+   - IPs (source, destination)
+   - File hashes (MD5, SHA256, etc.)
+   - File names and paths
+   - Usernames and accounts
+   - Hostnames/computer names
+   - Process names and command lines
+   - Domains and URLs
+   - Include context for each (e.g., "destination IP for lateral movement")
+
+6. **Confidence Assessment**: Rate 0-100 how confident you are this is a real security event:
+   - 80-100: Clear threat with strong indicators
+   - 50-79: Suspicious activity needing investigation
+   - 20-49: Grey zone, could be legitimate or misconfigured
+   - 0-19: Likely false positive or test data
+
+7. **Reasoning**: Explain your analysis briefly:
+   - Why this severity level?
+   - What makes this suspicious/malicious?
+   - What indicators support your confidence score?
+
+IMPORTANT: Handle ANY format - nested JSON, flat structures, arrays, etc.
+Extract maximum useful security information from whatever fields are available."""
+
+            # Get structured parsing from LLM
+            self.logger.debug(f"Invoking LLM semantic parser for {source} alert")
+            result: SemanticAlertParsing = await parser_llm.ainvoke(prompt)
+
+            # Convert to normalized format
+            normalized = {
+                "id": AlertNormalizer._extract_id(raw_alert, source),
+                "timestamp": AlertNormalizer._extract_timestamp(raw_alert, source),
+                "source": source,
+                "severity": result.severity,
+                "title": result.title,
+                "description": result.description,
+                "category": result.category,
+                "raw_data": raw_alert,  # Keep original for forensics and audit
+                "entities": [
+                    {
+                        "type": entity.type,
+                        "value": entity.value,
+                        "context": entity.context
+                    }
+                    for entity in result.entities
+                ],
+                "metadata": {
+                    "source_system": source,
+                    "ingestion_timestamp": datetime.utcnow().isoformat(),
+                    "parser": "llm_semantic",
+                    "llm_confidence": result.confidence,
+                    "llm_reasoning": result.reasoning,
+                    "normalization_version": "2.0.0"  # Semantic parsing version
+                }
+            }
+
+            # Add alert hash for deduplication
+            normalized["alert_hash"] = AlertNormalizer._generate_alert_hash(normalized)
+
+            self.logger.info(
+                f"✨ LLM semantic parsing successful: {result.title} "
+                f"(severity: {result.severity}, confidence: {result.confidence}%, "
+                f"entities: {len(result.entities)})"
+            )
+
+            return normalized
+
+        except Exception as e:
+            self.logger.error(f"Semantic parsing failed for {source}: {e}", exc_info=True)
+            return None
+
+    async def normalize(self, raw_alert: Dict[str, Any], source: str) -> Dict[str, Any]:
+        """Normalize alert to common format using LLM semantic parsing.
+
         Args:
             raw_alert: Raw alert data from source
             source: Source system name
-            
+
         Returns:
             Normalized alert dictionary
         """
         # Extract filename from alert metadata if available
         filename = raw_alert.get("_metadata", {}).get("filename") or raw_alert.get("filename")
-        source = AlertNormalizer._extract_source_from_filename(raw_alert, source, filename)
-        
+        source = self._extract_source_from_filename(raw_alert, source, filename)
+
+        # Try LLM semantic parsing first
+        if self.enable_llm_parsing and self.llm_client:
+            try:
+                normalized = await self._semantic_parse(raw_alert, source)
+                if normalized:
+                    self.logger.info(f"✨ LLM semantic parsing successful for alert from {source}")
+                    return normalized
+            except Exception as e:
+                self.logger.warning(f"LLM semantic parsing failed, falling back to rule-based: {e}")
+
         # Extract common fields with source-specific mappings
         normalized = {
             "id": AlertNormalizer._extract_id(raw_alert, source),
@@ -55,10 +234,10 @@ class AlertNormalizer:
                 "normalization_version": "1.0.0"
             }
         }
-        
+
         # Add alert hash for deduplication
         normalized["alert_hash"] = AlertNormalizer._generate_alert_hash(normalized)
-        
+
         return normalized
 
     @staticmethod
@@ -183,14 +362,18 @@ class AlertNormalizer:
 
     @staticmethod
     def _extract_severity(alert: Dict[str, Any], source: str) -> str:
-        """Extract and normalize severity."""
-        severity_fields = ["severity", "priority", "level", "risk_score"]
-        
+        """Extract and normalize severity using intelligent field detection."""
+        # Look for fields that contain severity information
         severity_value = None
-        for field in severity_fields:
-            if field in alert:
-                severity_value = alert[field]
-                break
+        for key, value in alert.items():
+            key_lower = key.lower()
+            if any(keyword in key_lower for keyword in [
+                'severity', 'priority', 'level', 'risk', 'criticality'
+            ]):
+                # Skip fields that are clearly not severity values
+                if not any(skip in key_lower for skip in ['id', 'code', 'number']):
+                    severity_value = value
+                    break
         
         # Source-specific
         if not severity_value:
@@ -241,47 +424,126 @@ class AlertNormalizer:
 
     @staticmethod
     def _extract_title(alert: Dict[str, Any], source: str) -> str:
-        """Extract alert title."""
-        title_fields = ["title", "name", "alert_name", "alertName", "rule_name", "ruleName"]
-        
-        for field in title_fields:
-            if field in alert and alert[field]:
-                return str(alert[field])
-        
-        # Source-specific
-        if source == "splunk" and "search_name" in alert:
-            return alert["search_name"]
-        elif source == "qradar" and "offense_type" in alert:
-            return f"QRadar: {alert['offense_type']}"
-        elif source == "sentinel" and "properties" in alert:
-            return alert["properties"].get("alertDisplayName", "")
-        
+        """Extract alert title using intelligent field detection.
+
+        Uses fuzzy matching to find the most appropriate title field
+        regardless of naming convention.
+        """
+        # Strategy 1: Look for fields with "title/name/event" semantics
+        # Using case-insensitive fuzzy matching
+        for key, value in alert.items():
+            if not isinstance(value, (str, int, float)):
+                continue
+
+            key_lower = key.lower()
+            # Check if field name suggests it's a title/name
+            if any(keyword in key_lower for keyword in [
+                'title', 'name', 'event', 'alert', 'rule',
+                'summary', 'type', 'description'
+            ]):
+                # Prioritize fields that look like titles (not IDs or codes)
+                str_value = str(value)
+                if len(str_value) > 5 and not str_value.isdigit():
+                    # Prefer shorter, descriptive names
+                    if 'id' not in key_lower and 'code' not in key_lower:
+                        return str_value
+
+        # Strategy 2: Find the most descriptive string field
+        # (longest non-technical string)
+        best_candidate = None
+        best_score = 0
+
+        for key, value in alert.items():
+            if not isinstance(value, str) or len(value) < 5:
+                continue
+
+            # Skip technical fields
+            if any(skip in key.lower() for skip in [
+                'id', 'timestamp', 'time', 'date', 'ip', 'address',
+                'port', 'hash', 'url', 'path', 'agent', 'location'
+            ]):
+                continue
+
+            # Score based on length and readability
+            score = len(value) if len(value) < 100 else 0
+            if score > best_score:
+                best_score = score
+                best_candidate = value
+
+        if best_candidate:
+            return best_candidate
+
+        # Fallback: return first non-empty string value
+        for value in alert.values():
+            if isinstance(value, str) and len(value) > 0:
+                return value
+
         return f"Alert from {source}"
 
     @staticmethod
     def _extract_description(alert: Dict[str, Any], source: str) -> str:
-        """Extract alert description."""
-        desc_fields = ["description", "message", "details", "summary"]
-        
-        for field in desc_fields:
-            if field in alert and alert[field]:
-                return str(alert[field])
-        
-        # Source-specific
-        if source == "sentinel" and "properties" in alert:
-            return alert["properties"].get("description", "")
-        
-        return ""
+        """Extract alert description using intelligent field detection."""
+        # Look for fields that semantically represent descriptions
+        for key, value in alert.items():
+            if not isinstance(value, str) or len(value) < 10:
+                continue
+
+            key_lower = key.lower()
+            if any(keyword in key_lower for keyword in [
+                'description', 'message', 'detail', 'summary',
+                'comment', 'note', 'reason', 'explanation'
+            ]):
+                return str(value)
+
+        # Fallback: find longest text field (likely description)
+        longest_text = ""
+        for key, value in alert.items():
+            if isinstance(value, str) and len(value) > len(longest_text):
+                # Skip fields that are clearly not descriptions
+                if not any(skip in key.lower() for skip in [
+                    'id', 'timestamp', 'time', 'ip', 'hash', 'url',
+                    'agent', 'location', 'user', 'host', 'path'
+                ]):
+                    if len(value) > 20:  # Descriptions are usually longer
+                        longest_text = value
+
+        return longest_text
 
     @staticmethod
     def _extract_category(alert: Dict[str, Any], source: str) -> str:
-        """Extract alert category."""
-        category_fields = ["category", "type", "classification", "tactic"]
-        
-        for field in category_fields:
+        """Extract alert category using intelligent field detection."""
+        # Look for fields that represent categories/types
+        for key, value in alert.items():
+            if not isinstance(value, (str, int)):
+                continue
+
+            key_lower = key.lower()
+            # Check for category-like fields, but SKIP severity fields
+            if any(keyword in key_lower for keyword in [
+                'category', 'type', 'classification', 'tactic',
+                'technique', 'kind', 'class'
+            ]):
+                # Avoid ID fields and severity fields
+                if 'id' not in key_lower and 'severity' not in key_lower and value:
+                    return str(value)
+
+        # Fallback: try to infer from title/event name
+        title_like_fields = ['event_name', 'alert_name', 'title', 'name']
+        for field in title_like_fields:
             if field in alert and alert[field]:
-                return str(alert[field])
-        
+                # Extract category from event name (e.g., "MFA Bypass Attempt" -> "authentication")
+                title_lower = str(alert[field]).lower()
+                if any(keyword in title_lower for keyword in ['login', 'auth', 'mfa', 'password']):
+                    return 'authentication'
+                elif any(keyword in title_lower for keyword in ['malware', 'virus', 'trojan']):
+                    return 'malware'
+                elif any(keyword in title_lower for keyword in ['network', 'connection', 'traffic']):
+                    return 'network'
+                elif any(keyword in title_lower for keyword in ['privilege', 'escalation', 'admin']):
+                    return 'privilege_escalation'
+                elif any(keyword in title_lower for keyword in ['data', 'exfil', 'leak']):
+                    return 'data_exfiltration'
+
         return "unknown"
 
     @staticmethod
@@ -584,8 +846,8 @@ class IngestionAgent(BaseAgent):
         source = state.get("source", "unknown")
 
         try:
-            # Normalize alert
-            normalized_alert = self.normalizer.normalize(raw_alert, source)
+            # Normalize alert (using async LLM semantic parsing)
+            normalized_alert = await self.normalizer.normalize(raw_alert, source)
 
             # Check deduplication
             if self.enable_deduplication:
@@ -680,7 +942,8 @@ class IngestionAgent(BaseAgent):
 
                     for raw_alert in raw_alerts:
                         try:
-                            normalized = self.normalizer.normalize(raw_alert, source_name)
+                            # Normalize alert (using async LLM semantic parsing)
+                            normalized = await self.normalizer.normalize(raw_alert, source_name)
 
                             # Check deduplication
                             if self.enable_deduplication and await self._is_duplicate(normalized):

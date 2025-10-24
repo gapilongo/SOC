@@ -459,7 +459,7 @@ class WorkflowEngine:
         return "human_loop"
 
     def _route_after_correlation(self, state: WorkflowState) -> str:
-        """Routing logic after correlation."""
+        """Routing logic after correlation (following SOC best practices)."""
         correlations = state.get("correlations", [])
         correlation_score = state.get("correlation_score", 0)
         confidence = state["confidence_score"]
@@ -470,34 +470,55 @@ class WorkflowEngine:
         if correlation_score > 85 and len(correlations) >= 5:
             return "response"
 
-        # Moderate correlations → analysis
-        if correlation_score > 60 or len(correlations) >= 3:
+        # Moderate-high correlations OR found multiple related alerts → deep analysis
+        if correlation_score > 50 or len(correlations) >= 2:
             return "analysis"
 
-        # Weak correlations → human review
-        if correlation_score > 20 and confidence > 50:
+        # Low correlations but medium confidence → still analyze (don't give up yet)
+        if confidence >= 40:
+            return "analysis"
+
+        # Very low confidence and no correlations → close as likely FP
+        if confidence < 30 and correlation_score < 20:
+            return "close"
+
+        # Edge case: escalate only if truly uncertain after correlation
+        if 30 <= confidence <= 60 and correlation_score < 30:
             return "human_loop"
 
-        # No meaningful correlations → close
-        return "close"
+        # Default: analyze (prefer AI investigation over human escalation)
+        return "analysis"
 
     def _route_after_analysis(self, state: WorkflowState) -> str:
-        """Routing logic after analysis."""
+        """Routing logic after analysis (following SOC best practices)."""
         threat_score = state.get("threat_score", 0)
         confidence = state["confidence_score"]
         conclusion = state.get("analysis_conclusion", "").lower()
+        tp_count = len(state.get("tp_indicators", []))
 
         self.logger.info(f"🛤️ Routing after analysis: threat_score={threat_score}%, confidence={confidence}%")
 
-        # High threat → response
-        if threat_score >= 80 or (threat_score >= 60 and confidence >= 80):
+        # High threat → automated response
+        if threat_score >= 70 or (threat_score >= 50 and confidence >= 80):
             return "response"
 
-        # Uncertain analysis → human review
-        if "uncertain" in conclusion or (30 <= confidence <= 70):
+        # Medium threat with evidence → response
+        if threat_score >= 50 and tp_count >= 3:
+            return "response"
+
+        # Analysis found low/no threat → close
+        if threat_score < 30 and confidence < 40:
+            return "close"
+
+        # Analysis is uncertain OR complex case → escalate to human (this is appropriate AFTER analysis)
+        if "uncertain" in conclusion or "needs human" in conclusion:
             return "human_loop"
 
-        # Low threat → close
+        # Medium threat, medium confidence → escalate for human judgment (after AI tried)
+        if 40 <= threat_score < 70 and 40 <= confidence < 75:
+            return "human_loop"
+
+        # Default: close (analysis didn't find significant threat)
         return "close"
 
     def _route_after_ingestion(self, state: WorkflowState) -> str:
@@ -1093,7 +1114,7 @@ class WorkflowEngine:
             return {
                 "processing_notes": [f"Human loop escalation failed: {str(e)}"],
                 "current_node": "human_loop",
-                "triage_status": "escalation_failed"
+                "triage_status": "escalated"  # Still escalated even if process failed
             }
 
     async def _execute_response(self, state: WorkflowState) -> Dict[str, Any]:
@@ -1144,7 +1165,7 @@ class WorkflowEngine:
             return {
                 "processing_notes": [f"Response execution failed: {str(e)}"],
                 "current_node": "response",
-                "triage_status": "response_failed"
+                "triage_status": "escalated"  # Escalate for manual intervention
             }
 
     async def _execute_learning(self, state: WorkflowState) -> Dict[str, Any]:
@@ -1165,9 +1186,26 @@ class WorkflowEngine:
 
         Returns only state updates, following LangGraph best practices.
         """
+        # Preserve important statuses - don't overwrite with generic "closed"
+        current_status = state.get("triage_status", "unknown")
+
+        # Preserve these statuses (meaningful outcomes):
+        # - responded: Response actions were taken
+        # - escalated: Alert is waiting for human review or manual intervention
+        preserved_statuses = [
+            "responded",
+            "escalated"
+        ]
+
+        if current_status in preserved_statuses:
+            final_status = current_status
+        else:
+            # Only set "closed" for truly closed alerts (FP, low confidence, etc.)
+            final_status = "closed"
+
         return {
             "current_node": "close",
-            "triage_status": "closed"
+            "triage_status": final_status
         }
 
     async def _llm_decide_routing(
@@ -1213,23 +1251,35 @@ class WorkflowEngine:
                 ),
             }
 
-            # Create intelligent routing prompt
+            # Create intelligent routing prompt following SOC best practices
             prompt = f"""You are a SOC routing AI. Analyze this alert after {after_node} and decide the optimal next step.
 
 Alert Context:
 {json.dumps(alert_context, indent=2)}
 
-Available Next Steps:
+Available Next Steps (follow SOC best practices - minimize human escalation):
 - **correlation**: Find related alerts, historical patterns, connections
-  → Use when: Network indicators, user indicators, or potential pattern
-- **analysis**: Deep investigation with tools and reasoning
-  → Use when: Complex threat, malware, or needs investigation
-- **response**: Take immediate containment/remediation action
-  → Use when: High confidence threat (>80%) with 3+ TP indicators
-- **human_loop**: Escalate to security analyst for review
-  → Use when: Uncertain (20-60% confidence), grey-zone cases
+  → PREFER THIS for: Grey-zone confidence (20-80%), network/user/file indicators, pattern detection needed
+  → Goal: Gather context before deep analysis
+
+- **analysis**: Deep investigation with automated tools and AI reasoning
+  → Use when: After correlation, suspicious activity needs investigation, complex threats
+  → Goal: Let AI investigate thoroughly before bothering analysts
+
+- **response**: Take immediate automated containment/remediation action
+  → Use when: CONFIRMED high threat (>85% confidence with 3+ TP indicators)
+  → Goal: Fast automated response for clear threats
+
+- **human_loop**: Escalate to security analyst for manual review
+  → Use SPARINGLY: Only when correlation + analysis would STILL be uncertain
+  → Use when: Critical business impact requiring human judgment, policy violations, compliance issues
+  → Goal: Minimize analyst alert fatigue
+
 - **close**: Close alert as false positive or benign
-  → Use when: Very low confidence (<15%) with 2+ FP indicators
+  → Use when: Very low confidence (<15%) with 2+ FP indicators, obvious false positive
+
+IMPORTANT: Following SOC best practices, prefer correlation → analysis → response over human escalation.
+Human escalation should be LAST RESORT for cases requiring human judgment after automated processing.
 
 Provide your decision with:
 1. next_step: The chosen step
@@ -1265,16 +1315,28 @@ Provide your decision with:
         tp_count = len(state["tp_indicators"])
 
         if after_node == "triage":
-            # Simple fallback rules
+            # Fallback rules following SOC best practices
+            # Close obvious false positives
             if confidence <= 10 and fp_count >= 2:
                 return "close"
+
+            # Fast-track high-confidence threats to response
             if confidence >= 85 and tp_count >= 3:
                 return "response"
-            if self._needs_correlation(state):
+
+            # Prefer correlation first for grey-zone cases (gather context)
+            if self._needs_correlation(state) or 20 <= confidence <= 80:
                 return "correlation"
-            if confidence < 60:
+
+            # Analysis for lower confidence that needs investigation
+            if confidence < 70:
                 return "analysis"
-            # Default: try correlation for most alerts
+
+            # Medium-high confidence (70-84%) → analyze to confirm
+            if confidence < 85:
+                return "analysis"
+
+            # Default fallback: correlation (safest, gathers context)
             return "correlation"
 
         # For other nodes, conservative default
@@ -1282,7 +1344,7 @@ Provide your decision with:
 
     def _should_learn(self, state: WorkflowState) -> bool:
         """Check if learning is beneficial."""
-        return (state.get("human_feedback") or 
+        return (state.get("human_feedback") or
                 any("unusual" in note.lower() for note in state["processing_notes"]))
 
     async def _persist_final_state(self, workflow_state: WorkflowState):
