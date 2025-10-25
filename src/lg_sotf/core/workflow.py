@@ -1,6 +1,8 @@
 """
- WorkflowEngine with atomic state management and proper agent coordination.
-Fixes the state corruption and duplicate execution issues.
+WorkflowEngine for orchestrating multi-agent SOC alert processing.
+
+This module handles workflow execution, agent coordination, and state management.
+The graph structure and routing logic are defined in graph.py.
 """
 
 import asyncio
@@ -8,12 +10,8 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import RLock
-from typing import Any, Dict, List, TypedDict, Annotated, Literal
-import operator
+from typing import Any, Dict, List, Literal
 import json
-
-from pydantic import BaseModel, Field
-from langgraph.graph import END, START, StateGraph
 
 from lg_sotf.agents.analysis.base import AnalysisAgent
 from lg_sotf.agents.correlation.base import CorrelationAgent
@@ -28,6 +26,13 @@ from lg_sotf.core.state.manager import StateManager
 from lg_sotf.core.state.model import SOCState, TriageStatus
 from lg_sotf.utils.llm import get_llm_client
 
+# Import graph components
+from lg_sotf.core.graph import (
+    WorkflowState,
+    WorkflowGraphBuilder,
+    RoutingDecision
+)
+
 
 @dataclass
 class ExecutionContext:
@@ -38,67 +43,8 @@ class ExecutionContext:
     locks: Dict[str, asyncio.Lock]    # Per-node locks
 
 
-class ExecutionContextData(TypedDict):
-    """Typed execution context for state."""
-    execution_id: str
-    started_at: str
-    last_node: str
-    executed_nodes: List[str]
-    execution_time: str
-
-
-class RoutingDecision(BaseModel):
-    """Structured LLM routing decision following LangGraph best practices."""
-    next_step: Literal["correlation", "analysis", "response", "human_loop", "close"] = Field(
-        description="The next processing step for the alert"
-    )
-    confidence: int = Field(ge=0, le=100, description="Confidence in this routing decision")
-    reasoning: str = Field(description="Brief reasoning for this routing choice")
-
-
-class WorkflowState(TypedDict):
-    """State schema for LangGraph workflow with proper reducers."""
-    # Core identification
-    alert_id: str
-    workflow_instance_id: str
-    execution_context: ExecutionContextData
-
-    # Alert data
-    raw_alert: Dict[str, Any]
-    enriched_data: Dict[str, Any]
-
-    # Status and scoring
-    triage_status: str
-    confidence_score: int
-    current_node: str
-    priority_level: int
-
-    # Indicators - WITH REDUCERS for accumulation
-    fp_indicators: Annotated[List[str], operator.add]
-    tp_indicators: Annotated[List[str], operator.add]
-
-    # Correlation data - WITH REDUCER
-    correlations: Annotated[List[Dict[str, Any]], operator.add]
-    correlation_score: int
-
-    # Analysis data
-    analysis_conclusion: str
-    threat_score: int
-    recommended_actions: Annotated[List[str], operator.add]
-    analysis_reasoning: Annotated[List[Dict[str, Any]], operator.add]
-    tool_results: Dict[str, Dict[str, Any]]
-
-    # Processing tracking - WITH REDUCER
-    processing_notes: Annotated[List[str], operator.add]
-    last_updated: str
-
-    # Execution guards
-    agent_executions: Dict[str, Dict[str, Any]]  # Track agent execution state
-    state_version: int  # State versioning for conflict detection
-
-
 class WorkflowEngine:
-    """ workflow engine with atomic state management."""
+    """Workflow engine with atomic state management."""
 
     def __init__(self, config_manager: ConfigManager, state_manager: StateManager, redis_storage=None, tool_orchestrator=None):
         self.config = config_manager
@@ -124,29 +70,38 @@ class WorkflowEngine:
         self._execution_contexts = {}  # Track active executions
         self._agent_locks = {}  # Per-agent execution locks
 
-        # Routing configuration
-        self.routing_config = {
-            'max_alert_age_hours': config_manager.get('routing.max_alert_age_hours', 72),
-            'correlation_grey_zone_min': config_manager.get('routing.correlation_grey_zone_min', 30),
-            'correlation_grey_zone_max': config_manager.get('routing.correlation_grey_zone_max', 70),
-            'analysis_threshold': config_manager.get('routing.analysis_threshold', 40),
-            'human_review_min': config_manager.get('routing.human_review_min', 20),
-            'human_review_max': config_manager.get('routing.human_review_max', 60),
-            'response_threshold': config_manager.get('routing.response_threshold', 80),
-        }
-        
-        self.graph = self._build_workflow_graph()
+        # Graph builder
+        self.graph_builder = WorkflowGraphBuilder(config_manager)
         self.compiled_graph = None
 
+        # Recursion limit for safety (prevents infinite loops)
+        self.recursion_limit = config_manager.get('workflow.recursion_limit', 50)
+
     async def initialize(self):
-        """Initialize the  workflow engine."""
+        """Initialize the workflow engine."""
         try:
             await self._setup_agents()
-            self.compiled_graph = self.graph.compile()
-            self.logger.info(" WorkflowEngine initialized")
+
+            # Build node executors map for graph construction
+            node_executors = {
+                "ingestion": self._execute_ingestion,
+                "triage": self._execute_triage,
+                "correlation": self._execute_correlation,
+                "analysis": self._execute_analysis,
+                "human_loop": self._execute_human_loop,
+                "response": self._execute_response,
+                "learning": self._execute_learning,
+                "close": self._execute_close,
+            }
+
+            # Build and compile graph using WorkflowGraphBuilder
+            graph = self.graph_builder.build_graph(node_executors)
+            self.compiled_graph = graph.compile()
+
+            self.logger.info("WorkflowEngine initialized successfully")
 
         except Exception as e:
-            self.logger.error(f"Failed to initialize  WorkflowEngine: {e}")
+            self.logger.error(f"Failed to initialize WorkflowEngine: {e}")
             raise WorkflowError(f"Initialization failed: {e}")
 
     async def _setup_agents(self):
@@ -257,75 +212,7 @@ class WorkflowEngine:
         self._execution_contexts[alert_id] = context
         return context
 
-    def _build_workflow_graph(self) -> StateGraph:
-        """Build the  LangGraph workflow."""
-        workflow = StateGraph(WorkflowState)
-
-        # Add nodes with synchronization wrappers
-        workflow.add_node("ingestion", self._execute_ingestion)
-        workflow.add_node("triage", self._execute_triage)
-        workflow.add_node("correlation", self._execute_correlation)
-        workflow.add_node("analysis", self._execute_analysis)
-        workflow.add_node("human_loop", self._execute_human_loop)
-        workflow.add_node("response", self._execute_response)
-        workflow.add_node("learning", self._execute_learning)
-        workflow.add_node("close", self._execute_close)
-
-        # Set entry point
-        workflow.add_edge(START, "ingestion")
-
-        # Add conditional edges with  routing
-        workflow.add_conditional_edges(
-            "ingestion",
-            self._route_after_ingestion,
-            {"triage": "triage", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "triage",
-            self._route_after_triage,
-            {
-                "correlation": "correlation",
-                "analysis": "analysis", 
-                "human_loop": "human_loop",
-                "response": "response",
-                "close": "close",
-            },
-        )
-
-        workflow.add_conditional_edges(
-            "correlation",
-            self._route_after_correlation,
-            {
-                "analysis": "analysis",
-                "response": "response",
-                "human_loop": "human_loop", 
-                "close": "close",
-            },
-        )
-
-        workflow.add_conditional_edges(
-            "analysis",
-            self._route_after_analysis,
-            {"human_loop": "human_loop", "response": "response", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "human_loop",
-            self._route_after_human_loop,
-            {"analysis": "analysis", "response": "response", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "response",
-            self._route_after_response,
-            {"learning": "learning", "close": "close"},
-        )
-
-        workflow.add_edge("learning", "close")
-        workflow.add_edge("close", END)
-
-        return workflow
+    # Graph building is now handled by WorkflowGraphBuilder in graph.py
 
     # ===============================
     #  EXECUTION WRAPPERS
@@ -371,15 +258,20 @@ class WorkflowEngine:
         alert_id = state["alert_id"]
         execution_context = self._execution_contexts.get(alert_id)
 
+        # ✅ IMPROVEMENT: Return informative updates instead of empty dict
         if not execution_context:
             self.logger.error(f"No execution context for alert {alert_id}")
-            return {}
+            return {
+                "processing_notes": [f"⚠️ Missing execution context for {node_name}"]
+            }
 
         # Check if this node already executed
         with self._state_lock:
             if execution_context.node_executions.get(node_name, False):
                 self.logger.warning(f"Node {node_name} already executed for {alert_id}, skipping")
-                return {}
+                return {
+                    "processing_notes": [f"⏭️ Skipped {node_name} (already executed)"]
+                }
 
         # Acquire node-specific lock
         async with execution_context.locks[node_name]:
@@ -387,7 +279,9 @@ class WorkflowEngine:
             with self._state_lock:
                 if execution_context.node_executions.get(node_name, False):
                     self.logger.warning(f"Node {node_name} executed during lock wait for {alert_id}")
-                    return {}
+                    return {
+                        "processing_notes": [f"⏭️ Skipped {node_name} (executed during lock wait)"]
+                    }
 
                 # Mark as executing
                 execution_context.node_executions[node_name] = True
@@ -987,9 +881,13 @@ class WorkflowEngine:
                 "state_version": 1
             }
 
-            # Execute through LangGraph
-            self.logger.info(f"🚀 Starting workflow for {alert_id}")
-            result_state = await self.compiled_graph.ainvoke(workflow_state)
+            # Execute through LangGraph with recursion limit for safety
+            # ✅ IMPROVEMENT: Add recursion_limit to prevent infinite loops
+            config = {
+                "recursion_limit": self.recursion_limit
+            }
+            self.logger.info(f"🚀 Starting workflow for {alert_id} (recursion_limit={self.recursion_limit})")
+            result_state = await self.compiled_graph.ainvoke(workflow_state, config)
 
             # Cleanup execution context
             if alert_id in self._execution_contexts:
