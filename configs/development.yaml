@@ -99,14 +99,15 @@ agents:
 
   triage:
     confidence_threshold: 70
-    enable_ml_scoring: true
+    enable_ml_scoring: false  # Disabled - using rule-based only
+    enable_llm_scoring: true  # Enabled - using Claude API!
     ml_model_path: "models/triage_model.pkl"
   
   correlation:
     correlation_window_minutes: 60
     similarity_threshold: 0.7
     max_correlations: 10
-    enable_llm_correlation: true
+    enable_llm_correlation: true  # Enabled - using Claude API!
     llm_weight: 0.3
     # New: External enrichment configuration
     enable_threat_intel: true
@@ -205,8 +206,8 @@ logging:
 
 # Security configuration
 security:
-  encryption_key: "dev_encryption_key_32_bytes_long___"
-  jwt_secret: "dev_jwt_secret_32_bytes_long______"
+  encryption_key: "dev_encryption_key_32bytes_test!"  # Exactly 32 bytes
+  jwt_secret: "dev_jwt_secret_32bytes_testing!"  # Exactly 32 bytes
   session_timeout: 3600
   max_login_attempts: 5
 
@@ -232,10 +233,10 @@ development:
 
 # LLM configuration
 llm:
-  provider: "gemini"
-  api_key: ""
-  # model: "gemini-2.5-pro"
-  model: "gemini-2.5-flash"
+  provider: "anthropic"  # Using Claude/Anthropic
+  api_key: ""  # Auto-discovered from Claude Code environment
+  model: "claude-3-5-haiku-20241022"  # Using Haiku for faster/cheaper testing
+  # model: "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet (more powerful)
   temperature: 0.3
   max_tokens: 1000
   timeout: 30
@@ -243,7 +244,7 @@ llm:
 # Workflow configuration
 workflow:
   # LLM-based routing configuration (LangGraph best practices)
-  enable_llm_routing: true  # Use LLM for intelligent routing decisions
+  enable_llm_routing: true  # Enabled - using Claude API for intelligent routing!
   llm_routing_threshold_min: 20  # Use LLM only for confidence >= this value
   llm_routing_threshold_max: 80  # Use LLM only for confidence <= this value
 
