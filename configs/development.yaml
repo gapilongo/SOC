@@ -232,10 +232,10 @@ development:
 
 # LLM configuration
 llm:
-  provider: "gemini"
-  api_key: ""
-  # model: "gemini-2.5-pro"
-  model: "gemini-2.5-flash"
+  provider: "anthropic"  # Using Claude/Anthropic
+  api_key: "YOUR_API_KEY_HERE"  # Replace with your Anthropic API key
+  model: "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet (recommended)
+  # model: "claude-3-haiku-20240307"  # Claude 3 Haiku (faster, cheaper)
   temperature: 0.3
   max_tokens: 1000
   timeout: 30
