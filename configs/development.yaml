@@ -1,23 +1,87 @@
-# Development configuration for LG-SOTF
+# LG-SOTF development configuration.
+#
+# Load with LG_SOTF_CONFIG_FILE=configs/development.yaml. This file is the
+# lowest-precedence layer: LG_SOTF_<SECTION>__<KEY> environment variables and
+# .env override it. ${VAR} / ${VAR:-default} are expanded from the environment.
+#
+# The jwt_secret, encryption_keys and indicator_hmac_key below are published
+# placeholders so a checkout runs without setup. They are listed in
+# lg_sotf.security.insecure, and staging/production refuse them: SecretBox and
+# hmac_indicator raise, and ConfigManager.validate() fails. Never copy them into
+# another environment; generate real values (see .env.example).
 
-# Database configuration
+environment: development
+
 database:
-  host: localhost
-  port: 5432
-  database: lg_sotf_dev
-  username: lg_sotf
-  password: lg_sotf_dev_password
-  pool_size: 5
-  max_overflow: 10
+  url: postgresql://soc:soc_dev_password@localhost:5432/soc
+  pool_min: 2
+  pool_max: 10
 
-# Redis configuration
 redis:
-  host: localhost
-  port: 6379
-  password: null
-  db: 0
-  max_connections: 5
+  url: redis://localhost:6379/0
+  key_prefix: lgsotf
 
+llm:
+  enabled: true
+  provider: anthropic   # LG_SOTF_LLM__PROVIDER=fake runs fully offline
+  # api_key: taken from ANTHROPIC_API_KEY (or LG_SOTF_LLM__API_KEY)
+  fast:
+    model: claude-haiku-4-5
+    max_tokens: 1024
+    temperature: 0.0
+    timeout_s: 60
+    max_retries: 2
+    max_concurrency: 8
+  deep:
+    # Thinking is always on for this model and sampling parameters are not
+    # accepted, so temperature is omitted automatically.
+    model: claude-opus-5-5
+    max_tokens: 16000
+    timeout_s: 300
+    max_retries: 2
+    max_concurrency: 4
+  prompt_caching: true
+  max_input_chars: 24000
+  max_field_chars: 2000
+  max_list_items: 50
+  daily_token_budget_per_tenant: 2000000
+
+auth:
+  jwt_secret: lg-sotf-development-only-jwt-secret-do-not-use
+  cookie_secure: false
+  access_token_ttl_s: 3600
+  bootstrap_tenant_id: default
+  bootstrap_tenant_name: Default
+  # Bootstrap admin: LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL / LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD
+
+api:
+  host: 127.0.0.1
+  port: 8000
+  public_url: http://localhost:8000
+  cors_origins:
+    - http://localhost:3000
+    - http://localhost:5173
+  docs_enabled: true
+
+worker:
+  concurrency: 4
+  per_tenant_concurrency: 4
+
+security:
+  encryption_keys: bGctc290Zi1kZXZlbG9wbWVudC1vbmx5LWtleS0wMDA=
+  indicator_hmac_key: lg-sotf-development-only-indicator-hmac-key
+
+observability:
+  log_level: INFO
+  log_format: console
+  metrics_enabled: true
+
+response:
+  dry_run: true
+
+# ---------------------------------------------------------------------------
+# Free-form tuning read by agents via ConfigManager.get("agents.<name>.<key>")
+# ---------------------------------------------------------------------------
 agents:
   ingestion:
     batch_size: 100
@@ -29,89 +93,35 @@ agents:
     rate_limit_enabled: true
     max_alerts_per_minute: 1000
     max_alerts_per_source_minute: 100
-    
     source_priorities:
       file: 1
       webhook: 2
       crowdstrike: 3
       splunk: 4
-    
     sources:
-      # ========================================
-      # FILE SOURCE
-      # ========================================
       file:
         enabled: true
-        watch_directory: "tests/fixtures/alerts"
-        file_patterns:
-          - "*.json"
-          - "*.csv"
+        watch_directory: tests/fixtures/alerts
+        file_patterns: ["*.json", "*.csv"]
         delete_after_read: false
-        move_to_processed: true
-        processed_directory: "tests/fixtures/alerts/processed"
-        
+        move_to_processed: false
         csv_delimiter: ","
         csv_has_header: true
-        csv_field_mapping:
-          # Firewall CSV: event_id,timestamp,severity,event_type,source_ip,destination_ip...
-          event_id: id
-          timestamp: timestamp
-          severity: severity
-          event_type: category
-          rule_name: title
-          source_ip: source_ip
-          destination_ip: destination_ip
-          destination_port: destination_port
-          protocol: protocol
-          user: user
-          device_name: host
-          country: country
-          bytes_transferred: bytes_transferred
-          action: action
-      
-      # ========================================
-      # WEBHOOK SOURCE (sibling, not child!)
-      # ========================================
-      webhook:
-        enabled: false
-        port: 8080
-        path: "/webhook/alerts"
-        auth_token: "poc_webhook_token"
-      
-      # ========================================
-      # SPLUNK SOURCE
-      # ========================================
-      splunk:
-        enabled: false
-        base_url: "https://splunk-poc.example.com:8089"
-        token: "poc_token"
-        index: "security"
-      
-      # ========================================
-      # CROWDSTRIKE SOURCE
-      # ========================================
-      crowdstrike:
-        enabled: false
-        base_url: "https://api.crowdstrike.com"
-        client_id: "poc_client_id"
-        client_secret: "poc_client_secret"
-        
 
   triage:
     confidence_threshold: 70
-    enable_ml_scoring: false  # Disabled - using rule-based only
-    enable_llm_scoring: true  # Enabled - using Claude API!
-    ml_model_path: "models/triage_model.pkl"
-  
+    enable_ml_scoring: false
+    enable_llm_scoring: true
+    llm_weight: 0.4
+
   correlation:
     correlation_window_minutes: 60
     similarity_threshold: 0.7
     max_correlations: 10
-    enable_llm_correlation: true  # Enabled - using Claude API!
+    enable_llm_correlation: true
     llm_weight: 0.3
-    # New: External enrichment configuration
-    enable_threat_intel: true
-    enable_siem_queries: true
+    enable_threat_intel: false
+    enable_siem_queries: false
     enable_burst_detection: true
     burst_threshold_per_minute: 5
 
@@ -121,136 +131,49 @@ agents:
     max_confidence_threshold: 90
     enable_tool_orchestration: true
     enable_llm_reasoning: true
-    react_temperature: 0.3
-    max_reasoning_tokens: 1000
     parallel_tool_execution: true
     max_parallel_tools: 3
     tool_timeout: 30
+    enable_fallback_analysis: true
+    min_iterations_before_stop: 2
+    confidence_stop_threshold: 95
 
   human_loop:
     escalation_threshold: 40
     max_escalation_level: 3
     response_timeout_hours: 24
+    auto_escalate_enabled: true
+    sla_check_interval: 300
 
   response:
     enabled: true
-    dry_run_mode: true  # Set to false in production to execute real actions
-    auto_approve_low_risk: true
-    auto_approve_medium_risk: false  # Require approval for medium risk actions
-    auto_approve_high_risk: false  # Require approval for high risk actions
+    dry_run_mode: true
+    auto_approve_low_risk: false
+    auto_approve_medium_risk: false
+    auto_approve_high_risk: false
     max_parallel_actions: 3
     action_timeout: 60
-    execution_timeout: 120
-    max_retries: 3
-    retry_delay: 2.0
 
-# Tool configuration
+routing:
+  max_alert_age_hours: 72
+  correlation_grey_zone_min: 30
+  correlation_grey_zone_max: 70
+  analysis_threshold: 40
+  human_review_min: 20
+  human_review_max: 60
+  response_threshold: 80
+
 tools:
-  siem:
-    splunk:
-      base_url: "https://splunk-dev.example.com:8089"
-      token: "dev_token"
-      index: "security"
-      search_timeout: 30
-
-    qradar:
-      base_url: "https://qradar-dev.example.com"
-      token: "dev_token"
-      timeout: 30
-
-    wazuh:
-      enabled: true
-      base_url: "https://localhost:55000"
-      username: "wazuh"
-      password: "wazuh"
-
+  execution_timeout: 30
+  caching_enabled: true
+  cache_ttl: 300
+  max_retries: 3
+  backoff_factor: 2
   intel:
     virustotal:
-      api_key: "dev_virustotal_key"
+      api_key: ${VIRUSTOTAL_API_KEY:-}
       timeout: 10
-      rate_limit: 4  # requests per minute
+      rate_limit: 4
 
-    recorded_future:
-      api_key: "dev_recorded_future_key"
-      timeout: 15
-
-  sandbox:
-    joe_sandbox:
-      base_url: "https://joesandbox-dev.example.com"
-      api_key: "dev_joe_sandbox_key"
-      timeout: 300  # 5 minutes
-
-  edr:
-    crowdstrike:
-      base_url: "https://api.crowdstrike.com"
-      client_id: "dev_client_id"
-      client_secret: "dev_client_secret"
-      timeout: 30
-
-# Storage configuration
-storage:
-  backend: "postgresql"
-  connection_string: "postgresql://lg_sotf:lg_sotf_dev_password@localhost:5432/lg_sotf_dev"
-
-  redis:
-    connection_string: "redis://localhost:6379/0"
-    default_ttl: 3600  # 1 hour
-
-# Logging configuration
-logging:
-  level: "DEBUG"
-  format: "json"
-  file_path: "logs/lg_sotf_dev.log"
-  max_file_size: "10MB"
-  backup_count: 5
-
-# Security configuration
-security:
-  encryption_key: "dev_encryption_key_32bytes_test!"  # Exactly 32 bytes
-  jwt_secret: "dev_jwt_secret_32bytes_testing!"  # Exactly 32 bytes
-  session_timeout: 3600
-  max_login_attempts: 5
-
-# Monitoring configuration
-monitoring:
-  metrics_enabled: true
-  metrics_port: 8090
-  tracing_enabled: true
-  tracing_sampling_rate: 0.1
-
-# POC settings
-poc:
-  mode: "file"  # file | direct | webhook
-  auto_process: true
-  alerts_directory: "tests/fixtures/alerts"
-
-# Development settings
-development:
-  debug_mode: true
-  auto_reload: true
-  mock_external_services: true
-  test_data_path: "tests/fixtures"
-
-# LLM configuration
-llm:
-  provider: "anthropic"  # Using Claude/Anthropic
-  api_key: ""  # Auto-discovered from Claude Code environment
-  model: "claude-3-5-haiku-20241022"  # Using Haiku for faster/cheaper testing
-  # model: "claude-3-5-sonnet-20241022"  # Claude 3.5 Sonnet (more powerful)
-  temperature: 0.3
-  max_tokens: 1000
-  timeout: 30
-
-# Workflow configuration
-workflow:
-  # LLM-based routing configuration (LangGraph best practices)
-  enable_llm_routing: true  # Enabled - using Claude API for intelligent routing!
-  llm_routing_threshold_min: 20  # Use LLM only for confidence >= this value
-  llm_routing_threshold_max: 80  # Use LLM only for confidence <= this value
-
-  # LLM model settings for routing
-  # model: "gemini-2.5-pro"
-  model: "gemini-2.5-flash"
-  temperature: 0.3  # Lower = more deterministic routing
-  max_tokens: 500  # Routing needs less tokens than analysis
-  timeout: 15  # Fast routing decisions
+ingestion:
+  llm_normalization: false

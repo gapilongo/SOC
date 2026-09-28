@@ -79,11 +79,24 @@ and a row-level-security policy:
 ALTER TABLE <t> ENABLE ROW LEVEL SECURITY;
 ALTER TABLE <t> FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON <t>
-  USING (tenant_id = current_setting('app.tenant_id', true)
-         OR current_setting('app.bypass_rls', true) = 'on')
-  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)
-         OR current_setting('app.bypass_rls', true) = 'on');
+  USING (tenant_id = current_setting('app.tenant_id', true) OR (SELECT lgsotf_rls_bypass()))
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true) OR (SELECT lgsotf_rls_bypass()));
 ```
+
+`lgsotf_rls_bypass()` is true only when `app.bypass_rls = 'on'` **and** the
+session user is a member of the role that owns the schema, so setting the GUC
+from a runtime session does nothing.
+
+Two database roles:
+
+* **Owner** (`database.migration_url`): runs `lg-sotf migrate` and the
+  scheduler (partition DDL, retention, cross-tenant sweeps via `system_tx`).
+* **Runtime** (`database.url`, role named by `database.runtime_role`): used by
+  the API and workers; no ownership, no `BYPASSRLS`; privileges granted by
+  `lg-sotf migrate`. Pre-tenant credential lookups (user by email, refresh
+  token by hash, API key by id) go through `SECURITY DEFINER` functions.
+
+Single-role installs (development) use the owner role everywhere.
 
 Application code never issues tenant queries outside a scoped transaction:
 
@@ -112,7 +125,7 @@ next two partitions ahead and drops expired ones.
 | `users` | `id UUID` PK, `tenant_id`, `email` (unique per tenant, lowercase), `password_hash` (argon2id, null for SSO-only), `role` (`admin`/`analyst`/`viewer`), `is_platform_admin`, `is_active`, `failed_logins`, `locked_until`, `last_login_at` |
 | `refresh_tokens` | `id UUID` PK, `user_id`, `tenant_id`, `token_hash` (sha256), `expires_at`, `revoked_at`, `replaced_by` (rotation) |
 | `api_keys` | `id UUID` PK, `tenant_id`, `name`, `prefix` (first 8 chars, shown in UI), `key_hash` (sha256), `scopes TEXT[]` (`ingest`, `read`, `write`), `created_by`, `last_used_at`, `revoked_at` |
-| `sources` | `id` PK, `tenant_id`, `type` (splunk/qradar/sentinel/wazuh/crowdstrike/guardduty/webhook/file), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `poll_interval_s`, `cursor JSONB`, `last_polled_at`, `last_error`, `health` |
+| `sources` | PK (`tenant_id`, `id`) — ids are unique per tenant, `type` (splunk/qradar/sentinel/wazuh/crowdstrike/guardduty/webhook/file), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `poll_interval_s`, `cursor JSONB`, `last_polled_at`, `last_error`, `health` |
 | `alerts` | PK (`tenant_id`, `id`); `source_id`, `source_alert_id`, `fingerprint`, `title`, `severity` (info/low/medium/high/critical), `category`, `status` (see §6), `disposition` (malicious/benign/inconclusive, null until decided), `confidence`, `threat_score`, `priority`, `assigned_to`, `occurred_at`, `ingested_at`, `updated_at`, `closed_at`, `raw JSONB` (original, size-capped), `normalized JSONB` (canonical model), `summary JSONB` (verdict, indicators, correlations digest, recommended actions, reasoning digest, LLM usage), `case_key`. UNIQUE (`tenant_id`, `source_id`, `source_alert_id`). Indexes: (`tenant_id`, `ingested_at DESC`, `id`), (`tenant_id`, `status`, `ingested_at DESC`), (`tenant_id`, `severity`, `ingested_at DESC`), (`tenant_id`, `fingerprint`, `ingested_at DESC`) |
 | `alert_events` | partitioned; `tenant_id`, `alert_id`, `ts`, `node`, `event_type`, `actor_type` (system/user/agent), `actor_id`, `data JSONB`. Timeline for the UI and audit of agent decisions |
 | `workflow_runs` | PK (`tenant_id`, `alert_id`); `thread_id` UNIQUE, `status` (queued/running/waiting_human/waiting_approval/completed/failed/dead_lettered), `attempt`, `worker_id`, `lease_expires_at`, `last_error`, `created_at`, `updated_at`, `completed_at` |
@@ -256,7 +269,7 @@ Endpoints:
 | POST | `/auth/login`, `/auth/refresh`, `/auth/logout`; GET `/auth/me` | public / cookie / cookie / bearer |
 | POST | `/ingest/alerts` (batch ≤ `api.max_ingest_batch`, 202 + per-item result) | api key `ingest` |
 | POST | `/ingest/webhook/{source_id}` (vendor-native payload, normalized server-side) | api key `ingest` |
-| GET | `/alerts` (filters: status, severity, disposition, source_id, q, from, to; keyset pagination `cursor`, `limit` ≤ 200) | viewer |
+| GET | `/alerts` (filters: status, severity, disposition, source_id, q, from, to; keyset pagination `cursor`, `limit` ≤ 200; `q` is a title search limited to a `from`/`to` window of at most 93 days, default 30) | viewer |
 | GET | `/alerts/{id}`, `/alerts/{id}/events` | viewer |
 | POST | `/alerts/{id}/reprocess` (admin), `/alerts/{id}/notes` (analyst) | |
 | GET | `/escalations` (filters, pagination), `/escalations/{id}` | viewer |

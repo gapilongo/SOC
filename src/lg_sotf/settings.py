@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -52,6 +52,17 @@ def _drop_empty(value: Any) -> Any:
     return value
 
 
+class _EnvironmentAliasSource(PydanticBaseSettingsSource):
+    """Legacy ``LG_SOTF_ENV``; ranks below ``LG_SOTF_ENVIRONMENT`` and above files."""
+
+    def get_field_value(self, field: FieldInfo, field_name: str) -> Tuple[Any, str, bool]:
+        return None, field_name, False
+
+    def __call__(self) -> Dict[str, Any]:
+        value = os.environ.get("LG_SOTF_ENV")
+        return {"environment": value} if value else {}
+
+
 class YamlFileSource(PydanticBaseSettingsSource):
     def __init__(self, settings_cls: Type[BaseSettings], path: Optional[str]):
         super().__init__(settings_cls)
@@ -73,7 +84,12 @@ class YamlFileSource(PydanticBaseSettingsSource):
 
 
 class DatabaseSettings(BaseModel):
+    # Runtime connection (API/worker). In production this is a non-owner role.
     url: SecretStr = SecretStr("postgresql://soc:soc_dev_password@localhost:5432/soc")
+    # Schema-owner connection for migrate/scheduler; defaults to ``url``.
+    migration_url: Optional[SecretStr] = None
+    # Login role that ``lg-sotf migrate`` grants runtime privileges to.
+    runtime_role: Optional[str] = None
     pool_min: int = 2
     pool_max: int = 10
     command_timeout_s: float = 30.0
@@ -91,8 +107,9 @@ class RedisSettings(BaseModel):
 
 class LLMTierSettings(BaseModel):
     model: str
-    max_tokens: int = 1024
+    max_tokens: int = 2048
     temperature: Optional[float] = 0.0
+    effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
     timeout_s: float = 60.0
     max_retries: int = 2
     max_concurrency: int = 16
@@ -103,10 +120,13 @@ class LLMSettings(BaseModel):
     provider: LLMProvider = "anthropic"
     api_key: Optional[SecretStr] = None
     base_url: Optional[str] = None
-    fast: LLMTierSettings = LLMTierSettings(model="claude-haiku-4-5-20251001", max_tokens=1024)
+    fast: LLMTierSettings = LLMTierSettings(model="claude-haiku-4-5", max_tokens=2048)
+    # Opus 5.5 always thinks and bills thinking as output, so leave room in max_tokens.
     deep: LLMTierSettings = LLMTierSettings(
-        model="claude-sonnet-5", max_tokens=4096, timeout_s=120.0, max_concurrency=8
+        model="claude-opus-5-5", max_tokens=16_000, timeout_s=300.0, max_concurrency=8
     )
+    refusal_fallback: bool = True
+    prices: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     allow_fake: bool = False
     max_input_chars: int = 24_000
     max_field_chars: int = 2_000
@@ -140,7 +160,7 @@ class AuthSettings(BaseModel):
 
 
 class APISettings(BaseModel):
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # noqa: S104 - containers must listen on all interfaces
     port: int = 8000
     public_url: str = "http://localhost:8000"
     cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"])
@@ -254,22 +274,24 @@ class Settings(BaseSettings):
         file_secret_settings: PydanticBaseSettingsSource,
     ) -> Tuple[PydanticBaseSettingsSource, ...]:
         init_kwargs = getattr(init_settings, "init_kwargs", {}) or {}
-        path = init_kwargs.get("config_file") or os.environ.get("LG_SOTF_CONFIG_FILE")
+        dotenv_vars = getattr(dotenv_settings, "env_vars", {}) or {}
+        path = (
+            init_kwargs.get("config_file")
+            or os.environ.get("LG_SOTF_CONFIG_FILE")
+            or dotenv_vars.get("lg_sotf_config_file")
+            or dotenv_vars.get("LG_SOTF_CONFIG_FILE")
+        )
         return (
             init_settings,
             env_settings,
+            _EnvironmentAliasSource(settings_cls),
             dotenv_settings,
             file_secret_settings,
             YamlFileSource(settings_cls, path),
         )
 
-    @field_validator("environment", mode="before")
-    @classmethod
-    def _env_alias(cls, v: Any) -> Any:
-        return v or os.environ.get("LG_SOTF_ENV") or "development"
-
     @model_validator(mode="after")
-    def _fallbacks(self) -> "Settings":
+    def _fallbacks(self) -> Settings:
         if "LG_SOTF_DATABASE__URL" not in os.environ and os.environ.get("DATABASE_URL"):
             self.database.url = SecretStr(os.environ["DATABASE_URL"])
         if "LG_SOTF_REDIS__URL" not in os.environ and os.environ.get("REDIS_URL"):
@@ -308,6 +330,9 @@ class Settings(BaseSettings):
             problems.append("auth.cookie_secure must be true")
         if "soc_dev_password" in self.database.url.get_secret_value():
             problems.append("database.url uses the development password")
+        from lg_sotf.security.insecure import insecure_secret_problems
+
+        problems.extend(insecure_secret_problems(self))
         return problems
 
     def assert_safe(self) -> None:

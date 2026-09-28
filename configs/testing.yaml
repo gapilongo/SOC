@@ -1,113 +1,124 @@
-# Testing configuration for LG-SOTF
+# LG-SOTF test-suite configuration: offline, deterministic, fake LLM.
+# Its secrets are published placeholders (see lg_sotf.security.insecure) and are
+# refused in staging/production.
+#
+# Integration tests take their database and Redis from
+# LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL; the URLs below are only
+# used when a test builds Settings from this file directly.
 
-# Database configuration (use test database)
+environment: test
+
 database:
-  host: localhost
-  port: 5432
-  database: lg_sotf_test
-  username: lg_sotf_test
-  password: lg_sotf_test_password
-  pool_size: 2
-  max_overflow: 5
+  url: ${LG_SOTF_TEST_DATABASE_URL:-postgresql://soc:soc_dev_password@localhost:5432/soc_test}
+  pool_min: 1
+  pool_max: 4
+  command_timeout_s: 10
 
-# Redis configuration (use test database)
 redis:
-  host: localhost
-  port: 6379
-  password: ""
-  db: 1
-  max_connections: 2
+  url: ${LG_SOTF_TEST_REDIS_URL:-redis://localhost:6379/1}
+  key_prefix: lgsotf-test
+  max_connections: 8
 
-# Agent configuration (minimal for testing)
+llm:
+  enabled: true
+  provider: fake
+  allow_fake: true
+  fast:
+    model: fake-fast
+    max_tokens: 1024
+    max_concurrency: 4
+  deep:
+    model: fake-deep
+    max_tokens: 4096
+    max_concurrency: 2
+  prompt_caching: false
+  max_input_chars: 8000
+  max_field_chars: 500
+  max_list_items: 20
+  daily_token_budget_per_tenant: 100000
+
+auth:
+  jwt_secret: lg-sotf-test-suite-only-jwt-secret-not-for-use
+  cookie_secure: false
+  password_min_length: 12
+  max_login_attempts: 5
+  lockout_minutes: 1
+
+api:
+  cors_origins:
+    - http://testserver
+  rate_limit_per_minute: 10000
+  ingest_rate_limit_per_minute: 10000
+  login_rate_limit_per_minute: 1000
+
+worker:
+  concurrency: 2
+  node_timeout_s: 30
+  analysis_timeout_s: 60
+  run_timeout_s: 120
+  max_deliveries: 3
+  visibility_timeout_s: 30
+  block_ms: 100
+  drain_timeout_s: 5
+
+scheduler:
+  tick_s: 0.5
+  leader_lease_s: 5
+
+security:
+  encryption_keys: bGctc290Zi10ZXN0LXN1aXRlLW9ubHkta2V5LTAwMDA=
+  indicator_hmac_key: lg-sotf-test-suite-only-indicator-hmac-key
+
+observability:
+  log_level: WARNING
+  log_format: json
+  metrics_enabled: true
+
+response:
+  dry_run: true
+  max_actions_per_hour_per_tenant: 1000
+
 agents:
   ingestion:
     batch_size: 5
     polling_interval: 10
     max_concurrent_alerts: 2
-  
+    enable_deduplication: true
   triage:
     confidence_threshold: 50
     enable_ml_scoring: false
-  
+    enable_llm_scoring: true
+  correlation:
+    correlation_window_minutes: 60
+    enable_llm_correlation: true
+    enable_threat_intel: false
+    enable_siem_queries: false
   analysis:
     max_iterations: 2
-    timeout_seconds: 10
-    enable_tool_caching: false
-  
+    enable_tool_orchestration: false
+    tool_timeout: 5
   human_loop:
     escalation_threshold: 30
     max_escalation_level: 2
     response_timeout_hours: 1
+  response:
+    enabled: true
+    dry_run_mode: true
 
-# Tool configuration (mock for testing)
+routing:
+  max_alert_age_hours: 72
+  correlation_grey_zone_min: 30
+  correlation_grey_zone_max: 70
+  analysis_threshold: 40
+  human_review_min: 20
+  human_review_max: 60
+  response_threshold: 80
+
 tools:
-  siem:
-    splunk:
-      base_url: "https://splunk-test.example.com:8089"
-      token: "test_token"
-      index: "security_test"
-      search_timeout: 10
-    
-    qradar:
-      base_url: "https://qradar-test.example.com"
-      token: "test_token"
-      timeout: 10
-  
-  intel:
-    virustotal:
-      api_key: "test_virustotal_key"
-      timeout: 5
-      rate_limit: 2
-  
-  sandbox:
-    joe_sandbox:
-      base_url: "https://joesandbox-test.example.com"
-      api_key: "test_joe_sandbox_key"
-      timeout: 60
-  
-  edr:
-    crowdstrike:
-      base_url: "https://api.crowdstrike.com"
-      client_id: "test_client_id"
-      client_secret: "test_client_secret"
-      timeout: 15
+  execution_timeout: 5
+  caching_enabled: false
+  max_retries: 1
+  backoff_factor: 1
 
-# Storage configuration
-storage:
-  backend: "postgresql"
-  connection_string: "postgresql://lg_sotf_test:lg_sotf_test_password@localhost:5432/lg_sotf_test"
-  
-  redis:
-    connection_string: "redis://localhost:6379/1"
-    default_ttl: 300  # 5 minutes
-
-# Logging configuration
-logging:
-  level: "INFO"
-  format: "json"
-  file_path: "logs/lg_sotf_test.log"
-  max_file_size: "5MB"
-  backup_count: 2
-
-# Security configuration
-security:
-  encryption_key: "test_encryption_key_32_bytes_long___"
-  jwt_secret: "test_jwt_secret_32_bytes_long______"
-  session_timeout: 1800
-  max_login_attempts: 3
-
-# Monitoring configuration
-monitoring:
-  metrics_enabled: true
-  metrics_port: 8091
-  tracing_enabled: true
-  tracing_sampling_rate: 1.0
-
-# Testing settings
-testing:
-  debug_mode: true
-  auto_reload: false
-  mock_external_services: true
-  test_data_path: "tests/fixtures"
-  cleanup_after_test: true
-  parallel_test_execution: true
+ingestion:
+  llm_normalization: false
