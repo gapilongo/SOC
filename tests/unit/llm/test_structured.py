@@ -399,3 +399,41 @@ async def test_non_mapping_result_is_invalid_output(make_settings: Callable[...,
     with pytest.raises(LLMOutputError):
         await ainvoke_structured(Weird(), Verdict, _msgs(make_settings()), agent="triage", tier="fast", tenant_id="t1", settings=make_settings())
     assert _rows()["triage"]["errors"] == 1
+
+
+# ------------------------------------------------------------------ per-alert tally
+
+
+async def test_tally_accumulates_calls_tokens_and_outcomes(make_settings: Callable[..., Settings]) -> None:
+    from lg_sotf.llm.fake import Refuse, ScriptedChatModel
+    from lg_sotf.llm.usage import UsageTally
+
+    settings = make_settings()
+    tally = UsageTally()
+    model = ScriptedChatModel(script={"Verdict": [{"disposition": "benign", "confidence": 5, "reasoning": "r"}, Refuse("cyber")]})
+    messages = build_messages("s", "t", {"title": "mimikatz"}, settings=settings)
+    await ainvoke_structured(model, Verdict, messages, agent="triage", tier="fast", tally=tally, settings=settings)
+    with pytest.raises(LLMRefusal) as info:
+        await ainvoke_structured(model, Verdict, messages, agent="analysis", tier="deep", tally=tally, settings=settings)
+    assert info.value.category == "cyber"
+    assert tally.calls == 2
+    assert tally.by_agent["triage"].input_tokens > 0 and tally.by_agent["triage"].refusals == 0
+    assert tally.by_agent["analysis"].refusals == 1
+
+
+async def test_tally_counts_transport_errors_and_budget_rejections(make_settings: Callable[..., Settings]) -> None:
+    from lg_sotf.llm.usage import UsageTally
+
+    settings = make_settings()
+    tally = UsageTally()
+    stub = StubModel(error=RuntimeError("boom"))
+    with pytest.raises(RuntimeError):
+        await ainvoke_structured(stub, Verdict, build_messages("s", "t", {}, settings=settings), agent="triage",
+                                 tier="fast", tally=tally, settings=settings)
+    budget = TokenBudget(fakeredis.FakeAsyncRedis(), settings, key_prefix="tally")
+    with pytest.raises(LLMBudgetExceeded):
+        await ainvoke_structured(FakeChatModel(), Verdict, build_messages("s", "t", {}, settings=settings),
+                                 agent="triage", tier="fast", tally=tally, settings=settings, budget=budget,
+                                 tenant_id="t1", budget_limit=1)
+    assert tally.by_agent["triage"].errors == 1 and tally.by_agent["triage"].calls == 1
+    assert tally.by_agent["triage"].budget_exceeded == 1

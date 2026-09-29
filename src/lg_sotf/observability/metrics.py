@@ -74,6 +74,24 @@ LLM_COST_USD = Counter(
     ["model"],
     registry=REGISTRY,
 )
+LLM_REFUSALS = Counter(
+    "lgsotf_llm_refusals_total",
+    "LLM calls the model declined, by calling agent and refusal category.",
+    ["agent", "category"],
+    registry=REGISTRY,
+)
+LLM_SKIPPED = Counter(
+    "lgsotf_llm_skipped_total",
+    "LLM calls an agent did not make, by agent and reason (rules decisive, budget, disabled, ...).",
+    ["agent", "reason"],
+    registry=REGISTRY,
+)
+ENRICHMENT_LOOKUPS = Counter(
+    "lgsotf_enrichment_lookups_total",
+    "Indicator enrichment lookups, by provider and result status (cache hits are status 'cached').",
+    ["provider", "status"],
+    registry=REGISTRY,
+)
 ESCALATIONS_OPEN = Gauge(
     "lgsotf_escalations_open",
     "Escalations currently open or claimed.",
@@ -135,6 +153,39 @@ def record_llm_tokens(model: str, kind: str, tokens: int) -> None:
 def record_llm_cost(model: str, usd: float) -> None:
     if usd > 0:
         LLM_COST_USD.labels(model=model).inc(usd)
+
+
+# Refusal categories are an open set on the provider side; unknown values collapse to "other"
+# so a new category can never create unbounded label cardinality.
+REFUSAL_CATEGORIES = frozenset(
+    {"cyber", "bio", "chem", "frontier_llm", "reasoning_extraction", "general_harms", "safety", "content_filter",
+     "prohibited_content", "blocklist", "spii", "unknown"}
+)
+LLM_SKIP_REASONS = frozenset(
+    {"rules_decisive", "no_related_alerts", "budget_exceeded", "disabled", "no_candidates", "refusal", "error"}
+)
+ENRICHMENT_STATUSES = frozenset(
+    {"ok", "not_found", "not_configured", "unsupported", "rate_limited", "error", "cached", "skipped"}
+)
+
+
+def refusal_category_label(category: object) -> str:
+    if category is None:
+        return "unknown"
+    text = str(category).strip().lower()[:32]
+    return text if text in REFUSAL_CATEGORIES else "other"
+
+
+def record_llm_refusal(agent: str, category: object) -> None:
+    LLM_REFUSALS.labels(agent=agent, category=refusal_category_label(category)).inc()
+
+
+def record_llm_skipped(agent: str, reason: str) -> None:
+    LLM_SKIPPED.labels(agent=agent, reason=reason if reason in LLM_SKIP_REASONS else "other").inc()
+
+
+def record_enrichment_lookup(provider: str, status: str) -> None:
+    ENRICHMENT_LOOKUPS.labels(provider=provider, status=status if status in ENRICHMENT_STATUSES else "other").inc()
 
 
 def set_escalations_open(count: int) -> None:

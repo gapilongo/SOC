@@ -132,3 +132,38 @@ def test_non_pydantic_schema_rejected() -> None:
 def test_bind_tools_is_accepted() -> None:
     model = FakeChatModel()
     assert model.bind_tools([]) is model
+
+
+# ------------------------------------------------------------------ scripted model
+
+
+async def test_scripted_model_plays_back_per_schema_and_validates() -> None:
+    from pydantic import BaseModel as _BaseModel
+
+    from lg_sotf.llm.fake import Invalid, Refuse, ScriptedChatModel, Truncate
+
+    class Out(_BaseModel):
+        score: int
+
+    model = ScriptedChatModel(script={"Out": [{"score": 3}, Refuse("bio"), Invalid(), Truncate(), {"score": "nope"}]})
+    runnable = model.with_structured_output(Out, include_raw=True)
+    msgs = [SystemMessage("s"), HumanMessage("<alert_data>{}</alert_data>")]
+    first = await runnable.ainvoke(msgs)
+    assert first["parsed"] == Out(score=3) and first["raw"].response_metadata["stop_reason"] == "end_turn"
+    refused = await runnable.ainvoke(msgs)
+    assert refused["parsed"] is None and refused["raw"].response_metadata["stop_reason"] == "refusal"
+    assert refused["raw"].response_metadata["stop_details"]["category"] == "bio"
+    invalid = await runnable.ainvoke(msgs)
+    assert invalid["parsed"] is None and invalid["parsing_error"] is not None
+    truncated = await runnable.ainvoke(msgs)
+    assert truncated["raw"].response_metadata["stop_reason"] == "max_tokens"
+    wrong = await runnable.ainvoke(msgs)
+    assert wrong["parsed"] is None and wrong["parsing_error"] is not None
+    heuristic = await runnable.ainvoke(msgs)  # script exhausted: heuristic answer
+    assert isinstance(heuristic["parsed"], Out)
+    assert [c.schema for c in model.calls] == ["Out"] * 6
+
+
+def test_tool_data_blocks_are_scored_too() -> None:
+    msgs = [HumanMessage("<alert_data>{}</alert_data>\n<tool_data>{\"note\": \"ransomware\"}</tool_data>")]
+    assert "ransomware" in untrusted_text(msgs)

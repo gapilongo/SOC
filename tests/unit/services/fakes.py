@@ -10,13 +10,22 @@ from typing import Any, AsyncIterator, Dict, List, Mapping, Optional, Sequence, 
 
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition, NotFound
 from lg_sotf.db.repos._base import UNSET
-from lg_sotf.db.repos.actions import ACTION_TRANSITIONS, ResponseAction, action_idempotency_key
+from lg_sotf.db.repos.actions import ACTION_TRANSITIONS, EXECUTED_STATUSES, ResponseAction, action_idempotency_key
 
 
 class FakeActions:
     def __init__(self) -> None:
         self.rows: Dict[uuid.UUID, ResponseAction] = {}
-        self.executed_last_hour = 0
+        # Executions "from earlier in the hour" that are not ledger rows here, per action type.
+        self.executed_earlier: Dict[str, int] = {}
+
+    @property
+    def executed_last_hour(self) -> int:
+        return sum(self.executed_earlier.values())
+
+    @executed_last_hour.setter
+    def executed_last_hour(self, value: int) -> None:
+        self.executed_earlier = {"_other": value}
 
     async def propose(self, tenant_id: str, alert_id: str, action_type: str, target: str, risk_level: str, *,
                       params: Optional[Mapping[str, Any]] = None, requested_by: Optional[str] = None,
@@ -35,13 +44,19 @@ class FakeActions:
         self.rows[row.id] = row
         return row, True
 
-    async def get(self, tenant_id: str, action_id: uuid.UUID) -> ResponseAction:
+    async def get(self, tenant_id: str, action_id: uuid.UUID, **_: Any) -> ResponseAction:
         if action_id not in self.rows:
             raise NotFound("response action", action_id)
         return self.rows[action_id]
 
-    async def get_many(self, tenant_id: str, ids: Sequence[uuid.UUID]) -> List[ResponseAction]:
+    async def get_many(self, tenant_id: str, ids: Sequence[uuid.UUID], **_: Any) -> List[ResponseAction]:
         return [self.rows[i] for i in ids if i in self.rows]
+
+    async def list(self, tenant_id: str, *, status: Any = None, alert_id: Optional[str] = None, **_: Any) -> Any:
+        statuses = [status] if isinstance(status, str) else list(status or [])
+        items = [r for r in self.rows.values()
+                 if (not statuses or r.status in statuses) and (alert_id is None or r.alert_id == alert_id)]
+        return type("Page", (), {"items": items, "next_cursor": None})()
 
     async def transition(self, tenant_id: str, action_id: uuid.UUID, to_status: str, *,
                          expected_from: Any = None, blocked_reason: Any = UNSET, approved_by: Any = UNSET,
@@ -60,12 +75,17 @@ class FakeActions:
                             ("connector", connector), ("result", result)):
             if value is not UNSET:
                 changes[name] = value
+        if to_status == "executing":
+            changes["executed_at"] = datetime.now(UTC)
         self.rows[action_id] = row.model_copy(update=changes)
         return self.rows[action_id]
 
-    async def count_executed_since(self, tenant_id: str, since: datetime, **_: Any) -> int:
-        executing = sum(1 for r in self.rows.values() if r.status in ("executing", "succeeded", "failed"))
-        return self.executed_last_hour + executing
+    def executed_counts(self) -> Dict[str, int]:
+        counts = dict(self.executed_earlier)
+        for row in self.rows.values():
+            if row.status in EXECUTED_STATUSES:
+                counts[row.action_type] = counts.get(row.action_type, 0) + 1
+        return counts
 
 
 @dataclass
@@ -77,7 +97,7 @@ class FakeTenants:
     def __init__(self, settings: Optional[Dict[str, Any]] = None) -> None:
         self.tenant = FakeTenant(settings or {})
 
-    async def get(self, tenant_id: str) -> FakeTenant:
+    async def get(self, tenant_id: str, **_: Any) -> FakeTenant:
         return self.tenant
 
 
@@ -89,6 +109,9 @@ class FakeAudit:
                      resource_id: Any = None, details: Any = None, **_: Any) -> None:
         self.entries.append((tenant_id, actor_type, action, resource_type, resource_id, dict(details or {})))
 
+    def actions(self) -> List[str]:
+        return [e[2] for e in self.entries]
+
 
 class FakeEvents:
     def __init__(self) -> None:
@@ -99,17 +122,26 @@ class FakeEvents:
 
 
 class FakeConnection:
-    def __init__(self) -> None:
+    """Records statements; answers the response service's executed-counts query from ``FakeActions``."""
+
+    def __init__(self, actions: Optional[FakeActions] = None) -> None:
         self.statements: List[Tuple[str, Tuple[Any, ...]]] = []
+        self.actions = actions
 
     async def execute(self, sql: str, *args: Any) -> str:
         self.statements.append((sql, args))
         return "SELECT 1"
 
+    async def fetch(self, sql: str, *args: Any) -> List[Dict[str, Any]]:
+        self.statements.append((sql, args))
+        if "FROM response_actions" in sql and self.actions is not None:
+            return [{"action_type": t, "n": n} for t, n in self.actions.executed_counts().items()]
+        return []
+
 
 class FakeDb:
-    def __init__(self) -> None:
-        self.conn = FakeConnection()
+    def __init__(self, actions: Optional[FakeActions] = None) -> None:
+        self.conn = FakeConnection(actions)
         self.transactions = 0
 
     @asynccontextmanager
@@ -125,3 +157,6 @@ class FakeRepos:
     audit: FakeAudit = field(default_factory=FakeAudit)
     escalations: Any = None
     db: FakeDb = field(default_factory=FakeDb)
+
+    def __post_init__(self) -> None:
+        self.db.conn.actions = self.actions

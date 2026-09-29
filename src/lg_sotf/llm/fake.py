@@ -20,7 +20,7 @@ import typing
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, Union
 
 import annotated_types
 from langchain_core.callbacks import AsyncCallbackManagerForLLMRun, CallbackManagerForLLMRun
@@ -29,7 +29,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableConfig, RunnableLambda
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from pydantic.fields import FieldInfo
 
 MALICIOUS_KEYWORDS: Tuple[str, ...] = (
@@ -59,7 +59,7 @@ _MID_CHOICES = {
     "correlation", "uncertain", "moderate",
 }
 _SEVERITY_RE = re.compile(r"severity\W{0,4}(critical|high|medium|low|informational|info)\b")
-_DATA_RE = re.compile(r"<alert_data>(.*?)</alert_data>", re.DOTALL)
+_DATA_RE = re.compile(r"<(alert_data|tool_data)>(.*?)</\1>", re.DOTALL)
 _EPOCH = datetime(2024, 1, 1, tzinfo=UTC)
 _UUID_NS = uuid.UUID("5b0d7c1e-8a52-4a55-9a7c-2f3b8c0f4d11")
 
@@ -119,9 +119,12 @@ def _message_text(message: BaseMessage) -> str:
 
 
 def untrusted_text(messages: Sequence[BaseMessage]) -> str:
-    """Alert text only: ``<alert_data>`` blocks if present, else all human turns (never the system prompt)."""
+    """Untrusted text only: ``<alert_data>``/``<tool_data>`` blocks if present, else all human turns.
+
+    The system prompt is never scored.
+    """
     human = "\n".join(_message_text(m) for m in messages if isinstance(m, HumanMessage))
-    blocks = _DATA_RE.findall(human)
+    blocks = [body for _tag, body in _DATA_RE.findall(human)]
     return "\n".join(blocks) if blocks else human
 
 
@@ -275,6 +278,8 @@ def _value(name: str, annotation: Any, field: Optional[FieldInfo], sig: Signals,
         return _instance_data(annotation, sig, depth + 1)
     if origin in (list, set, frozenset, tuple) or annotation in (list, set, tuple):
         item_type = args[0] if args else str
+        if typing.get_origin(item_type) is typing.Annotated:
+            item_type = typing.get_args(item_type)[0]
         if item_type is str:
             items: List[Any] = _strings(name, b, sig)
         else:
@@ -412,3 +417,155 @@ class FakeChatModel(BaseChatModel):
 
         runner: Callable[..., Any] = _run
         return RunnableLambda(runner, afunc=_arun, name=f"FakeStructured[{model_schema.__name__}]")
+
+
+# --------------------------------------------------------------------------
+# Scripted model (tests, evals)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Refuse:
+    """Script item: the model declines (``stop_reason="refusal"`` with ``stop_details.category``)."""
+
+    category: Optional[str] = "cyber"
+
+
+@dataclass(frozen=True)
+class Invalid:
+    """Script item: the model answers with text that is not valid for the schema."""
+
+    text: str = "not json"
+
+
+@dataclass(frozen=True)
+class Truncate:
+    """Script item: generation stopped at ``max_tokens`` before the object was complete."""
+
+
+@dataclass(frozen=True)
+class ScriptedCall:
+    """One call a :class:`ScriptedChatModel` received."""
+
+    schema: str
+    messages: Tuple[BaseMessage, ...]
+
+
+ScriptItem = Union[Mapping[str, Any], BaseModel, Refuse, Invalid, Truncate]
+
+
+def _breakpoint_prefix(messages: Sequence[BaseMessage]) -> Optional[str]:
+    """Rendered prompt text up to the last ``cache_control`` breakpoint, or None when there is none."""
+    rendered: List[str] = []
+    prefix: Optional[str] = None
+    for m in messages:
+        content = m.content
+        blocks = [content] if isinstance(content, str) else list(content)
+        for block in blocks:
+            if isinstance(block, str):
+                rendered.append(f"{m.type}:{block}")
+            elif isinstance(block, dict):
+                rendered.append(f"{m.type}:{block.get('text', '')}")
+                if block.get("cache_control"):
+                    prefix = "\n".join(rendered)
+    return prefix
+
+
+class ScriptedChatModel(FakeChatModel):
+    """Offline model that plays back scripted structured responses, per schema name.
+
+    ``script`` maps a schema class name (or ``"*"`` for any schema) to the
+    responses for successive calls: a mapping or model instance (validated
+    against the requested schema, so a script can never smuggle in an
+    invalid object), :class:`Refuse`, :class:`Invalid` or :class:`Truncate`.
+    When a schema's script is exhausted the heuristic :class:`FakeChatModel`
+    answer is used. Every call is recorded in ``calls``.
+
+    With ``simulate_cache`` the model reports Anthropic-style prompt-cache
+    usage: the text up to the last ``cache_control`` breakpoint is a cache
+    write the first time it is seen and a cache read afterwards. This is a
+    test double for the metering path, not a model of provider behaviour
+    (it ignores minimum cacheable lengths and TTLs).
+    """
+
+    script: Dict[str, List[Any]] = Field(default_factory=dict)
+    simulate_cache: bool = False
+    calls: List[ScriptedCall] = Field(default_factory=list)
+    cached_prefixes: List[str] = Field(default_factory=list)
+
+    def _next_item(self, schema_name: str) -> Optional[Any]:
+        for key in (schema_name, "*"):
+            queue = self.script.get(key)
+            if queue:
+                return queue.pop(0)
+        return None
+
+    def _scripted_response(self, messages: Sequence[BaseMessage], content: str, stop_reason: str) -> AIMessage:
+        message = self._response(messages, content)
+        message.response_metadata["stop_reason"] = stop_reason
+        if not self.simulate_cache:
+            return message
+        prefix = _breakpoint_prefix(messages)
+        usage = dict(message.usage_metadata or {})
+        if prefix is not None:
+            cached = _approx_tokens(prefix)
+            details = {"cache_read": cached} if prefix in self.cached_prefixes else {"cache_creation": cached}
+            if prefix not in self.cached_prefixes:
+                self.cached_prefixes.append(prefix)
+            usage["input_token_details"] = details
+            message.usage_metadata = usage  # type: ignore[assignment]
+        return message
+
+    def with_structured_output(
+        self,
+        schema: Union[Dict[str, Any], Type[BaseModel]],
+        *,
+        include_raw: bool = False,
+        method: str = "json_schema",
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, Any]:
+        if not (isinstance(schema, type) and issubclass(schema, BaseModel)):
+            raise NotImplementedError("ScriptedChatModel.with_structured_output supports Pydantic models only")
+        model_schema: Type[BaseModel] = schema
+
+        def _run(input_: LanguageModelInput, config: Optional[RunnableConfig] = None) -> Any:
+            messages = self._convert_input(input_).to_messages()
+            self.calls.append(ScriptedCall(model_schema.__name__, tuple(messages)))
+            item = self._next_item(model_schema.__name__)
+            parsed: Optional[BaseModel] = None
+            error: Optional[BaseException] = None
+            stop_reason = "end_turn"
+            if isinstance(item, Refuse):
+                raw = self._scripted_response(messages, "", "refusal")
+                raw.response_metadata["stop_details"] = {"type": "refusal", "category": item.category}
+                return {"raw": raw, "parsed": None, "parsing_error": None} if include_raw else None
+            if isinstance(item, Truncate):
+                content, stop_reason = '{"partial": ', "max_tokens"
+                error = ValueError("truncated output")
+            elif isinstance(item, Invalid):
+                content = item.text
+                error = ValueError("output is not valid JSON for the schema")
+            else:
+                try:
+                    if item is None:
+                        parsed = synthesize(model_schema, analyse_text(untrusted_text(messages)))
+                    else:
+                        data = item.model_dump() if isinstance(item, BaseModel) else dict(item)
+                        parsed = model_schema.model_validate(data)
+                    content = parsed.model_dump_json()
+                except (ValidationError, TypeError) as exc:
+                    if not include_raw:
+                        raise
+                    error, content = exc, ""
+            raw = self._scripted_response(messages, content, stop_reason)
+            if include_raw:
+                return {"raw": raw, "parsed": parsed, "parsing_error": error}
+            if error is not None:
+                raise error
+            return parsed
+
+        async def _arun(input_: LanguageModelInput, config: Optional[RunnableConfig] = None) -> Any:
+            return _run(input_, config)
+
+        runner: Callable[..., Any] = _run
+        return RunnableLambda(runner, afunc=_arun, name=f"Scripted[{model_schema.__name__}]")

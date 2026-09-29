@@ -3,9 +3,17 @@
 For each alert the agent records its indicators in ``indicator_sightings``
 (HMAC-hashed per install, redacted display) and asks the index for other
 alerts of the same tenant that shared any of them within the correlation
-window. Frequency and burst detection come from those sightings. An optional
-fast-tier LLM call, made only when related alerts exist, rates whether they
-look like one campaign.
+window. Frequency and burst detection come from those sightings.
+
+When related alerts exist the agent reads a compact digest of each (title,
+severity, status, disposition, time, MITRE techniques, shared-indicator
+count) and makes at most one fast-tier LLM call with those digests to rate
+whether they look like one campaign. Without related alerts no call is made.
+
+A refusal of that call leaves the alert's assessment open: its confidence is
+raised to the grey zone (``routing.correlation_grey_zone_min``) so it goes
+on to analysis and an analyst instead of an automatic close, and the digest
+carries ``llm_refusal``.
 """
 
 from __future__ import annotations
@@ -16,28 +24,40 @@ from typing import Any, Dict, List, Mapping, Optional
 
 from pydantic import BaseModel, Field
 
-from lg_sotf.agents.base import AgentContext, BaseAgent
+from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
+from lg_sotf.agents.triage.base import agent_refusal
 from lg_sotf.core.exceptions import AgentError
+from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.db.errors import NotFound
+from lg_sotf.llm.schema import clipped_list, clipped_str
 from lg_sotf.security.hashing import hmac_indicator
 
 MAX_RELATED = 20
+MAX_DIGESTS = 10
+DIGEST_TITLE_CHARS = 160
 TYPE_WEIGHTS: Dict[str, int] = {"hash": 30, "ip": 25, "domain": 25, "url": 25, "user": 20, "host": 15, "process": 10}
 
 SYSTEM_PROMPT = (
-    "You are a SOC analyst correlating a security alert with related alerts that share indicators. "
-    "Judge whether the activity looks like a coordinated campaign or unrelated noise."
+    "You are an analyst in a security operations center (SOC) correlating one alert from the organisation's "
+    "own monitoring with earlier alerts that share indicators (hosts, users, IPs, domains, hashes). This is "
+    "defensive work: the goal is to tell a coordinated intrusion or campaign apart from unrelated or routine "
+    "activity so defenders can prioritise. Describe evidence only; never provide attack instructions."
 )
 TASK_PROMPT = (
-    "Return campaign_likelihood (0-100), short attack campaign indicators and a brief reasoning. "
-    "Base the answer only on the supplied alert and the related-alert statistics."
+    "Using the alert and the related-alert digests, return campaign_likelihood (0-100, how likely these "
+    "alerts are one coordinated activity), attack_campaign_indicators (short phrases naming the concrete "
+    "shared evidence) and a brief reasoning. Related alerts already closed as benign by analysts count "
+    "against a campaign; confirmed malicious ones count for it."
 )
 
 
 class CorrelationAssessment(BaseModel):
+    """The fast-tier model's answer. Over-long text and lists are truncated to their limits, never rejected."""
+
     campaign_likelihood: int = Field(ge=0, le=100)
-    attack_campaign_indicators: List[str] = Field(default_factory=list, max_length=10)
-    reasoning: str = Field(max_length=2_000)
+    attack_campaign_indicators: clipped_list(10, item_chars=120)  # type: ignore[valid-type]
+    reasoning: clipped_str(2_000)  # type: ignore[valid-type]
 
 
 @dataclass
@@ -51,12 +71,17 @@ class CorrelationResult:
     burst: bool
     frequency_level: str
     llm_used: bool = False
+    llm_skipped: Optional[str] = None
+    llm_refusal: Optional[Dict[str, Optional[str]]] = None
+    related_dispositions: Dict[str, int] = field(default_factory=dict)
     campaign_indicators: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
     def digest(self) -> Dict[str, Any]:
         data = asdict(self)
         data.pop("notes")
+        if data["llm_refusal"] is None:
+            data.pop("llm_refusal")
         return data
 
 
@@ -83,6 +108,17 @@ class CorrelationAgent(BaseAgent):
         self.llm_weight = float(self.get_config("llm_weight", 0.3))
 
     async def run(
+        self,
+        ctx: AgentContext,
+        alert: Mapping[str, Any],
+        *,
+        base_confidence: float,
+        now: Optional[datetime] = None,
+    ) -> CorrelationResult:
+        async with AccountedRun(ctx):
+            return await self._run(ctx, alert, base_confidence=base_confidence, now=now)
+
+    async def _run(
         self,
         ctx: AgentContext,
         alert: Mapping[str, Any],
@@ -129,33 +165,86 @@ class CorrelationAgent(BaseAgent):
             frequency_level=frequency_level(per_hour),
         )
         if not related:
+            result.llm_skipped = self.skip_llm("no_related_alerts").skipped
             return result
 
-        llm = await self.call_llm(
+        digests = await self.related_digests(ctx, related[:MAX_DIGESTS])
+        for d in digests:
+            key = str(d.get("disposition") or "undecided")
+            result.related_dispositions[key] = result.related_dispositions.get(key, 0) + 1
+
+        llm: LLMResult[CorrelationAssessment] = await self.call_llm(
             ctx,
             tier="fast",
             schema=CorrelationAssessment,
             system=SYSTEM_PROMPT,
             task=TASK_PROMPT,
             untrusted={
-                "alert": dict(alert),
-                "related": {
+                "alert": self.alert_view(alert),
+                "correlation": {
                     "related_alerts": len(related),
                     "max_shared_indicators": max(r.shared_indicator_count for r in related),
                     "burst": burst,
+                    "window_minutes": int(self.window.total_seconds() // 60),
                     "indicator_types": type_counts,
                 },
+                "related_alerts": digests,
             },
             enabled=self.enable_llm,
         )
         result.notes.extend(llm.notes)
+        result.llm_skipped = llm.skipped
+        result.llm_refusal = agent_refusal(llm, self.name)
+        if llm.refused:
+            grey = RoutingThresholds.from_settings(ctx.settings.routing).correlation_grey_zone_min
+            result.confidence = max(result.confidence, grey)
+            result.notes.append("correlation: model refused; confidence held in the grey zone for review")
         if llm.value is not None:
             result.llm_used = True
             result.score = max(
                 0, min(100, round(rule_score * (1 - self.llm_weight) + llm.value.campaign_likelihood * self.llm_weight))
             )
-            result.campaign_indicators = [c[:120] for c in llm.value.attack_campaign_indicators]
+            result.campaign_indicators = list(llm.value.attack_campaign_indicators)
         return result
+
+    @staticmethod
+    def alert_view(alert: Mapping[str, Any]) -> Dict[str, Any]:
+        """The alert without its raw event: correlation reasons over entities and detections."""
+        keys = ("title", "severity", "category", "description", "occurred_at", "source_id", "entities", "mitre")
+        return {k: alert[k] for k in keys if k in alert}
+
+    @staticmethod
+    async def related_digests(ctx: AgentContext, related: List[Any]) -> List[Dict[str, Any]]:
+        """Compact, bounded view of each related alert (no raw events, no ids)."""
+        repos = ctx.repos
+        if repos is None or not related:
+            return []
+        out: List[Dict[str, Any]] = []
+        async with repos.db.tenant_tx(ctx.tenant_id) as conn:
+            for idx, r in enumerate(related, start=1):
+                try:
+                    other = await repos.alerts.get(ctx.tenant_id, r.alert_id, conn=conn)
+                except NotFound:
+                    continue
+                normalized = other.normalized if isinstance(other.normalized, Mapping) else {}
+                mitre = normalized.get("mitre") if isinstance(normalized.get("mitre"), Mapping) else {}
+                techniques = [str(t)[:40] for t in (mitre or {}).get("techniques") or [] if isinstance(t, (str, int))]
+                verdict = other.summary.get("verdict") if isinstance(other.summary, Mapping) else None
+                out.append(
+                    {
+                        "ref": f"r{idx}",
+                        "title": other.title[:DIGEST_TITLE_CHARS],
+                        "severity": other.severity,
+                        "category": other.category,
+                        "status": other.status,
+                        "disposition": other.disposition,
+                        "verdict": verdict if isinstance(verdict, str) else None,
+                        "occurred_at": other.occurred_at.isoformat(),
+                        "shared_indicators": r.shared_indicator_count,
+                        "mitre_techniques": techniques[:5],
+                    }
+                )
+        return out
 
     @staticmethod
     def _rule_score(related: List[Any], indicators: List[Indicator], burst: bool) -> int:

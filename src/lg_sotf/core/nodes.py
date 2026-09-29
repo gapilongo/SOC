@@ -16,12 +16,11 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional
 
 from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.agents.correlation.indicators import extract_indicators
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core import routing
 from lg_sotf.core.events import EventPublisher, publish_event
@@ -36,7 +35,7 @@ from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.services.escalation import EscalationService
-from lg_sotf.services.response import PlanContext, ResponseService
+from lg_sotf.services.response import PlanContext, ResponseService, plan_entities
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -74,11 +73,20 @@ def _small(data: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _entities_by_kind(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
-    by_kind: Dict[str, List[str]] = {}
-    for ind in extract_indicators(alert):
-        by_kind.setdefault(ind.type, []).append(ind.value)
-    return by_kind
+def _escalation_summary(state: WorkflowState) -> Dict[str, Any]:
+    """What an escalation shows the analyst about this alert (small; no raw alert data)."""
+    analysis = state.get("analysis") or {}
+    confidence = float(state.get("confidence", 50))
+    return {
+        "title": str(state["alert"].get("title", ""))[:300],
+        "severity": state["severity"],
+        "confidence": confidence,
+        "threat_score": analysis.get("threat_score"),
+        "verdict": analysis.get("verdict"),
+        "conclusion": str(analysis.get("conclusion") or "")[:1_000],
+        "simulated_evidence": bool(analysis.get("simulated_evidence")),
+        "recommended_actions": list(analysis.get("recommended_actions") or [])[:10],
+    }
 
 
 class WorkflowNodes:
@@ -294,39 +302,112 @@ class WorkflowNodes:
             threat_score=float(analysis.get("threat_score", confidence)),
             reason=str(decision.get("reason") or "analyst review required"),
             reason_code=str(decision.get("code") or "inconclusive"),
-            summary={
-                "title": str(state["alert"].get("title", ""))[:300],
-                "severity": state["severity"],
-                "confidence": confidence,
-                "threat_score": analysis.get("threat_score"),
-                "verdict": analysis.get("verdict"),
-                "conclusion": str(analysis.get("conclusion") or "")[:1_000],
-                "simulated_evidence": bool(analysis.get("simulated_evidence")),
-                "recommended_actions": list(analysis.get("recommended_actions") or [])[:10],
-            },
-            related_alert_ids=list(correlation.get("related_alert_ids") or []),
+            summary=_escalation_summary(state),
+            correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
+            fingerprint=state.get("fingerprint") or None,
         )
-        await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"escalation_id": ticket.id})
+        await self.deps.repos.alerts.update(
+            tenant_id, alert_id, summary={"escalation_id": ticket.id, "escalation_attached": ticket.attached}
+        )
         return {
             "escalation_id": ticket.id,
-            EVENT_KEY: {"escalation_id": ticket.id, "level": ticket.level, "priority": ticket.priority, "created": ticket.created},
+            EVENT_KEY: {
+                "escalation_id": ticket.id,
+                "level": ticket.level,
+                "priority": ticket.priority,
+                "created": ticket.created,
+                "attached": ticket.attached,
+            },
         }
 
     async def await_analyst(self, state: WorkflowState) -> Dict[str, Any]:
-        decision = interrupt({"type": "analyst_decision", "escalation_id": state.get("escalation_id")})
-        return {"analyst": decision}
+        """Wait for the analyst decision on the escalation this alert waits on.
+
+        A decision on a grouped escalation's parent alert is *inherited* by an
+        attached alert (:meth:`EscalationService.decision_scope`): it is
+        marked ``inherited_from`` and stripped of pre-approved actions, so it
+        never authorises containment of this alert's assets. A benign group
+        decision that does not fit this alert (another detection, or more
+        severe) is not applied: the alert gets its own escalation and the run
+        waits again, on that escalation (a second interrupt in this node).
+        LangGraph re-runs the node from the top on every resume, so the
+        lookups and the detach are idempotent.
+        """
+        tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+        waiting_on = state.get("escalation_id")
+        decision = dict(interrupt({"type": "analyst_decision", "escalation_id": waiting_on}))
+        if not waiting_on:
+            return {"analyst": decision}
+        scope = await self.deps.escalations.decision_scope(
+            tenant_id,
+            alert_id,
+            str(waiting_on),
+            decision=str(decision.get("decision")),
+            fingerprint=state.get("fingerprint") or None,
+            severity=state["severity"],
+        )
+        if not scope.inherited:
+            return {"analyst": decision}
+        if scope.own_review_reason is None:
+            return {"analyst": {**decision, "approved_actions": [], "inherited_from": scope.parent_alert_id}}
+        analysis = state.get("analysis") or {}
+        confidence = float(state.get("confidence", 50))
+        ticket = await self.deps.escalations.open_detached(
+            tenant_id,
+            alert_id,
+            scope.escalation,
+            reason_code=scope.own_review_reason,
+            decision=str(decision.get("decision")),
+            severity=state["severity"],
+            confidence=confidence,
+            threat_score=float(analysis.get("threat_score", confidence)),
+            summary=_escalation_summary(state),
+        )
+        if ticket.created:
+            await self.deps.repos.alerts.update(
+                tenant_id,
+                alert_id,
+                summary={"escalation_id": ticket.id, "escalation_attached": False, "detached_from": scope.escalation.id},
+            )
+            await self.deps.repos.alert_events.append(
+                tenant_id,
+                alert_id,
+                "escalation.detached",
+                node="await_analyst",
+                actor_type="system",
+                actor_id="workflow",
+                data={
+                    "escalation_id": ticket.id,
+                    "detached_from": scope.escalation.id,
+                    "group_decision": str(decision.get("decision")),
+                    "reason": scope.own_review_reason,
+                },
+            )
+        own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
+        return {"analyst": dict(own), "escalation_id": ticket.id}
 
     def _evidence(self, state: WorkflowState) -> str:
+        """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.
+
+        ``rules`` only when the analysis agent found corroborating rule
+        evidence (``rule_corroborated``: threat intel, analyst-confirmed
+        history, specific indicators; never severity or field presence).
+        Without an analysis (correlation went straight to ``decide``) the
+        evidence is ``llm_only``: triage rules read text an attacker can
+        shape and never corroborate containment. Digests written before
+        ``rule_corroborated`` existed fall back to the capped rule score.
+        """
         analyst = state.get("analyst") or {}
-        if analyst.get("decision") == "true_positive":
+        if analyst.get("decision") == "true_positive" and not analyst.get("inherited_from"):
             return "analyst"
-        threshold = self.deps.thresholds.response_threshold
         analysis = state.get("analysis") or {}
-        if analysis:
-            rule_score = float(analysis.get("rule_threat_score", 0))
-        else:
-            rule_score = float((state.get("triage") or {}).get("rule_confidence", 0))
-        return "rules" if rule_score >= threshold else "llm_only"
+        if not analysis:
+            return "llm_only"
+        corroborated = analysis.get("rule_corroborated")
+        if isinstance(corroborated, bool):
+            return "rules" if corroborated else "llm_only"
+        rule_score = float(analysis.get("rule_threat_score", 0))
+        return "rules" if rule_score >= self.deps.thresholds.response_threshold else "llm_only"
 
     async def plan_response(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert_id, alert = state["tenant_id"], state["alert_id"], state["alert"]
@@ -337,13 +418,14 @@ class WorkflowNodes:
         threat_texts = [str(analysis.get("conclusion") or ""), *[str(c) for c in triage.get("threat_categories") or []]]
         for key in ("tactics", "techniques"):
             threat_texts.extend(str(v) for v in (mitre or {}).get(key) or [] if isinstance(v, (str, int)))
-        is_tp = analyst.get("decision") == "true_positive"
+        # An inherited group decision (attached alert) never pre-approves this alert's actions.
+        is_tp = analyst.get("decision") == "true_positive" and not analyst.get("inherited_from")
         ctx = PlanContext(
             severity=state["severity"],
             evidence=self._evidence(state),  # type: ignore[arg-type]
             title=str(alert.get("title", "")),
             category=alert.get("category"),
-            entities=_entities_by_kind(alert),
+            entities=plan_entities(alert),
             recommended_actions=list(analysis.get("recommended_actions") or []),
             threat_texts=threat_texts,
             approved_actions=list(analyst.get("approved_actions") or []) if is_tp else [],

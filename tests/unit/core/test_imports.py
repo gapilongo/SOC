@@ -2,7 +2,7 @@
 
 ``KNOWN_BROKEN`` lists legacy modules that still import code this wave
 removed (``core.state``, ``audit.metrics``) and are being ported by their
-owners (API/app initializer, human-loop agents). The xfail is strict: once a
+owners (API/app initializer). The xfail is strict: once a
 module imports again the test fails until it is taken off the list.
 """
 
@@ -21,7 +21,6 @@ NOT_IMPORTABLE_BY_DESIGN = frozenset({"lg_sotf.db.migrations.env"})
 KNOWN_BROKEN = {
     "lg_sotf.app_initializer": "imports lg_sotf.audit.metrics and lg_sotf.core.state (removed); port to WorkflowEngine.create",
     "lg_sotf.api": "imports lg_sotf.app_initializer",
-    "lg_sotf.agents.human_loop": "imports lg_sotf.core.state (removed); fold into services.escalation",
 }
 
 

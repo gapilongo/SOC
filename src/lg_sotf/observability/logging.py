@@ -5,12 +5,16 @@ through one handler that renders JSON (production) or a console format
 (development). Request/alert identifiers bound with :func:`bind_context`
 travel with every record in the current task. A redaction pass converts every
 value to its rendered form (objects and exceptions become strings) and strips
-credentials from it; formatted tracebacks are redacted as well.
+credentials from it; formatted tracebacks are redacted as well. Numeric values
+under plural credential names (``refresh_tokens=12`` in a retention report)
+are counts, not secrets, and are kept; a singular name (``token``,
+``password``) still hides any value.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import sys
 from contextlib import contextmanager
 from datetime import date, datetime, time
@@ -23,7 +27,7 @@ from uuid import UUID
 import structlog
 from structlog.types import EventDict, Processor, WrappedLogger
 
-from lg_sotf.security.redaction import redact, redact_text
+from lg_sotf.security.redaction import REDACTED, is_secret_key, redact, redact_text
 from lg_sotf.settings import Settings, get_settings
 
 _HANDLER_MARKER = "_lg_sotf_handler"
@@ -32,6 +36,8 @@ CONTEXT_KEYS = ("request_id", "tenant_id", "alert_id", "thread_id", "node")
 # Consumed by structlog/ProcessorFormatter later in the chain; they must keep their types.
 _STRUCTLOG_META = frozenset({"exc_info", "stack_info", "_record", "_from_structlog"})
 _STR_TYPES = (datetime, date, time, UUID, Decimal, Enum, PurePath)
+# Written by the processor chain; a caller field of the same name is kept as "<key>_".
+RESERVED_FIELDS = ("level", "logger", "timestamp", "service", "env")
 _MAX_LOG_DEPTH = 32
 
 
@@ -56,14 +62,65 @@ def _loggable(value: Any, depth: int = 0) -> Any:
     return repr(value)
 
 
+_KEY_SPLIT = re.compile(r"[^a-z0-9]+")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+# Counts are logged as plain integers; anything with more digits than this could be a numeric secret.
+_MAX_COUNT_DIGITS = 12
+
+
+def _is_count_key(key: str) -> bool:
+    """Whether ``key`` names a *number of* credentials (``refresh_tokens``, ``api_keys``) rather than one.
+
+    The redaction rules treat a key that ends in a credential label as a
+    secret whatever its value; for a plural label with a numeric value that
+    hides operational counts (retention reports, cleanup totals). A singular
+    label (``token``, ``pin_code``-style ``password``) still denotes a value.
+    """
+    if len(key) > 128:
+        return False
+    parts = [p for p in _KEY_SPLIT.split(_CAMEL_BOUNDARY.sub("_", key).lower()) if p]
+    if not parts or not parts[-1].endswith("s") or len(parts[-1]) < 3:
+        return False
+    singular = "_".join([*parts[:-1], parts[-1][:-1]])
+    return is_secret_key(singular) or is_secret_key(parts[-1][:-1])
+
+
+def _is_count_value(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if isinstance(value, float):
+        return True
+    return len(str(abs(value))) <= _MAX_COUNT_DIGITS
+
+
+def _restore_counts(original: Any, redacted: Any, depth: int = 0) -> Any:
+    """Undo masking of numeric values under plural credential keys (``{"refresh_tokens": 3}``)."""
+    if depth >= _MAX_LOG_DEPTH:
+        return redacted
+    if isinstance(original, Mapping) and isinstance(redacted, dict):
+        out = dict(redacted)
+        for k, v in original.items():
+            if k not in out:
+                continue
+            if isinstance(k, str) and out[k] == REDACTED and _is_count_value(v) and _is_count_key(k):
+                out[k] = v
+            elif isinstance(v, (Mapping, list)):
+                out[k] = _restore_counts(v, out[k], depth + 1)
+        return out
+    if isinstance(original, list) and isinstance(redacted, list) and len(original) == len(redacted):
+        return [_restore_counts(o, r, depth + 1) for o, r in zip(original, redacted, strict=True)]
+    return redacted
+
+
 def _redact_event(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
     for key, value in list(event_dict.items()):
         if key in _STRUCTLOG_META:
             continue
         if isinstance(key, str):
             # Through a one-key mapping so secret-labelled keys hide values of any type.
-            redacted, _n = redact({key: _loggable(value)})
-            event_dict[key] = redacted[key]
+            wrapped = {key: _loggable(value)}
+            redacted, _n = redact(wrapped)
+            event_dict[key] = _restore_counts(wrapped, redacted)[key]
         else:
             event_dict[key] = redact_text(str(_loggable(value)))[0]
     return event_dict
@@ -73,6 +130,19 @@ def _redact_exception(_: WrappedLogger, __: str, event_dict: EventDict) -> Event
     exc = event_dict.get("exception")
     if isinstance(exc, str):
         event_dict["exception"] = redact_text(exc)[0]
+    return event_dict
+
+
+def _keep_caller_fields(_: WrappedLogger, __: str, event_dict: EventDict) -> EventDict:
+    """Rename caller fields that the chain itself writes (``level`` etc.) to ``<key>_``.
+
+    Without this ``log.info("x", level="L3")`` would lose the value to the log
+    level (or spoof ``service``/``env``). Runs before those fields are added,
+    so anything already present came from the caller or the bound context.
+    """
+    for key in RESERVED_FIELDS:
+        if key in event_dict:
+            event_dict[f"{key}_"] = event_dict.pop(key)
     return event_dict
 
 
@@ -101,6 +171,7 @@ def configure_logging(settings: Optional[Settings] = None, *, stream: Optional[T
 
     shared: list[Processor] = [
         structlog.contextvars.merge_contextvars,
+        _keep_caller_fields,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),

@@ -130,10 +130,10 @@ def extract_indicators(alert: Mapping[str, Any]) -> List[Indicator]:
         value = _scalar(item)
         if value is None or value.upper() in ("N/A", "NONE", "NULL", "-") or not _valid(itype, value):
             continue
-        key = (itype, normalize_indicator(itype, value))
-        if key in seen or per_type.get(itype, 0) >= MAX_PER_TYPE:
+        seen_key = (itype, normalize_indicator(itype, value))
+        if seen_key in seen or per_type.get(itype, 0) >= MAX_PER_TYPE:
             continue
-        seen.add(key)
+        seen.add(seen_key)
         per_type[itype] = per_type.get(itype, 0) + 1
         out.append(Indicator(itype, value))
         if len(out) >= MAX_TOTAL:

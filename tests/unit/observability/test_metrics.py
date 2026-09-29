@@ -19,6 +19,10 @@ CONTRACT_METRICS = {
     "lgsotf_llm_cost_usd_total": ("model",),
     "lgsotf_escalations_open": (),
     "lgsotf_actions_total": ("action_type", "status"),
+    # LLM agent quality/cost (architecture section 13 addendum).
+    "lgsotf_llm_refusals_total": ("agent", "category"),
+    "lgsotf_llm_skipped_total": ("agent", "reason"),
+    "lgsotf_enrichment_lookups_total": ("provider", "status"),
 }
 FORBIDDEN_LABELS = {"tenant_id", "alert_id", "user_id", "request_id", "thread_id"}
 
@@ -88,6 +92,31 @@ def test_llm_helpers() -> None:
     metrics.record_llm_cost("m", 0.5)
     metrics.record_llm_cost("m", 0.0)
     assert _value("lgsotf_llm_cost_usd_total", model="m") == pytest.approx(cost + 0.5)
+
+
+def test_quality_and_cost_counters_keep_labels_bounded() -> None:
+    assert tuple(metrics.LLM_REFUSALS._labelnames) == CONTRACT_METRICS["lgsotf_llm_refusals_total"]
+    cyber = _value("lgsotf_llm_refusals_total", agent="analysis", category="cyber")
+    other = _value("lgsotf_llm_refusals_total", agent="analysis", category="other")
+    unknown = _value("lgsotf_llm_refusals_total", agent="analysis", category="unknown")
+    metrics.record_llm_refusal("analysis", "CYBER")
+    metrics.record_llm_refusal("analysis", "a-brand-new-category-" + "x" * 200)
+    metrics.record_llm_refusal("analysis", None)
+    assert _value("lgsotf_llm_refusals_total", agent="analysis", category="cyber") == cyber + 1
+    assert _value("lgsotf_llm_refusals_total", agent="analysis", category="other") == other + 1
+    assert _value("lgsotf_llm_refusals_total", agent="analysis", category="unknown") == unknown + 1
+
+    skipped = _value("lgsotf_llm_skipped_total", agent="triage", reason="rules_decisive")
+    metrics.record_llm_skipped("triage", "rules_decisive")
+    metrics.record_llm_skipped("triage", "free-text reason")
+    assert _value("lgsotf_llm_skipped_total", agent="triage", reason="rules_decisive") == skipped + 1
+    assert _value("lgsotf_llm_skipped_total", agent="triage", reason="other") >= 1
+
+    lookups = _value("lgsotf_enrichment_lookups_total", provider="virustotal", status="ok")
+    metrics.record_enrichment_lookup("virustotal", "ok")
+    metrics.record_enrichment_lookup("virustotal", "weird")
+    assert _value("lgsotf_enrichment_lookups_total", provider="virustotal", status="ok") == lookups + 1
+    assert _value("lgsotf_enrichment_lookups_total", provider="virustotal", status="other") >= 1
 
 
 def test_render_latest() -> None:

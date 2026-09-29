@@ -8,13 +8,14 @@ from typing import Any, Dict
 
 import pytest
 
-from lg_sotf.core import suppression
 from lg_sotf.core.suppression import (
     MAX_SUBJECT_CHARS,
     InvalidRule,
+    WorkBudget,
     alert_match_view,
     compile_pattern,
     evaluate_predicate,
+    explain_rule,
     first_matching_rule,
     rule_matches,
     validate_regex,
@@ -101,7 +102,7 @@ def test_invalid_rules_raise(match: Dict[str, Any]) -> None:
         "(?=a)a",
         "a{0,256}a{0,256}a{0,256}!",
         "x{1000}",
-        ".*scanner.*",
+        ".{0,200}.{0,200}.{0,200}!",
     ],
 )
 def test_regex_outside_the_safe_subset_is_rejected(pattern: str) -> None:
@@ -113,7 +114,15 @@ def test_regex_outside_the_safe_subset_is_rejected(pattern: str) -> None:
 
 @pytest.mark.parametrize(
     "pattern",
-    ["Known scanner .{0,40}", r"\d{1,3}(\.\d{1,3}){3}", r"[a-z]+\.example\.com", "(ab|cd)?x", "host-[0-9]+"],
+    [
+        "Known scanner .{0,40}",
+        r"\d{1,3}(\.\d{1,3}){3}",
+        r"[a-z]+\.example\.com",
+        "(ab|cd)?x",
+        "host-[0-9]+",
+        # Unbounded wildcards are exempt from the quantifier limits: the common analyst pattern.
+        ".*scanner.*",
+    ],
 )
 def test_common_patterns_are_accepted(pattern: str) -> None:
     assert validate_regex(pattern) == pattern
@@ -126,14 +135,28 @@ def test_accepted_patterns_match_long_subjects_quickly() -> None:
     assert time.perf_counter() - started < 1.0
 
 
-def test_regex_timeout_counts_as_no_match(monkeypatch: pytest.MonkeyPatch) -> None:
-    class Slow:
-        pattern = "x"
+EXPENSIVE = ".*a.{0,120}.{0,120}b"
 
-        def fullmatch(self, subject: str, timeout: float) -> None:
-            raise TimeoutError("regex timed out")
 
-    assert suppression._regex_fullmatch(Slow(), "x") is False  # type: ignore[arg-type]
+def test_running_out_of_work_counts_as_no_match() -> None:
+    # Accepted (two wide ranges), matches a short subject, but a long one exceeds the per-subject budget.
+    assert validate_regex(EXPENSIVE) == EXPENSIVE
+    assert evaluate_predicate({"regex": EXPENSIVE}, "ab" * 20)
+    assert not evaluate_predicate({"regex": EXPENSIVE}, "ab" * 512)
+    explained = explain_rule({"title": {"regex": EXPENSIVE}}, {"title": "ab" * 512})
+    assert not explained.matched and explained.error is None
+    assert [p.reason for p in explained.predicates] == ["work_budget_exceeded"]
+
+
+def test_an_exhausted_shared_budget_stops_suppressing() -> None:
+    budget = WorkBudget(5)
+    assert not evaluate_predicate({"regex": "[a-z ]*"}, "x" * 200, budget)
+    assert budget.exceeded and budget.overruns == 1
+    rules = [Rule("r1", "wide", {"title": {"regex": ".*scanner.*"}})]
+    assert first_matching_rule(rules, VIEW, WorkBudget(1)) is None
+    hit = first_matching_rule(rules, VIEW)
+    assert hit is not None and hit.rule_id == "r1"
+    assert hit.explanation is not None and hit.explanation.matched
 
 
 @pytest.mark.parametrize(
