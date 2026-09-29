@@ -1,0 +1,246 @@
+"""The ``lg-sotf eval`` command body: load, check, run, report, gate.
+
+Exit codes: 0 when the run finished and every threshold held (or no
+thresholds were given), 1 when the gate found a violation, 2 when the
+evaluation could not run or produced nothing to judge (bad dataset,
+thresholds or baseline, a baseline from a different dataset or selection,
+unwritable report path, database, schema or Redis problem, every item
+errored).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import sys
+import tempfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence
+
+from lg_sotf.eval.dataset import Dataset, DatasetError, load_dataset
+from lg_sotf.eval.gate import ThresholdsError, evaluate_gate, load_thresholds
+from lg_sotf.eval.report import (
+    REPORT_SCHEMA_VERSION,
+    build_report,
+    load_report,
+    render_markdown,
+    summary_lines,
+    write_json,
+)
+from lg_sotf.eval.results import ItemResult
+from lg_sotf.eval.runner import ISOLATION_MODES, EvalSetupError, run_evaluation
+from lg_sotf.settings import Settings
+
+EXIT_OK = 0
+EXIT_GATE_FAILED = 1
+EXIT_CANNOT_RUN = 2
+MAX_CONCURRENCY = 32
+
+
+class EvalCommandError(Exception):
+    """The evaluation could not run; the message is safe to print."""
+
+
+@dataclass(frozen=True)
+class EvalOptions:
+    dataset: str
+    report: str
+    markdown: Optional[str] = None
+    thresholds: Optional[str] = None
+    baseline: Optional[str] = None
+    splits: Sequence[str] = ()
+    tags: Sequence[str] = ()
+    limit: Optional[int] = None
+    tenant_id: Optional[str] = None
+    concurrency: int = 1
+    isolate: str = "splits"
+    allow_baseline_mismatch: bool = False
+    validate_only: bool = False
+
+
+def markdown_path(options: EvalOptions) -> Path:
+    if options.markdown:
+        return Path(options.markdown)
+    return Path(options.report).with_suffix(".md")
+
+
+def selection(options: EvalOptions) -> Dict[str, Any]:
+    """What was evaluated beyond the dataset file; recorded in ``report.run`` and compared with a baseline."""
+    return {
+        "splits": sorted(options.splits),
+        "tags": sorted(options.tags),
+        "limit": options.limit,
+        "isolation": options.isolate,
+    }
+
+
+def check_writable(path: Path) -> None:
+    """Raise :class:`EvalCommandError` unless ``path`` can be (over)written; leaves no file behind."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            if path.is_dir() or not os.access(path, os.W_OK):
+                raise PermissionError(13, "Permission denied", str(path))
+            with open(path, "a", encoding="utf-8"):
+                pass
+            return
+        fd, probe = tempfile.mkstemp(prefix=".lg-sotf-eval-", dir=path.parent)
+        os.close(fd)
+        os.unlink(probe)
+    except OSError as exc:
+        raise EvalCommandError(
+            f"cannot write the report to {path}: {exc.strerror or exc}. Nothing was evaluated. In a container, "
+            "mount a directory the container user can write (docker run --user \"$(id -u):$(id -g)\")."
+        ) from exc
+
+
+def baseline_mismatches(baseline: Dict[str, Any], dataset: Dataset, current: Dict[str, Any]) -> List[str]:
+    """Reasons why ``baseline`` is not comparable with the current run (empty when it is)."""
+    problems: List[str] = []
+    if baseline.get("schema_version") != REPORT_SCHEMA_VERSION:
+        problems.append(
+            f"report schema version {baseline.get('schema_version')!r} differs from {REPORT_SCHEMA_VERSION}"
+        )
+    raw_ds = baseline.get("dataset")
+    ds: Dict[str, Any] = raw_ds if isinstance(raw_ds, dict) else {}
+    if ds.get("sha256") != dataset.sha256:
+        problems.append("it was produced from a different dataset file (sha256 differs)")
+    if ds.get("items") != len(dataset.items):
+        problems.append(f"it covers {ds.get('items')!r} items, this run {len(dataset.items)}")
+    raw_run = baseline.get("run")
+    run: Dict[str, Any] = raw_run if isinstance(raw_run, dict) else {}
+    if run.get("selection") != current:
+        problems.append(f"its selection {run.get('selection')!r} differs from this run's {current!r}")
+    return problems
+
+
+def find_work_tree(path: Path) -> Optional[Path]:
+    """The enclosing git work tree of ``path`` (by looking for ``.git``), if any."""
+    for parent in [path, *path.parents]:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def _stderr(message: str) -> None:
+    print(message, file=sys.stderr)
+
+
+def _write_outputs(report: Dict[str, Any], gate_dict: Optional[Dict[str, Any]], json_path: str, md: Path) -> None:
+    try:
+        write_json(report, json_path)
+        md.parent.mkdir(parents=True, exist_ok=True)
+        md.write_text(render_markdown(report, gate_dict), encoding="utf-8")
+    except OSError as exc:
+        # The run already happened (and may have cost money): never lose its results.
+        fd, fallback = tempfile.mkstemp(prefix="lg-sotf-eval-", suffix=".json")
+        os.close(fd)
+        write_json(report, fallback)
+        raise EvalCommandError(
+            f"cannot write the report ({exc.strerror or exc}); the results were saved to {fallback}"
+        ) from exc
+
+
+def execute(
+    settings: Settings,
+    options: EvalOptions,
+    echo: Callable[[str], None] = print,
+    warn: Callable[[str], None] = _stderr,
+) -> int:
+    """Run the command; returns the process exit code. Raises :class:`EvalCommandError` for exit code 2."""
+    if not 1 <= options.concurrency <= MAX_CONCURRENCY:
+        raise EvalCommandError(f"--concurrency must be between 1 and {MAX_CONCURRENCY}")
+    if options.isolate not in ISOLATION_MODES:
+        raise EvalCommandError(f"--isolate must be one of {', '.join(ISOLATION_MODES)}")
+    try:
+        dataset = load_dataset(options.dataset).select(splits=options.splits, tags=options.tags, limit=options.limit)
+    except DatasetError as exc:
+        raise EvalCommandError(str(exc)) from exc
+    if not dataset.items:
+        raise EvalCommandError("no dataset items match the selected splits/tags")
+    try:
+        thresholds = load_thresholds(options.thresholds) if options.thresholds else None
+    except ThresholdsError as exc:
+        raise EvalCommandError(str(exc)) from exc
+    current_selection = selection(options)
+    baseline: Optional[Dict[str, Any]] = None
+    if options.baseline:
+        try:
+            baseline = load_report(options.baseline)
+        except (OSError, ValueError) as exc:
+            raise EvalCommandError(f"cannot read baseline report: {exc}") from exc
+        problems = baseline_mismatches(baseline, dataset, current_selection)
+        if problems:
+            message = "baseline is not comparable with this run: " + "; ".join(problems)
+            if not options.allow_baseline_mismatch:
+                raise EvalCommandError(message + " (pass --allow-baseline-mismatch to compare anyway)")
+            warn("Warning: " + message)
+    if not dataset.synthetic:
+        for label, raw in (("dataset", options.dataset), ("report", options.report)):
+            tree = find_work_tree(Path(raw).resolve().parent)
+            if tree is not None:
+                warn(
+                    f"Warning: the {label} {raw} is inside the git work tree {tree} and the dataset is not marked "
+                    "synthetic; keep labelled customer data and its reports out of version control."
+                )
+    if options.validate_only:
+        echo(f"dataset ok: {len(dataset.items)} items, splits {dataset.splits()}")
+        if thresholds is not None:
+            echo(f"thresholds ok: {len(thresholds['metrics'])} bounds, {len(thresholds['regressions'])} regression checks")
+        if baseline is not None:
+            echo("baseline ok")
+        return EXIT_OK
+    md = markdown_path(options)
+    check_writable(Path(options.report))
+    check_writable(md)
+
+    def progress(done: int, total: int, result: ItemResult) -> None:
+        tail = f" ({result.error})" if result.error else ""
+        echo(f"[{done}/{total}] {result.item_id}: {result.status}, predicted {result.predicted or 'n/a'}{tail}")
+
+    import asyncpg
+    from redis.exceptions import RedisError
+
+    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
+    from lg_sotf.runtime.ops import OperationError
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    try:
+        run = asyncio.run(
+            run_evaluation(
+                settings,
+                dataset,
+                tenant_id=options.tenant_id,
+                concurrency=options.concurrency,
+                isolate=options.isolate,  # type: ignore[arg-type]
+                progress=progress,
+            )
+        )
+    except (EvalSetupError, SecurityConfigError, OperationError) as exc:
+        raise EvalCommandError(str(exc)) from exc
+    except DatabaseUnavailable as exc:
+        raise EvalCommandError(f"database unavailable: {exc}") from exc
+    except (DatabaseError, asyncpg.PostgresError) as exc:
+        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
+    except RedisError as exc:
+        raise EvalCommandError(f"redis unavailable: {type(exc).__name__}") from exc
+    run_info = {**run.info, "selection": current_selection}
+    report = build_report(run.results, dataset=dataset, run_info=run_info)
+    gate_dict: Optional[Dict[str, Any]] = None
+    if thresholds is not None:
+        gate = evaluate_gate(report, thresholds, baseline=baseline)
+        gate_dict = gate.as_dict()
+        report["gate"] = gate_dict
+    _write_outputs(report, gate_dict, options.report, md)
+    for line in summary_lines(report, gate_dict):
+        echo(line)
+    echo(f"report: {options.report}; markdown: {md}")
+    if report["metrics"]["scored"] == 0:
+        raise EvalCommandError(
+            f"every one of the {report['metrics']['items']} items errored; nothing was evaluated "
+            "(see the report's item errors)"
+        )
+    if gate_dict is not None and not gate_dict["passed"]:
+        return EXIT_GATE_FAILED
+    return EXIT_OK

@@ -115,16 +115,25 @@ class LLMTierSettings(BaseModel):
     max_concurrency: int = 16
 
 
+class FastTierSettings(LLMTierSettings):
+    model: str = "claude-haiku-4-5"
+
+
+class DeepTierSettings(LLMTierSettings):
+    # Opus 5.5 always thinks and bills thinking as output, so leave room in max_tokens.
+    model: str = "claude-opus-5-5"
+    max_tokens: int = 16_000
+    timeout_s: float = 300.0
+    max_concurrency: int = 8
+
+
 class LLMSettings(BaseModel):
     enabled: bool = True
     provider: LLMProvider = "anthropic"
     api_key: Optional[SecretStr] = None
     base_url: Optional[str] = None
-    fast: LLMTierSettings = LLMTierSettings(model="claude-haiku-4-5", max_tokens=2048)
-    # Opus 5.5 always thinks and bills thinking as output, so leave room in max_tokens.
-    deep: LLMTierSettings = LLMTierSettings(
-        model="claude-opus-5-5", max_tokens=16_000, timeout_s=300.0, max_concurrency=8
-    )
+    fast: FastTierSettings = Field(default_factory=FastTierSettings)
+    deep: DeepTierSettings = Field(default_factory=DeepTierSettings)
     refusal_fallback: bool = True
     prices: Dict[str, Dict[str, float]] = Field(default_factory=dict)
     allow_fake: bool = False
@@ -218,16 +227,21 @@ class ObservabilitySettings(BaseModel):
     service_name: str = "lg-sotf"
 
 
+Autonomy = Literal["auto", "approval", "disabled"]
+
+
+def _default_autonomy() -> Dict[str, Autonomy]:
+    return {
+        "low": "approval",
+        "medium": "approval",
+        "high": "approval",
+        "critical": "disabled",
+    }
+
+
 class ResponseSettings(BaseModel):
     dry_run: bool = True
-    default_autonomy: Dict[str, Literal["auto", "approval", "disabled"]] = Field(
-        default_factory=lambda: {
-            "low": "approval",
-            "medium": "approval",
-            "high": "approval",
-            "critical": "disabled",
-        }
-    )
+    default_autonomy: Dict[str, Autonomy] = Field(default_factory=_default_autonomy)
     max_actions_per_hour_per_tenant: int = 50
     webhook_url: Optional[str] = None
     webhook_secret: Optional[SecretStr] = None

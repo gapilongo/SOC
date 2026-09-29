@@ -68,7 +68,7 @@ RUN --mount=type=secret,id=build_ca,required=false \
 # ---------------------------------------------------------------------------
 FROM ${BASE_IMAGE} AS runtime
 
-ARG VERSION=1.0.0
+ARG VERSION=0.2.0
 ARG REVISION=unknown
 ARG CREATED=unknown
 ARG SOURCE=https://github.com/gapilongo/SOC

@@ -62,7 +62,7 @@ jobs:
           src/lg_sotf/services
           src/lg_sotf/ingestion
       - name: Shellcheck
-        run: shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh
+        run: shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh src/lg_front/docker/entrypoint.sh
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
@@ -302,3 +302,45 @@ jobs:
       - name: Build frontend image (no push)
         if: steps.detect.outputs.dockerfile == 'true'
         run: docker build -t lg-sotf-frontend:ci src/lg_front
+
+  e2e-ui:
+    name: Web UI end-to-end (Playwright, compose stack)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: src/lg_front/package-lock.json
+      - name: Install the frontend dependencies and Chromium
+        working-directory: src/lg_front
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      # Builds the api and frontend images, starts the production-like compose
+      # stack with the web UI (fake LLM, bootstrap admin), runs e2e/ in Chromium
+      # (sign-in, live dashboard, filters and pagination, timeline, escalation
+      # decision, approval, role gating, sign-out, CSP) and checks the container
+      # logs for tokens; tears the stack down afterwards.
+      - name: Run the suite against the stack
+        env:
+          CI: "true"
+          APP_IMAGE: lg-sotf:e2e
+          FRONTEND_IMAGE: lg-sotf-frontend:e2e
+          E2E_SCREENSHOTS: ${{ github.workspace }}/e2e-screenshots
+        run: scripts/e2e_ui_stack.sh
+      - name: Upload the report, traces and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-ui
+          path: |
+            src/lg_front/playwright-report
+            src/lg_front/test-results
+            e2e-screenshots
+          if-no-files-found: ignore
+          retention-days: 14

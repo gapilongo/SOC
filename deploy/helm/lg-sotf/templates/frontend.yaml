@@ -2,7 +2,10 @@
 {{- $c := dict "root" . "component" "frontend" "values" .Values.frontend }}
 {{- $name := include "lg-sotf.componentName" $c }}
 # Static web UI (image from src/lg_front/Dockerfile). It talks to the API
-# through the same Ingress host, so it needs no secrets or settings.
+# through the same Ingress host by default, so it needs no secrets; the
+# public runtime settings below become /config.js and the
+# Content-Security-Policy when the container starts.
+{{- $cfg := .Values.frontend.config }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,14 +45,43 @@ spec:
             - name: http
               containerPort: {{ .Values.frontend.containerPort }}
               protocol: TCP
+          env:
+            - name: LG_SOTF_API_BASE_URL
+              value: {{ $cfg.apiBaseUrl | quote }}
+            - name: LG_SOTF_WS_URL
+              value: {{ $cfg.wsUrl | quote }}
+            - name: LG_SOTF_CSP_CONNECT_SRC
+              value: {{ join " " $cfg.extraConnectSrc | quote }}
+            - name: LG_SOTF_HSTS_MAX_AGE
+              value: {{ $cfg.hstsMaxAge | toString | quote }}
+            - name: LG_SOTF_OIDC_ISSUER
+              value: {{ $cfg.oidc.issuer | quote }}
+            - name: LG_SOTF_OIDC_CLIENT_ID
+              value: {{ $cfg.oidc.clientId | quote }}
+            - name: LG_SOTF_OIDC_SCOPE
+              value: {{ $cfg.oidc.scope | quote }}
+            - name: LG_SOTF_OIDC_AUDIENCE
+              value: {{ $cfg.oidc.audience | quote }}
+            - name: LG_SOTF_OIDC_TOKEN_TYPE
+              value: {{ $cfg.oidc.tokenType | quote }}
+            - name: LG_SOTF_OIDC_REDIRECT_URI
+              value: {{ $cfg.oidc.redirectUri | quote }}
+            - name: LG_SOTF_OIDC_AUTHORIZATION_ENDPOINT
+              value: {{ $cfg.oidc.authorizationEndpoint | default "" | quote }}
+            - name: LG_SOTF_OIDC_TOKEN_ENDPOINT
+              value: {{ $cfg.oidc.tokenEndpoint | quote }}
+            - name: LG_SOTF_OIDC_END_SESSION_ENDPOINT
+              value: {{ $cfg.oidc.endSessionEndpoint | default "" | quote }}
+            - name: LG_SOTF_OIDC_LABEL
+              value: {{ $cfg.oidc.label | quote }}
           livenessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
             periodSeconds: 15
           readinessProbe:
             httpGet:
-              path: /
+              path: /healthz
               port: http
             periodSeconds: 5
           resources:

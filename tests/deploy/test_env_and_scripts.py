@@ -258,6 +258,7 @@ def test_only_useful_scripts_remain() -> None:
         "ci/bandit-baseline.json",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
+        "e2e_ui_stack.sh",
         "generate_secrets.py",
         "smoke_stack.py",
         "smoke_stack.sh",

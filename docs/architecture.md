@@ -226,6 +226,12 @@ Rules:
   containment action. Routing to `close` from LLM evidence requires rule
   corroboration or analyst decision; containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.
+  (Clarification: "auto-close" here means closing as benign. The decision to
+  plan a response is taken from the threat score; rule corroboration gates
+  automatic *containment*, not planning or non-containment actions such as
+  `create_ticket`, which run under autonomy `auto` on any evidence. A
+  policy response whose actions complete closes the alert as malicious at
+  any severity.)
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * A model refusal at any stage escalates with reason `model_refused`; no
@@ -369,3 +375,28 @@ to `audit_log`.
   truncated between tests.
 * LLM paths are tested with the `fake` provider; no test requires network.
 * Every bug fix and every guardrail has a test.
+
+## 15. Evaluation harness (`lg_sotf.eval`)
+
+* `lg-sotf eval --dataset <jsonl> --report <json> [--thresholds <yaml>] [--baseline <json>]`
+  ingests each labelled item with `IngestionService.ingest` and runs it with
+  `WorkflowEngine.run` in a fresh tenant (`eval-<timestamp>-<random>`,
+  created with the schema-owner connection). The queue is bypassed; every
+  other component is the production one.
+* A run that reaches an analyst or approval interrupt is left waiting and
+  recorded as `review="unreviewed"` (plus an `eval.review_not_performed`
+  alert event). The harness never resumes a run with a synthetic decision and
+  never approves an action.
+* Metrics are pure functions of the per-item results
+  (`lg_sotf.eval.metrics`); the headline is the malicious false-negative rate
+  (expected-malicious alerts closed as benign without a human). The gate
+  compares the JSON report with a thresholds file and optionally a baseline
+  report; exit code 1 means a violation, 2 that the run could not start.
+* `environment=production` is refused; point the settings at a dedicated
+  evaluation database. See `docs/evaluation.md`.
+* Clarifications (behaviour since the eval review): by default each split
+  runs in its own fresh tenant (`<base>-<n>-<split>`, `--isolate splits`;
+  `--isolate none` keeps one tenant). Database reachability, the migrated
+  schema, Redis and the report paths are checked before any tenant is
+  created; those failures, a baseline from a different dataset or selection,
+  and a run in which every item errored all exit with code 2.

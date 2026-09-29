@@ -1,0 +1,323 @@
+# Security model
+
+This document describes how LG-SOTF protects the data it processes and the
+environments it can act on: the threat model, tenant isolation,
+authentication, secrets, defences against prompt injection, response
+guardrails, data handling and audit. The system contract is
+`docs/architecture.md`; operating procedures (key rotation, incident
+checklist) are in `docs/operations.md`. To report a vulnerability, see
+`SECURITY.md` in the repository root.
+
+## 1. Threat model
+
+### What we protect
+
+| Asset | Why it matters |
+|---|---|
+| Alert data of each tenant | Security telemetry: host and user names, addresses, command lines, sometimes personal data |
+| The integrity of triage decisions | A wrong automatic close hides an intrusion; a wrong response disrupts the business |
+| The ability to act (response connectors) | Containment actions (block an address, isolate a host, disable an account) go to the tenant's SOAR |
+| Credentials held by the platform | Source (SIEM/EDR/cloud) credentials, SOAR webhook secrets, enrichment API keys, LLM provider keys |
+| Accounts and sessions | Analysts approve containment; admins configure sources and policy |
+| The audit trail | Evidence of who decided and approved what |
+
+### Who we defend against
+
+| Actor | Capability | Main controls |
+|---|---|---|
+| External attacker whose activity produces alerts | Controls much of the alert text: process names, command lines, file names, user agents, cloud resource tags, email subjects | Untrusted-data prompt boundary, injection detection, rule corroboration, severity policy, guardrails, analyst review (sections 5, 6) |
+| Attacker with a stolen API key | Can push alerts (`ingest` scope) or read (`read`) within one tenant | Scoped keys, hashed at rest, revocable, rate limits, no admin or decision rights for keys (section 3) |
+| Malicious or compromised tenant user | Acts within their role in their tenant | RBAC, per-action approval rights by risk, audit log, other tenants unreachable (sections 2, 3, 8) |
+| Tenant admin configuring a hostile source URL | Could aim pull connectors at internal services (SSRF) | Outbound destination policy (section 4) |
+| A misbehaving or manipulated model | Returns a wrong verdict or a harmful recommendation | Schema-validated output, model output never alone sufficient to close high/critical alerts or to contain (sections 5, 6) |
+| Operator with infrastructure access | Database, Redis, secrets | Out of scope for application controls; mitigated by two database roles, encrypted secrets, append-only audit log, and your own infrastructure access control |
+
+Out of scope: compromise of the host, container runtime, database server or
+Kubernetes control plane; the security of the SOAR platform that receives
+response webhooks; the LLM provider's own handling of prompts (governed by
+your agreement with the provider).
+
+### Trust boundaries
+
+```mermaid
+flowchart LR
+    subgraph Untrusted
+      SRC[Alert sources<br/>SIEM / EDR / cloud]
+      NET[Internet clients]
+    end
+    subgraph Platform
+      API[API] --> PG[(PostgreSQL<br/>RLS per tenant)]
+      API --> RD[(Redis)]
+      W[Worker] --> PG
+      W --> RD
+      S[Scheduler] --> PG
+    end
+    NET -->|JWT / OIDC / API key| API
+    SRC -->|push: API key| API
+    S -->|pull: HTTPS, destination policy| SRC
+    W -->|redacted, delimited alert data| LLM[LLM provider]
+    W -->|indicators, with key and consent| TI[Enrichment providers]
+    W -->|HMAC-signed webhook| SOAR[Tenant SOAR]
+```
+
+## 2. Tenant isolation
+
+Every tenant-owned table has a `tenant_id` column and a PostgreSQL row-level
+security policy with `FORCE ROW LEVEL SECURITY`: a row is visible and
+writable only when `tenant_id` equals the transaction's `app.tenant_id`
+setting. Application code reaches tenant data only inside
+`Database.tenant_tx(tenant_id)` (which sets it with `SET LOCAL`), and
+repositories additionally filter by `tenant_id` explicitly (defence in
+depth).
+
+Cross-tenant work (partition maintenance, retention, SLA and stale-run sweeps,
+tenant creation from the CLI) uses `system_tx()`, which bypasses the policy
+only when `app.bypass_rls = 'on'` **and** the session user belongs to the
+schema-owner role. In production the API and workers connect as a separate
+runtime role (`database.runtime_role`) that owns nothing and has no
+`BYPASSRLS`; `lg-sotf migrate` refuses to grant privileges to a role that is
+a superuser, has `BYPASSRLS` or is a member of the owner role. Credential
+lookups that must happen before the tenant is known (user by email, refresh
+token by hash, API key by id) go through narrow `SECURITY DEFINER`
+functions. The isolation is tested against a real database with the runtime
+role (`tests/integration/db/test_rls.py`, `tests/integration/api/test_isolation.py`).
+
+Beyond the database:
+
+* Redis keys, streams and pub/sub channels carry the tenant id
+  (`{prefix}:t:{tenant_id}:...`, `{prefix}:events:{tenant_id}`); WebSocket
+  connections subscribe only to their principal's tenant channel.
+* LangGraph checkpoint threads are `{tenant_id}:{alert_id}`.
+* Caches (verdict cache, enrichment cache) are keyed per tenant; enrichment
+  results are never shared between tenants.
+* Indicator correlation uses per-tenant rows of HMAC-hashed values.
+* A platform admin may act on another tenant with `X-Tenant-ID`; every such
+  request is written to that tenant's audit log, and decisions (claims,
+  escalation decisions, approvals) stay with the tenant's own members.
+
+## 3. Authentication and authorisation
+
+* **Local accounts**: argon2id password hashes; minimum length
+  `auth.password_min_length` (12); identical responses and work for unknown
+  users, wrong passwords and locked accounts; lockout after
+  `auth.max_login_attempts` failures for `auth.lockout_minutes`.
+* **Sessions**: short-lived HS256 access tokens (`auth.access_token_ttl_s`,
+  15 minutes by default) carrying `jti`; opaque refresh tokens stored as
+  SHA-256 hashes, in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to
+  `/api/v1/auth`, rotated on every refresh. Reuse of a rotated refresh token
+  revokes all of the user's sessions and is audited. Logout revokes the
+  refresh token and blocks the presented access token until it expires. The
+  user row is re-read on every request, so deactivation and role changes
+  apply immediately.
+* **Single sign-on (OIDC)**: tokens from `auth.oidc_issuer` are verified
+  against its JWKS (RS256/ES256 only, `aud` required); tenant and role come
+  from configured claims; linking to a local account requires a verified
+  email; OIDC never grants platform-admin rights.
+* **API keys**: `lgk_<id>_<secret>`, stored as SHA-256 hashes and shown once;
+  scopes `ingest`, `read`, `write`; keys can never use administrative
+  endpoints, decide escalations or approve actions.
+* **Roles**: `viewer` (read), `analyst` (notes, suppression proposals,
+  claim/decide escalations, approve low and medium risk actions), `admin`
+  (users, keys, sources, settings, suppression management, high and critical
+  approvals). The approver's role always comes from the authenticated
+  principal, never from a request body.
+* **Hardening**: request size limits enforced while streaming, Redis rate
+  limits (stricter on login and ingest; failing credentials are throttled per
+  client address), CORS allowlist, security headers (CSP
+  `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `no-store`, HSTS over
+  HTTPS), uniform error envelope without stack traces. Trust
+  `X-Forwarded-For` only from the proxies named in `api.forwarded_allow_ips`.
+
+Details and the endpoint/role matrix: `docs/api.md`.
+
+## 4. Secrets and outbound connections
+
+* **Where secrets live**: only in environment variables fed from your secret
+  store (Kubernetes Secrets, a secret manager). `settings.py` is the only
+  reader. The Helm chart's values schema rejects secret-bearing keys under
+  `settings`, so they cannot land in a ConfigMap or in release history. The
+  production compose override passes each container only the secrets it
+  needs (docs/deployment.md).
+* **Startup checks**: in `staging` and `production`, processes refuse to
+  start without a JWT secret of at least 32 bytes, encryption keys and an
+  indicator HMAC key, with a fake model, wildcard CORS, insecure cookies, the
+  development database password, or any secret value published in this
+  repository (placeholders in `configs/development.yaml` and `.env.example`).
+* **Secrets at rest**: source credentials, tenant webhook secrets and tenant
+  enrichment API keys are encrypted with Fernet (`security.encryption_keys`,
+  rotation by key list), bound to their tenant and purpose, write-only
+  through the API (responses show only `has_secret` / `<name>_configured`).
+  Configuration keys that look like credentials are refused in plain
+  `config`.
+* **Hashes**: passwords (argon2id), API keys and refresh tokens (SHA-256),
+  indicator values (HMAC-SHA256 with `security.indicator_hmac_key`).
+* **Pull connectors**: source URLs are tenant-controlled, so every request is
+  checked before it is sent: HTTPS only in staging/production; every address
+  the host resolves to must be allowed; loopback, link-local (including cloud
+  metadata endpoints), multicast, unspecified and reserved addresses are
+  always refused; private ranges only when the install sets
+  `ingestion.allow_private_destinations`; the connection is pinned to the
+  checked address (no DNS rebinding) while TLS still verifies the host name.
+* **Response webhooks**: HMAC-SHA256 signed (`X-LGSOTF-Signature` over
+  timestamp and body), with an idempotency key per action; receivers must
+  verify the signature and reject stale timestamps.
+* **Logs**: structured JSON with a redaction pass over every record and
+  traceback; no request bodies, query strings or credentials in access logs;
+  no raw alert bodies at INFO.
+
+## 5. Prompt-injection defences
+
+Alert content is attacker-influenced. The design assumes a model **will**
+sometimes be fooled and makes sure that being fooled cannot, on its own,
+close a dangerous alert or trigger containment.
+
+1. **Hard boundary between instructions and data**
+   (`lg_sotf.llm.prompting`). Instructions live in the system message; alert
+   data is redacted, size-capped, serialised as compact JSON with `<` and `>`
+   escaped (a closing `</alert_data>` cannot be forged from inside the data)
+   and wrapped in `<alert_data>`; investigation results go in a separate
+   `<tool_data>` block. Both blocks are explicitly labelled as untrusted data,
+   never instructions.
+2. **Structured output only.** Every model call must return a
+   schema-validated object; invalid or truncated output is an error, a
+   refusal is recorded as a refusal. Free text from the model never selects a
+   code path.
+3. **Injection detection as evidence.** Triage scans every alert field
+   (NFKC-normalised, zero-width and bidi characters removed, bounded scan) for
+   model-steering text: "ignore previous instructions", "classify this as
+   benign", fake `<system>` tags, verdict forgeries and similar. When found,
+   false-positive signals taken from alert text are voided, a
+   `prompt_injection_suspected` true-positive signal is added, and the rule
+   score cannot corroborate an automatic response.
+4. **Rules decide what text cannot.** False-positive keywords count only from
+   the detection title and rule name, not from descriptions or command lines.
+   A low/medium benign close needs rule corroboration in addition to the
+   model. The routing policy chooses to plan a response from the threat
+   score; what then runs automatically is decided per action: automatic
+   *containment* needs rule evidence that does not come from text an
+   attacker writes (threat-intelligence verdicts, analyst-confirmed history,
+   behavioural observations), and containment on model-only evidence always
+   waits for approval. Non-containment actions (create a ticket, notify,
+   collect forensics) run automatically wherever the tenant set autonomy
+   `auto` for their risk level.
+5. **Severity policy.** Automation never closes a high or critical alert as
+   benign; only an analyst decision, an admin-enabled suppression rule or an
+   analyst-confirmed verdict (not for critical) does. A response the policy
+   started closes the alert as **malicious** once its actions complete
+   (connector success or the tenant's dry run), at any severity; if an
+   action fails or none completes, the alert is escalated instead. The
+   evaluation metric `high_severity_auto_closed_benign` measures the first
+   rule and is gated at 0 in CI.
+6. **Refusals escalate.** A refusal by any agent sends the alert to an
+   analyst with reason `model_refused`; no actions are planned from a refused
+   analysis.
+7. **Measured.** The evaluation harness has an `adversarial` split (injection
+   in descriptions, command lines, entity names, cloud tags and logs, tag
+   forgery, zero-width obfuscation, padding, camouflage, response steering)
+   and the CI gate requires a 0% malicious false-negative rate on it
+   (docs/evaluation.md). With the fake model this checks policy, not model
+   robustness; run it with your production model before changing models or
+   prompts.
+
+## 6. Response guardrails
+
+LG-SOTF proposes containment and, only where a tenant allows it, executes it
+through the tenant's SOAR webhook. It never calls vendor EDR, firewall or
+identity APIs directly.
+
+* **Autonomy per risk level** (tenant policy, default: `approval` for low,
+  medium and high, `disabled` for critical). Containment on model-only
+  evidence is never automatic; an analyst's pre-approval covers only low and
+  medium risk; high and critical actions need an admin.
+* **Guardrails before planning and again right before execution**: the
+  tenant policy must be well formed (malformed policy blocks everything); the
+  action type must be known and allowed; the target must match the action's
+  kind and be syntactically valid; IP blocks never target loopback,
+  link-local, multicast, unspecified or reserved addresses (including
+  IPv4-mapped and similar IPv6 forms), and private ranges only when the tenant
+  allows it; protected hosts, users, domains and CIDRs are never acted on,
+  whatever the spelling (IP literal forms, DN and `DOMAIN\user` forms,
+  Unicode normalisation).
+* **Rate limits**: a per-tenant hourly cap (bounded by the install's
+  `response.max_actions_per_hour_per_tenant`) and per-action blast-radius
+  limits, enforced atomically at execution.
+* **Dry run by default**: `response.dry_run=true` (the default) records what
+  would happen without sending anything. A dry-run execution is reported as
+  such on the alert.
+* **Ledger**: every action is a row with an idempotency key, its status
+  history, who approved it and the connector's result; every transition is
+  audited.
+
+## 7. Data handling
+
+* **What is stored**: the original event (`alerts.raw`, capped at
+  `ingestion.max_raw_bytes`), the normalised canonical alert, summaries of
+  each agent's reasoning, the timeline, escalations, analyst decisions and
+  feedback, the action ledger, daily LLM usage, and the audit log.
+* **Redaction**: secrets are removed from every event **before** it is
+  stored or shown to a model: private keys, cloud and API keys, JWTs,
+  authorisation headers, credentials in connection strings and command lines,
+  values under secret-labelled keys. Hashes, GUIDs and other indicators stay
+  intact because analysts need them.
+* **Personal data is not redacted.** User names, email addresses, host
+  names, IP addresses and command lines are the substance of triage; they are
+  stored and, when the LLM is enabled, sent to the configured model provider.
+  Customers must cover this in their data-processing terms with you and with
+  the provider. Options to limit exposure: disable the LLM (`llm.enabled=false`,
+  rules only), use a provider and region that meet your requirements, and
+  keep enrichment providers opt-in per tenant.
+* **Enrichment**: indicators go to third-party threat-intelligence providers
+  only when a key is configured and the tenant consents (install key shared
+  explicitly, or the tenant's own key). Private addresses and the tenant's
+  internal domains are never sent.
+* **Retention** (scheduler maintenance job, defaults): alerts 90 days, alert
+  events 90, audit log 365, indicator sightings 30, LLM usage 400, workflow
+  checkpoints of completed runs 30. Configure with `retention.*`. A tenant may
+  have shorter or longer `alerts_days` and `indicators_days` in
+  `tenants.settings.retention` (set by an operator in the database;
+  `/tenant/settings` does not edit them); the partitioned timeline and audit
+  tables follow the install setting. Expired monthly
+  partitions are dropped whole.
+* **Deletion on request**: there is no self-service tenant data export or
+  erasure endpoint in this release; operators handle such requests in the
+  database (see the gaps list in the README).
+* **Backups** contain everything above; the encryption and HMAC keys are
+  part of the backup set but must be stored separately (docs/deployment.md).
+
+## 8. Audit
+
+Security-relevant events are written to `audit_log`, a partitioned,
+append-only table: a per-tenant SHA-256 hash chain (`prev_hash`, `hash`), and
+a database trigger that blocks `UPDATE`, `DELETE` and `TRUNCATE` except for
+the retention job. Entries cover logins and session events, refresh-token
+reuse, user and API-key changes, source and settings changes, suppression
+rules, claims, decisions, approvals and response execution, escalation
+creation, and platform-admin cross-tenant access. Entries never contain
+secrets or raw alert bodies (they are redacted again before logging).
+Admins read them with `GET /api/v1/audit` and verify the chain with
+`GET /api/v1/audit/verify`. Export the audit log for the period of an
+incident before retention removes it.
+
+## 9. Supply chain and build
+
+* Pinned runtime and development dependencies (`requirements*.txt`),
+  `pip-audit` and Bandit in CI, Gitleaks on every change and a weekly
+  full-history scan, Dependabot for GitHub Actions and Python dependencies.
+* The container image runs as a non-root user (uid 10001) with a read-only
+  root filesystem, no build tools and no pip; `dumb-init` as PID 1. Kubernetes
+  manifests drop all capabilities and use the `RuntimeDefault` seccomp
+  profile.
+
+## 10. Known limitations
+
+* HS256 access tokens use one shared secret; rotating it invalidates access
+  tokens (refresh tokens survive). There is no asymmetric signing or key id
+  rotation window yet.
+* There is no built-in MFA for local accounts; use OIDC with your identity
+  provider's MFA for production.
+* Personal data in alerts is not pseudonymised before it reaches the model
+  provider (section 7).
+* Rate limits fail open when Redis is unavailable (account lockout still
+  applies).
+* No third-party penetration test or certification (SOC 2, ISO 27001) has
+  been performed on this release.

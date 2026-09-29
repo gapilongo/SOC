@@ -252,6 +252,96 @@ def dlq_requeue(entry_ids: List[str]) -> None:
         raise click.ClickException(f"{failed} of {len(results)} dead letters were not requeued")
 
 
+@cli.command("eval")
+@click.option("--dataset", required=True, type=click.Path(dir_okay=False), help="Labelled JSONL dataset.")
+@click.option(
+    "--report",
+    default="eval-report.json",
+    show_default=True,
+    type=click.Path(dir_okay=False),
+    help="JSON report path (Markdown is written next to it unless --markdown is given).",
+)
+@click.option("--markdown", default=None, type=click.Path(dir_okay=False), help="Markdown report path.")
+@click.option("--thresholds", default=None, type=click.Path(dir_okay=False), help="Gate thresholds (YAML/JSON).")
+@click.option("--baseline", default=None, type=click.Path(dir_okay=False), help="Earlier JSON report for regressions.")
+@click.option("--split", "splits", multiple=True, help="Only items in this split (repeatable).")
+@click.option("--tag", "tags", multiple=True, help="Only items carrying this tag (repeatable; all must match).")
+@click.option("--limit", type=click.IntRange(1, None), default=None, help="Evaluate at most this many items.")
+@click.option("--tenant", "tenant_id", default=None, help="Id of the new tenant to evaluate in (default: generated).")
+@click.option("--concurrency", type=click.IntRange(1, 32), default=1, show_default=True, help="Items run at once.")
+@click.option(
+    "--isolate",
+    type=click.Choice(["splits", "none"]),
+    default="splits",
+    show_default=True,
+    help="splits: a fresh tenant per split, so split metrics are independent; none: one tenant for all items.",
+)
+@click.option(
+    "--allow-baseline-mismatch",
+    is_flag=True,
+    help="Compare with a baseline from a different dataset, selection or report schema (warns instead of exit 2).",
+)
+@click.option("--validate-only", is_flag=True, help="Check the dataset, thresholds and baseline; run nothing.")
+def eval_command(
+    dataset: str,
+    report: str,
+    markdown: Optional[str],
+    thresholds: Optional[str],
+    baseline: Optional[str],
+    splits: List[str],
+    tags: List[str],
+    limit: Optional[int],
+    tenant_id: Optional[str],
+    concurrency: int,
+    isolate: str,
+    allow_baseline_mismatch: bool,
+    validate_only: bool,
+) -> None:
+    """Run a labelled dataset through ingestion and the workflow, report metrics and gate on thresholds.
+
+    Uses the configured database and Redis (point them at a dedicated evaluation
+    database migrated with `lg-sotf migrate`) and creates fresh tenants per run
+    (one per split by default). Progress and the summary go to stdout, logs to
+    stderr. Exit code 0: passed; 1: a threshold or regression check failed;
+    2: could not run (or every item errored).
+    """
+    from lg_sotf.eval.command import EXIT_CANNOT_RUN, EvalCommandError, EvalOptions, execute
+
+    options = EvalOptions(
+        dataset=dataset,
+        report=report,
+        markdown=markdown,
+        thresholds=thresholds,
+        baseline=baseline,
+        splits=tuple(splits),
+        tags=tuple(tags),
+        limit=limit,
+        tenant_id=tenant_id,
+        concurrency=concurrency,
+        isolate=isolate,
+        allow_baseline_mismatch=allow_baseline_mismatch,
+        validate_only=validate_only,
+    )
+    settings = get_settings() if validate_only else _prepare()
+    if not validate_only and "log_level" not in settings.observability.model_fields_set:
+        # Per-node INFO logs drown the progress lines; keep warnings unless a level was configured.
+        from lg_sotf.observability.logging import configure_logging
+
+        quiet = settings.model_copy(
+            update={"observability": settings.observability.model_copy(update={"log_level": "WARNING"})}
+        )
+        configure_logging(quiet, stream=sys.stderr)
+    try:
+        code = execute(settings, options, echo=click.echo)
+    except EvalCommandError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(EXIT_CANNOT_RUN)
+    except OSError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(EXIT_CANNOT_RUN)
+    sys.exit(code)
+
+
 def main() -> None:
     cli(prog_name="lg-sotf")
 

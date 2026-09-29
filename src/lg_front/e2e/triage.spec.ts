@@ -1,0 +1,509 @@
+/**
+ * The analyst workflow through the real UI, against a running stack:
+ * security headers and sign-in, provisioning (API key, analyst, viewer),
+ * the dashboard updating live after alerts arrive through the ingest API,
+ * alert filters and pagination, the alert timeline, claiming and deciding
+ * the escalation as an analyst, approving its response as an admin until
+ * the alert closes, role gating for analyst and viewer, sign-out, and no
+ * token in browser storage. The Content-Security-Policy is checked on the
+ * wire and in the browser (no violations on any page).
+ */
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+
+import {
+  API,
+  assertNoTokenInStorage,
+  getAlert,
+  ingest,
+  newSession,
+  randomPassword,
+  requiredEnv,
+  screenshot,
+  signIn,
+  signOut,
+  statValue,
+  waitForAlert,
+  type AlertState,
+  type Credentials,
+} from './support';
+
+test.describe.configure({ mode: 'serial' });
+
+const run = `e2e${Date.now().toString(36)}`;
+const admin: Credentials = { email: requiredEnv('E2E_ADMIN_EMAIL'), password: requiredEnv('E2E_ADMIN_PASSWORD') };
+const analyst: Credentials = { email: `analyst-${run}@e2e.example.com`, password: randomPassword() };
+const viewer: Credentials = { email: `viewer-${run}@e2e.example.com`, password: randomPassword() };
+const BEACON_TITLE = `Possible C2 beacon from workstation ws-${run}`;
+const BURST = 104; // with the beacon: more than one page (100) of this run's alerts
+const SEVERITIES = ['low', 'medium', 'high'] as const;
+
+let apiKey = '';
+let beaconId = '';
+// The first burst alert: sign-in anomalies like it are escalated to an analyst (grey zone).
+let escalatedId = '';
+const ESCALATED_TITLE = `Unusual sign-in pattern ${run} #0`;
+
+function octet(seed: number): number {
+  return 1 + (seed % 250);
+}
+
+function beacon(): object {
+  const seed = Date.now();
+  return {
+    source_alert_id: `${run}-beacon`,
+    title: BEACON_TITLE,
+    description: 'Periodic beacon to a command and control server; malware suspected.',
+    severity: 'medium',
+    occurred_at: new Date().toISOString(),
+    entities: {
+      ips: [`198.51.100.${octet(seed)}`],
+      hosts: [`ws-${run}`],
+      users: [`u-${run}`],
+      hashes: [Buffer.from(run.padEnd(16, '0')).toString('hex').slice(0, 32)],
+      processes: ['powershell.exe'],
+    },
+  };
+}
+
+function burst(n: number): object {
+  return {
+    source_alert_id: `${run}-burst-${n}`,
+    title: `Unusual sign-in pattern ${run} #${n}`,
+    severity: SEVERITIES[n % SEVERITIES.length],
+    occurred_at: new Date().toISOString(),
+    entities: { users: [`user${n}-${run}`], hosts: [`host-${n % 7}-${run}`] },
+  };
+}
+
+const expectedBySeverity = (sev: string) =>
+  Array.from({ length: BURST }, (_, n) => SEVERITIES[n % SEVERITIES.length]).filter((s) => s === sev).length + (sev === 'medium' ? 1 : 0);
+
+async function openAlertFromList(page: Page, title: string) {
+  await page.goto('/alerts');
+  await page.getByLabel('Title contains').fill(title);
+  await page.getByRole('button', { name: 'Apply' }).click();
+  const row = page.getByRole('row', { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+  await expect(row).toHaveCount(1);
+  await row.click();
+  const drawer = page.getByRole('dialog', { name: title });
+  await expect(drawer).toBeVisible();
+  return drawer;
+}
+
+function escalationCard(page: Page, title: string) {
+  return page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').filter({ hasText: title });
+}
+
+/** The escalation card for `title` on the Escalations page, loading further pages of the queue as needed. */
+async function findEscalation(page: Page, title: string) {
+  await page.goto('/escalations');
+  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+  const card = escalationCard(page, title);
+  await expect(page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').first()).toBeVisible();
+  for (let i = 0; i < 20 && (await card.count()) === 0; i += 1) {
+    const more = page.getByRole('button', { name: 'Load more' });
+    if ((await more.count()) === 0) break;
+    const before = await page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').count();
+    await more.click();
+    await expect.poll(() => page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').count()).toBeGreaterThan(before);
+  }
+  await expect(card).toHaveCount(1);
+  return card;
+}
+
+function actionRows(page: Page, alertId: string) {
+  return page.getByRole('row').filter({ has: page.getByRole('button', { name: `Open alert ${alertId}` }) });
+}
+
+test('security headers on every document, and the admin signs in under the CSP', async ({ browser, request }) => {
+  for (const path of ['/login', '/', '/alerts', '/config.js']) {
+    const r = await request.get(path);
+    expect(r.status(), path).toBe(200);
+    const csp = r.headers()['content-security-policy'] ?? '';
+    expect(csp, `CSP on ${path}`).toContain("default-src 'none'");
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("style-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).not.toContain('unsafe-inline');
+    expect(csp).not.toContain('unsafe-eval');
+    expect(r.headers()['x-frame-options']).toBe('DENY');
+    expect(r.headers()['x-content-type-options']).toBe('nosniff');
+    expect(r.headers()['referrer-policy']).toBe('no-referrer');
+  }
+  const config = await (await request.get('/config.js')).text();
+  expect(config).not.toMatch(/secret|password|eyJ/i);
+
+  const { context, page, watch } = await newSession(browser);
+  await page.goto('/login');
+  await screenshot(page, '01-login');
+  await signIn(page, admin);
+  await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
+  await assertNoTokenInStorage(page);
+  const refresh = (await context.cookies()).find((c) => c.name === 'lgsotf_refresh');
+  expect(refresh, 'refresh cookie').toBeTruthy();
+  expect(refresh?.httpOnly).toBe(true);
+  expect(refresh?.sameSite).toBe('Strict');
+  // A reload restores the session from the HttpOnly refresh cookie, not from storage.
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await assertNoTokenInStorage(page);
+  await watch.assertClean();
+  await context.close();
+});
+
+test('the admin creates an API key, an analyst and a viewer in the UI', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, admin);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Users and API keys' }).click();
+  await expect(page.getByRole('heading', { name: 'Users and API keys', level: 1 })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Create key' }).click();
+  let dialog = page.getByRole('dialog', { name: 'Create API key' });
+  await dialog.getByLabel('Name').fill(`e2e ingest ${run}`);
+  await dialog.getByLabel('read', { exact: true }).check();
+  await dialog.getByRole('button', { name: 'Create key' }).click();
+  dialog = page.getByRole('dialog', { name: `API key e2e ingest ${run} created` });
+  apiKey = await dialog.locator('#new-api-key').inputValue();
+  expect(apiKey.length).toBeGreaterThan(20);
+  await dialog.getByRole('button', { name: 'I have stored the key' }).click();
+  await expect(page.getByText(`e2e ingest ${run}`)).toBeVisible();
+  await expect(page.getByText(apiKey)).toHaveCount(0);
+
+  for (const [who, role] of [
+    [analyst, 'analyst'],
+    [viewer, 'viewer'],
+  ] as const) {
+    await page.getByRole('button', { name: 'Add user' }).click();
+    const form = page.getByRole('dialog', { name: 'Add user' });
+    await form.getByLabel('Email').fill(who.email);
+    await form.getByLabel('Role').selectOption(role);
+    await form.getByLabel('Password (optional)').fill(who.password);
+    await form.getByRole('button', { name: 'Create user' }).click();
+    await expect(form).toBeHidden();
+    await expect(page.getByRole('row').filter({ hasText: who.email })).toContainText(role);
+  }
+  await assertNoTokenInStorage(page);
+  await watch.assertClean();
+  await context.close();
+});
+
+test('the dashboard updates live when alerts arrive through the ingest API', async ({ browser, request }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, admin);
+  await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
+  const before = await statValue(page, 'Alerts');
+
+  const items = await ingest(request, apiKey, [beacon(), ...Array.from({ length: BURST }, (_, n) => burst(n))]);
+  expect(items.filter((i) => i.status === 'inserted')).toHaveLength(BURST + 1);
+  beaconId = items[0].alert_id as string;
+  escalatedId = items[1].alert_id as string;
+
+  // No navigation, no Refresh click: the WebSocket events refresh the page.
+  await expect.poll(() => statValue(page, 'Alerts'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
+  await screenshot(page, '02-dashboard');
+  await watch.assertClean();
+  await context.close();
+});
+
+const SETTLED = ['waiting_human', 'waiting_approval', 'closed'];
+
+/**
+ * Wait until the beacon needs something from a person (an open escalation or
+ * an action awaiting approval) or is closed. The alert status alone is not
+ * enough: right after a decision it still reads waiting_human until the
+ * worker takes the resume.
+ */
+async function nextRequest(request: APIRequestContext, alertId: string): Promise<AlertState> {
+  const headers = { 'X-API-Key': apiKey };
+  const deadline = Date.now() + 150_000;
+  let last: AlertState | null = null;
+  while (Date.now() < deadline) {
+    last = await getAlert(request, apiKey, alertId);
+    if (last.status === 'closed') return last;
+    if (last.status === 'waiting_human') {
+      const r = await request.get(`${API}/escalations`, { params: { alert_id: alertId, status: 'open' }, headers });
+      if (((await r.json()) as { items: unknown[] }).items.length > 0) return last;
+    }
+    if (last.status === 'waiting_approval') {
+      const r = await request.get(`${API}/actions`, { params: { alert_id: alertId, status: 'awaiting_approval' }, headers });
+      if (((await r.json()) as { items: unknown[] }).items.length > 0) return last;
+    }
+    await new Promise((r) => setTimeout(r, 1_000));
+  }
+  throw new Error(`alert ${alertId} asked nobody for anything within the timeout (last status: ${last?.status})`);
+}
+
+test('alerts: filters, pagination and the alert timeline', async ({ browser, request }) => {
+  await waitForAlert(request, apiKey, beaconId, SETTLED);
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, admin);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Alerts' }).click();
+  await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeVisible();
+  await screenshot(page, '03-alerts');
+
+  await page.getByLabel('Title contains').fill(run);
+  await page.getByRole('button', { name: 'Apply' }).click();
+  await expect(page).toHaveURL(new RegExp(`q=${run}`));
+  const footer = page.getByText(/rows? loaded/);
+  await expect(footer).toHaveText('100 rows loaded, more available');
+  await page.getByRole('button', { name: 'Load more' }).click();
+  await expect(footer).toHaveText(`${BURST + 1} rows loaded`);
+  await expect(page.getByRole('grid', { name: 'Alerts' })).toHaveAttribute('aria-rowcount', String(BURST + 2));
+
+  const severity = page.getByRole('group', { name: 'Severity' });
+  await severity.getByRole('button', { name: 'high', exact: true }).click();
+  await expect(severity.getByRole('button', { name: 'high', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page).toHaveURL(/severity=high/);
+  await expect(footer).toHaveText(`${expectedBySeverity('high')} rows loaded`);
+  await severity.getByRole('button', { name: 'medium', exact: true }).click();
+  await expect(footer).toHaveText(`${expectedBySeverity('high') + expectedBySeverity('medium')} rows loaded`);
+  // Every rendered row respects the filter.
+  const labels = await page.getByRole('grid', { name: 'Alerts' }).getByRole('row').evaluateAll((rows) =>
+    rows.map((r) => r.getAttribute('aria-label')).filter(Boolean),
+  );
+  expect(labels.length).toBeGreaterThan(0);
+  for (const label of labels) expect(label).toMatch(/^(high|medium) alert: /);
+  await page.getByRole('button', { name: 'Clear' }).click();
+  await expect(page).not.toHaveURL(/severity=/);
+
+  const drawer = await openAlertFromList(page, BEACON_TITLE);
+  const timeline = drawer.locator('section', { has: page.getByRole('heading', { name: 'Timeline' }) }).locator('li');
+  await expect.poll(() => timeline.count()).toBeGreaterThanOrEqual(3);
+  await expect(drawer.getByRole('heading', { name: 'Verdict and reasoning' })).toBeVisible();
+  await expect(drawer.getByLabel('Add a note')).toBeVisible();
+  await drawer.getByRole('heading', { name: 'Timeline' }).scrollIntoViewIfNeeded();
+  await screenshot(page, '04-alert-timeline');
+  await watch.assertClean();
+  await context.close();
+});
+
+test('a viewer reads everything but sees no administration', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, viewer);
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Alerts' })).toBeVisible();
+  for (const adminOnly of ['Users and API keys', 'Audit log', 'Tenant settings', 'Sources', 'LLM usage']) {
+    await expect(nav.getByRole('link', { name: adminOnly })).toHaveCount(0);
+  }
+  await page.goto('/users');
+  await expect(page.getByRole('heading', { name: 'You do not have access to this page' })).toBeVisible();
+  const drawer = await openAlertFromList(page, BEACON_TITLE);
+  await expect(drawer.getByLabel('Add a note')).toHaveCount(0);
+  await expect(drawer.getByRole('button', { name: 'Reprocess' })).toHaveCount(0);
+  await assertNoTokenInStorage(page);
+  await watch.assertClean();
+  await context.close();
+});
+
+test('an analyst has no administration either', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, analyst);
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Escalations' })).toBeVisible();
+  for (const adminOnly of ['Users and API keys', 'Audit log', 'Tenant settings', 'Sources', 'LLM usage']) {
+    await expect(nav.getByRole('link', { name: adminOnly })).toHaveCount(0);
+  }
+  await page.goto('/audit');
+  await expect(page.getByRole('heading', { name: 'You do not have access to this page' })).toBeVisible();
+  await watch.assertClean();
+  await context.close();
+});
+
+/** Viewer gating on an escalation card, then the analyst claims it and records `decision`. */
+async function decideAsAnalyst(
+  viewerPage: Page,
+  analystPage: Page,
+  title: string,
+  decision: 'True positive (malicious)' | 'False positive',
+  shots: boolean,
+) {
+  await test.step('viewer: the escalation is visible but cannot be claimed or decided', async () => {
+    const card = await findEscalation(viewerPage, title);
+    await expect(card.getByRole('button', { name: 'Claim', exact: true })).toHaveCount(0);
+    await expect(card.getByRole('button', { name: 'Decide', exact: true })).toBeDisabled();
+    await expect(card).toContainText('Requires the analyst role.');
+  });
+  await test.step(`analyst: claim, then decide ${decision}`, async () => {
+    const page = analystPage;
+    const card = await findEscalation(page, title);
+    await expect(card).toContainText('Unassigned');
+    await card.getByRole('button', { name: 'Claim', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Escalation claimed.' })).toBeVisible();
+    await expect(card).toContainText('Assigned to you');
+    await card.scrollIntoViewIfNeeded();
+    if (shots) await screenshot(page, '05-escalations');
+    await card.getByRole('button', { name: 'Decide', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Record decision' });
+    await dialog.getByLabel(decision).check();
+    await dialog.getByLabel('Notes').fill(`e2e ${run}: ${decision}.`);
+    await dialog.getByLabel('Triage correct').selectOption('yes');
+    if (shots) await screenshot(page, '06-decision');
+    await dialog.getByRole('button', { name: 'Submit decision' }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole('status').filter({ hasText: /Decision recorded; \d+ alert\(s\) resumed\./ })).toBeVisible();
+    // The decided escalation leaves the default (open, claimed, expired) queue.
+    await expect(card).toHaveCount(0);
+  });
+}
+
+test('an analyst claims and decides an escalation, and the alert closes', async ({ browser, request }) => {
+  const v = await newSession(browser);
+  const a = await newSession(browser);
+  await signIn(v.page, viewer);
+  await signIn(a.page, analyst);
+
+  const waiting = await nextRequest(request, escalatedId);
+  expect(waiting.status, 'the sign-in alert waits for an analyst').toBe('waiting_human');
+  await decideAsAnalyst(v.page, a.page, ESCALATED_TITLE, 'False positive', true);
+
+  const closed = await waitForAlert(request, apiKey, escalatedId, ['closed']);
+  expect(closed.disposition).toBe('benign');
+  const drawer = await openAlertFromList(a.page, ESCALATED_TITLE);
+  await expect(drawer.getByText('closed', { exact: true }).first()).toBeVisible();
+  await expect(drawer.getByText('benign', { exact: true }).first()).toBeVisible();
+  // The timeline records who decided.
+  await expect(drawer.getByText(/^analyst[ ._]decision$/i).first()).toBeVisible();
+  for (const s of [v, a]) {
+    await assertNoTokenInStorage(s.page);
+    await s.watch.assertClean();
+    await s.context.close();
+  }
+});
+
+/**
+ * Works the C2 alert to closure the way a SOC does, whatever order the
+ * workflow asks in: pending response actions are approved by the admin (the
+ * first time after checking viewer and analyst gating on them), and an
+ * escalation, if the workflow raises one, is decided by the analyst.
+ */
+test('response approval: role gating, the admin approves, the alert closes as malicious', async ({ browser, request }) => {
+  const v = await newSession(browser);
+  const a = await newSession(browser);
+  const ad = await newSession(browser);
+  await signIn(v.page, viewer);
+  await signIn(a.page, analyst);
+  await signIn(ad.page, admin);
+  let approved = 0;
+
+  const approve = async () => {
+    if (approved === 0) {
+      await test.step('viewer: pending actions are visible but cannot be approved or rejected', async () => {
+        await v.page.goto('/actions?status=awaiting_approval');
+        const rows = actionRows(v.page, beaconId);
+        await expect(rows.first()).toBeVisible();
+        await expect(v.page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+        await expect(v.page.getByRole('button', { name: 'Reject', exact: true })).toHaveCount(0);
+        await expect(rows.first()).toContainText('Requires the analyst role.');
+      });
+      await test.step('analyst: approve only low and medium risk, reject at any risk', async () => {
+        await a.page.goto('/actions?status=awaiting_approval');
+        const rows = actionRows(a.page, beaconId);
+        await expect(rows.first()).toBeVisible();
+        const n = await rows.count();
+        expect(n).toBeGreaterThan(0);
+        for (let i = 0; i < n; i += 1) {
+          const row = rows.nth(i);
+          const risk = ((await row.getByRole('cell').nth(3).textContent()) ?? '').trim().toLowerCase();
+          await expect(row.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
+          if (risk.includes('high') || risk.includes('critical')) {
+            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+            await expect(row).toContainText('needs an admin');
+          } else {
+            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+          }
+        }
+      });
+    }
+    await test.step("admin: approve one action and reject the alert's other pending actions", async () => {
+      const page = ad.page;
+      await page.goto('/actions?status=awaiting_approval');
+      const row = actionRows(page, beaconId).first();
+      await expect(row).toBeVisible();
+      if (approved === 0) await screenshot(page, '07-actions');
+      await row.getByRole('button', { name: 'Approve', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: /^Approve / });
+      await dialog.getByLabel("Reject the alert's other pending actions").check();
+      await dialog.getByRole('button', { name: 'Approve action' }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('status').filter({ hasText: /^Approved / })).toBeVisible();
+    });
+    approved += 1;
+  };
+
+  let state = await nextRequest(request, beaconId);
+  expect(state.status, 'the C2 alert asks for approval of its planned response').toBe('waiting_approval');
+  for (let round = 0; round < 6 && state.status !== 'closed'; round += 1) {
+    if (state.status === 'waiting_human') await decideAsAnalyst(v.page, a.page, BEACON_TITLE, 'True positive (malicious)', false);
+    else await approve();
+    state = await nextRequest(request, beaconId);
+  }
+  expect(state.status).toBe('closed');
+  expect(state.disposition).toBe('malicious');
+  expect(approved).toBeGreaterThanOrEqual(1);
+
+  // The approved action ran as a dry run (response.dry_run defaults to true); the rest were rejected.
+  const page = ad.page;
+  await page.goto('/actions');
+  const rows = actionRows(page, beaconId);
+  await expect(rows.filter({ hasText: 'Recorded only (dry run)' }).first()).toBeVisible();
+  await expect(rows.filter({ hasText: 'awaiting approval' })).toHaveCount(0);
+  const drawer = await openAlertFromList(page, BEACON_TITLE);
+  await expect(drawer.getByText('closed', { exact: true }).first()).toBeVisible();
+  await expect(drawer.getByText('malicious', { exact: true }).first()).toBeVisible();
+  for (const s of [v, a, ad]) {
+    await assertNoTokenInStorage(s.page);
+    await s.watch.assertClean();
+    await s.context.close();
+  }
+});
+
+test('main pages render under the CSP (and screenshots for the README)', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, admin);
+  const pages: [string, string, string][] = [
+    ['/alerts', 'Alerts', '03-alerts'],
+    ['/escalations?status=decided', 'Escalations', '05-escalations-decided'],
+    ['/actions', 'Actions and approvals', '07-actions-ledger'],
+    ['/suppressions', 'Suppressions', '08-suppressions'],
+    ['/sources', 'Sources', '09-sources'],
+    ['/users', 'Users and API keys', '10-users'],
+    ['/settings', 'Tenant settings', '11-settings'],
+    ['/usage', 'LLM usage', '12-usage'],
+    ['/audit', 'Audit log', '13-audit'],
+    // Last: the summary is cached for 15 seconds, so it now reflects the decisions above.
+    ['/', 'Dashboard', '02-dashboard'],
+  ];
+  for (const [path, heading, shot] of pages) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: heading, level: 1 })).toBeVisible();
+    await expect(page.getByText(/^Loading/)).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({ hasText: /error|failed/i })).toHaveCount(0);
+    await screenshot(page, shot);
+  }
+  // The audit log recorded the analyst's claim and decision and the admin's approval.
+  await page.goto('/audit');
+  await expect(page.getByText('escalation.claimed').first()).toBeVisible();
+  await expect(page.getByText('escalation.decided').first()).toBeVisible();
+  await expect(page.getByText('response_action.approved').first()).toBeVisible();
+  await watch.assertClean();
+  await context.close();
+});
+
+test('sign-out ends the session: no token left, the refresh cookie no longer works', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, analyst);
+  await page.goto('/alerts');
+  await signOut(page);
+  await assertNoTokenInStorage(page);
+  await page.goto('/alerts');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await expect(page).toHaveURL(/\/login/);
+  // Nothing of the previous session is readable without signing in again.
+  const status = await page.evaluate(async (api) => (await fetch(`${api}/alerts?limit=1`)).status, API);
+  expect(status).toBe(401);
+  const refresh = await page.evaluate(async (api) => (await fetch(`${api}/auth/refresh`, { method: 'POST' })).status, API);
+  expect(refresh).toBe(401);
+  await watch.assertClean();
+  await context.close();
+});
+
