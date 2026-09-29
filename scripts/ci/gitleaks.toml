@@ -1,0 +1,44 @@
+# gitleaks configuration for CI (`gitleaks git|dir --config scripts/ci/gitleaks.toml`).
+#
+# Extends the default rule set. Nothing is allowlisted by path: tests/ is
+# scanned like everything else, so a real credential committed to a fixture,
+# cassette or conftest is reported. The allowlist below names individual fake
+# values (matched against the detected secret, anchored where possible):
+#   * published placeholder keys in configs/development.yaml and
+#     configs/testing.yaml, which lg_sotf.security.insecure recognises and
+#     staging/production refuse;
+#   * the synthetic credentials used by the redaction and logging tests
+#     (tests/unit/security/test_redaction.py, tests/unit/observability/
+#     test_logging.py, tests/unit/agents, tests/unit/llm).
+# To add a new fake fixture, prefer an obviously fake value containing one of
+# the marker words below, or add an anchored regex for that exact value here.
+title = "lg-sotf"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Published development/test placeholders and named synthetic test fixtures"
+regexTarget = "secret"
+regexes = [
+  # Marker words used by every placeholder and fake fixture in the repo.
+  '''(?i)(development-only|test-suite-only|do-not-use|not-for-use|change-me|changeme|replace-me)''',
+  # base64 Fernet placeholders from configs/development.yaml and configs/testing.yaml
+  '''^bGctc290Zi1kZXZlbG9wbWVudC1vbmx5LWtleS0wMDA=$''',
+  '''^bGctc290Zi10ZXN0LXN1aXRlLW9ubHkta2V5LTAwMDA=$''',
+  # Alphabet-run fakes: sk_live_abcdefghijklmnop1234, ghp_abcdefghijklmnopqrstuvwxyz0123456789,
+  # "Bearer abcdefghijklmnopqrstuvwxyz".
+  '''^(sk_live_|ghp_)?abcdefghijklmnop[a-z0-9]*$''',
+  '''^abcdef123456$''',
+  '''^vt-test-key-0123456789$''',
+  '''^rt_live_4f9a8b7c6d5e4f3a2b1c$''',
+  '''^Zx9fQ2hR7tL0pW3kM8vB$''',
+  '''^admin:S3cretPass$''',
+  # base64("user:password123")
+  '''^dXNlcjpwYXNzd29yZDEyMw==$''',
+  # Well-known example JWT ({"alg":"HS256"} / {"sub":"1234567890"}).
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U$''',
+  # Truncated / synthetic PEM and PGP blocks in the redaction tests (escaped
+  # "\n" in Python source followed by a stub body or a repetition expression).
+  '''^-----BEGIN (RSA |PGP )?PRIVATE KEY( BLOCK)?-----\\n(MIIEowIBAAKCAQEA\\nabc\\n|" \* 8_000|" \+ "A" \* 500_000|lQOYBF\\n)''',
+]

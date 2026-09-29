@@ -249,9 +249,10 @@ async def test_review_payloads_drive_the_node_semantics(repos: Repositories, mak
         reject_remaining=request.payload["reject_remaining"],
     )
     assert outcome == {ids["block_ip"]: "approved"}
-    assert await responses.awaiting(TENANT_A, alert_id, pending) == [ids["block_domain"]]
+    assert set(await responses.awaiting(TENANT_A, alert_id, pending)) == {ids["block_ip"], ids["block_domain"]}
     executed = await responses.execute(TENANT_A, alert_id, pending)
     assert executed == {ids["block_ip"]: "dry_run", ids["block_domain"]: "awaiting_approval"}
+    assert await responses.awaiting(TENANT_A, alert_id, pending) == [ids["block_domain"]]
 
 
 async def test_type_only_preapproval_never_reaches_attached_alerts(

@@ -1,0 +1,109 @@
+{{- if .Values.scheduler.enabled }}
+{{- $c := dict "root" . "component" "scheduler" "values" .Values.scheduler }}
+{{- $name := include "lg-sotf.componentName" $c }}
+# Two replicas for availability; exactly one is leader at a time through a
+# PostgreSQL session advisory lock (lg_sotf.runtime.leader). The follower
+# stays ready and takes over within settings.scheduler.leader_lease_s.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.scheduler.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lg-sotf.podLabels" $c | nindent 8 }}
+      annotations:
+        {{- include "lg-sotf.podAnnotations" $c | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "lg-sotf.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.scheduler.terminationGracePeriodSeconds }}
+      {{- include "lg-sotf.scheduling" $c | trim | nindent 6 }}
+      containers:
+        - name: scheduler
+          image: {{ include "lg-sotf.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["scheduler", "--metrics-port", "{{ .Values.scheduler.healthPort }}"]
+          ports:
+            - name: health
+              containerPort: {{ .Values.scheduler.healthPort }}
+              protocol: TCP
+          env:
+            {{- include "lg-sotf.env" . | nindent 12 }}
+          envFrom:
+            {{- include "lg-sotf.envFrom" (dict "root" . "owner" true "bootstrap" false) | nindent 12 }}
+          {{- with .Values.scheduler.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.scheduler.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.scheduler.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "lg-sotf.volumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "lg-sotf.volumes" (dict "root" . "configMap" (include "lg-sotf.configMapName" .)) | nindent 8 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "lg-sotf.selectorLabels" $c | nindent 4 }}
+  ports:
+    - name: health
+      port: {{ .Values.scheduler.healthPort }}
+      targetPort: health
+      protocol: TCP
+{{- if .Values.scheduler.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.scheduler.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+{{- end }}
+{{- end }}

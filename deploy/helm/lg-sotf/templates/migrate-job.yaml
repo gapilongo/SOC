@@ -1,0 +1,133 @@
+{{- if .Values.migrate.enabled }}
+{{- $c := dict "root" . "component" "migrate" "values" .Values.migrate }}
+{{- $name := include "lg-sotf.componentName" $c }}
+{{- $hooks := .Values.migrate.useHelmHooks }}
+{{- $configMap := include "lg-sotf.configMapName" . }}
+{{- $serviceAccount := include "lg-sotf.serviceAccountName" . }}
+{{- $jobName := $name }}
+{{- if not $hooks }}
+{{- /*
+Without hooks the Job is an ordinary release resource. Its pod template is
+immutable, so the name carries a digest of the image and settings: a new
+image or configuration renders a new Job instead of failing the upgrade with
+"field is immutable"; an unchanged release keeps the same Job.
+*/}}
+{{- $digest := printf "%s|%s" (include "lg-sotf.image" .) (include "lg-sotf.settingsYaml" . | sha256sum) | sha256sum | trunc 8 }}
+{{- $jobName = printf "%s-%s" $name $digest }}
+{{- end }}
+{{- if $hooks }}
+{{- /*
+Pre-install hooks run before the release's ordinary resources exist, so the
+job gets its own hook-scoped copy of the settings ConfigMap (and
+ServiceAccount), created just before it and removed once the hooks succeed.
+The Secrets are created by the operator ahead of the install.
+*/}}
+{{- $configMap = printf "%s-migrate" (include "lg-sotf.configMapName" .) }}
+{{- if .Values.serviceAccount.create }}
+{{- $serviceAccount = $name }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $serviceAccount }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    {{- with (merge (deepCopy .Values.serviceAccount.annotations) .Values.commonAnnotations) }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+automountServiceAccountToken: false
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $configMap }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+data:
+  settings.yaml: |
+    {{- include "lg-sotf.settingsYaml" . | nindent 4 }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  annotations:
+    {{- if $hooks }}
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    # Kept after success for its logs; replaced on the next upgrade and
+    # garbage-collected by ttlSecondsAfterFinished.
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- else }}
+    # Argo CD / Flux-style tools: sync before the Deployments (wave 0).
+    # Plain `helm upgrade` applies everything at once and does NOT order this
+    # Job before the new pods; see docs/deployment.md ("Migrations without
+    # Helm hooks").
+    argocd.argoproj.io/sync-wave: "-1"
+    {{- end }}
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: {{ .Values.migrate.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrate.activeDeadlineSeconds }}
+  {{- if .Values.migrate.ttlSecondsAfterFinished }}
+  ttlSecondsAfterFinished: {{ .Values.migrate.ttlSecondsAfterFinished }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "lg-sotf.podLabels" $c | nindent 8 }}
+      annotations:
+        {{- include "lg-sotf.podAnnotations" $c | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $serviceAccount }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      containers:
+        - name: migrate
+          image: {{ include "lg-sotf.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["migrate"]
+          env:
+            {{- include "lg-sotf.env" . | nindent 12 }}
+          envFrom:
+            {{- include "lg-sotf.envFrom" (dict "root" . "owner" true "bootstrap" true) | nindent 12 }}
+          resources:
+            {{- toYaml .Values.migrate.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "lg-sotf.volumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "lg-sotf.volumes" (dict "root" . "configMap" $configMap) | nindent 8 }}
+{{- end }}

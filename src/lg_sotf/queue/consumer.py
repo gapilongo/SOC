@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
@@ -29,6 +30,10 @@ MAX_REASON_CHARS = 500
 # XREADGROUP BLOCK must end before the socket read timeout fires.
 _BLOCK_MARGIN_MS = 1_000
 _START = "0-0"
+# Two live consumers racing for a dead consumer's entry: XCLAIM with this min-idle lets only the first win.
+_DEAD_CLAIM_MIN_IDLE_MS = 1_000
+_MAX_DEAD_SCAN_INTERVAL_S = 5.0
+_OWN_PENDING_BATCH = 100
 
 
 def _text(value: Any) -> str:
@@ -81,11 +86,18 @@ async def queue_stats(redis: Redis, streams: QueueStreams) -> List[StreamStats]:
 class StreamConsumer:
     """One worker's view of the ``workers`` consumer group.
 
-    :meth:`read` returns reclaimed entries (idle longer than
-    ``worker.visibility_timeout_s``) first, then new high-priority entries,
-    then new normal entries. Entries stay pending until :meth:`ack` or
-    :meth:`dead_letter`; an entry left pending is reclaimed by some consumer
-    after the visibility timeout, with its delivery count incremented.
+    :meth:`read` returns reclaimed entries first, then new high-priority
+    entries, then new normal entries. Entries stay pending until :meth:`ack`
+    or :meth:`dead_letter`; an entry left pending is reclaimed by some
+    consumer, with its delivery count incremented:
+
+    * at once when its consumer is dead: once this consumer has called
+      :meth:`announce_alive`, it claims the entries of consumers whose
+      liveness key has expired (their process died without cleanup);
+    * otherwise after it has been idle for ``worker.visibility_timeout_s``.
+
+    Reclaiming an entry never runs it twice concurrently: the worker's claim
+    on ``workflow_runs`` (a live lease) decides who executes the run.
     """
 
     def __init__(self, redis: Redis, settings: Optional[Settings], consumer_name: str) -> None:
@@ -101,6 +113,9 @@ class StreamConsumer:
         if self._block_ms < s.worker.block_ms:
             log.warning("queue.block_ms_clamped", block_ms=self._block_ms, configured=s.worker.block_ms)
         self._claim_cursor: Dict[str, str] = {stream: _START for stream in self._streams.work}
+        self._alive_ttl_ms: Optional[int] = None
+        self._dead_scan_interval_s = _MAX_DEAD_SCAN_INTERVAL_S
+        self._next_dead_scan = 0.0
 
     @property
     def name(self) -> str:
@@ -144,8 +159,62 @@ class StreamConsumer:
                 )
         return messages
 
+    async def announce_alive(self, ttl_s: float) -> None:
+        """Mark this consumer live for ``ttl_s``; the owner refreshes it well within ``ttl_s`` while it runs.
+
+        From the first call on, :meth:`read` also claims the pending entries
+        of consumers whose liveness key has expired.
+        """
+        ttl_ms = max(int(ttl_s * 1000), 1)
+        await self._redis.set(self._streams.consumer_alive(self._name), b"1", px=ttl_ms)
+        if self._alive_ttl_ms is None:
+            self._dead_scan_interval_s = min(ttl_s / 3.0, _MAX_DEAD_SCAN_INTERVAL_S)
+        self._alive_ttl_ms = ttl_ms
+
+    async def withdraw(self) -> None:
+        """Drop the liveness key (clean shutdown): entries this consumer still holds are claimable at once."""
+        await self._redis.delete(self._streams.consumer_alive(self._name))
+
+    async def requeue_own_pending(self) -> int:
+        """Send entries still pending under this consumer name back to the tail of their stream.
+
+        A restarted process that reuses its predecessor's consumer name
+        inherits its pending entries; ``XREADGROUP >`` never returns them and
+        no other consumer sees the name as dead. Call once, before the first
+        :meth:`read`. Returns the number of entries requeued.
+        """
+        requeued = 0
+        for stream in self._streams.work:
+            try:
+                while True:
+                    rows = await self._redis.xpending_range(
+                        stream, CONSUMER_GROUP, min="-", max="+", count=_OWN_PENDING_BATCH, consumername=self._name
+                    )
+                    ids: List[Any] = [_text(r["message_id"]) for r in rows]
+                    if not ids:
+                        break
+                    entries: Any = await self._redis.xclaim(
+                        stream, CONSUMER_GROUP, self._name, min_idle_time=0, message_ids=ids
+                    )
+                    pipe = self._redis.pipeline(transaction=True)
+                    for entry_id, fields in entries:
+                        if entry_id is None or not fields:
+                            continue
+                        decoded = decode_fields(fields)
+                        pipe.xadd(stream, {k: v for k, v in decoded.items() if k in WORK_FIELDS})
+                        requeued += 1
+                    pipe.xack(stream, CONSUMER_GROUP, *ids)
+                    pipe.xdel(stream, *ids)
+                    await pipe.execute()
+            except ResponseError as exc:
+                if "NOGROUP" not in str(exc):
+                    raise
+        if requeued:
+            log.warning("queue.own_pending_requeued", consumer=self._name, count=requeued)
+        return requeued
+
     async def _reclaim(self, max_count: int) -> List[Message]:
-        found: List[Message] = []
+        found = await self._claim_from_dead(max_count)
         for stream in self._streams.work:
             remaining = max_count - len(found)
             if remaining <= 0:
@@ -171,6 +240,52 @@ class StreamConsumer:
                     found.append(msg)
             if found:
                 log.info("queue.reclaimed", stream=self._streams.label(stream), count=len(entries))
+        return found
+
+    async def _claim_from_dead(self, max_count: int) -> List[Message]:
+        """Claim entries pending for consumers whose liveness key has expired (at most every few seconds)."""
+        now = time.monotonic()
+        if self._alive_ttl_ms is None or now < self._next_dead_scan:
+            return []
+        self._next_dead_scan = now + self._dead_scan_interval_s
+        min_idle_ms = min(_DEAD_CLAIM_MIN_IDLE_MS, self._alive_ttl_ms // 2)
+        found: List[Message] = []
+        for stream in self._streams.work:
+            summary = await self._redis.xpending(stream, CONSUMER_GROUP)
+            for consumer in summary.get("consumers") or []:
+                remaining = max_count - len(found)
+                if remaining <= 0:
+                    # More may be waiting: look again on the next read.
+                    self._next_dead_scan = now
+                    return found
+                name = _text(consumer["name"])
+                if name == self._name or int(consumer["pending"]) == 0:
+                    continue
+                if await self._redis.exists(self._streams.consumer_alive(name)):
+                    continue
+                rows = await self._redis.xpending_range(
+                    stream, CONSUMER_GROUP, min="-", max="+", count=remaining, consumername=name
+                )
+                ids: List[Any] = [_text(r["message_id"]) for r in rows]
+                if not ids:
+                    continue
+                claimed: Any = await self._redis.xclaim(
+                    stream, CONSUMER_GROUP, self._name, min_idle_time=min_idle_ms, message_ids=ids
+                )
+                entries = [(_text(e), f) for e, f in claimed if e is not None and f]
+                if not entries:
+                    continue
+                deliveries = await self._delivery_counts(stream, [e for e, _ in entries])
+                for entry_id, fields in entries:
+                    msg = await self._parse_or_dead_letter(stream, entry_id, fields, deliveries.get(entry_id, 1))
+                    if msg is not None:
+                        found.append(msg)
+                log.warning(
+                    "queue.claimed_from_dead_consumer",
+                    stream=self._streams.label(stream),
+                    dead_consumer=name,
+                    count=len(entries),
+                )
         return found
 
     async def _delivery_counts(self, stream: str, entry_ids: Sequence[str]) -> Dict[str, int]:
@@ -296,7 +411,8 @@ class StreamConsumer:
         """Delete this consumer from the group when it holds no pending entries (clean shutdown).
 
         Deleting a consumer drops its pending entries, so a consumer that
-        still owns any is kept; they are reclaimed after the visibility timeout.
+        still owns any is kept; once its liveness key is gone (:meth:`withdraw`
+        or expiry) live consumers claim them.
         """
         if await self.pending_count() > 0:
             return False

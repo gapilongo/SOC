@@ -1,0 +1,23 @@
+apiVersion: v2
+name: lg-sotf
+description: >-
+  LG-SOTF multi-tenant AI triage platform for security alerts: API, queue
+  workers, leader-elected scheduler and a pre-install/pre-upgrade migration job.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.25.0-0"
+keywords:
+  - security
+  - soc
+  - siem
+  - alert-triage
+  - langgraph
+home: https://github.com/gapilongo/SOC
+sources:
+  - https://github.com/gapilongo/SOC
+maintainers:
+  - name: LG-SOTF Team
+    email: team@lg-sotf.org
+annotations:
+  artifacthub.io/license: MIT

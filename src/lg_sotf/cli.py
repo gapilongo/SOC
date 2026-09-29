@@ -160,6 +160,29 @@ def create_admin(tenant_id: str, email: str, role: str, password_stdin: bool, pl
     click.echo(f"created {user.role} {user.email} in tenant {user.tenant_id} (id {user.id})")
 
 
+@cli.command("create-tenant")
+@click.option("--id", "tenant_id", required=True, help="Tenant id: 2-63 of a-z, 0-9, '-', '_'.")
+@click.option("--name", required=True, help="Display name.")
+@click.option("--admin-email", default=None, help="Also create this tenant's first admin.")
+@click.option("--password-stdin", is_flag=True, help="Read the admin password from the first line of stdin.")
+def create_tenant(tenant_id: str, name: str, admin_email: Optional[str], password_stdin: bool) -> None:
+    """Create a tenant (schema-owner connection), optionally with its first admin."""
+    from lg_sotf.runtime.ops import create_tenant as run_create_tenant
+
+    if password_stdin and admin_email is None:
+        raise click.UsageError("--password-stdin needs --admin-email")
+    settings = _prepare()
+    password = _read_password(password_stdin) if admin_email is not None else None
+    report = _run(
+        run_create_tenant(
+            settings, tenant_id=tenant_id, name=name, admin_email=admin_email, admin_password=password
+        )
+    )
+    click.echo(f"created tenant {report.tenant_id} ({report.name})")
+    if report.admin is not None:
+        click.echo(f"created admin {report.admin.email} in tenant {report.tenant_id} (id {report.admin.id})")
+
+
 @cli.command()
 @click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
 @click.option("--alert", "alert_id", required=True, help="Alert id.")

@@ -1,0 +1,15 @@
+# Known findings in git history, accepted as a baseline for the scheduled
+# full-history gitleaks scan (.github/workflows/ci.yml, job gitleaks-history).
+# One fingerprint per line: <commit>:<file>:<rule>:<line>. Any NEW finding in
+# history still fails the job.
+#
+# The two gcp-api-key entries were real Google API keys committed to
+# configs/development.yaml. They must be revoked at the provider (removing
+# them from the tree does not help: history is public). The others are
+# placeholder values in early reference configs.
+1a24cbfc873972b8d7fa0ebeed3216264c38b01a:configs/poc.yaml:generic-api-key:78
+1a24cbfc873972b8d7fa0ebeed3216264c38b01a:configs/poc.yaml:generic-api-key:79
+1a24cbfc873972b8d7fa0ebeed3216264c38b01a:configs/testing.yaml:generic-api-key:94
+49b5226e52b90d7252de099792997d9c31022ea6:configs/development.yaml:gcp-api-key:121
+56a0d0f90ad2ce6d23e45c39d416be61414825a8:.env.example:generic-api-key:74
+e653c65f152b653ad579d6ccd3a89e51d81c664a:configs/development.yaml:gcp-api-key:219

@@ -1,0 +1,35 @@
+{{- if and .Values.tests.enabled .Values.api.enabled }}
+{{- $c := dict "root" . "component" "test" }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "lg-sotf.componentName" $c }}-api-readyz
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  enableServiceLinks: false
+  securityContext:
+    {{- toYaml .Values.podSecurityContext | nindent 4 }}
+  containers:
+    - name: readyz
+      image: {{ include "lg-sotf.image" . }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      env:
+        - name: HEALTHCHECK_URL
+          value: "http://{{ include "lg-sotf.componentName" (dict "root" . "component" "api") }}:{{ .Values.api.service.port }}/readyz"
+      command: ["python", "/usr/local/lib/lg-sotf/healthcheck.py"]
+      resources:
+        requests:
+          cpu: 10m
+          memory: 32Mi
+        limits:
+          cpu: 100m
+          memory: 64Mi
+      securityContext:
+        {{- toYaml .Values.containerSecurityContext | nindent 8 }}
+{{- end }}

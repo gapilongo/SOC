@@ -118,7 +118,12 @@ async def test_schema_hardening_invariants(migrated_database_url: str) -> None:
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conrelid = 'sources'::regclass AND contype = 'p'",
     )
     assert sources_pk == [("PRIMARY KEY (tenant_id, id)",)]
-    for fn in ("lgsotf_auth_refresh_token(text)", "lgsotf_auth_api_key(uuid)", "lgsotf_auth_users_by_email(text)"):
+    for fn in (
+        "lgsotf_auth_refresh_token(text)",
+        "lgsotf_auth_api_key(uuid)",
+        "lgsotf_auth_users_by_email(text)",
+        "lgsotf_create_tenant(text, text)",
+    ):
         [(definer, public_exec)] = _query(
             url,
             f"SELECT p.prosecdef, has_function_privilege('pg_monitor', '{fn}', 'EXECUTE') "  # noqa: S608

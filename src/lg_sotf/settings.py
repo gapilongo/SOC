@@ -152,6 +152,7 @@ class AuthSettings(BaseModel):
     oidc_tenant_claim: str = "tenant_id"
     oidc_role_claim: str = "roles"
     oidc_email_claim: str = "email"
+    oidc_email_verified_claim: str = "email_verified"
     oidc_default_tenant: Optional[str] = None
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[SecretStr] = None

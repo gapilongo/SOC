@@ -1,213 +1,198 @@
-"""FastAPI application factory for LG-SOTF API."""
+"""FastAPI application factory (``lg-sotf api`` runs ``create_app`` with ``factory=True``).
 
-import asyncio
-import logging
-from typing import Optional
+The API process authenticates, scopes every query to the caller's tenant and
+enqueues work; it never runs a workflow in-process (contract section 1).
+"""
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from __future__ import annotations
 
-from lg_sotf.app_initializer import LG_SOTFApplication
-from lg_sotf.api.utils.websocket import WebSocketManager
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, Optional
+
+import httpx
+from fastapi import APIRouter, FastAPI
+from starlette.middleware.cors import CORSMiddleware
+
+from lg_sotf import __version__
+from lg_sotf.api.auth.oidc import OIDCVerifier
+from lg_sotf.api.auth.tokens import TokenService
+from lg_sotf.api.context import ApiContext, TenantCache, allowed_origins
+from lg_sotf.api.errors import install_error_handlers
+from lg_sotf.api.middleware import BodyLimitMiddleware, RequestContextMiddleware, SecurityHeadersMiddleware
+from lg_sotf.api.ratelimit import RateLimiter
 from lg_sotf.api.routers import (
     alerts,
-    correlations,
+    audit,
+    auth,
     dashboard,
-    escalations,
-    ingestion,
-    metrics,
-    websocket,
+    health,
+    identity,
+    ingest,
+    platform,
+    review,
+    sources,
+    suppressions,
+    tenant,
+    ws,
 )
+from lg_sotf.db.pool import Database
+from lg_sotf.db.repos import Repositories
+from lg_sotf.observability.logging import configure_logging, get_logger, is_configured
+from lg_sotf.observability.tracing import setup_tracing, shutdown_tracing
+from lg_sotf.settings import Settings, get_settings
 
-logger = logging.getLogger(__name__)
+log = get_logger(__name__)
+
+API_PREFIX = "/api/v1"
+INGEST_PREFIX = f"{API_PREFIX}/ingest/"
+ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-Tenant-ID", "X-Request-ID"]
+EXPOSED_HEADERS = ["X-Request-ID", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"]
+
+
+def cors_origins(settings: Settings) -> list[str]:
+    """The configured origins without ``*`` (credentials are allowed, so a wildcard is never used)."""
+    if "*" in (o.strip() for o in settings.api.cors_origins):
+        log.warning("api.cors_wildcard_ignored")
+    return allowed_origins(settings)
+
+
+async def build_context(settings: Settings, *, http_transport: Optional[httpx.AsyncBaseTransport] = None) -> ApiContext:
+    from lg_sotf.ingestion.service import IngestionService
+    from lg_sotf.llm import TokenBudget
+    from lg_sotf.queue.events import EventBus
+    from lg_sotf.queue.producer import WorkQueue
+    from lg_sotf.queue.redis import create_redis
+    from lg_sotf.security.crypto import SecretBox
+    from lg_sotf.services.review import ReviewService
+
+    db = Database(settings.database, application_name="lg-sotf-api")
+    await db.open()
+    redis = create_redis(settings)
+    try:
+        repos = Repositories.create(db)
+        events = EventBus(redis, settings)
+        box = SecretBox.from_settings(settings) if settings.security.encryption_keys else None
+        oidc = OIDCVerifier(settings.auth, transport=http_transport) if settings.auth.oidc_issuer else None
+        return ApiContext(
+            settings=settings,
+            db=db,
+            repos=repos,
+            redis=redis,
+            queue=WorkQueue(redis, settings),
+            events=events,
+            ingestion=IngestionService(db, settings, secret_box=box, repos=repos, budget=TokenBudget(redis, settings)),
+            review=ReviewService(repos, settings, events),
+            tokens=TokenService(settings),
+            limiter=RateLimiter(redis, settings.redis.key_prefix),
+            tenants=TenantCache(repos),
+            secret_box=box,
+            oidc=oidc,
+        )
+    except BaseException:
+        await redis.aclose()
+        await db.close()
+        raise
+
+
+async def close_context(ctx: ApiContext) -> None:
+    for step in (ctx.events.aclose, ctx.ingestion.close):
+        try:
+            await step()
+        except Exception as exc:  # noqa: BLE001 - keep closing the rest
+            log.warning("api.shutdown_step_failed", error_type=type(exc).__name__)
+    if ctx.oidc is not None:
+        await ctx.oidc.aclose()
+    await ctx.redis.aclose()
+    await ctx.db.close()
 
 
 def create_app(
-    config_path: str = "configs/development.yaml",
-    setup_signal_handlers: bool = False,
+    settings: Optional[Settings] = None,
+    *,
+    http_transport: Optional[httpx.AsyncBaseTransport] = None,
+    configure_observability: bool = True,
 ) -> FastAPI:
-    """Create and configure the FastAPI application.
+    """Build the API. ``http_transport`` (tests) serves the OIDC issuer's JWKS."""
+    s = settings or get_settings()
 
-    Args:
-        config_path: Path to configuration file
-        setup_signal_handlers: Whether to setup signal handlers (False for uvicorn)
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        s.assert_safe()
+        if configure_observability:
+            if not is_configured():
+                configure_logging(s)
+            setup_tracing(s)
+        ctx = await build_context(s, http_transport=http_transport)
+        app.state.ctx = ctx
+        log.info(
+            "api.started", environment=s.environment, oidc=ctx.oidc is not None, encryption=ctx.secret_box is not None
+        )
+        try:
+            yield
+        finally:
+            app.state.ctx = None
+            await close_context(ctx)
+            if configure_observability:
+                shutdown_tracing()
+            log.info("api.stopped")
 
-    Returns:
-        Configured FastAPI application instance
-    """
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-
-    # Create FastAPI app
+    docs = s.api.docs_enabled
     app = FastAPI(
-        title="LG-SOTF Dashboard API",
-        description="Production-grade SOC Dashboard API",
-        version="1.0.0",
-        docs_url="/api/docs",
-        redoc_url="/api/redoc"
+        title="LG-SOTF API",
+        version=__version__,
+        description="Multi-tenant AI triage for security alerts. See docs/api.md for authentication and conventions.",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url=f"{API_PREFIX}/openapi.json" if docs else None,
+        swagger_ui_oauth2_redirect_url=None,
     )
+    app.state.ctx = None
+    install_error_handlers(app)
 
-    # Add CORS middleware
+    api = APIRouter(prefix=API_PREFIX)
+    for router in (
+        auth.router,
+        ingest.router,
+        alerts.router,
+        review.escalations,
+        review.actions,
+        sources.router,
+        suppressions.router,
+        identity.users,
+        identity.api_keys,
+        tenant.router,
+        dashboard.dashboard,
+        dashboard.usage,
+        audit.router,
+        platform.router,
+    ):
+        api.include_router(router)
+    app.include_router(health.router)
+    app.include_router(health.metrics_router)
+    # Probes only: /metrics stays off /api/v1, which the public ingress routes here.
+    app.include_router(health.router, prefix=API_PREFIX, include_in_schema=False)
+    app.include_router(api)
+    app.include_router(ws.router)
+    app.include_router(ws.router, prefix=API_PREFIX, include_in_schema=False)
+
+    max_body = s.api.max_body_bytes
+    max_ingest = max(s.api.max_ingest_body_bytes, max_body)
+
+    def limit_for(path: str) -> int:
+        return max_ingest if path.startswith(INGEST_PREFIX) else max_body
+
+    # Added innermost first: the last one added wraps everything.
+    app.add_middleware(BodyLimitMiddleware, limit_for=limit_for)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=cors_origins(s),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=ALLOWED_HEADERS,
+        expose_headers=EXPOSED_HEADERS,
+        max_age=600,
     )
-
-    # Create application instances (will be initialized in startup event)
-    lg_sotf_app = LG_SOTFApplication(
-        config_path=config_path,
-        setup_signal_handlers=setup_signal_handlers
-    )
-    ws_manager = WebSocketManager()
-
-    # Store in app state for dependency injection
-    app.state.lg_sotf_app = lg_sotf_app
-    app.state.ws_manager = ws_manager
-
-    # Track background tasks for proper shutdown
-    app.state.background_tasks = []
-
-    # Register routers
-    app.include_router(metrics.router)
-    app.include_router(alerts.router)
-    app.include_router(ingestion.router)
-    app.include_router(dashboard.router)
-    app.include_router(correlations.router)
-    app.include_router(escalations.router)
-    app.include_router(websocket.router)
-
-    # Startup event handler
-    @app.on_event("startup")
-    async def startup():
-        """Initialize application on startup."""
-        logger.info("Starting LG-SOTF API server...")
-
-        # Initialize LG-SOTF application
-        await lg_sotf_app.initialize()
-        logger.info("LG-SOTF application initialized")
-
-        # Start background tasks
-        _start_background_tasks(app)
-        logger.info("Background tasks started")
-
-        logger.info("✅ LG-SOTF API server ready")
-
-    # Shutdown event handler
-    @app.on_event("shutdown")
-    async def shutdown():
-        """Cleanup on shutdown."""
-        logger.info("🛑 Shutting down API server...")
-
-        # Close all WebSocket connections
-        if ws_manager.active_connections:
-            logger.info(f"Closing {len(ws_manager.active_connections)} WebSocket connections...")
-            connections = list(ws_manager.active_connections.values())
-            for ws in connections:
-                try:
-                    await ws.close()
-                except Exception as e:
-                    logger.error(f"Error closing WebSocket: {e}")
-            ws_manager.active_connections.clear()
-            logger.info("✓ WebSocket connections closed")
-
-        # Cancel background tasks
-        if app.state.background_tasks:
-            logger.info(f"Cancelling {len(app.state.background_tasks)} background tasks...")
-            for task in app.state.background_tasks:
-                if not task.done():
-                    task.cancel()
-
-            # Wait for tasks to complete with timeout
-            try:
-                await asyncio.wait_for(
-                    asyncio.gather(*app.state.background_tasks, return_exceptions=True),
-                    timeout=5.0
-                )
-                logger.info("✓ Background tasks cancelled")
-            except asyncio.TimeoutError:
-                logger.warning("⚠ Some background tasks did not complete within timeout")
-
-        # Shutdown LG-SOTF application
-        await lg_sotf_app.shutdown()
-        logger.info("✅ Shutdown complete")
-
+    app.add_middleware(SecurityHeadersMiddleware, force_hsts=s.api.public_url.startswith("https://"))
+    app.add_middleware(RequestContextMiddleware)
     return app
-
-
-def _start_background_tasks(app: FastAPI):
-    """Start background monitoring and update tasks."""
-    ws_manager: WebSocketManager = app.state.ws_manager
-    lg_sotf_app: LG_SOTFApplication = app.state.lg_sotf_app
-
-    async def metrics_updater():
-        """Periodically collect and broadcast system metrics."""
-        while True:
-            try:
-                await asyncio.sleep(10)
-
-                # Import here to avoid circular dependency
-                from lg_sotf.api.routers.metrics import _collect_system_metrics
-
-                metrics = await _collect_system_metrics(lg_sotf_app)
-
-                await ws_manager.broadcast({
-                    "type": "system_metrics",
-                    "data": metrics.model_dump()
-                }, "system_metrics")
-
-            except asyncio.CancelledError:
-                logger.info("Metrics updater cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Metrics updater error: {e}")
-
-    async def ingestion_monitor():
-        """Monitor ingestion activity and broadcast updates."""
-        while True:
-            try:
-                await asyncio.sleep(5)  # Check every 5 seconds
-
-                if not lg_sotf_app.workflow_engine:
-                    continue
-
-                ingestion_agent = (
-                    lg_sotf_app.workflow_engine.agents.get("ingestion_instance") or
-                    lg_sotf_app.workflow_engine.agents.get("ingestion")
-                )
-
-                if not ingestion_agent:
-                    continue
-
-                # Broadcast ingestion stats
-                await ws_manager.broadcast({
-                    "type": "ingestion_stats",
-                    "data": {
-                        "total_ingested": ingestion_agent.ingestion_stats["total_ingested"],
-                        "total_deduplicated": ingestion_agent.ingestion_stats["total_deduplicated"],
-                        "total_errors": ingestion_agent.ingestion_stats["total_errors"],
-                        "by_source": dict(ingestion_agent.ingestion_stats["by_source"]),
-                        "enabled_sources": ingestion_agent.enabled_sources,
-                        "last_poll": lg_sotf_app._last_ingestion_poll.isoformat() if lg_sotf_app._last_ingestion_poll else None
-                    }
-                }, "ingestion_updates")
-
-            except asyncio.CancelledError:
-                logger.info("Ingestion monitor cancelled")
-                break
-            except Exception as e:
-                logger.error(f"Ingestion monitor error: {e}")
-
-    # Create and track background tasks
-    app.state.background_tasks.append(asyncio.create_task(ws_manager.heartbeat_loop()))
-    app.state.background_tasks.append(asyncio.create_task(metrics_updater()))
-    app.state.background_tasks.append(asyncio.create_task(ingestion_monitor()))
-
-
-# Create app instance for uvicorn
-app = create_app()

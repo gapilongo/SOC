@@ -1,0 +1,38 @@
+{{- if .Values.serviceMonitor.enabled }}
+{{- $sm := .Values.serviceMonitor }}
+{{- range $component := list "api" "worker" "scheduler" }}
+{{- if (index $.Values $component).enabled }}
+{{- $c := dict "root" $ "component" $component }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "lg-sotf.componentName" $c }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+    {{- with $sm.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  namespaceSelector:
+    matchNames:
+      - {{ $.Release.Namespace }}
+  endpoints:
+    - port: {{ if eq $component "api" }}http{{ else }}health{{ end }}
+      path: /metrics
+      interval: {{ $sm.interval }}
+      scrapeTimeout: {{ $sm.scrapeTimeout }}
+      {{- if eq $component "api" }}
+      # The API /metrics requires settings.api.metrics_token.
+      authorization:
+        type: Bearer
+        credentials:
+          name: {{ default (include "lg-sotf.runtimeSecretName" $) $sm.apiBearerTokenSecret.name }}
+          key: {{ $sm.apiBearerTokenSecret.key }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

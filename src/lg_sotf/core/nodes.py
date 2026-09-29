@@ -292,7 +292,10 @@ class WorkflowNodes:
         correlation = state.get("correlation") or {}
         confidence = float(state.get("confidence", 50))
         if decision.get("route") == "plan_response" and not state.get("analyst"):
-            decision["reason"] = "automatic response left the threat without a human or a completed action"
+            if "failed" in (state.get("executed") or {}).values():
+                decision["reason"] = "an automatic response action failed"
+            else:
+                decision["reason"] = "automatic response left the threat without a human or a completed action"
             decision["code"] = "response_review"
         ticket = await self.deps.escalations.open_or_attach(
             tenant_id,
@@ -449,11 +452,19 @@ class WorkflowNodes:
         return {"approval": decision}
 
     async def execute_actions(self, state: WorkflowState) -> Dict[str, Any]:
-        """Apply the pending approval decision (if any), run approved actions, re-read what still waits.
+        """Apply the pending approval decision (if any), run every approved action, re-read what still waits.
 
         A decision changes only the actions it names unless it sets
         ``reject_remaining``; actions still awaiting approval afterwards send
         the run back to ``await_approval`` with a fresh interrupt.
+
+        Approvals commit through the API whenever the analyst clicks, also
+        while this node runs, and their resume messages cannot reach a run
+        that is not waiting. So the node keeps executing until one execute
+        pass over the pending work finds nothing approved: every action is
+        then either finished or was still ``awaiting_approval`` when that
+        pass read it, in which case it stays in ``awaiting_actions`` and its
+        approval's resume message continues the run at ``await_approval``.
         """
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]
         plan = state.get("plan") or {}
@@ -471,10 +482,21 @@ class WorkflowNodes:
                 reject_remaining=bool(approval.get("reject_remaining")),
             )
         candidates = list(
-            dict.fromkeys([*(plan.get("auto") or []), *(plan.get("awaiting") or []), *(plan.get("done") or [])])
+            dict.fromkeys(
+                [*(plan.get("auto") or []), *(plan.get("awaiting") or []), *(plan.get("done") or []), *awaiting]
+            )
         )
         results = await self.deps.responses.execute(tenant_id, alert_id, candidates)
-        still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, awaiting)
+        still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, candidates)
+        for _ in range(len(candidates) + 1):
+            if not still_waiting:
+                break
+            again = await self.deps.responses.execute(tenant_id, alert_id, still_waiting)
+            results.update(again)
+            if all(status == "awaiting_approval" for status in again.values()):
+                still_waiting = [i for i in still_waiting if again.get(i) == "awaiting_approval"]
+                break
+            still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, candidates)
         executed = {**(state.get("executed") or {}), **approvals, **results}
         statuses: Dict[str, int] = {}
         for status in executed.values():
@@ -527,6 +549,7 @@ class WorkflowNodes:
             "analyst_decision": analyst.get("decision"),
             "escalation_id": state.get("escalation_id"),
             "actions": statuses,
+            "dry_run": statuses.get("dry_run", 0) > 0,
             "simulated_evidence": bool(analysis.get("simulated_evidence")),
             "llm_budget_exceeded": bool(state.get("llm_budget_exceeded")),
         }

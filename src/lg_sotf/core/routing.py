@@ -5,9 +5,10 @@ Safety rules enforced here (contract section 8):
 * Automation never closes a high/critical alert: only an analyst decision,
   a suppression rule or an analyst-confirmed verdict (not for critical) does.
   Lower severities close only with rule-based corroboration of the LLM.
-* A response the policy (not an analyst) chose goes to an analyst unless an
-  action really succeeded or is waiting for approval: dry-run or blocked
-  actions alone never close a malicious alert silently.
+* A response the policy (not an analyst) chose goes to an analyst when an
+  action failed or none completed; it closes (disposition ``malicious``)
+  once its actions succeeded or ran in the tenant's dry-run mode. Blocked
+  or rejected actions alone never close a malicious alert silently.
 * Containment is only ever proposed through ``plan_response``, where tenant
   autonomy and guardrails apply.
 * ``needs_more_info`` sends the case back to analysis at most
@@ -29,6 +30,7 @@ from pydantic import BaseModel, ConfigDict
 
 HIGH_SEVERITIES = frozenset({"high", "critical"})
 BENIGN_DECISIONS = frozenset({"false_positive", "benign_positive"})
+COMPLETED_ACTION_STATUSES = frozenset({"succeeded", "dry_run"})
 
 GateRoute = Literal["triage", "close"]
 TriageRoute = Literal["correlation", "close"]
@@ -222,15 +224,19 @@ def route_after_plan(state: Mapping[str, Any]) -> PlanRoute:
 def route_after_execute(state: Mapping[str, Any]) -> ExecuteRoute:
     """Back to approval while actions still wait; otherwise close, or escalate a policy-only response.
 
-    A response the policy chose closes only when an action really succeeded
-    through a connector; dry-run, blocked or rejected actions alone mean no
-    human and no external system has handled the threat yet.
+    A response the policy chose closes when its actions completed: through
+    a connector (``succeeded``) or in the dry-run mode the tenant chose
+    (``dry_run``). It escalates when an action failed, or when no action
+    completed at all (everything blocked or rejected): then neither a human
+    nor a connector has handled the threat.
     """
     if state.get("awaiting_actions"):
         return "await_approval"
     if _analyst_confirmed(state):
         return "close"
-    executed = state.get("executed") or {}
-    if any(status == "succeeded" for status in executed.values()):
+    statuses = set((state.get("executed") or {}).values())
+    if "failed" in statuses:
+        return "escalate"
+    if statuses & COMPLETED_ACTION_STATUSES:
         return "close"
     return "escalate"

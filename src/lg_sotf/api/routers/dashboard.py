@@ -1,191 +1,110 @@
-"""Dashboard statistics and analytics endpoints."""
+# ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
+"""``/dashboard/summary`` (viewer, cached 15 s per tenant in Redis) and ``/usage/llm`` (admin)."""
 
-import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
+from typing import Optional
 
-from lg_sotf.app_initializer import LG_SOTFApplication
-from lg_sotf.api.dependencies import get_lg_sotf_app
-from lg_sotf.api.models.metrics import DashboardStatsResponse
+from fastapi import APIRouter, Depends, Query, Request
+from redis.exceptions import RedisError
 
-logger = logging.getLogger(__name__)
+from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
+from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.context import ApiContext, get_ctx
+from lg_sotf.api.errors import ApiError
+from lg_sotf.api.schemas import DashboardOut, UsageDayOut, UsageOut
+from lg_sotf.observability.logging import get_logger
 
-router = APIRouter(prefix="/api/v1/dashboard", tags=["dashboard"])
+log = get_logger(__name__)
+
+CACHE_TTL_S = 15
+MAX_WINDOW_HOURS = 24 * 90
+DEFAULT_USAGE_DAYS = 30
+MAX_USAGE_DAYS = 400
+
+dashboard = APIRouter(prefix="/dashboard", tags=["dashboard"])
+usage = APIRouter(prefix="/usage", tags=["usage"])
 
 
-@router.get("/stats", response_model=DashboardStatsResponse)
-async def get_dashboard_stats(
-    lg_sotf_app: LG_SOTFApplication = Depends(get_lg_sotf_app)
-):
-    """Get comprehensive dashboard statistics."""
+def cache_key(ctx: ApiContext, tenant_id: str, window_hours: int) -> str:
+    return f"{ctx.prefix}:t:{tenant_id}:cache:dashboard:{window_hours}"
+
+
+async def _compute(ctx: ApiContext, tenant_id: str, window_hours: int) -> DashboardOut:
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=window_hours)
+    repos = ctx.repos
+    async with ctx.db.tenant_tx(tenant_id, readonly=True) as conn:
+        counts = await repos.alerts.dashboard_counts(tenant_id, since, conn=conn)
+        times = await repos.alerts.response_times(tenant_id, since, conn=conn)
+        open_escalations = await repos.escalations.count_active(tenant_id, conn=conn)
+        runs = await repos.runs.counts_by_status(tenant_id, conn=conn)
+        usage_rows = await repos.llm_usage.list_range(tenant_id, since.date(), now.date(), conn=conn)
+    return DashboardOut(
+        window_hours=window_hours,
+        since=since,
+        generated_at=now,
+        alerts_total=counts.total,
+        by_status=counts.by_status,
+        by_severity=counts.by_severity,
+        by_disposition=counts.by_disposition,
+        mtta_s=times.mtta_s,
+        mttr_s=times.mttr_s,
+        acknowledged=times.acknowledged,
+        resolved=times.resolved,
+        open_escalations=open_escalations,
+        runs_by_status=runs,
+        queue_depth=int(runs.get("queued", 0)),
+        llm_cost_usd=float(sum((r.cost_usd for r in usage_rows), Decimal(0))),
+        llm_tokens=sum(r.input_tokens + r.output_tokens for r in usage_rows),
+    )
+
+
+@dashboard.get("/summary", response_model=DashboardOut, summary="Counts, MTTA/MTTR, queue depth and LLM cost")
+async def summary(
+    request: Request,
+    window_hours: int = Query(default=24, ge=1, le=MAX_WINDOW_HOURS),
+    principal: Principal = Depends(require(VIEWER)),
+) -> DashboardOut:
+    ctx = get_ctx(request)
+    key = cache_key(ctx, principal.tenant_id, window_hours)
     try:
-        stats = await _get_dashboard_statistics(lg_sotf_app)
-        return stats
-
-    except Exception as e:
-        logger.error(f"Dashboard stats retrieval failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Helper functions
-
-async def _get_dashboard_statistics(lg_sotf_app: LG_SOTFApplication) -> DashboardStatsResponse:
-    """Collect dashboard statistics from PostgreSQL and Redis."""
+        cached = await ctx.redis.get(key)
+        if cached is not None:
+            return DashboardOut.model_validate_json(cached)
+    except (RedisError, OSError, TimeoutError, ValueError) as exc:
+        log.warning("dashboard.cache_unavailable", error_type=type(exc).__name__)
+    result = await _compute(ctx, principal.tenant_id, window_hours)
     try:
-        storage = lg_sotf_app.postgres_storage
-        cutoff_time = datetime.utcnow() - timedelta(hours=24)
-
-        async with storage.pool.acquire() as conn:
-            total_alerts = await conn.fetchval("""
-                SELECT COUNT(DISTINCT alert_id)
-                FROM states
-                WHERE created_at >= $1
-            """, cutoff_time)
-
-            high_priority = await conn.fetchval("""
-                SELECT COUNT(DISTINCT s1.alert_id)
-                FROM states s1
-                INNER JOIN (
-                    SELECT alert_id, MAX(version) as max_version
-                    FROM states
-                    WHERE created_at >= $1
-                    GROUP BY alert_id
-                ) s2 ON s1.alert_id = s2.alert_id AND s1.version = s2.max_version
-                WHERE (state_data->>'priority_level')::int <= 2
-            """, cutoff_time)
-
-            status_results = await conn.fetch("""
-                SELECT
-                    state_data->>'triage_status' as status,
-                    COUNT(DISTINCT s1.alert_id) as count
-                FROM states s1
-                INNER JOIN (
-                    SELECT alert_id, MAX(version) as max_version
-                    FROM states
-                    WHERE created_at >= $1
-                    GROUP BY alert_id
-                ) s2 ON s1.alert_id = s2.alert_id AND s1.version = s2.max_version
-                GROUP BY state_data->>'triage_status'
-            """, cutoff_time)
-
-            severity_results = await conn.fetch("""
-                SELECT
-                    state_data->'raw_alert'->>'severity' as severity,
-                    COUNT(DISTINCT alert_id) as count
-                FROM states
-                WHERE created_at >= $1
-                GROUP BY state_data->'raw_alert'->>'severity'
-            """, cutoff_time)
-
-        alerts_by_status = {row['status']: row['count'] for row in status_results if row['status']}
-        alerts_by_severity = {row['severity']: row['count'] for row in severity_results if row['severity']}
-
-        # Get top threat indicators from Redis
-        top_threat_indicators = await _get_top_threat_indicators(lg_sotf_app)
-
-        return DashboardStatsResponse(
-            total_alerts_today=total_alerts or 0,
-            high_priority_alerts=high_priority or 0,
-            alerts_by_status=alerts_by_status,
-            alerts_by_severity=alerts_by_severity,
-            top_threat_indicators=top_threat_indicators,
-            recent_escalations=[],
-            processing_time_avg=125.0
-        )
-
-    except Exception as e:
-        logger.error(f"Dashboard statistics error: {e}")
-        return DashboardStatsResponse(
-            total_alerts_today=0,
-            high_priority_alerts=0,
-            alerts_by_status={},
-            alerts_by_severity={},
-            top_threat_indicators=[],
-            recent_escalations=[],
-            processing_time_avg=0.0
-        )
+        await ctx.redis.set(key, result.model_dump_json().encode(), ex=CACHE_TTL_S)
+    except (RedisError, OSError, TimeoutError) as exc:
+        log.warning("dashboard.cache_unavailable", error_type=type(exc).__name__)
+    return result
 
 
-async def _get_top_threat_indicators(lg_sotf_app: LG_SOTFApplication, limit: int = 10) -> List[Dict[str, Any]]:
-    """Get top threat indicators from Redis based on frequency and correlation."""
-    try:
-        redis_storage = lg_sotf_app.redis_storage
-        if not redis_storage or not redis_storage.redis_client:
-            return []
-
-        indicators_data = []
-
-        # Scan all indicator alert sets
-        async for key in redis_storage.redis_client.scan_iter(match="indicator:*:alerts"):
-            key_str = key.decode('utf-8') if isinstance(key, bytes) else str(key)
-
-            # Extract indicator type and value from key
-            # Format: indicator:{type}:{value}:alerts
-            parts = key_str.split(":")
-            if len(parts) >= 3:
-                indicator_type = parts[1]
-                indicator_value = ":".join(parts[2:-1])  # Handle values with colons
-
-                # Get count of alerts with this indicator
-                alert_count = await redis_storage.redis_client.scard(key)
-
-                if alert_count > 0:
-                    # Get metadata for additional context
-                    metadata_key = f"indicator:{indicator_type}:{indicator_value}"
-                    metadata_raw = await redis_storage.redis_client.hgetall(metadata_key)
-
-                    metadata = {}
-                    if metadata_raw:
-                        for k, v in metadata_raw.items():
-                            k_str = k.decode('utf-8') if isinstance(k, bytes) else str(k)
-                            v_str = v.decode('utf-8') if isinstance(v, bytes) else str(v)
-                            metadata[k_str] = v_str
-
-                    # Calculate threat score based on frequency and recency
-                    frequency_count = int(metadata.get('count', alert_count))
-                    threat_score = alert_count * 10  # Base score from alert count
-
-                    # Boost score for high-risk indicator types
-                    risk_multipliers = {
-                        'file_hash': 2.0,
-                        'destination_ip': 1.5,
-                        'user': 1.3,
-                        'username': 1.3,
-                        'source_ip': 1.2
-                    }
-                    threat_score *= risk_multipliers.get(indicator_type, 1.0)
-
-                    indicators_data.append({
-                        'indicator': f"{indicator_type}:{indicator_value}",
-                        'indicator_type': indicator_type,
-                        'indicator_value': indicator_value,
-                        'count': alert_count,
-                        'frequency': frequency_count,
-                        'threat_score': int(threat_score),
-                        'first_seen': metadata.get('first_seen'),
-                        'last_seen': metadata.get('last_seen')
-                    })
-
-        # Sort by threat score descending
-        indicators_data.sort(key=lambda x: x['threat_score'], reverse=True)
-
-        # Return top N with formatted output
-        top_indicators = []
-        for ind in indicators_data[:limit]:
-            top_indicators.append({
-                'indicator': ind['indicator'],
-                'indicator_type': ind['indicator_type'],
-                'indicator_value': ind['indicator_value'],
-                'count': ind['count'],
-                'threat_level': 'high' if ind['threat_score'] > 50 else 'medium' if ind['threat_score'] > 20 else 'low',
-                'first_seen': ind['first_seen'],
-                'last_seen': ind['last_seen']
-            })
-
-        return top_indicators
-
-    except Exception as e:
-        logger.error(f"Top threat indicators error: {e}", exc_info=True)
-        return []
+@usage.get("/llm", response_model=UsageOut, summary="Daily LLM usage and cost")
+async def llm_usage(
+    request: Request,
+    start: Optional[date] = Query(default=None, alias="from"),
+    end: Optional[date] = Query(default=None, alias="to"),
+    principal: Principal = Depends(require(ADMIN)),
+) -> UsageOut:
+    ctx = get_ctx(request)
+    end = end or datetime.now(UTC).date()
+    start = start or end - timedelta(days=DEFAULT_USAGE_DAYS - 1)
+    if end < start:
+        raise ApiError(400, "invalid_window", "'to' must not be before 'from'")
+    if (end - start).days + 1 > MAX_USAGE_DAYS:
+        raise ApiError(400, "invalid_window", f"at most {MAX_USAGE_DAYS} days per request")
+    rows = await ctx.repos.llm_usage.list_range(principal.tenant_id, start, end)
+    return UsageOut(
+        start=start,
+        end=end,
+        days=[UsageDayOut.model_validate(r) for r in rows],
+        total_calls=sum(r.calls for r in rows),
+        total_input_tokens=sum(r.input_tokens for r in rows),
+        total_output_tokens=sum(r.output_tokens for r in rows),
+        total_cost_usd=sum((r.cost_usd for r in rows), Decimal(0)),
+    )

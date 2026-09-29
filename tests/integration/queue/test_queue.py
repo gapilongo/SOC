@@ -184,3 +184,77 @@ async def test_remove_if_idle_keeps_consumer_with_pending_work(redis_client: Any
     assert await consumer.remove_if_idle() is False
     await consumer.ack(msg)
     assert await consumer.remove_if_idle() is True
+
+
+async def test_entries_of_a_live_consumer_are_not_claimed(redis_client: Any, queue_settings: Build) -> None:
+    s = queue_settings(visibility_timeout_s=1200)
+    queue, holder = await _setup(redis_client, s, "w1")
+    other = StreamConsumer(redis_client, s, "w2")
+    await holder.announce_alive(5)
+    await other.announce_alive(5)
+    await queue.enqueue_process("tenant-a", "a1", "high")
+    (msg,) = await holder.read(1)
+    await asyncio.sleep(1.1)
+    assert await other.read(1) == []
+    assert await holder.pending_count() == 1
+
+
+async def test_entries_of_a_dead_consumer_are_claimed_once_its_liveness_expires(
+    redis_client: Any, queue_settings: Build
+) -> None:
+    s = queue_settings(visibility_timeout_s=1200)
+    queue, dead = await _setup(redis_client, s, "w1")
+    await dead.announce_alive(1.5)
+    for i in range(3):
+        await queue.enqueue_process("tenant-a", f"a{i}", "high")
+    held = await dead.read(3)
+    survivors = [StreamConsumer(redis_client, s, f"s{i}") for i in range(2)]
+    for survivor in survivors:
+        await survivor.announce_alive(5)
+    assert [await survivor.read(3) for survivor in survivors] == [[], []]
+
+    await asyncio.sleep(1.6)
+    claimed = await asyncio.gather(*(survivor.read(3) for survivor in survivors))
+    got = sorted((m.entry_id, m.deliveries) for batch in claimed for m in batch)
+    assert got == sorted((m.entry_id, 2) for m in held)
+    assert await dead.pending_count() == 0
+
+
+async def test_withdrawn_consumer_entries_are_claimable_at_once(redis_client: Any, queue_settings: Build) -> None:
+    s = queue_settings(visibility_timeout_s=1200)
+    queue, leaving = await _setup(redis_client, s, "w1")
+    await leaving.announce_alive(60)
+    await queue.enqueue_process("tenant-a", "a1", "high")
+    (msg,) = await leaving.read(1)
+    await leaving.withdraw()
+    await asyncio.sleep(1.1)
+    survivor = StreamConsumer(redis_client, s, "w2")
+    await survivor.announce_alive(60)
+    assert [m.entry_id for m in await survivor.read(1)] == [msg.entry_id]
+
+
+async def test_consumer_without_liveness_does_not_claim_from_others(redis_client: Any, queue_settings: Build) -> None:
+    s = queue_settings(visibility_timeout_s=1200)
+    queue, holder = await _setup(redis_client, s, "w1")
+    await queue.enqueue_process("tenant-a", "a1", "high")
+    await holder.read(1)
+    await asyncio.sleep(1.1)
+    assert await StreamConsumer(redis_client, s, "tool").read(1) == []
+
+
+async def test_requeue_own_pending_hands_a_predecessors_entries_back(redis_client: Any, queue_settings: Build) -> None:
+    s = queue_settings(visibility_timeout_s=1200)
+    queue, predecessor = await _setup(redis_client, s, "w1")
+    await queue.enqueue_process("tenant-a", "a1", "high")
+    await queue.enqueue_process("tenant-a", "a2", "low")
+    await queue.enqueue_process("tenant-a", "gone", "low")
+    held = await predecessor.read(3)
+    await redis_client.xdel(queue.streams.normal, held[2].entry_id)
+
+    restarted = StreamConsumer(redis_client, s, "w1")
+    assert await restarted.requeue_own_pending() == 2
+    assert await restarted.pending_count() == 0
+    again = await restarted.read(5)
+    assert [(m.alert_id, m.deliveries) for m in again] == [("a1", 1), ("a2", 1)]
+    assert {m.entry_id for m in again}.isdisjoint(m.entry_id for m in held)
+    assert await redis_client.xlen(queue.streams.high) + await redis_client.xlen(queue.streams.normal) == 2

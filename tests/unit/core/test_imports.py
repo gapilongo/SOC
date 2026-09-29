@@ -1,16 +1,15 @@
 """Every lg_sotf module imports, so a deleted module that something still needs fails CI.
 
-``KNOWN_BROKEN`` lists legacy modules that still import code this wave
-removed (``core.state``, ``audit.metrics``) and are being ported by their
-owners (API/app initializer). The xfail is strict: once a
-module imports again the test fails until it is taken off the list.
+``KNOWN_BROKEN`` lists modules that are temporarily expected not to import
+(currently none). The xfail is strict: once a module imports again the test
+fails until it is taken off the list.
 """
 
 from __future__ import annotations
 
 import importlib
 import pkgutil
-from typing import List
+from typing import Dict, List
 
 import pytest
 
@@ -18,10 +17,7 @@ import lg_sotf
 
 # Alembic's env script only runs inside an alembic command context.
 NOT_IMPORTABLE_BY_DESIGN = frozenset({"lg_sotf.db.migrations.env"})
-KNOWN_BROKEN = {
-    "lg_sotf.app_initializer": "imports lg_sotf.audit.metrics and lg_sotf.core.state (removed); port to WorkflowEngine.create",
-    "lg_sotf.api": "imports lg_sotf.app_initializer",
-}
+KNOWN_BROKEN: Dict[str, str] = {}
 
 
 def _modules() -> List[str]:
@@ -44,6 +40,13 @@ def test_module_imports(module: str) -> None:
 
 
 def test_engine_modules_do_not_import_removed_packages() -> None:
-    for removed in ("lg_sotf.core.state", "lg_sotf.audit.metrics", "lg_sotf.audit.tracer", "lg_sotf.config"):
+    for removed in (
+        "lg_sotf.core.state",
+        "lg_sotf.audit.metrics",
+        "lg_sotf.audit.tracer",
+        "lg_sotf.config",
+        "lg_sotf.app_initializer",
+        "lg_sotf.storage",
+    ):
         with pytest.raises(ImportError):
             importlib.import_module(removed)

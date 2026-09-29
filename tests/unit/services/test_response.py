@@ -202,7 +202,7 @@ async def test_partial_approval_leaves_other_actions_pending(make_settings: Call
     assert outcome == {first: "approved", second: "rejected"}
     assert repos.actions.rows[UUID(second)].blocked_reason == "rejected_by_reviewer"
     assert repos.actions.rows[UUID(blocked)].status == "blocked"
-    assert rest and await service.awaiting("t1", "a1", plan.awaiting) == rest
+    assert rest and await service.awaiting("t1", "a1", plan.awaiting) == [first, *rest]
     decisions = [e for e in repos.audit.entries if e[2] in ("response_action.approved", "response_action.rejected")]
     assert decisions and all(e[1] == "user" for e in decisions)
 
@@ -211,6 +211,7 @@ async def test_partial_approval_leaves_other_actions_pending(make_settings: Call
     row = repos.actions.rows[UUID(first)]
     assert row.connector == "dry_run" and row.result["would_execute"] == row.action_type
     assert all(executed[r] == "awaiting_approval" for r in rest)
+    assert await service.awaiting("t1", "a1", plan.awaiting) == rest
     again = await service.execute("t1", "a1", [first])
     assert again[first] == "dry_run"
     audited = repos.audit.actions()

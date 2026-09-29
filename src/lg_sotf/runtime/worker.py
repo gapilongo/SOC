@@ -192,8 +192,17 @@ class Worker:
         return time.monotonic() - self._loop_tick < self._stall_limit_s
 
     async def run(self) -> None:
-        """Consume until :meth:`request_stop`, then drain and return."""
+        """Consume until :meth:`request_stop`, then drain and return.
+
+        While running, the consumer's liveness key is refreshed every
+        heartbeat and expires ``lease_s`` after the process dies; other
+        workers then claim the entries it held, so a crash is recovered
+        within about one lease rather than ``worker.visibility_timeout_s``.
+        """
         await self._consumer.ensure_groups()
+        await self._consumer.announce_alive(self._lease_s)
+        await self._consumer.requeue_own_pending()
+        liveness = asyncio.create_task(self._announce_liveness(), name="consumer-liveness")
         flusher = asyncio.create_task(self._flush_usage_periodically(), name="usage-flush")
         self._running = True
         log.info("worker.started", worker_id=self.worker_id, concurrency=self._cfg.concurrency)
@@ -203,13 +212,23 @@ class Worker:
             self._running = False
             await self._drain()
             flusher.cancel()
-            await asyncio.gather(flusher, return_exceptions=True)
+            liveness.cancel()
+            await asyncio.gather(flusher, liveness, return_exceptions=True)
             await self.flush_usage()
             try:
                 await self._consumer.remove_if_idle()
+                await self._consumer.withdraw()
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup on shutdown
                 log.warning("worker.consumer_cleanup_failed", error=type(exc).__name__)
             log.info("worker.stopped", worker_id=self.worker_id)
+
+    async def _announce_liveness(self) -> None:
+        while True:
+            await asyncio.sleep(self._heartbeat_s)
+            try:
+                await self._consumer.announce_alive(self._lease_s)
+            except Exception as exc:  # noqa: BLE001 - a lapse only lets others claim entries; the run lease guards
+                log.warning("worker.liveness_announce_failed", error=type(exc).__name__)
 
     async def _consume(self) -> None:
         errors = 0

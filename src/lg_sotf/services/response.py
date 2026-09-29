@@ -180,6 +180,7 @@ MAX_TARGETS_PER_TYPE = 3
 MAX_ACTIONS = 15
 REQUESTED_BY = "agent:workflow"
 POLICY_APPROVER = "policy:auto"
+PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
 ANALYST_APPROVAL_RISKS = frozenset({"low", "medium"})
 ANALYST_PREAPPROVAL_RISKS = ANALYST_APPROVAL_RISKS
 HOURLY_CAP_REASON = "hourly_cap_reached"
@@ -1296,11 +1297,16 @@ class ResponseService:
         return outcome
 
     async def awaiting(self, tenant_id: str, alert_id: str, action_ids: Sequence[str]) -> List[str]:
-        """Which of ``action_ids`` (this alert's) are still awaiting approval, in ledger order."""
+        """Which of ``action_ids`` (this alert's) are still pending work, in ledger order.
+
+        Pending work is an action awaiting approval or one approved but not
+        yet executed: an approval can commit at any moment (the API does not
+        wait for the run), so an ``approved`` row is work the run still owes.
+        """
         if not action_ids:
             return []
         actions = await self._repos.actions.get_many(tenant_id, [UUID(str(i)) for i in action_ids])
-        return [str(a.id) for a in actions if a.alert_id == alert_id and a.status == "awaiting_approval"]
+        return [str(a.id) for a in actions if a.alert_id == alert_id and a.status in PENDING_WORK_STATUSES]
 
     # ------------------------------------------------------------- execution
 

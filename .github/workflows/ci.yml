@@ -1,0 +1,304 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Weekly: full-history secret scan and fresh dependency advisories.
+  schedule:
+    - cron: "17 3 * * 1"
+
+# Cancel superseded runs of the same branch / pull request.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: every job only reads the repository. No job pushes images,
+# writes packages, or comments; add per-job permissions if that changes.
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  HELM_VERSION: v3.16.4
+  KUBECONFORM_VERSION: v0.6.7
+  KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
+  KUBERNETES_VERSION: 1.29.0
+  GITLEAKS_IMAGE: zricethezav/gitleaks:v8.24.3@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  lint:
+    name: Lint and type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -e .
+      - name: Ruff
+        run: ruff check --output-format=github src tests scripts docker
+      - name: Mypy (typed packages)
+        run: >-
+          mypy
+          src/lg_sotf/settings.py
+          src/lg_sotf/llm
+          src/lg_sotf/security
+          src/lg_sotf/observability
+          src/lg_sotf/core/config
+          src/lg_sotf/db
+          src/lg_sotf/queue
+          src/lg_sotf/runtime
+          src/lg_sotf/services
+          src/lg_sotf/ingestion
+      - name: Shellcheck
+        run: shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh
+
+  test:
+    name: Tests (PostgreSQL 16, Redis 7)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_USER: soc
+          POSTGRES_PASSWORD: ci_only_password
+          POSTGRES_DB: soc_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U soc -d soc_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      LG_SOTF_TEST_DATABASE_URL: postgresql://soc:ci_only_password@127.0.0.1:5432/soc_test
+      LG_SOTF_TEST_REDIS_URL: redis://127.0.0.1:6379/5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -e .
+      # tests/deploy renders the chart; without helm those tests skip.
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Pytest
+        run: >-
+          pytest
+          --cov=lg_sotf --cov-branch
+          --cov-report=term-missing:skip-covered
+          --cov-report=xml:coverage.xml
+          --junitxml=junit.xml
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports
+          path: |
+            coverage.xml
+            junit.xml
+          retention-days: 14
+
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install scanners
+        run: pip install "pip-audit==2.9.0" "bandit[toml]==1.8.6"
+      - name: pip-audit (pinned runtime and dev dependencies)
+        run: |
+          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements.txt
+          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements-dev.txt
+      - name: Bandit (new medium+ findings against the reviewed baseline)
+        run: bandit -r src/lg_sotf -ll -ii -b scripts/ci/bandit-baseline.json
+      - name: Gitleaks (commits in this change)
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "${BASE_REF}" ] || [ "${BASE_REF}" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="-1"
+          else
+            RANGE="${BASE_REF}..HEAD"
+          fi
+          docker run --rm -v "${PWD}:/repo:ro" "${GITLEAKS_IMAGE}" git /repo \
+            --config /repo/scripts/ci/gitleaks.toml --redact --no-banner --exit-code 1 \
+            --log-opts="${RANGE}"
+      - name: Gitleaks (current tree)
+        run: |
+          docker run --rm -v "${PWD}:/repo:ro" "${GITLEAKS_IMAGE}" dir /repo \
+            --config /repo/scripts/ci/gitleaks.toml --redact --no-banner --exit-code 1
+
+  gitleaks-history:
+    name: Secret scan (full history)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Every commit on every fetched ref. Already-known historical findings
+      # are listed by fingerprint in scripts/ci/gitleaks-history.ignore; any
+      # other finding fails the job.
+      - name: Gitleaks (all history)
+        run: |
+          docker run --rm -v "${PWD}:/repo:ro" "${GITLEAKS_IMAGE}" git /repo \
+            --config /repo/scripts/ci/gitleaks.toml \
+            --gitleaks-ignore-path /repo/scripts/ci/gitleaks-history.ignore \
+            --redact --no-banner --exit-code 1 --log-opts="--all"
+
+  docker:
+    name: Container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build (no push)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          load: true
+          tags: lg-sotf:ci
+          build-args: |
+            VERSION=ci
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test image
+        run: |
+          docker run --rm lg-sotf:ci version
+          test "$(docker run --rm --entrypoint id lg-sotf:ci -u)" = "10001"
+          docker run --rm --read-only --tmpfs /tmp lg-sotf:ci --help >/dev/null
+          # The health probe reports healthy for one-shot commands.
+          docker run --rm --entrypoint python lg-sotf:ci /usr/local/lib/lg-sotf/healthcheck.py
+      - name: Validate compose files
+        env:
+          POSTGRES_SUPERUSER_PASSWORD: ci
+          LGSOTF_OWNER_PASSWORD: ci
+          LGSOTF_APP_PASSWORD: ci
+          LG_SOTF_AUTH__JWT_SECRET: ci
+          LG_SOTF_SECURITY__ENCRYPTION_KEYS: ci
+          LG_SOTF_SECURITY__INDICATOR_HMAC_KEY: ci
+        run: |
+          docker compose -f docker/docker-compose.yml config -q
+          docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml config -q
+      - name: Stack smoke test (compose, HTTP API only)
+        # Full customer path against the image built above: ingest, review, approvals, isolation,
+        # sessions, worker SIGKILL/restart without losing alerts, Redis outage and recovery.
+        env:
+          APP_IMAGE: lg-sotf:ci
+        run: scripts/smoke_stack.sh --no-build
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install kubeconform
+        run: |
+          curl -fsSL -o /tmp/kubeconform.tgz \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tgz" | sha256sum -c -
+          tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
+      - name: Lint
+        run: |
+          helm lint --strict deploy/helm/lg-sotf
+          helm lint --strict deploy/helm/lg-sotf -f deploy/helm/lg-sotf/ci/full-values.yaml
+      - name: Template and validate
+        run: |
+          helm template ci deploy/helm/lg-sotf > /tmp/default.yaml
+          helm template ci deploy/helm/lg-sotf -f deploy/helm/lg-sotf/ci/full-values.yaml > /tmp/full.yaml
+          kubeconform -strict -summary -kubernetes-version "${KUBERNETES_VERSION}" \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            /tmp/default.yaml /tmp/full.yaml
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Detect frontend
+        id: detect
+        run: |
+          if [ -f src/lg_front/package.json ] && [ -f src/lg_front/package-lock.json ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "No frontend package with a lockfile; skipping."
+          fi
+          if [ -f src/lg_front/Dockerfile ]; then
+            echo "dockerfile=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerfile=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: steps.detect.outputs.present == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: src/lg_front/package-lock.json
+      - name: Install, lint, test, build
+        if: steps.detect.outputs.present == 'true'
+        working-directory: src/lg_front
+        env:
+          CI: "true"
+        run: |
+          npm ci --no-audit --no-fund
+          npm run lint --if-present
+          npm run test:ci --if-present
+          npm run build --if-present
+      - name: Build frontend image (no push)
+        if: steps.detect.outputs.dockerfile == 'true'
+        run: docker build -t lg-sotf-frontend:ci src/lg_front

@@ -47,6 +47,10 @@ class QueueStreams:
     def dlq(self) -> str:
         return f"{self.prefix}:q:alerts:dlq"
 
+    def consumer_alive(self, consumer: str) -> str:
+        """Liveness key a running worker keeps refreshed for its consumer name (expires when it dies)."""
+        return f"{self.prefix}:q:consumers:{consumer}:alive"
+
     @property
     def work(self) -> Tuple[str, str]:
         """Work streams in read priority order."""
