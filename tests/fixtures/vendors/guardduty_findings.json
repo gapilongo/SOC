@@ -1,0 +1,81 @@
+{
+  "_synthetic": "Synthetic Amazon GuardDuty findings (EventBridge-wrapped and bare); not real data.",
+  "events": [
+    {
+      "version": "0",
+      "id": "c8a2b1e0-1111-2222-3333-444455556666",
+      "detail-type": "GuardDuty Finding",
+      "source": "aws.guardduty",
+      "account": "111122223333",
+      "time": "2024-03-05T10:30:00Z",
+      "region": "us-east-1",
+      "resources": [],
+      "detail": {
+        "schemaVersion": "2.0",
+        "accountId": "111122223333",
+        "region": "us-east-1",
+        "partition": "aws",
+        "id": "d2c4a6e8f0b1d3c5e7a9b0c2d4e6f8a1",
+        "arn": "arn:aws:guardduty:us-east-1:111122223333:detector/12abc34d567e8fa901bc2d34e56789f0/finding/d2c4a6e8f0b1d3c5e7a9b0c2d4e6f8a1",
+        "type": "UnauthorizedAccess:EC2/SSHBruteForce",
+        "resource": {
+          "resourceType": "Instance",
+          "instanceDetails": {
+            "instanceId": "i-0abc1234def567890",
+            "instanceType": "t3.micro",
+            "networkInterfaces": [
+              {"privateIpAddress": "172.31.10.20", "publicIp": "198.51.100.44", "publicDnsName": "ec2-198-51-100-44.compute-1.amazonaws.com"}
+            ],
+            "tags": [{"key": "Name", "value": "bastion"}]
+          }
+        },
+        "service": {
+          "serviceName": "guardduty",
+          "detectorId": "12abc34d567e8fa901bc2d34e56789f0",
+          "action": {
+            "actionType": "NETWORK_CONNECTION",
+            "networkConnectionAction": {
+              "connectionDirection": "INBOUND",
+              "remoteIpDetails": {"ipAddressV4": "203.0.113.66", "organization": {"asnOrg": "Example Hosting"}, "country": {"countryName": "Exampleland"}},
+              "localPortDetails": {"port": 22, "portName": "SSH"},
+              "protocol": "TCP",
+              "blocked": false
+            }
+          },
+          "eventFirstSeen": "2024-03-05T10:00:00.000Z",
+          "eventLastSeen": "2024-03-05T10:25:00.000Z",
+          "archived": false,
+          "count": 27
+        },
+        "severity": 5,
+        "createdAt": "2024-03-05T10:05:00.000Z",
+        "updatedAt": "2024-03-05T10:25:00.000Z",
+        "title": "203.0.113.66 is performing SSH brute force attacks against i-0abc1234def567890.",
+        "description": "203.0.113.66 is performing SSH brute force attacks against i-0abc1234def567890. Brute force attacks are used to gain unauthorized access to your instance by guessing the SSH password."
+      }
+    },
+    {
+      "schemaVersion": "2.0",
+      "accountId": "111122223333",
+      "region": "eu-west-1",
+      "id": "e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6",
+      "type": "CredentialAccess:IAMUser/AnomalousBehavior",
+      "resource": {
+        "resourceType": "AccessKey",
+        "accessKeyDetails": {"accessKeyId": "AKIAIOSFODNN7EXAMPLE", "principalId": "AIDAEXAMPLEPRINCIPAL", "userName": "ci-deployer", "userType": "IAMUser"}
+      },
+      "service": {
+        "action": {
+          "actionType": "AWS_API_CALL",
+          "awsApiCallAction": {"api": "GetSecretValue", "serviceName": "secretsmanager.amazonaws.com", "callerType": "Remote IP", "remoteIpDetails": {"ipAddressV4": "198.51.100.99"}}
+        },
+        "eventFirstSeen": "2024-03-05T09:40:00Z"
+      },
+      "severity": 8.5,
+      "createdAt": "2024-03-05T09:45:00Z",
+      "updatedAt": "2024-03-05T09:45:00Z",
+      "title": "Anomalous secret retrieval by ci-deployer",
+      "description": "APIs commonly used to access credentials were invoked in an unusual way."
+    }
+  ]
+}

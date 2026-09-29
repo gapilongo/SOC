@@ -1,0 +1,44 @@
+{
+  "_synthetic": "Synthetic payloads from a generic alerting product, with the matching webhook source config; not real data.",
+  "config": {
+    "format": "generic",
+    "field_map": {
+      "title": "alert.name",
+      "severity": "alert.priority",
+      "occurred_at": ["alert.raised_at", "received"],
+      "source_alert_id": "alert.uuid",
+      "description": "alert.details.summary",
+      "category": "alert.kind",
+      "rule_name": "alert.rule.name",
+      "entities.ips": ["network.src", "network.dst"],
+      "entities.hosts": "asset.hostname",
+      "entities.users": "actors.*.login",
+      "entities.domains": "network.dns.*.qname",
+      "mitre.techniques": "alert.tags"
+    },
+    "severity_map": {"p1": "critical", "p2": "high", "p3": "medium"},
+    "severity_scale": "1-5"
+  },
+  "events": [
+    {
+      "alert": {
+        "uuid": "8e7d6c5b-4a39-2817-0615-243342516071",
+        "name": "Outbound connection to newly registered domain",
+        "priority": "P2",
+        "raised_at": 1709633730123,
+        "kind": "network",
+        "rule": {"name": "NRD-OUTBOUND-01"},
+        "details": {"summary": "Host contacted a domain registered in the last 24h."},
+        "tags": ["attack.t1071.001", "T1568.002 - Domain Generation Algorithms"]
+      },
+      "asset": {"hostname": "KIOSK-3"},
+      "network": {"src": "10.30.0.3", "dst": "198.51.100.200:443", "dns": [{"qname": "a1b2c3-new.example.org"}, {"qname": "cdn.example.com"}]},
+      "actors": [{"login": "kiosk"}, {"login": "svc-update"}],
+      "vendor_extra": {"sensor": "edge-7", "ruleset": "2024.03"}
+    },
+    {
+      "alert": {"name": "Low disk space on sensor", "priority": 1},
+      "received": "2024-03-05T10:15:00+02:00"
+    }
+  ]
+}

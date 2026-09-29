@@ -1,13 +1,8 @@
-"""
-Module entry point for LG-SOTF.
+"""``python -m lg_sotf`` runs the ``lg-sotf`` CLI."""
 
-This allows running the application as:
-python -m lg_sotf.main
-"""
+from __future__ import annotations
 
-import asyncio
-
-from .main import main
+from lg_sotf.cli import main
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

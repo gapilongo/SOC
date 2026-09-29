@@ -1,0 +1,478 @@
+"""Workflow node implementations and the wrapper every non-interrupt node runs in.
+
+The wrapper applies the node timeout, binds the logging context, observes
+``lgsotf_node_seconds``, appends a ``node.completed`` alert event with the
+node's small digest and publishes ``alert.updated``. Nodes return LangGraph
+state updates; the optional ``_event`` key carries the digest and never
+reaches graph state.
+
+Side-effecting nodes (``escalate``, ``plan_response``, ``execute_actions``,
+``close``) are idempotent because LangGraph re-runs a node whose checkpoint
+was not written.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
+
+from langgraph.types import interrupt
+
+from lg_sotf.agents.base import AgentContext
+from lg_sotf.agents.correlation.indicators import extract_indicators
+from lg_sotf.agents.registry import AgentSet
+from lg_sotf.core import routing
+from lg_sotf.core.events import EventPublisher, publish_event
+from lg_sotf.core.exceptions import NodeTimeout
+from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.routing import BENIGN_DECISIONS, RoutingThresholds
+from lg_sotf.core.suppression import alert_match_view, first_matching_rule
+from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.repos import Repositories
+from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.llm import USE_DEFAULT, TokenBudget
+from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.metrics import observe_node
+from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.response import PlanContext, ResponseService
+from lg_sotf.settings import Settings
+
+log = get_logger(__name__)
+
+NodeFn = Callable[[WorkflowState], Awaitable[Dict[str, Any]]]
+AGENT_NODES = frozenset({"triage", "correlation", "analysis"})
+EVENT_KEY = "_event"
+MAX_EVENT_KEYS = 20
+
+
+@dataclass
+class NodeDeps:
+    settings: Settings
+    repos: Repositories
+    agents: AgentSet
+    escalations: EscalationService
+    responses: ResponseService
+    verdicts: VerdictCache
+    thresholds: RoutingThresholds
+    events: Optional[EventPublisher] = None
+    budget: Optional[TokenBudget] = None
+
+
+def _small(data: Mapping[str, Any]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in list(data.items())[:MAX_EVENT_KEYS]:
+        if isinstance(value, str):
+            out[key] = value[:300]
+        elif isinstance(value, (int, float, bool)) or value is None:
+            out[key] = value
+        elif isinstance(value, (list, tuple)):
+            out[key] = [v if isinstance(v, (int, float, bool)) else str(v)[:120] for v in list(value)[:10]]
+        elif isinstance(value, Mapping):
+            out[key] = {str(k)[:64]: v for k, v in list(value.items())[:10] if isinstance(v, (str, int, float, bool))}
+    return out
+
+
+def _entities_by_kind(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
+    by_kind: Dict[str, List[str]] = {}
+    for ind in extract_indicators(alert):
+        by_kind.setdefault(ind.type, []).append(ind.value)
+    return by_kind
+
+
+class WorkflowNodes:
+    def __init__(self, deps: NodeDeps) -> None:
+        self.deps = deps
+        self._impl: Dict[str, NodeFn] = {
+            "gate": self.gate,
+            "triage": self.triage,
+            "correlation": self.correlation,
+            "analysis": self.analysis,
+            "decide": self.decide,
+            "escalate": self.escalate,
+            "await_analyst": self.await_analyst,
+            "plan_response": self.plan_response,
+            "await_approval": self.await_approval,
+            "execute_actions": self.execute_actions,
+            "close": self.close,
+        }
+
+    def node(self, name: str) -> NodeFn:
+        fn = self._impl[name]
+        if name.startswith("await_"):
+            return fn
+        worker = self.deps.settings.worker
+        timeout_s = worker.analysis_timeout_s if name == "analysis" else worker.node_timeout_s
+        return self._wrap(name, fn, timeout_s)
+
+    def _wrap(self, name: str, fn: NodeFn, timeout_s: float) -> NodeFn:
+        repos = self.deps.repos
+        events = self.deps.events
+        actor_type = "agent" if name in AGENT_NODES else "system"
+
+        async def run_node(state: WorkflowState) -> Dict[str, Any]:
+            tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+            started = time.perf_counter()
+            with bound_context(
+                tenant_id=tenant_id, alert_id=alert_id, thread_id=thread_id_for(tenant_id, alert_id), node=name
+            ):
+                try:
+                    budget = asyncio.timeout(timeout_s)
+                    try:
+                        async with budget:
+                            update = await fn(state)
+                    except TimeoutError as exc:
+                        if budget.expired():
+                            raise NodeTimeout(name, timeout_s) from exc
+                        raise
+                    digest = _small(update.pop(EVENT_KEY, {}))
+                    await repos.alert_events.append(
+                        tenant_id,
+                        alert_id,
+                        "node.completed",
+                        node=name,
+                        actor_type=actor_type,
+                        actor_id=name if actor_type == "agent" else "workflow",
+                        data=digest,
+                    )
+                except Exception as exc:
+                    log.warning("workflow.node_failed", error_type=type(exc).__name__)
+                    raise
+                finally:
+                    observe_node(name, time.perf_counter() - started)
+                log.info("workflow.node_completed", duration_ms=round((time.perf_counter() - started) * 1000))
+            await publish_event(events, "alert.updated", tenant_id, alert_id, {"node": name, **digest})
+            return update
+
+        run_node.__name__ = f"node_{name}"
+        return run_node
+
+    def _ctx(self, state: WorkflowState) -> AgentContext:
+        limit = state.get("llm_budget_limit")
+        return AgentContext(
+            tenant_id=state["tenant_id"],
+            alert_id=state["alert_id"],
+            settings=self.deps.settings,
+            repos=self.deps.repos,
+            budget=self.deps.budget,
+            budget_limit=limit if isinstance(limit, int) else USE_DEFAULT,
+            llm_budget_exceeded=bool(state.get("llm_budget_exceeded")),
+        )
+
+    async def gate(self, state: WorkflowState) -> Dict[str, Any]:
+        tenant_id, alert = state["tenant_id"], state["alert"]
+        view = alert_match_view(
+            title=str(alert.get("title", "")),
+            severity=state["severity"],
+            category=alert.get("category"),
+            source_id=str(alert.get("source_id", "")),
+            source_alert_id=str(alert.get("source_alert_id", "")),
+            fingerprint=state.get("fingerprint", ""),
+            normalized=alert,
+        )
+        rules = await self.deps.repos.suppressions.list_active(tenant_id)
+        match = first_matching_rule(rules, view)
+        if match is not None:
+            await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
+            by = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
+            return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
+        if state["severity"] != "critical":
+            cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
+            if cached is not None:
+                cache_hit: Dict[str, Any] = {
+                    "type": "verdict_cache",
+                    "decision": cached.get("decision"),
+                    "source_alert_id": cached.get("alert_id"),
+                }
+                return {
+                    "gate": {"suppressed": True, "suppressed_by": cache_hit},
+                    EVENT_KEY: {"suppressed": True, "verdict_cache": True},
+                }
+        return {"gate": {"suppressed": False}, EVENT_KEY: {"suppressed": False}}
+
+    async def triage(self, state: WorkflowState) -> Dict[str, Any]:
+        ctx = self._ctx(state)
+        result = await self.deps.agents.triage.run(ctx, state["alert"])
+        digest = result.digest()
+        await self.deps.repos.alerts.update(
+            ctx.tenant_id, ctx.alert_id, confidence=result.confidence, priority=result.priority, summary={"triage": digest}
+        )
+        return {
+            "triage": digest,
+            "confidence": result.confidence,
+            "llm_budget_exceeded": ctx.llm_budget_exceeded,
+            "notes": result.notes,
+            EVENT_KEY: {
+                "confidence": result.confidence,
+                "rule_confidence": result.rule_confidence,
+                "priority": result.priority,
+                "rule_fp": len(result.rule_fp),
+                "rule_tp": len(result.rule_tp),
+                "llm_used": result.llm_used,
+            },
+        }
+
+    async def correlation(self, state: WorkflowState) -> Dict[str, Any]:
+        ctx = self._ctx(state)
+        result = await self.deps.agents.correlation.run(
+            ctx, state["alert"], base_confidence=float(state.get("confidence", 50))
+        )
+        digest = result.digest()
+        await self.deps.repos.alerts.update(
+            ctx.tenant_id, ctx.alert_id, confidence=result.confidence, summary={"correlation": digest}
+        )
+        return {
+            "correlation": digest,
+            "confidence": result.confidence,
+            "llm_budget_exceeded": ctx.llm_budget_exceeded,
+            "notes": result.notes,
+            EVENT_KEY: {
+                "score": result.score,
+                "related_count": result.related_count,
+                "indicators": result.indicator_count,
+                "burst": result.burst,
+                "llm_used": result.llm_used,
+            },
+        }
+
+    async def analysis(self, state: WorkflowState) -> Dict[str, Any]:
+        ctx = self._ctx(state)
+        analyst = state.get("analyst") or {}
+        loops = int(state.get("more_info_loops", 0))
+        notes: Optional[str] = None
+        if analyst.get("decision") == "needs_more_info":
+            loops += 1
+            notes = str(analyst.get("notes") or "") or "analyst requested more information"
+        result = await self.deps.agents.analysis.run(
+            ctx,
+            state["alert"],
+            triage=state.get("triage") or {},
+            correlation=state.get("correlation") or {},
+            analyst_notes=notes,
+        )
+        summary: Dict[str, Any] = {"analysis": result.summary()}
+        if ctx.llm_budget_exceeded:
+            summary["llm_budget_exceeded"] = True
+        await self.deps.repos.alerts.update(
+            ctx.tenant_id, ctx.alert_id, threat_score=result.threat_score, summary=summary
+        )
+        return {
+            "analysis": result.digest(),
+            "analysis_runs": int(state.get("analysis_runs", 0)) + 1,
+            "more_info_loops": loops,
+            "llm_budget_exceeded": ctx.llm_budget_exceeded,
+            "notes": result.notes,
+            EVENT_KEY: {
+                "threat_score": result.threat_score,
+                "rule_threat_score": result.rule_threat_score,
+                "verdict": result.verdict,
+                "llm_used": result.llm_used,
+                "tool_steps": result.tool_steps,
+                "simulated_evidence": result.simulated_evidence,
+            },
+        }
+
+    async def decide(self, state: WorkflowState) -> Dict[str, Any]:
+        decision = routing.decide(state, self.deps.thresholds).as_dict()
+        return {"decision": decision, EVENT_KEY: decision}
+
+    async def escalate(self, state: WorkflowState) -> Dict[str, Any]:
+        tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+        decision = dict(state.get("decision") or {})
+        analysis = state.get("analysis") or {}
+        correlation = state.get("correlation") or {}
+        confidence = float(state.get("confidence", 50))
+        if decision.get("route") == "plan_response" and not state.get("analyst"):
+            decision["reason"] = "automatic response left the threat without a human or a completed action"
+            decision["code"] = "response_review"
+        ticket = await self.deps.escalations.open_or_attach(
+            tenant_id,
+            alert_id,
+            severity=state["severity"],
+            confidence=confidence,
+            threat_score=float(analysis.get("threat_score", confidence)),
+            reason=str(decision.get("reason") or "analyst review required"),
+            reason_code=str(decision.get("code") or "inconclusive"),
+            summary={
+                "title": str(state["alert"].get("title", ""))[:300],
+                "severity": state["severity"],
+                "confidence": confidence,
+                "threat_score": analysis.get("threat_score"),
+                "verdict": analysis.get("verdict"),
+                "conclusion": str(analysis.get("conclusion") or "")[:1_000],
+                "simulated_evidence": bool(analysis.get("simulated_evidence")),
+                "recommended_actions": list(analysis.get("recommended_actions") or [])[:10],
+            },
+            related_alert_ids=list(correlation.get("related_alert_ids") or []),
+        )
+        await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"escalation_id": ticket.id})
+        return {
+            "escalation_id": ticket.id,
+            EVENT_KEY: {"escalation_id": ticket.id, "level": ticket.level, "priority": ticket.priority, "created": ticket.created},
+        }
+
+    async def await_analyst(self, state: WorkflowState) -> Dict[str, Any]:
+        decision = interrupt({"type": "analyst_decision", "escalation_id": state.get("escalation_id")})
+        return {"analyst": decision}
+
+    def _evidence(self, state: WorkflowState) -> str:
+        analyst = state.get("analyst") or {}
+        if analyst.get("decision") == "true_positive":
+            return "analyst"
+        threshold = self.deps.thresholds.response_threshold
+        analysis = state.get("analysis") or {}
+        if analysis:
+            rule_score = float(analysis.get("rule_threat_score", 0))
+        else:
+            rule_score = float((state.get("triage") or {}).get("rule_confidence", 0))
+        return "rules" if rule_score >= threshold else "llm_only"
+
+    async def plan_response(self, state: WorkflowState) -> Dict[str, Any]:
+        tenant_id, alert_id, alert = state["tenant_id"], state["alert_id"], state["alert"]
+        analysis = state.get("analysis") or {}
+        triage = state.get("triage") or {}
+        analyst = state.get("analyst") or {}
+        mitre = alert.get("mitre") if isinstance(alert.get("mitre"), Mapping) else {}
+        threat_texts = [str(analysis.get("conclusion") or ""), *[str(c) for c in triage.get("threat_categories") or []]]
+        for key in ("tactics", "techniques"):
+            threat_texts.extend(str(v) for v in (mitre or {}).get(key) or [] if isinstance(v, (str, int)))
+        is_tp = analyst.get("decision") == "true_positive"
+        ctx = PlanContext(
+            severity=state["severity"],
+            evidence=self._evidence(state),  # type: ignore[arg-type]
+            title=str(alert.get("title", "")),
+            category=alert.get("category"),
+            entities=_entities_by_kind(alert),
+            recommended_actions=list(analysis.get("recommended_actions") or []),
+            threat_texts=threat_texts,
+            approved_actions=list(analyst.get("approved_actions") or []) if is_tp else [],
+            approved_by=str(analyst.get("decided_by")) if is_tp and analyst.get("decided_by") else None,
+            approver_role=analyst.get("approver_role") if is_tp else None,
+        )
+        plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
+        counts = {"auto": len(plan.auto), "awaiting": len(plan.awaiting), "blocked": len(plan.blocked), "done": len(plan.done)}
+        await self.deps.repos.alerts.update(
+            tenant_id, alert_id, summary={"response": {"threat_type": plan.threat_type, "evidence": ctx.evidence, **counts}}
+        )
+        return {
+            "plan": plan.as_dict(),
+            "awaiting_actions": list(plan.awaiting),
+            "approval": None,
+            EVENT_KEY: {"threat_type": plan.threat_type, "evidence": ctx.evidence, **counts},
+        }
+
+    async def await_approval(self, state: WorkflowState) -> Dict[str, Any]:
+        decision = interrupt({"type": "approval", "action_ids": list(state.get("awaiting_actions") or [])})
+        return {"approval": decision}
+
+    async def execute_actions(self, state: WorkflowState) -> Dict[str, Any]:
+        """Apply the pending approval decision (if any), run approved actions, re-read what still waits.
+
+        A decision changes only the actions it names unless it sets
+        ``reject_remaining``; actions still awaiting approval afterwards send
+        the run back to ``await_approval`` with a fresh interrupt.
+        """
+        tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+        plan = state.get("plan") or {}
+        approval = state.get("approval")
+        awaiting = list(state.get("awaiting_actions") or [])
+        approvals: Dict[str, str] = {}
+        if approval is not None and awaiting:
+            approvals = await self.deps.responses.apply_approval(
+                tenant_id,
+                alert_id,
+                pending_ids=awaiting,
+                approved_ids=list(approval.get("approved_action_ids") or []),
+                rejected_ids=list(approval.get("rejected_action_ids") or []),
+                decided_by=str(approval.get("decided_by") or "unknown"),
+                reject_remaining=bool(approval.get("reject_remaining")),
+            )
+        candidates = list(
+            dict.fromkeys([*(plan.get("auto") or []), *(plan.get("awaiting") or []), *(plan.get("done") or [])])
+        )
+        results = await self.deps.responses.execute(tenant_id, alert_id, candidates)
+        still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, awaiting)
+        executed = {**(state.get("executed") or {}), **approvals, **results}
+        statuses: Dict[str, int] = {}
+        for status in executed.values():
+            statuses[status] = statuses.get(status, 0) + 1
+        return {
+            "executed": executed,
+            "awaiting_actions": still_waiting,
+            "approval": None,
+            EVENT_KEY: {
+                "statuses": statuses,
+                "approval_applied": approval is not None,
+                "still_awaiting": len(still_waiting),
+            },
+        }
+
+    @staticmethod
+    def outcome(state: Mapping[str, Any]) -> tuple[str, str]:
+        """(disposition, close reason) for the path that reached ``close``."""
+        analyst = state.get("analyst") or {}
+        decision = analyst.get("decision")
+        if decision in BENIGN_DECISIONS:
+            return "benign", f"analyst:{decision}"
+        if decision == "true_positive":
+            return "malicious", "analyst:true_positive"
+        gate = state.get("gate") or {}
+        if gate.get("suppressed"):
+            return "benign", str((gate.get("suppressed_by") or {}).get("type") or "suppressed")
+        route = (state.get("decision") or {}).get("route")
+        if route == "close":
+            return str((state.get("decision") or {}).get("disposition") or "benign"), "policy:close"
+        if route == "plan_response":
+            return "malicious", "policy:response"
+        return "benign", "triage:false_positive"
+
+    async def close(self, state: WorkflowState) -> Dict[str, Any]:
+        tenant_id, alert_id = state["tenant_id"], state["alert_id"]
+        disposition, reason = self.outcome(state)
+        analysis = state.get("analysis") or {}
+        analyst = state.get("analyst") or {}
+        executed = state.get("executed") or {}
+        statuses: Dict[str, int] = {}
+        for status in executed.values():
+            statuses[status] = statuses.get(status, 0) + 1
+        summary: Dict[str, Any] = {
+            "verdict": disposition,
+            "close_reason": reason,
+            "confidence": state.get("confidence"),
+            "threat_score": analysis.get("threat_score"),
+            "decision": state.get("decision") or None,
+            "analyst_decision": analyst.get("decision"),
+            "escalation_id": state.get("escalation_id"),
+            "actions": statuses,
+            "simulated_evidence": bool(analysis.get("simulated_evidence")),
+            "llm_budget_exceeded": bool(state.get("llm_budget_exceeded")),
+        }
+        gate = state.get("gate") or {}
+        if gate.get("suppressed"):
+            summary["suppressed_by"] = gate.get("suppressed_by")
+        threat = analysis.get("threat_score")
+        async with self.deps.repos.db.tenant_tx(tenant_id) as conn:
+            await self.deps.repos.alerts.update(
+                tenant_id,
+                alert_id,
+                disposition=disposition,
+                confidence=float(state.get("confidence", 50)),
+                threat_score=float(threat) if threat is not None else None,
+                summary=summary,
+                conn=conn,
+            )
+            await self.deps.repos.alerts.update_status(tenant_id, alert_id, "closed", conn=conn)
+        if analyst.get("decision") in BENIGN_DECISIONS:
+            await self.deps.verdicts.put_analyst_benign(
+                tenant_id,
+                state.get("fingerprint", ""),
+                decision=str(analyst["decision"]),
+                alert_id=alert_id,
+                escalation_id=state.get("escalation_id"),
+            )
+        return {
+            "disposition": disposition,
+            "close_reason": reason,
+            EVENT_KEY: {"status": "closed", "disposition": disposition, "close_reason": reason},
+        }

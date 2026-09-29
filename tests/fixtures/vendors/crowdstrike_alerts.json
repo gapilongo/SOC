@@ -1,0 +1,75 @@
+{
+  "_synthetic": "Synthetic CrowdStrike Falcon Alerts API v2 entity and legacy Detects API detection; not real data.",
+  "events": [
+    {
+      "composite_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90:ind:0f1e2d3c4b5a69788796a5b4c3d2e1f0:4455667788-10197-12345",
+      "id": "ind:0f1e2d3c4b5a69788796a5b4c3d2e1f0:4455667788-10197-12345",
+      "cid": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "created_timestamp": "2024-03-05T10:15:31.123456789Z",
+      "timestamp": "2024-03-05T10:15:29.500Z",
+      "updated_timestamp": "2024-03-05T10:16:02.000Z",
+      "name": "CredentialDumpingLsass",
+      "display_name": "Credential dumping via LSASS access",
+      "description": "A process accessed LSASS memory in a way consistent with credential theft.",
+      "severity": 90,
+      "severity_name": "Critical",
+      "confidence": 80,
+      "tactic": "Credential Access",
+      "tactic_id": "TA0006",
+      "technique": "OS Credential Dumping",
+      "technique_id": "T1003.001",
+      "product": "epp",
+      "type": "ldt",
+      "status": "new",
+      "device": {
+        "device_id": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+        "hostname": "FIN-LAPTOP-07",
+        "local_ip": "10.1.2.3",
+        "external_ip": "198.51.100.23",
+        "platform_name": "Windows",
+        "os_version": "Windows 11"
+      },
+      "user_name": "asmith",
+      "user_principal": "asmith@corp.example.com",
+      "filename": "procdump64.exe",
+      "filepath": "\\Device\\HarddiskVolume3\\Users\\asmith\\Downloads\\procdump64.exe",
+      "cmdline": "procdump64.exe -accepteula -ma lsass.exe out.dmp",
+      "sha256": "0A1B2C3D4E5F60718293A4B5C6D7E8F90A1B2C3D4E5F60718293A4B5C6D7E8F9",
+      "md5": "00000000000000000000000000000000",
+      "parent_details": {
+        "cmdline": "C:\\Windows\\System32\\cmd.exe /c procdump64.exe -ma lsass.exe out.dmp",
+        "filename": "cmd.exe",
+        "filepath": "\\Device\\HarddiskVolume3\\Windows\\System32\\cmd.exe",
+        "sha256": "b99d114b267f4a79c7b4b1e1ff7f7fb6b7a2d3c4e5f60718293a4b5c6d7e8f90"
+      },
+      "falcon_host_link": "https://falcon.crowdstrike.com/activity-v2/detections/example",
+      "pattern_disposition": 0
+    },
+    {
+      "detection_id": "ldt:0f1e2d3c4b5a69788796a5b4c3d2e1f0:99887766",
+      "created_timestamp": "2024-03-05T09:00:00Z",
+      "first_behavior": "2024-03-05T08:59:58Z",
+      "max_severity": 50,
+      "max_severity_displayname": "Medium",
+      "status": "new",
+      "device": {"hostname": "DEV-BOX-01", "local_ip": "10.9.8.7"},
+      "behaviors": [
+        {
+          "behavior_id": "10001",
+          "display_name": "SuspiciousScriptExecution",
+          "scenario": "suspicious_activity",
+          "description": "A script interpreter ran an obfuscated script.",
+          "severity": 50,
+          "tactic": "Execution",
+          "tactic_id": "TA0002",
+          "technique_id": "T1059",
+          "user_name": "dev01",
+          "cmdline": "wscript.exe //B C:\\Users\\dev01\\AppData\\Local\\Temp\\a.vbs",
+          "filename": "wscript.exe",
+          "sha256": "c2b4f6a8e0d1c3b5a7968778695a4b3c2d1e0f1a2b3c4d5e6f708192a3b4c5d6",
+          "timestamp": "2024-03-05T08:59:58Z"
+        }
+      ]
+    }
+  ]
+}
