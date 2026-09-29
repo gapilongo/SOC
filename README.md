@@ -265,7 +265,9 @@ OIDC for analysts, and secrets from your secret store. Follow
 `make smoke`: it builds the image, starts its own throwaway stack, exercises
 ingestion, triage and the API end to end, and tears the stack down. To check
 a running deployment instead, run `scripts/smoke_stack.py --base-url ...
-flow` with an admin's credentials (docs/deployment.md). Processes refuse to
+flow` with an admin's credentials (docs/deployment.md). For hosted dev and
+uat environments (GitHub Actions to a free Oracle Cloud VM, HTTPS by Caddy,
+automatic rollback) follow [docs/cicd.md](docs/cicd.md). Processes refuse to
 start in `staging`/`production` with missing or placeholder secrets, the fake
 model, wildcard CORS or insecure cookies.
 
@@ -376,6 +378,7 @@ container logs and that no page violates the Content-Security-Policy.
 | [API](docs/api.md) | Authentication, roles, endpoints, events |
 | [Configuration](docs/configuration.md) | Every setting |
 | [Deployment](docs/deployment.md) | Image, Compose, Helm, PostgreSQL roles, TLS, sizing, upgrades, backups |
+| [CI/CD](docs/cicd.md) | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM, promotion, rollback, backups |
 | [Operations](docs/operations.md) | Runbooks, key rotation, incidents, dashboards and alerts |
 | [Security](docs/security.md) | Threat model and controls |
 | [Evaluation](docs/evaluation.md) | The evaluation harness |

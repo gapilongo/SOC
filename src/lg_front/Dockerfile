@@ -23,9 +23,11 @@ ARG NODE_IMAGE=node:22-alpine
 ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.28-alpine
 
 # ---------------------------------------------------------------------------
-# Build: install the locked dependency set, type-check and bundle.
+# Build: install the locked dependency set, type-check and bundle. The output
+# is static files, so this stage runs on the build host's own platform even in
+# a multi-arch build (no emulated npm/vite for linux/arm64).
 # ---------------------------------------------------------------------------
-FROM ${NODE_IMAGE} AS build
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
 ENV CI=true \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false \

@@ -25,6 +25,12 @@ Files:
 | `.env.example` | Every important setting, with how to generate secrets |
 | `scripts/generate_secrets.py` | Fresh random secrets (`.env` or `kubectl create secret`) |
 | `Makefile` | `make help` lists the shortcuts |
+| `deploy/vm/` | Single-VM deploys (Caddy HTTPS, dev/uat, rollback, backups) used by the CI/CD pipeline |
+
+Hosted dev and uat environments (images published to GHCR for amd64 and
+arm64, deployed over SSH to an Oracle Cloud Always Free VM behind Caddy,
+promotion by release tag, automatic rollback) are described in
+[cicd.md](cicd.md).
 
 ## 1. The image
 

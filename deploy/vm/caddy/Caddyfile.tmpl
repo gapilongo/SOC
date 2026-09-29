@@ -1,0 +1,17 @@
+# LG-SOTF edge (Caddy). Rendered by deploy/vm/deploy.sh into
+# <root>/edge/conf/Caddyfile; do not edit the rendered copy by hand.
+# One site file per environment is imported from sites/<env>.caddy.
+{
+	@@GLOBAL_OPTIONS@@
+	# No request or proxy-error logs: WebSocket URLs carry the access token in
+	# the query string and Caddy would record the full URI. The api and the
+	# frontend's nginx log every request without its query string. Admin API
+	# requests (the container health check) are not logged either.
+	log default {
+		output stdout
+		format json
+		exclude http.log.access http.log.error admin.api
+	}
+}
+
+import sites/*.caddy

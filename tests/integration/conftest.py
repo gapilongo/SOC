@@ -69,8 +69,25 @@ def database_url() -> str:
     return url
 
 
+def assert_rls_applies(url: str) -> None:
+    """Row-level security tests are meaningless for a role that bypasses RLS."""
+    with psycopg.connect(to_libpq_url(url), autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user"
+        ).fetchone()
+    assert row is not None
+    name, is_super, bypass = row
+    if is_super or bypass:
+        pytest.fail(
+            f"LG_SOTF_TEST_DATABASE_URL connects as {name!r}, which is a superuser or has BYPASSRLS; "
+            "row-level security would not apply. Use a plain role (NOSUPERUSER NOBYPASSRLS CREATEDB) "
+            "that owns the test database."
+        )
+
+
 @pytest.fixture(scope="session")
 def migrated_database_url(database_url: str) -> Iterator[str]:
+    assert_rls_applies(database_url)
     reset_schema(database_url)
     upgrade_head(database_url)
     yield database_url

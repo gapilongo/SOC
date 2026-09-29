@@ -1,0 +1,127 @@
+# VM overlay: the production-like stack on a single VM (docs/cicd.md).
+#
+#   docker compose -p lgsotf-<env> \
+#     -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
+#     -f deploy/vm/docker-compose.vm.yml --env-file <env dir>/.env up -d --wait
+#
+# deploy/vm/deploy.sh writes that .env and runs these commands; you do not need
+# to by hand. On top of docker-compose.prod.yml (two database roles, staging
+# safety checks, secrets only through ${...} interpolation) this overlay:
+#
+# * runs published images (APP_IMAGE / FRONTEND_IMAGE, pinned by digest) and
+#   never builds;
+# * always runs the frontend (no profile);
+# * publishes no host ports: the shared Caddy (docker-compose.edge.yml) reaches
+#   api and frontend over the external `lgsotf-proxy` network under the
+#   aliases <env>-api and <env>-frontend, so several environments can share one
+#   VM and ports 80/443;
+# * trusts X-Forwarded-For/-Proto only from the frontend and Caddy's fixed
+#   address (CADDY_IP);
+# * sets memory/CPU limits sized so two environments fit on an Always Free
+#   Ampere VM (4 OCPU / 24 GB), restart policies and log rotation.
+#
+# Limits can be raised per environment with the *_MEM / *_CPUS variables.
+
+x-vm-logging: &vm-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  postgres:
+    # A stable path outside the release directory, so a new release does not
+    # recreate the database container (deploy.sh copies the script there).
+    volumes:
+      - ${LGSOTF_ENV_DIR:?set LGSOTF_ENV_DIR}/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    shm_size: 256m
+    deploy:
+      resources:
+        limits:
+          cpus: "${POSTGRES_CPUS:-1.0}"
+          memory: ${POSTGRES_MEM:-1536m}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  redis:
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPUS:-0.5}"
+          memory: ${REDIS_MEM:-512m}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  migrate:
+    image: ${APP_IMAGE:?set APP_IMAGE}
+    build: !reset null
+    pull_policy: missing
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1g
+    logging: *vm-logging
+
+  api:
+    image: ${APP_IMAGE:?set APP_IMAGE}
+    pull_policy: missing
+    ports: !reset []
+    environment:
+      LG_SOTF_API__FORWARDED_ALLOW_IPS: ${LG_SOTF_API__FORWARDED_ALLOW_IPS:?set LG_SOTF_API__FORWARDED_ALLOW_IPS}
+    networks:
+      proxy:
+        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-api"]
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS:-1.0}"
+          memory: ${API_MEM:-1g}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  worker:
+    image: ${APP_IMAGE:?set APP_IMAGE}
+    pull_policy: missing
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS:-1.5}"
+          memory: ${WORKER_MEM:-2g}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  scheduler:
+    image: ${APP_IMAGE:?set APP_IMAGE}
+    pull_policy: missing
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          cpus: "${SCHEDULER_CPUS:-0.5}"
+          memory: ${SCHEDULER_MEM:-512m}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  frontend:
+    profiles: !reset []
+    image: ${FRONTEND_IMAGE:?set FRONTEND_IMAGE}
+    build: !reset null
+    pull_policy: missing
+    ports: !reset []
+    networks:
+      proxy:
+        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-frontend"]
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPUS:-0.5}"
+          memory: ${FRONTEND_MEM:-128m}
+    logging: *vm-logging
+    restart: unless-stopped
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-lgsotf-proxy}

@@ -3,7 +3,9 @@
 #   pip install -r requirements-dev.txt && pip install --no-deps -e .
 #
 # Regenerate after changing the [dev] extra in pyproject.toml:
-#   pip-compile --extra=dev --strip-extras -o requirements-dev.txt pyproject.toml
+#   pip-compile --extra=dev --extra=openai --extra=gemini --strip-extras -o requirements-dev.txt pyproject.toml
+#
+# CI installs every optional LLM provider so all providers are tested and type-checked.
 -r requirements.txt
 ast-serialize==0.11.2
 coverage==7.16.2
@@ -23,3 +25,15 @@ ruff==0.16.9
 sortedcontainers==2.4.0
 types-aiofiles==25.1.0.20260518
 types-pyyaml==6.0.12.20260906
+
+# Optional LLM providers ([openai] and [gemini] extras) and their dependencies.
+filetype==1.2.0
+google-auth==2.59.0
+google-genai==2.25.0
+langchain-google-genai==4.4.0
+langchain-openai==1.6.6
+openai==3.22.0
+pyasn1==0.6.4
+pyasn1_modules==0.4.2
+regex==2026.9.29
+tiktoken==0.14.0

@@ -1,0 +1,46 @@
+# Environment @@ENV@@: rendered by deploy/vm/deploy.sh; do not edit by hand.
+#
+# The UI and the API share one origin (https://@@DOMAIN@@), so the refresh
+# cookie (HttpOnly, Secure, SameSite=Strict, Path=/api/v1/auth) stays
+# first-party and no CORS preflight is needed.
+@@DOMAIN@@ {
+	@@TLS@@
+
+	# Defaults only ("?"): the frontend's nginx already sends the
+	# Content-Security-Policy and hardening headers for the UI, and the api its
+	# own (HSTS included); these fill gaps without duplicating or overriding
+	# them. One directive per header: a "?" block would add its headers only
+	# when none of them is present.
+	header ?Strict-Transport-Security "max-age=63072000; includeSubDomains"
+	header ?X-Content-Type-Options "nosniff"
+	header ?X-Frame-Options "DENY"
+	header ?Referrer-Policy "no-referrer"
+	header -Server
+
+	# REST API, the /api/v1/ws WebSocket and the probes go straight to the api.
+	# Caddy sets X-Forwarded-For/-Proto; the api trusts them only from Caddy's
+	# fixed address (LG_SOTF_API__FORWARDED_ALLOW_IPS).
+	@api path /api/* /healthz /readyz
+	handle @api {
+		reverse_proxy @@ENV@@-api:8000 {
+			# Stream responses and WebSocket frames immediately.
+			flush_interval -1
+			# Ride out a container restart during a deploy instead of a 502.
+			lb_try_duration 15s
+			lb_try_interval 500ms
+		}
+	}
+
+	# Prometheus metrics stay internal (scrape the api on the proxy network).
+	handle /metrics {
+		respond 404
+	}
+
+	# Everything else: the web app (nginx, static files and /config.js).
+	handle {
+		reverse_proxy @@ENV@@-frontend:8080 {
+			lb_try_duration 15s
+			lb_try_interval 500ms
+		}
+	}
+}

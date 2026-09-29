@@ -1,0 +1,63 @@
+# Shared HTTPS edge for every LG-SOTF environment on this VM (docs/cicd.md).
+#
+# One Caddy owns ports 80 and 443 and routes each environment's hostname to
+# that environment's api and frontend over the external `lgsotf-proxy`
+# network. deploy/vm/deploy.sh installs this file as <root>/edge/compose.yml,
+# renders <root>/edge/conf/Caddyfile and one conf/sites/<env>.caddy per
+# environment, and reloads Caddy; you do not run it by hand.
+#
+# Certificates (Let's Encrypt, automatic) live in the caddy_data volume: keep
+# it, or Caddy re-issues on the next start and may hit rate limits.
+
+name: lgsotf-edge
+
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-caddy:2.11-alpine}
+    restart: unless-stopped
+    ports:
+      - "${EDGE_HTTP_PORT:-80}:80"
+      - "${EDGE_HTTPS_PORT:-443}:443"
+      - "${EDGE_HTTPS_PORT:-443}:443/udp"
+    volumes:
+      # The directory, not single files: deploy.sh replaces files atomically and
+      # a single-file bind mount would keep pointing at the old inode.
+      - ./conf:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      proxy:
+        ipv4_address: ${CADDY_IP:-172.31.251.2}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Caddy's admin API (localhost inside the container only).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-lgsotf-proxy}
+
+volumes:
+  caddy_data:
+  caddy_config:

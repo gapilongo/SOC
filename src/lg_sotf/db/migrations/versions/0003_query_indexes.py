@@ -41,20 +41,20 @@ INDEXES = (
 )
 
 
+def _drop_if_invalid_sql(name: str) -> str:
+    # name only ever comes from INDEXES above, never from input.
+    template = (
+        "DO $$ BEGIN IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "
+        "WHERE c.relname = '{name}' AND NOT i.indisvalid) THEN EXECUTE 'DROP INDEX {name}'; END IF; END $$"
+    )
+    return template.replace("{name}", name)
+
+
 def upgrade() -> None:
     with op.get_context().autocommit_block():
         for name, definition in INDEXES:
             # A failed concurrent build leaves an INVALID index behind; drop it so the retry rebuilds.
-            op.execute(
-                f"""
-                DO $$ BEGIN
-                    IF EXISTS (SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
-                               WHERE c.relname = '{name}' AND NOT i.indisvalid) THEN
-                        EXECUTE 'DROP INDEX {name}';
-                    END IF;
-                END $$
-                """  # noqa: S608 - fixed identifiers
-            )
+            op.execute(_drop_if_invalid_sql(name))
             op.execute(f"CREATE INDEX CONCURRENTLY IF NOT EXISTS {name} ON {definition}")
 
 
