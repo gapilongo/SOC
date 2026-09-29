@@ -16,6 +16,19 @@ Components:
 {{- if .Values.frontend.enabled }}
   frontend   {{ include "lg-sotf.componentName" (dict "root" . "component" "frontend") }}
 {{- end }}
+{{- if and .Values.frontend.enabled .Values.ingress.enabled }}
+{{- $scheme := ternary "https" "http" (not (empty .Values.ingress.tls)) }}
+{{- $origins := list }}
+{{- range (.Values.settings.api.cors_origins | default list) }}{{ $origins = append $origins (trimSuffix "/" (toString .)) }}{{ end }}
+{{- range .Values.ingress.hosts }}
+{{- if not (has (printf "%s://%s" $scheme .) $origins) }}
+
+WARNING: {{ $scheme }}://{{ . }} is not in settings.api.cors_origins. The API refuses the web UI's
+live-update WebSocket from origins not listed there (the UI shows "Live updates unavailable").
+Add it: --set 'settings.api.cors_origins={{ "{" }}{{ $scheme }}://{{ . }}{{ "}" }}'
+{{- end }}
+{{- end }}
+{{- end }}
 
 Secrets are not created by this chart. The pods read:
   runtime secret  {{ include "lg-sotf.runtimeSecretName" . }}  (all components)

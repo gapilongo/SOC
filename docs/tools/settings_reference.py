@@ -1,0 +1,334 @@
+"""Generate the settings reference in docs/configuration.md from ``lg_sotf.settings.Settings``.
+
+    python docs/tools/settings_reference.py            # print the generated block
+    python docs/tools/settings_reference.py --write    # replace the block in docs/configuration.md
+    python docs/tools/settings_reference.py --check    # exit 1 if the file is stale
+
+Every field of ``Settings`` (and of the typed views of the free-form
+``routing`` and ``ingestion`` sections) must have an entry in
+:data:`DESCRIPTIONS`; generation fails otherwise, and
+``tests/unit/eval/test_configuration_docs.py`` fails the build.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+import types
+import typing
+from pathlib import Path
+from typing import Any, Dict, Iterator, List, Tuple, Type
+
+from pydantic import BaseModel, SecretStr
+
+from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.ingestion.options import IngestionOptions
+from lg_sotf.settings import Settings
+
+DOC_PATH = Path(__file__).resolve().parents[1] / "configuration.md"
+BEGIN = "<!-- BEGIN GENERATED SETTINGS REFERENCE (docs/tools/settings_reference.py) -->"
+END = "<!-- END GENERATED SETTINGS REFERENCE -->"
+ENV_PREFIX = "LG_SOTF_"
+
+TIER_CAVEAT = " Setting one key of the tier keeps the defaults of the others."
+
+SECTION_INTRO: Dict[str, str] = {
+    "": "Top-level settings.",
+    "database": "PostgreSQL connections (asyncpg pool; the worker's LangGraph checkpointer opens its own pool).",
+    "redis": "Redis: work queue (Streams), event fan-out (pub/sub), rate limits, caches.",
+    "llm": "Language model provider, tiers, prompt limits, budgets and pricing.",
+    "llm.fast": "Fast tier: triage, correlation and ingestion fallback calls." + TIER_CAVEAT,
+    "llm.deep": "Deep tier: the analysis agent's investigation." + TIER_CAVEAT,
+    "auth": "Local accounts, sessions, OIDC single sign-on and the bootstrap tenant/admin.",
+    "api": "HTTP API process.",
+    "worker": "Worker process (queue consumer and workflow runner).",
+    "scheduler": "Scheduler process (leader-elected periodic jobs).",
+    "retention": "Data retention, applied by the scheduler's maintenance job.",
+    "security": "Application keys. Required in staging and production.",
+    "observability": "Logging, tracing and metrics.",
+    "response": "Response automation defaults and the install-wide SOAR webhook.",
+    "routing": (
+        "Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys "
+        "are ignored, values are validated when a worker starts."
+    ),
+    "ingestion": (
+        "Ingestion limits and pull-connector behaviour (`lg_sotf.ingestion.options.IngestionOptions`). Pull "
+        "sources may override `page_size`, `max_pages_per_poll`, `overlap_s`, `http_timeout_s` and "
+        "`http_max_retries` in their own config."
+    ),
+}
+
+DESCRIPTIONS: Dict[str, str] = {
+    "environment": "`development`, `test`, `staging` or `production`. Staging and production run the startup safety checks (`Settings.assert_safe`). `LG_SOTF_ENV` is accepted as a legacy alias.",
+    "config_file": "Optional YAML file with lower precedence than environment variables and `.env`; may reference `${VAR}` and `${VAR:-default}`.",
+    "database.url": "Runtime DSN (API, worker). In production a non-owner role without `BYPASSRLS`. `DATABASE_URL` is honoured when this is unset. The default is the development stack's credential and is refused in staging/production.",
+    "database.migration_url": "Schema-owner DSN for `lg-sotf migrate`, the scheduler and operator commands. Defaults to `database.url` (single-role installs).",
+    "database.runtime_role": "Login role that `lg-sotf migrate` grants runtime privileges to (two-role installs).",
+    "database.pool_min": "Minimum connections per process pool.",
+    "database.pool_max": "Maximum connections per process pool; size PostgreSQL `max_connections` from it (see docs/deployment.md).",
+    "database.command_timeout_s": "Client-side timeout for one database command.",
+    "database.statement_timeout_ms": "Server-side `statement_timeout` set on every pooled connection.",
+    "database.ssl_mode": "libpq-style TLS mode: `disable`, `prefer`, `require`, `verify-ca`, `verify-full`. Use `verify-full` in production.",
+    "database.ssl_root_cert": "CA bundle path for `verify-ca` / `verify-full`.",
+    "redis.url": "Redis URL (`rediss://` for TLS). `REDIS_URL` is honoured when this is unset.",
+    "redis.max_connections": "Connection pool size per process.",
+    "redis.key_prefix": "Prefix of every key, stream and channel; lets several installs share one Redis.",
+    "redis.socket_timeout_s": "Socket timeout for Redis commands.",
+    "llm.enabled": "Master switch. When false, agents run on rules only and nothing is sent to a model.",
+    "llm.provider": "`anthropic` (default), `openai`, `gemini` (optional extras) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`).",
+    "llm.api_key": "Provider API key. Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider.",
+    "llm.base_url": "Custom API endpoint (gateway or proxy). When set, Anthropic server-side refusal fallbacks are not requested.",
+    "llm.refusal_fallback": "Anthropic only: ask the API to retry a refused request on a fallback model (server-side fallback beta). A refusal that remains still escalates the alert.",
+    "llm.prices": "Price overrides per model id, merged over the built-in table: `{model: {input, output, cache_write, cache_read}}` in USD per million tokens (cache prices default to 1.25x and 0.1x input). Unknown models are metered at zero cost with a warning.",
+    "llm.allow_fake": "Allow `provider=fake` in staging/production (demos only).",
+    "llm.max_input_chars": "Total size budget of the untrusted alert data in one prompt; the largest subtrees are shrunk first.",
+    "llm.max_field_chars": "Cap on every string in prompt data.",
+    "llm.max_list_items": "Cap on every list in prompt data.",
+    "llm.prompt_caching": "Mark stable prompt prefixes for provider prompt caching (Anthropic).",
+    "llm.daily_token_budget_per_tenant": "Default daily token budget per tenant (tenants may override with `llm_daily_token_budget`). When exhausted, agents fall back to rules and the alert summary records `llm_budget_exceeded`. Unset means unlimited.",
+    "llm.fast.model": "Model id of the tier.",
+    "llm.fast.max_tokens": "Maximum output tokens per call.",
+    "llm.fast.temperature": "Sampling temperature; omitted automatically for models that do not accept it.",
+    "llm.fast.effort": "Optional effort level (`low`, `medium`, `high`, `xhigh`, `max`) for models that support it.",
+    "llm.fast.timeout_s": "Per-call timeout.",
+    "llm.fast.max_retries": "Client retries for transient provider errors.",
+    "llm.fast.max_concurrency": "Concurrent calls of this tier per process.",
+    "llm.deep.model": "Model id of the tier.",
+    "llm.deep.max_tokens": "Maximum output tokens per call (models that always think bill thinking as output; leave room).",
+    "llm.deep.temperature": "Sampling temperature; omitted automatically for models that do not accept it.",
+    "llm.deep.effort": "Optional effort level (`low`, `medium`, `high`, `xhigh`, `max`) for models that support it.",
+    "llm.deep.timeout_s": "Per-call timeout.",
+    "llm.deep.max_retries": "Client retries for transient provider errors.",
+    "llm.deep.max_concurrency": "Concurrent calls of this tier per process.",
+    "auth.jwt_secret": "HS256 signing key for access tokens; at least 32 bytes. Required in staging/production.",
+    "auth.jwt_issuer": "`iss` claim of issued access tokens.",
+    "auth.jwt_audience": "`aud` claim of issued access tokens.",
+    "auth.access_token_ttl_s": "Access token lifetime.",
+    "auth.refresh_token_ttl_s": "Refresh token (cookie) lifetime.",
+    "auth.cookie_secure": "Send the refresh cookie over HTTPS only. Must stay true in staging/production.",
+    "auth.cookie_domain": "Optional `Domain` attribute of the refresh cookie.",
+    "auth.password_min_length": "Minimum password length for local accounts.",
+    "auth.max_login_attempts": "Consecutive failed logins before the account is locked.",
+    "auth.lockout_minutes": "Lock duration after too many failed logins.",
+    "auth.oidc_issuer": "Enables OIDC bearer tokens from this issuer (verified against its JWKS).",
+    "auth.oidc_audience": "Expected `aud` of OIDC tokens.",
+    "auth.oidc_jwks_url": "JWKS URL; discovered from the issuer when unset.",
+    "auth.oidc_tenant_claim": "Claim holding the tenant id.",
+    "auth.oidc_role_claim": "Claim holding the role(s) (`admin`, `analyst`, `viewer`).",
+    "auth.oidc_email_claim": "Claim holding the user's email.",
+    "auth.oidc_email_verified_claim": "Claim that must be true before the email is trusted.",
+    "auth.oidc_default_tenant": "Tenant for tokens without a tenant claim (single-organisation installs).",
+    "auth.bootstrap_admin_email": "`lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist.",
+    "auth.bootstrap_admin_password": "Password of the bootstrap admin. Give it to the migrate job only, then remove it.",
+    "auth.bootstrap_tenant_id": "Tenant created by `lg-sotf migrate`.",
+    "auth.bootstrap_tenant_name": "Display name of the bootstrap tenant.",
+    "api.host": "Bind address of `lg-sotf api`.",
+    "api.port": "Port of `lg-sotf api`.",
+    "api.public_url": "External URL of the API. An `https://` URL turns on HSTS.",
+    "api.cors_origins": "Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production.",
+    "api.max_body_bytes": "Request body limit for ordinary endpoints.",
+    "api.max_ingest_body_bytes": "Request body limit for ingestion endpoints.",
+    "api.max_ingest_batch": "Maximum events per `POST /ingest/alerts` call.",
+    "api.rate_limit_per_minute": "Requests per minute per principal.",
+    "api.ingest_rate_limit_per_minute": "Ingestion requests per minute per API key.",
+    "api.login_rate_limit_per_minute": "Login attempts per minute per client IP.",
+    "api.metrics_token": "Bearer token required by the API's `/metrics`.",
+    "api.docs_enabled": "Serve `/docs` and `/api/v1/openapi.json`. Consider disabling in production.",
+    "api.forwarded_allow_ips": "Proxies whose `X-Forwarded-*` headers are trusted. Only the ingress controller or load balancer; the client IP keys login rate limits and audit entries.",
+    "worker.concurrency": "Workflow runs in flight per worker process.",
+    "worker.node_timeout_s": "Timeout of one workflow node.",
+    "worker.analysis_timeout_s": "Timeout of the analysis node.",
+    "worker.run_timeout_s": "Budget of one run including node retries.",
+    "worker.max_deliveries": "Deliveries before a queue entry is dead-lettered.",
+    "worker.visibility_timeout_s": "Pending entries of live workers older than this are reclaimed by other workers.",
+    "worker.block_ms": "Blocking read time on the queue streams.",
+    "worker.drain_timeout_s": "Time given to in-flight runs on `SIGTERM`.",
+    "worker.per_tenant_concurrency": "Runs in flight per tenant per worker process (noisy-neighbour limit).",
+    "scheduler.tick_s": "Loop interval; source polling runs on every tick.",
+    "scheduler.sla_sweep_interval_s": "Interval of the escalation SLA sweep.",
+    "scheduler.stale_run_sweep_interval_s": "Interval of the stale and orphaned run sweeps.",
+    "scheduler.maintenance_interval_s": "Interval of partition and retention maintenance.",
+    "scheduler.leader_lease_s": "Leader lock keep-alive; a standby takes over within about this time.",
+    "retention.alerts_days": "Alerts (and their runs, escalations, actions) older than this are purged.",
+    "retention.events_days": "Alert timeline events.",
+    "retention.audit_days": "Audit log (hash chain per tenant); export before it ages out if you need longer.",
+    "retention.indicators_days": "Indicator sightings used for correlation.",
+    "retention.llm_usage_days": "Daily LLM usage rows.",
+    "retention.checkpoints_days": "LangGraph checkpoints of completed runs.",
+    "security.encryption_keys": "Comma-separated Fernet keys: the first encrypts, all decrypt (rotation). Encrypts source credentials and tenant secrets.",
+    "security.indicator_hmac_key": "HMAC key for stored indicator values (correlation). Changing it resets correlation history.",
+    "observability.log_level": "Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).",
+    "observability.log_format": "`json` (default) or `console`.",
+    "observability.metrics_enabled": "Reserved. Not read by any process in this release: metrics are always exposed (API `/metrics` behind `api.metrics_token`, worker/scheduler health port).",
+    "observability.otlp_endpoint": "OTLP/HTTP endpoint for traces; tracing is off when unset.",
+    "observability.service_name": "`service.name` of traces and a static field of every log line.",
+    "response.dry_run": "Force the dry-run connector everywhere (actions are recorded, never sent). Default true.",
+    "response.default_autonomy": "Default autonomy per risk level (`auto`, `approval`, `disabled`); tenants override it in their settings.",
+    "response.max_actions_per_hour_per_tenant": "Install-wide cap on executed actions per tenant per hour; tenant caps cannot exceed it.",
+    "response.webhook_url": "Install-wide SOAR webhook (HMAC-signed POST) used by tenants that choose the `webhook` connector without their own URL.",
+    "response.webhook_secret": "HMAC secret of the install-wide webhook.",
+    "response.webhook_timeout_s": "Timeout of one webhook call.",
+    "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
+    "tools": "Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent.",
+    "routing": "See the routing table below.",
+    "ingestion": "See the ingestion table below.",
+    # routing (RoutingThresholds)
+    "routing.triage_close_max_confidence": "Triage may close a low/medium alert when its confidence is at most this and it has enough false-positive signals.",
+    "routing.triage_close_min_fp": "False-positive signals required with `triage_close_max_confidence` (at least one must come from rules).",
+    "routing.triage_fp_majority_min": "Alternative close rule: at least this many false-positive signals outnumbering true-positive ones...",
+    "routing.triage_fp_majority_max_confidence": "...and confidence at most this.",
+    "routing.correlation_strong_score": "Correlation score above which, with enough related alerts, analysis is skipped.",
+    "routing.correlation_strong_min_related": "Related alerts required for the strong-correlation shortcut.",
+    "routing.correlation_grey_zone_min": "Lower bound of the confidence grey zone that goes to an analyst.",
+    "routing.correlation_grey_zone_max": "Upper bound of the confidence grey zone.",
+    "routing.human_review_min": "Below this confidence and correlation score (low/medium severity, no burst) analysis is skipped.",
+    "routing.human_review_max": "Reserved upper bound of the human-review band.",
+    "routing.analysis_threshold": "Reserved analysis threshold (kept for configuration compatibility).",
+    "routing.response_threshold": "Threat score at which the policy plans a response.",
+    "routing.response_combo_threat": "Alternative response rule: threat score at least this...",
+    "routing.response_combo_confidence": "...with confidence at least this.",
+    "routing.close_max_threat": "Below this threat score a low/medium alert closes if rules corroborate; high/critical go to an analyst.",
+    "routing.max_more_info_loops": "How often an analyst's `needs_more_info` re-runs analysis before the case returns to the analyst.",
+    "routing.max_alert_age_hours": "Reserved alert-age limit (not enforced by routing in this release).",
+    # ingestion (IngestionOptions)
+    "ingestion.llm_fallback": "Use the fast LLM to normalize events no deterministic normalizer recognizes. Off by default.",
+    "ingestion.llm_fallback_max_per_call": "Further unrecognized events in one call are rejected.",
+    "ingestion.llm_fallback_concurrency": "LLM normalizations in flight per call.",
+    "ingestion.llm_fallback_timeout_s": "Total time for one call's LLM normalizations.",
+    "ingestion.batch_size": "Rows per INSERT.",
+    "ingestion.max_event_bytes": "Larger events (compact JSON) are rejected.",
+    "ingestion.max_raw_bytes": "Cap on the stored raw event; truncated with a marker.",
+    "ingestion.redact_in_thread_bytes": "Events above this size are redacted and normalized in a worker thread.",
+    "ingestion.max_future_skew_s": "Occurrence times further in the future are clamped to now and flagged.",
+    "ingestion.page_size": "Pull connectors: events per page.",
+    "ingestion.max_pages_per_poll": "Pull connectors: pages per poll before the cursor is saved and the poll resumes later.",
+    "ingestion.overlap_s": "Pull connectors: re-read window before the watermark (duplicates are dropped).",
+    "ingestion.http_timeout_s": "Pull connectors: request timeout.",
+    "ingestion.http_connect_timeout_s": "Pull connectors: connect timeout.",
+    "ingestion.http_max_retries": "Pull connectors: retries of a failed request.",
+    "ingestion.http_backoff_base_s": "Pull connectors: first retry delay (exponential backoff).",
+    "ingestion.http_backoff_max_s": "Pull connectors: maximum retry delay.",
+    "ingestion.http_max_retry_after_s": "Pull connectors: a longer `Retry-After` ends the poll instead of sleeping.",
+    "ingestion.allow_private_destinations": "Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source.",
+}
+
+Row = Tuple[str, str, str, str, str]
+
+
+def env_var(path: str) -> str:
+    return ENV_PREFIX + "__".join(part.upper() for part in path.split("."))
+
+
+def type_name(annotation: Any) -> str:
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+    if origin in (typing.Union, types.UnionType):
+        non_none = [a for a in args if a is not type(None)]
+        inner = " | ".join(type_name(a) for a in non_none)
+        return f"{inner} (optional)" if len(non_none) < len(args) else inner
+    if origin is typing.Literal:
+        return " \\| ".join(f"`{a}`" for a in args)
+    if origin in (list, List):
+        return f"list[{type_name(args[0])}]" if args else "list"
+    if origin in (dict, Dict):
+        return "mapping"
+    if annotation is SecretStr:
+        return "secret"
+    if isinstance(annotation, type):
+        return {"str": "string", "int": "integer", "float": "number", "bool": "boolean"}.get(
+            annotation.__name__, annotation.__name__
+        )
+    return str(annotation)
+
+
+def render_default(value: Any) -> str:
+    if value is None:
+        return "unset"
+    if isinstance(value, SecretStr):
+        return f"`{value.get_secret_value()}`"
+    if isinstance(value, bool):
+        return f"`{str(value).lower()}`"
+    if isinstance(value, (dict, list)):
+        return "`{}`".format(json.dumps(value, separators=(", ", ": "))) if value else ("`{}`" if isinstance(value, dict) else "`[]`")
+    return f"`{value}`"
+
+
+def _walk(model: Type[BaseModel], instance: Any, prefix: str) -> Iterator[Tuple[str, Row]]:
+    for name, field in model.model_fields.items():
+        path = f"{prefix}{name}"
+        annotation = field.annotation
+        value = getattr(instance, name)
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            yield from _walk(annotation, value, f"{path}.")
+            continue
+        if path not in DESCRIPTIONS:
+            raise KeyError(f"settings field {path!r} has no description in docs/tools/settings_reference.py")
+        section = prefix.rstrip(".")
+        yield section, (path, env_var(path), type_name(annotation), render_default(value), DESCRIPTIONS[path])
+
+
+def reference_rows() -> Dict[str, List[Row]]:
+    """Rows per section, in declaration order (``""`` holds top-level fields)."""
+    sections: Dict[str, List[Row]] = {}
+    for section, row in _walk(Settings, Settings.model_construct(), ""):
+        sections.setdefault(section, []).append(row)
+    for name, model in (("routing", RoutingThresholds), ("ingestion", IngestionOptions)):
+        for section, row in _walk(model, model(), f"{name}."):
+            sections.setdefault(section, []).append(row)
+    return sections
+
+
+def documented_paths() -> List[str]:
+    return [row[0] for rows in reference_rows().values() for row in rows]
+
+
+def render() -> str:
+    lines = [BEGIN, ""]
+    for section, rows in reference_rows().items():
+        title = f"`{section}`" if section else "Top level"
+        lines.append(f"### {title}")
+        lines.append("")
+        intro = SECTION_INTRO.get(section)
+        if intro:
+            lines.append(intro)
+            lines.append("")
+        lines.append("| Setting | Environment variable | Type | Default | Description |")
+        lines.append("|---|---|---|---|---|")
+        for path, env, typ, default, desc in rows:
+            lines.append(f"| `{path}` | `{env}` | {typ} | {default} | {desc} |")
+        lines.append("")
+    lines.append(END)
+    return "\n".join(lines)
+
+
+def current_block(text: str) -> str:
+    start = text.index(BEGIN)
+    end = text.index(END) + len(END)
+    return text[start:end]
+
+
+def write(path: Path = DOC_PATH) -> bool:
+    text = path.read_text(encoding="utf-8")
+    new = text.replace(current_block(text), render())
+    if new != text:
+        path.write_text(new, encoding="utf-8")
+        return True
+    return False
+
+
+def main(argv: List[str]) -> int:
+    if "--write" in argv:
+        changed = write()
+        print("updated" if changed else "up to date", DOC_PATH)
+        return 0
+    if "--check" in argv:
+        stale = current_block(DOC_PATH.read_text(encoding="utf-8")) != render()
+        if stale:
+            print(f"{DOC_PATH} is stale: run python docs/tools/settings_reference.py --write", file=sys.stderr)
+        return 1 if stale else 0
+    print(render())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

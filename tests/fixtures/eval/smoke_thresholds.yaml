@@ -1,0 +1,27 @@
+# Regression gate for the CI smoke evaluation: synthetic_v1.jsonl with llm.provider=fake.
+#
+# The fake model is a keyword heuristic, so these bounds guard the pipeline's
+# plumbing and safety policy (every item ingests and runs, nothing malicious is
+# closed without a human, no benign alert is routed to containment, the close
+# path still works), not model quality. Gates for a real model belong in a
+# separate file; see docs/evaluation.md.
+version: 1
+description: CI smoke gate (synthetic dataset, fake LLM)
+min_items: 60
+metrics:
+  error_rate: {max: 0}
+  malicious_false_negative_rate: {max: 0}
+  splits.adversarial.malicious_false_negative_rate: {max: 0}
+  splits.standard.malicious_false_negative_rate: {max: 0}
+  benign_auto_response_rate: {max: 0}
+  # Automation never closes a high/critical alert as anything but malicious (a policy
+  # response whose actions completed closes as malicious; that is not gated).
+  high_severity_auto_closed_benign: {max: 0}
+  # The automatic close path must keep working for obvious operational noise.
+  benign_auto_close_rate: {min: 0.2}
+  # Every run must finish or stop at a human within the plumbing budget.
+  latency_s.p95: {max: 10}
+regressions:
+  malicious_false_negative_rate: {max_increase: 0}
+  benign_auto_close_rate: {max_decrease: 0.05}
+  escalation_rate: {max_increase: 0.05}

@@ -140,9 +140,11 @@ def test_default_render_has_expected_resources(default_manifests: List[Manifest]
     assert not find(default_manifests, "Ingress")
     assert not find(default_manifests, "NetworkPolicy")
     assert not find(default_manifests, "ServiceMonitor")
-    assert not find(default_manifests, "Deployment", "-frontend"), "frontend is disabled by default"
+    # The web UI ships enabled by default, with its own Service and PodDisruptionBudget.
+    assert one(default_manifests, "Deployment", "-frontend")
+    assert one(default_manifests, "Service", "-frontend")
     pdbs = {m["metadata"]["name"] for m in find(default_manifests, "PodDisruptionBudget")}
-    assert pdbs == {f"t-lg-sotf-{c}" for c in WORKLOADS}
+    assert pdbs == {f"t-lg-sotf-{c}" for c in WORKLOADS} | {"t-lg-sotf-frontend"}
 
 
 def test_api_probes_and_args(default_manifests: List[Manifest]) -> None:

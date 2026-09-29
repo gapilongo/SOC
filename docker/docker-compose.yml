@@ -1,7 +1,7 @@
 # LG-SOTF development / evaluation stack.
 #
 #   make up                    # or: docker compose -f docker/docker-compose.yml up -d --build
-#   make up PROFILES=frontend  # also build and run the web UI (once src/lg_front/Dockerfile exists)
+#   make up PROFILES=frontend  # also build and run the web UI on http://localhost:3000
 #
 # Runs PostgreSQL 16, Redis 7 (AOF), the one-shot migrate job, and the api,
 # worker and scheduler roles of the single lg-sotf image. The LLM provider
@@ -162,9 +162,17 @@ services:
     stop_grace_period: 30s
     restart: unless-stopped
 
-  # Optional web UI. The image is defined by src/lg_front/Dockerfile (owned by
-  # the frontend); enable with `--profile frontend` once that file exists. It is
-  # expected to serve the SPA as a non-root static server on port 8080.
+  # Web UI (src/lg_front/Dockerfile): enable with `make up PROFILES=frontend`
+  # (or `docker compose --profile frontend up`), then open
+  # http://localhost:${FRONTEND_PORT:-3000}. nginx serves the static app and
+  # proxies /api (REST and the /api/v1/ws WebSocket) to the api service, so the
+  # browser talks to one origin and the refresh cookie stays first-party.
+  # Runtime settings are environment variables turned into /config.js at
+  # start-up; the image carries no URLs or secrets. Live updates: the API
+  # accepts the WebSocket only from origins in api.cors_origins
+  # (configs/development.yaml lists http://localhost:3000); opening the UI on
+  # another origin (127.0.0.1, another FRONTEND_PORT, a real hostname with the
+  # production overlay) needs that origin added there.
   frontend:
     profiles: ["frontend"]
     image: ${FRONTEND_IMAGE:-lg-sotf-frontend:dev}
@@ -172,7 +180,26 @@ services:
       context: ../src/lg_front
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.28-alpine}
+      secrets:
+        - build_ca
+    environment:
+      LG_SOTF_API_UPSTREAM: http://api:8000
+      LG_SOTF_API_BASE_URL: ${FRONTEND_API_BASE_URL:-}
+      LG_SOTF_WS_URL: ${FRONTEND_WS_URL:-}
+      LG_SOTF_OIDC_ISSUER: ${FRONTEND_OIDC_ISSUER:-}
+      LG_SOTF_OIDC_CLIENT_ID: ${FRONTEND_OIDC_CLIENT_ID:-}
+      LG_SOTF_OIDC_SCOPE: ${FRONTEND_OIDC_SCOPE:-}
+      LG_SOTF_OIDC_AUDIENCE: ${FRONTEND_OIDC_AUDIENCE:-}
+      LG_SOTF_OIDC_TOKEN_TYPE: ${FRONTEND_OIDC_TOKEN_TYPE:-}
+      LG_SOTF_OIDC_REDIRECT_URI: ${FRONTEND_OIDC_REDIRECT_URI:-}
+      LG_SOTF_OIDC_AUTHORIZATION_ENDPOINT: ${FRONTEND_OIDC_AUTHORIZATION_ENDPOINT:-}
+      LG_SOTF_OIDC_TOKEN_ENDPOINT: ${FRONTEND_OIDC_TOKEN_ENDPOINT:-}
+      LG_SOTF_OIDC_END_SESSION_ENDPOINT: ${FRONTEND_OIDC_END_SESSION_ENDPOINT:-}
+      LG_SOTF_OIDC_LABEL: ${FRONTEND_OIDC_LABEL:-}
+      LG_SOTF_CSP_CONNECT_SRC: ${FRONTEND_CSP_CONNECT_SRC:-}
+      LG_SOTF_HSTS_MAX_AGE: ${FRONTEND_HSTS_MAX_AGE:-}
     ports:
       - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
     depends_on:
@@ -185,7 +212,7 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 4

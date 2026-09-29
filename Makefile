@@ -1,6 +1,6 @@
 # LG-SOTF developer and operator shortcuts. `make help` lists targets.
 #
-# Variables (override on the command line, e.g. `make image IMAGE=lg-sotf:1.0.0`):
+# Variables (override on the command line, e.g. `make image IMAGE=lg-sotf:0.2.0`):
 #   PYTHON             interpreter for local targets
 #   IMAGE              image tag built by `make image` and used by compose
 #   PYTHON_BASE_IMAGE  base image (e.g. mirror.gcr.io/library/python:3.11-slim)

@@ -78,8 +78,16 @@ printf '%s\n' "$PASSWORD" | docker compose -f docker/docker-compose.yml run --rm
     create-admin --tenant default --email admin@example.com --password-stdin
 ```
 
-Web UI: `make up PROFILES=frontend` once `src/lg_front/Dockerfile` exists (the
-service is disabled by default; it expects a static server on port 8080).
+Web UI: `make up PROFILES=frontend` builds `src/lg_front/Dockerfile` and serves
+the app on `http://localhost:${FRONTEND_PORT:-3000}` (nginx, non-root, port 8080
+in the container), proxying `/api` and the `/api/v1/ws` WebSocket to the api
+service. Open it as `http://localhost:3000`: the API accepts the live-update
+WebSocket only from origins in `api.cors_origins`, which the development
+configuration sets to `http://localhost:3000` and `http://localhost:5173`. Stop
+it with the same profile (`make down PROFILES=frontend`). With the
+production-like overlay below, add `--profile frontend` and set
+`LG_SOTF_API__CORS_ORIGINS` to the UI's URL; `scripts/e2e_ui_stack.sh` does
+exactly that and drives the UI in a browser.
 
 Registry mirrors: `PYTHON_BASE_IMAGE`, `POSTGRES_IMAGE`, `REDIS_IMAGE` (see
 `.env.example`). Host ports bind to `127.0.0.1` only; PostgreSQL and Redis are
@@ -101,7 +109,8 @@ gets `lgsotf_owner` (migrate, scheduler) and `lgsotf_app` (api, worker; no
 ownership, no `BYPASSRLS`) from `docker/postgres/init-roles.sh`. The fake LLM is
 allowed only via `LG_SOTF_LLM__ALLOW_FAKE=true` (the override's default, for
 demos). `auth.cookie_secure=true`, so browser logins need HTTPS in front of the
-API.
+API (browsers exempt only `http://localhost`, which is how
+`scripts/e2e_ui_stack.sh` tests the UI against this overlay).
 
 `.env` holds every password, but in the override it is used **only for `${...}`
 interpolation** (`--env-file`); the app services reset `env_file`, so the file
@@ -176,6 +185,34 @@ pg_stat_activity: lgsotf_app -> lg-sotf-api, lg-sotf-worker;
                   lgsotf_owner -> lg-sotf-scheduler, lg-sotf-scheduler-leader
 POST /api/v1/auth/login (bootstrap admin) -> 200 {access_token, expires_in, token_type, user}
 $ docker compose ... down -v
+```
+
+The same overlay with the web UI, driven in Chromium by the Playwright suite
+(`src/lg_front/e2e`; images built from the tree, base images from
+`mirror.gcr.io`, `BUILD_CA_FILE` for the TLS-intercepting proxy):
+
+```text
+$ PYTHON_BASE_IMAGE=... NODE_IMAGE=... NGINX_IMAGE=... POSTGRES_IMAGE=... REDIS_IMAGE=... \
+  BUILD_CA_FILE=<proxy CA> scripts/e2e_ui_stack.sh
+==> building lg-sotf:e2e
+==> building lg-sotf-frontend:e2e
+==> starting the stack (lgsotf-e2e) with the web UI on http://localhost:13000
+api, frontend, postgres, redis, scheduler, worker: running (healthy); migrate: exited (0)
+==> Playwright suite (src/lg_front/e2e)
+  ok  security headers on every document, and the admin signs in under the CSP
+  ok  the admin creates an API key, an analyst and a viewer in the UI
+  ok  the dashboard updates live when alerts arrive through the ingest API
+  ok  alerts: filters, pagination and the alert timeline
+  ok  a viewer reads everything but sees no administration
+  ok  an analyst has no administration either
+  ok  an analyst claims and decides an escalation, and the alert closes
+  ok  response approval: role gating, the admin approves, the alert closes as malicious
+  ok  main pages render under the CSP (and screenshots for the README)
+  ok  sign-out ends the session: no token left, the refresh cookie no longer works
+  10 passed (52.0s)
+==> container logs carry no access tokens
+ok    no JWT in the frontend, api, worker or scheduler logs
+E2E UI PASSED                                   (about 2 minutes including both builds)
 ```
 
 ### End-to-end smoke test (`make smoke`)

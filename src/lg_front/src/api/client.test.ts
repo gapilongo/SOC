@@ -1,0 +1,112 @@
+import { describe, expect, it, vi } from 'vitest';
+
+import { ApiError, buildQuery, createApiClient, describeError, type AuthBridge } from './client';
+
+function json(status: number, body: unknown, headers: Record<string, string> = {}) {
+  return new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+}
+
+function bridge(overrides: Partial<AuthBridge> = {}): AuthBridge {
+  return { getToken: () => 'tok-1', refresh: vi.fn(async () => null), actingTenant: () => null, ...overrides };
+}
+
+function headerOf(call: unknown[], name: string): string | undefined {
+  const init = call[1] as RequestInit;
+  return (init.headers as Record<string, string>)[name];
+}
+
+describe('api client', () => {
+  it('parses the error envelope with code, message, details and request id', async () => {
+    const fetchImpl = vi.fn(async () =>
+      json(422, { error: { code: 'invalid_settings', message: 'tenant settings are invalid', request_id: 'req-abc-12345', details: ['autonomy.low: bad value', { loc: ['body', 'name'], msg: 'field required' }] } }),
+    );
+    const api = createApiClient({ baseUrl: '/api/v1', auth: bridge(), fetchImpl });
+    const err = await api.patch('/tenant/settings', {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    const e = err as ApiError;
+    expect(e.status).toBe(422);
+    expect(e.code).toBe('invalid_settings');
+    expect(e.message).toBe('tenant settings are invalid');
+    expect(e.requestId).toBe('req-abc-12345');
+    expect(e.detailMessages).toEqual(['autonomy.low: bad value', 'name: field required']);
+    expect(describeError(e)).toEqual({ message: 'tenant settings are invalid', requestId: 'req-abc-12345', details: e.detailMessages });
+  });
+
+  it('falls back to a generic message and the response request id for non-JSON errors', async () => {
+    const fetchImpl = vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'x-request-id': 'edge-req-99999' } }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e.status).toBe(502);
+    expect(e.code).toBe('http_502');
+    expect(e.message).toMatch(/unreachable/);
+    expect(e.requestId).toBe('edge-req-99999');
+  });
+
+  it('reports network failures with the request id it generated', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e.status).toBe(0);
+    expect(e.code).toBe('network_error');
+    const sent = headerOf(fetchImpl.mock.calls[0] as unknown[], 'X-Request-ID');
+    expect(sent).toMatch(/^[A-Za-z0-9._:-]{8,128}$/);
+    expect(e.requestId).toBe(sent);
+  });
+
+  it('exposes Retry-After on 429', async () => {
+    const fetchImpl = vi.fn(async () => json(429, { error: { code: 'rate_limited', message: 'slow down', request_id: 'r-12345678' } }, { 'retry-after': '17' }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e.retryAfter).toBe(17);
+  });
+
+  it('refreshes once on 401 and retries with the new token', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(json(401, { error: { code: 'unauthorized', message: 'expired', request_id: 'r-00000001' } }))
+      .mockResolvedValueOnce(json(200, { ok: true }));
+    const refresh = vi.fn(async () => 'tok-2');
+    const api = createApiClient({ baseUrl: '/api/v1', auth: bridge({ refresh }), fetchImpl });
+    await expect(api.get('/auth/me')).resolves.toEqual({ ok: true });
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(headerOf(fetchImpl.mock.calls[0], 'Authorization')).toBe('Bearer tok-1');
+    expect(headerOf(fetchImpl.mock.calls[1], 'Authorization')).toBe('Bearer tok-2');
+  });
+
+  it('surfaces the 401 when the session cannot be refreshed', async () => {
+    const fetchImpl = vi.fn(async () => json(401, { error: { code: 'invalid_session', message: 'session ended', request_id: 'r-00000002' } }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e.status).toBe(401);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('never refreshes for anonymous calls such as login', async () => {
+    const fetchImpl = vi.fn(async () => json(401, { error: { code: 'invalid_credentials', message: 'no', request_id: 'r-00000003' } }));
+    const refresh = vi.fn(async () => 'x');
+    const api = createApiClient({ baseUrl: '', auth: bridge({ refresh }), fetchImpl });
+    await expect(api.post('/auth/login', { email: 'a', password: 'b' }, { anonymous: true })).rejects.toMatchObject({ code: 'invalid_credentials' });
+    expect(refresh).not.toHaveBeenCalled();
+    expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'Authorization')).toBeUndefined();
+  });
+
+  it('sends X-Tenant-ID when a platform admin acts on another tenant', async () => {
+    const fetchImpl = vi.fn(async () => json(200, []));
+    const api = createApiClient({ baseUrl: '', auth: bridge({ actingTenant: () => 'globex' }), fetchImpl });
+    await api.get('/sources');
+    expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'X-Tenant-ID')).toBe('globex');
+  });
+
+  it('returns undefined for 204 responses', async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    await expect(api.del('/users/1')).resolves.toBeUndefined();
+  });
+
+  it('builds repeated multi-valued query parameters and skips empty ones', () => {
+    expect(buildQuery({ status: ['queued', 'failed'], q: '', cursor: undefined, limit: 100, from: null })).toBe('?status=queued&status=failed&limit=100');
+    expect(buildQuery({})).toBe('');
+  });
+});

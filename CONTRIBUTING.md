@@ -1,74 +1,89 @@
 # Contributing to LG-SOTF
 
-Thank you for your interest in contributing! We welcome all contributions from bug reports to new features.
+Thank you for helping. This project handles security telemetry and can
+trigger containment actions, so changes are held to a high bar: tested,
+documented, and safe by default.
 
-## Getting Started
+Security problems: do not open a public issue; follow [SECURITY.md](SECURITY.md).
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature-name`
-3. Make your changes
-4. Run tests: `python scripts/run_tests.py`
-5. Submit a pull request
+## Development setup
 
-## Development Setup
+Requirements: Python 3.11+, PostgreSQL 15+ (16 recommended) and Redis 7+ for
+integration tests, Docker for the image and stack tests, Node 22 for the web
+application.
 
-```bash
-# Clone your fork
-git clone https://github.com/gapilongo/SOC.git
-cd lg-sotf
+```sh
+git clone https://github.com/gapilongo/SOC.git && cd SOC
+python3.11 -m venv .venv && . .venv/bin/activate
+make dev          # pinned dependencies from requirements-dev.txt, editable install
+make lint         # ruff and mypy (the typed packages CI checks)
+make test         # unit tests; integration tests skip without the variables below
 
-# Install dependencies
-pip install -r requirements-dev.txt
-
-# Setup pre-commit hooks
-pre-commit install
-
-# Run tests to verify setup
-python -m pytest tests/
+# Integration tests: dedicated databases whose names contain "test" (they are reset)
+export LG_SOTF_TEST_DATABASE_URL=postgresql://soc:<password>@127.0.0.1:5432/soc_test
+export LG_SOTF_TEST_REDIS_URL=redis://127.0.0.1:6379/5
+make test
 ```
 
-## Code Guidelines
+`make help` lists every target (image build, compose stack, smoke test, Helm
+lint). The web application in `src/lg_front` has its own `npm` scripts; see
+its README.
 
-- Follow PEP 8 style guidelines
-- Add tests for new functionality
-- Update documentation when needed
-- Keep commits focused and atomic
-- Write clear commit messages
+## Ground rules
 
-## Code Quality
+* **Read the contract first.** `docs/architecture.md` is the system contract;
+  when code and that document disagree, fix one of them in the same change.
+* **Tests assert behaviour.** Every bug fix and every guardrail gets a test.
+  Integration tests use real PostgreSQL and Redis; LLM paths use the `fake`
+  provider (`lg_sotf.llm.fake`), never the network.
+* **Safety first.** Changes to routing, response planning, guardrails,
+  redaction, prompt construction or tenant scoping need a test for the unsafe
+  case (for example: an injected alert must not close, a protected asset must
+  not be acted on, another tenant's row must not be visible). Run the
+  evaluation harness (`lg-sotf eval`, docs/evaluation.md) when you change
+  routing thresholds, prompts or agents, and include the before/after report
+  summary in the pull request.
+* **Configuration** is read only in `lg_sotf/settings.py`. When you add or
+  change a setting, describe it in `docs/tools/settings_reference.py` and run
+  `python docs/tools/settings_reference.py --write`; a test fails otherwise.
+* **Database changes** are Alembic migrations, expand/contract only (the
+  previous release must keep working during a rolling upgrade). Every
+  tenant-owned table gets `tenant_id` and the row-level security policy.
+* **No secrets, no real customer data** in commits, fixtures or test output.
+  Fixtures use documentation address ranges (192.0.2.0/24, 198.51.100.0/24,
+  203.0.113.0/24), `example.com` names and are marked synthetic. CI runs
+  Gitleaks.
+* **Dependencies** are pinned in `requirements*.txt`; explain why a new one
+  is needed. CI runs `pip-audit` and Bandit.
 
-We use automated tools to maintain code quality:
-- **Black** for formatting
-- **isort** for import sorting  
-- **flake8** for linting
-- **mypy** for type checking
+## Style
 
-Run before submitting:
-```bash
-pre-commit run --all-files
-```
+* Ruff (`make lint`) with the rules in `pyproject.toml`, line length 120.
+* Type hints everywhere; new packages should pass `mypy
+  --disallow-untyped-defs`.
+* Structured logging through `lg_sotf.observability.logging.get_logger` with
+  event names (`component.event`) and keyword fields; never log secrets or
+  raw alert bodies at INFO.
+* Documentation in plain English, no marketing claims: describe what the
+  code does today.
 
-## Pull Request Process
+## Pull requests
 
-1. Ensure tests pass and code follows style guidelines
-2. Update documentation for new features
-3. Reference any related issues in your PR description
-4. Keep PRs focused on a single feature or bug fix
+1. Branch from `main`, keep the change focused, write clear commit messages.
+2. Fill in the pull request template: what changed, why, how it was tested,
+   and the security and operational impact.
+3. CI must pass: lint and types, unit and integration tests (including the
+   smoke evaluation), security scans, image build and Helm validation.
+4. Update `CHANGELOG.md` under "Unreleased" for user-visible changes, and the
+   relevant document in `docs/`.
 
-## Reporting Issues
+## Reporting bugs and requesting features
 
-When reporting bugs, please include:
-- Clear description of the issue
-- Steps to reproduce
-- Expected vs actual behavior
-- Environment details
-
-## Questions?
-
-- Check existing [issues](https://github.com/gapilongo/SOC/issues)
-- Start a [discussion](https://github.com/gapilongo/SOC/discussions)
-- Review our [documentation](docs/)
+Use the issue templates. For bugs include the version (`lg-sotf version`),
+deployment mode, the relevant settings (never secrets), logs with request
+ids, and steps to reproduce.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions are licensed under the
+project's license (see [LICENSE](LICENSE)).

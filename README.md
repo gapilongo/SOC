@@ -1,527 +1,387 @@
-# SOC POC with LangGraph
+# LG-SOTF
 
-## 🔒 Intelligent Security Operations Center - Multi-Agent Workflow System
+[![CI](https://github.com/gapilongo/SOC/actions/workflows/ci.yml/badge.svg)](https://github.com/gapilongo/SOC/actions/workflows/ci.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-An advanced Security Operations Center (SOC) proof-of-concept built on LangGraph, featuring autonomous AI agents for alert processing, threat analysis, and incident response. This system demonstrates how modern AI can enhance security operations through intelligent automation, human-AI collaboration, and continuous learning.
+LG-SOTF is a multi-tenant AI triage platform for security alerts. It ingests
+alerts from your SIEM, EDR and cloud detectors, investigates each one with a
+LangGraph workflow of rule-based and LLM agents, closes obvious noise,
+escalates everything uncertain or dangerous to your analysts with a written
+assessment, and proposes response actions that run only under your policy,
+guardrails and approvals.
 
-## 🏗️ Architecture Overview
+It is built to be operated: durable queue-based workers with checkpointed
+workflows, PostgreSQL row-level security per tenant, an audited decision
+trail, metered LLM cost, Prometheus metrics, a Helm chart, and an evaluation
+harness that measures what the platform would miss before you change a model
+or a threshold.
 
-The SOC POC implements a sophisticated multi-layered architecture designed for scalability, reliability, and intelligent decision-making:
-
-### Core Framework
-- **State Management**: Centralized state handling with versioning and audit trails
-- **Workflow Engine**: LangGraph-powered orchestration for complex multi-agent workflows
-- **Configuration**: Dynamic policy-driven configuration management
-
-### Agent Ecosystem
-Six specialized AI agents working in harmony:
-
-1. **Ingestion Agent** - Multi-source alert collection with deduplication
-2. **Triage Agent** - Intelligent alert prioritization and initial classification  
-3. **Analysis Agent** - Deep threat investigation using ReAct reasoning loops
-4. **Human-in-the-Loop** - Structured analyst collaboration and escalation
-5. **Response Agent** - Automated containment and remediation actions
-6. **Learning Agent** - Continuous model improvement and knowledge extraction
-
-### Tool Orchestration Layer
-Unified interface to security tools:
-- **SIEM Integration** - Splunk, QRadar, Sentinel connectivity
-- **Threat Intelligence** - IOC enrichment and reputation services
-- **Sandbox Analysis** - Automated malware detonation
-- **EDR/XDR Tools** - Endpoint investigation and response
-
-## 🚀 Key Features
-
-### Intelligent Decision Making
-- **Confidence-Based Routing** - Alerts flow through agents based on confidence thresholds
-- **Policy-Driven Workflows** - Configurable decision points with business logic
-- **Adaptive Thresholds** - Dynamic adjustment based on historical performance
-
-### Advanced State Management
-```python
-Enhanced State Object:
-├── alert_id & raw_alert
-├── enriched_data & triage_status  
-├── confidence_score & FP/TP_indicators
-├── workflow_history & agent_executions
-├── human_feedback & response_actions
-└── metadata & audit_trail
-```
-
-### Asynchronous Processing
-- **Concurrent Tool Execution** - Parallel security tool queries
-- **Retry Mechanisms** - Robust error handling and fallback strategies
-- **Caching Layer** - Redis-powered performance optimization
-- **Rate Limiting** - API protection and resource management
-
-### Human-AI Collaboration
-- **Structured Feedback Interface** - Clear escalation and review processes
-- **Role-Based Access Control** - Analyst, senior analyst, and manager workflows
-- **SLA Tracking** - Response time monitoring and alerting
-- **Knowledge Transfer** - Human insights fed back to learning systems
-
-## 🔄 Workflow Process
+## How it works
 
 ```mermaid
-graph TD
-    %% Enhanced State Definition
-    State[<b>Enhanced State Object</b><br/>• alert_id<br/>• raw_alert<br/>• enriched_data<br/>• triage_status<br/>• confidence_score<br/>• FP/TP_indicators<br/>• workflow_history<br/>• agent_executions<br/>• human_feedback<br/>• response_actions<br/>• metadata]
-    
-    %% Enhanced Nodes with Async Support
-    Ingestion[<b>Ingestion Agent</b><br/>• Async Sources<br/>• Batching<br/>• Deduplication<br/>• Rate Limiting]
-    Triage[<b>Triage Agent</b><br/>• Rule Engine<br/>• ML Scoring<br/>• Thresholds<br/>• Fallback]
-    Correlation[<b>Correlation Agent</b><br/>• Async Queries<br/>• Caching<br/>• Timeouts<br/>• Retry Logic]
-    Analysis[<b>Analysis Agent</b><br/>• ReAct Loop<br/>• Tool Orchestration<br/>• Fallback to Human<br/>• Reasoning Logs]
-    HumanLoop[<b>Human-in-the-Loop</b><br/>• Structured Feedback<br/>• Role-Based Access<br/>• Escalation Levels<br/>• SLA Tracking]
-    Response[<b>Response Agent</b><br/>• Playbook Engine<br/>• Approval Workflow<br/>• Rollback Support<br/>• Action Audit]
-    Learning[<b>Learning Agent</b><br/>• Model Versioning<br/>• Training Pipeline<br/>• Performance Metrics<br/>• A/B Testing]
-    Close[<b>Close Alert</b><br/>• State Validation<br/>• Audit Trail<br/>• Archive Process<br/>• Metrics Collection]
-    
-    %% Enhanced Decision Points with Thresholds
-    IsFP{Confidence > 80%<br/>AND FP Indicators?<br/>Policy: FP_THRESHOLD}
-    NeedsCorrelation{Confidence 40-70%<br/>OR Needs Context?<br/>Policy: CORRELATION_POLICY}
-    NeedsAnalysis{Confidence < 60%<br/>OR Complex Alert?<br/>Policy: ANALYSIS_POLICY}
-    NeedsHuman{Confidence Grey Zone<br/>OR High Risk?<br/>Policy: HUMAN_REVIEW_POLICY}
-    NeedsResponse{Confirmed Threat<br/>AND Auto-Response<br/>Enabled?<br/>Policy: RESPONSE_POLICY}
-    
-    %% Enhanced Tool Orchestration
-    Tools[<b>Tool Orchestration Layer</b><br/>• Async Execution<br/>• Retry Strategies<br/>• Caching Layer<br/>• Metrics Collection<br/>• Timeout Handling<br/>• Fallback Logic]
-    
-    %% Storage Layer
-    Storage[<b>Storage Layer</b><br/>• PostgreSQL<br/>• Redis Cache<br/>• Vector DB<br/>• State History<br/>• Audit Logs]
-    
-    %% Monitoring & Observability
-    Monitoring[<b>Monitoring & Observability</b><br/>• Metrics<br/>• Tracing<br/>• Logging<br/>• Alerts<br/>• Dashboards]
-    
-    %% Enhanced Flow with Async and Feedback Loops
-    Ingestion -->|Initialize State| State
-    State -->|New Alert| Triage
-    Triage -->|Update State| State
-    State -->|Triage Complete| IsFP
-    IsFP -->|Yes| Close
-    IsFP -->|No| NeedsCorrelation
-    NeedsCorrelation -->|Yes| Correlation
-    NeedsCorrelation -->|No| NeedsAnalysis
-    Correlation -->|Update State| State
-    State -->|Correlation Complete| NeedsAnalysis
-    NeedsAnalysis -->|Yes| Analysis
-    NeedsAnalysis -->|No| NeedsHuman
-    Analysis -->|ReAct Loop| State
-    State -->|Analysis Complete| NeedsHuman
-    NeedsHuman -->|Yes| HumanLoop
-    NeedsHuman -->|No| NeedsResponse
-    HumanLoop -->|Update State| State
-    State -->|Human Feedback| NeedsResponse
-    NeedsResponse -->|Yes| Response
-    NeedsResponse -->|No| Learning
-    Response -->|Update State| State
-    State -->|Response Complete| Learning
-    Learning -->|Update State| State
-    State -->|Learning Complete| Close
-    
-    %% Enhanced Tool Connections with Orchestration
-    Triage -.->|Call via Orchestrator| Tools
-    Correlation -.->|Async Call via Orchestrator| Tools
-    Analysis -.->|ReAct via Orchestrator| Tools
-    HumanLoop -.->|Call via Orchestrator| Tools
-    Response -.->|Call via Orchestrator| Tools
-    Learning -.->|Call via Orchestrator| Tools
-    
-    %% Storage Connections
-    State <-->|Persist/Load| Storage
-    Tools <-->|Cache/Store| Storage
-    
-    %% Monitoring Connections
-    State -.->|State Changes| Monitoring
-    Tools -.->|Tool Metrics| Monitoring
-    Triage -.->|Agent Metrics| Monitoring
-    Correlation -.->|Agent Metrics| Monitoring
-    Analysis -.->|Agent Metrics| Monitoring
-    HumanLoop -.->|Agent Metrics| Monitoring
-    Response -.->|Agent Metrics| Monitoring
-    Learning -.->|Agent Metrics| Monitoring
-    
-    %% Feedback Loops
-    HumanLoop -.->|Feedback| Learning
-    Learning -.->|Improved Models| Analysis
-    Learning -.->|Improved Models| Triage
-    Learning -.->|Improved Models| Correlation
-    
-    %% Styling
-    classDef agent fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:2px
-    classDef state fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
-    classDef tools fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    classDef storage fill:#fff8e1,stroke:#ff8f00,stroke-width:2px
-    classDef monitoring fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    classDef terminal fill:#ffebee,stroke:#b71c1c,stroke-width:2px
-    
-    class Ingestion,Triage,Correlation,Analysis,HumanLoop,Response,Learning agent
-    class IsFP,NeedsCorrelation,NeedsAnalysis,NeedsHuman,NeedsResponse decision
-    class State state
-    class Tools tools
-    class Storage storage
-    class Monitoring monitoring
-    class Close terminal
-```
-
-### Architecture Layers
-
-```mermaid
-graph TB
-    subgraph "Core Framework"
-        Core[Core Framework]
-        State[State Management]
-        Workflow[Workflow Engine]
-        Config[Configuration]
+flowchart LR
+    subgraph Sources
+      PULL[Splunk, QRadar, Sentinel,<br/>Wazuh, CrowdStrike]
+      PUSH[Webhooks, GuardDuty,<br/>canonical API]
     end
-    
-    subgraph "Agent Layer"
-        IngestionMod[Ingestion Module]
-        TriageMod[Triage Module]
-        AnalysisMod[Analysis Module]
-        HumanMod[Human Loop Module]
-        ResponseMod[Response Module]
-        LearningMod[Learning Module]
+    subgraph LG-SOTF
+      SCH[Scheduler<br/>leader-elected] -->|poll with cursor| PULL
+      API[API<br/>REST + WebSocket]
+      Q[(Redis Streams<br/>work queue)]
+      PG[(PostgreSQL<br/>RLS per tenant,<br/>checkpoints, audit)]
+      W[Workers<br/>LangGraph engine]
+      PUSH -->|API key| API
+      SCH -->|ingest + enqueue| Q
+      API -->|ingest + enqueue| Q
+      Q --> W
+      W --> PG
+      API --> PG
     end
-    
-    subgraph "Tool Layer"
-        ToolOrchestrator[Tool Orchestrator]
-        SIEMTools[SIEM Tools]
-        IntelTools[Intel Tools]
-        SandboxTools[Sandbox Tools]
-        EDRTools[EDR Tools]
-    end
-    
-    subgraph "Storage Layer"
-        StateStorage[State Storage]
-        CacheLayer[Cache Layer]
-        VectorDB[Vector DB]
-        AuditLogs[Audit Logs]
-    end
-    
-    subgraph "Monitoring Layer"
-        Metrics[Metrics Collection]
-        Tracing[Distributed Tracing]
-        Logging[Structured Logging]
-        Alerting[Alerting System]
-    end
-    
-    Core --> State
-    Core --> Workflow
-    Core --> Config
-    
-    Workflow --> IngestionMod
-    Workflow --> TriageMod
-    Workflow --> AnalysisMod
-    Workflow --> HumanMod
-    Workflow --> ResponseMod
-    Workflow --> LearningMod
-    
-    IngestionMod --> ToolOrchestrator
-    TriageMod --> ToolOrchestrator
-    AnalysisMod --> ToolOrchestrator
-    HumanMod --> ToolOrchestrator
-    ResponseMod --> ToolOrchestrator
-    LearningMod --> ToolOrchestrator
-    
-    ToolOrchestrator --> SIEMTools
-    ToolOrchestrator --> IntelTools
-    ToolOrchestrator --> SandboxTools
-    ToolOrchestrator --> EDRTools
-    
-    State --> StateStorage
-    ToolOrchestrator --> CacheLayer
-    LearningMod --> VectorDB
-    State --> AuditLogs
-    
-    IngestionMod --> Metrics
-    TriageMod --> Metrics
-    AnalysisMod --> Metrics
-    HumanMod --> Metrics
-    ResponseMod --> Metrics
-    LearningMod --> Metrics
-    
-    Metrics --> Tracing
-    Metrics --> Logging
-    Metrics --> Alerting
+    W -->|redacted alert data| LLM[LLM provider<br/>Claude by default]
+    W -->|indicators, opt-in| TI[Threat intel<br/>VirusTotal, AbuseIPDB]
+    W -->|HMAC-signed actions| SOAR[Your SOAR<br/>Tracecat, Shuffle, Tines ...]
+    AN[Analysts and admins<br/>web app or API] --> API
 ```
 
-### 1. Alert Ingestion
+Each alert runs through one workflow, checkpointed in PostgreSQL so a crashed
+worker resumes where it stopped:
+
 ```mermaid
-graph LR
-    A[Alert Sources] --> B[Ingestion Agent]
-    B --> C[State Initialization]
-    C --> D[Deduplication]
-    D --> E[Rate Limiting]
-    E --> F[Triage Queue]
+flowchart LR
+    G[gate<br/>suppression rules,<br/>verdict cache] --> T[triage<br/>rules + fast model]
+    T -->|obvious noise, low/medium only| C[close]
+    T --> CO[correlation<br/>shared indicators, bursts]
+    CO --> A[analysis<br/>rules, history, threat intel,<br/>deep model]
+    CO --> D
+    A --> D[decide<br/>routing policy]
+    D -->|uncertain, high severity,<br/>model refused| E[escalate<br/>analyst decision]
+    D -->|high threat score| P[plan response<br/>autonomy + guardrails]
+    D -->|low threat, rules agree,<br/>low/medium only| C
+    E --> P
+    E --> C
+    P -->|approval needed, incl. containment<br/>on model-only evidence| AP[await approval]
+    AP --> X[execute via connector]
+    P -->|autonomy auto| X
+    X -->|actions completed:<br/>closed as malicious| C
+    G --> C
 ```
 
-### 2. Intelligent Triage
-```mermaid
-graph TD
-    A[Alert Input] --> B{Rule Engine}
-    B --> C[ML Scoring]
-    C --> D{Confidence Score}
-    D -->|>80%| E[Auto-Close FP]
-    D -->|40-80%| F[Correlation Queue]
-    D -->|<40%| G[Analysis Queue]
-    
-    E --> H[Learning Feedback]
-    F --> I[Correlation Agent]
-    G --> J[Analysis Agent]
+## Features in this release
+
+**Ingestion**
+* Pull connectors for Splunk (search jobs), IBM QRadar (offenses), Microsoft
+  Sentinel (Log Analytics), Wazuh indexer and CrowdStrike Falcon (Alerts
+  API v2), with persisted cursors, overlap windows, retries and an outbound
+  destination policy (no SSRF into your network).
+* Push ingestion: canonical alerts (`POST /api/v1/ingest/alerts`) and
+  vendor-native webhooks (Splunk, CrowdStrike, Sentinel, Wazuh, GuardDuty via
+  EventBridge, QRadar, or any JSON with a field map).
+* Deterministic normalisation to one canonical alert model (a subset of OCSF
+  Detection Finding) with entities and MITRE ATT&CK; secret redaction before
+  anything is stored or sent to a model; deduplication by source alert id.
+
+**Triage and investigation**
+* Triage, correlation and analysis agents combining deterministic rules with
+  a fast and a deep model tier (Anthropic Claude by default; OpenAI and
+  Google Gemini as optional extras; a deterministic offline model for tests
+  and demos).
+* Correlation across the tenant's alerts by HMAC-hashed indicators; tenant
+  alert history and optional threat-intelligence lookups (VirusTotal,
+  AbuseIPDB) as evidence.
+* Safety policy in code: automation never closes a high or critical alert
+  as benign (only an analyst decision, an admin-enabled suppression rule or
+  an analyst-confirmed verdict can); a low/medium benign close needs rule
+  corroboration, not just the model; containment on model-only evidence
+  always waits for approval; model refusals and suspected prompt injection
+  go to a human. A response the policy started closes the alert as
+  malicious once its actions complete (for example a ticket created under
+  autonomy `auto`), whatever the severity.
+
+**Human review**
+* Escalations with levels, SLAs, escalation of overdue cases, grouping of
+  related alerts into one case, claim/decide with optimistic locking, and
+  decisions `true_positive`, `false_positive`, `benign_positive`,
+  `needs_more_info` that resume the waiting workflows.
+* Analyst feedback capture, suppression rules (analyst proposals enabled by
+  admins) and suggestions from false-positive decisions.
+
+**Response**
+* A catalogue of containment and notification actions (block IP, domain or
+  URL, isolate host, terminate process, quarantine file, disable user, reset
+  password, revoke sessions, collect forensics, create ticket, notify),
+  planned into an idempotent action ledger.
+* Per-tenant autonomy per risk level, protected assets, allowed actions,
+  hourly caps and blast-radius limits, re-checked right before execution.
+* Dry-run by default; HMAC-signed webhooks to your SOAR for real execution.
+  LG-SOTF never calls vendor EDR, firewall or identity APIs directly.
+
+**Platform**
+* Multi-tenant: PostgreSQL row-level security with a separate non-owner
+  runtime role, tenant-scoped Redis keys and checkpoints, platform-admin
+  cross-tenant access that is audited.
+* Authentication: local accounts (argon2id, lockout, rotating refresh
+  tokens), OIDC single sign-on, scoped API keys; roles viewer, analyst,
+  admin.
+* Append-only, hash-chained audit log per tenant with an API to verify it.
+* LLM usage and cost metering per tenant, model and agent; per-tenant daily
+  token budgets with rule-only fallback.
+* Operations: API, worker, scheduler and migrate roles in one image;
+  Redis Streams queue with dead-letter queue and CLI; crash recovery via
+  leases and checkpoints; retention and partition maintenance; Prometheus
+  metrics, JSON logs, OpenTelemetry tracing; Docker Compose and a Helm chart
+  (HPA, KEDA, PDBs, NetworkPolicies, ServiceMonitors).
+* Evaluation harness (`lg-sotf eval`) with a synthetic labelled dataset,
+  adversarial prompt-injection cases, metrics and a CI regression gate.
+* Analyst web application (`src/lg_front`, React and TypeScript, a client
+  of the public API only): live dashboard, alert queue with filters and
+  timelines, escalation claim and decision, approvals, suppressions, and
+  tenant administration, served by a non-root nginx container under a
+  strict Content-Security-Policy. Access tokens are kept in memory only.
+  Shipped in the compose stack (`PROFILES=frontend`) and the Helm chart
+  (`frontend.enabled`).
+
+### Not in this release
+
+No built-in MFA for local accounts (use OIDC with your identity provider's
+MFA), no direct vendor EDR/firewall/IdP integrations (response goes through
+your SOAR), no self-service tenant data export or erasure, no model
+fine-tuning or automatic threshold learning, and no published accuracy
+figures on real customer data: measure on your own labelled alerts with the
+evaluation harness.
+
+## Screenshots
+
+Taken by the browser end-to-end suite (`scripts/e2e_ui_stack.sh`) against
+the compose stack running the offline demo model: the alerts are the suite's
+synthetic test alerts, and texts such as "fake conclusion" come from the
+deterministic stand-in model, not from Claude.
+
+| | |
+|---|---|
+| ![Dashboard](docs/screenshots/02-dashboard.png) | ![Alert with its workflow timeline](docs/screenshots/04-alert-timeline.png) |
+| Dashboard, updated live over the WebSocket | An alert: verdict, entities and workflow timeline |
+| ![Escalation queue](docs/screenshots/05-escalations.png) | ![Actions awaiting approval](docs/screenshots/07-actions.png) |
+| Escalation queue, claimed by an analyst | Response actions awaiting approval |
+
+More pages (alerts, decision dialog, users, settings, usage, audit log) are
+in [docs/screenshots](docs/screenshots).
+
+## Quickstart (Docker Compose)
+
+Requirements: Docker with Compose v2, GNU make, Python 3 (for the secret
+generator), `curl`.
+
+### 1. Offline demo with the fake model (no API key)
+
+```sh
+git clone https://github.com/gapilongo/SOC.git && cd SOC
+make env                     # .env from .env.example plus fresh random secrets
+echo 'LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL=admin@example.com' >> .env
+make up                      # builds the image; starts postgres, redis, migrate, api, worker, scheduler
+curl -s localhost:8000/readyz
+grep '^LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD=' .env   # the generated admin password
 ```
 
-### 3. Contextual Correlation
-```mermaid
-graph LR
-    A[Alert] --> B[Correlation Agent]
-    B --> C[Async Queries]
-    C --> D[Threat Intel APIs]
-    C --> E[SIEM Historical Data]
-    C --> F[Asset Information]
-    
-    D --> G[Enrichment Results]
-    E --> G
-    F --> G
-    
-    G --> H[Temporal Analysis]
-    H --> I[Entity Resolution]
-    I --> J[Updated State]
+The default `LG_SOTF_LLM__PROVIDER=fake` is a deterministic keyword
+heuristic that runs offline. It exercises the whole pipeline but is not a
+detection model; staging and production refuse it.
+
+Send an alert and review it through the API:
+
+```sh
+API=http://localhost:8000/api/v1
+TOKEN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"<password from .env>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+
+# An API key for senders (shown once)
+KEY=$(curl -s -X POST $API/api-keys -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"quickstart","scopes":["ingest"]}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["key"])')
+
+# Ingest a canonical alert
+curl -s -X POST $API/ingest/alerts -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '[{"source_alert_id":"demo-1","title":"Mimikatz credential dumping on dc-01","severity":"high",
+        "occurred_at":"2026-01-15T10:00:00Z","entities":{"hosts":["dc-01"],"users":["tadmin"]}}]'
+
+# A few seconds later: the alert waits for an analyst, with an escalation
+curl -s "$API/alerts?limit=5" -H "Authorization: Bearer $TOKEN"
+curl -s "$API/escalations?status=open" -H "Authorization: Bearer $TOKEN"
+# Claim (version from the escalation), decide, then approve proposed actions:
+#   POST $API/escalations/<id>/claim     {"version": <v>}
+#   POST $API/escalations/<id>/decision  {"version": <v+1>, "decision": "true_positive", "notes": "..."}
+#   GET  $API/actions?status=awaiting_approval
+#   POST $API/actions/<id>/approve       {"reject_remaining": true}
 ```
 
-### 4. Deep Analysis (ReAct Loop)
-```mermaid
-graph TD
-    A[Analysis Agent] --> B[Reasoning]
-    B --> C{Need More Data?}
-    C -->|Yes| D[Action: Query Tools]
-    D --> E[Tool Execution]
-    E --> F[Observation]
-    F --> B
-    
-    C -->|No| G[Conclusion]
-    G --> H{Confidence Level}
-    H -->|High| I[Auto Response]
-    H -->|Medium| J[Human Review]
-    H -->|Low| K[Escalate to Senior]
-    
-    I --> L[Response Agent]
-    J --> M[Human-in-Loop]
-    K --> M
+With the default `response.dry_run=true`, approved actions are recorded as
+`dry_run` and nothing leaves the platform. Interactive API docs are at
+`http://localhost:8000/docs`.
+
+The analyst web app runs as a separate container (nginx serving the static
+app and proxying `/api` to the api service). Start it with the rest of the
+stack and sign in as `admin@example.com`:
+
+```sh
+make up PROFILES=frontend    # also builds and starts the web UI
 ```
 
-### 5. Human Escalation
-```mermaid
-graph TD
-    A[Human Review Required] --> B{Risk Level}
-    B -->|Critical| C[Immediate Escalation]
-    B -->|High| D[Senior Analyst Queue]
-    B -->|Medium| E[Standard Review Queue]
-    
-    C --> F[Manager/CISO Alert]
-    D --> G[Senior Analyst]
-    E --> H[Analyst]
-    
-    F --> I[Structured Feedback]
-    G --> I
-    H --> I
-    
-    I --> J{Decision}
-    J -->|Approve| K[Response Agent]
-    J -->|Deny| L[Close Alert]
-    J -->|Need More Info| M[Back to Analysis]
+Open **http://localhost:3000** (use `localhost`, not `127.0.0.1`: live
+updates are accepted only from origins listed in `api.cors_origins`, and the
+development configuration lists `http://localhost:3000`). The UI shows the
+dashboard, the alert queue with filters and timelines, escalations to claim
+and decide, and the actions awaiting approval; admins also get users and API
+keys, sources, tenant settings, LLM usage and the audit log.
+
+Stop with `make down` (keeps data) or `make clean-volumes` (deletes it).
+If you started the UI, pass the profile again (`make down PROFILES=frontend`):
+without it the UI container keeps running and the stack's network cannot be
+removed.
+
+### 2. Real triage with Claude
+
+Add your Anthropic API key to `.env` and restart:
+
+```sh
+cat >> .env <<'EOF'
+LG_SOTF_LLM__PROVIDER=anthropic
+ANTHROPIC_API_KEY=<your key>
+EOF
+make up
 ```
 
-### 6. Automated Response
-```mermaid
-graph TD
-    A[Response Triggered] --> B[Playbook Selection]
-    B --> C{Approval Required?}
-    C -->|Yes| D[Approval Workflow]
-    C -->|No| E[Execute Actions]
-    
-    D --> F{Approved?}
-    F -->|Yes| E
-    F -->|No| G[Log Decision & Close]
-    
-    E --> H[Block IP/Domain]
-    E --> I[Quarantine File]
-    E --> J[Disable Account]
-    E --> K[Network Isolation]
-    
-    H --> L[Action Audit]
-    I --> L
-    J --> L
-    K --> L
-    
-    L --> M{Success?}
-    M -->|Yes| N[Update State]
-    M -->|No| O[Rollback & Alert]
-    
-    N --> P[Learning Agent]
-    O --> Q[Human Intervention]
+The fast tier (triage, correlation) defaults to `claude-haiku-4-5` and the
+deep tier (analysis) to `claude-opus-5-5`; change them with
+`LG_SOTF_LLM__FAST__MODEL` / `LG_SOTF_LLM__DEEP__MODEL` (set the tier's other
+keys too, see docs/configuration.md). Every call is metered: see
+`GET /api/v1/usage/llm` and set `LG_SOTF_LLM__DAILY_TOKEN_BUDGET_PER_TENANT` to
+cap spend.
+
+### Production
+
+Use the production compose override (two database roles, mandatory secrets)
+or the Helm chart in `deploy/helm/lg-sotf`, with TLS in front of the API,
+OIDC for analysts, and secrets from your secret store. Follow
+[docs/deployment.md](docs/deployment.md). Before promoting an image, run
+`make smoke`: it builds the image, starts its own throwaway stack, exercises
+ingestion, triage and the API end to end, and tears the stack down. To check
+a running deployment instead, run `scripts/smoke_stack.py --base-url ...
+flow` with an admin's credentials (docs/deployment.md). Processes refuse to
+start in `staging`/`production` with missing or placeholder secrets, the fake
+model, wildcard CORS or insecure cookies.
+
+## Configuration
+
+All settings come from `LG_SOTF_<SECTION>__<KEY>` environment variables, an
+optional `.env`, and an optional YAML file named by `LG_SOTF_CONFIG_FILE`.
+Standard `DATABASE_URL`, `REDIS_URL` and `ANTHROPIC_API_KEY` are honoured.
+The main groups:
+
+| Section | What it controls |
+|---|---|
+| `database`, `redis` | Connections, pool sizes, TLS, the runtime and owner database roles |
+| `llm` | Provider, fast and deep tier models, timeouts, concurrency, prompt size limits, budgets, prices |
+| `auth` | JWT, session lifetimes, lockout, OIDC, bootstrap tenant and admin |
+| `api` | Bind address, CORS, body limits, rate limits, metrics token, trusted proxies |
+| `worker`, `scheduler` | Concurrency, timeouts, retries, dead-lettering, sweep intervals, leader lease |
+| `response` | Dry-run switch, default autonomy, install-wide action cap and SOAR webhook |
+| `retention` | Days to keep alerts, events, audit log, indicators, usage, checkpoints |
+| `security` | Fernet encryption keys and the indicator HMAC key |
+| `routing`, `ingestion`, `agents`, `tools` | Policy thresholds, ingestion limits, escalation defaults, enrichment providers |
+
+Every setting, its environment variable and default is listed in
+[docs/configuration.md](docs/configuration.md) (generated from the code).
+Tenant policy (autonomy, protected assets, connector, review SLAs,
+enrichment keys, token budget) is set per tenant through
+`/api/v1/tenant/settings`.
+
+## Security model in brief
+
+* **Tenant isolation** in the database (row-level security, non-owner
+  runtime role, `SECURITY DEFINER` credential lookups), in Redis keys, in
+  workflow checkpoints and in caches.
+* **Least authority for automation**: the model's opinion alone never closes
+  a high or critical alert as benign and never triggers containment without
+  approval; response actions
+  pass autonomy policy and guardrails twice and default to dry run.
+* **Prompt-injection defences**: alert data is redacted, size-capped,
+  escaped and delimited as untrusted data; output is schema-validated;
+  steering text is detected and treated as evidence of malice; an
+  adversarial evaluation split is gated in CI.
+* **Secrets** only from the environment, encrypted at rest where stored,
+  write-only through the API; startup refuses unsafe production
+  configuration.
+* **Accountability**: every decision, approval and administrative change is
+  in a hash-chained, append-only audit log.
+
+Personal data in alerts (names, addresses, hosts) is not pseudonymised and is
+sent to the configured model provider when the LLM is enabled. Read
+[docs/security.md](docs/security.md) for the threat model and data handling,
+and [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Measuring quality
+
+```sh
+lg-sotf eval --dataset tests/fixtures/eval/synthetic_v1.jsonl --report ~/lg-sotf-eval/smoke.json \
+             --thresholds tests/fixtures/eval/smoke_thresholds.yaml
 ```
 
-### 7. Continuous Learning
-```mermaid
-graph TD
-    A[Learning Agent] --> B[Collect Feedback]
-    B --> C[Human Feedback]
-    B --> D[Agent Performance]
-    B --> E[Response Outcomes]
-    
-    C --> F[Model Training Data]
-    D --> F
-    E --> F
-    
-    F --> G[Model Versioning]
-    G --> H{A/B Testing}
-    H -->|Champion| I[Deploy New Model]
-    H -->|Challenger| J[Performance Analysis]
-    
-    J --> K{Better Performance?}
-    K -->|Yes| I
-    K -->|No| L[Keep Current Model]
-    
-    I --> M[Update Agent Configs]
-    L --> N[Log Results]
-    
-    M --> O[Performance Monitoring]
-    N --> O
-    
-    O --> P[Metrics Dashboard]
+The harness runs labelled alerts through the real ingestion and workflow in
+fresh tenants (one per split, so split metrics are independent), never
+invents analyst decisions, and reports the malicious
+false-negative rate (threats closed without a human), benign auto-close rate,
+escalation and inconclusive rates, per-class precision/recall/F1, Cohen's
+kappa, cost and latency, with a regression gate for CI. The shipped dataset
+is synthetic and the CI run uses the fake model, so those numbers check
+plumbing and policy, not detection quality; export your analysts' decisions
+to evaluate a real model ([docs/evaluation.md](docs/evaluation.md)).
+
+## Development
+
+```sh
+python3.11 -m venv .venv && . .venv/bin/activate
+make dev                     # pinned dependencies + editable install
+make lint                    # ruff + mypy
+make test                    # unit tests; integration tests need the variables below
+export LG_SOTF_TEST_DATABASE_URL=postgresql://soc:<password>@127.0.0.1:5432/soc_test
+export LG_SOTF_TEST_REDIS_URL=redis://127.0.0.1:6379/5
+make test
 ```
 
-## 📊 Monitoring & Observability
+Integration tests reset the database named in `LG_SOTF_TEST_DATABASE_URL`
+(its name must contain `test`). LLM paths are tested with the fake provider;
+no test needs network access. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Comprehensive Telemetry
-- **Metrics Collection**: Agent performance, tool latency, accuracy rates
-- **Distributed Tracing**: End-to-end workflow visibility
-- **Structured Logging**: Searchable audit trails and debugging
-- **Real-time Dashboards**: Operations center visibility
+The web app has its own unit tests (`npm run test:ci` in `src/lg_front`).
+The browser end-to-end suite drives the real UI in Chromium against the
+production-like compose stack (build, start, test, tear down):
 
-### Key Performance Indicators
-- **Mean Time to Detection (MTTD)**
-- **Mean Time to Response (MTTR)**  
-- **False Positive Rate**
-- **Agent Accuracy Scores**
-- **Human Escalation Rate**
-- **Tool Utilization Metrics**
-
-## 🛠️ Technology Stack
-
-### Core Technologies
-- **LangGraph**: Multi-agent workflow orchestration
-- **LangChain**: LLM integration and tool connectivity
-- **PostgreSQL**: Primary state and audit storage
-- **Redis**: Caching and session management
-- **Vector Database**: Similarity search and embeddings
-
-### AI/ML Components
-- **Large Language Models**: GPT-4, Claude for reasoning
-- **Custom ML Models**: Specialized threat detection
-- **Embedding Models**: Semantic similarity analysis
-- **Classification Models**: Alert categorization
-
-### Security Tool Integrations
-- **SIEM Platforms**: Splunk, IBM QRadar, Microsoft Sentinel
-- **Threat Intelligence**: VirusTotal, MISP, commercial feeds
-- **Sandbox Solutions**: Cuckoo, Joe Sandbox, Falcon Sandbox
-- **EDR/XDR**: CrowdStrike, SentinelOne, Microsoft Defender
-
-## 🚦 Getting Started
-
-### Prerequisites
-```bash
-Python 3.11+
-PostgreSQL 14+
-Redis 7+
-Docker & Docker Compose
-Security tool API credentials
+```sh
+(cd src/lg_front && npm ci && npx playwright install chromium)
+scripts/e2e_ui_stack.sh      # --no-build to reuse images, --keep to leave the stack up
 ```
 
-### Quick Setup
-```bash
-# Clone repository
-git clone https://github.com/your-org/soc-langgraph-poc
-cd soc-langgraph-poc
+It signs in, provisions an analyst, a viewer and an ingest API key through
+the UI, checks that the dashboard updates live when alerts arrive, filters
+and pages the alert list, opens a timeline, claims and decides an escalation,
+approves a response until the alert closes, checks role gating, signs out,
+and asserts that no token is kept in browser storage or written to the
+container logs and that no page violates the Content-Security-Policy.
 
-# Install dependencies
-pip install -r requirements.txt
+## Documentation
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your API keys and database URLs
+| | |
+|---|---|
+| [User guide](docs/user-guide.md) | Analyst and admin workflows |
+| [Architecture](docs/architecture.md) | The system contract |
+| [API](docs/api.md) | Authentication, roles, endpoints, events |
+| [Configuration](docs/configuration.md) | Every setting |
+| [Deployment](docs/deployment.md) | Image, Compose, Helm, PostgreSQL roles, TLS, sizing, upgrades, backups |
+| [Operations](docs/operations.md) | Runbooks, key rotation, incidents, dashboards and alerts |
+| [Security](docs/security.md) | Threat model and controls |
+| [Evaluation](docs/evaluation.md) | The evaluation harness |
+| [Changelog](CHANGELOG.md) | Release notes |
 
-# Initialize database
-python scripts/init_db.py
+## License
 
-# Start services
-docker-compose up -d
-
-# Launch SOC workflow
-python main.py
-```
-
-### Configuration
-Key configuration areas:
-- **Agent Policies**: Confidence thresholds and routing logic
-- **Tool Credentials**: API keys and connection strings  
-- **Workflow Rules**: Business logic and escalation procedures
-- **Learning Settings**: Model update frequencies and training data
-
-## 📈 Use Cases & Benefits
-
-### Automated Threat Detection
-- **24/7 Operations**: Continuous alert processing without human fatigue
-- **Consistent Analysis**: Standardized investigation procedures
-- **Rapid Response**: Sub-minute detection-to-containment cycles
-
-### Analyst Augmentation
-- **Decision Support**: AI-powered recommendations with explanations
-- **Workload Optimization**: Focus on high-value investigative work
-- **Knowledge Scaling**: Junior analysts with senior-level insights
-
-### Operational Excellence
-- **Reduced False Positives**: Intelligent filtering and correlation
-- **Improved MTTR**: Faster incident response through automation
-- **Audit Compliance**: Complete workflow documentation and traceability
-
-## 🔮 Roadmap & Future Enhancements
-
-### Planned Features
-- **Multi-Tenant Architecture**: Support for multiple customer environments
-- **Advanced ML Models**: Custom threat detection model training
-- **Integration Marketplace**: Plug-and-play security tool connectors
-- **Mobile Interface**: Analyst mobile app for on-the-go response
-
-### Research Areas
-- **Federated Learning**: Cross-organization threat intelligence sharing
-- **Explainable AI**: Enhanced transparency in AI decision-making
-- **Attack Graph Analysis**: Multi-stage attack detection and visualization
-
-## 🤝 Contributing
-
-We welcome contributions from the security and AI communities:
-
-1. **Issue Reporting**: Bug reports and feature requests
-2. **Code Contributions**: Pull requests with improvements
-3. **Tool Integrations**: New security tool connectors
-4. **Documentation**: Enhanced guides and examples
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- **LangGraph Team**: For the excellent multi-agent framework
-- **Security Community**: For threat intelligence and best practices  
-- **Open Source Contributors**: For the foundational tools and libraries
-
----
-
-**Built with ❤️ for the cybersecurity community**
-
-*Empowering security teams with intelligent automation while keeping humans in control of critical decisions.*
+Released under the [MIT License](LICENSE). Contributions are accepted under
+the same license ([CONTRIBUTING.md](CONTRIBUTING.md)).

@@ -373,10 +373,12 @@ migrate:
   podAnnotations: {}
 
 # ---------------------------------------------------------------------------
-# Optional web UI (image built from src/lg_front/Dockerfile).
+# Analyst web UI (image built from src/lg_front/Dockerfile). Non-root nginx
+# serving static files; with the Ingress enabled, "/" goes to the UI and
+# "/api" to the API on the same host.
 # ---------------------------------------------------------------------------
 frontend:
-  enabled: false
+  enabled: true
   replicaCount: 2
   image:
     repository: ghcr.io/gapilongo/lg-sotf-frontend
@@ -387,6 +389,40 @@ frontend:
   service:
     type: ClusterIP
     port: 8080
+  # Public runtime settings, written to /config.js and the
+  # Content-Security-Policy at container start. Never put secrets here.
+  config:
+    # Live updates: the API accepts /api/v1/ws only from origins listed in
+    # settings.api.cors_origins, so add the URL users open (e.g.
+    # https://soc.example.com) there even when UI and API share the Ingress.
+    # Empty: the API is on the same host as the UI (the chart's Ingress).
+    # Set when the API has its own origin, e.g. https://api.soc.example.com
+    # (add that origin to settings.api.cors_origins).
+    apiBaseUrl: ""
+    # Full WebSocket URL of /api/v1/ws; empty derives it from apiBaseUrl or the page.
+    wsUrl: ""
+    # Extra origins the browser may connect to (connect-src), e.g. an IdP
+    # token endpoint on another host.
+    extraConnectSrc: []
+    # Strict-Transport-Security max-age in seconds ("" to leave it to the ingress).
+    hstsMaxAge: ""
+    # Single sign-on (authorization code + PKCE, public client). Enabled when
+    # issuer and clientId are set; the API must trust the same issuer
+    # (settings.auth.oidc_issuer / oidc_audience).
+    oidc:
+      issuer: ""
+      clientId: ""
+      scope: ""
+      audience: ""
+      # access_token (default) or id_token: which token the API receives.
+      tokenType: ""
+      redirectUri: ""
+      # Overrides of the discovery document (all optional). Set both
+      # authorizationEndpoint and tokenEndpoint to skip discovery entirely.
+      authorizationEndpoint: ""
+      tokenEndpoint: ""
+      endSessionEndpoint: ""
+      label: ""
   resources:
     requests:
       cpu: 50m

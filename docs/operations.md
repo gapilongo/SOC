@@ -164,7 +164,10 @@ Checks: the current and next month partitions exist
 (`SELECT inhrelid::regclass FROM pg_inherits WHERE inhparent = 'alert_events'::regclass;`).
 If partitions are missing, inserts fall into the default partition and still
 succeed, but retention becomes slower; confirm the scheduler leader is healthy.
-Per-tenant retention overrides live in tenant settings. Changing retention
+A tenant may override `alerts_days` and `indicators_days` in
+`tenants.settings.retention` (set by an operator in the database; the
+`/tenant/settings` API does not edit them); `alert_events` and `audit_log`
+follow the install setting because whole monthly partitions are dropped. Changing retention
 takes effect at the next maintenance run.
 
 ## 7. Key rotation

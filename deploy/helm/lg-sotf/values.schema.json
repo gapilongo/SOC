@@ -807,6 +807,84 @@
         },
         "topologySpreadConstraints": {
           "$ref": "#/definitions/list"
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "apiBaseUrl": {
+              "type": "string",
+              "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+            },
+            "wsUrl": {
+              "type": "string",
+              "pattern": "^$|^wss?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+            },
+            "extraConnectSrc": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(https?|wss?)://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+              }
+            },
+            "hstsMaxAge": {
+              "type": [
+                "string",
+                "integer"
+              ],
+              "pattern": "^[0-9]{0,9}$",
+              "minimum": 0
+            },
+            "oidc": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "issuer": {
+                  "type": "string",
+                  "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+                },
+                "clientId": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._:@/-]{0,255}$"
+                },
+                "scope": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9 ._:/-]{0,512}$"
+                },
+                "audience": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._:/-]{0,512}$"
+                },
+                "tokenType": {
+                  "enum": [
+                    "",
+                    "access_token",
+                    "id_token"
+                  ]
+                },
+                "redirectUri": {
+                  "type": "string",
+                  "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+                },
+                "authorizationEndpoint": {
+                  "type": "string",
+                  "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+                },
+                "tokenEndpoint": {
+                  "type": "string",
+                  "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+                },
+                "endSessionEndpoint": {
+                  "type": "string",
+                  "pattern": "^$|^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$"
+                },
+                "label": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9 ._()-]{0,80}$"
+                }
+              }
+            }
+          }
         }
       }
     },
