@@ -189,10 +189,19 @@ function ProtectedSection({ data }: { data: TenantSettingsOut }) {
   const [users, setUsers] = useState(strings(pa.users).join('\n'));
   const [domains, setDomains] = useState(strings(pa.domains).join('\n'));
   const [cidrs, setCidrs] = useState([...strings(pa.cidrs), ...legacyCidrs].join('\n'));
+  const [processes, setProcesses] = useState(strings(pa.processes).join('\n'));
+  const [hashes, setHashes] = useState(strings(pa.hashes).join('\n'));
   const save = useSave();
   const submit = () => {
     const patch: JsonObject = {
-      protected_assets: { hosts: lines(hosts), users: lines(users), domains: lines(domains), cidrs: lines(cidrs) },
+      protected_assets: {
+        hosts: lines(hosts),
+        users: lines(users),
+        domains: lines(domains),
+        cidrs: lines(cidrs),
+        processes: lines(processes),
+        hashes: lines(hashes),
+      },
     };
     if (data.settings.protected_cidrs !== undefined) patch.protected_cidrs = null;
     save.mutate(patch);
@@ -200,7 +209,7 @@ function ProtectedSection({ data }: { data: TenantSettingsOut }) {
   return (
     <Section
       title="Protected assets"
-      description="No automated or approved action may target these. Host and user entries accept * and ? wildcards. One entry per line."
+      description="No automated or approved action may target these. Host, user and process entries accept * and ? wildcards. Critical operating-system and security-agent processes (lsass.exe, explorer.exe, ...) are always protected. One entry per line."
       onSubmit={submit}
       busy={save.isPending}
       error={save.error}
@@ -210,6 +219,8 @@ function ProtectedSection({ data }: { data: TenantSettingsOut }) {
         <TextAreaField label="Users" rows={4} value={users} onChange={(e) => setUsers(e.target.value)} placeholder="administrator" />
         <TextAreaField label="Domains" rows={4} value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="corp.example" />
         <TextAreaField label="Networks (CIDR)" rows={4} value={cidrs} onChange={(e) => setCidrs(e.target.value)} placeholder="10.0.0.0/8" />
+        <TextAreaField label="Processes" rows={4} value={processes} onChange={(e) => setProcesses(e.target.value)} placeholder="corp-agent.exe" />
+        <TextAreaField label="File hashes" rows={4} value={hashes} onChange={(e) => setHashes(e.target.value)} placeholder="SHA-256, SHA-1 or MD5" />
       </div>
     </Section>
   );

@@ -89,6 +89,18 @@ production-like overlay below, add `--profile frontend` and set
 `LG_SOTF_API__CORS_ORIGINS` to the UI's URL; `scripts/e2e_ui_stack.sh` does
 exactly that and drives the UI in a browser.
 
+Client addresses behind the bundled nginx: the frontend and the api share a
+small `edge` network with fixed addresses (`EDGE_SUBNET`, default
+`172.31.250.0/29`; frontend `EDGE_FRONTEND_IP` `.2`, api `EDGE_API_IP` `.3`;
+change them if the range is taken on the host), and the api trusts
+`X-Forwarded-For` only from the frontend (`LG_SOTF_API__FORWARDED_ALLOW_IPS`
+defaults to `EDGE_FRONTEND_IP`). Without this, every browser request would
+carry the frontend's address, one client could exhaust the per-address login
+limit for everyone, and audit entries would record the proxy. When a TLS
+reverse proxy sits in front of the frontend, set `FRONTEND_TRUSTED_PROXIES`
+(`LG_SOTF_TRUSTED_PROXIES` in the container) to its address or CIDR: nginx
+then takes the client address and `X-Forwarded-Proto` from that proxy only.
+
 Registry mirrors: `PYTHON_BASE_IMAGE`, `POSTGRES_IMAGE`, `REDIS_IMAGE` (see
 `.env.example`). Host ports bind to `127.0.0.1` only; PostgreSQL and Redis are
 not published (`docker compose exec postgres psql -U soc soc`).
@@ -364,8 +376,12 @@ LG_SOTF_DATABASE__MIGRATION_URL=... \
 
 Prefer a secret manager (External Secrets Operator, Sealed Secrets, Vault agent)
 that produces the same keys. `values.schema.json` rejects secret-bearing keys
-under `settings` (for example `settings.auth.jwt_secret`), so they cannot end up
-in a ConfigMap or in Helm release history.
+under `settings` (for example `settings.auth.jwt_secret`, and any `api_key`,
+`*token*`, `*secret*` or `*password*` key under `settings.tools`), so they cannot
+end up in a ConfigMap or in Helm release history. Install-level threat-intel
+keys go into the same Secret as environment variables, for example
+`LG_SOTF_TOOLS__VIRUSTOTAL__API_KEY` and `LG_SOTF_TOOLS__ABUSEIPDB__API_KEY`;
+they are merged into `tools.<provider>` next to the non-secret settings.
 
 ### 3.2 Install
 
@@ -520,11 +536,15 @@ Use TLS to the database: `settings.database.ssl_mode: verify-full` and, for a
 private CA, `ssl_root_cert` pointing at a file mounted with `extraVolumes` /
 `extraVolumeMounts`.
 
-Connection budget: each process opens up to `database.pool_max` connections
-(the scheduler additionally holds one leader session, and the worker's LangGraph
-checkpointer has its own pool). Keep
-`(api + worker replicas) x pool_max + scheduler replicas x (pool_max + 1) + headroom`
-below PostgreSQL `max_connections`. If you add PgBouncer, the scheduler needs
+Connection budget: each API and scheduler process opens up to
+`database.pool_max` connections (the scheduler additionally holds one leader
+session). A worker's pool is `max(pool_max, worker.concurrency / 2)` (at most
+50), and its LangGraph checkpointer has its own pool of
+`min(pool_max, worker.concurrency)`. Keep
+`api replicas x pool_max + worker replicas x (worker pool + checkpointer pool) + scheduler replicas x (pool_max + 1) + 1 (migrate) + headroom`
+below PostgreSQL `max_connections` (stock PostgreSQL allows 100: with the
+defaults, 2 API + 4 workers + 1 scheduler use about 111, so raise it or put
+PgBouncer in front). If you add PgBouncer, the scheduler needs
 **session** pooling (advisory locks are session scoped).
 
 ## 5. TLS
@@ -546,11 +566,14 @@ below PostgreSQL `max_connections`. If you add PgBouncer, the scheduler needs
 Throughput is bounded by LLM latency and provider rate limits, not CPU.
 
 * A worker runs up to `worker.concurrency` workflow runs at once (default 16),
-  with at most `worker.per_tenant_concurrency` per tenant. LLM calls are further
-  bounded **per process** by `llm.fast.max_concurrency` and
-  `llm.deep.max_concurrency`.
-* Cluster-wide concurrent LLM calls are `worker replicas x max_concurrency` per
-  tier. Keep that below your provider's concurrency and requests-per-minute
+  with at most `worker.per_tenant_concurrency` per tenant **while other tenants
+  have work in that worker** (a tenant alone may use every slot, so
+  single-organisation installs get the full concurrency). LLM calls can be
+  further bounded **per process** by `llm.fast.max_concurrency` and
+  `llm.deep.max_concurrency` (unset: `worker.concurrency`, i.e. no extra bound;
+  watch `lgsotf_llm_slot_wait_seconds` when you set them).
+* Cluster-wide concurrent LLM calls are `worker replicas x max_concurrency`
+  (or `x worker.concurrency` when unset) per tier. Keep that below your provider's concurrency and requests-per-minute
   limits; otherwise calls are retried (`max_retries`) and runs slow down rather
   than scale.
 * Approximate sustained throughput:

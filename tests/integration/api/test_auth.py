@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness, fresh_rate_window
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -74,6 +74,90 @@ async def test_lockout_after_max_attempts_refuses_even_the_right_password(api: A
     assert "locked_now" in reasons and "locked" in reasons
 
 
+async def test_concurrent_logins_cannot_exceed_the_lockout_budget(api: ApiHarness, monkeypatch) -> None:
+    """AUTHZ-1: attempts are counted before argon2, so a burst runs at most max checks and a
+    correct password that arrives while the account locks is refused."""
+    import asyncio
+
+    import httpx
+
+    from lg_sotf.api.auth import service as auth_service
+
+    max_attempts = api.ctx.settings.auth.max_login_attempts
+    user = await api.user(TENANT_A, "admin", email="burst@a.example.com")
+    checks = 0
+    real_verify = auth_service.averify_password
+
+    async def counting_verify(hashed: str, password: str) -> bool:
+        nonlocal checks
+        checks += 1
+        await asyncio.sleep(0.05)  # keep every request in flight together
+        return await real_verify(hashed, password)
+
+    monkeypatch.setattr(auth_service, "averify_password", counting_verify)
+
+    async def attempt(i: int, password: str) -> int:
+        transport = httpx.ASGITransport(app=api.app, client=(f"10.9.{i // 250}.{i % 250 + 1}", 1234))
+        async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
+            response = await client.post(
+                "/api/v1/auth/login", json={"email": "burst@a.example.com", "password": password}
+            )
+            return response.status_code
+
+    guesses = [f"wrong-guess-{i:04d}-xyz" for i in range(2 * max_attempts)] + [PASSWORD]
+    statuses = await asyncio.gather(*(attempt(i, pw) for i, pw in enumerate(guesses)))
+    assert checks <= max_attempts, f"{checks} password checks ran, budget is {max_attempts}"
+    assert statuses[-1] == 401
+    assert set(statuses) == {401}
+    after = await api.repos.users.get(TENANT_A, user.id)
+    assert after.is_locked()
+    assert not (await api.repos.audit.list(TENANT_A, action="auth.login")).items
+
+
+async def test_correct_password_in_flight_does_not_clear_a_fresh_lock(api: ApiHarness) -> None:
+    user = await api.user(TENANT_A, "analyst", email="inflight@a.example.com")
+    reserved = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3)
+    assert reserved is not None
+    for _ in range(2):
+        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is not None
+    assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is None
+    locked = await api.repos.users.record_login_failure(
+        TENANT_A, user.id, max_attempts=3, lockout_minutes=15, counted=True
+    )
+    assert locked.is_locked()
+    # The first reservation was the right password; it must not wipe the lock.
+    assert await api.repos.users.record_login_success(TENANT_A, user.id) is None
+    assert (await api.repos.users.get(TENANT_A, user.id)).is_locked()
+
+
+async def test_unsettled_reservations_become_a_lock_that_expires(api: ApiHarness) -> None:
+    """Attempts reserved by requests that never settled (crash) must not refuse the account forever."""
+    from datetime import UTC, datetime, timedelta
+
+    user = await api.user(TENANT_A, "analyst", email="crashed@a.example.com")
+    for _ in range(3):
+        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is not None
+    assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15) is None
+    assert (await api.repos.users.get(TENANT_A, user.id)).is_locked()
+    later = datetime.now(UTC) + timedelta(minutes=16)
+    again = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, now=later)
+    assert again is not None and again.failed_logins == 1 and again.locked_until is None
+
+
+async def test_email_registered_in_another_tenant_does_not_block_tenantless_login(api: ApiHarness) -> None:
+    """AUTHZ-7: another tenant's admin registering the same email cannot break sign-in."""
+    victim = await api.user(TENANT_A, "admin", email="ceo@victim.example")
+    await api.user(TENANT_B, "viewer", email="ceo@victim.example", password="some other long password")
+    response = await _login(api, "ceo@victim.example")
+    assert response.status_code == 200, response.text
+    assert response.json()["user"]["id"] == str(victim.id)
+    squatter = await _login(api, "ceo@victim.example", "some other long password")
+    assert squatter.status_code == 200
+    assert squatter.json()["user"]["tenant_id"] == TENANT_B
+    wrong = await _login(api, "ceo@victim.example", "neither of the two passwords")
+    assert wrong.status_code == 401 and wrong.json()["error"]["code"] == "invalid_credentials"
+
+
 async def test_disabled_and_sso_only_accounts_cannot_log_in(api: ApiHarness) -> None:
     await api.user(TENANT_A, "analyst", email="off@a.example.com", active=False)
     await api.user(TENANT_A, "analyst", email="sso@a.example.com", password=None)
@@ -84,7 +168,11 @@ async def test_disabled_and_sso_only_accounts_cannot_log_in(api: ApiHarness) -> 
 async def test_email_in_two_tenants_needs_the_tenant(api: ApiHarness) -> None:
     await api.user(TENANT_A, "analyst", email="both@example.com")
     b_user = await api.user(TENANT_B, "viewer", email="both@example.com")
-    assert (await _login(api, "both@example.com")).status_code == 401
+    ambiguous = await _login(api, "both@example.com")
+    assert ambiguous.status_code == 401
+    assert ambiguous.json()["error"]["code"] == "tenant_required"
+    # The ambiguous answer does not use up the accounts' lockout budgets.
+    assert (await api.repos.users.get_by_email(TENANT_B, "both@example.com")).failed_logins == 0
     response = await _login(api, "both@example.com", tenant=TENANT_B)
     assert response.status_code == 200
     assert response.json()["user"]["id"] == str(b_user.id)
@@ -231,6 +319,7 @@ async def test_platform_admin_override_is_audited_and_others_cannot(api: ApiHarn
 
 async def test_repeated_auth_failures_from_one_address_are_throttled(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 1})
+    await fresh_rate_window()
     headers = {"Authorization": "Bearer not-a-token"}
     statuses = [(await api.client.get("/api/v1/alerts", headers=headers)).status_code for _ in range(25)]
     assert statuses[0] == 401
@@ -246,3 +335,43 @@ async def test_login_is_rate_limited_per_address_and_account(make_api) -> None:
     assert statuses == [401, 401, 429]
     assert int(response.headers["retry-after"]) >= 1
     assert response.json()["error"]["code"] == "rate_limited"
+
+
+async def test_per_address_login_cap_counts_only_failures(make_api) -> None:
+    """WSC-1: users sharing one address (a proxy) are not refused because of each other's valid logins,
+    while failures from that address are still capped."""
+    api = await make_api(api={"login_rate_limit_per_minute": 1})  # address cap: 10 per minute
+    for i in range(12):
+        await api.user(TENANT_A, "viewer", email=f"shared{i}@a.example.com")
+    await fresh_rate_window()
+    for i in range(12):
+        ok = await api.client.post(
+            "/api/v1/auth/login", json={"email": f"shared{i}@a.example.com", "password": PASSWORD}
+        )
+        assert ok.status_code == 200, (i, ok.text)
+    failures = [
+        (
+            await api.client.post("/api/v1/auth/login", json={"email": f"nobody{i}@a.example.com", "password": "wrong"})
+        ).status_code
+        for i in range(12)
+    ]
+    assert failures[:10] == [401] * 10 and failures[10:] == [429, 429]
+
+
+async def test_cookie_endpoints_refuse_other_origins(api: ApiHarness) -> None:
+    """WSC-8: a same-site sibling origin cannot rotate (and so revoke) or log out a user's session."""
+    from tests.integration.api.conftest import UI_ORIGIN
+
+    await api.user(TENANT_A, "analyst", email="csrf@a.example.com")
+    assert (await _login(api, "csrf@a.example.com")).status_code == 200
+    evil = {"Origin": "https://attacker.soc.example.com", "Content-Type": "text/plain"}
+    for path in ("/api/v1/auth/refresh", "/api/v1/auth/logout"):
+        refused = await api.client.post(path, headers=evil)
+        assert refused.status_code == 403, (path, refused.text)
+    cross = await api.client.post("/api/v1/auth/refresh", headers={"Sec-Fetch-Site": "cross-site"})
+    assert cross.status_code == 403
+    assert not (await api.repos.audit.list(TENANT_A, action="auth.refresh_reuse_detected")).items
+    # The session is intact: the UI's own origin and non-browser clients still work.
+    assert (await api.client.post("/api/v1/auth/refresh", headers={"Origin": UI_ORIGIN})).status_code == 200
+    assert (await api.client.post("/api/v1/auth/refresh")).status_code == 200
+    assert (await api.client.post("/api/v1/auth/logout", headers={"Origin": "https://testserver"})).status_code == 204

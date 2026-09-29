@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
 from redis.exceptions import RedisError
@@ -21,7 +22,7 @@ from lg_sotf.api.auth.authenticate import (
 from lg_sotf.api.auth.deps import ANY, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.auth.service import AuthService, invalid_session
-from lg_sotf.api.context import ApiContext, get_ctx
+from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
 from lg_sotf.api.schemas import LoginIn, MeOut, TokenOut, UserOut
@@ -70,18 +71,58 @@ def _login_ip_limit(ctx: ApiContext) -> int:
 
 
 async def _limit_login(ctx: ApiContext, request: Request, email: str) -> None:
-    """Per (address, account) limit plus a looser per-address cap.
+    """Per (address, account) limit plus a looser per-address cap on *failed* logins.
 
     Keying by account keeps one client's failed attempts from locking out
-    everyone else behind the same proxy address; the address cap still bounds
-    password hashing work from a single source. Per-account brute force is
-    bounded by lockout as well.
+    everyone else behind the same proxy address. The address cap counts only
+    failures (see :func:`_count_failed_login`), so many people signing in
+    correctly through one address are never refused by it, while password
+    hashing work from a single failing source stays bounded. Per-account brute
+    force is bounded by lockout as well.
     """
     ip = client_ip(request)
     limit = ctx.settings.api.login_rate_limit_per_minute
     account = credential_fingerprint(email.strip().lower())
     await ctx.limiter.enforce(LOGIN_BUCKET, f"{ip}:{account}", limit)
-    await ctx.limiter.enforce(LOGIN_IP_BUCKET, ip, _login_ip_limit(ctx))
+    blocked = await ctx.limiter.blocked(LOGIN_IP_BUCKET, ip, _login_ip_limit(ctx))
+    if blocked is not None:
+        raise rate_limited(blocked)
+
+
+async def _count_failed_login(ctx: ApiContext, request: Request) -> None:
+    await ctx.limiter.hit(LOGIN_IP_BUCKET, client_ip(request), _login_ip_limit(ctx))
+
+
+def _origin_host(value: str) -> str:
+    try:
+        return (urlsplit(value.strip()).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _check_cookie_origin(ctx: ApiContext, request: Request) -> None:
+    """CSRF guard for the cookie-authenticated endpoints (refresh, logout).
+
+    SameSite=Strict stops other *sites*, not other origins of the same site
+    (a sibling subdomain). Browsers send ``Origin`` on every POST, so a
+    browser request is accepted only from this API's own host, ``api.public_url``
+    or an ``api.cors_origins`` entry; ``Sec-Fetch-Site: cross-site`` is always
+    refused. Non-browser clients send neither header and are unaffected.
+    """
+    if request.headers.get("sec-fetch-site", "").lower() == "cross-site":
+        raise ApiError(403, "forbidden", "cross-site request refused")
+    origin = request.headers.get("origin")
+    if origin is None:
+        return
+    allowed = {o.lower() for o in allowed_origins(ctx.settings)}
+    allowed.add(ctx.settings.api.public_url.strip().rstrip("/").lower())
+    host = _origin_host(origin)
+    # The host the request was sent to (a proxy may drop the port from Host).
+    own_host = _origin_host("//" + request.headers.get("host", ""))
+    if origin.strip().rstrip("/").lower() in allowed or (host and host == own_host):
+        return
+    log.warning("auth.cookie_request_bad_origin", path=request.url.path)
+    raise ApiError(403, "forbidden", "request origin is not allowed")
 
 
 async def _limit_session(ctx: ApiContext, request: Request, bucket: str, presented: Optional[str]) -> None:
@@ -95,7 +136,12 @@ async def _limit_session(ctx: ApiContext, request: Request, bucket: str, present
 async def login(body: LoginIn, request: Request, response: Response) -> TokenOut:
     ctx = get_ctx(request)
     await _limit_login(ctx, request, body.email)
-    session = await AuthService(ctx).login(body.email, body.password, body.tenant, client_ip=client_ip(request))
+    try:
+        session = await AuthService(ctx).login(body.email, body.password, body.tenant, client_ip=client_ip(request))
+    except ApiError as exc:
+        if exc.status_code == 401:
+            await _count_failed_login(ctx, request)
+        raise
     _set_refresh_cookie(ctx, response, session.refresh.token)
     return TokenOut(
         access_token=session.access.token,
@@ -107,6 +153,7 @@ async def login(body: LoginIn, request: Request, response: Response) -> TokenOut
 @router.post("/refresh", response_model=TokenOut, summary="Rotate the refresh cookie and get a new access token")
 async def refresh(request: Request, response: Response) -> TokenOut:
     ctx = get_ctx(request)
+    _check_cookie_origin(ctx, request)
     presented = request.cookies.get(REFRESH_COOKIE)
     await _limit_session(ctx, request, REFRESH_BUCKET, presented)
     if not presented:
@@ -139,6 +186,7 @@ async def refresh(request: Request, response: Response) -> TokenOut:
 @router.post("/logout", status_code=204, summary="Revoke the refresh cookie (and the presented access token)")
 async def logout(request: Request) -> Response:
     ctx = get_ctx(request)
+    _check_cookie_origin(ctx, request)
     presented = request.cookies.get(REFRESH_COOKIE)
     await _limit_session(ctx, request, REFRESH_BUCKET, presented)
     await AuthService(ctx).logout(presented)

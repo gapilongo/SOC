@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Tuple, Union
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from psycopg.rows import dict_row
@@ -29,6 +28,7 @@ from pydantic import ValidationError as PydanticValidationError
 from redis.asyncio import Redis
 
 from lg_sotf.agents.registry import AgentSet
+from lg_sotf.core.checkpointer import TenantScopedPostgresSaver
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.exceptions import InvalidResumePayload, WorkflowError
 from lg_sotf.core.graph import build_graph, cap_alert
@@ -136,7 +136,7 @@ class WorkflowEngine:
         repos: Repositories,
         graph: CompiledStateGraph,
         pool: AsyncConnectionPool,
-        checkpointer: AsyncPostgresSaver,
+        checkpointer: TenantScopedPostgresSaver,
         agents: AgentSet,
         escalations: EscalationService,
         events: Optional[EventPublisher],
@@ -186,7 +186,7 @@ class WorkflowEngine:
             verdicts=VerdictCache(redis, settings.redis.key_prefix),
             thresholds=RoutingThresholds.from_settings(settings.routing),
             events=events,
-            budget=TokenBudget(redis, settings),
+            budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
         )
         size = checkpoint_pool_size or max(2, min(settings.database.pool_max, settings.worker.concurrency))
         pool: AsyncConnectionPool = AsyncConnectionPool(
@@ -196,9 +196,15 @@ class WorkflowEngine:
             kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
             open=False,
             name="lgsotf-checkpoints",
+            # Verify a connection before handing it out: after a database restart or
+            # failover, idle connections are dead and would fail the next run (which
+            # then waits worker.visibility_timeout_s for redelivery).
+            check=AsyncConnectionPool.check_connection,
+            max_idle=300.0,
+            max_lifetime=1_800.0,
         )
         await pool.open(wait=True, timeout=settings.database.command_timeout_s)
-        checkpointer = AsyncPostgresSaver(pool)  # type: ignore[arg-type]
+        checkpointer = TenantScopedPostgresSaver(pool)  # type: ignore[arg-type]
         graph = build_graph(
             WorkflowNodes(deps),
             deps.thresholds,
@@ -239,6 +245,21 @@ class WorkflowEngine:
                     return value
         return None
 
+    @staticmethod
+    def _unfinished(snapshot: Any) -> Tuple[str, ...]:
+        """Nodes still to run from the latest checkpoint; empty only when the graph finished.
+
+        ``snapshot.next`` leaves out tasks whose writes were already saved. A
+        process killed after a step's writes but before that step's checkpoint
+        (e.g. right after ``__start__``) leaves such tasks and an empty
+        ``next``; the thread is still unfinished and ``ainvoke(None)`` continues
+        it from the saved writes.
+        """
+        remaining = tuple(snapshot.next or ())
+        if remaining:
+            return remaining
+        return tuple(str(getattr(t, "name", "")) for t in (getattr(snapshot, "tasks", ()) or ()))
+
     # ------------------------------------------------------------------ run
 
     async def run(self, tenant_id: str, alert_id: str) -> RunOutcome:
@@ -255,7 +276,7 @@ class WorkflowEngine:
             pending = self._pending_interrupt(snapshot)
             if pending is not None:
                 return await self._waiting(tenant_id, alert_id, pending)
-            if snapshot.next:
+            if self._unfinished(snapshot):
                 return await self._continue(tenant_id, alert_id, snapshot, config)
             if snapshot.values:
                 if alert.status not in ("new", "queued"):
@@ -274,7 +295,7 @@ class WorkflowEngine:
             snapshot = await self.graph.aget_state(config)
             pending = self._pending_interrupt(snapshot)
             if pending is None:
-                if snapshot.next:
+                if self._unfinished(snapshot):
                     return await self._continue(tenant_id, alert_id, snapshot, config)
                 if snapshot.values:
                     alert = await self.repos.alerts.get(tenant_id, alert_id)
@@ -327,7 +348,7 @@ class WorkflowEngine:
         close transaction committed but its checkpoint was not written);
         ``close`` is idempotent, so it simply runs again.
         """
-        remaining = tuple(snapshot.next)
+        remaining = self._unfinished(snapshot)
         log.info("workflow.continue_checkpoint", next=list(remaining))
         alert = await self.repos.alerts.get(tenant_id, alert_id)
         if not (alert.status == "closed" and set(remaining) <= {"close"}):
@@ -390,11 +411,26 @@ class WorkflowEngine:
         pending = self._pending_interrupt(snapshot)
         if pending is not None:
             return await self._waiting(tenant_id, alert_id, pending)
-        if snapshot.next:
-            raise WorkflowError(f"workflow stopped before finishing (next={list(snapshot.next)})")
+        if remaining := self._unfinished(snapshot):
+            raise WorkflowError(f"workflow stopped before finishing (next={list(remaining)})")
         alert = await self.repos.alerts.get(tenant_id, alert_id)
+        await self._prune_checkpoints(config)
         log.info("workflow.completed", alert_status=alert.status, disposition=alert.disposition)
         return RunOutcome("completed", alert.status, None)
+
+    async def _prune_checkpoints(self, config: RunnableConfig) -> None:
+        """Keep only the final checkpoint of a finished run (the one ``aget_state`` reads).
+
+        Each node boundary writes a checkpoint (``durability="sync"``), about
+        eight per alert; once the run is finished only the last one is ever
+        read again. Best effort: retention removes whatever a failure leaves.
+        """
+        try:
+            removed = await self._checkpointer.aprune_thread(config["configurable"]["thread_id"])
+        except Exception as exc:  # noqa: BLE001 - storage housekeeping must never fail a finished run
+            log.warning("workflow.checkpoint_prune_failed", error_type=type(exc).__name__)
+            return
+        log.debug("workflow.checkpoints_pruned", removed=removed)
 
     async def _waiting(self, tenant_id: str, alert_id: str, pending: Dict[str, Any]) -> RunOutcome:
         target = WAITING_STATUS.get(str(pending.get("type")))

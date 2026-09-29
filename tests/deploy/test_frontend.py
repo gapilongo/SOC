@@ -121,7 +121,12 @@ def test_nginx_sends_security_headers_on_every_static_response() -> None:
 
 def test_nginx_caching_and_spa_fallback() -> None:
     locations = _locations(NGINX_CONF.read_text())
-    assert 'Cache-Control "public, max-age=31536000, immutable"' in locations["/assets/"]
+    # WSC-4: long-lived caching only for assets that exist; a 404 is never cached.
+    assert "add_header Cache-Control $asset_cache_control always;" in locations["/assets/"]
+    cache_map = re.search(r"map \$status \$asset_cache_control \{(.*?)\}", NGINX_CONF.read_text(), re.S)
+    assert cache_map is not None
+    assert '200     "public, max-age=31536000, immutable";' in cache_map.group(1)
+    assert 'default "no-store";' in cache_map.group(1)
     assert "try_files $uri =404;" in locations["/assets/"], "missing hashed assets must 404, not serve index.html"
     assert 'Cache-Control "no-store"' in locations["= /config.js"]
     assert "try_files $uri /index.html;" in locations["/"]
@@ -351,3 +356,24 @@ def test_helm_schema_rejects_injectable_frontend_values() -> None:
 def test_helm_frontend_can_be_disabled() -> None:
     manifests = render("--set", "frontend.enabled=false")
     assert not find(manifests, "Deployment", "-frontend")
+
+
+def test_entrypoint_trusts_forwarded_headers_only_from_listed_proxies(tmp_path: Path) -> None:
+    """WSC-1: X-Forwarded-Proto / the client address come only from LG_SOTF_TRUSTED_PROXIES."""
+    proc = _run_entrypoint(tmp_path, {"LG_SOTF_API_UPSTREAM": "http://api:8000"})
+    assert proc.returncode == 0, proc.stderr
+    out = tmp_path / "out"
+    assert (out / "realip.conf").read_text() == ""
+    assert "default $scheme;" in (out / "proxy-http.conf").read_text()
+    assert "X-Forwarded-Proto $lg_forwarded_proto;" in (out / "api-proxy.conf").read_text()
+    assert "X-Forwarded-For $proxy_add_x_forwarded_for;" in (out / "api-proxy.conf").read_text()
+
+    proc = _run_entrypoint(tmp_path, {"LG_SOTF_TRUSTED_PROXIES": "10.1.0.0/16 fd00::/8"})
+    assert proc.returncode == 0, proc.stderr
+    realip = (out / "realip.conf").read_text()
+    assert "set_real_ip_from 10.1.0.0/16;" in realip and "set_real_ip_from fd00::/8;" in realip
+    assert "real_ip_header X-Forwarded-For;" in realip
+    assert "  10.1.0.0/16 1;" in (out / "proxy-http.conf").read_text()
+
+    bad = _run_entrypoint(tmp_path, {"LG_SOTF_TRUSTED_PROXIES": "10.0.0.0/8; evil"})
+    assert bad.returncode != 0

@@ -315,6 +315,8 @@ class TestLLMUsage:
         assert usage[0].cost_usd == Decimal("0.002500")
         totals = await repos.llm_usage.day_totals(TENANT_A, d2)
         assert (totals.calls, totals.input_tokens, totals.output_tokens) == (1, 1000, 300)
+        assert await repos.llm_usage.day_tokens(TENANT_A, d2) == 1000 + 300 + 800  # cache reads count too
+        assert await repos.llm_usage.day_tokens(TENANT_A, date(2020, 1, 1)) == 0
         assert (await repos.llm_usage.day_totals(TENANT_A, date(2020, 1, 1))).calls == 0
         assert [u.calls for u in await repos.llm_usage.list_range(TENANT_B, d1, d1)] == [7]
         with pytest.raises(ValueError):

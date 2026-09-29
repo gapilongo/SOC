@@ -15,6 +15,7 @@ CONTRACT_METRICS = {
     "lgsotf_runs_total": ("outcome",),
     "lgsotf_node_seconds": ("node",),
     "lgsotf_llm_calls_total": ("model", "agent", "outcome"),
+    "lgsotf_llm_slot_wait_seconds": ("tier",),
     "lgsotf_llm_tokens_total": ("model", "kind"),
     "lgsotf_llm_cost_usd_total": ("model",),
     "lgsotf_escalations_open": (),

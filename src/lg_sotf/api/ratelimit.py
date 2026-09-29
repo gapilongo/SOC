@@ -79,6 +79,19 @@ class RateLimiter:
             return 0
         return int(value) if value is not None else 0
 
+    async def blocked(
+        self, bucket: str, identity: str, limit: int, *, window_s: int = WINDOW_S
+    ) -> Optional[RateDecision]:
+        """A refusing decision when ``identity`` already used ``limit`` in this window (nothing is counted)."""
+        if limit <= 0:
+            return None
+        now = self._clock()
+        count = await self.peek(bucket, identity, window_s=window_s)
+        if count < limit:
+            return None
+        window = int(now // window_s)
+        return RateDecision(False, limit, 0, max(1, math.ceil((window + 1) * window_s - now)))
+
     async def enforce(
         self,
         bucket: str,

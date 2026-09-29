@@ -9,9 +9,18 @@ model's answer is treated as untrusted too:
   ``1.1.1.1`` is not grounded by ``11.1.1.10``), so the model cannot invent
   indicators;
 * the alert id is never taken from the model (a hash of the event is used);
+* title and rule name are kept only when they equal a whole scalar value
+  of the event (otherwise the title is ``Unrecognized event from
+  <source>``): they feed the fingerprint and triage, so a model must not
+  compose them from attacker text;
 * severity is floored at ``medium`` so a model cannot demote an unknown
-  event into something the workflow might close without review;
-* the alert is flagged ``llm_normalized``.
+  event;
+* the alert is flagged ``llm_normalized``. Triage treats none of its text as
+  trusted, the gate never applies a cached verdict to it, and routing never
+  closes it automatically (``decide`` escalates with code
+  ``llm_normalized``);
+* the tenant's ``llm_daily_token_budget`` applies; an exhausted budget
+  rejects the event without calling the model.
 """
 
 from __future__ import annotations
@@ -23,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lg_sotf.ingestion.entities import normalize_hash, normalize_ip
 from lg_sotf.ingestion.normalizers.base import AlertBuilder, NormalizeContext
-from lg_sotf.llm import TokenBudget, ainvoke_structured, build_messages, get_chat_model
+from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget, ainvoke_structured, build_messages, get_chat_model
 from lg_sotf.models.alert import SEVERITIES, CanonicalAlert, Severity
 from lg_sotf.settings import Settings
 
@@ -97,8 +106,11 @@ class Grounding:
         scalars: List[str] = []
         _scalar_text(event, scalars)
         self.values: Set[str] = set()
+        self.scalars: Set[str] = set()
         for text in scalars[:_MAX_GROUNDING_VALUES]:
             self._add(text)
+            if text.strip():
+                self.scalars.add(text.strip().lower())
             for pattern in (_SPLIT, _SPLIT_FINE):
                 for token in pattern.split(text):
                     self._add(token)
@@ -123,6 +135,12 @@ class Grounding:
         normalized = canon(value)
         return normalized is not None and normalized in self._canonical[kind or ""]
 
+    def whole_value(self, value: Optional[str]) -> Optional[str]:
+        """``value`` when it is exactly one scalar of the event (case-insensitive), else ``None``."""
+        if isinstance(value, str) and value.strip() and value.strip().lower() in self.scalars:
+            return value.strip()
+        return None
+
     def filter(self, values: List[str], kind: Optional[str] = None) -> List[str]:
         return [v for v in values if self.contains(v, kind)]
 
@@ -134,8 +152,10 @@ async def llm_normalize(
     settings: Settings,
     tenant_id: str,
     budget: Optional[TokenBudget] = None,
+    budget_limit: BudgetLimit = USE_DEFAULT,
 ) -> CanonicalAlert:
-    """Raises :class:`lg_sotf.llm.LLMError` subclasses or :class:`NormalizationError`."""
+    """Raises :class:`lg_sotf.llm.LLMError` subclasses (``LLMBudgetExceeded`` when the
+    tenant's daily budget is spent) or :class:`NormalizationError`."""
     model = get_chat_model("fast", settings)
     messages = build_messages(SYSTEM, TASK, {"event": dict(event)}, settings=settings)
     out = await ainvoke_structured(
@@ -147,6 +167,7 @@ async def llm_normalize(
         tenant_id=tenant_id,
         settings=settings,
         budget=budget,
+        budget_limit=budget_limit,
     )
     grounding = Grounding(event)
     b = AlertBuilder(event, ctx)
@@ -159,12 +180,14 @@ async def llm_normalize(
     if SEVERITIES.index(severity) < SEVERITIES.index(MIN_LLM_SEVERITY):
         severity = MIN_LLM_SEVERITY
     occurred = out.occurred_at if out.occurred_at and grounding.contains(out.occurred_at) else None
+    rule_name = grounding.whole_value(out.rule_name)
+    title = grounding.whole_value(out.title) or rule_name or f"Unrecognized event from {ctx.source_id}"[:300]
     return b.build(
-        title=out.title,
+        title=title,
         severity=severity,
         time_candidates=(occurred,),
         source_alert_id=None,
         description=out.description,
-        category=out.category,
-        rule_name=out.rule_name,
+        category=grounding.whole_value(out.category),
+        rule_name=rule_name,
     )

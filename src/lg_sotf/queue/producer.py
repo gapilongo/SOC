@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, List, Mapping, Optional, Sequence, Tuple
 
 from redis.asyncio import Redis
 
@@ -41,6 +41,20 @@ class WorkQueue:
         entry_id = await self._add(stream, encode_work(tenant_id, alert_id, "process", {}))
         log.debug("queue.enqueued", kind="process", stream=self._streams.label(stream), entry_id=entry_id)
         return entry_id
+
+    async def enqueue_process_many(self, tenant_id: str, alerts: Sequence[Tuple[str, str]]) -> List[str]:
+        """``enqueue_process`` for several ``(alert_id, severity)`` pairs in one pipelined round trip."""
+        if not alerts:
+            return []
+        for _, severity in alerts:
+            if severity not in SEVERITIES:
+                raise ValueError(f"invalid severity: {severity!r}")
+        async with self._redis.pipeline(transaction=False) as pipe:
+            for alert_id, severity in alerts:
+                pipe.xadd(self._streams.for_severity(severity), dict(encode_work(tenant_id, alert_id, "process", {})))  # type: ignore[arg-type]
+            ids = await pipe.execute()
+        log.debug("queue.enqueued", kind="process", count=len(ids))
+        return [_text(i) for i in ids]
 
     async def enqueue_resume(self, tenant_id: str, alert_id: str, payload: Mapping[str, Any]) -> str:
         """Queue a resume of an interrupted run on the high-priority stream (an analyst is waiting)."""

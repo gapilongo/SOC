@@ -140,7 +140,7 @@ Fast tier: triage, correlation and ingestion fallback calls. Setting one key of 
 | `llm.fast.effort` | `LG_SOTF_LLM__FAST__EFFORT` | `low` \| `medium` \| `high` \| `xhigh` \| `max` (optional) | unset | Optional effort level (`low`, `medium`, `high`, `xhigh`, `max`) for models that support it. |
 | `llm.fast.timeout_s` | `LG_SOTF_LLM__FAST__TIMEOUT_S` | number | `60.0` | Per-call timeout. |
 | `llm.fast.max_retries` | `LG_SOTF_LLM__FAST__MAX_RETRIES` | integer | `2` | Client retries for transient provider errors. |
-| `llm.fast.max_concurrency` | `LG_SOTF_LLM__FAST__MAX_CONCURRENCY` | integer | `16` | Concurrent calls of this tier per process. |
+| `llm.fast.max_concurrency` | `LG_SOTF_LLM__FAST__MAX_CONCURRENCY` | integer (optional) | unset | Concurrent calls of this tier per process; unset = `worker.concurrency`. Set it only to respect a provider rate limit (waits show in `lgsotf_llm_slot_wait_seconds`). |
 
 ### `llm.deep`
 
@@ -154,7 +154,7 @@ Deep tier: the analysis agent's investigation. Setting one key of the tier keeps
 | `llm.deep.effort` | `LG_SOTF_LLM__DEEP__EFFORT` | `low` \| `medium` \| `high` \| `xhigh` \| `max` (optional) | unset | Optional effort level (`low`, `medium`, `high`, `xhigh`, `max`) for models that support it. |
 | `llm.deep.timeout_s` | `LG_SOTF_LLM__DEEP__TIMEOUT_S` | number | `300.0` | Per-call timeout. |
 | `llm.deep.max_retries` | `LG_SOTF_LLM__DEEP__MAX_RETRIES` | integer | `2` | Client retries for transient provider errors. |
-| `llm.deep.max_concurrency` | `LG_SOTF_LLM__DEEP__MAX_CONCURRENCY` | integer | `8` | Concurrent calls of this tier per process. |
+| `llm.deep.max_concurrency` | `LG_SOTF_LLM__DEEP__MAX_CONCURRENCY` | integer (optional) | unset | Concurrent calls of this tier per process; unset = `worker.concurrency`. Set it only to respect a provider rate limit (waits show in `lgsotf_llm_slot_wait_seconds`). |
 
 ### `auth`
 
@@ -204,6 +204,12 @@ HTTP API process.
 | `api.metrics_token` | `LG_SOTF_API__METRICS_TOKEN` | secret (optional) | unset | Bearer token required by the API's `/metrics`. |
 | `api.docs_enabled` | `LG_SOTF_API__DOCS_ENABLED` | boolean | `true` | Serve `/docs` and `/api/v1/openapi.json`. Consider disabling in production. |
 | `api.forwarded_allow_ips` | `LG_SOTF_API__FORWARDED_ALLOW_IPS` | string | `127.0.0.1` | Proxies whose `X-Forwarded-*` headers are trusted. Only the ingress controller or load balancer; the client IP keys login rate limits and audit entries. |
+| `api.ws_max_per_principal` | `LG_SOTF_API__WS_MAX_PER_PRINCIPAL` | integer | `5` | Concurrent live-event WebSockets per principal per API process; more get close code 1013. |
+| `api.ws_max_per_tenant` | `LG_SOTF_API__WS_MAX_PER_TENANT` | integer | `100` | Concurrent live-event WebSockets per tenant per API process, so one tenant cannot take every slot. |
+| `api.ws_max_subscribers` | `LG_SOTF_API__WS_MAX_SUBSCRIBERS` | integer | `1000` | Concurrent live-event WebSockets per API process (all tenants). |
+| `api.ws_subscriber_buffer` | `LG_SOTF_API__WS_SUBSCRIBER_BUFFER` | integer | `256` | Events buffered per WebSocket before a slow client is disconnected (1013). |
+| `api.ws_revalidate_s` | `LG_SOTF_API__WS_REVALIDATE_S` | number | `15.0` | How often an open WebSocket re-checks its token (logout), account and tenant status. |
+| `api.max_inflight_ingest` | `LG_SOTF_API__MAX_INFLIGHT_INGEST` | integer | `64` | Ingest requests processed at once per API process; more get 503 with Retry-After instead of queueing on the database pool. |
 
 ### `worker`
 
@@ -219,7 +225,7 @@ Worker process (queue consumer and workflow runner).
 | `worker.visibility_timeout_s` | `LG_SOTF_WORKER__VISIBILITY_TIMEOUT_S` | integer | `1200` | Pending entries of live workers older than this are reclaimed by other workers. |
 | `worker.block_ms` | `LG_SOTF_WORKER__BLOCK_MS` | integer | `5000` | Blocking read time on the queue streams. |
 | `worker.drain_timeout_s` | `LG_SOTF_WORKER__DRAIN_TIMEOUT_S` | number | `60.0` | Time given to in-flight runs on `SIGTERM`. |
-| `worker.per_tenant_concurrency` | `LG_SOTF_WORKER__PER_TENANT_CONCURRENCY` | integer | `8` | Runs in flight per tenant per worker process (noisy-neighbour limit). |
+| `worker.per_tenant_concurrency` | `LG_SOTF_WORKER__PER_TENANT_CONCURRENCY` | integer | `8` | Runs in flight per tenant per worker process while other tenants have work in that process (noisy-neighbour limit); a tenant alone may use every slot. |
 
 ### `scheduler`
 

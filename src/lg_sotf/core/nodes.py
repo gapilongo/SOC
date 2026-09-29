@@ -28,7 +28,7 @@ from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.core.graph import WorkflowState
 from lg_sotf.core.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.core.suppression import alert_match_view, first_matching_rule
-from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
@@ -185,9 +185,12 @@ class WorkflowNodes:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
             by = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
-        if state["severity"] != "critical":
+        flags = alert.get("flags") if isinstance(alert.get("flags"), list) else []
+        # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
+        # attacker-shaped text: it never inherits a cached verdict.
+        if state["severity"] != "critical" and "llm_normalized" not in flags:
             cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
-            if cached is not None:
+            if cached is not None and cache_applies(cached, state["severity"]):
                 cache_hit: Dict[str, Any] = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
@@ -423,6 +426,13 @@ class WorkflowNodes:
             threat_texts.extend(str(v) for v in (mitre or {}).get(key) or [] if isinstance(v, (str, int)))
         # An inherited group decision (attached alert) never pre-approves this alert's actions.
         is_tp = analyst.get("decision") == "true_positive" and not analyst.get("inherited_from")
+        targets = analysis.get("corroborated_targets")
+        corroborated = (
+            frozenset((str(t[0]), str(t[1])) for t in targets if isinstance(t, (list, tuple)) and len(t) == 2)
+            if isinstance(targets, list)
+            else None
+        )
+        entities = alert.get("entities") if isinstance(alert.get("entities"), Mapping) else {}
         ctx = PlanContext(
             severity=state["severity"],
             evidence=self._evidence(state),  # type: ignore[arg-type]
@@ -434,7 +444,11 @@ class WorkflowNodes:
             approved_actions=list(analyst.get("approved_actions") or []) if is_tp else [],
             approved_by=str(analyst.get("decided_by")) if is_tp and analyst.get("decided_by") else None,
             approver_role=analyst.get("approver_role") if is_tp else None,
+            corroborated_targets=corroborated,
+            hosts=[str(h) for h in (entities or {}).get("hosts") or [] if isinstance(h, str)],
         )
+        # A response for this detection contradicts any cached "benign" verdict for it.
+        await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
         counts = {"auto": len(plan.auto), "awaiting": len(plan.awaiting), "blocked": len(plan.blocked), "done": len(plan.done)}
         await self.deps.repos.alerts.update(
@@ -575,7 +589,10 @@ class WorkflowNodes:
                 decision=str(analyst["decision"]),
                 alert_id=alert_id,
                 escalation_id=state.get("escalation_id"),
+                severity=state["severity"],
             )
+        elif disposition == "malicious":
+            await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
         return {
             "disposition": disposition,
             "close_reason": reason,

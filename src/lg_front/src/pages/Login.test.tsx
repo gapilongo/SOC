@@ -47,6 +47,20 @@ describe('LoginPage', () => {
     expect(screen.getByText('req-login-42')).toBeInTheDocument();
   });
 
+  it('asks for the tenant when the account exists in several tenants', async () => {
+    const s = session(
+      vi.fn(async () => {
+        throw apiError(401, 'tenant_required', 'enter the tenant', 'req-login-43');
+      }),
+    );
+    await s.auth.init();
+    renderWithSession(routes, s, { route: '/login' });
+    await userEvent.type(screen.getByLabelText('Email'), 'a@acme.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'correct horse');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText(/exists in several tenants/)).toBeInTheDocument();
+  });
+
   it('explains an expired session', async () => {
     const s = session();
     await s.auth.login('a@acme.test', 'pw', null);

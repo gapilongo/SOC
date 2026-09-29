@@ -280,3 +280,18 @@ def test_prod_override_with_generated_env_file_isolates_credentials(tmp_path: Pa
     assert pg["POSTGRES_PASSWORD"] == superuser and pg["LGSOTF_OWNER_PASSWORD"] == owner_pw
     # Optional pass-through keys that are unset in .env stay unset (not empty strings).
     assert services["api"]["environment"].get("ANTHROPIC_API_KEY") is None
+
+
+def test_api_trusts_exactly_the_frontend_proxy() -> None:
+    """WSC-1: behind the bundled nginx every request would otherwise carry the proxy's address,
+    so one client could exhaust the per-address login cap for everyone."""
+    base = yaml.load(COMPOSE.read_text(), Loader=ComposeLoader)  # noqa: S506 - SafeLoader subclass
+    prod = yaml.load(PROD.read_text(), Loader=ComposeLoader)  # noqa: S506
+    services = base["services"]
+    frontend_ip = services["frontend"]["networks"]["edge"]["ipv4_address"]
+    assert frontend_ip == "${EDGE_FRONTEND_IP:-172.31.250.2}"
+    assert services["api"]["environment"]["LG_SOTF_API__FORWARDED_ALLOW_IPS"] == frontend_ip
+    assert "edge" in services["api"]["networks"]
+    assert base["networks"]["edge"]["ipam"]["config"][0]["subnet"] == "${EDGE_SUBNET:-172.31.250.0/29}"
+    prod_api = prod["services"]["api"]["environment"]["LG_SOTF_API__FORWARDED_ALLOW_IPS"]
+    assert prod_api.endswith("${EDGE_FRONTEND_IP:-172.31.250.2}}")

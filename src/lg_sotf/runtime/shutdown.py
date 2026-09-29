@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from typing import Callable, Iterable, Optional, Set
+from typing import Any, Callable, Iterable, Optional, Set
 
 from lg_sotf.observability.logging import get_logger
 
@@ -64,13 +64,30 @@ def cancel_current_task() -> Callable[[], None]:
     return cancel
 
 
-async def cancel_and_wait(tasks: Iterable[asyncio.Task[object]]) -> None:
-    """Cancel tasks and wait until they have finished (their exceptions are discarded)."""
-    pending: Set[asyncio.Task[object]] = {t for t in tasks if not t.done()}
-    for task in pending:
-        task.cancel()
-    if pending:
-        await asyncio.gather(*pending, return_exceptions=True)
+RECANCEL_INTERVAL_S = 2.0
+
+
+async def cancel_and_wait(tasks: Iterable[asyncio.Task[Any]], *, recancel_s: float = RECANCEL_INTERVAL_S) -> None:
+    """Cancel tasks and wait until they have finished (their exceptions are discarded).
+
+    A cancellation can be *swallowed*: on Python 3.11 ``asyncio.wait_for``
+    returns the inner result and drops the outer cancel when the inner
+    future finished at the same moment, and redis-py wraps every command in
+    ``wait_for``. A task that swallowed it keeps running, so it is cancelled
+    again every ``recancel_s`` until it is done, instead of being awaited
+    forever.
+    """
+    all_tasks = [t for t in tasks]
+    pending: Set[asyncio.Task[Any]] = {t for t in all_tasks if not t.done()}
+    while pending:
+        for task in pending:
+            task.cancel()
+        _done, pending = await asyncio.wait(pending, timeout=recancel_s)
+        if pending:
+            log.warning("runtime.task_running_after_cancel", tasks=len(pending))
+    for task in all_tasks:
+        if not task.cancelled():
+            task.exception()  # retrieved: never "exception was never retrieved"
 
 
 async def wait_or_stop(stop: asyncio.Event, timeout_s: float) -> bool:

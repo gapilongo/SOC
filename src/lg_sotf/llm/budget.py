@@ -3,6 +3,13 @@
 Usage is counted per UTC day under ``{prefix}:t:{tenant}:llm:tokens:{YYYYMMDD}``.
 A call reserves an estimate up front (rejected if it would cross the limit)
 and settles the difference once real usage is known.
+
+Redis is only a cache of the day's usage: when the day's key is missing or
+empty (Redis restarted without persistence, failed over, evicted the key),
+it is seeded from ``llm_usage_daily`` (the ``usage_seed`` callable) before
+the first reservation, so a Redis data loss does not hand a tenant a fresh
+budget. Usage not yet flushed to PostgreSQL (at most the usage recorder's
+flush interval per process) is the remaining window.
 """
 
 from __future__ import annotations
@@ -10,7 +17,7 @@ from __future__ import annotations
 import enum
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Final, Literal, Optional, Union
+from typing import Awaitable, Callable, Final, Literal, Optional, Union
 
 from redis.asyncio import Redis
 
@@ -41,12 +48,23 @@ def _today() -> date:
     return datetime.now(UTC).date()
 
 
+UsageSeed = Callable[[str, date], Awaitable[int]]
+
+
 class TokenBudget:
-    def __init__(self, redis: Redis, settings: Optional[Settings] = None, *, key_prefix: Optional[str] = None):
+    def __init__(
+        self,
+        redis: Redis,
+        settings: Optional[Settings] = None,
+        *,
+        key_prefix: Optional[str] = None,
+        usage_seed: Optional[UsageSeed] = None,
+    ):
         s = settings or get_settings()
         self._redis = redis
         self._default_limit = s.llm.daily_token_budget_per_tenant
         self._prefix = key_prefix or s.redis.key_prefix
+        self._usage_seed = usage_seed
 
     def key(self, tenant_id: str, day: Optional[date] = None) -> str:
         d = day or _today()
@@ -81,6 +99,12 @@ class TokenBudget:
         day = _today()
         key = self.key(tenant_id, day)
         new_total = await self._incr(key, estimated_tokens)
+        if new_total == estimated_tokens and self._usage_seed is not None:
+            # The counter was empty: nothing counted today, or Redis lost it. Only this caller
+            # sees its own estimate as the total, so the day is seeded once.
+            recorded = await self._usage_seed(tenant_id, day)
+            if recorded > 0:
+                new_total = await self._incr(key, recorded)
         if effective is not None and new_total > effective:
             await self._incr(key, -estimated_tokens)
             raise LLMBudgetExceeded(

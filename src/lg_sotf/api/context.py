@@ -38,6 +38,30 @@ class WebSocketOptions:
     max_message_bytes: int = 4_096
 
 
+class Admission:
+    """Non-blocking cap on requests in flight (ingest routes).
+
+    Over the cap a request is refused at once (the caller answers 503 with
+    ``Retry-After``) instead of queueing on the database pool, where it
+    would time out after seconds and slow every other request down.
+    """
+
+    def __init__(self, limit: int) -> None:
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        self.limit = limit
+        self.inflight = 0
+
+    def try_acquire(self) -> bool:
+        if self.inflight >= self.limit:
+            return False
+        self.inflight += 1
+        return True
+
+    def release(self) -> None:
+        self.inflight = max(0, self.inflight - 1)
+
+
 class TenantCache:
     """Short-lived cache of tenant rows (status checks on every request)."""
 
@@ -83,6 +107,11 @@ class ApiContext:
     secret_box: Optional[SecretBox] = None
     oidc: Optional[OIDCVerifier] = None
     ws: WebSocketOptions = field(default_factory=WebSocketOptions)
+    ingest_admission: Optional[Admission] = None
+
+    def __post_init__(self) -> None:
+        if self.ingest_admission is None:
+            self.ingest_admission = Admission(self.settings.api.max_inflight_ingest)
 
     @property
     def prefix(self) -> str:

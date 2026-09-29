@@ -122,14 +122,29 @@ async def test_false_positive_creates_a_disabled_suppression_suggestion(
 ) -> None:
     settings = make_settings()
     review = ReviewService(repos, settings)
-    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner")
+    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner", severity="medium")
     ticket = await EscalationService(repos, None, settings).open_or_attach(
         TENANT_A, alert_id, severity="medium", confidence=50, threat_score=20, reason="review"
     )
     analyst = await user(repos, "analyst")
     result = await review.decide(TENANT_A, ticket.id, analyst, "analyst", "false_positive", "scanner", [], ticket.version)
     rule = await repos.suppressions.get(TENANT_A, result.suppression_suggestion_id or "")
-    assert rule.enabled is False and rule.match == {"fingerprint": "fp-noisy-scanner", "source_id": "api"}
+    assert rule.enabled is False and rule.match == {
+        "fingerprint": "fp-noisy-scanner",
+        "source_id": "api",
+        "severity": {"in": ["info", "low", "medium"]},
+    }
+    # LLM-W6-05: once enabled, the suggestion never suppresses a more severe alert of that detection.
+    from lg_sotf.core.suppression import alert_match_view, first_matching_rule
+
+    enabled = await repos.suppressions.update(TENANT_A, rule.id, enabled=True)
+    for severity, expected in (("medium", True), ("low", True), ("high", False), ("critical", False)):
+        view = alert_match_view(
+            title="Nightly scanner", severity=severity, category=None, source_id="api",
+            source_alert_id="x", fingerprint="fp-noisy-scanner", normalized={},
+        )
+        assert (first_matching_rule([enabled], view) is not None) is expected, severity
+    await repos.suppressions.update(TENANT_A, rule.id, enabled=False)
     assert rule.source_feedback_id == result.feedback_id and rule.created_by == analyst
     assert rule.expires_at is not None
     assert await repos.suppressions.list_active(TENANT_A) == []

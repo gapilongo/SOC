@@ -134,6 +134,7 @@ class AnalysisResult:
     stop_reason: Optional[str] = None
     rule_corroborated: bool = False
     rule_evidence: List[str] = field(default_factory=list)
+    corroborated_targets: List[List[str]] = field(default_factory=list)
     llm_refusal: Optional[Dict[str, Optional[str]]] = None
     observations: List[Dict[str, Any]] = field(default_factory=list)
     history: List[Dict[str, Any]] = field(default_factory=list)
@@ -155,6 +156,7 @@ class AnalysisResult:
             "rule_verdict": self.rule_verdict,
             "rule_corroborated": self.rule_corroborated,
             "rule_evidence": self.rule_evidence,
+            "corroborated_targets": self.corroborated_targets,
             "conclusion": self.conclusion[:1_000],
             "recommended_actions": self.recommended_actions,
             "llm_used": self.llm_used,
@@ -235,6 +237,50 @@ def temp_directory_execution(path: Any) -> bool:
     if len(parts) < 2 or not parts[-1].endswith(EXECUTABLE_EXTENSIONS):
         return False
     return any(p in TEMP_DIRECTORIES for p in parts[:-1])
+
+
+MAX_CORROBORATED_TARGETS = 40
+_PRIMARY_HASH_FIELDS = ("file_hash", "sha256", "sha1", "md5", "process_hash")
+_HOST_FIELDS = ("hostname", "host", "computer_name", "device_name")
+
+
+def corroborated_targets(
+    alert: Mapping[str, Any], indicators: Sequence[str], history: Sequence[Tuple[Indicator, EnrichmentResult]],
+    observations: Sequence[Any],
+) -> List[List[str]]:
+    """``[kind, value]`` pairs the rule evidence is *about* (per-target corroboration).
+
+    Threat-intelligence and history verdicts corroborate the indicator they
+    were returned for. A temp-directory execution corroborates that
+    executable (its base name and the event's primary file hash) and the
+    alert's hosts; a C2-port connection corroborates the destination address
+    and the hosts. Nothing here corroborates parent processes, other
+    processes or other addresses mentioned in the same alert.
+    """
+    out: List[List[str]] = []
+    for ind, result in history:
+        if result.status == "ok" and result.verdict == "malicious":
+            out.append([ind.type, ind.value])
+    for obs in observations:
+        if any(v == "malicious" for v in obs.verdicts):
+            out.append([obs.candidate.kind, obs.candidate.value])
+    raw = _raw(alert)
+    entities = alert.get("entities") if isinstance(alert.get("entities"), Mapping) else {}
+    hosts = [h for h in ((entities or {}).get("hosts") or []) if isinstance(h, str)]
+    hosts += [str(raw[k]) for k in _HOST_FIELDS if isinstance(raw.get(k), str)]
+    behavioural = False
+    if "temp_directory_execution" in indicators:
+        behavioural = True
+        path = str(raw.get("file_path") or "")
+        out.append(["process", _PATH_SPLIT_RE.split(path)[-1]])
+        out += [["hash", str(raw[k])] for k in _PRIMARY_HASH_FIELDS if isinstance(raw.get(k), str)]
+    if "suspicious_port_usage" in indicators and isinstance(raw.get("destination_ip"), str):
+        behavioural = True
+        out.append(["ip", str(raw["destination_ip"])])
+    if behavioural:
+        out += [["host", h] for h in hosts]
+    unique = list(dict.fromkeys((k, v) for k, v in out if v))
+    return [[k, v] for k, v in unique[:MAX_CORROBORATED_TARGETS]]
 
 
 def rule_evidence(indicators: Sequence[str]) -> List[str]:
@@ -502,6 +548,9 @@ class AnalysisAgent(BaseAgent):
             "rule_verdict": rule_verdict(rule_score),
             "rule_corroborated": corroborated,
             "rule_evidence": rule_evidence(indicators) if corroborated else [],
+            "corroborated_targets": (
+                corroborated_targets(alert, indicators, history, run.observations) if corroborated else []
+            ),
             "threat_indicators": indicators,
             "tool_steps": run.lookups,
             "llm_calls": run.llm_calls,

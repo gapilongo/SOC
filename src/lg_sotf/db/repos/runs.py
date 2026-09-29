@@ -102,6 +102,49 @@ class RunsRepo(Repository):
                 )
         return WorkflowRun.model_validate(dict(row))
 
+    async def queue_alerts(
+        self, tenant_id: str, alert_ids: Sequence[str], *, conn: Optional[Connection] = None
+    ) -> List[str]:
+        """Batch form of :meth:`upsert_queued` plus the alert's ``new -> queued`` step.
+
+        Creates missing runs as ``queued``, moves those alerts that are
+        ``new`` (or ``failed``/``closed``, as a dispatch may) to ``queued``, and
+        returns the ids whose run is ``queued`` (the ones to enqueue): three
+        statements for the whole batch instead of two round trips per alert.
+        """
+        ids = list(dict.fromkeys(a for a in alert_ids if a))
+        if not ids:
+            return []
+        threads = [thread_id_for(tenant_id, a) for a in ids]
+        async with self._tenant(tenant_id, conn) as c:
+            await c.execute(
+                """
+                INSERT INTO workflow_runs (tenant_id, alert_id, thread_id, status)
+                SELECT $1, a, t, 'queued' FROM unnest($2::text[], $3::text[]) AS x(a, t)
+                ON CONFLICT (tenant_id, alert_id) DO NOTHING
+                """,
+                tenant_id,
+                ids,
+                threads,
+            )
+            rows = await c.fetch(
+                "SELECT alert_id FROM workflow_runs WHERE tenant_id = $1 AND alert_id = ANY($2::text[]) AND status = 'queued'",
+                tenant_id,
+                ids,
+            )
+            queued = [r["alert_id"] for r in rows]
+            if queued:
+                await c.execute(
+                    """
+                    UPDATE alerts SET status = 'queued', closed_at = NULL
+                    WHERE tenant_id = $1 AND id = ANY($2::text[]) AND status IN ('new', 'failed', 'closed')
+                    """,
+                    tenant_id,
+                    queued,
+                )
+        order = {a: i for i, a in enumerate(ids)}
+        return sorted(queued, key=order.__getitem__)
+
     async def start(
         self,
         tenant_id: str,
@@ -384,8 +427,12 @@ class RunsRepo(Repository):
         A run already claimed ``max_attempts`` times (default
         ``worker.max_deliveries``) is dead-lettered instead of requeued, so an
         alert that kills its worker cannot loop forever through fresh queue
-        messages. Each stale run is returned by exactly one caller, so the
-        sweeper enqueues it once; the old worker's next heartbeat returns False.
+        messages. A run whose alert is still ``waiting_human``/``waiting_approval``
+        (the worker died while claiming a resume, before the run moved on) goes
+        back to that waiting status instead: its resume message is retried and
+        no process run is needed. Each stale run is returned by exactly one
+        caller, so the sweeper enqueues it once; the old worker's next
+        heartbeat returns False.
         """
         require_aware(now, "now")
         if max_attempts is None:
@@ -397,7 +444,9 @@ class RunsRepo(Repository):
                 """
                 WITH p AS (SELECT COALESCE($1::timestamptz, now()) AS at)
                 UPDATE workflow_runs r SET
-                    status = CASE WHEN r.attempt >= $3 THEN 'dead_lettered' ELSE 'queued' END,
+                    status = CASE WHEN r.attempt >= $3 THEN 'dead_lettered'
+                                  WHEN s.alert_status IN ('waiting_human', 'waiting_approval') THEN s.alert_status
+                                  ELSE 'queued' END,
                     worker_id = NULL,
                     lease_expires_at = NULL,
                     last_error = CASE WHEN r.attempt >= $3
@@ -405,11 +454,13 @@ class RunsRepo(Repository):
                                       ELSE r.last_error END,
                     completed_at = CASE WHEN r.attempt >= $3 THEN p.at ELSE r.completed_at END
                 FROM p, (
-                    SELECT tenant_id, alert_id FROM workflow_runs
-                    WHERE status = 'running' AND lease_expires_at < COALESCE($1::timestamptz, now())
-                    ORDER BY lease_expires_at
+                    SELECT w.tenant_id, w.alert_id, a.status AS alert_status
+                    FROM workflow_runs w
+                    LEFT JOIN alerts a ON a.tenant_id = w.tenant_id AND a.id = w.alert_id
+                    WHERE w.status = 'running' AND w.lease_expires_at < COALESCE($1::timestamptz, now())
+                    ORDER BY w.lease_expires_at
                     LIMIT $2
-                    FOR UPDATE SKIP LOCKED
+                    FOR UPDATE OF w SKIP LOCKED
                 ) s
                 WHERE r.tenant_id = s.tenant_id AND r.alert_id = s.alert_id
                 RETURNING r.*
@@ -424,12 +475,20 @@ class RunsRepo(Repository):
             dead_lettered=[r for r in runs if r.status == "dead_lettered"],
         )
 
-    async def counts_by_status(self, tenant_id: str, *, conn: Optional[Connection] = None) -> Dict[str, int]:
+    async def counts_by_status(
+        self, tenant_id: str, *, active_only: bool = False, conn: Optional[Connection] = None
+    ) -> Dict[str, int]:
+        """Runs per status; ``active_only`` counts only runs that have not finished
+        (``completed``/``dead_lettered`` excluded), which ``ix_workflow_runs_active`` serves
+        without reading the tenant's whole history."""
+        sql = (
+            "SELECT status, count(*) AS n FROM workflow_runs WHERE tenant_id = $1 "
+            "AND status NOT IN ('completed', 'dead_lettered') GROUP BY status"
+            if active_only
+            else "SELECT status, count(*) AS n FROM workflow_runs WHERE tenant_id = $1 GROUP BY status"
+        )
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(
-                "SELECT status, count(*) AS n FROM workflow_runs WHERE tenant_id = $1 GROUP BY status",
-                tenant_id,
-            )
+            rows = await c.fetch(sql, tenant_id)
         return {r["status"]: r["n"] for r in rows}
 
     async def counts_by_status_all_tenants(self) -> Dict[str, int]:

@@ -88,6 +88,22 @@
     },
     "object": {
       "type": "object"
+    },
+    "toolProvider": {
+      "description": "Install-level enrichment provider settings. Provider API keys come from a Secret as LG_SOTF_TOOLS__<PROVIDER>__API_KEY (secrets.existingSecret or extraEnv), never from values.",
+      "type": [
+        "object",
+        "boolean",
+        "string",
+        "number",
+        "array",
+        "null"
+      ],
+      "patternProperties": {
+        "(?i)(api_?key|secret|token|password|passwd|credential)": {
+          "$ref": "#/definitions/forbidden"
+        }
+      }
     }
   },
   "properties": {
@@ -294,6 +310,18 @@
                 "console"
               ]
             }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "description": "Enrichment tools; secret-bearing keys are rejected at any provider.",
+          "patternProperties": {
+            "(?i)(api_?key|secret|token|password|passwd|credential)": {
+              "$ref": "#/definitions/forbidden"
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/toolProvider"
           }
         }
       }

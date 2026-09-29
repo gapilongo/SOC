@@ -439,3 +439,29 @@ def test_frontend_is_rendered_only_when_enabled(full_manifests: List[Manifest]) 
 def test_chart_files_exist() -> None:
     for name in ("Chart.yaml", "values.yaml", "values.schema.json", "templates/NOTES.txt"):
         assert (CHART_DIR / name).is_file(), name
+
+
+@requires_helm
+@pytest.mark.parametrize(
+    "key",
+    [
+        "settings.tools.virustotal.api_key",
+        "settings.tools.abuseipdb.apikey",
+        "settings.tools.misp.token",
+        "settings.tools.shodan.client_secret",
+        "settings.tools.api_key",
+    ],
+)
+def test_schema_rejects_enrichment_secrets_under_settings(key: str) -> None:
+    """WSC-5: provider keys would land in the plaintext ConfigMap."""
+    proc = run_helm_template("--set", f"{key}=SECRETVALUE", check=False)
+    assert proc.returncode != 0
+    assert "SECRETVALUE" not in proc.stdout
+
+
+@requires_helm
+def test_schema_keeps_non_secret_tool_settings() -> None:
+    proc = run_helm_template(
+        "--set", "settings.tools.virustotal.timeout=15", "--set", "settings.tools.internal_domains={corp.example}"
+    )
+    assert "timeout: 15" in proc.stdout

@@ -271,3 +271,34 @@ async def test_open_detached_gives_the_alert_its_own_escalation_idempotently(
     audits = [e.action for e in (await repos.audit.list(TENANT_A, resource_id=ticket.id)).items]
     assert audits == ["escalation.detached"]
     assert (await repos.audit.verify_chain(TENANT_A)).ok
+
+
+async def test_indicator_lookups_run_outside_the_grouping_lock(
+    repos: Repositories, make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """PERF-9: the per-tenant grouping lock is held only for the parent lookup and attach/create."""
+    from lg_sotf.services.escalation import ESCALATION_GROUP_LOCK
+
+    svc = service(repos, make_settings)
+    first = await add_alert(repos, TENANT_A, fingerprint="fp-l1")
+    second = await add_alert(repos, TENANT_A, fingerprint="fp-l2")
+    await sight(repos, TENANT_A, first, [("ip", "185.220.101.45")])
+    await sight(repos, TENANT_A, second, [("ip", "185.220.101.45")])
+    held: List[int] = []
+    real = repos.indicators.related_alerts
+
+    async def spy(*args: Any, **kwargs: Any) -> Any:
+        async with repos.db.system_tx(readonly=True) as conn:
+            held.append(
+                await conn.fetchval(
+                    "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = $1 AND granted",
+                    ESCALATION_GROUP_LOCK,
+                )
+            )
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(repos.indicators, "related_alerts", spy)
+    parent = await escalate(svc, TENANT_A, first)
+    child = await escalate(svc, TENANT_A, second)
+    assert child.attached and child.id == parent.id
+    assert held and held == [0] * len(held)

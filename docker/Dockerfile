@@ -92,12 +92,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TMPDIR=/tmp
 
 # Fixed numeric ids so Kubernetes runAsNonRoot can verify the user.
+# The base image's own pip/setuptools/wheel (the app runs from /opt/venv and never
+# installs anything) and its setuid/setgid bits are removed: nothing for image
+# scanners to flag and nothing for the unprivileged user to escalate through.
 RUN groupadd --system --gid 10001 lgsotf \
  && useradd --system --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \
         --shell /usr/sbin/nologin lgsotf \
  && mkdir -p /app \
  && chown root:root /app \
- && chmod 0755 /app
+ && chmod 0755 /app \
+ && /usr/local/bin/python -m pip uninstall -y -q pip setuptools wheel \
+ && rm -rf /usr/local/bin/pip* /usr/local/bin/idle* /usr/local/bin/pydoc* /usr/local/bin/2to3* \
+        /usr/local/lib/python3*/ensurepip \
+ && find / -xdev -type f -perm /6000 -exec chmod a-s {} + \
+ && ! find / -xdev -type f -perm /6000 | grep -q .
 
 COPY --from=builder /opt/venv /opt/venv
 # Non-secret reference configs (select one with LG_SOTF_CONFIG_FILE). The

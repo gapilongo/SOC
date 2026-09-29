@@ -158,11 +158,12 @@ tools:
   cache_ttl: 1800
   max_retries: 3
   backoff_factor: 2
-  intel:
-    virustotal:
-      api_key: ${VIRUSTOTAL_API_KEY}
-      timeout: 15
-      rate_limit: 4
+  # Read by EnrichmentService as tools.<provider>. Provide the key from a secret store as
+  # LG_SOTF_TOOLS__VIRUSTOTAL__API_KEY (never in a ConfigMap or this file).
+  virustotal:
+    api_key: ${VIRUSTOTAL_API_KEY}
+    timeout: 15
+    rate_limit: 4
 
 ingestion:
   llm_normalization: false

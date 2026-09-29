@@ -8,6 +8,8 @@ the auth tests exercise the real login flow.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -27,6 +29,19 @@ BASE_URL = "https://testserver"
 UI_ORIGIN = "https://ui.example.com"
 TEST_JWT_SECRET = "lg-sotf-test-suite-only-jwt-secret-not-for-use"
 PASSWORD = "correct horse battery staple"
+
+# The rate limiter counts in fixed 60 s windows; a burst that straddles a minute
+# boundary is split across two counters and never reaches its cap.
+RATE_WINDOW_S = 60.0
+BURST_ALLOWANCE_S = 15.0
+
+
+async def fresh_rate_window() -> None:
+    """Wait for the next window when less than ``BURST_ALLOWANCE_S`` is left in this one."""
+    elapsed = time.time() % RATE_WINDOW_S
+    if elapsed > RATE_WINDOW_S - BURST_ALLOWANCE_S:
+        await asyncio.sleep(RATE_WINDOW_S - elapsed + 0.1)
+
 
 __all__ = ["BASE_URL", "PASSWORD", "TENANT_A", "TENANT_B", "UI_ORIGIN"]
 

@@ -22,7 +22,9 @@ FIELD_ALERT = "alert_id"
 FIELD_KIND = "kind"
 FIELD_PAYLOAD = "payload"
 FIELD_ENQUEUED_AT = "enqueued_at"
-WORK_FIELDS = (FIELD_TENANT, FIELD_ALERT, FIELD_KIND, FIELD_PAYLOAD, FIELD_ENQUEUED_AT)
+# How many times a worker put the entry back to retry it later (a copy starts with fresh deliveries).
+FIELD_RETRIES = "retries"
+WORK_FIELDS = (FIELD_TENANT, FIELD_ALERT, FIELD_KIND, FIELD_PAYLOAD, FIELD_ENQUEUED_AT, FIELD_RETRIES)
 
 
 class MalformedMessage(ValueError):
@@ -77,6 +79,16 @@ class Message:
     enqueued_at: Optional[datetime]
     deliveries: int
     raw_fields: Dict[str, str] = field(repr=False, default_factory=dict)
+
+    @property
+    def retries(self) -> int:
+        value = self.raw_fields.get(FIELD_RETRIES, "0")
+        return int(value) if value.isdigit() else 0
+
+    @property
+    def attempts(self) -> int:
+        """Deliveries of this entry plus those of the copies it replaced (see ``FIELD_RETRIES``)."""
+        return self.deliveries + self.retries
 
 
 def utc_now_iso() -> str:

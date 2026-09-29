@@ -212,6 +212,8 @@ jobs:
           docker run --rm --read-only --tmpfs /tmp lg-sotf:ci --help >/dev/null
           # The health probe reports healthy for one-shot commands.
           docker run --rm --entrypoint python lg-sotf:ci /usr/local/lib/lg-sotf/healthcheck.py
+          # No package manager and no setuid/setgid binaries in the runtime image.
+          test -z "$(docker run --rm --entrypoint sh lg-sotf:ci -c 'command -v pip pip3; ls /usr/local/lib/python3*/site-packages | grep -E "^(pip|setuptools|wheel)"; find / -xdev -type f -perm /6000 2>/dev/null')"
       - name: Validate compose files
         env:
           POSTGRES_SUPERUSER_PASSWORD: ci
@@ -296,6 +298,7 @@ jobs:
           CI: "true"
         run: |
           npm ci --no-audit --no-fund
+          npm run audit:prod
           npm run lint --if-present
           npm run test:ci --if-present
           npm run build --if-present

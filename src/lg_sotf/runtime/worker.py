@@ -15,7 +15,11 @@ Per message (contract section 7 and the ``workflow_runs`` claim rules):
    message is dead-lettered.
 3. The engine runs under ``worker.run_timeout_s`` while a heartbeat extends
    the run lease and keeps the stream entry from being reclaimed. Losing the
-   lease cancels the run.
+   lease cancels the run. Cancellation can be swallowed on Python 3.11
+   (``asyncio.wait_for`` inside redis-py), so the heartbeat stops on an
+   event rather than on ``cancel()``, every cancel is repeated until the task
+   is done (:func:`~lg_sotf.runtime.shutdown.cancel_and_wait`), and the run
+   timeout is also enforced from outside the engine task.
 4. The outcome is written to ``workflow_runs`` and only then is the message
    acked. On failure the run is marked ``failed`` and the message stays
    pending for a retry. A resume payload the engine rejects
@@ -44,6 +48,7 @@ from lg_sotf.observability.metrics import record_run
 from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.queue.events import make_event
 from lg_sotf.queue.streams import Message
+from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.settings import Settings
 
@@ -57,6 +62,15 @@ _READ_ERROR_BACKOFF_S = (0.5, 1.0, 2.0, 5.0)
 _DEFER_BACKOFF_S = 0.25
 LIVENESS_TICK_S = 5.0
 LIVENESS_GRACE_S = 30.0
+# Extra time the outer watchdog gives the engine's own run timeout before cancelling it.
+RUN_TIMEOUT_GRACE_S = 5.0
+# How long another tenant counts as "active" after its last run or deferral in this worker.
+TENANT_ACTIVITY_WINDOW_S = 30.0
+# A resume that arrives while its run is not (yet) waiting is retried after this backoff
+# (doubling per attempt) instead of idling until worker.visibility_timeout_s.
+RESUME_RETRY_BASE_S = 1.0
+RESUME_RETRY_MAX_S = 30.0
+RETRYABLE_RESUME_REASONS = frozenset({"not_waiting", "leased"})
 # Engine errors that no retry can fix: the message is dead-lettered at once.
 PERMANENT_ERRORS: Tuple[Type[BaseException], ...] = (InvalidResumePayload,)
 
@@ -165,6 +179,8 @@ class Worker:
         self._stop = asyncio.Event()
         self._inflight: Set[asyncio.Task[None]] = set()
         self._tenant_running: Dict[str, int] = {}
+        self._tenant_seen: Dict[str, float] = {}
+        self._retries: Set[asyncio.Task[None]] = set()
         self._loop_tick = time.monotonic()
         self._running = False
         self.stats = WorkerStats()
@@ -214,6 +230,8 @@ class Worker:
             flusher.cancel()
             liveness.cancel()
             await asyncio.gather(flusher, liveness, return_exceptions=True)
+            # Scheduled resume retries: their entries stay pending and are recovered like any other.
+            await cancel_and_wait(list(self._retries))
             await self.flush_usage()
             try:
                 await self._consumer.remove_if_idle()
@@ -251,6 +269,10 @@ class Worker:
             errors = 0
             self._loop_tick = time.monotonic()
             deferred = 0
+            now = time.monotonic()
+            for msg in messages:
+                # Every tenant in this batch competes for the slots, whatever its position.
+                self._tenant_seen[msg.tenant_id] = now
             for msg in messages:
                 if not self._try_reserve_tenant(msg.tenant_id):
                     await self._defer(msg)
@@ -260,13 +282,19 @@ class Worker:
                 self._inflight.add(task)
                 task.add_done_callback(self._inflight.discard)
             if messages and deferred == len(messages):
-                await self._sleep_unless_stopped(_DEFER_BACKOFF_S)
+                # Every message belonged to a tenant at its cap: wait until a run finishes
+                # (a slot for that tenant may open) instead of spinning requeue loops.
+                if self._inflight:
+                    await self._wait_for_free_slot(timeout_s=max(_DEFER_BACKOFF_S, self._liveness_tick_s))
+                else:
+                    await self._sleep_unless_stopped(_DEFER_BACKOFF_S)
 
-    async def _wait_for_free_slot(self) -> None:
-        """Wait until a run finishes or a stop is requested, ticking liveness meanwhile."""
+    async def _wait_for_free_slot(self, timeout_s: Optional[float] = None) -> None:
+        """Wait until a run finishes or a stop is requested (or ``timeout_s``), ticking liveness meanwhile."""
         stop_waiter = asyncio.create_task(self._stop.wait())
+        deadline = None if timeout_s is None else time.monotonic() + timeout_s
         try:
-            while not self._stop.is_set():
+            while not self._stop.is_set() and (deadline is None or time.monotonic() < deadline):
                 done, _ = await asyncio.wait(
                     set(self._inflight) | {stop_waiter},
                     timeout=self._liveness_tick_s,
@@ -285,9 +313,25 @@ class Worker:
         except TimeoutError:
             pass
 
+    def _other_tenants_active(self, tenant_id: str) -> bool:
+        now = time.monotonic()
+        if any(t != tenant_id and n > 0 for t, n in self._tenant_running.items()):
+            return True
+        return any(t != tenant_id and now - seen < TENANT_ACTIVITY_WINDOW_S for t, seen in self._tenant_seen.items())
+
     def _try_reserve_tenant(self, tenant_id: str) -> bool:
+        """Claim a slot for ``tenant_id``; the per-tenant cap applies only while other tenants compete.
+
+        ``worker.per_tenant_concurrency`` is a noisy-neighbour limit: a tenant
+        alone on this worker (a single-organisation install, or a quiet
+        period) may use every slot.
+        """
+        now = time.monotonic()
+        self._tenant_seen[tenant_id] = now
+        if len(self._tenant_seen) > 10_000:
+            self._tenant_seen = {t: s for t, s in self._tenant_seen.items() if now - s < TENANT_ACTIVITY_WINDOW_S}
         running = self._tenant_running.get(tenant_id, 0)
-        if running >= self._cfg.per_tenant_concurrency:
+        if running >= self._cfg.per_tenant_concurrency and self._other_tenants_active(tenant_id):
             return False
         self._tenant_running[tenant_id] = running + 1
         return True
@@ -320,9 +364,7 @@ class Worker:
         if pending:
             # Their messages stay pending and their leases expire; others pick them up.
             log.warning("worker.drain_timeout_cancelling", count=len(pending))
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
+            await cancel_and_wait(pending)
 
     async def _run_message(self, msg: Message) -> None:
         try:
@@ -406,20 +448,45 @@ class Worker:
             record_run("skipped")
             log.info("worker.run_skipped", reason=exc.reason, kind=msg.kind)
             return
-        if msg.deliveries <= self._cfg.max_deliveries:
-            log.info("worker.run_not_claimable", reason=exc.reason, kind=msg.kind, deliveries=msg.deliveries)
+        if msg.attempts <= self._cfg.max_deliveries:
+            log.info("worker.run_not_claimable", reason=exc.reason, kind=msg.kind, deliveries=msg.attempts)
+            if msg.kind == "resume" and exc.reason in RETRYABLE_RESUME_REASONS:
+                self._schedule_resume_retry(msg)
+            return
+        if exc.reason == "leased" and msg.kind == "resume":
+            # A long run is still executing; the decision must not be dropped as a duplicate.
+            # The entry stays pending and is redelivered after the visibility timeout.
+            log.info("worker.resume_waits_for_run", deliveries=msg.attempts)
             return
         if exc.reason == "leased":
             # Another worker executes the run under a live lease; this entry is a duplicate.
             await self._consumer.ack(msg)
             self.stats.skipped += 1
             record_run("skipped")
-            log.info("worker.stale_duplicate_dropped", deliveries=msg.deliveries, kind=msg.kind)
+            log.info("worker.stale_duplicate_dropped", deliveries=msg.attempts, kind=msg.kind)
             return
         # A resume for a run that never became waiting: the payload cannot apply; the run is left alone.
         await self._dead_letter_message(
             msg, f"exceeded {self._cfg.max_deliveries} deliveries; run not claimable ({exc.reason})"
         )
+
+    def _schedule_resume_retry(self, msg: Message) -> None:
+        """Retry a resume whose run is not waiting yet (still running, or requeued after a crash)
+        after a short backoff: an analyst's decision should apply within seconds, not after
+        ``worker.visibility_timeout_s``. The entry stays pending meanwhile, so a crash loses nothing."""
+        delay = min(RESUME_RETRY_BASE_S * (2 ** max(msg.attempts - 1, 0)), RESUME_RETRY_MAX_S)
+
+        async def retry() -> None:
+            if await wait_or_stop(self._stop, delay):
+                return
+            try:
+                await self._consumer.requeue(msg, count_attempt=True)
+            except Exception as exc:  # noqa: BLE001 - the pending entry is reclaimed after the visibility timeout
+                log.warning("worker.resume_retry_failed", error=type(exc).__name__)
+
+        task = asyncio.create_task(retry(), name=f"resume-retry:{msg.entry_id}")
+        self._retries.add(task)
+        task.add_done_callback(self._retries.discard)
 
     async def _dead_letter_message(self, msg: Message, reason: str) -> None:
         """Move only the message to the DLQ; the run is not touched."""
@@ -492,19 +559,26 @@ class Worker:
     async def _execute_with_lease(self, msg: Message) -> RunOutcomeLike:
         engine_task: asyncio.Task[RunOutcomeLike] = asyncio.create_task(self._call_engine(msg))
         lease_lost = asyncio.Event()
-        heartbeat = asyncio.create_task(self._heartbeat(msg, engine_task, lease_lost))
+        stop_heartbeat = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat(msg, engine_task, lease_lost, stop_heartbeat))
         try:
-            return await engine_task
+            # Watchdog: the engine's own asyncio.timeout relies on a cancel that can be swallowed.
+            done, _ = await asyncio.wait({engine_task}, timeout=self._cfg.run_timeout_s + RUN_TIMEOUT_GRACE_S)
+            if not done:
+                await cancel_and_wait([engine_task])
+                raise TimeoutError(f"run exceeded {self._cfg.run_timeout_s:g}s")
+            if lease_lost.is_set():
+                raise _LeaseLostError()
+            return engine_task.result()
         except asyncio.CancelledError:
             if lease_lost.is_set() and not self._current_task_cancelling():
                 raise _LeaseLostError() from None
             raise
         finally:
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
+            stop_heartbeat.set()
+            await cancel_and_wait([heartbeat])
             if not engine_task.done():
-                engine_task.cancel()
-                await asyncio.gather(engine_task, return_exceptions=True)
+                await cancel_and_wait([engine_task])
 
     @staticmethod
     def _current_task_cancelling() -> bool:
@@ -518,11 +592,21 @@ class Worker:
             return await self._engine.run(msg.tenant_id, msg.alert_id)
 
     async def _heartbeat(
-        self, msg: Message, engine_task: asyncio.Task[RunOutcomeLike], lease_lost: asyncio.Event
+        self,
+        msg: Message,
+        engine_task: asyncio.Task[RunOutcomeLike],
+        lease_lost: asyncio.Event,
+        stop: asyncio.Event,
     ) -> None:
+        """Extend the lease until ``stop`` is set or the run ends.
+
+        The loop checks ``stop`` and the engine task after every await, so it
+        ends even when a ``cancel()`` was swallowed inside a Redis command.
+        """
         last_ok = time.monotonic()
-        while True:
-            await asyncio.sleep(self._heartbeat_s)
+        while not stop.is_set() and not engine_task.done():
+            if await wait_or_stop(stop, self._heartbeat_s) or engine_task.done():
+                return
             try:
                 held = await self._repos.runs.heartbeat(
                     msg.tenant_id, msg.alert_id, self.worker_id, lease_s=self._lease_s
@@ -533,9 +617,11 @@ class Worker:
             else:
                 if held:
                     last_ok = time.monotonic()
+            if stop.is_set():
+                return
             if not held:
                 lease_lost.set()
-                engine_task.cancel()
+                await cancel_and_wait([engine_task])
                 return
             try:
                 await self._consumer.touch(msg)
@@ -593,6 +679,17 @@ class Worker:
             await self.flush_usage()
 
 
+MAX_DERIVED_POOL = 50
+
+
+def worker_pool_size(settings: Settings) -> int:
+    """asyncpg pool size of a worker: ``database.pool_max``, raised to half of
+    ``worker.concurrency`` (capped) so a worker tuned for more runs in flight does not
+    queue them on a pool sized for the default. See docs/deployment.md for the
+    resulting ``max_connections`` budget."""
+    return max(settings.database.pool_max, min(settings.worker.concurrency // 2, MAX_DERIVED_POOL))
+
+
 async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
     """Process entry point for ``lg-sotf worker``: wire dependencies, serve health, run until signalled."""
     from lg_sotf.core.workflow import WorkflowEngine
@@ -603,7 +700,7 @@ async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int
     from lg_sotf.runtime.shutdown import GracefulShutdown, cancel_current_task
 
     worker_id = default_worker_id()
-    db = Database(settings.database, application_name="lg-sotf-worker")
+    db = Database(settings.database, application_name="lg-sotf-worker", max_size=worker_pool_size(settings))
     redis = create_redis(settings)
     engine: Optional[EngineLike] = None
     try:

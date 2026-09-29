@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 import pytest
 
-from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.services.dispatch import dispatch_new_alerts
 
 
@@ -16,102 +14,87 @@ class Ingested:
     severity: str
 
 
-@dataclass
-class Run:
-    status: str
-
-
 class FakeRuns:
-    def __init__(self, statuses: Dict[str, str]) -> None:
-        self.statuses = statuses
+    """Mirrors ``RunsRepo.queue_alerts``: create missing runs, step 'new'/'failed'/'closed' alerts to queued."""
 
-    async def upsert_queued(self, tenant_id: str, alert_id: str, *, conn: Any = None, **_: Any) -> Run:
-        assert conn is not None
-        return Run(self.statuses.setdefault(alert_id, "queued"))
+    def __init__(self, runs: Dict[str, str], alerts: Dict[str, str], events: List[str]) -> None:
+        self.runs = runs
+        self.alerts = alerts
+        self.events = events
+        self.calls = 0
 
-
-class FakeAlerts:
-    def __init__(self, statuses: Dict[str, str]) -> None:
-        self.statuses = statuses
-
-    async def update_status(self, tenant_id: str, alert_id: str, to: str, *, conn: Any = None) -> None:
-        current = self.statuses.get(alert_id, "new")
-        if current not in ("new", "queued", "failed"):
-            raise InvalidTransition("alert", alert_id, current, to)
-        self.statuses[alert_id] = to
-
-
-class FakeDb:
-    def __init__(self) -> None:
-        self.committed = False
-        self.events: List[str] = []
-
-    @asynccontextmanager
-    async def tenant_tx(self, tenant_id: str) -> AsyncIterator[object]:
-        self.events.append("begin")
-        yield object()
+    async def queue_alerts(self, tenant_id: str, alert_ids: Sequence[str], *, conn: Any = None) -> List[str]:
+        self.calls += 1
         self.events.append("commit")
+        queued = []
+        for alert_id in alert_ids:
+            if self.runs.setdefault(alert_id, "queued") == "queued":
+                queued.append(alert_id)
+                if self.alerts.get(alert_id, "new") in ("new", "failed", "closed"):
+                    self.alerts[alert_id] = "queued"
+        return queued
 
 
 @dataclass
 class FakeRepos:
-    db: FakeDb
     runs: FakeRuns
-    alerts: FakeAlerts
 
 
 @dataclass
 class FakeQueue:
-    db: FakeDb
+    events: List[str]
     sent: List[Tuple[str, str, str]] = field(default_factory=list)
 
-    async def enqueue_process(self, tenant_id: str, alert_id: str, severity: str) -> str:
-        self.db.events.append("enqueue")
-        self.sent.append((tenant_id, alert_id, severity))
-        return f"{len(self.sent)}-0"
+    async def enqueue_process_many(self, tenant_id: str, alerts: Sequence[Tuple[str, str]]) -> List[str]:
+        if alerts:
+            self.events.append("enqueue")
+        for alert_id, severity in alerts:
+            self.sent.append((tenant_id, alert_id, severity))
+        return [f"{i}-0" for i in range(len(alerts))]
 
 
-def _setup(run_statuses: Dict[str, str], alert_statuses: Dict[str, str]) -> Tuple[FakeRepos, FakeQueue]:
-    db = FakeDb()
-    return FakeRepos(db, FakeRuns(run_statuses), FakeAlerts(alert_statuses)), FakeQueue(db)
+def _setup(run_statuses: Dict[str, str], alert_statuses: Dict[str, str]) -> Tuple[FakeRepos, FakeQueue, List[str]]:
+    events: List[str] = []
+    return FakeRepos(FakeRuns(run_statuses, alert_statuses, events)), FakeQueue(events), events
 
 
 async def test_dispatch_marks_queued_and_enqueues_after_commit() -> None:
-    repos, queue = _setup({}, {})
+    repos, queue, events = _setup({}, {})
     n = await dispatch_new_alerts(repos, queue, "tenant-a", [Ingested("a1", "high"), Ingested("a2", "low")])  # type: ignore[arg-type]
     assert n == 2
     assert queue.sent == [("tenant-a", "a1", "high"), ("tenant-a", "a2", "low")]
-    assert repos.alerts.statuses == {"a1": "queued", "a2": "queued"}
-    assert repos.db.events == ["begin", "commit", "enqueue", "enqueue"]
+    assert repos.runs.alerts == {"a1": "queued", "a2": "queued"}
+    # One batch transaction, then one pipelined enqueue (PERF-3), never the other way round.
+    assert events == ["commit", "enqueue"] and repos.runs.calls == 1
 
 
 async def test_dispatch_skips_runs_that_left_queued() -> None:
-    repos, queue = _setup({"a1": "running", "a2": "completed"}, {"a1": "processing", "a2": "closed"})
+    repos, queue, _ = _setup({"a1": "running", "a2": "completed"}, {"a1": "processing", "a2": "closed"})
     n = await dispatch_new_alerts(repos, queue, "tenant-a", [Ingested("a1", "high"), Ingested("a2", "low")])  # type: ignore[arg-type]
     assert n == 0
     assert queue.sent == []
-    assert repos.alerts.statuses == {"a1": "processing", "a2": "closed"}
+    assert repos.runs.alerts == {"a1": "processing", "a2": "closed"}
 
 
 async def test_dispatch_enqueues_queued_run_even_if_alert_moved_on() -> None:
-    repos, queue = _setup({"a1": "queued"}, {"a1": "processing"})
+    repos, queue, _ = _setup({"a1": "queued"}, {"a1": "processing"})
     assert await dispatch_new_alerts(repos, queue, "tenant-a", [Ingested("a1", "medium")]) == 1  # type: ignore[arg-type]
-    assert repos.alerts.statuses["a1"] == "processing"
+    assert repos.runs.alerts["a1"] == "processing"
 
 
 async def test_dispatch_nothing_is_a_noop() -> None:
-    repos, queue = _setup({}, {})
+    repos, queue, events = _setup({}, {})
     assert await dispatch_new_alerts(repos, queue, "tenant-a", []) == 0  # type: ignore[arg-type]
-    assert repos.db.events == []
+    assert events == []
 
 
 async def test_enqueue_failure_propagates_after_commit() -> None:
-    repos, queue = _setup({}, {})
+    repos, queue, _ = _setup({}, {})
 
-    async def boom(*_: Any) -> str:
+    async def boom(*_: Any) -> List[str]:
         raise ConnectionError("redis down")
 
-    queue.enqueue_process = boom  # type: ignore[method-assign]
+    queue.enqueue_process_many = boom  # type: ignore[method-assign]
     with pytest.raises(ConnectionError):
         await dispatch_new_alerts(repos, queue, "tenant-a", [Ingested("a1", "high")])  # type: ignore[arg-type]
-    assert repos.alerts.statuses == {"a1": "queued"}
+    assert repos.runs.alerts == {"a1": "queued"}

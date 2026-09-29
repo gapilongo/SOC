@@ -138,8 +138,12 @@ next two partitions ahead and drops expired ones.
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
-`lg-sotf migrate` and cleaned by the retention job for threads whose run is
-completed and older than `retention.checkpoints_days`.
+`lg-sotf migrate`, which then puts them under the tenant RLS policy (keyed on
+`split_part(thread_id, ':', 1)`); the worker's checkpointer
+(`core/checkpointer.py`) sets `app.tenant_id` from the thread id before each
+statement. The retention job removes them for threads whose run is
+completed and older than `retention.checkpoints_days`, and with their alert
+when the alert itself expires.
 
 ## 6. Alert lifecycle
 
@@ -189,7 +193,9 @@ Graph (compiled once per worker process with `AsyncPostgresSaver`,
 
 ```
 START → gate → triage → correlation → analysis → decide
-gate:        suppression rules / verdict cache → close (benign) | triage
+gate:        suppression rules / verdict cache (same or lower severity than the
+             analyst decided; never for critical or LLM-normalised alerts) →
+             close (benign) | triage
 triage:      rules + fast-tier LLM → close (obvious FP) | correlation
 correlation: indicator sightings + optional LLM → analysis | decide
 analysis:    ReAct with deep-tier LLM, bounded steps, early stop
@@ -273,7 +279,8 @@ Rules:
   (labels: `model`, `agent`, `outcome`) and `llm_usage_daily` UPSERT (batched).
   Per-tenant daily token budget: when exceeded, agents fall back to rules and
   mark `summary.llm_budget_exceeded`.
-* Per-model concurrency semaphores (`llm.<tier>.max_concurrency`).
+* Per-model concurrency semaphores (`llm.<tier>.max_concurrency`, default
+  `worker.concurrency`; waits exported as `lgsotf_llm_slot_wait_seconds`).
 
 ## 10. API
 
@@ -315,6 +322,7 @@ Endpoints:
 | GET/POST/PATCH/DELETE | `/suppressions` | analyst create, admin manage |
 | GET/POST/PATCH/DELETE | `/users`, `/api-keys` | admin |
 | GET/PATCH | `/tenant/settings` (autonomy policy, protected assets, LLM budget) | admin |
+| DELETE | `/tenant/verdict-cache` (clear cached analyst-benign verdicts) | admin |
 | GET | `/dashboard/summary` (counts by status/severity/disposition, MTTA/MTTR, queue depth, LLM cost; cached 15 s per tenant) | viewer |
 | GET | `/usage/llm` (daily usage/cost) | admin |
 | GET | `/audit` (hash-chained audit log; filters, keyset pagination), `/audit/verify` (recompute the tenant's chain) | admin |
@@ -364,7 +372,8 @@ to `audit_log`.
   `lgsotf_queue_pending{stream}`, `lgsotf_runs_total{outcome}`,
   `lgsotf_node_seconds{node}`, `lgsotf_llm_calls_total{model,agent,outcome}`,
   `lgsotf_llm_tokens_total{model,kind}`, `lgsotf_llm_cost_usd_total{model}`,
-  `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`.
+  `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
+  `lgsotf_llm_slot_wait_seconds{tier}`.
 * Tracing: OpenTelemetry, OTLP exporter when `observability.otlp_endpoint` set.
 
 ## 14. Testing conventions

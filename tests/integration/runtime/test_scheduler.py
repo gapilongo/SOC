@@ -35,7 +35,7 @@ class FakeIngestion:
     polled: List[str] = field(default_factory=list)
     closed: bool = False
 
-    async def poll_source(self, tenant_id: str, source: Source) -> Result:
+    async def poll_source(self, tenant_id: str, source: Source, **_: Any) -> Result:
         self.polled.append(source.id)
         if source.id in self.fail_sources:
             raise ConnectionError("upstream SIEM unreachable")

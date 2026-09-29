@@ -236,12 +236,22 @@ def grant_runtime_privileges(role: str, database_url: Optional[str] = None) -> N
 
 
 async def setup_checkpointer(database_url: Optional[str] = None) -> None:
-    """Create or upgrade LangGraph's checkpoint tables (idempotent)."""
+    """Create or upgrade LangGraph's checkpoint tables and put them under tenant RLS (idempotent).
+
+    The tables hold every alert's workflow state, so they get the same
+    ``FORCE ROW LEVEL SECURITY`` policy as the other tenant-owned tables
+    (keyed on the ``{tenant}:{alert}`` thread id prefix). It is re-applied on
+    every ``lg-sotf migrate``, also when LangGraph recreated a table.
+    """
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
 
+    from lg_sotf.core.checkpointer import secure_checkpoint_tables
+
     url = libpq_url(database_url)
     async with await AsyncConnection.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row) as conn:
         await AsyncPostgresSaver(conn).setup()
+        async with conn.transaction():
+            await secure_checkpoint_tables(conn)
     log.info("db.migrate.checkpointer_ready")

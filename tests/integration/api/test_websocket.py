@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import socket
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from lg_sotf.queue.events import make_event
-from tests.integration.api.conftest import TENANT_A, TENANT_B, UI_ORIGIN, ApiHarness
+from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, UI_ORIGIN, ApiHarness
 
 pytestmark = pytest.mark.integration
 
@@ -27,6 +28,12 @@ class _Server(uvicorn.Server):
 
 @pytest_asyncio.fixture
 async def served(api: ApiHarness) -> AsyncIterator[str]:
+    async with _serving(api) as url:
+        yield url
+
+
+@contextlib.asynccontextmanager
+async def _serving(api: ApiHarness) -> AsyncIterator[str]:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("127.0.0.1", 0))
@@ -104,3 +111,68 @@ async def test_socket_closes_when_the_token_expires(api: ApiHarness, served: str
             while True:
                 await asyncio.wait_for(ws.recv(), 5)
     assert excinfo.value.rcvd is not None and excinfo.value.rcvd.code == 4401
+
+
+async def _closed_code(ws: Any, wait_s: float = 5.0) -> int:
+    with pytest.raises(ConnectionClosed) as excinfo:
+        while True:
+            await asyncio.wait_for(ws.recv(), wait_s)
+    assert excinfo.value.rcvd is not None
+    return excinfo.value.rcvd.code
+
+
+async def test_logout_closes_an_open_socket(make_api: Any) -> None:
+    """AUTHZ-3: a revoked (logged-out) token stops receiving events."""
+    api = await make_api(api={"ws_revalidate_s": 0.2})
+    await api.user(TENANT_A, "viewer", email="ws.out@a.example.com")
+    login = await api.client.post("/api/v1/auth/login", json={"email": "ws.out@a.example.com", "password": PASSWORD})
+    token = login.json()["access_token"]
+    async with _serving(api) as served:
+        async with connect(f"{served}/ws?token={token}") as ws:
+            assert (await _recv(ws))["type"] == "hello"
+            out = await api.client.post("/api/v1/auth/logout", headers={"Authorization": f"Bearer {token}"})
+            assert out.status_code == 204
+            assert await _closed_code(ws) == 4401
+
+
+async def test_deactivated_user_socket_is_closed(make_api: Any) -> None:
+    api = await make_api(api={"ws_revalidate_s": 0.2})
+    user = await api.user(TENANT_A, "viewer")
+    async with _serving(api) as served:
+        async with connect(f"{served}/ws?token={api.token(user)}") as ws:
+            assert (await _recv(ws))["type"] == "hello"
+            await api.repos.users.update(TENANT_A, user.id, is_active=False)
+            assert await _closed_code(ws) == 1008
+
+
+async def test_suspended_tenant_socket_is_closed(make_api: Any) -> None:
+    api = await make_api(api={"ws_revalidate_s": 0.2})
+    user = await api.user(TENANT_A, "viewer")
+    async with _serving(api) as served:
+        async with connect(f"{served}/ws?token={api.token(user)}") as ws:
+            assert (await _recv(ws))["type"] == "hello"
+            await api.repos.tenants.set_status(TENANT_A, "suspended")
+            api.ctx.tenants.invalidate(TENANT_A)
+            assert await _closed_code(ws) == 1008
+
+
+async def test_one_tenant_cannot_take_every_socket(make_api: Any) -> None:
+    """AUTHZ-4: per-principal and per-tenant quotas keep other tenants able to connect."""
+    api = await make_api(api={"ws_max_per_principal": 2, "ws_max_per_tenant": 3, "ws_max_subscribers": 4})
+    a1, a2 = await api.user(TENANT_A, "viewer"), await api.user(TENANT_A, "viewer")
+    b = await api.user(TENANT_B, "viewer")
+    async with _serving(api) as served, contextlib.AsyncExitStack() as stack:
+        for _ in range(2):
+            ws = await stack.enter_async_context(connect(f"{served}/ws?token={api.token(a1)}"))
+            assert (await _recv(ws))["type"] == "hello"
+        with pytest.raises(InvalidStatus):  # principal quota
+            async with connect(f"{served}/ws?token={api.token(a1)}"):
+                pass
+        ws = await stack.enter_async_context(connect(f"{served}/ws?token={api.token(a2)}"))
+        assert (await _recv(ws))["type"] == "hello"
+        with pytest.raises(InvalidStatus):  # tenant quota
+            async with connect(f"{served}/ws?token={api.token(a2)}"):
+                pass
+        assert api.ctx.events.subscriber_count == 3
+        async with connect(f"{served}/ws?token={api.token(b)}") as other:
+            assert (await _recv(other))["type"] == "hello"

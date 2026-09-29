@@ -559,4 +559,21 @@ def downgrade() -> None:
         "DROP FUNCTION IF EXISTS audit_entry_hash(TEXT, BIGINT, TIMESTAMPTZ, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TEXT)"
     )
     op.execute("DROP FUNCTION IF EXISTS lgsotf_touch_updated_at()")
+    # LangGraph's checkpoint tables are not Alembic's, but `lg-sotf migrate` puts them under a
+    # tenant policy that uses lgsotf_rls_bypass(); lift it so the function can go.
+    op.execute(
+        """
+        DO $$
+        DECLARE t TEXT;
+        BEGIN
+            FOREACH t IN ARRAY ARRAY['checkpoints', 'checkpoint_blobs', 'checkpoint_writes'] LOOP
+                IF to_regclass('public.' || t) IS NOT NULL THEN
+                    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
+                    EXECUTE format('ALTER TABLE %I NO FORCE ROW LEVEL SECURITY', t);
+                    EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', t);
+                END IF;
+            END LOOP;
+        END $$
+        """
+    )
     op.execute("DROP FUNCTION IF EXISTS lgsotf_rls_bypass()")

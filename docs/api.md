@@ -65,8 +65,12 @@ Three kinds of credentials are accepted. All of them resolve to a
   all get the same `401 invalid_credentials` after the same amount of
   argon2 work. After `auth.max_login_attempts` consecutive failures an
   account is locked for `auth.lockout_minutes` (even the right password
-  fails meanwhile). An email registered in several tenants must pass
-  `tenant`.
+  fails meanwhile). Each attempt is counted before the password is checked,
+  so concurrent requests cannot run more than `auth.max_login_attempts`
+  checks per lockout window. Without `tenant`, an email registered in
+  several tenants is resolved by the password (each account keeps its own
+  lockout count); when the password matches in more than one tenant the
+  answer is `401 tenant_required` and the client must pass `tenant`.
 * The API never creates users implicitly. The first admin comes from
   `lg-sotf migrate` (`auth.bootstrap_admin_*`) or `lg-sotf create-admin`;
   further users are created through `/users`.
@@ -88,9 +92,9 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
 * when the token's email (`auth.oidc_email_claim`) is verified by the IdP
   (the `auth.oidc_email_verified_claim` claim, default `email_verified`, is
   `true`) and a local user with that email exists in
-  that tenant, the principal is linked to it (a disabled local account
-  blocks the SSO login). An unverified or missing `email_verified` never
-  links. OIDC never grants platform-admin rights, even when linked to a
+  that tenant, the principal is linked to it. A disabled local account with
+  the token's email blocks the SSO login whether or not the email is
+  verified; an unverified or missing `email_verified` never links. OIDC never grants platform-admin rights, even when linked to a
   platform-admin account: platform admins sign in with local login. Claiming and deciding escalations and approving
   actions are attributed to a person and need such a provisioned account;
   create SSO-only users with `POST /users` without a password.
@@ -153,6 +157,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET, POST | `/users`; GET, PATCH, DELETE `/users/{id}` | admin |
 | GET, POST | `/api-keys`; DELETE `/api-keys/{id}` | admin |
 | GET, PATCH | `/tenant/settings` | admin |
+| DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
 | GET | `/audit`, `/audit/verify` | admin |
@@ -225,7 +230,9 @@ and delete them. Only admins create rules that are active immediately: a rule
 created by an analyst or an API key is stored with `enabled: false` whatever
 the request says, and takes effect once an admin enables it (`PATCH
 {"enabled": true}`). Rules suggested from false-positive decisions are also
-created disabled. A rule whose every predicate matches any alert (all
+created disabled, and match only the decided alert's severity and below
+(`{"severity": {"in": [...]}}`), never a more severe alert of the same
+detection. A rule whose every predicate matches any alert (all
 severities, a `.*` regex, a `/0` network) is refused with 422
 `invalid_rule`.
 
@@ -241,20 +248,23 @@ Password hashes and API key hashes are never returned.
 
 `GET /tenant/settings` returns the settings with secrets replaced by
 `<name>_configured: true`. `PATCH` is a merge patch (`null` removes a key)
-over: `autonomy`, `protected_assets`, `protected_cidrs`, `response`
+over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
+`processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
 `llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
 (`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
-every problem.
+every problem. Concurrent `PATCH` requests are serialised on the tenant row,
+so edits of different sub-keys of one section never overwrite each other.
 
 ### Dashboard and usage
 
 `GET /dashboard/summary?window_hours=24` returns counts by status, severity
-and disposition, MTTA/MTTR, open escalations, workflow runs by status (the
-tenant's queue depth) and LLM tokens and cost; it is cached for 15 seconds
+and disposition, MTTA/MTTR, open escalations, unfinished workflow runs by
+status (the tenant's queue depth; completed and dead-lettered runs are not
+counted) and LLM tokens and cost; it is cached for 15 seconds
 per tenant and window. `GET /usage/llm?from=&to=` returns daily usage rows
 (at most 400 days).
 
@@ -278,9 +288,14 @@ browser connections must come from an allowed CORS origin). After a
 (`alert.created`, `alert.updated`, `escalation.created`,
 `escalation.updated`, `action.updated`) and periodic `{"type": "ping"}`.
 Delivery is at-most-once: after a reconnect, re-read state from the REST
-API. The server closes the socket with code 4401 when the token expires
-(reconnect with a fresh token), 1013 when the client falls behind or the
-server is at capacity, and 1008 on policy violations.
+API. The server closes the socket with code 4401 when the token expires or
+is revoked by a logout (reconnect with a fresh token), 1013 when the client
+falls behind, the server is at capacity or the principal
+(`api.ws_max_per_principal`, default 5) or tenant (`api.ws_max_per_tenant`,
+default 100) already holds its share of sockets, and 1008 on policy
+violations, including a disabled or deleted account or a suspended tenant.
+An open socket re-checks its token, account and tenant every
+`api.ws_revalidate_s` (default 15 s).
 
 ## Limits and hardening
 
@@ -290,7 +305,9 @@ server is at capacity, and 1008 on policy violations.
 * Fixed-window rate limits in Redis, per minute: `api.rate_limit_per_minute`
   per principal, `api.ingest_rate_limit_per_minute` per API key on the
   ingest endpoints, `api.login_rate_limit_per_minute` per (client address,
-  email) on login with a per-address cap of ten times that, and per refresh
+  email) on login with a per-address cap of ten times that on *failed*
+  logins (users signing in correctly through one proxy address are never
+  refused because of each other), and per refresh
   token on refresh/logout. Failed authentications are counted per address:
   once an address is over its budget, further *failing* requests get 429
   instead of 401, and a credential that keeps failing is refused before it
@@ -302,6 +319,16 @@ server is at capacity, and 1008 on policy violations.
   applies).
 * CORS allows only `api.cors_origins`, with credentials; a `*` entry is
   ignored.
+* The cookie endpoints (`POST /auth/refresh`, `/auth/logout`) refuse a
+  browser request whose `Origin` is not the API's own host, `api.public_url`
+  or an `api.cors_origins` entry, and any `Sec-Fetch-Site: cross-site`
+  request (`403`): `SameSite=Strict` does not stop a sibling subdomain.
+* Ingest requests in flight per API process are capped at
+  `api.max_inflight_ingest` (64); more get `503 overloaded` with
+  `Retry-After: 1` at once instead of queueing on the database pool. One
+  process sustains roughly 70 single-alert requests per second; send batches
+  (about 50 alerts per request gives roughly ten times the throughput) or run
+  more API replicas.
 * Responses carry `X-Content-Type-Options: nosniff`, `X-Frame-Options:
   DENY`, a restrictive `Content-Security-Policy` (`frame-ancestors 'none'`),
   `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and, over HTTPS,

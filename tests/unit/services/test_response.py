@@ -407,3 +407,60 @@ async def test_connector_raising_timeout_itself_is_a_connector_error(make_settin
     ids = await _approved(repos, 1)
     assert await service.execute("t1", "a1", ids) == {ids[0]: "failed"}
     assert repos.actions.rows[UUID(ids[0])].result == {"error": "connector_exception", "error_type": "TimeoutError"}
+
+
+async def test_rules_evidence_contains_only_the_targets_it_concerns(make_settings: Callable[..., Settings]) -> None:
+    """LLM-W6-01 (c): port/temp-path observations authorise containment of *their* targets only."""
+    auto_all = {"autonomy": {"low": "auto", "medium": "auto", "high": "auto"}}
+    repos = FakeRepos(tenants=FakeTenants(auto_all))
+    service = ResponseService(repos, make_settings(), None)  # type: ignore[arg-type]
+    corroborated = frozenset({("ip", "185.220.101.44"), ("host", "WS-042.corp.example")})
+    await service.plan("t1", "a1", plan_ctx(evidence="rules", corroborated_targets=corroborated, hosts=["ws-042"]))
+    rows = rows_by_key(repos)
+    assert rows[("block_ip", "185.220.101.44")].status == "approved"
+    assert rows[("isolate_host", "ws-042")].status == "approved"  # short and FQDN forms compare equal
+    other = rows[("quarantine_file", "44d88612fea8a8f36de82e1278abb02f")]
+    assert other.status == "awaiting_approval" and other.params["approval_reason"] == "target_not_corroborated"
+    assert other.params["scope"] == {"hosts": ["ws-042"]}
+    assert rows[("create_ticket", "alert:a1")].status == "approved"  # non-containment is unaffected
+
+
+async def test_critical_and_tenant_protected_processes_and_hashes_are_blocked(
+    make_settings: Callable[..., Settings],
+) -> None:
+    tenant = {
+        "autonomy": {"low": "auto", "medium": "auto", "high": "auto"},
+        "protected_assets": {"processes": ["corp-agent*"], "hashes": ["44D88612FEA8A8F36DE82E1278ABB02F"]},
+    }
+    repos = FakeRepos(tenants=FakeTenants(tenant))
+    service = ResponseService(repos, make_settings(), None)  # type: ignore[arg-type]
+    entities = {**ENTITIES, "process": ["C:\\Windows\\System32\\LSASS.EXE", "ｅｘｐｌｏｒｅｒ.exe", "corp-agent.exe", "evil.exe"]}
+    await service.plan("t1", "a1", plan_ctx(entities=entities, recommended_actions=["kill the process"]))
+    rows = rows_by_key(repos)
+    for target in ("C:\\Windows\\System32\\LSASS.EXE", "ｅｘｐｌｏｒｅｒ.exe", "corp-agent.exe"):
+        assert rows[("terminate_process", target)].blocked_reason == "protected_asset", target
+    assert rows[("quarantine_file", "44d88612fea8a8f36de82e1278abb02f")].blocked_reason == "protected_asset"
+
+
+def test_parent_process_fields_are_never_targets() -> None:
+    from lg_sotf.services.response import plan_entities
+
+    alert = {
+        "entities": {
+            "processes": ["lsass.exe", "explorer.exe", "cmd.exe"],
+            "hashes": ["a" * 64, "b" * 64],
+        },
+        "raw": {
+            "process_name": "lsass.exe",
+            "parent_process_name": "C:\\Windows\\explorer.exe",
+            "ParentImage": "cmd.exe",
+            "process_hash": "a" * 64,
+            "parent_process_hash": "B" * 64,
+        },
+    }
+    entities = plan_entities(alert)
+    assert entities["process"] == ["lsass.exe"]
+    assert entities["hash"] == ["a" * 64]
+    # A value that is both the subject and its parent (cmd spawning cmd) stays a target.
+    alert["raw"]["process_name"] = "cmd.exe"
+    assert "cmd.exe" in plan_entities(alert)["process"]

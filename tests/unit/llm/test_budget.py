@@ -99,3 +99,23 @@ async def test_real_redis(redis_client: Any, unique_prefix: str, make_settings: 
         assert await redis_client.ttl(budget.key("t1")) > 0
     finally:
         await redis_client.delete(budget.key("t1"))
+
+
+async def test_lost_counter_is_seeded_from_recorded_usage(fake_redis: Any, make_settings: Callable[..., Settings]) -> None:
+    """M4: a Redis restart must not hand the tenant a fresh daily budget."""
+    recorded = {"t1": 9_500}
+    seeded: list = []
+
+    async def seed(tenant_id: str, day: Any) -> int:
+        seeded.append(tenant_id)
+        return recorded.get(tenant_id, 0)
+
+    budget = TokenBudget(fake_redis, make_settings(llm={"daily_token_budget_per_tenant": 10_000}), usage_seed=seed)
+    await fake_redis.flushdb()  # Redis lost the day's counter
+    with pytest.raises(LLMBudgetExceeded):
+        await budget.check_and_reserve("t1", 1_000)
+    assert await budget.used("t1") == 9_500
+    await budget.check_and_reserve("t1", 400)  # still within the remaining 500
+    assert seeded == ["t1"]  # seeded once, not on every call
+    await budget.check_and_reserve("t2", 5_000)  # nothing recorded: nothing to seed
+    assert await budget.used("t2") == 5_000

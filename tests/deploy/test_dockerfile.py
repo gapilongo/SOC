@@ -169,3 +169,12 @@ def test_dockerignore_reincludes_everything_the_build_copies() -> None:
             sources = rest.split()[:-1]
             for src in sources:
                 assert src.rstrip("/") in reincluded, f"{src} is copied but excluded from the build context"
+
+
+def test_runtime_image_drops_the_base_images_pip_and_setuid_bits() -> None:
+    """WSC-3: the runtime stage starts from a fresh base image with its own pip/setuptools."""
+    text = (DOCKER_DIR / "Dockerfile").read_text()
+    runtime = text[text.index("AS runtime") :]
+    assert "pip uninstall -y -q pip setuptools wheel" in runtime
+    assert "-perm /6000 -exec chmod a-s" in runtime
+    assert runtime.index("pip uninstall") < runtime.index("USER 10001")

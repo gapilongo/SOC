@@ -28,6 +28,7 @@ from lg_sotf.api.schemas import (
     EscalationOut,
     PageOut,
 )
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.review import ResumeRequest
 
@@ -55,6 +56,18 @@ async def enqueue_resumes(ctx: ApiContext, tenant_id: str, requests: Sequence[Re
             failed += 1
             log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
     return ok, failed
+
+
+async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
+    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
+    cache = VerdictCache(ctx.redis, ctx.prefix)
+    for alert_id in alert_ids:
+        try:
+            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
+            if alert.fingerprint:
+                await cache.invalidate(tenant_id, alert.fingerprint)
+        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
+            log.warning("api.verdict_invalidate_failed", alert_id=alert_id, error_type=type(exc).__name__)
 
 
 def _assignee(principal: Principal, value: Optional[str]) -> Optional[UUID]:
@@ -135,6 +148,8 @@ async def decide(
         feedback=body.feedback.model_dump(exclude_none=True) if body.feedback else None,
         suggest_suppression=body.suggest_suppression,
     )
+    if body.decision == "true_positive":
+        await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])
     ok, failed = await enqueue_resumes(ctx, principal.tenant_id, result)
     return DecisionOut(
         escalation=EscalationOut.model_validate(result.escalation),

@@ -13,6 +13,9 @@
 #   LG_SOTF_OIDC_TOKEN_ENDPOINT, LG_SOTF_OIDC_END_SESSION_ENDPOINT, LG_SOTF_OIDC_LABEL
 #   LG_SOTF_CSP_CONNECT_SRC       extra origins for connect-src, space separated
 #   LG_SOTF_HSTS_MAX_AGE          send Strict-Transport-Security with this max-age (seconds)
+#   LG_SOTF_TRUSTED_PROXIES       space-separated addresses/CIDRs of a reverse proxy in front of
+#                                 this container (e.g. the TLS terminator): its X-Forwarded-For
+#                                 and X-Forwarded-Proto are honoured; anyone else's are ignored
 #
 # Values are validated before they are written into JavaScript or nginx
 # configuration: a malformed value stops the container instead of producing
@@ -62,6 +65,7 @@ OIDC_END=${LG_SOTF_OIDC_END_SESSION_ENDPOINT:-}
 OIDC_LABEL=${LG_SOTF_OIDC_LABEL:-}
 CONNECT_EXTRA=${LG_SOTF_CSP_CONNECT_SRC:-}
 HSTS=${LG_SOTF_HSTS_MAX_AGE:-}
+TRUSTED_PROXIES=${LG_SOTF_TRUSTED_PROXIES:-}
 
 check_url LG_SOTF_API_BASE_URL "$API_BASE_URL" 'https?'
 check_url LG_SOTF_WS_URL "$WS_URL" 'wss?'
@@ -83,6 +87,9 @@ check_text LG_SOTF_OIDC_TOKEN_TYPE "$OIDC_TOKEN_TYPE" '(access_token|id_token)'
 check_text LG_SOTF_OIDC_LABEL "$OIDC_LABEL" '[A-Za-z0-9 ._()-]{1,80}'
 check_text LG_SOTF_HSTS_MAX_AGE "$HSTS" '[0-9]{1,9}'
 for o in $CONNECT_EXTRA; do check_url LG_SOTF_CSP_CONNECT_SRC "$o" 'https?|wss?'; done
+for p in $TRUSTED_PROXIES; do
+  check_text LG_SOTF_TRUSTED_PROXIES "$p" '([0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?|[0-9A-Fa-f:]*:[0-9A-Fa-f:]*(/[0-9]{1,3})?)'
+done
 
 # --- /config.js (values are validated above, so plain quoting is safe) -----------
 oidc=null
@@ -135,6 +142,28 @@ else
   : > "$OUT/listen-ipv6.conf"
 fi
 
+# --- trusted reverse proxies (http context, always generated) ------------------------
+# Only a listed proxy may set the client address (real_ip) and the original
+# scheme; for everyone else X-Forwarded-Proto is this connection's $scheme.
+{
+  echo 'geo $realip_remote_addr $lg_trusted_proxy {'
+  echo '  default 0;'
+  for p in $TRUSTED_PROXIES; do echo "  $p 1;"; done
+  echo '}'
+  echo 'map "$lg_trusted_proxy:$http_x_forwarded_proto" $lg_forwarded_proto {'
+  echo '  default $scheme;'
+  echo '  "1:https" https;'
+  echo '  "1:http" http;'
+  echo '}'
+} > "$OUT/proxy-http.conf"
+{
+  for p in $TRUSTED_PROXIES; do echo "set_real_ip_from $p;"; done
+  if [ -n "$TRUSTED_PROXIES" ]; then
+    echo 'real_ip_header X-Forwarded-For;'
+    echo 'real_ip_recursive on;'
+  fi
+} > "$OUT/realip.conf"
+
 # --- optional /api reverse proxy ----------------------------------------------------
 if [ -n "$API_UPSTREAM" ]; then
   # The browser's WebSocket API cannot send headers, so the API takes the
@@ -151,7 +180,7 @@ location = /api/v1/ws {
   proxy_set_header Upgrade \$http_upgrade;
   proxy_set_header Connection \$connection_upgrade;
   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Forwarded-Proto \$lg_forwarded_proto;
   proxy_set_header X-Forwarded-Host \$host;
   proxy_read_timeout 3600s;
   proxy_send_timeout 3600s;
@@ -164,7 +193,7 @@ location /api/ {
   proxy_set_header Upgrade \$http_upgrade;
   proxy_set_header Connection \$connection_upgrade;
   proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-  proxy_set_header X-Forwarded-Proto \$scheme;
+  proxy_set_header X-Forwarded-Proto \$lg_forwarded_proto;
   proxy_set_header X-Forwarded-Host \$host;
   proxy_read_timeout 3600s;
   proxy_send_timeout 3600s;

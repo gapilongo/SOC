@@ -191,7 +191,29 @@ def test_llm_slot_works_across_event_loops(make_settings: Callable[..., Settings
 
 
 async def test_llm_slot_rejects_bad_config(make_settings: Callable[..., Settings]) -> None:
-    with pytest.raises(LLMUnavailable):
-        await _enter("fast", make_settings(llm={"fast": {"model": "f", "max_concurrency": 0}}))
+    with pytest.raises(ValueError):  # refused when settings load (pydantic ValidationError)
+        make_settings(llm={"fast": {"model": "f", "max_concurrency": 0}})
     with pytest.raises(ValueError):
         await _enter("huge", make_settings())
+
+
+async def test_llm_slots_default_to_worker_concurrency(make_settings: Callable[..., Settings]) -> None:
+    """PERF-2: unset tier slots never cap throughput below worker.concurrency (was 16 fast / 8 deep)."""
+    from lg_sotf.observability.metrics import LLM_SLOT_WAIT_SECONDS
+
+    s = make_settings(worker={"concurrency": 24}, llm={"deep": {"model": "d"}})
+    assert s.llm.deep.max_concurrency is None
+    active = peak = 0
+
+    async def call() -> None:
+        nonlocal active, peak
+        async with llm_slot("deep", s):
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.02)
+            active -= 1
+
+    before = LLM_SLOT_WAIT_SECONDS.labels(tier="deep")._sum.get()  # type: ignore[attr-defined]
+    await asyncio.gather(*(call() for _ in range(30)))
+    assert peak == 24
+    assert LLM_SLOT_WAIT_SECONDS.labels(tier="deep")._sum.get() > before  # type: ignore[attr-defined]

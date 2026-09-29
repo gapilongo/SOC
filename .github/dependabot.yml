@@ -19,6 +19,24 @@ updates:
     commit-message:
       prefix: docker
 
+  - package-ecosystem: docker
+    directory: /src/lg_front
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: docker
+
+  - package-ecosystem: npm
+    directory: /src/lg_front
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend-dev:
+        dependency-type: development
+    commit-message:
+      prefix: deps
+
   - package-ecosystem: pip
     directory: /
     schedule:

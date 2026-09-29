@@ -40,7 +40,7 @@ async def _compute(ctx: ApiContext, tenant_id: str, window_hours: int) -> Dashbo
         counts = await repos.alerts.dashboard_counts(tenant_id, since, conn=conn)
         times = await repos.alerts.response_times(tenant_id, since, conn=conn)
         open_escalations = await repos.escalations.count_active(tenant_id, conn=conn)
-        runs = await repos.runs.counts_by_status(tenant_id, conn=conn)
+        runs = await repos.runs.counts_by_status(tenant_id, active_only=True, conn=conn)
         usage_rows = await repos.llm_usage.list_range(tenant_id, since.date(), now.date(), conn=conn)
     return DashboardOut(
         window_hours=window_hours,

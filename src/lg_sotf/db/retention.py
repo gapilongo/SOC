@@ -5,6 +5,14 @@ never holds long locks or bloats a single transaction. Tenants may override
 ``alerts_days`` and ``indicators_days`` via ``settings.retention`` in their
 tenant settings; partitioned tables (``alert_events``, ``audit_log``) follow
 the global setting because they are dropped a whole month at a time.
+
+Alerts expire when they ended (``closed`` since ``closed_at``, or ``failed``,
+e.g. dead-lettered, since their last change) more than ``alerts_days`` ago.
+An alert's LangGraph checkpoints (its full workflow state) are deleted in
+the same transaction as the alert, so a tenant ``alerts_days`` shorter than
+``checkpoints_days`` never leaves unreachable checkpoints behind; checkpoint
+threads without a run (whatever the cause) are removed once they are older
+than ``checkpoints_days``.
 """
 
 from __future__ import annotations
@@ -114,19 +122,32 @@ async def purge_expired(
     report.checkpoint_threads, done = await _purge_checkpoints(db, retention, now, batch_size, max_batches)
     report.complete &= done
 
+    has_checkpoints = await _checkpoint_tables_present(db)
+    # Checkpoint rows of the doomed alerts go in the same statement (thread id = tenant:alert).
+    checkpoint_ctes = (
+        "".join(
+            f""", gone_{table} AS (
+            DELETE FROM {table} c USING doomed d WHERE c.thread_id = d.tenant_id || ':' || d.id
+        )"""  # noqa: S608 - fixed table names
+            for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+        )
+        if has_checkpoints
+        else ""
+    )
     min_alert_days = await _min_days(db, "alerts_days", retention.alerts_days)
+    ended = "CASE WHEN a.status = 'closed' THEN a.closed_at ELSE a.updated_at END"
     report.alerts, done = await _batched(
         db,
         f"""
         WITH doomed AS (
             SELECT a.tenant_id, a.id
             FROM alerts a JOIN tenants t ON t.id = a.tenant_id
-            WHERE a.status = 'closed'
-              AND a.closed_at < $1::timestamptz - make_interval(days => $2)
-              AND a.closed_at < $1::timestamptz
+            WHERE a.status IN ('closed', 'failed')
+              AND {ended} < $1::timestamptz - make_interval(days => $2)
+              AND {ended} < $1::timestamptz
                   - make_interval(days => COALESCE({_override_days("alerts_days")}, $3))
             LIMIT $4
-        )
+        ){checkpoint_ctes}
         DELETE FROM alerts a USING doomed d WHERE a.tenant_id = d.tenant_id AND a.id = d.id
         """,  # noqa: S608
         (now, min_alert_days, retention.alerts_days),
@@ -213,17 +234,23 @@ async def purge_expired(
     return report
 
 
+async def _checkpoint_tables_present(db: Database) -> bool:
+    async with db.system_tx(readonly=True) as c:
+        return bool(
+            await c.fetchval(
+                "SELECT to_regclass('public.checkpoints') IS NOT NULL "
+                "AND to_regclass('public.checkpoint_blobs') IS NOT NULL "
+                "AND to_regclass('public.checkpoint_writes') IS NOT NULL"
+            )
+        )
+
+
 async def _purge_checkpoints(
     db: Database, retention: RetentionSettings, now: datetime, batch_size: int, max_batches: int
 ) -> Tuple[int, bool]:
-    """Delete LangGraph checkpoints of runs that finished before the checkpoint cutoff."""
-    async with db.system_tx(readonly=True) as c:
-        present = await c.fetchval(
-            "SELECT to_regclass('public.checkpoints') IS NOT NULL "
-            "AND to_regclass('public.checkpoint_blobs') IS NOT NULL "
-            "AND to_regclass('public.checkpoint_writes') IS NOT NULL"
-        )
-    if not present:
+    """Delete LangGraph checkpoints of runs that finished before the checkpoint cutoff,
+    and threads that have no run at all (their alert and run are gone) once that old."""
+    if not await _checkpoint_tables_present(db):
         return 0, True
     cutoff = now - timedelta(days=retention.checkpoints_days)
     total = 0
@@ -231,10 +258,15 @@ async def _purge_checkpoints(
         async with db.system_tx() as c:
             threads = await c.fetch(
                 """
-                SELECT r.thread_id FROM workflow_runs r
-                WHERE r.status IN ('completed', 'dead_lettered') AND r.completed_at < $1
-                  AND EXISTS (SELECT 1 FROM checkpoints cp WHERE cp.thread_id = r.thread_id)
-                LIMIT $2
+                (SELECT r.thread_id FROM workflow_runs r
+                 WHERE r.status IN ('completed', 'dead_lettered') AND r.completed_at < $1
+                   AND EXISTS (SELECT 1 FROM checkpoints cp WHERE cp.thread_id = r.thread_id)
+                 LIMIT $2)
+                UNION
+                (SELECT DISTINCT cp.thread_id FROM checkpoints cp
+                 WHERE NOT EXISTS (SELECT 1 FROM workflow_runs r WHERE r.thread_id = cp.thread_id)
+                   AND (cp.checkpoint ->> 'ts') < to_char($1 AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS')
+                 LIMIT $2)
                 """,
                 cutoff,
                 batch_size,

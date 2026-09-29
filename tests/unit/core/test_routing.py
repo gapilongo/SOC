@@ -246,3 +246,19 @@ def test_policy_response_with_a_failed_action_escalates() -> None:
     assert routing.route_after_execute(failed) == "escalate"
     assert routing.route_after_execute({**failed, "executed": {"a": "dry_run", "b": "failed"}}) == "escalate"
     assert routing.route_after_execute({**failed, "analyst": TP}) == "close"
+
+
+def test_llm_normalized_alerts_are_never_closed_automatically() -> None:
+    """LLM-W6-06: a model-written title yields no trusted FP words and no automatic close."""
+    from lg_sotf.agents.triage.base import trusted_evidence_words, trusted_words
+
+    alert = {"title": "Scheduled maintenance test backup", "rule_name": "backup", "flags": ["llm_normalized"]}
+    assert trusted_words(alert) == frozenset() and trusted_evidence_words(alert) == frozenset()
+    obvious_fp = state(severity="low", alert=alert, triage=triage(confidence=0, rule_conf=0, rule_fp=4))
+    assert routing.route_after_triage(obvious_fp, T) == "correlation"
+    low_threat = state(
+        severity="low", confidence=10, alert=alert,
+        analysis={"threat_score": 10, "rule_threat_score": 20, "verdict": "benign"},
+    )
+    decision = routing.decide(low_threat, T)
+    assert (decision.route, decision.code) == ("escalate", "llm_normalized")

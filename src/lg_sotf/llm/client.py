@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import threading
+import time
 import weakref
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from typing import Any, AsyncIterator, Dict, Literal, Optional, Tuple
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from lg_sotf.llm.errors import LLMUnavailable
+from lg_sotf.observability.metrics import record_llm_slot_wait
 from lg_sotf.settings import LLMTierSettings, Settings, get_settings
 
 Tier = Literal["fast", "deep"]
@@ -267,14 +269,23 @@ def _semaphore(tier: Tier, size: int) -> asyncio.Semaphore:
 
 @asynccontextmanager
 async def llm_slot(tier: Tier, settings: Optional[Settings] = None) -> AsyncIterator[None]:
-    """Hold one of ``llm.<tier>.max_concurrency`` slots for the duration of a call."""
+    """Hold one of ``llm.<tier>.max_concurrency`` slots for the duration of a call.
+
+    Unset, the tier gets ``worker.concurrency`` slots (one per run in flight), so
+    the slots never cap throughput below the worker's own concurrency. The wait
+    is exported as ``lgsotf_llm_slot_wait_seconds{tier}``: it counts against the
+    node timeout, so a sustained wait means the slots are too few.
+    """
     if tier not in TIERS:
         raise ValueError(f"unknown LLM tier {tier!r}")
     s = settings or get_settings()
-    size = getattr(s.llm, tier).max_concurrency
+    configured = getattr(s.llm, tier).max_concurrency
+    size = s.worker.concurrency if configured is None else configured
     if size < 1:
         raise LLMUnavailable(f"llm.{tier}.max_concurrency must be >= 1")
+    started = time.monotonic()
     async with _semaphore(tier, size):
+        record_llm_slot_wait(tier, time.monotonic() - started)
         yield
 
 

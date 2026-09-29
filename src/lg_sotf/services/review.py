@@ -464,7 +464,17 @@ class ReviewService:
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
         if not alert.fingerprint:
             return None
-        match: Dict[str, Any] = {"fingerprint": alert.fingerprint, "source_id": alert.source_id}
+        # Bounded to the severity the analyst judged (and below): a benign medium detection says
+        # nothing about a later critical one with the same fingerprint, which fingerprints do not
+        # distinguish (no severity, command line or process in them).
+        order = ("info", "low", "medium", "high", "critical")
+        decided_rank = order.index(alert.severity) if alert.severity in order else 0
+        severities = list(order[: decided_rank + 1])
+        match: Dict[str, Any] = {
+            "fingerprint": alert.fingerprint,
+            "source_id": alert.source_id,
+            "severity": {"in": severities},
+        }
         try:
             validate_rule_match(match)
         except InvalidRule:
@@ -472,7 +482,7 @@ class ReviewService:
             return None
         rule = await self._repos.suppressions.create(
             tenant_id,
-            f"Suggested from false positive: {alert.title}"[:200],
+            f"Suggested from false positive (severity <= {alert.severity}): {alert.title}"[:200],
             match,
             created_by=user_id,
             source_feedback_id=feedback_id,

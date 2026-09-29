@@ -166,6 +166,18 @@ async def test_disabled_local_account_blocks_sso(oidc_api: ApiHarness, idp: IdP)
     assert (await oidc_api.client.get("/api/v1/auth/me", headers=bearer(idp.token()))).status_code == 401
 
 
+@pytest.mark.parametrize("verified", [False, "false", None])
+async def test_disabled_local_account_blocks_sso_without_verified_email(
+    oidc_api: ApiHarness, idp: IdP, verified: Any
+) -> None:
+    """AUTHZ-2: an offboarded admin cannot keep SSO access through an IdP that omits email_verified."""
+    await oidc_api.user(TENANT_A, "admin", email="fired.admin@a.example.com", active=False)
+    token = idp.token(email="Fired.Admin@a.example.com", email_verified=verified, roles=["admin"])
+    assert (await oidc_api.client.get("/api/v1/auth/me", headers=bearer(token))).status_code == 401
+    minted = await oidc_api.client.post("/api/v1/api-keys", json={"name": "persist", "scopes": ["read"]}, headers=bearer(token))
+    assert minted.status_code == 401
+
+
 @pytest.mark.parametrize(
     "claims",
     [

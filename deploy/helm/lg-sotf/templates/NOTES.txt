@@ -60,6 +60,13 @@ WARNING: ingress.tls is empty. settings.auth.cookie_secure requires HTTPS; termi
 {{- end }}
 
 {{- $fwd := toString (default "" .Values.settings.api.forwarded_allow_ips) }}
+{{- if and .Values.ingress.enabled (or (eq $fwd "") (eq $fwd "127.0.0.1")) }}
+
+WARNING: ingress is enabled but settings.api.forwarded_allow_ips is {{ $fwd | default "unset" | quote }}.
+The API then sees the ingress controller's address as every client's: one client can exhaust the
+per-address login limit for all users, and audit entries record the controller, not the user.
+Set it to the ingress controller pods' CIDR (or the load balancer addresses).
+{{- end }}
 {{- if or (contains "*" $fwd) (contains "0.0.0.0/0" $fwd) (regexMatch "/([0-9]|1[0-5])(,|$|\\s)" $fwd) }}
 
 WARNING: settings.api.forwarded_allow_ips ({{ $fwd }}) trusts X-Forwarded-For from a very wide range.
