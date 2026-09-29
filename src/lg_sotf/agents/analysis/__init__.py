@@ -1,23 +1,27 @@
-"""
-Analysis agents module.
-"""
+"""Analysis agent (rule assessment plus bounded ReAct investigation)."""
 
-from lg_sotf.agents.analysis.base import AnalysisAgent
-from lg_sotf.agents.analysis.react import ReActReasoner
+from lg_sotf.agents.analysis.base import AnalysisAgent, AnalysisResult, AnalysisVerdict
+from lg_sotf.agents.analysis.react import AnalysisRunContext, ReActReasoner, ReActStep
 from lg_sotf.agents.analysis.tools import (
     HashAnalysisTool,
     IPAnalysisTool,
     NetworkAnalysisTool,
     ProcessAnalysisTool,
     TemporalAnalysisTool,
+    default_tools,
 )
 
 __all__ = [
     "AnalysisAgent",
-    "ReActReasoner", 
-    "IPAnalysisTool",
+    "AnalysisResult",
+    "AnalysisRunContext",
+    "AnalysisVerdict",
     "HashAnalysisTool",
-    "ProcessAnalysisTool", 
+    "IPAnalysisTool",
     "NetworkAnalysisTool",
-    "TemporalAnalysisTool"
+    "ProcessAnalysisTool",
+    "ReActReasoner",
+    "ReActStep",
+    "TemporalAnalysisTool",
+    "default_tools",
 ]

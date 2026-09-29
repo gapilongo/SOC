@@ -1,84 +1,66 @@
-"""
-Custom exceptions for LG-SOTF.
-
-This module defines custom exceptions used throughout the framework
-to provide clear error handling and debugging information.
-"""
+"""Exception hierarchy shared across LG-SOTF."""
 
 
 class LG_SOTFError(Exception):
     """Base exception for LG-SOTF."""
-    pass
 
 
 class ConfigError(LG_SOTFError):
     """Configuration-related errors."""
-    pass
-
-
-class StateError(LG_SOTFError):
-    """State management errors."""
-    pass
 
 
 class WorkflowError(LG_SOTFError):
     """Workflow execution errors."""
-    pass
+
+
+class InvalidResumePayload(WorkflowError, ValueError):
+    """A resume payload does not match the schema or the run's pending interrupt."""
 
 
 class NodeError(LG_SOTFError):
     """Node execution errors."""
-    pass
+
+
+class NodeTimeout(NodeError):
+    """A node exceeded its own time budget.
+
+    Deliberately not a ``TimeoutError``: the node budget bounds a stuck node,
+    so it is never retried inside the run (the queue's delivery limit applies).
+    """
+
+    def __init__(self, node: str, timeout_s: float) -> None:
+        super().__init__(f"node {node!r} exceeded its {timeout_s:g}s timeout")
+        self.node = node
+        self.timeout_s = timeout_s
 
 
 class RoutingError(LG_SOTFError):
     """Edge routing errors."""
-    pass
 
 
 class AgentError(LG_SOTFError):
     """Agent execution errors."""
-    pass
 
 
 class ToolError(LG_SOTFError):
     """Tool execution errors."""
-    pass
 
 
 class StorageError(LG_SOTFError):
     """Storage-related errors."""
-    pass
 
 
 class AuthenticationError(LG_SOTFError):
     """Authentication errors."""
-    pass
 
 
 class AuthorizationError(LG_SOTFError):
     """Authorization errors."""
-    pass
 
 
 class ValidationError(LG_SOTFError):
     """Validation errors."""
-    pass
-
-
-class TimeoutError(LG_SOTFError):
-    """Timeout errors."""
-    pass
 
 
 class RateLimitError(LG_SOTFError):
     """Rate limiting errors."""
-    pass
-
-class TracingError(LG_SOTFError):
-    """Tracing errors."""
-    pass
-
-class MetricsError(LG_SOTFError):
-    """Metrics errors."""
-    pass

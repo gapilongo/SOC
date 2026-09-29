@@ -1,0 +1,22 @@
+{
+  "_synthetic": "Synthetic alerts in the LG-SOTF canonical ingest format (POST /api/v1/ingest/alerts); not real data.",
+  "events": [
+    {
+      "source_alert_id": "custom-001",
+      "title": "Impossible travel for user carol",
+      "severity": "high",
+      "description": "Two sign-ins 9000 km apart within 20 minutes.",
+      "category": "identity",
+      "rule_name": "impossible-travel",
+      "occurred_at": "2024-03-05T10:15:30+01:00",
+      "entities": {"users": ["carol@corp.example.com"], "ips": ["203.0.113.10", "198.51.100.11", "999.1.1.1"], "emails": ["carol@corp.example.com"]},
+      "mitre": {"tactics": ["TA0001"], "techniques": ["T1078.004"]},
+      "tenant_notes": "vip user"
+    },
+    {
+      "title": "Detection from a script",
+      "severity": "informational",
+      "occurred_at": 1709633730
+    }
+  ]
+}

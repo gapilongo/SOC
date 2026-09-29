@@ -1,0 +1,54 @@
+{
+  "_synthetic": "Synthetic Microsoft Sentinel SecurityAlert / SecurityIncident rows and a REST incident resource; not real data.",
+  "events": [
+    {
+      "TenantId": "00000000-1111-2222-3333-444444444444",
+      "TimeGenerated": "2024-03-05T10:20:00.1234567Z",
+      "DisplayName": "Suspicious sign-in from an anonymous IP address",
+      "AlertName": "Anonymous IP address sign-in",
+      "AlertSeverity": "Medium",
+      "Description": "Sign-in from an IP address that is used by an anonymizing proxy.",
+      "ProviderName": "IPC",
+      "VendorName": "Microsoft",
+      "ProductName": "Azure Active Directory Identity Protection",
+      "SystemAlertId": "7b9c1d2e-3f40-5a6b-7c8d-9e0f1a2b3c4d",
+      "AlertType": "AnonymousLogin",
+      "StartTime": "2024-03-05T10:14:00Z",
+      "EndTime": "2024-03-05T10:14:00Z",
+      "Tactics": "InitialAccess, CredentialAccess",
+      "Techniques": "[\"T1078\",\"T1110.003\"]",
+      "Entities": "[{\"$id\":\"1\",\"Type\":\"account\",\"Name\":\"bwayne\",\"UPNSuffix\":\"corp.example.com\",\"AadUserId\":\"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee\"},{\"$id\":\"2\",\"Type\":\"ip\",\"Address\":\"203.0.113.200\"},{\"$id\":\"3\",\"Type\":\"host\",\"HostName\":\"gotham-ws\",\"DnsDomain\":\"corp.example.com\"},{\"$id\":\"4\",\"Type\":\"url\",\"Url\":\"https://login.example.com/common/oauth2\"},{\"$id\":\"5\",\"Type\":\"filehash\",\"Algorithm\":\"SHA256\",\"Value\":\"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"},{\"$ref\":\"1\"}]",
+      "ExtendedProperties": "{\"Client IP Address\":\"203.0.113.200\",\"Request Id\":\"f00d\"}",
+      "Status": "New",
+      "CompromisedEntity": "bwayne@corp.example.com"
+    },
+    {
+      "TimeGenerated": "2024-03-05T11:00:00Z",
+      "IncidentName": "0d1c2b3a-4958-6a7b-8c9d-0e1f2a3b4c5d",
+      "IncidentNumber": 4211,
+      "Title": "Multi-stage attack involving credential access",
+      "Description": "Correlated alerts across identity and endpoint.",
+      "Severity": "High",
+      "Status": "New",
+      "CreatedTime": "2024-03-05T10:59:00Z",
+      "FirstActivityTime": "2024-03-05T10:14:00Z",
+      "AdditionalData": "{\"alertsCount\":3,\"tactics\":[\"InitialAccess\",\"CredentialAccess\"],\"techniques\":[\"T1078\"]}",
+      "AlertIds": "[\"7b9c1d2e-3f40-5a6b-7c8d-9e0f1a2b3c4d\"]"
+    },
+    {
+      "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/ws/providers/Microsoft.SecurityInsights/Incidents/9a8b7c6d-5e4f-3a2b-1c0d-ffeeddccbbaa",
+      "name": "9a8b7c6d-5e4f-3a2b-1c0d-ffeeddccbbaa",
+      "type": "Microsoft.SecurityInsights/Incidents",
+      "properties": {
+        "title": "Mass download by a single user",
+        "severity": "Low",
+        "status": "New",
+        "incidentNumber": 4212,
+        "createdTimeUtc": "2024-03-05T12:00:00Z",
+        "firstActivityTimeUtc": "2024-03-05T11:45:00Z",
+        "additionalData": {"tactics": ["Exfiltration"], "techniques": ["T1567"]},
+        "owner": {"assignedTo": null}
+      }
+    }
+  ]
+}

@@ -1,374 +1,245 @@
+"""Workflow state schema and graph construction (contract section 8).
+
+::
+
+    START -> gate -> triage -> correlation -> analysis -> decide
+    gate          -> close | triage
+    triage        -> close | correlation
+    correlation   -> analysis | decide
+    analysis      -> decide
+    decide        -> escalate | plan_response | close
+    escalate      -> await_analyst
+    await_analyst -> plan_response | close | analysis (once) | escalate
+    plan_response -> execute_actions | await_approval | close | escalate
+    await_approval -> execute_actions
+    execute_actions -> await_approval | close | escalate
+    close         -> END
+
+State holds identifiers, the size-capped canonical alert, scores and small
+digests. Tool outputs and full reasoning live in ``alerts.summary`` and
+``alert_events``.
 """
-LangGraph workflow graph construction and routing logic.
 
-This module defines the graph structure, state schema, and routing decisions
-for the SOC alert processing workflow.
-"""
+from __future__ import annotations
 
-import operator
-from typing import Any, Dict, List, Literal, TypedDict, Annotated
+import json
+from typing import Annotated, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Protocol, TypedDict
 
-from pydantic import BaseModel, Field
 from langgraph.graph import END, START, StateGraph
+from langgraph.types import RetryPolicy
 
-from lg_sotf.core.config.manager import ConfigManager
+from lg_sotf.core import routing
+from lg_sotf.core.routing import RoutingThresholds
+
+MAX_NOTES = 50
+MAX_NOTE_CHARS = 300
+MAX_ALERT_JSON_CHARS = 32_000
+MAX_RAW_JSON_CHARS = 12_000
+MAX_FIELD_CHARS = 2_000
+MAX_LIST_ITEMS = 50
+MAX_DEPTH = 6
+
+NODE_NAMES = (
+    "gate",
+    "triage",
+    "correlation",
+    "analysis",
+    "decide",
+    "escalate",
+    "await_analyst",
+    "plan_response",
+    "await_approval",
+    "execute_actions",
+    "close",
+)
 
 
-class ExecutionContextData(TypedDict):
-    """Typed execution context for state."""
-    execution_id: str
-    started_at: str
-    last_node: str
-    executed_nodes: List[str]
-    execution_time: str
+def capped_notes(left: Optional[List[str]], right: Optional[List[str]]) -> List[str]:
+    """Append reducer that keeps the newest :data:`MAX_NOTES` short notes."""
+    merged = list(left or []) + [str(n)[:MAX_NOTE_CHARS] for n in (right or [])]
+    return merged[-MAX_NOTES:]
 
 
-class RoutingDecision(BaseModel):
-    """Structured LLM routing decision following LangGraph best practices."""
-    next_step: Literal["correlation", "analysis", "response", "human_loop", "close"] = Field(
-        description="The next processing step for the alert"
-    )
-    confidence: int = Field(ge=0, le=100, description="Confidence in this routing decision")
-    reasoning: str = Field(description="Brief reasoning for this routing choice")
-
-
-class WorkflowState(TypedDict):
-    """State schema for LangGraph workflow with proper reducers."""
-    # Core identification
+class WorkflowState(TypedDict, total=False):
+    tenant_id: str
     alert_id: str
-    workflow_instance_id: str
-    execution_context: ExecutionContextData
-
-    # Alert data
-    raw_alert: Dict[str, Any]
-    enriched_data: Dict[str, Any]
-
-    # Status and scoring
-    triage_status: str
-    confidence_score: int
-    current_node: str
-    priority_level: int
-
-    # Indicators - WITH REDUCERS for accumulation
-    fp_indicators: Annotated[List[str], operator.add]
-    tp_indicators: Annotated[List[str], operator.add]
-
-    # Correlation data - WITH REDUCER
-    correlations: Annotated[List[Dict[str, Any]], operator.add]
-    correlation_score: int
-
-    # Analysis data
-    analysis_conclusion: str
-    threat_score: int
-    recommended_actions: Annotated[List[str], operator.add]
-    analysis_reasoning: Annotated[List[Dict[str, Any]], operator.add]
-    tool_results: Dict[str, Dict[str, Any]]
-
-    # Processing tracking - WITH REDUCER
-    processing_notes: Annotated[List[str], operator.add]
-    last_updated: str
-
-    # Execution guards
-    agent_executions: Dict[str, Dict[str, Any]]  # Track agent execution state
-    state_version: int  # State versioning for conflict detection
-
-
-class WorkflowGraphBuilder:
-    """Builder for constructing the LangGraph workflow graph."""
-
-    def __init__(self, config_manager: ConfigManager):
-        """Initialize graph builder with configuration."""
-        self.config = config_manager
-        self.routing_config = {
-            'max_alert_age_hours': config_manager.get('routing.max_alert_age_hours', 72),
-            'correlation_grey_zone_min': config_manager.get('routing.correlation_grey_zone_min', 30),
-            'correlation_grey_zone_max': config_manager.get('routing.correlation_grey_zone_max', 70),
-            'analysis_threshold': config_manager.get('routing.analysis_threshold', 40),
-            'human_review_min': config_manager.get('routing.human_review_min', 20),
-            'human_review_max': config_manager.get('routing.human_review_max', 60),
-            'response_threshold': config_manager.get('routing.response_threshold', 80),
-        }
-
-    def build_graph(self, node_executors: Dict[str, Any]) -> StateGraph:
-        """Build the LangGraph workflow graph.
-
-        Args:
-            node_executors: Dictionary mapping node names to executor functions
-
-        Returns:
-            Compiled StateGraph ready for execution
-        """
-        workflow = StateGraph(WorkflowState)
-
-        # Add nodes with execution wrappers
-        for node_name, executor in node_executors.items():
-            workflow.add_node(node_name, executor)
-
-        # Set entry point
-        workflow.add_edge(START, "ingestion")
-
-        # Add conditional edges with routing
-        workflow.add_conditional_edges(
-            "ingestion",
-            self.route_after_ingestion,
-            {"triage": "triage", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "triage",
-            self.route_after_triage,
-            {
-                "correlation": "correlation",
-                "analysis": "analysis",
-                "human_loop": "human_loop",
-                "response": "response",
-                "close": "close",
-            },
-        )
-
-        workflow.add_conditional_edges(
-            "correlation",
-            self.route_after_correlation,
-            {
-                "analysis": "analysis",
-                "response": "response",
-                "human_loop": "human_loop",
-                "close": "close",
-            },
-        )
-
-        workflow.add_conditional_edges(
-            "analysis",
-            self.route_after_analysis,
-            {"human_loop": "human_loop", "response": "response", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "human_loop",
-            self.route_after_human_loop,
-            {"analysis": "analysis", "response": "response", "close": "close"},
-        )
-
-        workflow.add_conditional_edges(
-            "response",
-            self.route_after_response,
-            {"learning": "learning", "close": "close"},
-        )
-
-        workflow.add_edge("learning", "close")
-        workflow.add_edge("close", END)
-
-        # Validate graph structure
-        self._validate_graph(workflow)
-
-        return workflow
-
-    def _validate_graph(self, workflow: StateGraph):
-        """Validate graph structure before compilation.
-
-        Args:
-            workflow: StateGraph to validate
-
-        Raises:
-            ValueError: If graph structure is invalid
-        """
-        # LangGraph will do most validation on compile(),
-        # but we can add custom checks here
-        if not hasattr(workflow, 'nodes') or len(workflow.nodes) == 0:
-            raise ValueError("Graph has no nodes defined")
-
-    # ===============================
-    # ROUTING METHODS
-    # ===============================
-
-    async def route_after_triage(
-        self,
-        state: WorkflowState
-    ) -> Literal["correlation", "analysis", "response", "human_loop", "close"]:
-        """Intelligent async routing after triage.
-
-        Following LangGraph best practices:
-        - ALWAYS route through correlation for threat intelligence building
-        - Fast-track obvious FPs to close
-        - All other alerts go through correlation
-        """
-        confidence = state["confidence_score"]
-        fp_count = len(state["fp_indicators"])
-        tp_count = len(state["tp_indicators"])
-
-        # ONLY obvious false positives skip correlation and go directly to close
-        if confidence <= 10 and fp_count >= 2:
-            return "close"
-
-        if fp_count > tp_count and fp_count >= 3 and confidence <= 20:
-            return "close"
-
-        # ALL other alerts MUST go through correlation first to build threat intelligence
-        return "correlation"
-
-    def route_after_correlation(self, state: WorkflowState) -> str:
-        """Routing after correlation."""
-        correlations = state.get("correlations", [])
-        correlation_score = state.get("correlation_score", 0)
-        confidence = state["confidence_score"]
-
-        # Strong correlations → direct response
-        if correlation_score > 85 and len(correlations) >= 5:
-            return "response"
-
-        # Moderate correlations → analysis
-        if correlation_score > 60 or len(correlations) >= 3:
-            return "analysis"
-
-        # Weak correlations → human review
-        if correlation_score > 20 and confidence > 50:
-            return "human_loop"
-
-        # No meaningful correlations → close
-        return "close"
-
-    def route_after_analysis(self, state: WorkflowState) -> str:
-        """Routing after analysis."""
-        threat_score = state.get("threat_score", 0)
-        confidence = state["confidence_score"]
-        conclusion = state.get("analysis_conclusion", "").lower()
-
-        # High threat → response
-        if threat_score >= 80 or (threat_score >= 60 and confidence >= 80):
-            return "response"
-
-        # Uncertain analysis → human review
-        if "uncertain" in conclusion or (30 <= confidence <= 70):
-            return "human_loop"
-
-        # Low threat → close
-        return "close"
-
-    def route_after_ingestion(self, state: WorkflowState) -> str:
-        """Routing logic after ingestion."""
-        return "triage" if state["raw_alert"] else "close"
-
-    def route_after_human_loop(self, state: WorkflowState) -> str:
-        """Routing logic after human loop."""
-        confidence = state["confidence_score"]
-        return "response" if confidence >= 75 else "close"
-
-    def route_after_response(self, state: WorkflowState) -> str:
-        """Routing logic after response."""
-        return "learning" if self._should_learn(state) else "close"
-
-    # ===============================
-    # ROUTING HELPER METHODS
-    # ===============================
-
-    def _needs_correlation(self, state: WorkflowState) -> bool:
-        """Determine if alert needs correlation based on indicators."""
-        enriched_data = state.get("enriched_data", {})
-        raw_alert = state.get("raw_alert", {})
-
-        # Check for network indicators
-        has_network_indicators = any([
-            enriched_data.get("source_ip"),
-            enriched_data.get("destination_ip"),
-            enriched_data.get("domain"),
-            enriched_data.get("url"),
-            raw_alert.get("source_ip"),
-            raw_alert.get("destination_ip"),
-            raw_alert.get("domain")
-        ])
-
-        # Check for user indicators
-        has_user_indicators = any([
-            enriched_data.get("user"),
-            enriched_data.get("username"),
-            raw_alert.get("user"),
-            raw_alert.get("username")
-        ])
-
-        # Check for file/hash indicators
-        has_file_indicators = any([
-            enriched_data.get("file_hash"),
-            enriched_data.get("file_name"),
-            raw_alert.get("file_hash"),
-            raw_alert.get("sha256"),
-            raw_alert.get("md5")
-        ])
-
-        return has_network_indicators or has_user_indicators or has_file_indicators
-
-    def _needs_analysis(self, state: WorkflowState) -> bool:
-        """Determine if alert needs deep analysis."""
-        confidence = state.get("confidence_score", 0)
-        fp_count = len(state.get("fp_indicators", []))
-        tp_count = len(state.get("tp_indicators", []))
-        category = state.get("enriched_data", {}).get("category", "").lower()
-
-        # Low confidence with mixed signals
-        if confidence < 40 and fp_count > 0 and tp_count > 0:
-            return True
-
-        # Complex attack categories that need investigation
-        complex_categories = [
-            "lateral_movement",
-            "privilege_escalation",
-            "persistence",
-            "command_and_control",
-            "exfiltration",
-            "malware"
-        ]
-        if any(cat in category for cat in complex_categories):
-            return True
-
-        # Alerts with tool results need deeper analysis
-        tool_results = state.get("tool_results", [])
-        if tool_results:
-            return True
-
-        return False
-
-    def _should_learn(self, state: WorkflowState) -> bool:
-        """Check if learning is beneficial."""
-        return (state.get("human_feedback") or
-                any("unusual" in note.lower() for note in state["processing_notes"]))
-
-    # ===============================
-    # FALLBACK ROUTING (when LLM unavailable)
-    # ===============================
-
-    def fallback_routing(
-        self,
-        state: WorkflowState,
-        after_node: str
-    ) -> Literal["correlation", "analysis", "response", "human_loop", "close"]:
-        """Fallback routing logic when LLM is unavailable or fails."""
-        confidence = state["confidence_score"]
-        fp_count = len(state["fp_indicators"])
-        tp_count = len(state["tp_indicators"])
-
-        if after_node == "triage":
-            # Fallback rules following SOC best practices
-            # Close obvious false positives
-            if confidence <= 10 and fp_count >= 2:
-                return "close"
-
-            # Fast-track high-confidence threats to response
-            if confidence >= 85 and tp_count >= 3:
-                return "response"
-
-            # Prefer correlation first for grey-zone cases (gather context)
-            if self._needs_correlation(state) or 20 <= confidence <= 80:
-                return "correlation"
-
-            # Analysis for lower confidence that needs investigation
-            if confidence < 70:
-                return "analysis"
-
-            # Medium-high confidence (70-84%) → analyze to confirm
-            if confidence < 85:
-                return "analysis"
-
-            # Default fallback: correlation (safest, gathers context)
-            return "correlation"
-
-        # For other nodes, conservative default
-        return "close"
+    severity: str
+    fingerprint: str
+    alert: Dict[str, Any]
+    confidence: float
+    gate: Dict[str, Any]
+    triage: Dict[str, Any]
+    correlation: Dict[str, Any]
+    analysis: Dict[str, Any]
+    analysis_runs: int
+    more_info_loops: int
+    decision: Dict[str, Any]
+    escalation_id: Optional[str]
+    analyst: Optional[Dict[str, Any]]
+    plan: Dict[str, Any]
+    awaiting_actions: List[str]
+    approval: Optional[Dict[str, Any]]
+    executed: Dict[str, str]
+    disposition: Optional[str]
+    close_reason: Optional[str]
+    llm_budget_exceeded: bool
+    llm_budget_limit: Optional[int]
+    notes: Annotated[List[str], capped_notes]
+
+
+def _cap(value: Any, depth: int = 0) -> Any:
+    if depth > MAX_DEPTH:
+        return "[truncated: nesting]"
+    if isinstance(value, str):
+        return value if len(value) <= MAX_FIELD_CHARS else value[: MAX_FIELD_CHARS - 3] + "..."
+    if isinstance(value, Mapping):
+        return {str(k)[:128]: _cap(v, depth + 1) for k, v in list(value.items())[:MAX_LIST_ITEMS * 2]}
+    if isinstance(value, (list, tuple)):
+        return [_cap(v, depth + 1) for v in list(value)[:MAX_LIST_ITEMS]]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:MAX_FIELD_CHARS]
+
+
+def _json_len(value: Any) -> int:
+    return len(json.dumps(value, default=str, separators=(",", ":")))
+
+
+MAX_OMITTED_KEYS = 20
+MAX_OMITTED_KEY_CHARS = 64
+OMITTED_RESERVE_CHARS = 1_600
+PROTECTED_ALERT_KEYS = frozenset(
+    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities"}
+)
+# (items per list, chars per string, keys per mapping, depth), tried in order until entities fit.
+ENTITY_SHRINK_STEPS = (
+    (25, 1_024, 50, 4),
+    (15, 512, 40, 3),
+    (10, 256, 30, 3),
+    (5, 128, 20, 2),
+    (3, 64, 15, 2),
+)
+
+
+def _shrink(value: Any, items: int, chars: int, keys: int, depth: int) -> Any:
+    if isinstance(value, str):
+        return value if len(value) <= chars else value[: max(0, chars - 3)] + "..."
+    if isinstance(value, Mapping):
+        if depth <= 0:
+            return str(value)[:chars]
+        return {k: _shrink(v, items, chars, keys, depth - 1) for k, v in list(value.items())[:keys]}
+    if isinstance(value, (list, tuple)):
+        if depth <= 0:
+            return str(value)[:chars]
+        return [_shrink(v, items, chars, keys, depth - 1) for v in list(value)[:items]]
+    return value
+
+
+def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
+    """Size-cap the canonical alert for graph state: per-field, per-list and total limits.
+
+    ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`. The whole
+    document is bounded by :data:`MAX_ALERT_JSON_CHARS`: first the largest
+    unprotected keys are dropped, then ``entities`` is shrunk step by step
+    (fewer items, shorter strings) so indicators and response targets
+    survive, and only as a last resort are whole entity kinds dropped.
+    Every loop removes something, so this always terminates.
+    """
+    limit = MAX_ALERT_JSON_CHARS - OMITTED_RESERVE_CHARS
+    capped: Dict[str, Any] = _cap(dict(canonical))
+    capped.pop("_omitted_keys", None)
+    omitted: List[str] = []
+    if "raw" in capped and _json_len(capped["raw"]) > MAX_RAW_JSON_CHARS:
+        capped["raw"] = {"_omitted": "raw event too large for workflow state"}
+    while _json_len(capped) > limit:
+        candidates = [k for k in capped if k not in PROTECTED_ALERT_KEYS]
+        if not candidates:
+            break
+        largest = max(candidates, key=lambda k: _json_len(capped[k]))
+        capped.pop(largest)
+        omitted.append(largest)
+    entities = capped.get("entities")
+    if _json_len(capped) > limit and entities is not None:
+        for step in ENTITY_SHRINK_STEPS:
+            capped["entities"] = _shrink(entities, *step)
+            if _json_len(capped) <= limit:
+                break
+        shrunk = capped["entities"]
+        if isinstance(shrunk, dict):
+            while _json_len(capped) > limit and shrunk:
+                kind = max(shrunk, key=lambda k: _json_len(shrunk[k]))
+                shrunk.pop(kind)
+                omitted.append(f"entities.{kind}")
+        elif _json_len(capped) > limit:
+            capped.pop("entities")
+            omitted.append("entities")
+        capped["_entities_truncated"] = True
+    if omitted:
+        capped["_omitted_keys"] = [k[:MAX_OMITTED_KEY_CHARS] for k in omitted[:MAX_OMITTED_KEYS]]
+    return capped
+
+
+NodeFn = Callable[[WorkflowState], Awaitable[Dict[str, Any]]]
+
+
+class GraphNodes(Protocol):
+    """Node callables the graph is built from (wrapped by the engine)."""
+
+    def node(self, name: str) -> NodeFn: ...
+
+
+def build_graph(
+    nodes: GraphNodes,
+    thresholds: RoutingThresholds,
+    *,
+    retry_policy: Optional[RetryPolicy] = None,
+    node_retry_policies: Optional[Mapping[str, Optional[RetryPolicy]]] = None,
+) -> StateGraph:
+    """Assemble the workflow graph.
+
+    ``node_retry_policies`` overrides ``retry_policy`` per node (``None``
+    disables retries). ``await_*`` nodes never retry: they only interrupt.
+    """
+    overrides = dict(node_retry_policies or {})
+    graph: StateGraph = StateGraph(WorkflowState)
+    for name in NODE_NAMES:
+        policy = None if name.startswith("await_") else overrides.get(name, retry_policy)
+        graph.add_node(name, nodes.node(name), retry_policy=policy)  # type: ignore[call-overload]  # async node alias
+
+    graph.add_edge(START, "gate")
+    graph.add_conditional_edges("gate", routing.route_after_gate, {"triage": "triage", "close": "close"})
+    graph.add_conditional_edges(
+        "triage",
+        lambda s: routing.route_after_triage(s, thresholds),
+        {"correlation": "correlation", "close": "close"},
+    )
+    graph.add_conditional_edges(
+        "correlation",
+        lambda s: routing.route_after_correlation(s, thresholds),
+        {"analysis": "analysis", "decide": "decide"},
+    )
+    graph.add_edge("analysis", "decide")
+    graph.add_conditional_edges(
+        "decide",
+        routing.route_after_decide,
+        {"escalate": "escalate", "plan_response": "plan_response", "close": "close"},
+    )
+    graph.add_edge("escalate", "await_analyst")
+    graph.add_conditional_edges(
+        "await_analyst",
+        lambda s: routing.route_after_analyst(s, thresholds),
+        {"plan_response": "plan_response", "close": "close", "analysis": "analysis", "escalate": "escalate"},
+    )
+    graph.add_conditional_edges(
+        "plan_response",
+        routing.route_after_plan,
+        {"execute_actions": "execute_actions", "await_approval": "await_approval", "close": "close", "escalate": "escalate"},
+    )
+    graph.add_edge("await_approval", "execute_actions")
+    graph.add_conditional_edges(
+        "execute_actions",
+        routing.route_after_execute,
+        {"await_approval": "await_approval", "close": "close", "escalate": "escalate"},
+    )
+    graph.add_edge("close", END)
+    return graph

@@ -1,17 +1,5 @@
-"""
-Audit and monitoring module for LG-SOTF.
+"""Audit trail helpers."""
 
-This module provides audit logging, distributed tracing,
-and metrics collection for the framework.
-"""
+from lg_sotf.audit.logger import AuditLogger
 
-# from .logger import AuditLogger
-
-# from .metrics import MetricsCollector
-# from .tracer import DistributedTracer
-
-# __all__ = [
-#     "AuditLogger",
-#     "DistributedTracer",
-#     "MetricsCollector",
-# ]
+__all__ = ["AuditLogger"]
