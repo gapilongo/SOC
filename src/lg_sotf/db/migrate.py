@@ -1,0 +1,245 @@
+"""Schema migrations, LangGraph checkpointer setup, runtime grants and partition maintenance.
+
+Alembic runs synchronously (psycopg driver); call :func:`upgrade_head` via
+``asyncio.to_thread`` from async code.
+
+Roles: the schema owner runs migrations and the scheduler (it may bypass RLS
+and owns the partitions it creates and drops). The API and worker should use
+a separate login role that has only the privileges
+:func:`grant_runtime_privileges` gives it; that role cannot bypass tenant
+isolation, alter tables, or modify the audit log. ``lg-sotf migrate`` runs
+:func:`upgrade_head`, :func:`setup_checkpointer`, then
+:func:`grant_runtime_privileges`.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+import psycopg
+import structlog
+from alembic import command
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+from psycopg import sql
+from sqlalchemy import create_engine, pool, text
+
+from lg_sotf.db.partitions import drop_expired_partitions, ensure_partitions
+from lg_sotf.db.pool import Database
+from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_query_params
+from lg_sotf.settings import get_settings
+
+__all__ = [
+    "MIGRATIONS_DIR",
+    "RUNTIME_TABLE_PRIVILEGES",
+    "alembic_config",
+    "current_revision",
+    "downgrade_base",
+    "drop_expired_partitions",
+    "ensure_partitions",
+    "grant_runtime_privileges",
+    "head_revision",
+    "libpq_url",
+    "runtime_grant_statements",
+    "schema_is_current",
+    "setup_checkpointer",
+    "sqlalchemy_url",
+    "upgrade_head",
+]
+
+# Least privilege for the API/worker role. Deletes of alerts, events, tokens
+# and audit rows are retention's job (schema owner); audit_log is append-only.
+RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
+    "alembic_version": ("SELECT",),
+    "tenants": ("SELECT", "UPDATE"),
+    "users": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "refresh_tokens": ("SELECT", "INSERT", "UPDATE"),
+    "api_keys": ("SELECT", "INSERT", "UPDATE"),
+    "sources": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "alerts": ("SELECT", "INSERT", "UPDATE"),
+    "alert_events": ("SELECT", "INSERT"),
+    "workflow_runs": ("SELECT", "INSERT", "UPDATE"),
+    "escalations": ("SELECT", "INSERT", "UPDATE"),
+    "analyst_feedback": ("SELECT", "INSERT"),
+    "response_actions": ("SELECT", "INSERT", "UPDATE"),
+    "suppression_rules": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "indicator_sightings": ("SELECT", "INSERT"),
+    "llm_usage_daily": ("SELECT", "INSERT", "UPDATE"),
+    "audit_log": ("SELECT", "INSERT"),
+}
+CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
+    "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "checkpoint_blobs": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "checkpoint_writes": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "checkpoint_migrations": ("SELECT",),
+}
+SERIAL_SEQUENCES: Tuple[Tuple[str, str], ...] = (("alert_events", "id"), ("audit_log", "id"))
+AUTH_LOOKUP_FUNCTIONS: Tuple[str, ...] = (
+    "lgsotf_auth_refresh_token(text)",
+    "lgsotf_auth_api_key(uuid)",
+    "lgsotf_auth_users_by_email(text)",
+)
+
+log = structlog.get_logger(__name__)
+
+MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+
+
+def _ssl_params() -> dict[str, Optional[str]]:
+    db = get_settings().database
+    return {"sslmode": db.ssl_mode, "sslrootcert": db.ssl_root_cert}
+
+
+def libpq_url(database_url: Optional[str] = None) -> str:
+    """Configured (or given) URL as ``postgresql://`` with SSL settings applied.
+
+    Configured ``ssl_mode``/``ssl_root_cert`` override the URL's own
+    ``sslmode``/``sslrootcert`` so psycopg (migrations, checkpointer) uses the
+    same TLS policy as the asyncpg pool.
+    """
+    url = database_url or get_settings().database.url.get_secret_value()
+    return with_query_params(to_libpq_url(url), _ssl_params(), override=True)
+
+
+def sqlalchemy_url(database_url: Optional[str] = None) -> str:
+    return to_sqlalchemy_url(libpq_url(database_url))
+
+
+def _script_config() -> Config:
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS_DIR))
+    cfg.set_main_option("path_separator", "os")
+    return cfg
+
+
+def alembic_config(database_url: Optional[str] = None) -> Config:
+    """Alembic configuration built in code; no ini file required."""
+    cfg = _script_config()
+    cfg.attributes["sqlalchemy_url"] = sqlalchemy_url(database_url)
+    return cfg
+
+
+def upgrade_head(database_url: Optional[str] = None) -> None:
+    cfg = alembic_config(database_url)
+    log.info("db.migrate.upgrade", target="head", url=redact_url(cfg.attributes["sqlalchemy_url"]))
+    command.upgrade(cfg, "head")
+
+
+def downgrade_base(database_url: Optional[str] = None) -> None:
+    """Drop the whole application schema. Intended for tests and teardown."""
+    cfg = alembic_config(database_url)
+    log.warning("db.migrate.downgrade", target="base", url=redact_url(cfg.attributes["sqlalchemy_url"]))
+    command.downgrade(cfg, "base")
+
+
+def head_revision() -> str:
+    script = ScriptDirectory.from_config(_script_config())
+    head = script.get_current_head()
+    if head is None:
+        raise RuntimeError("no migration revisions found")
+    return head
+
+
+def current_revision(database_url: Optional[str] = None) -> Optional[str]:
+    engine = create_engine(sqlalchemy_url(database_url), poolclass=pool.NullPool)
+    try:
+        with engine.connect() as conn:
+            exists = conn.execute(text("SELECT to_regclass('public.alembic_version')")).scalar()
+            if exists is None:
+                return None
+            return conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+    finally:
+        engine.dispose()
+
+
+async def schema_is_current(db: Database) -> bool:
+    """True when the database is migrated to this code's head revision."""
+    async with db.connection() as conn:
+        if await conn.fetchval("SELECT to_regclass('public.alembic_version')") is None:
+            return False
+        version = await conn.fetchval("SELECT version_num FROM alembic_version")
+    return version == head_revision()
+
+
+def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tables: List[str]) -> List[sql.Composed]:
+    """Statements that reset ``role`` to exactly the runtime privileges.
+
+    ``sequences`` are schema-qualified sequence names; ``checkpoint_tables``
+    are the LangGraph tables that exist.
+    """
+    who = sql.Identifier(role)
+    stmts: List[sql.Composed] = [
+        sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(who),
+        sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {}").format(who),
+        sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(who),
+    ]
+    tables = dict(RUNTIME_TABLE_PRIVILEGES)
+    tables.update({t: CHECKPOINT_TABLE_PRIVILEGES[t] for t in checkpoint_tables})
+    for table, privileges in tables.items():
+        stmts.append(
+            sql.SQL("GRANT {} ON TABLE {} TO {}").format(
+                sql.SQL(", ").join(sql.SQL(p) for p in privileges), sql.Identifier("public", table), who
+            )
+        )
+    for seq in sequences:
+        stmts.append(sql.SQL("GRANT USAGE ON SEQUENCE {} TO {}").format(sql.Identifier(*seq.split(".", 1)), who))
+    for fn in AUTH_LOOKUP_FUNCTIONS:
+        stmts.append(sql.SQL("GRANT EXECUTE ON FUNCTION {} TO {}").format(sql.SQL(fn), who))
+    return stmts
+
+
+def grant_runtime_privileges(role: str, database_url: Optional[str] = None) -> None:
+    """Give the API/worker login role exactly the privileges it needs (idempotent).
+
+    Run after :func:`upgrade_head` and :func:`setup_checkpointer`, as the
+    schema owner. Refuses a role that could bypass RLS (superuser,
+    BYPASSRLS, or a member of the owner role), because granting it would
+    defeat the separation.
+    """
+    with psycopg.connect(libpq_url(database_url)) as conn:
+        found = conn.execute(
+            """
+            SELECT r.rolsuper, r.rolbypassrls,
+                   pg_has_role(r.rolname, (SELECT relowner FROM pg_class WHERE oid = 'public.tenants'::regclass),
+                               'MEMBER')
+            FROM pg_roles r WHERE r.rolname = %s
+            """,
+            (role,),
+        ).fetchone()
+        if found is None:
+            raise ValueError(f"database role does not exist: {role!r}")
+        if any(found):
+            raise ValueError(
+                f"runtime role {role!r} must not be a superuser, have BYPASSRLS or be a member of the schema owner"
+            )
+        sequences: List[str] = [
+            r[0]
+            for r in conn.execute(
+                "SELECT pg_get_serial_sequence(t, c) FROM unnest(%s::text[], %s::text[]) AS x(t, c)",
+                ([f"public.{t}" for t, _ in SERIAL_SEQUENCES], [c for _, c in SERIAL_SEQUENCES]),
+            ).fetchall()
+            if r[0] is not None
+        ]
+        checkpoint_tables: List[str] = [
+            r[0]
+            for r in conn.execute(
+                "SELECT t FROM unnest(%s::text[]) AS t WHERE to_regclass('public.' || t) IS NOT NULL",
+                (list(CHECKPOINT_TABLE_PRIVILEGES),),
+            ).fetchall()
+        ]
+        for stmt in runtime_grant_statements(role, sequences=sequences, checkpoint_tables=checkpoint_tables):
+            conn.execute(stmt)
+    log.info("db.migrate.runtime_grants", role=role, checkpoint_tables=len(checkpoint_tables))
+
+
+async def setup_checkpointer(database_url: Optional[str] = None) -> None:
+    """Create or upgrade LangGraph's checkpoint tables (idempotent)."""
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from psycopg import AsyncConnection
+    from psycopg.rows import dict_row
+
+    url = libpq_url(database_url)
+    async with await AsyncConnection.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row) as conn:
+        await AsyncPostgresSaver(conn).setup()
+    log.info("db.migrate.checkpointer_ready")

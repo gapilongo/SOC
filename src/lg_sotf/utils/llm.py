@@ -1,32 +1,22 @@
+"""Compatibility shim for agents that predate :mod:`lg_sotf.llm`.
+
+New code should call :func:`lg_sotf.llm.get_chat_model` with an explicit tier
+and :func:`lg_sotf.llm.ainvoke_structured` for validated output.
 """
-LLM client factory - just creates and returns the correct LLM client
-based on configuration. No prompt logic here.
-"""
 
-from typing import Any
+from __future__ import annotations
 
-from langchain_anthropic import ChatAnthropic
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_openai import ChatOpenAI
+from typing import TYPE_CHECKING, Optional
+
+from langchain_core.language_models.chat_models import BaseChatModel
+
+from lg_sotf.llm.client import get_chat_model
+
+if TYPE_CHECKING:
+    from lg_sotf.core.config.manager import ConfigManager
 
 
-def get_llm_client(config_manager: Any):
-    """Return an LLM client based on configuration."""
-    try:
-        provider = config_manager.get("llm.provider")
-        model = config_manager.get("llm.model")
-        temperature = config_manager.get("llm.temperature", 0.0)
-        api_key = config_manager.get("llm.api_key")
-
-        if provider == "openai":
-            return ChatOpenAI(model=model, temperature=temperature, api_key=api_key)
-        elif provider == "anthropic":
-            return ChatAnthropic(model=model, temperature=temperature, api_key=api_key)
-        elif provider == "gemini":
-            return ChatGoogleGenerativeAI(
-                model=model, temperature=temperature, api_key=api_key
-            )
-        else:
-            raise ValueError(f"Unsupported LLM provider: {provider}")
-    except Exception as e:
-        raise ValueError(f"Failed to create LLM client: {e}")
+def get_llm_client(config_manager: Optional[ConfigManager] = None) -> BaseChatModel:
+    """Fast-tier chat model. Raises :class:`lg_sotf.llm.LLMUnavailable` when disabled or misconfigured."""
+    settings = config_manager.settings if config_manager is not None else None
+    return get_chat_model("fast", settings=settings)

@@ -1,214 +1,168 @@
-# Production configuration for LG-SOTF
+# LG-SOTF production configuration.
+#
+# Every secret comes from the environment (Kubernetes Secret / vault agent).
+# A variable that is unset leaves the field at its default, and
+# settings.assert_safe() refuses to start when a required secret is missing.
+# Any value can also be overridden with LG_SOTF_<SECTION>__<KEY>.
 
-# Database configuration
+environment: production
+
 database:
-  host: ${DB_HOST}
-  port: ${DB_PORT}
-  database: ${DB_NAME}
-  username: ${DB_USER}
-  password: ${DB_PASSWORD}
-  pool_size: 20
-  max_overflow: 30
-  ssl_mode: require
+  url: ${DATABASE_URL}
+  pool_min: ${DATABASE_POOL_MIN:-5}
+  pool_max: ${DATABASE_POOL_MAX:-20}
+  command_timeout_s: 30
+  statement_timeout_ms: 30000
+  ssl_mode: ${DATABASE_SSL_MODE:-require}
+  ssl_root_cert: ${DATABASE_SSL_ROOT_CERT}
 
-# Redis configuration
 redis:
-  host: ${REDIS_HOST}
-  port: ${REDIS_PORT}
-  password: ${REDIS_PASSWORD}
-  db: ${REDIS_DB}
-  max_connections: 20
-  ssl: true
+  url: ${REDIS_URL}
+  key_prefix: ${REDIS_KEY_PREFIX:-lgsotf}
+  max_connections: 128
 
-# Agent configuration
+llm:
+  enabled: true
+  provider: anthropic
+  api_key: ${ANTHROPIC_API_KEY}
+  fast:
+    model: ${LLM_FAST_MODEL:-claude-haiku-4-5}
+    max_tokens: 1024
+    temperature: 0.0
+    timeout_s: 60
+    max_retries: 3
+    max_concurrency: 32
+  deep:
+    model: ${LLM_DEEP_MODEL:-claude-opus-5-5}
+    max_tokens: 16000
+    timeout_s: 300
+    max_retries: 3
+    max_concurrency: 16
+  prompt_caching: true
+  max_input_chars: 24000
+  max_field_chars: 2000
+  max_list_items: 50
+  daily_token_budget_per_tenant: ${LLM_DAILY_TOKEN_BUDGET_PER_TENANT:-5000000}
+
+auth:
+  jwt_secret: ${JWT_SECRET}
+  jwt_issuer: lg-sotf
+  jwt_audience: lg-sotf-api
+  access_token_ttl_s: 900
+  refresh_token_ttl_s: 1209600
+  cookie_secure: true
+  cookie_domain: ${COOKIE_DOMAIN}
+  password_min_length: 12
+  max_login_attempts: 10
+  lockout_minutes: 15
+  oidc_issuer: ${OIDC_ISSUER}
+  oidc_audience: ${OIDC_AUDIENCE}
+  oidc_jwks_url: ${OIDC_JWKS_URL}
+  oidc_default_tenant: ${OIDC_DEFAULT_TENANT}
+  bootstrap_admin_email: ${BOOTSTRAP_ADMIN_EMAIL}
+  bootstrap_admin_password: ${BOOTSTRAP_ADMIN_PASSWORD}
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  public_url: ${PUBLIC_URL}
+  # The SPA is served same-origin; list extra origins with
+  # LG_SOTF_API__CORS_ORIGINS='["https://soc.example.com"]'.
+  cors_origins: []
+  metrics_token: ${METRICS_TOKEN}
+  docs_enabled: false
+  forwarded_allow_ips: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+
+worker:
+  concurrency: ${WORKER_CONCURRENCY:-16}
+  per_tenant_concurrency: 8
+
+security:
+  encryption_keys: ${ENCRYPTION_KEYS}
+  indicator_hmac_key: ${INDICATOR_HMAC_KEY}
+
+observability:
+  log_level: ${LOG_LEVEL:-INFO}
+  log_format: json
+  metrics_enabled: true
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+  service_name: lg-sotf
+
+response:
+  dry_run: ${RESPONSE_DRY_RUN:-true}
+  webhook_url: ${RESPONSE_WEBHOOK_URL}
+  webhook_secret: ${RESPONSE_WEBHOOK_SECRET}
+
 agents:
   ingestion:
     batch_size: 100
     polling_interval: 60
     max_concurrent_alerts: 50
     enable_deduplication: true
-    deduplication_window: 3600  # 1 hour
-  
+    deduplication_window_hours: 24
+    rate_limit_enabled: true
+    max_alerts_per_minute: 5000
+    max_alerts_per_source_minute: 1000
   triage:
     confidence_threshold: 80
-    enable_ml_scoring: true
-    ml_model_path: "/models/triage_model.pkl"
-    model_version: "1.0.0"
-    enable_rule_engine: true
-    rule_engine_path: "/rules/triage_rules.yaml"
-  
+    enable_ml_scoring: false
+    enable_llm_scoring: true
+    llm_weight: 0.4
+  correlation:
+    correlation_window_minutes: 60
+    similarity_threshold: 0.7
+    max_correlations: 10
+    enable_llm_correlation: true
+    llm_weight: 0.3
+    enable_threat_intel: true
+    enable_siem_queries: true
+    enable_burst_detection: true
+    burst_threshold_per_minute: 5
   analysis:
     max_iterations: 5
-    timeout_seconds: 120
-    enable_tool_caching: true
-    cache_ttl: 1800  # 30 minutes
-    enable_parallel_execution: true
+    min_confidence_threshold: 60
+    max_confidence_threshold: 90
+    enable_tool_orchestration: true
+    enable_llm_reasoning: true
+    parallel_tool_execution: true
     max_parallel_tools: 3
-  
+    tool_timeout: 30
+    enable_fallback_analysis: true
   human_loop:
     escalation_threshold: 60
-    max_escalation_level: 5
+    max_escalation_level: 3
     response_timeout_hours: 8
-    enable_notification: true
-    notification_channels: ["email", "slack", "pagerduty"]
-  
+    auto_escalate_enabled: true
+    sla_check_interval: 300
   response:
-    enable_playbooks: true
-    playbook_path: "/playbooks/"
-    enable_approval_workflow: true
-    approval_levels: 2
-    enable_rollback: true
-  
-  learning:
-    enable_feedback_learning: true
-    enable_model_retraining: true
-    retraining_interval: 86400  # 24 hours
-    model_performance_threshold: 0.85
+    enabled: true
+    dry_run_mode: true
+    auto_approve_low_risk: false
+    auto_approve_medium_risk: false
+    auto_approve_high_risk: false
+    max_parallel_actions: 3
+    action_timeout: 60
 
-# Tool configuration
+routing:
+  max_alert_age_hours: 72
+  correlation_grey_zone_min: 30
+  correlation_grey_zone_max: 70
+  analysis_threshold: 40
+  human_review_min: 20
+  human_review_max: 60
+  response_threshold: 80
+
 tools:
-  siem:
-    splunk:
-      base_url: ${SPLUNK_BASE_URL}
-      token: ${SPLUNK_TOKEN}
-      index: ${SPLUNK_INDEX}
-      search_timeout: 60
-      verify_ssl: true
-      connection_pool_size: 10
-    
-    qradar:
-      base_url: ${QRADAR_BASE_URL}
-      token: ${QRADAR_TOKEN}
-      timeout: 60
-      verify_ssl: true
-      connection_pool_size: 10
-  
+  execution_timeout: 30
+  caching_enabled: true
+  cache_ttl: 1800
+  max_retries: 3
+  backoff_factor: 2
   intel:
     virustotal:
       api_key: ${VIRUSTOTAL_API_KEY}
       timeout: 15
       rate_limit: 4
-      verify_ssl: true
-    
-    recorded_future:
-      api_key: ${RECORDED_FUTURE_API_KEY}
-      timeout: 30
-      verify_ssl: true
-  
-  sandbox:
-    joe_sandbox:
-      base_url: ${JOE_SANDBOX_BASE_URL}
-      api_key: ${JOE_SANDBOX_API_KEY}
-      timeout: 600  # 10 minutes
-      verify_ssl: true
-      priority: "normal"
-    
-    any_run:
-      base_url: ${ANY_RUN_BASE_URL}
-      api_key: ${ANY_RUN_API_KEY}
-      timeout: 600
-      verify_ssl: true
-  
-  edr:
-    crowdstrike:
-      base_url: ${CROWDSTRIKE_BASE_URL}
-      client_id: ${CROWDSTRIKE_CLIENT_ID}
-      client_secret: ${CROWDSTRIKE_CLIENT_SECRET}
-      timeout: 60
-      verify_ssl: true
-      connection_pool_size: 10
 
-# Storage configuration
-storage:
-  backend: "postgresql"
-  connection_string: ${DATABASE_CONNECTION_STRING}
-  
-  redis:
-    connection_string: ${REDIS_CONNECTION_STRING}
-    default_ttl: 3600  # 1 hour
-  
-  vector_db:
-    backend: "chroma"
-    connection_string: ${VECTOR_DB_CONNECTION_STRING}
-    collection_name: "lg_sotf_embeddings"
-
-# Logging configuration
-logging:
-  level: "INFO"
-  format: "json"
-  file_path: "/var/log/lg_sotf/lg_sotf.log"
-  max_file_size: "100MB"
-  backup_count: 10
-  enable_log_rotation: true
-  enable_log_shipping: true
-  log_shipper: "fluentd"
-  log_shipper_config: "/etc/lg_sotf/fluentd.conf"
-
-# Security configuration
-security:
-  encryption_key: ${ENCRYPTION_KEY}
-  jwt_secret: ${JWT_SECRET}
-  session_timeout: 3600
-  max_login_attempts: 5
-  enable_mfa: true
-  mfa_expiry: 86400  # 24 hours
-  enable_audit_logging: true
-  audit_log_retention: 7776000  # 90 days
-  enable_data_encryption: true
-  encryption_algorithm: "AES-256-GCM"
-
-# Monitoring configuration
-monitoring:
-  metrics_enabled: true
-  metrics_port: 8090
-  metrics_path: "/metrics"
-  tracing_enabled: true
-  tracing_sampling_rate: 0.1
-  tracing_exporter: "jaeger"
-  jaeger_endpoint: ${JAEGER_ENDPOINT}
-  enable_health_checks: true
-  health_check_port: 8081
-  health_check_path: "/health"
-
-# Performance configuration
-performance:
-  max_concurrent_workflows: 1000
-  workflow_timeout: 3600  # 1 hour
-  enable_caching: true
-  cache_ttl: 1800  # 30 minutes
-  enable_rate_limiting: true
-  rate_limit_requests: 1000
-  rate_limit_window: 60  # 1 minute
-
-# High availability configuration
-high_availability:
-  enabled: true
-  enable_load_balancing: true
-  load_balancer: "nginx"
-  enable_auto_scaling: true
-  min_instances: 3
-  max_instances: 10
-  scaling_metric: "cpu"
-  scaling_target: 70
-  scaling_cooldown: 300  # 5 minutes
-
-# Backup configuration
-backup:
-  enabled: true
-  backup_schedule: "0 2 * * *"  # Daily at 2 AM
-  backup_retention: 30  # days
-  backup_compression: true
-  backup_encryption: true
-  backup_storage: "s3"
-  s3_bucket: ${BACKUP_S3_BUCKET}
-  s3_region: ${BACKUP_S3_REGION}
-
-# Disaster recovery configuration
-disaster_recovery:
-  enabled: true
-  dr_region: ${DR_REGION}
-  rpo: 300  # 5 minutes Recovery Point Objective
-  rto: 1800  # 30 minutes Recovery Time Objective
-  enable_cross_region_replication: true
-  enable_failover: true
-  failover_threshold: 3  # number of failures before failover
+ingestion:
+  llm_normalization: false

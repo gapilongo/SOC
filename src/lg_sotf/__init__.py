@@ -1,20 +1,8 @@
-"""
-LG-SOTF: LangGraph SOC Triage & Orchestration Framework
+"""LG-SOTF: multi-tenant AI triage and investigation platform for security alerts.
 
-A production-grade framework for automating Security Operations Center workflows
-using LangGraph for intelligent alert processing and response.
+Importing the package has no side effects; import subpackages explicitly.
 """
 
-__version__ = "0.1.0"
-__author__ = "LG-SOTF Team"
-__email__ = "team@lg-sotf.org"
+__version__ = "1.0.0"
 
-from lg_sotf.core.config.manager import ConfigManager
-from lg_sotf.core.state.manager import StateManager
-from lg_sotf.core.workflow import WorkflowEngine
-
-__all__ = [
-    "WorkflowEngine",
-    "StateManager", 
-    "ConfigManager",
-]
+__all__ = ["__version__"]

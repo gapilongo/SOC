@@ -1,0 +1,24 @@
+{
+  "id": "alert-network-002",
+  "timestamp": "2025-11-18T15:32:00Z",
+  "source": "firewall",
+  "severity": "high",
+  "category": "network",
+  "title": "Suspicious Outbound Connection",
+  "description": "Outbound connection to known C2 infrastructure detected",
+  "raw_data": {
+    "source_ip": "192.168.1.100",
+    "destination_ip": "185.220.101.50",
+    "destination_port": 4444,
+    "user": "administrator",
+    "host": "WORKSTATION-01",
+    "protocol": "TCP",
+    "bytes_transferred": 524288,
+    "country": "Russia"
+  },
+  "entities": {
+    "ip": ["192.168.1.100", "185.220.101.50"],
+    "user": ["administrator"],
+    "host": ["WORKSTATION-01"]
+  }
+}

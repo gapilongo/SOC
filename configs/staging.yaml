@@ -1,1 +1,126 @@
- 
+# LG-SOTF staging configuration: production shape, smaller scale, verbose logs.
+# Staging runs the same safety checks as production (settings.assert_safe()).
+
+environment: staging
+
+database:
+  url: ${DATABASE_URL}
+  pool_min: 2
+  pool_max: 10
+  ssl_mode: ${DATABASE_SSL_MODE:-require}
+  ssl_root_cert: ${DATABASE_SSL_ROOT_CERT}
+
+redis:
+  url: ${REDIS_URL}
+  key_prefix: ${REDIS_KEY_PREFIX:-lgsotf-staging}
+
+llm:
+  enabled: true
+  provider: anthropic
+  api_key: ${ANTHROPIC_API_KEY}
+  fast:
+    model: ${LLM_FAST_MODEL:-claude-haiku-4-5}
+    max_tokens: 1024
+    temperature: 0.0
+    timeout_s: 60
+    max_retries: 3
+    max_concurrency: 8
+  deep:
+    model: ${LLM_DEEP_MODEL:-claude-opus-5-5}
+    max_tokens: 16000
+    timeout_s: 300
+    max_retries: 3
+    max_concurrency: 4
+  prompt_caching: true
+  daily_token_budget_per_tenant: ${LLM_DAILY_TOKEN_BUDGET_PER_TENANT:-1000000}
+
+auth:
+  jwt_secret: ${JWT_SECRET}
+  cookie_secure: true
+  cookie_domain: ${COOKIE_DOMAIN}
+  oidc_issuer: ${OIDC_ISSUER}
+  oidc_audience: ${OIDC_AUDIENCE}
+  oidc_jwks_url: ${OIDC_JWKS_URL}
+  oidc_default_tenant: ${OIDC_DEFAULT_TENANT}
+  bootstrap_admin_email: ${BOOTSTRAP_ADMIN_EMAIL}
+  bootstrap_admin_password: ${BOOTSTRAP_ADMIN_PASSWORD}
+
+api:
+  public_url: ${PUBLIC_URL}
+  cors_origins: []
+  metrics_token: ${METRICS_TOKEN}
+  docs_enabled: true
+  forwarded_allow_ips: ${FORWARDED_ALLOW_IPS:-127.0.0.1}
+
+worker:
+  concurrency: 8
+
+security:
+  encryption_keys: ${ENCRYPTION_KEYS}
+  indicator_hmac_key: ${INDICATOR_HMAC_KEY}
+
+observability:
+  log_level: ${LOG_LEVEL:-DEBUG}
+  log_format: json
+  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+  service_name: lg-sotf-staging
+
+response:
+  dry_run: true
+  webhook_url: ${RESPONSE_WEBHOOK_URL}
+  webhook_secret: ${RESPONSE_WEBHOOK_SECRET}
+
+agents:
+  ingestion:
+    batch_size: 100
+    polling_interval: 60
+    max_concurrent_alerts: 20
+    enable_deduplication: true
+  triage:
+    confidence_threshold: 75
+    enable_ml_scoring: false
+    enable_llm_scoring: true
+    llm_weight: 0.4
+  correlation:
+    correlation_window_minutes: 60
+    enable_llm_correlation: true
+    llm_weight: 0.3
+    enable_threat_intel: true
+    enable_siem_queries: true
+    enable_burst_detection: true
+  analysis:
+    max_iterations: 5
+    enable_tool_orchestration: true
+    enable_llm_reasoning: true
+    tool_timeout: 30
+  human_loop:
+    escalation_threshold: 50
+    max_escalation_level: 3
+    response_timeout_hours: 8
+  response:
+    enabled: true
+    dry_run_mode: true
+
+routing:
+  max_alert_age_hours: 72
+  correlation_grey_zone_min: 30
+  correlation_grey_zone_max: 70
+  analysis_threshold: 40
+  human_review_min: 20
+  human_review_max: 60
+  response_threshold: 80
+
+tools:
+  execution_timeout: 30
+  caching_enabled: true
+  cache_ttl: 600
+  max_retries: 3
+  backoff_factor: 2
+  intel:
+    virustotal:
+      api_key: ${VIRUSTOTAL_API_KEY}
+      timeout: 15
+      rate_limit: 4
+
+ingestion:
+  llm_normalization: false

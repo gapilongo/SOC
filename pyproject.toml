@@ -1,157 +1,169 @@
 [build-system]
-requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "lg_sotf"
-version = "0.1.0"
-description = "LangGraph SOC Triage & Orchestration Framework"
+name = "lg-sotf"
+dynamic = ["version"]
+description = "Multi-tenant AI triage and investigation platform for security alerts, built on LangGraph"
 readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "MIT"}
-authors = [
-    {name = "LG-SOTF Team", email = "team@lg-sotf.org"},
-]
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "LG-SOTF Team", email = "team@lg-sotf.org" }]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: FastAPI",
+    "Intended Audience :: Information Technology",
     "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Security",
     "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 dependencies = [
-    "langgraph>=0.6.6",
-    "pydantic>=2.0.0",
-    "pydantic-settings>=2.0.0",
-    "asyncio-mqtt>=0.13.0",
-    "aiohttp>=3.8.0",
-    "asyncpg>=0.28.0",
-    "redis>=4.5.0",
-    "aioredis",
-    "structlog>=23.1.0",
-    "click>=8.1.0",
-    "pyyaml>=6.0",
-    "cryptography>=41.0.0",
-    "prometheus-client>=0.17.0",
-    "opentelemetry-api>=1.20.0",
-    "opentelemetry-sdk>=1.20.0",
-    "fastapi >=0.117.1",
-    "uvicorn>=0.37.0",
-    "websockets>=15.0.1",
-    "aiofiles>=25.1.0"
+    # Workflow engine and durable checkpoints
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint>=4.1.1,<5",
+    "langgraph-checkpoint-postgres>=3.1,<4",
+    "psycopg[binary,pool]>=3.2,<4",
+    # LLM
+    "langchain-core>=1.6,<2",
+    "langchain-anthropic>=1.7,<2",
+    # Storage and queue
+    "asyncpg>=0.30,<1",
+    "redis>=5.2,<9",
+    "alembic>=1.13,<2",
+    "sqlalchemy>=2.0,<3",
+    # API
+    "fastapi>=0.115,<1",
+    "uvicorn[standard]>=0.30,<1",
+    "httpx>=0.27,<1",
+    # Configuration and models
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.4,<3",
+    "annotated-types>=0.6",
+    "pyyaml>=6.0,<7",
+    "click>=8.1,<9",
+    # Security
+    "pyjwt[crypto]>=2.8,<3",
+    "argon2-cffi>=23.1,<26",
+    "cryptography>=42",
+    # Observability
+    "prometheus-client>=0.20,<1",
+    "structlog>=24.1",
+    "opentelemetry-api>=1.25,<2",
+    "opentelemetry-sdk>=1.25,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
+    # Legacy pull-source plugins (agents/ingestion/plugins); drop with them.
+    "aiohttp>=3.9,<4",
+    "aiofiles>=23.2",
 ]
 
 [project.optional-dependencies]
+openai = ["langchain-openai>=1.0,<2"]
+gemini = ["langchain-google-genai>=4.0,<5"]
 dev = [
-    "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.1.0",
-    "pytest-mock>=3.11.0",
-    "black>=23.7.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
-    "isort>=5.12.0",
-    "pre-commit>=3.3.0",
-    "sphinx>=7.1.0",
-    "sphinx-rtd-theme>=1.3.0",
-    "myst-parser>=2.0.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
+    "pytest-mock>=3.14",
+    "fakeredis>=2.26",
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "types-PyYAML",
+    "types-aiofiles",
 ]
 
 [project.urls]
 Homepage = "https://github.com/gapilongo/SOC"
-Documentation = "https://lg-sotf.readthedocs.io"
 Repository = "https://github.com/gapilongo/SOC"
 Issues = "https://github.com/gapilongo/SOC/issues"
 
 [project.scripts]
 lg-sotf = "lg_sotf.cli:main"
-lg-sotf-poc = "scripts.run_poc:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "lg_sotf.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["lg_sotf*"]
 
 [tool.setuptools.package-data]
-lg_sotf = ["py.typed"]
+lg_sotf = [
+    "py.typed",
+    "db/alembic.ini",
+    "db/migrations/script.py.mako",
+    "db/migrations/versions/*.py",
+]
 
-[tool.black]
-line-length = 88
-target-version = ['py310']
-include = '\.pyi?$'
-extend-exclude = '''
-/(
-  # directories
-  \.eggs
-  | \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | build
-  | dist
-)/
-'''
-
-[tool.isort]
-profile = "black"
-multi_line_output = 3
-line_length = 88
-known_first_party = ["lg_sotf"]
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_unreachable = true
-strict_equality = true
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
 
 [tool.pytest.ini_options]
+minversion = "8.0"
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--strict-config",
-    "--cov=lg_sotf",
-    "--cov-report=term-missing",
-    "--cov-report=html",
-    "--cov-report=xml",
-]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = ["-ra", "--strict-markers", "--strict-config"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
+    "integration: needs real PostgreSQL/Redis (LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL); skipped when unset",
+    "slow: long-running tests (deselect with -m 'not slow')",
+    "unit: fast, isolated tests",
 ]
 
 [tool.coverage.run]
-source = ["src/lg_sotf"]
-omit = [
-    "*/tests/*",
-    "*/test_*",
-    "*/conftest.py",
-]
+source = ["lg_sotf"]
+branch = true
 
 [tool.coverage.report]
+skip_empty = true
 exclude_lines = [
     "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
+    "if TYPE_CHECKING:",
     "raise NotImplementedError",
-    "if 0:",
     "if __name__ == .__main__.:",
-    "class .*\\bProtocol\\):",
     "@(abc\\.)?abstractmethod",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC"]
+ignore = ["E501", "UP006", "UP007", "UP035", "UP045", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "S108", "S311", "S603", "UP042"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["lg_sotf"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_equality = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "lg_sotf.settings",
+    "lg_sotf.llm.*",
+    "lg_sotf.security.*",
+    "lg_sotf.observability.*",
+    "lg_sotf.core.config.*",
+]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
