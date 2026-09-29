@@ -142,7 +142,7 @@ export default function DashboardPage() {
             <Breakdown title="By severity" counts={d.by_severity} order={[...SEVERITIES].reverse()} linkFor={(k) => `/alerts?severity=${encodeURIComponent(k)}`} />
             <Breakdown title="By status" counts={d.by_status} order={ALERT_STATUSES} linkFor={(k) => `/alerts?status=${encodeURIComponent(k)}`} />
             <Breakdown title="By disposition" counts={d.by_disposition} order={DISPOSITIONS} linkFor={(k) => `/alerts?disposition=${encodeURIComponent(k)}`} />
-            <Breakdown title="Workflow runs by status" counts={d.runs_by_status} order={[]} />
+            <Breakdown title="Unfinished workflow runs" counts={d.runs_by_status} order={[]} />
           </div>
         </div>
       )}

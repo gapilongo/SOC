@@ -104,3 +104,69 @@ def test_image_job_runs_the_stack_smoke_test_on_the_built_image() -> None:
     assert job["timeout-minutes"] >= 20
     lint = next(s for s in steps() if s.get("name") == "Shellcheck")
     assert "scripts/smoke_stack.sh" in lint["run"]
+
+
+WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))
+
+
+def test_every_workflow_pins_actions_and_drops_checkout_credentials() -> None:
+    """WSC-6: every workflow (not only ci.yml) holds secrets or tokens; tags are mutable."""
+    assert len(WORKFLOWS) >= 3
+    for path in WORKFLOWS:
+        data = yaml.safe_load(path.read_text())
+        for name, job in data["jobs"].items():
+            for step in job.get("steps", []):
+                uses = step.get("uses")
+                if not uses:
+                    continue
+                assert SHA_PIN.match(uses), f"{path.name}:{name} uses a mutable ref: {uses}"
+                if uses.startswith("actions/checkout@"):
+                    assert step.get("with", {}).get("persist-credentials") is False, f"{path.name}:{name}"
+
+
+def test_frontend_dependencies_are_audited_and_updated() -> None:
+    """WSC-7: npm advisories fail CI and Dependabot watches the frontend and its base images."""
+    config = yaml.safe_load((REPO_ROOT / ".github" / "dependabot.yml").read_text())
+    entries = {(u["package-ecosystem"], u["directory"]) for u in config["updates"]}
+    assert {("npm", "/src/lg_front"), ("docker", "/src/lg_front"), ("docker", "/docker")} <= entries
+    frontend = workflow()["jobs"]["frontend"]
+    assert any("npm run audit:prod" in step.get("run", "") for step in frontend["steps"])
+
+
+# High-signal shapes of the gitleaks default rules that fake fixtures tend to trip.
+_SECRET_SHAPES = [
+    re.compile(r"\b(ey[a-zA-Z0-9]{17,}\.ey[a-zA-Z0-9/\\_-]{17,}\.(?:[a-zA-Z0-9/\\_-]{10,}={0,2})?)"),
+    re.compile(r"\b((?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16})\b"),
+    re.compile(r"\b(glpat-[\w-]{20})"),
+    re.compile(r"\b(npm_[a-z0-9]{36})", re.IGNORECASE),
+    re.compile(r"\b(SG\.[\w=-]{20,24}\.[\w=-]{39,50})"),
+    re.compile(r"(hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9+/]{43,56})"),
+    re.compile(r"\b(gh[pousr]_[0-9a-zA-Z]{36})\b"),
+]
+
+
+def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> None:
+    """WSC-2: a new fake fixture must not turn the CI secret scan red unnoticed."""
+    import subprocess
+
+    listed = subprocess.run(  # noqa: S603 - fixed argv
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
+        cwd=REPO_ROOT, capture_output=True, check=True,
+    ).stdout.decode().split("\0")
+    allow = [re.compile(rx) for rx in tomllib.loads(GITLEAKS.read_text())["allowlist"]["regexes"]]
+    allow.append(re.compile(r".+EXAMPLE$"))  # gitleaks' own aws-access-token allowlist (AWS documentation keys)
+    leaks = []
+    for name in filter(None, listed):
+        path = REPO_ROOT / name
+        if not path.is_file() or path.stat().st_size > 2_000_000:
+            continue
+        try:
+            text = path.read_text()
+        except (UnicodeDecodeError, OSError):
+            continue
+        for shape in _SECRET_SHAPES:
+            for match in shape.finditer(text):
+                secret = match.group(1)
+                if not any(rx.search(secret) for rx in allow):
+                    leaks.append(f"{name}: {secret[:12]}...")
+    assert leaks == [], "allowlist the fake value in scripts/ci/gitleaks.toml or assemble it at run time"

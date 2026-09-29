@@ -177,3 +177,48 @@ async def test_direct_partition_access_is_also_isolated(db: Database, repos: Rep
         assert await conn.fetchval(f"SELECT count(*) FROM {partition}") == 0  # noqa: S608
     async with db.tenant_tx(TENANT_A) as conn:
         assert await conn.fetchval(f"SELECT count(*) FROM {partition}") == 1  # noqa: S608
+
+
+async def test_checkpoint_tables_are_tenant_isolated(db: Database, repos: Repositories, migrated_database_url: str) -> None:
+    """AUTHZ-5: LangGraph checkpoints (full alert state) are under the same RLS as tenant tables."""
+    from lg_sotf.db.migrate import setup_checkpointer
+
+    await setup_checkpointer(migrated_database_url)
+    await setup_checkpointer(migrated_database_url)  # idempotent re-apply
+    thread_b = f"{TENANT_B}:alert-1"
+    async with db.system_tx() as conn:
+        for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+            await conn.execute(f"DELETE FROM {table}")  # noqa: S608
+        await conn.execute(
+            "INSERT INTO checkpoints (thread_id, checkpoint_id, checkpoint) VALUES ($1, 'c1', '{}'::jsonb)", thread_b
+        )
+        await conn.execute(
+            "INSERT INTO checkpoint_blobs (thread_id, channel, version, type) VALUES ($1, 'ch', '1', 'empty')", thread_b
+        )
+        await conn.execute(
+            "INSERT INTO checkpoint_writes (thread_id, checkpoint_id, task_id, idx, channel, blob) "
+            "VALUES ($1, 'c1', 't', 0, 'ch', '\\x00'::bytea)",
+            thread_b,
+        )
+        flags = await conn.fetch(
+            "SELECT relname, relrowsecurity, relforcerowsecurity FROM pg_class "
+            "WHERE relname IN ('checkpoints', 'checkpoint_blobs', 'checkpoint_writes')"
+        )
+    assert len(flags) == 3 and all(r["relrowsecurity"] and r["relforcerowsecurity"] for r in flags)
+    try:
+        for table in ("checkpoints", "checkpoint_blobs", "checkpoint_writes"):
+            async with db.tenant_tx(TENANT_A) as conn:
+                assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 0  # noqa: S608
+                assert await conn.execute(f"DELETE FROM {table}") == "DELETE 0"  # noqa: S608
+            async with db.tenant_tx(TENANT_B) as conn:
+                assert await conn.fetchval(f"SELECT count(*) FROM {table}") == 1  # noqa: S608
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            async with db.tenant_tx(TENANT_A) as conn:
+                await conn.execute(
+                    "INSERT INTO checkpoints (thread_id, checkpoint_id, checkpoint) VALUES ($1, 'c2', '{}'::jsonb)",
+                    thread_b,
+                )
+    finally:
+        async with db.system_tx() as conn:
+            for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
+                await conn.execute(f"DELETE FROM {table}")  # noqa: S608

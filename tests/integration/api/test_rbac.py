@@ -53,6 +53,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("DELETE", f"/api/v1/api-keys/{U}", "admin", None),
     ("GET", "/api/v1/tenant/settings", "admin", None),
     ("PATCH", "/api/v1/tenant/settings", "admin", {}),
+    ("DELETE", "/api/v1/tenant/verdict-cache", "admin", None),
     ("GET", "/api/v1/dashboard/summary", "viewer", None),
     ("GET", "/api/v1/usage/llm", "admin", None),
     ("GET", "/api/v1/audit", "admin", None),

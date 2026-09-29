@@ -89,7 +89,7 @@ import ipaddress
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -202,7 +202,9 @@ ACTION_CAP_LOCK = 710_020
 _CAP_LOCK_SQL = "SELECT pg_advisory_xact_lock($1, hashtext($2))"
 _EXECUTED_COUNTS_SQL = """
     SELECT action_type, count(*)::int AS n FROM response_actions
-    WHERE tenant_id = $1 AND executed_at >= $2 AND status = ANY($3::text[])
+    WHERE tenant_id = $1 AND status = ANY($3::text[])
+      -- The window is measured on the database clock that stamps executed_at, unless given.
+      AND executed_at >= COALESCE($2::timestamptz, now() - interval '1 hour')
     GROUP BY action_type
 """
 # Actions left 'executing' whose run will never come back to them.
@@ -327,6 +329,29 @@ _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z
 _NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,256}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 
+# Operating-system and security-agent processes no response ever terminates, whatever the
+# tenant configured: killing them crashes or blinds the host, and malware routinely borrows
+# their names (an implant called lsass.exe in a Temp folder is still named lsass.exe).
+# Compared by base name, NFKC-normalised and case-folded, with and without ".exe".
+CRITICAL_PROCESSES: FrozenSet[str] = frozenset(
+    {
+        "system", "system idle process", "registry", "memory compression", "secure system",
+        "smss", "csrss", "wininit", "winlogon", "services", "lsass", "lsaiso", "svchost", "explorer",
+        "dwm", "fontdrvhost", "spoolsv", "taskhostw", "sihost", "ctfmon", "conhost", "userinit",
+        "msmpeng", "mssense", "sensecncproxy", "nissrv", "securityhealthservice", "senseir",
+        "csfalconservice", "csfalconcontainer", "sentinelagent", "sentinelservicehost", "cbdefense", "repmgr",
+        "cylancesvc", "xagt", "elastic-agent", "elastic-endpoint", "osqueryd", "sysmon", "sysmon64",
+        "init", "systemd", "systemd-journald", "systemd-logind", "systemd-udevd", "kthreadd", "sshd", "dbus-daemon",
+        "launchd", "kernel_task", "windowserver", "loginwindow", "falcon-sensor", "auditd",
+    }
+)
+# Raw-event keys that describe the ancestry of the detected activity (parent/grandparent
+# process, its image and hash). Their values are context, never response targets.
+_LINEAGE_KEY_RE = re.compile(r"(?:^|[_\-. ])(?:grand)?parent", re.IGNORECASE)
+_LINEAGE_CAMEL_RE = re.compile(r"[a-z](?:Grand)?Parent")
+_MAX_LINEAGE_SCAN = 2_000
+MAX_SCOPE_HOSTS = 10
+
 
 # --------------------------------------------------------------------------- planning inputs
 
@@ -352,6 +377,37 @@ class PlanContext:
     approved_actions: Sequence[str] = ()
     approved_by: Optional[str] = None
     approver_role: Optional[str] = None
+    # Targets the rule evidence is *about* (kind, value): threat-intel or history verdicts on
+    # that indicator, the executable and host a behavioural rule observed. With "rules"
+    # evidence, automatic containment is limited to these; ``None`` = not computed (legacy).
+    corroborated_targets: Optional[FrozenSet[Tuple[str, str]]] = None
+    # Hosts the alert concerns; host-local actions (terminate_process, quarantine_file) are
+    # scoped to them in the ledger params and the signed webhook body.
+    hosts: Sequence[str] = ()
+
+
+HOST_SCOPED_ACTIONS = frozenset({"terminate_process", "quarantine_file"})
+
+
+def target_key(kind: str, value: str) -> Tuple[str, ...]:
+    """Comparison forms of a target, so evidence and plan targets match whatever their spelling."""
+    if kind == "process":
+        return (_process_base(value),)
+    if kind == "host":
+        return _host_forms(value)
+    if kind == "user":
+        return _user_forms(value)
+    if kind == "domain":
+        return (_domain_key(value),)
+    if kind == "ip":
+        address = parse_address(value)
+        return (str(address),) if address is not None else (_clean(value),)
+    return (_clean(value),)
+
+
+def target_corroborated(kind: str, value: str, corroborated: FrozenSet[Tuple[str, str]]) -> bool:
+    keys = {(k, form) for k, v in corroborated for form in target_key(k, v)}
+    return any((kind, form) in keys for form in target_key(kind, value))
 
 
 @dataclass
@@ -398,7 +454,51 @@ def plan_entities(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
     by_kind: Dict[str, List[str]] = {}
     for indicator in extract_indicators(alert):
         by_kind.setdefault(indicator.type, []).append(indicator.value)
+    lineage = lineage_only_values(alert.get("raw"))
+    if lineage:
+        # Parent/grandparent processes and their hashes are the context of the detection, not
+        # its subject: terminating explorer.exe or quarantining services.exe's hash fleet-wide
+        # because a child misbehaved is never the intended response.
+        for kind in ("process", "hash"):
+            kept = [v for v in by_kind.get(kind, []) if not (_entity_keys(kind, v) & lineage)]
+            if kind in by_kind:
+                by_kind[kind] = kept
     return by_kind
+
+
+def _entity_keys(kind: str, value: str) -> FrozenSet[str]:
+    return frozenset({_process_base(value) if kind == "process" else _clean(value)})
+
+
+def lineage_only_values(raw: Any) -> FrozenSet[str]:
+    """Normalised process base names and hashes that occur *only* under parent/grandparent keys of the raw event."""
+    lineage: set[str] = set()
+    primary: set[str] = set()
+    budget = [_MAX_LINEAGE_SCAN]
+
+    def add(bucket: set[str], value: str) -> None:
+        text = value.strip()
+        if not text or len(text) > 1_024:
+            return
+        bucket.add(_clean(text))
+        bucket.add(_process_base(text))
+
+    def walk(node: Any, in_lineage: bool, depth: int) -> None:
+        if budget[0] <= 0 or depth > 8:
+            return
+        budget[0] -= 1
+        if isinstance(node, Mapping):
+            for key, value in node.items():
+                name = str(key)[:64]
+                walk(value, in_lineage or bool(_LINEAGE_KEY_RE.search(name) or _LINEAGE_CAMEL_RE.search(name)), depth + 1)
+        elif isinstance(node, (list, tuple)):
+            for item in node[:100]:
+                walk(item, in_lineage, depth + 1)
+        elif isinstance(node, str):
+            add(lineage if in_lineage else primary, node)
+
+    walk(raw, False, 0)
+    return frozenset(lineage - primary)
 
 
 def candidate_targets(action_type: str, entities: Mapping[str, Sequence[str]], alert_id: str) -> List[str]:
@@ -454,6 +554,9 @@ def validate_target(kind: str, target: str) -> Optional[str]:
 
 
 _NAT64_PREFIX = ipaddress.IPv6Network("64:ff9b::/96")
+_NAT64_LOCAL_PREFIX = ipaddress.IPv6Network("64:ff9b:1::/48")
+# Characters URL parsers (WHATWG/UTS 46) treat as a label separator in host names.
+_DOT_EQUIVALENTS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
 _CLASS_RANK = {"public": 0, "internal": 1, "unroutable": 2}
 _WILDCARDS = frozenset("*?[")
 _DN_VALUE_RE = re.compile(r"^(?:cn|uid)\s*=\s*((?:\\.|[^,+\\])+)")
@@ -471,6 +574,13 @@ def _embedded_ipv4(address: IPAddress) -> List[ipaddress.IPv4Address]:
         out.append(address.teredo[1])
     value = int(address)
     if address in _NAT64_PREFIX:
+        out.append(ipaddress.IPv4Address(value & 0xFFFFFFFF))
+    if address in _NAT64_LOCAL_PREFIX:
+        # RFC 8215 local-use prefix 64:ff9b:1::/48 with the RFC 6052 /48 layout: the IPv4
+        # address sits in bits 48-63 and 72-87 (bits 64-71 are the reserved "u" octet).
+        # Some translators put it in the low 32 bits instead; both readings are checked.
+        packed = address.packed
+        out.append(ipaddress.IPv4Address(packed[6:8] + packed[9:11]))
         out.append(ipaddress.IPv4Address(value & 0xFFFFFFFF))
     if value >> 32 == 0 and value > 1:
         out.append(ipaddress.IPv4Address(value))
@@ -588,6 +698,24 @@ def _user_forms(name: str) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(f for f in (cleaned, base, bare) if f))
 
 
+def _process_base(name: str) -> str:
+    """Compare form of a process's base name (``C:\\x\\LSASS.EXE`` -> ``lsass.exe``)."""
+    return re.split(r"[\\/]", _clean(name).strip("\"'"))[-1].strip()
+
+
+def _process_forms(name: str) -> Tuple[str, ...]:
+    """A process as written, its base name and the base name without ``.exe``."""
+    cleaned = _clean(name).strip("\"'")
+    base = _process_base(name)
+    stem = base[:-4] if base.endswith(".exe") else base
+    return tuple(dict.fromkeys(f for f in (cleaned, base, stem) if f))
+
+
+def critical_process(name: str) -> bool:
+    """Whether ``name`` (any path, case or Unicode spelling) is a built-in never-terminate process."""
+    return any(form in CRITICAL_PROCESSES for form in _process_forms(name))
+
+
 class _Names:
     """Exact names in a set (constant-time lookup), wildcard patterns matched with fnmatch."""
 
@@ -646,6 +774,10 @@ class ProtectedAssetsSettings(BaseModel):
     users: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
     domains: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
     cidrs: List[ProtectedCidr] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
+    # Process names (or wildcards) never terminated, and file hashes never quarantined, on top of
+    # the built-in CRITICAL_PROCESSES (e.g. line-of-business agents, known-good binaries).
+    processes: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
+    hashes: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
 
 
 _LEGACY_ASSETS: TypeAdapter[List[str]] = TypeAdapter(
@@ -665,9 +797,13 @@ class ProtectedAssets:
     domains: Tuple[str, ...] = ()
     networks: Tuple[IPNetwork, ...] = ()
     problems: Tuple[str, ...] = ()
+    processes: Tuple[str, ...] = ()
+    hashes: Tuple[str, ...] = ()
     _hosts: _Names = field(init=False, repr=False, compare=False)
     _users: _Names = field(init=False, repr=False, compare=False)
     _domains: FrozenSet[str] = field(init=False, repr=False, compare=False)
+    _processes: _Names = field(init=False, repr=False, compare=False)
+    _hashes: FrozenSet[str] = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         host_entries: List[str] = []
@@ -681,6 +817,11 @@ class ProtectedAssets:
         # "*.example.com" means example.com and its subdomains, which is what every domain entry covers.
         domains = (_domain_key(d[2:] if d.startswith("*.") else d) for d in self.domains)
         object.__setattr__(self, "_domains", frozenset(d for d in domains if d))
+        process_entries: List[str] = []
+        for process in self.processes:
+            process_entries.extend(_process_forms(process))
+        object.__setattr__(self, "_processes", _Names(process_entries))
+        object.__setattr__(self, "_hashes", frozenset(_clean(h) for h in self.hashes if _clean(h)))
 
     @property
     def invalid(self) -> bool:
@@ -693,6 +834,8 @@ class ProtectedAssets:
         users: List[str] = []
         domains: List[str] = []
         cidrs: List[str] = []
+        processes: List[str] = []
+        hashes: List[str] = []
         problems: List[str] = []
         if isinstance(raw, Mapping):
             try:
@@ -701,6 +844,7 @@ class ProtectedAssets:
                 problems += _problem_list("protected_assets", exc)
             else:
                 hosts, users, domains, cidrs = list(parsed.hosts), list(parsed.users), list(parsed.domains), list(parsed.cidrs)
+                processes, hashes = list(parsed.processes), list(parsed.hashes)
         elif raw is not None:
             # Legacy flat list: networks become CIDRs, anything else protects that exact name everywhere.
             try:
@@ -729,6 +873,8 @@ class ProtectedAssets:
             domains=tuple(domains),
             networks=tuple(ipaddress.ip_network(c, strict=False) for c in cidrs),
             problems=tuple(problems[:MAX_POLICY_PROBLEMS]),
+            processes=tuple(processes),
+            hashes=tuple(hashes),
         )
 
     def _host_protected(self, host: str) -> bool:
@@ -759,11 +905,19 @@ class ProtectedAssets:
         return None
 
     def match(self, kind: str, target: str) -> Optional[str]:
-        """Which protected category the target falls in (``host``/``user``/``domain``/``cidr``), else ``None``.
+        """Which protected category the target falls in, else ``None``.
 
-        IP and host targets are checked against CIDRs and host names; domain
-        targets and URL hosts (percent-decoded) also against protected domains.
+        Categories: ``host``/``user``/``domain``/``cidr``/``process``/``hash``
+        and ``critical_process`` (the built-in never-terminate list). IP and
+        host targets are checked against CIDRs and host names; domain targets
+        and URL hosts (canonicalised) also against protected domains.
         """
+        if kind == "process":
+            if critical_process(target):
+                return "critical_process"
+            return "process" if self._processes.matches(_process_forms(target)) else None
+        if kind == "hash":
+            return "hash" if _clean(target) in self._hashes else None
         if kind == "user":
             return "user" if self._user_protected(target) else None
         if kind in ("ip", "host"):
@@ -771,12 +925,39 @@ class ProtectedAssets:
         if kind == "domain":
             return self._address_match(target, as_domain=True)
         if kind == "url":
-            try:
-                host = urlsplit(target.strip()).hostname or ""
-            except ValueError:
-                return None
-            return self._address_match(unquote(host), as_domain=True) if host else None
+            for host in url_hosts(target):
+                category = self._address_match(host, as_domain=True)
+                if category is not None:
+                    return category
+            return None
         return None
+
+
+def canonical_host(host: str) -> str:
+    """A URL host the way browsers and proxies resolve it: percent-decoded, NFKC (full-width
+    digits and letters to ASCII), ideographic/full-width dots to ``.``, invisible format
+    characters removed, lowercased."""
+    decoded = unquote(host).translate(_DOT_EQUIVALENTS)
+    return _clean(decoded).translate(_DOT_EQUIVALENTS).rstrip(".")
+
+
+def url_hosts(target: str) -> List[str]:
+    """Every host a client could connect to for ``target``: Python's reading of the URL and the
+    WHATWG one (``\\`` is a path separator in http(s) URLs, so ``http://1.2.3.4\\@evil.com/``
+    goes to 1.2.3.4), each in its literal and canonical form."""
+    text = target.strip()
+    hosts: List[str] = []
+    candidates = [text]
+    if "\\" in text and text.lower().startswith(("http:", "https:")):
+        candidates.append(text.replace("\\", "/"))
+    for candidate in candidates:
+        try:
+            host = urlsplit(candidate).hostname or ""
+        except ValueError:
+            continue
+        if host:
+            hosts += [unquote(host), canonical_host(host)]
+    return list(dict.fromkeys(h for h in hosts if h))
 
 
 def _is_network(value: str) -> bool:
@@ -1090,9 +1271,14 @@ class ResponseService:
         return self._registry.for_tenant(tenant_id, tenant_settings)
 
     async def executed_counts(
-        self, tenant_id: str, since: datetime, *, conn: Any = None
+        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Any = None
     ) -> Tuple[int, Dict[str, int]]:
-        """(total, per action type) of actions that started real execution since ``since``."""
+        """(total, per action type) of actions that started real execution since ``since``.
+
+        ``since=None`` (what the guardrails use) means the last hour on the
+        database clock, the clock that stamps ``executed_at``: a worker whose
+        clock runs fast cannot shrink the window and exceed the caps.
+        """
 
         async def _fetch(c: Any) -> List[Any]:
             return list(await c.fetch(_EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES)))
@@ -1110,12 +1296,12 @@ class ResponseService:
     async def plan(
         self, tenant_id: str, alert_id: str, ctx: PlanContext, *, now: Optional[datetime] = None
     ) -> PlanResult:
-        now = now or datetime.now(UTC)
+        window_start = now - timedelta(hours=1) if now is not None else None
         tenant = await self._repos.tenants.get(tenant_id)
         policy = self.policy(tenant.settings)
         threat_type, candidates = build_candidates(ctx, alert_id)
         result = PlanResult(threat_type=threat_type)
-        used_total, used_by_type = await self.executed_counts(tenant_id, now - timedelta(hours=1))
+        used_total, used_by_type = await self.executed_counts(tenant_id, window_start)
         auto_budget = max(0, policy.max_actions_per_hour - used_total)
         type_budget = {t: max(0, limit - used_by_type.get(t, 0)) for t, limit in policy.blast_radius.items()}
 
@@ -1126,6 +1312,14 @@ class ResponseService:
                 "alert": {"severity": ctx.severity, "title": ctx.title[:200]},
                 "evidence": ctx.evidence,
             }
+            if cand.action_type in HOST_SCOPED_ACTIONS:
+                params["scope"] = {"hosts": list(dict.fromkeys(str(h) for h in ctx.hosts))[:MAX_SCOPE_HOSTS]}
+            uncorroborated = (
+                spec.containment
+                and ctx.evidence == "rules"
+                and ctx.corroborated_targets is not None
+                and not target_corroborated(spec.target_kind, cand.target, ctx.corroborated_targets)
+            )
             autonomy = policy.autonomy[spec.risk]
             block = check_guardrails(cand.action_type, cand.target, policy)
             reason = block.code if block else None
@@ -1145,6 +1339,12 @@ class ResponseService:
                 if spec.containment and ctx.evidence == "llm_only":
                     status, params["approval_reason"] = "awaiting_approval", "llm_only_evidence"
                     params["explanation"] = "awaiting approval: containment on LLM-only evidence is never automatic"
+                elif uncorroborated:
+                    status, params["approval_reason"] = "awaiting_approval", "target_not_corroborated"
+                    params["explanation"] = (
+                        "awaiting approval: the rule evidence does not concern this target, so containing it "
+                        "is not automatic"
+                    )
                 elif auto_budget <= 0:
                     status, params["approval_reason"] = "awaiting_approval", HOURLY_CAP_REASON
                     params["explanation"] = f"awaiting approval: hourly cap of {policy.max_actions_per_hour} reached"
@@ -1166,21 +1366,29 @@ class ResponseService:
 
             # Approved rows are written as 'proposed' first so approved_by lands in the
             # ledger column; a re-run finds the row still 'proposed' and finishes it.
-            action, created = await self._repos.actions.propose(
-                tenant_id,
-                alert_id,
-                cand.action_type,
-                cand.target,
-                spec.risk,
-                params=params,
-                requested_by=REQUESTED_BY,
-                status="proposed" if status == "approved" else status,
-                blocked_reason=reason,
-            )
-            if created:
-                await self._record_transition(
-                    tenant_id, action, "response_action.proposed", {"approved_by": approved_by, "autonomy": autonomy}
+            async with self._repos.db.tenant_tx(tenant_id) as conn:
+                action, created = await self._repos.actions.propose(
+                    tenant_id,
+                    alert_id,
+                    cand.action_type,
+                    cand.target,
+                    spec.risk,
+                    params=params,
+                    requested_by=REQUESTED_BY,
+                    status="proposed" if status == "approved" else status,
+                    blocked_reason=reason,
+                    conn=conn,
                 )
+                if created:
+                    await self._record_transition(
+                        tenant_id,
+                        action,
+                        "response_action.proposed",
+                        {"approved_by": approved_by, "autonomy": autonomy},
+                        conn=conn,
+                    )
+            if created:
+                await self.publish_action(tenant_id, action)
             if action.status == "proposed":
                 if status == "approved" and approved_by:
                     action = await self._approve_proposed(tenant_id, action, approved_by)
@@ -1194,31 +1402,27 @@ class ResponseService:
     ) -> ResponseAction:
         """A row left 'proposed' by an interrupted approval whose decision changed on re-plan."""
         try:
-            settled = await self._repos.actions.transition(
-                tenant_id, action.id, status, expected_from="proposed", blocked_reason=reason
+            return await self._transition_audited(
+                tenant_id, action.id, status, details={"replanned": True}, expected_from="proposed", blocked_reason=reason
             )
         except (AlreadyInState, InvalidTransition):
             return await self._repos.actions.get(tenant_id, action.id)
-        await self._record_transition(tenant_id, settled, f"response_action.{status}", {"replanned": True})
-        return settled
 
     async def _approve_proposed(self, tenant_id: str, action: ResponseAction, approved_by: str) -> ResponseAction:
+        policy = approved_by == POLICY_APPROVER
         try:
-            approved = await self._repos.actions.transition(
-                tenant_id, action.id, "approved", expected_from="proposed", approved_by=approved_by[:128]
+            return await self._transition_audited(
+                tenant_id,
+                action.id,
+                "approved",
+                details={"approved_by": approved_by[:128], "preapproved": not policy},
+                actor_type="agent" if policy else "user",
+                actor_id=approved_by,
+                expected_from="proposed",
+                approved_by=approved_by[:128],
             )
         except (AlreadyInState, InvalidTransition):
             return await self._repos.actions.get(tenant_id, action.id)
-        policy = approved_by == POLICY_APPROVER
-        await self._record_transition(
-            tenant_id,
-            approved,
-            "response_action.approved",
-            {"approved_by": approved_by[:128], "preapproved": not policy},
-            actor_type="agent" if policy else "user",
-            actor_id=approved_by,
-        )
-        return approved
 
     @staticmethod
     def _classify(result: PlanResult, action_id: str, status: str) -> None:
@@ -1278,21 +1482,23 @@ class ResponseService:
             else:
                 continue
             try:
-                updated = await self._repos.actions.transition(
-                    tenant_id, action.id, target, expected_from="awaiting_approval", **extra  # type: ignore[arg-type]
+                updated = await self._transition_audited(
+                    tenant_id,
+                    action.id,
+                    target,
+                    details={
+                        "decided_by": decided_by[:128],
+                        "reject_remaining": reject_remaining and action_id not in rejected,
+                    },
+                    actor_type="user",
+                    actor_id=decided_by,
+                    expected_from="awaiting_approval",
+                    **extra,
                 )
             except (AlreadyInState, InvalidTransition):
                 current = await self._repos.actions.get(tenant_id, action.id)
                 outcome[action_id] = current.status
                 continue
-            await self._record_transition(
-                tenant_id,
-                updated,
-                f"response_action.{target}",
-                {"decided_by": decided_by[:128], "reject_remaining": reject_remaining and action_id not in rejected},
-                actor_type="user",
-                actor_id=decided_by,
-            )
             outcome[action_id] = updated.status
         return outcome
 
@@ -1334,7 +1540,6 @@ class ResponseService:
         time left to start is recorded ``failed`` without being sent
         (``error="execution_budget_exhausted"``).
         """
-        now = now or datetime.now(UTC)
         if not action_ids:
             return {}
         tenant = await self._repos.tenants.get(tenant_id)
@@ -1368,7 +1573,7 @@ class ResponseService:
         action: ResponseAction,
         connector: Connector,
         policy: ResponsePolicy,
-        now: datetime,
+        now: Optional[datetime],
         ends_at: float,
     ) -> str:
         if action.status == "executing":
@@ -1416,10 +1621,11 @@ class ResponseService:
         for row in rows:
             owner, action_id = str(row["tenant_id"]), row["id"]
             try:
-                failed = await self._repos.actions.transition(
+                await self._transition_audited(
                     owner,
                     action_id,
                     "failed",
+                    details={"reason": "orphaned_execution"},
                     expected_from="executing",
                     result={
                         "error": "orphaned_execution",
@@ -1428,7 +1634,6 @@ class ResponseService:
                 )
             except (AlreadyInState, InvalidTransition):
                 continue
-            await self._record_transition(owner, failed, "response_action.failed", {"reason": "orphaned_execution"})
             settled += 1
         if settled:
             log.warning("response.orphaned_actions_failed", count=settled)
@@ -1453,7 +1658,7 @@ class ResponseService:
         action: ResponseAction,
         connector: Connector,
         policy: ResponsePolicy,
-        now: datetime,
+        now: Optional[datetime],
     ) -> Optional[ResponseAction]:
         """Move an approved action to ``executing``; ``None`` when it was blocked or taken by someone else.
 
@@ -1465,16 +1670,23 @@ class ResponseService:
         executing: Optional[ResponseAction] = None
         try:
             guard = check_guardrails(action.action_type, action.target, policy)
-            if guard is not None:
-                blocked = await self._block_approved(tenant_id, action, guard.code, {"detail": guard.detail, "stage": "execution"})
-            elif isinstance(connector, DryRunConnector):
-                executing = await self._repos.actions.transition(
-                    tenant_id, action.id, "executing", expected_from="approved", connector=connector.name
-                )
+            if guard is not None or isinstance(connector, DryRunConnector):
+                async with self._repos.db.tenant_tx(tenant_id) as conn:
+                    if guard is not None:
+                        blocked = await self._block_approved(
+                            tenant_id, action, guard.code, {"detail": guard.detail, "stage": "execution"}, conn
+                        )
+                    else:
+                        executing = await self._repos.actions.transition(
+                            tenant_id, action.id, "executing", expected_from="approved", connector=connector.name,
+                            conn=conn,
+                        )
+                    await self._audit_claim(tenant_id, blocked, executing, connector, conn)
             else:
                 async with self._repos.db.tenant_tx(tenant_id) as conn:
                     await conn.execute(_CAP_LOCK_SQL, ACTION_CAP_LOCK, tenant_id)
-                    used, by_type = await self.executed_counts(tenant_id, now - timedelta(hours=1), conn=conn)
+                    window_start = now - timedelta(hours=1) if now is not None else None
+                    used, by_type = await self.executed_counts(tenant_id, window_start, conn=conn)
                     type_limit = policy.blast_radius.get(action.action_type)
                     if used >= policy.max_actions_per_hour:
                         blocked = await self._block_approved(
@@ -1493,15 +1705,32 @@ class ResponseService:
                             tenant_id, action.id, "executing", expected_from="approved", connector=connector.name,
                             conn=conn,
                         )
+                    await self._audit_claim(tenant_id, blocked, executing, connector, conn)
         except (AlreadyInState, InvalidTransition):
             return None
         if blocked is not None:
             log.warning("response.execution_blocked", action_type=action.action_type, reason=blocked.blocked_reason)
-            await self._record_transition(tenant_id, blocked, "response_action.blocked", {"stage": "execution"})
+            await self.publish_action(tenant_id, blocked)
             return None
         assert executing is not None
-        await self._record_transition(tenant_id, executing, "response_action.executing", {"connector": connector.name})
+        await self.publish_action(tenant_id, executing)
         return executing
+
+    async def _audit_claim(
+        self,
+        tenant_id: str,
+        blocked: Optional[ResponseAction],
+        executing: Optional[ResponseAction],
+        connector: Connector,
+        conn: Any,
+    ) -> None:
+        """Audit a claim inside its transaction (published by the caller after commit)."""
+        if blocked is not None:
+            await self._record_transition(tenant_id, blocked, "response_action.blocked", {"stage": "execution"}, conn=conn)
+        elif executing is not None:
+            await self._record_transition(
+                tenant_id, executing, "response_action.executing", {"connector": connector.name}, conn=conn
+            )
 
     async def _run_connector(
         self, tenant_id: str, executing: ResponseAction, connector: Connector, *, timeout_s: Optional[float] = None
@@ -1531,11 +1760,46 @@ class ResponseService:
     async def _finish(
         self, tenant_id: str, executing: ResponseAction, connector: Connector, result: ConnectorResult
     ) -> str:
-        final = await self._repos.actions.transition(
-            tenant_id, executing.id, result.status, expected_from="executing", result=result.detail
+        final = await self._transition_audited(
+            tenant_id,
+            executing.id,
+            result.status,
+            details={"connector": connector.name},
+            expected_from="executing",
+            result=result.detail,
         )
-        await self._record_transition(tenant_id, final, f"response_action.{result.status}", {"connector": connector.name})
         return final.status
+
+    async def _transition_audited(
+        self,
+        tenant_id: str,
+        action_id: Any,
+        to_status: str,
+        *,
+        audit_action: Optional[str] = None,
+        details: Optional[Mapping[str, Any]] = None,
+        actor_type: str = "agent",
+        actor_id: Optional[str] = None,
+        **changes: Any,
+    ) -> ResponseAction:
+        """A ledger transition and its audit entry in one transaction; the event is published after commit.
+
+        If the audit append fails the transition rolls back too, so a retry
+        repeats both: the audit trail never misses a transition that happened.
+        """
+        async with self._repos.db.tenant_tx(tenant_id) as conn:
+            updated = await self._repos.actions.transition(tenant_id, action_id, to_status, conn=conn, **changes)
+            await self._record_transition(
+                tenant_id,
+                updated,
+                audit_action or f"response_action.{to_status}",
+                details or {},
+                actor_type=actor_type,
+                actor_id=actor_id,
+                conn=conn,
+            )
+        await self.publish_action(tenant_id, updated)
+        return updated
 
     async def _record_transition(
         self,

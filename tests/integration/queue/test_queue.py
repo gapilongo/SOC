@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Callable
 
+import pytest
+
 from lg_sotf.queue.consumer import CONSUMER_GROUP, StreamConsumer, queue_stats
 from lg_sotf.queue.dlq import DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
@@ -258,3 +260,41 @@ async def test_requeue_own_pending_hands_a_predecessors_entries_back(redis_clien
     assert [(m.alert_id, m.deliveries) for m in again] == [("a1", 1), ("a2", 1)]
     assert {m.entry_id for m in again}.isdisjoint(m.entry_id for m in held)
     assert await redis_client.xlen(queue.streams.high) + await redis_client.xlen(queue.streams.normal) == 2
+
+
+async def test_dead_consumers_are_removed_from_the_group(
+    redis_client: Any, queue_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L3: every killed worker leaves a consumer behind; once drained and idle it is deleted."""
+    import asyncio
+
+    from lg_sotf.queue import consumer as consumer_module
+    from lg_sotf.queue.producer import WorkQueue
+    from lg_sotf.queue.streams import CONSUMER_GROUP
+
+    monkeypatch.setattr(consumer_module, "_FORGET_MIN_IDLE_MS", 200)
+    s = queue_settings(block_ms=50)
+    queue = WorkQueue(redis_client, s)
+    live = StreamConsumer(redis_client, s, "live-worker")
+    await live.ensure_groups()
+    await live.announce_alive(0.3)
+    for i in range(5):  # five worker pods killed, each holding one entry
+        await queue.enqueue_process("tenant-a", f"a{i}", "high")
+        dead = StreamConsumer(redis_client, s, f"worker-pod-{i}")
+        await dead.announce_alive(0.2)
+        assert len(await dead.read(1)) == 1
+    await asyncio.sleep(0.5)
+    recovered: list = []
+    names: set = set()
+    for _ in range(20):  # a dead consumer is forgotten once idle > max(4 x liveness TTL, _FORGET_MIN_IDLE_MS)
+        await live.announce_alive(0.3)
+        batch = await live.read(50)
+        for msg in batch:
+            await live.ack(msg)
+        recovered += batch
+        names = {c["name"].decode() for c in await redis_client.xinfo_consumers(queue.streams.high, CONSUMER_GROUP)}
+        if names == {"live-worker"}:
+            break
+        await asyncio.sleep(0.3)
+    assert len({m.alert_id for m in recovered}) == 5
+    assert names == {"live-worker"}, names

@@ -218,21 +218,25 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
     if not known:
         raise forbidden("this identity has no LG-SOTF role")
     role = max(known, key=lambda r: ROLE_RANK[r])
-    # The identity is linked to a local user (for attribution and deactivation)
-    # only through an email the IdP asserts is verified. The platform-admin
-    # flag is never inherited over OIDC: platform admins use local login, so an
-    # IdP account that can present an admin's email gains no cross-tenant access.
+    # Blocking and linking are separate. A disabled local account with the
+    # token's email blocks the token whether or not the IdP marks the email
+    # verified (blocking can only hurt the token holder; IdPs such as Entra ID
+    # omit email_verified). The identity is *linked* to that account (for
+    # attribution) only through a verified email. The platform-admin flag is
+    # never inherited over OIDC: platform admins use local login, so an IdP
+    # account that can present an admin's email gains no cross-tenant access.
     user_id: Optional[UUID] = None
     email = identity.email if identity.email_verified else None
-    if email:
+    if identity.email:
         try:
-            user = await ctx.repos.users.get_by_email(tenant_id, email)
+            user = await ctx.repos.users.get_by_email(tenant_id, identity.email)
         except ValueError:
             user = None
         if user is not None:
             if not user.is_active:
                 raise unauthorized("account is disabled")
-            user_id = user.id
+            if identity.email_verified:
+                user_id = user.id
     return Principal(
         kind="user",
         tenant_id=tenant_id,

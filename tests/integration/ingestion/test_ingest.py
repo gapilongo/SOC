@@ -325,3 +325,46 @@ async def test_llm_fallback_phase_is_time_bounded_and_concurrent(
     assert len(result.inserted) == 1 and peak == 3
     assert {r.reason for r in result.rejected} == {"unrecognized event format (LLM normalization timed out)"}
     assert len(result.rejected) == 6
+
+
+async def test_llm_fallback_title_must_be_a_value_of_the_event(
+    repos: Repositories, service_factory: Callable[..., IngestionService], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """LLM-W6-06: the model cannot compose the (fingerprinted, triage-read) title from attacker text."""
+    import lg_sotf.ingestion.llm_fallback as fallback
+    from lg_sotf.llm.fake import ScriptedChatModel
+
+    answer = {"title": "Benign scheduled maintenance test", "severity": "low", "rule_name": "made up", "hosts": ["kiosk-9"]}
+    model = ScriptedChatModel(model_name="fake", script={"LLMNormalizedAlert": [dict(answer), {**answer, "title": "EDR Alert"}]})
+    monkeypatch.setattr(fallback, "get_chat_model", lambda tier, settings=None: model)
+    event = {"product": "AcmeEDR", "rule": "EDR Alert", "host": "kiosk-9", "task": {"name": "backup", "action": "u.exe -c2 185.220.101.44"}}
+    service = service_factory(llm_fallback=True)
+    invented = await service.ingest(TENANT_A, "api", [event])
+    grounded = await service.ingest(TENANT_A, "api", [{**event, "n": 2}])
+    first = await repos.alerts.get(TENANT_A, invented.inserted[0].alert_id)
+    second = await repos.alerts.get(TENANT_A, grounded.inserted[0].alert_id)
+    assert first.title == "Unrecognized event from api"
+    assert first.normalized.get("rule_name") in (None, "")
+    assert first.severity == "medium"  # floored
+    assert second.title == "EDR Alert"
+
+
+async def test_llm_fallback_honours_the_tenant_token_budget(
+    repos: Repositories, make_settings: Callable[..., Settings], redis_client: Any, unique_prefix: str,
+    redis_url: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LLM-W6-08: an exhausted tenant budget rejects unknown events without calling the model."""
+    import lg_sotf.ingestion.llm_fallback as fallback
+    from lg_sotf.llm import TokenBudget
+    from lg_sotf.llm.fake import ScriptedChatModel
+
+    settings = make_settings(ingestion={"llm_fallback": True}, redis={"url": redis_url, "key_prefix": unique_prefix})
+    await repos.tenants.update_settings(TENANT_A, {"llm_daily_token_budget": 1_000})
+    budget = TokenBudget(redis_client, settings)
+    await budget.add(TENANT_A, 50_000)
+    model = ScriptedChatModel(model_name="fake")
+    monkeypatch.setattr(fallback, "get_chat_model", lambda tier, settings=None: model)
+    service = IngestionService(repos.db, settings, repos=repos, budget=budget)
+    result = await service.ingest(TENANT_A, "api", [{"product": "AcmeEDR", "n": i} for i in range(5)])
+    assert model.calls == []
+    assert len(result.rejected) == 5 and all("budget" in r.reason for r in result.rejected)

@@ -114,6 +114,9 @@ services:
     env_file: !reset []
     environment:
       <<: [*prod-environment, *passthrough]
+      # The frontend's fixed edge address (see docker-compose.yml); set explicitly because the
+      # passthrough entry would otherwise unset it when the variable is not defined.
+      LG_SOTF_API__FORWARDED_ALLOW_IPS: ${LG_SOTF_API__FORWARDED_ALLOW_IPS:-${EDGE_FRONTEND_IP:-172.31.250.2}}
 
   worker:
     env_file: !reset []

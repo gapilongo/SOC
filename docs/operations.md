@@ -90,7 +90,11 @@ Procedure:
 
 A single alert can also be forced through again:
 `lg-sotf enqueue --tenant <t> --alert <id> [--force]` (`--force` reprocesses a
-finished run).
+finished run). For a run waiting on a decision or approval that was already
+committed but never reached it (the resume message was lost),
+`lg-sotf enqueue --tenant <t> --alert <id> --resume` rebuilds the resume from
+the escalation row or the action ledger; the scheduler does the same on its
+own (see below). Both are audited as `alert.reprocess_requested`.
 
 ## 4. Stuck runs
 
@@ -102,7 +106,20 @@ Built-in recovery (scheduler leader):
 * `stale_runs`: a run whose worker lease (`workflow_runs.lease_expires_at`) has
   expired is requeued; runs out of attempts are failed/dead-lettered.
 * `orphaned_runs`: runs left `queued`/`failed` without a queue message (Redis
-  data loss, crash between commit and enqueue) are re-enqueued.
+  data loss, crash between commit and enqueue) are re-enqueued. The same job
+  dispatches alerts left `new` with no run for more than 5 minutes (a crash
+  between insert and dispatch; polled pages already commit their runs with
+  the page), and rebuilds lost resumes: a run `waiting_human` whose
+  escalation is `decided`, or `waiting_approval` with approved actions or
+  none awaiting approval, for longer than `worker.visibility_timeout_s`, gets
+  its resume re-enqueued from PostgreSQL (log `resume.recovered`).
+* Resumes that reach a run which is not waiting yet (still running, or
+  requeued after a crash) are retried with a short backoff (1 s doubling to
+  30 s) instead of idling until the visibility timeout; a stale run whose
+  alert is still waiting goes back to that waiting status.
+* Dead consumers: once a crashed worker's entries are claimed and it has
+  been idle for a while, it is removed from the consumer group
+  (`queue.dead_consumer_removed`).
 * Dead workers: each worker keeps a liveness key
   (`{prefix}:q:consumers:<consumer>:alive`) refreshed every third of its run
   lease (60 s) and deleted on a clean stop. Once a worker's key has expired

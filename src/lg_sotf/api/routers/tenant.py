@@ -29,8 +29,9 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import TenantSettingsOut
+from lg_sotf.api.schemas import TenantSettingsOut, VerdictCacheClearedOut
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Tenant
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.connectors.base import ConnectorConfigError
@@ -260,7 +261,9 @@ async def patch_settings(
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
     async with ctx.db.tenant_tx(tenant_id) as conn:
-        tenant = await ctx.repos.tenants.get(tenant_id, conn=conn)
+        # Lock the row: nested sections (response, tools) are merged from this snapshot, so two
+        # concurrent PATCHes of different sub-keys would otherwise silently drop one of them.
+        tenant = await ctx.repos.tenants.get(tenant_id, for_update=True, conn=conn)
         patch = build_patch(ctx, tenant, body)
         updated = await ctx.repos.tenants.update_settings(tenant_id, patch, conn=conn)
         await AuditLogger(ctx.repos).record(
@@ -275,3 +278,23 @@ async def patch_settings(
         )
     ctx.tenants.invalidate(tenant_id)
     return _out(updated)
+
+
+@router.delete(
+    "/verdict-cache",
+    response_model=VerdictCacheClearedOut,
+    summary="Forget every cached analyst-benign verdict of the tenant",
+)
+async def clear_verdict_cache(request: Request, principal: Principal = Depends(require(ADMIN))) -> VerdictCacheClearedOut:
+    ctx = get_ctx(request)
+    removed = await VerdictCache(ctx.redis, ctx.prefix).clear_tenant(principal.tenant_id)
+    await AuditLogger(ctx.repos).record(
+        principal.tenant_id,
+        "tenant.verdict_cache_cleared",
+        "tenant",
+        principal.tenant_id,
+        actor_type=principal.actor_type,
+        actor_id=principal.actor_id,
+        details={"removed": removed},
+    )
+    return VerdictCacheClearedOut(removed=removed)

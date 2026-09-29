@@ -159,6 +159,19 @@ class LLMUsageRepo(Repository):
             )
         return to_models(LLMUsageDay, rows)
 
+    async def day_tokens(self, tenant_id: str, day: date, *, conn: Optional[Connection] = None) -> int:
+        """All tokens recorded for the tenant on ``day`` (what the daily token budget counts)."""
+        async with self._tenant(tenant_id, conn) as c:
+            value = await c.fetchval(
+                """
+                SELECT COALESCE(sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0)::bigint
+                FROM llm_usage_daily WHERE tenant_id = $1 AND day = $2
+                """,
+                tenant_id,
+                day,
+            )
+        return int(value or 0)
+
     async def day_totals(self, tenant_id: str, day: date, *, conn: Optional[Connection] = None) -> LLMUsageTotals:
         """Totals across models and agents for one day (daily token budget checks)."""
         async with self._tenant(tenant_id, conn) as c:

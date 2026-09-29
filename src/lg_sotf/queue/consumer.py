@@ -12,6 +12,7 @@ from redis.exceptions import ResponseError
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.streams import (
     CONSUMER_GROUP,
+    FIELD_RETRIES,
     WORK_FIELDS,
     MalformedMessage,
     Message,
@@ -32,6 +33,8 @@ _BLOCK_MARGIN_MS = 1_000
 _START = "0-0"
 # Two live consumers racing for a dead consumer's entry: XCLAIM with this min-idle lets only the first win.
 _DEAD_CLAIM_MIN_IDLE_MS = 1_000
+# A dead consumer with nothing pending is deleted from the group once idle this long.
+_FORGET_MIN_IDLE_MS = 60_000
 _MAX_DEAD_SCAN_INTERVAL_S = 5.0
 _OWN_PENDING_BATCH = 100
 
@@ -286,7 +289,31 @@ class StreamConsumer:
                     dead_consumer=name,
                     count=len(entries),
                 )
+        await self._forget_dead_consumers()
         return found
+
+    async def _forget_dead_consumers(self) -> int:
+        """Delete group consumers that are dead (no liveness key), hold nothing and have been idle
+        for a while: every killed worker process leaves one behind otherwise, and the group's
+        consumer list (and Redis memory) would grow without bound."""
+        assert self._alive_ttl_ms is not None
+        min_idle_ms = max(4 * self._alive_ttl_ms, _FORGET_MIN_IDLE_MS)
+        removed = 0
+        for stream in self._streams.work:
+            try:
+                consumers = await self._redis.xinfo_consumers(stream, CONSUMER_GROUP)
+            except ResponseError:
+                continue
+            for consumer in consumers:
+                name = _text(consumer.get("name"))
+                if name == self._name or int(consumer.get("pending", 0)) or int(consumer.get("idle", 0)) < min_idle_ms:
+                    continue
+                if await self._redis.exists(self._streams.consumer_alive(name)):
+                    continue
+                await self._redis.xgroup_delconsumer(stream, CONSUMER_GROUP, name)
+                removed += 1
+                log.info("queue.dead_consumer_removed", stream=self._streams.label(stream), consumer=name)
+        return removed
 
     async def _delivery_counts(self, stream: str, entry_ids: Sequence[str]) -> Dict[str, int]:
         pipe = self._redis.pipeline(transaction=False)
@@ -362,9 +389,16 @@ class StreamConsumer:
         """Copy the entry to the DLQ with ``reason`` and ``failed_at``, then ack it. Returns the DLQ entry id."""
         return await self._move_to_dlq(msg.stream, msg.entry_id, msg.raw_fields, reason, msg.deliveries)
 
-    async def requeue(self, msg: Message) -> str:
-        """Put a copy of the entry at the tail of its stream and ack the original (fair-share deferral)."""
+    async def requeue(self, msg: Message, *, count_attempt: bool = False) -> str:
+        """Put a copy of the entry at the tail of its stream and ack the original.
+
+        Fair-share deferral keeps the retry count; a retry (``count_attempt``)
+        carries this entry's deliveries into the copy (``retries``), so
+        ``worker.max_deliveries`` still bounds it.
+        """
         fields = {k: v for k, v in msg.raw_fields.items() if k in WORK_FIELDS}
+        if count_attempt:
+            fields[FIELD_RETRIES] = str(msg.attempts)
         pipe = self._redis.pipeline(transaction=True)
         pipe.xadd(msg.stream, fields)  # type: ignore[arg-type]
         pipe.xack(msg.stream, CONSUMER_GROUP, msg.entry_id)

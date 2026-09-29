@@ -430,3 +430,7 @@ class UsageOut(BaseModel):
     total_input_tokens: int
     total_output_tokens: int
     total_cost_usd: Decimal
+
+
+class VerdictCacheClearedOut(BaseModel):
+    removed: int

@@ -14,7 +14,7 @@ from lg_sotf.ingestion.service import IngestionService
 from lg_sotf.ingestion.sources import ConnectorDeps, source_secret_context
 from lg_sotf.services.connectors.registry import webhook_secret_context
 from lg_sotf.tools.enrichment.service import tool_secret_context
-from tests.integration.api.conftest import PASSWORD, TENANT_A, ApiHarness
+from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 
@@ -362,3 +362,36 @@ async def test_dashboard_is_cached_per_tenant_and_usage_sums(api: ApiHarness) ->
     assert Decimal(usage.json()["total_cost_usd"]) == Decimal("0.25")
     bad = await api.client.get("/api/v1/usage/llm?from=2025-01-10&to=2025-01-01", headers=admin)
     assert bad.status_code == 400
+
+
+async def test_concurrent_settings_patches_do_not_lose_updates(api: ApiHarness) -> None:
+    """M3: nested sections are merged under a row lock, so both sub-keys survive."""
+    import asyncio
+
+    headers = await api.login_headers(TENANT_A, "admin")
+    for _ in range(5):
+        await api.client.patch("/api/v1/tenant/settings", json={"response": None}, headers=headers)
+        first, second = await asyncio.gather(
+            api.client.patch("/api/v1/tenant/settings", json={"response": {"max_actions_per_hour": 3}}, headers=headers),
+            api.client.patch(
+                "/api/v1/tenant/settings", json={"response": {"blast_radius": {"isolate_host": 1}}}, headers=headers
+            ),
+        )
+        assert first.status_code == second.status_code == 200
+        stored = (await api.repos.tenants.get(TENANT_A)).settings["response"]
+        assert stored.get("max_actions_per_hour") == 3 and stored.get("blast_radius") == {"isolate_host": 1}, stored
+
+
+async def test_admin_clears_the_verdict_cache(api: ApiHarness) -> None:
+    from lg_sotf.core.verdict_cache import VerdictCache
+
+    cache = VerdictCache(api.ctx.redis, api.ctx.prefix)
+    await cache.put_analyst_benign(TENANT_A, "fp-1", decision="false_positive", alert_id="a", escalation_id=None, severity="low")
+    await cache.put_analyst_benign(TENANT_B, "fp-1", decision="false_positive", alert_id="a", escalation_id=None, severity="low")
+    analyst = await api.login_headers(TENANT_A, "analyst")
+    assert (await api.client.delete("/api/v1/tenant/verdict-cache", headers=analyst)).status_code == 403
+    admin = await api.login_headers(TENANT_A, "admin")
+    response = await api.client.delete("/api/v1/tenant/verdict-cache", headers=admin)
+    assert response.status_code == 200 and response.json() == {"removed": 1}
+    assert await cache.get(TENANT_A, "fp-1") is None and await cache.get(TENANT_B, "fp-1") is not None
+    assert (await api.repos.audit.list(TENANT_A, action="tenant.verdict_cache_cleared")).items

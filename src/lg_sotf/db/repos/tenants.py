@@ -24,9 +24,12 @@ class Tenant(Record):
 
 
 class TenantsRepo(Repository):
-    async def get(self, tenant_id: str, *, conn: Optional[Connection] = None) -> Tenant:
+    async def get(self, tenant_id: str, *, for_update: bool = False, conn: Optional[Connection] = None) -> Tenant:
+        """The tenant row; ``for_update`` locks it until the caller's transaction ends
+        (read-modify-write of ``settings`` without lost updates)."""
+        sql = "SELECT * FROM tenants WHERE id = $1 FOR UPDATE" if for_update else "SELECT * FROM tenants WHERE id = $1"
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow("SELECT * FROM tenants WHERE id = $1", tenant_id)
+            row = await c.fetchrow(sql, tenant_id)
         tenant = to_model(Tenant, row)
         if tenant is None:
             raise NotFound("tenant", tenant_id)

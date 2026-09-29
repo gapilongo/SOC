@@ -197,3 +197,12 @@ def test_notes_are_quiet_when_the_origin_is_allowed(tmp_path: Path) -> None:
     assert "cors_origins" not in _render_notes(
         tmp_path / "b", "--set", "ingress.enabled=true", "--set", "frontend.enabled=false"
     )
+
+
+@requires_helm
+def test_notes_warn_when_the_ingress_is_not_a_trusted_proxy(tmp_path: Path) -> None:
+    """WSC-1: with an ingress and the default forwarded_allow_ips every client shares one address."""
+    base = ["--set", "ingress.enabled=true", "--set", "ingress.hosts={soc.example.com}"]
+    assert "forwarded_allow_ips is \"127.0.0.1\"" in _render_notes(tmp_path, *base)
+    trusted = _render_notes(tmp_path / "b", *base, "--set", "settings.api.forwarded_allow_ips=10.2.0.0/16")
+    assert "forwarded_allow_ips is" not in trusted

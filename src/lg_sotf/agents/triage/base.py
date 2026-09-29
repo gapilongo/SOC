@@ -233,14 +233,27 @@ def agent_refusal(result: LLMResult[Any], agent: str) -> Optional[Dict[str, Opti
     return None if digest is None else {**digest, "agent": agent}
 
 
+def _model_written(alert: Mapping[str, Any]) -> bool:
+    """Title and rule name came from the LLM-fallback normalizer, i.e. from untrusted text."""
+    flags = alert.get("flags")
+    return isinstance(flags, list) and "llm_normalized" in flags
+
+
 def trusted_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
-    """Whole words of the detection title and rule name (the fields FP signals may come from)."""
+    """Whole words of the detection title and rule name (the fields FP signals may come from).
+
+    Empty for an LLM-normalised alert: a model chose those fields from attacker-shaped text.
+    """
+    if _model_written(alert):
+        return frozenset()
     text = " ".join(str(alert.get(k) or "") for k in TRUSTED_TEXT_FIELDS).lower()
     return frozenset(t.strip(".:-") for t in _WORD_RE.findall(text))
 
 
 def trusted_evidence_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
     """Alphanumeric words of the title and rule name (true-positive keywords that may make triage decisive)."""
+    if _model_written(alert):
+        return frozenset()
     text = " ".join(str(alert.get(k) or "") for k in TRUSTED_TEXT_FIELDS).lower()[:MAX_TP_TEXT_CHARS]
     return frozenset(_TP_WORD_RE.findall(text))
 

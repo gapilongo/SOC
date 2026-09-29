@@ -46,6 +46,47 @@ def check_password(settings: Settings, password: str) -> None:
         raise OperationError(f"password must be at least {settings.auth.password_min_length} characters")
 
 
+async def audit_user_created(repos: Repositories, user: User, *, via: str) -> None:
+    """Hash-chained audit entries for an account created outside the API (CLI, migrate).
+
+    ``user.created`` always; ``platform.admin_granted`` as well when the account
+    is a platform admin (the cross-tenant super-user flag).
+    """
+    audit = AuditLogger(repos)
+    details = {
+        "email": user.email,
+        "role": user.role,
+        "platform_admin": user.is_platform_admin,
+        "sso_only": user.password_hash is None,
+        "via": via,
+    }
+    await audit.record(
+        user.tenant_id, "user.created", "user", str(user.id), actor_type="system", actor_id=via, details=details
+    )
+    if user.is_platform_admin:
+        await audit.record(
+            user.tenant_id,
+            "platform.admin_granted",
+            "user",
+            str(user.id),
+            actor_type="system",
+            actor_id=via,
+            details={"email": user.email, "via": via},
+        )
+
+
+async def audit_reprocess(repos: Repositories, tenant_id: str, alert_id: str, *, via: str, **details: object) -> None:
+    await AuditLogger(repos).record(
+        tenant_id,
+        "alert.reprocess_requested",
+        "alert",
+        alert_id,
+        actor_type="system",
+        actor_id="cli",
+        details={"via": via, **details},
+    )
+
+
 @dataclass
 class MigrateReport:
     runtime_role_granted: Optional[str] = None
@@ -91,6 +132,7 @@ async def migrate(settings: Settings) -> MigrateReport:
                     password_hash=await ahash_password(password),
                     is_platform_admin=True,
                 )
+                await audit_user_created(repos, user, via="migrate")
                 report.admin_created = user.email
     finally:
         await db.close()
@@ -124,11 +166,13 @@ async def create_user(
         except NotFound as exc:
             raise OperationError(f"tenant {tenant_id!r} does not exist") from exc
         try:
-            return await repos.users.create(
+            user = await repos.users.create(
                 tenant_id, email, role, password_hash=await ahash_password(password), is_platform_admin=platform_admin
             )
         except Conflict as exc:
             raise OperationError("a user with this email already exists in the tenant") from exc
+        await audit_user_created(repos, user, via="cli")
+        return user
     finally:
         await db.close()
 
@@ -180,6 +224,7 @@ async def create_tenant(
         if admin_email is not None:
             password_hash = await ahash_password(admin_password) if admin_password is not None else None
             report.admin = await repos.users.create(tenant.id, admin_email, "admin", password_hash=password_hash)
+            await audit_user_created(repos, report.admin, via="cli")
         return report
     finally:
         await db.close()
@@ -210,7 +255,31 @@ async def enqueue_alert(settings: Settings, *, tenant_id: str, alert_id: str, fo
     try:
         repos = Repositories.create(db)
         severity = await _requeue_run(repos, tenant_id, alert_id, force=force)
+        await audit_reprocess(repos, tenant_id, alert_id, via="enqueue", force=force)
         return await WorkQueue(redis, settings).enqueue_process(tenant_id, alert_id, severity)
+    finally:
+        await redis.aclose()
+        await db.close()
+
+
+async def enqueue_lost_resume(settings: Settings, *, tenant_id: str, alert_id: str) -> str:
+    """Rebuild the resume a waiting run should have received (decided escalation or approved actions)."""
+    from lg_sotf.runtime.resumes import rebuild_resume_payload
+
+    db = owner_database(settings, "lg-sotf-cli")
+    redis = create_redis(settings)
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        payload = await rebuild_resume_payload(repos, tenant_id, alert_id)
+        if payload is None:
+            try:
+                run = await repos.runs.get(tenant_id, alert_id)
+            except NotFound as exc:
+                raise OperationError(f"no workflow run for alert {alert_id!r} in tenant {tenant_id!r}") from exc
+            raise OperationError(f"run is {run.status}; there is no decided escalation or approval to resume with")
+        await audit_reprocess(repos, tenant_id, alert_id, via="enqueue_resume", resume_type=payload["type"])
+        return await WorkQueue(redis, settings).enqueue_resume(tenant_id, alert_id, payload)
     finally:
         await redis.aclose()
         await db.close()
@@ -249,6 +318,7 @@ async def _requeue_letter(repos: Repositories, dlq: DeadLetterQueue, queue: Work
         run_reset = False
         severity = "high"
         log.info("ops.dlq_resume_run_state", detail=str(exc))
+    await audit_reprocess(repos, letter.tenant_id, letter.alert_id, via="dlq_requeue", kind=letter.kind)
     if letter.kind == "resume" and run_reset:
         # The run restarts from its checkpoint and interrupts again; the resume then applies.
         await queue.enqueue_process(letter.tenant_id, letter.alert_id, severity)

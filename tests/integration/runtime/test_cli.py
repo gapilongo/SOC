@@ -264,3 +264,46 @@ def test_enqueue_refuses_finished_run_without_force(cli_env: str, settings_env: 
     forced = runner.invoke(cli, ["enqueue", "--tenant", TENANT_A, "--alert", alert_id, "--force"])
     assert forced.exit_code == 0, forced.output
     assert asyncio.run(_run_status(cli_env, alert_id)) == "queued"
+
+
+async def _audit_actions(url: str, tenant: str) -> List[Any]:
+    db = _db(url)
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        return [(e.action, e.actor_id, e.details) for e in (await repos.audit.list(tenant, limit=100)).items]
+    finally:
+        await db.close()
+
+
+def test_cli_account_creation_and_reprocess_are_audited(cli_env: str) -> None:
+    """AUTHZ-6: accounts created by migrate/create-admin/create-tenant and CLI reprocessing leave audit entries."""
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+    boot = asyncio.run(_audit_actions(cli_env, "acme"))
+    assert {a for a, _, _ in boot} >= {"user.created", "platform.admin_granted"}
+    assert any(a == "user.created" and actor == "migrate" for a, actor, _ in boot)
+
+    created = runner.invoke(
+        cli,
+        ["create-admin", "--tenant", "acme", "--email", "shadow@acme.example", "--platform-admin", "--password-stdin"],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+    assert created.exit_code == 0, created.output
+    entries = asyncio.run(_audit_actions(cli_env, "acme"))
+    shadow = [(a, d) for a, actor, d in entries if actor == "cli" and d.get("email") == "shadow@acme.example"]
+    assert {a for a, _ in shadow} == {"user.created", "platform.admin_granted"}
+    assert any(d.get("platform_admin") is True for _, d in shadow)
+
+    tenant = runner.invoke(
+        cli,
+        ["create-tenant", "--id", "globex", "--name", "Globex", "--admin-email", "boss@globex.example", "--password-stdin"],
+        input=f"{ADMIN_PASSWORD}\n",
+    )
+    assert tenant.exit_code == 0, tenant.output
+    actions = [a for a, _, _ in asyncio.run(_audit_actions(cli_env, "globex"))]
+    assert "tenant.created" in actions and "user.created" in actions
+
+    alert_id = asyncio.run(_seed_alert(cli_env))
+    assert runner.invoke(cli, ["enqueue", "--tenant", TENANT_A, "--alert", alert_id]).exit_code == 0
+    assert "alert.reprocess_requested" in [a for a, _, _ in asyncio.run(_audit_actions(cli_env, TENANT_A))]

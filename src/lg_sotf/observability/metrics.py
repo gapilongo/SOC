@@ -56,6 +56,13 @@ NODE_SECONDS = Histogram(
     buckets=_NODE_BUCKETS,
     registry=REGISTRY,
 )
+LLM_SLOT_WAIT_SECONDS = Histogram(
+    "lgsotf_llm_slot_wait_seconds",
+    "Time a model call waited for a per-process concurrency slot (llm.<tier>.max_concurrency).",
+    ["tier"],
+    buckets=_NODE_BUCKETS,
+    registry=REGISTRY,
+)
 LLM_CALLS = Counter(
     "lgsotf_llm_calls_total",
     "LLM calls, by model, calling agent and outcome.",
@@ -137,6 +144,10 @@ def time_node(node: str) -> Iterator[None]:
         yield
     finally:
         observe_node(node, time.perf_counter() - start)
+
+
+def record_llm_slot_wait(tier: str, seconds: float) -> None:
+    LLM_SLOT_WAIT_SECONDS.labels(tier=tier).observe(max(0.0, seconds))
 
 
 def record_llm_call(model: str, agent: str, outcome: str) -> None:

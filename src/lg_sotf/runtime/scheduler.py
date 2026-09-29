@@ -12,7 +12,10 @@ Jobs (each in its own task, never overlapping with itself):
 The scheduler connects as the schema owner because the sweeps span tenants
 (``system_tx``) and maintenance runs DDL. On a graceful stop running jobs get
 ``stop_grace_s`` to finish; on loss of leadership they are cancelled at once.
-Anything a cancelled job left half done is recovered by ``orphaned_runs``.
+Each polled page is committed with its alerts' queued runs and dispatched
+right after, so a cancelled poll strands nothing: whatever a cancelled job
+left half done (queued runs without a message, ``new`` alerts without a
+run) is recovered by ``orphaned_runs``.
 """
 
 from __future__ import annotations
@@ -35,7 +38,14 @@ from lg_sotf.queue.consumer import queue_stats
 from lg_sotf.queue.events import make_event
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.runtime.leader import LeaderLease
-from lg_sotf.runtime.orphans import claim_orphaned_runs, oldest_undelivered_age_s, orphan_thresholds
+from lg_sotf.runtime.orphans import (
+    STRANDED_NEW_AFTER_S,
+    claim_orphaned_runs,
+    find_stranded_new_alerts,
+    oldest_undelivered_age_s,
+    orphan_thresholds,
+)
+from lg_sotf.runtime.resumes import recover_lost_resumes
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.runtime.worker import EventPublisherLike, sanitize_error
 from lg_sotf.services.dispatch import DispatchableAlert, dispatch_new_alerts
@@ -62,7 +72,9 @@ class IngestResultLike(Protocol):
 
 
 class IngestionLike(Protocol):
-    async def poll_source(self, tenant_id: str, source: Source) -> IngestResultLike: ...
+    async def poll_source(
+        self, tenant_id: str, source: Source, *, on_page: Optional[Callable[[Any], Awaitable[None]]] = None
+    ) -> IngestResultLike: ...
 
     async def close(self) -> None: ...
 
@@ -268,8 +280,27 @@ class Scheduler:
 
     async def _poll_one(self, source: Source) -> None:
         with bound_context(tenant_id=source.tenant_id):
+            enqueued = 0
+            handed_over: set[str] = set()
+
+            async def dispatch_page(page: Any) -> None:
+                nonlocal enqueued
+                inserted = [a for a in page.inserted if a.alert_id not in handed_over]
+                handed_over.update(a.alert_id for a in inserted)
+                if not inserted:
+                    return
+                try:
+                    enqueued += await dispatch_new_alerts(
+                        self._repos, self._queue, source.tenant_id, inserted, events=self._events
+                    )
+                except Exception as exc:  # noqa: BLE001 - runs are queued; enqueue is retried every tick
+                    log.error("scheduler.dispatch_failed", source_id=source.id, error=type(exc).__name__)
+                    self._remember_undispatched(source.tenant_id, [(a.alert_id, a.severity) for a in inserted])
+
             try:
-                result = await self._ingestion_service().poll_source(source.tenant_id, source)
+                result = await self._ingestion_service().poll_source(
+                    source.tenant_id, source, on_page=dispatch_page
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - isolate per-source failures
@@ -284,15 +315,8 @@ class Scheduler:
             inserted = list(result.inserted)
             if not inserted:
                 return
-            try:
-                count = await dispatch_new_alerts(
-                    self._repos, self._queue, source.tenant_id, inserted, events=self._events
-                )
-            except Exception as exc:  # noqa: BLE001 - alerts are stored; enqueue is retried every tick
-                log.error("scheduler.dispatch_failed", source_id=source.id, error=type(exc).__name__)
-                self._remember_undispatched(source.tenant_id, [(a.alert_id, a.severity) for a in inserted])
-                return
-            log.info("scheduler.source_polled", source_id=source.id, inserted=len(inserted), enqueued=count)
+            await dispatch_page(result)  # anything the ingestion did not hand over page by page
+            log.info("scheduler.source_polled", source_id=source.id, inserted=len(inserted), enqueued=enqueued)
 
     def _remember_undispatched(self, tenant_id: str, alerts: Sequence[Tuple[str, str]]) -> None:
         room = MAX_UNDISPATCHED - len(self._undispatched)
@@ -369,7 +393,38 @@ class Scheduler:
     # -- orphaned runs -----------------------------------------------------------
 
     async def _orphaned_runs_job(self) -> None:
+        await self.recover_stranded_alerts()
         await self.recover_orphaned_runs()
+        await self.recover_lost_resumes()
+
+    async def recover_stranded_alerts(self, *, older_than_s: float = STRANDED_NEW_AFTER_S) -> int:
+        """Dispatch alerts left ``new`` without a run (crash or cancel between insert and dispatch)."""
+        stranded = await find_stranded_new_alerts(self._db, older_than_s=older_than_s, limit=SWEEP_BATCH)
+        by_tenant: Dict[str, List[_PendingAlert]] = {}
+        for alert in stranded:
+            by_tenant.setdefault(alert.tenant_id, []).append(_PendingAlert(alert.alert_id, alert.severity))
+        recovered = 0
+        for tenant_id, alerts in by_tenant.items():
+            try:
+                recovered += await dispatch_new_alerts(self._repos, self._queue, tenant_id, alerts, events=self._events)
+            except Exception as exc:  # noqa: BLE001 - found again on the next sweep
+                log.error("scheduler.stranded_dispatch_failed", error=type(exc).__name__)
+        if recovered:
+            log.warning("scheduler.stranded_alerts_dispatched", count=recovered)
+        return recovered
+
+    async def recover_lost_resumes(self, *, older_than_s: Optional[float] = None) -> int:
+        """Re-enqueue analyst decisions and approvals whose resume message was lost (contract section 1)."""
+        threshold = float(self._settings.worker.visibility_timeout_s) if older_than_s is None else older_than_s
+        total = 0
+        for _ in range(MAX_SWEEP_BATCHES):
+            enqueued, examined = await recover_lost_resumes(
+                self._db, self._repos, self._queue, older_than_s=threshold, limit=SWEEP_BATCH
+            )
+            total += enqueued
+            if examined < SWEEP_BATCH or enqueued == 0:
+                break
+        return total
 
     async def recover_orphaned_runs(self) -> int:
         """Re-enqueue queued/failed runs that have not changed for longer than their threshold."""
@@ -527,7 +582,8 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
 
             box = SecretBox.from_settings(settings) if settings.security.encryption_keys else None
             # LLM normalization fallback during polls is charged to the tenant's daily budget.
-            service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=TokenBudget(redis, settings))
+            budget = TokenBudget(redis, settings, usage_seed=Repositories.create(db).llm_usage.day_tokens)
+            service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=budget)
             return service
 
         scheduler = Scheduler(settings, db, redis, ingestion_factory, queue, events)

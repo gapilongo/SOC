@@ -187,12 +187,23 @@ def create_tenant(tenant_id: str, name: str, admin_email: Optional[str], passwor
 @click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
 @click.option("--alert", "alert_id", required=True, help="Alert id.")
 @click.option("--force", is_flag=True, help="Reprocess even if the run already finished.")
-def enqueue(tenant_id: str, alert_id: str, force: bool) -> None:
-    """Queue an alert for processing (operations)."""
-    from lg_sotf.runtime.ops import enqueue_alert
+@click.option(
+    "--resume",
+    "resume",
+    is_flag=True,
+    help="Re-send the decision or approval a waiting run missed, rebuilt from the database.",
+)
+def enqueue(tenant_id: str, alert_id: str, force: bool, resume: bool) -> None:
+    """Queue an alert for processing, or re-send a lost resume (operations)."""
+    from lg_sotf.runtime.ops import enqueue_alert, enqueue_lost_resume
 
     settings = _prepare()
-    entry_id = _run(enqueue_alert(settings, tenant_id=tenant_id, alert_id=alert_id, force=force))
+    if resume:
+        if force:
+            raise click.UsageError("--resume and --force cannot be combined")
+        entry_id = _run(enqueue_lost_resume(settings, tenant_id=tenant_id, alert_id=alert_id))
+    else:
+        entry_id = _run(enqueue_alert(settings, tenant_id=tenant_id, alert_id=alert_id, force=force))
     click.echo(f"enqueued {entry_id}")
 
 

@@ -50,7 +50,7 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
 import httpx
 
@@ -82,7 +82,8 @@ from lg_sotf.ingestion.sources import (
     create_connector,
     load_credentials,
 )
-from lg_sotf.llm import TokenBudget
+from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget
+from lg_sotf.llm.errors import LLMBudgetExceeded
 from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, IngestedAlert, cap_mapping, json_size
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
@@ -272,7 +273,13 @@ class IngestionService:
 
     # -- pull ------------------------------------------------------------------
 
-    async def poll_source(self, tenant_id: str, source: Source) -> IngestResult:
+    async def poll_source(
+        self,
+        tenant_id: str,
+        source: Source,
+        *,
+        on_page: Optional[Callable[[IngestResult], Awaitable[None]]] = None,
+    ) -> IngestResult:
         """Fetch new events since the stored cursor, ingest them and record the poll.
 
         Each page is committed together with its cursor, so the cursor only
@@ -281,6 +288,12 @@ class IngestionService:
         records the failure on the source and is reported in
         ``IngestResult.error``; it is not raised. Push-only and disabled
         sources raise :class:`SourceConfigError`/:class:`SourceDisabled`.
+
+        Pulled alerts get their ``queued`` run in the page's own transaction.
+        ``on_page`` (the scheduler's dispatch) is awaited after each committed
+        page, so a poll cancelled later (rolling deploy, leadership loss)
+        has already handed the earlier pages to the workers; a page whose
+        dispatch was interrupted is recovered by the orphaned-run sweep.
         """
         if source.tenant_id != tenant_id:
             raise ValueError("source belongs to another tenant")
@@ -300,6 +313,8 @@ class IngestionService:
                             tenant_id, source.id, source.type, fmt, source.config, page.events, page=page
                         )
                         result.extend(page_result)
+                        if on_page is not None and page_result.inserted:
+                            await on_page(page_result)
                         result.pages += 1
                         if result.pages >= connector.options.max_pages_per_poll:
                             result.more_pending = True
@@ -505,13 +520,23 @@ class IngestionService:
         return _Prepared(index, row)
 
     async def _llm_prepare(
-        self, tenant_id: str, index: int, redacted: Dict[str, Any], ctx: NormalizeContext
+        self,
+        tenant_id: str,
+        index: int,
+        redacted: Dict[str, Any],
+        ctx: NormalizeContext,
+        budget_limit: BudgetLimit = USE_DEFAULT,
     ) -> _Outcome:
         try:
-            alert = await llm_normalize(redacted, ctx, settings=self._settings, tenant_id=tenant_id, budget=self._budget)
+            alert = await llm_normalize(
+                redacted, ctx, settings=self._settings, tenant_id=tenant_id, budget=self._budget, budget_limit=budget_limit
+            )
             prepared = self._finish(index, alert, redacted, 0)
         except asyncio.CancelledError:
             raise
+        except LLMBudgetExceeded:
+            record_llm_normalization("budget_exceeded")
+            return _Outcome(reason="unrecognized event format (LLM budget exceeded)")
         except NormalizationError as exc:
             record_llm_normalization("error")
             log.warning("ingestion.llm_normalization_failed", error_type=type(exc).__name__)
@@ -523,6 +548,15 @@ class IngestionService:
         record_llm_normalization("success")
         return _Outcome(prepared=prepared)
 
+    async def _tenant_budget_limit(self, tenant_id: str) -> BudgetLimit:
+        """The tenant's ``llm_daily_token_budget`` (what the workflow honours), else the install default."""
+        try:
+            tenant = await self._repos.tenants.get(tenant_id)
+        except NotFound:
+            return USE_DEFAULT
+        limit = tenant.settings.get("llm_daily_token_budget")
+        return limit if isinstance(limit, int) and not isinstance(limit, bool) else USE_DEFAULT
+
     async def _llm_phase(
         self, tenant_id: str, pending: List[Tuple[int, Dict[str, Any]]], ctx: NormalizeContext
     ) -> Dict[int, _Outcome]:
@@ -531,10 +565,11 @@ class IngestionService:
         if not pending:
             return results
         slots = asyncio.Semaphore(self._options.llm_fallback_concurrency)
+        budget_limit = await self._tenant_budget_limit(tenant_id)
 
         async def one(index: int, redacted: Dict[str, Any]) -> None:
             async with slots:
-                results[index] = await self._llm_prepare(tenant_id, index, redacted, ctx)
+                results[index] = await self._llm_prepare(tenant_id, index, redacted, ctx, budget_limit)
 
         try:
             async with asyncio.timeout(self._options.llm_fallback_timeout_s):
@@ -615,6 +650,13 @@ class IngestionService:
                     tenant_id, source_id, sorted(set(dup_keys)), conn=conn
                 )
             if page is not None:
+                # Pulled alerts get their queued run in the transaction that moves the cursor
+                # past them: if the poll is cancelled (rolling deploy, leadership loss) before
+                # the scheduler enqueues them, the orphaned-run sweep still finds the runs.
+                if inserted_ids:
+                    await self._repos.runs.queue_alerts(
+                        tenant_id, [p.row.id for p in unique if p.row.id in inserted_ids], conn=conn
+                    )
                 advanced = await self._repos.sources.set_cursor(
                     tenant_id, source_id, page.cursor, page.watermark, conn=conn
                 )

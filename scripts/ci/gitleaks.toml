@@ -38,6 +38,10 @@ regexes = [
   '''^dXNlcjpwYXNzd29yZDEyMw==$''',
   # Well-known example JWT ({"alg":"HS256"} / {"sub":"1234567890"}).
   '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U$''',
+  # Synthetic JWT whose signature is base64("signature-value") (tests/deploy/test_e2e_ui.py).
+  '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.c2lnbmF0dXJlLXZhbHVl$''',
+  # Fake AWS session key ids in the evaluation fixtures (tests/fixtures/eval/synthetic_v1.jsonl).
+  '''^ASIAEXAMPLEEXAMPLE\d{2}$''',
   # Truncated / synthetic PEM and PGP blocks in the redaction tests (escaped
   # "\n" in Python source followed by a stub body or a repetition expression).
   '''^-----BEGIN (RSA |PGP )?PRIVATE KEY( BLOCK)?-----\\n(MIIEowIBAAKCAQEA\\nabc\\n|" \* 8_000|" \+ "A" \* 500_000|lQOYBF\\n)''',

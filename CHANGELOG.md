@@ -111,6 +111,38 @@ no automated migration from 0.1 data.
 
 - See [docs/security.md](docs/security.md) for the threat model and
   controls, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
+- Release hardening from the final review: login attempts are counted
+  before the password check (lockout holds under concurrency); SSO is
+  blocked by a disabled local account even without `email_verified`; open
+  WebSockets re-check logout, deactivation and suspension and are capped per
+  principal and tenant; LangGraph checkpoint tables are under tenant RLS;
+  CLI-created accounts and reprocessing are audited; tenant-less login is
+  resolved by password; response targets exclude parent processes and a
+  built-in list of critical processes, and are scoped to the alert's hosts;
+  containment on rule evidence applies only to corroborated targets;
+  verdict-cache hits are severity-bound and invalidated by true positives;
+  LLM-normalised alerts are never closed automatically; more command-line
+  credential forms are redacted; URL guardrails canonicalise hosts;
+  cookie endpoints check `Origin`; the compose stack trusts only its own
+  proxy's `X-Forwarded-For`; the runtime image carries no pip or setuid
+  binaries; Helm refuses enrichment keys in values.
+
+### Fixed
+
+- Worker runs could wedge when a cancellation was swallowed inside redis-py
+  on Python 3.11; cancelled polls, lost resume messages and stale resumes are
+  recovered from PostgreSQL; ledger transitions and their audit entries are
+  atomic; retention removes checkpoints with their alert and expires failed
+  alerts; the token budget survives a Redis restart; dead consumers leave the
+  group; settings PATCHes no longer lose concurrent updates.
+- A worker killed after a graph step's writes were saved but before that
+  step's checkpoint (seen right after `__start__`) no longer leaves its alert
+  stuck in `processing` with the run marked `completed`: the retry continues
+  the thread from the saved writes.
+- Throughput: single-tenant workers use their full concurrency, LLM slots
+  follow `worker.concurrency`, dispatch is batched with ingest admission
+  control, and new indexes serve the dashboard and alert-list filters (see
+  docs/performance.md).
 
 ## Before 0.2.0
 

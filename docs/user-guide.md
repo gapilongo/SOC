@@ -192,7 +192,14 @@ secrets replaced by `*_configured` flags):
   severity. Keep low risk at `approval` if every closure should involve a
   person.
 * `protected_assets`: `hosts` (wildcards allowed), `users`, `cidrs`,
-  `domains` that no action may ever target, whatever the spelling.
+  `domains`, `processes` (wildcards allowed) and `hashes` that no action may
+  ever target, whatever the spelling. Critical operating-system and
+  security-agent processes (`lsass.exe`, `csrss.exe`, `winlogon.exe`,
+  `services.exe`, `svchost.exe`, `explorer.exe`, `systemd`, `sshd`, EDR
+  agents ...) are never terminated, whatever the tenant configured.
+  Parent/grandparent processes and their hashes are never response
+  targets, and `terminate_process`/`quarantine_file` carry the alert's
+  hosts in `params.scope.hosts` of the signed webhook body.
 * `response`: `connector` (`dry_run` or `webhook`), `webhook_url` and
   `webhook_secret` (your SOAR: Tracecat, Shuffle, Tines, n8n or any HTTPS
   receiver that verifies the HMAC signature), `dry_run`, `allowed_actions`,

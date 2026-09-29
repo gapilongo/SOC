@@ -110,6 +110,15 @@ def policy_for(make_settings: Callable[..., Settings], tenant: Optional[Dict[str
         ("block_url", "http://203.28933/", PROTECTED, "protected_asset"),
         ("block_url", "http://[::ffff:203.0.113.5]/", PROTECTED, "protected_asset"),
         ("block_url", "http://%64c01.corp.local/", PROTECTED, "protected_asset"),
+        # LLM-W6-07: spellings WHATWG parsers (browsers, proxies, SOAR libraries) resolve to a protected host.
+        ("block_url", "https://\uff18.\uff18.\uff18.\uff18/", PROTECTED, "protected_asset"),
+        ("block_url", "https://8\u30028\u30028\u30028/", PROTECTED, "protected_asset"),
+        ("block_url", "https://8\uff0e8\uff0e8\uff0e8/", PROTECTED, "protected_asset"),
+        ("block_url", "https://8\uff618\uff618\uff618/", PROTECTED, "protected_asset"),
+        ("block_url", "http://8.8.8.8\\@evil.com/", PROTECTED, "protected_asset"),
+        ("block_url", "https://[64:ff9b:1::808:808]/", PROTECTED, "protected_asset"),
+        ("block_url", "https://login\u3002example\u3002com/x", PROTECTED, "protected_asset"),
+        ("block_ip", "64:ff9b:1:808:8:800::", PROTECTED, "unroutable_ip"),
         ("block_url", "https://evil.test/payload", PROTECTED, None),
         ("block_url", "https://dc01.corp.local@evil.test/", PROTECTED, None),  # the real host is evil.test
         # user names in every account notation (RR-3)

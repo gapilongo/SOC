@@ -87,6 +87,32 @@ async def claim_orphaned_runs(
     ]
 
 
+_STRANDED_NEW_SQL = """
+SELECT a.tenant_id, a.id AS alert_id, a.severity
+FROM alerts a
+WHERE a.status = 'new' AND a.ingested_at < now() - make_interval(secs => $1)
+  AND NOT EXISTS (SELECT 1 FROM workflow_runs r WHERE r.tenant_id = a.tenant_id AND r.alert_id = a.id)
+ORDER BY a.ingested_at
+LIMIT $2
+"""
+# An alert stays 'new' only between its insert and the dispatch right after it.
+STRANDED_NEW_AFTER_S = 300.0
+
+
+@dataclass(frozen=True)
+class StrandedAlert:
+    tenant_id: str
+    alert_id: str
+    severity: str
+
+
+async def find_stranded_new_alerts(db: Database, *, older_than_s: float, limit: int) -> List[StrandedAlert]:
+    """Alerts stored but never dispatched (no run): a crash or cancel between insert and dispatch."""
+    async with db.system_tx(readonly=True) as conn:
+        rows = await conn.fetch(_STRANDED_NEW_SQL, float(older_than_s), limit)
+    return [StrandedAlert(r["tenant_id"], r["alert_id"], r["severity"]) for r in rows]
+
+
 def _text(value: object) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
 

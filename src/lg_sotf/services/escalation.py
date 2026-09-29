@@ -378,6 +378,10 @@ class EscalationService:
         body["correlated_alert_ids"] = [str(a) for a in correlated_alert_ids][:MAX_CORRELATED]
 
         attached_from: Optional[Escalation] = None
+        # Related alerts are only candidates (the parent lookup re-checks them under the
+        # lock), so the indicator lookups run before the per-tenant grouping lock is taken:
+        # the lock is held for the parent lookup and the attach/create step only.
+        related = await self._related_candidates(tenant_id, alert_id, policy, now)
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             await conn.execute(_GROUP_LOCK_SQL, ESCALATION_GROUP_LOCK, tenant_id)
             own = await self._repos.escalations.get_active_for_alert(tenant_id, alert_id, conn=conn)
@@ -386,7 +390,7 @@ class EscalationService:
             row = await conn.fetchrow(_ATTACHED_TO_SQL, tenant_id, alert_id)
             if row is not None:
                 return _ticket(Escalation.model_validate(dict(row)), created=False, attached=True)
-            parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now)
+            parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now, related)
             if parent is not None:
                 new_level = max_level(parent.level, level)
                 row = await conn.fetchrow(
@@ -461,21 +465,29 @@ class EscalationService:
         fingerprint: Optional[str],
         policy: ReviewPolicy,
         now: datetime,
+        related: Sequence[str] = (),
     ) -> Optional[Escalation]:
         grouping = policy.grouping
         if not grouping.enabled or grouping.max_attached <= 0:
             return None
         since = now - timedelta(minutes=grouping.window_minutes)
-        related: List[str] = []
-        if grouping.by_indicators:
-            related = await self._related_by_indicators(conn, tenant_id, alert_id, since, grouping.indicator_types)
         fp = fingerprint if grouping.by_fingerprint and fingerprint else None
         if not related and fp is None:
             return None
         row = await conn.fetchrow(
-            _FIND_PARENT_SQL, tenant_id, alert_id, since, related, fp, grouping.max_attached
+            _FIND_PARENT_SQL, tenant_id, alert_id, since, list(related), fp, grouping.max_attached
         )
         return Escalation.model_validate(dict(row)) if row is not None else None
+
+    async def _related_candidates(
+        self, tenant_id: str, alert_id: str, policy: ReviewPolicy, now: datetime
+    ) -> List[str]:
+        grouping = policy.grouping
+        if not grouping.enabled or grouping.max_attached <= 0 or not grouping.by_indicators:
+            return []
+        since = now - timedelta(minutes=grouping.window_minutes)
+        async with self._repos.db.tenant_tx(tenant_id, readonly=True) as conn:
+            return await self._related_by_indicators(conn, tenant_id, alert_id, since, grouping.indicator_types)
 
     async def _related_by_indicators(
         self, conn: Any, tenant_id: str, alert_id: str, since: datetime, types: Sequence[str]

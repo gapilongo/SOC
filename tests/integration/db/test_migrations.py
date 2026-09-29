@@ -149,3 +149,20 @@ async def test_setup_checkpointer_is_idempotent(migrated_database_url: str) -> N
     await setup_checkpointer(migrated_database_url)
     names = {r[0] for r in _query(migrated_database_url, "SELECT tablename FROM pg_tables WHERE schemaname='public'")}
     assert {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"} <= names
+
+
+async def test_query_indexes_exist(migrated_database_url: str) -> None:
+    """PERF-6/PERF-7: composite and partial indexes for list filters and the dashboard."""
+    names = {
+        row[0]
+        for row in _query(
+            migrated_database_url, "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'"
+        )
+    }
+    assert {
+        "ix_alerts_status_severity",
+        "ix_alerts_disposition",
+        "ix_alerts_tenant_closed",
+        "ix_escalations_claimed",
+        "ix_workflow_runs_active",
+    } <= names

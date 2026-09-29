@@ -7,6 +7,14 @@
   for the principal's tenant (contract section 7), and ``{"type": "ping"}``
   heartbeats. Delivery is at-most-once: clients re-read state after a
   reconnect.
+* While the socket is open the principal is re-checked every
+  ``api.ws_revalidate_s``: a logged-out (revoked) or expired token closes
+  it with 4401; a disabled or deleted account, or a suspended tenant, with
+  1008. REST refuses the same token at once; the socket follows within one
+  interval (plus the tenant cache's 15 s).
+* Concurrent sockets are capped per principal (``api.ws_max_per_principal``)
+  and per tenant (``api.ws_max_per_tenant``) before the process-wide limit,
+  so one tenant cannot take every slot; over-quota connections get 1013.
 * The server closes the socket with 4401 when the token expires, 1013 when
   the client falls too far behind (or the server is at its subscriber
   limit) and 1008 when a send times out or the client misbehaves.
@@ -28,7 +36,7 @@ from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
 from lg_sotf.observability.logging import bind_context, get_logger
-from lg_sotf.queue.events import SubscriberLimitReached
+from lg_sotf.queue.events import SubscriberLimitReached, SubscriberQuotaReached
 
 log = get_logger(__name__)
 
@@ -45,6 +53,24 @@ def _origin_allowed(ctx: ApiContext, origin: Optional[str]) -> bool:
     if origin is None:
         return True
     return origin.rstrip("/") in allowed_origins(ctx.settings)
+
+
+async def _still_authorized(ctx: ApiContext, token: str, principal: Principal) -> Optional[int]:
+    """``None`` while the socket may stay open, else the close code."""
+    try:
+        current = await bearer_principal(ctx, token)
+    except ApiError as exc:
+        if exc.status_code >= 500:
+            return None  # the identity provider is unreachable: keep serving until the token expires
+        if exc.status_code == 401 and "account" not in exc.detail:
+            return CLOSE_TOKEN_EXPIRED  # revoked (logout) or expired
+        return CLOSE_POLICY  # disabled / deleted account
+    if current.tenant_id != principal.tenant_id or not role_at_least(current.role, "viewer"):
+        return CLOSE_POLICY
+    tenant = await ctx.tenants.get(principal.tenant_id)
+    if tenant is None or tenant.status != "active":
+        return CLOSE_POLICY
+    return None
 
 
 async def _authenticate(ctx: ApiContext, websocket: WebSocket) -> Optional[Principal]:
@@ -88,7 +114,7 @@ async def events_socket(websocket: WebSocket) -> None:
     mark_principal(websocket.scope, principal.tenant_id, principal.id)
     bind_context(tenant_id=principal.tenant_id)
     try:
-        async with ctx.events.subscribe(principal.tenant_id) as subscription:
+        async with ctx.events.subscribe(principal.tenant_id, owner=principal.id) as subscription:
             await websocket.accept()
             await _send(
                 websocket,
@@ -99,7 +125,10 @@ async def events_socket(websocket: WebSocket) -> None:
                     "expires_at": principal.expires_at.isoformat() if principal.expires_at else None,
                 },
             )
-            code = await _serve(websocket, ctx, principal, subscription)
+            code = await _serve(websocket, ctx, principal, subscription, websocket.query_params.get("token", ""))
+    except SubscriberQuotaReached as exc:
+        log.info("ws.subscriber_quota", reason=str(exc))
+        code = CLOSE_TRY_AGAIN
     except SubscriberLimitReached:
         log.warning("ws.subscriber_limit")
         code = CLOSE_TRY_AGAIN
@@ -119,7 +148,9 @@ async def _send(websocket: WebSocket, ctx: ApiContext, message: Dict[str, Any]) 
     )
 
 
-async def _serve(websocket: WebSocket, ctx: ApiContext, principal: Principal, subscription: Any) -> Optional[int]:
+async def _serve(
+    websocket: WebSocket, ctx: ApiContext, principal: Principal, subscription: Any, token: str
+) -> Optional[int]:
     tenant_id = principal.tenant_id
 
     async def forward() -> int:
@@ -150,7 +181,19 @@ async def _serve(websocket: WebSocket, ctx: ApiContext, principal: Principal, su
         await asyncio.sleep(max(0.0, remaining))
         return CLOSE_TOKEN_EXPIRED
 
-    tasks = [asyncio.create_task(coro) for coro in (forward(), heartbeat(), receive(), expiry())]
+    async def revalidate() -> int:
+        while True:
+            await asyncio.sleep(ctx.settings.api.ws_revalidate_s)
+            try:
+                code = await _still_authorized(ctx, token, principal)
+            except Exception as exc:  # noqa: BLE001 - a database/Redis blip must not drop every socket
+                log.warning("ws.revalidate_failed", error_type=type(exc).__name__)
+                continue
+            if code is not None:
+                log.info("ws.principal_revoked", code=code)
+                return code
+
+    tasks = [asyncio.create_task(coro) for coro in (forward(), heartbeat(), receive(), expiry(), revalidate())]
     try:
         done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:

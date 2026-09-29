@@ -302,3 +302,33 @@ async def test_notes_are_stored_as_alert_events(api: ApiHarness) -> None:
     assert (note["actor_type"], note["actor_id"]) == ("user", str(analyst.id))
     missing = await api.client.post("/api/v1/alerts/nope/notes", json={"text": "x"}, headers=api.auth(analyst))
     assert missing.status_code == 404
+
+
+async def test_ingest_over_the_inflight_cap_is_refused_at_once(make_api) -> None:
+    """PERF-3: overload is refused with 503 + Retry-After instead of queueing on the database pool."""
+    import asyncio
+
+    api = await make_api(api={"max_inflight_ingest": 1})
+    headers = await api.key_headers(TENANT_A, ["ingest"])
+    gate = asyncio.Event()
+    real_ingest = api.ctx.ingestion.ingest
+
+    async def slow_ingest(*args: Any, **kwargs: Any) -> Any:
+        await gate.wait()
+        return await real_ingest(*args, **kwargs)
+
+    api.ctx.ingestion.ingest = slow_ingest  # type: ignore[method-assign]
+    event = [{"source_alert_id": "adm-1", "title": "t", "severity": "low"}]
+    first = asyncio.create_task(api.client.post("/api/v1/ingest/alerts", json=event, headers=headers))
+    for _ in range(500):  # until the first request holds its admission slot
+        if api.ctx.ingest_admission.inflight:
+            break
+        await asyncio.sleep(0.01)
+    refused = await api.client.post("/api/v1/ingest/alerts", json=event, headers=headers)
+    assert refused.status_code == 503 and refused.headers["retry-after"] == "1"
+    assert refused.json()["error"]["code"] == "overloaded"
+    gate.set()
+    assert (await first).status_code == 202
+    assert api.ctx.ingest_admission.inflight == 0
+    after = await api.client.post("/api/v1/ingest/alerts", json=event, headers=headers)
+    assert after.status_code == 202

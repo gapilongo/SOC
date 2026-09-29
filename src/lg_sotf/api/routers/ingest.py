@@ -9,13 +9,18 @@ vendor-native payload (one JSON object or an array of them) for a push
 source (``webhook``/``guardduty``) registered in the key's tenant.
 
 New alerts are queued for the workers before the 202 response; the response
-lists one result per submitted event, in order.
+lists one result per submitted event, in order. At most
+``api.max_inflight_ingest`` ingest requests are processed at once per API
+process; more are refused at once with ``503 overloaded`` and
+``Retry-After`` rather than queueing on the database pool. Batch events
+(tens per request) for throughput.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any, List, Mapping
+from contextlib import contextmanager
+from typing import Any, Iterator, List, Mapping
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -51,6 +56,27 @@ async def _json_body(request: Request) -> Any:
         return json.loads(raw)
     except (ValueError, RecursionError) as exc:
         raise ApiError(400, "invalid_json", "request body is not valid JSON") from exc
+
+
+RETRY_AFTER_S = 1
+
+
+@contextmanager
+def _admitted(ctx: ApiContext) -> Iterator[None]:
+    admission = ctx.ingest_admission
+    assert admission is not None
+    if not admission.try_acquire():
+        log.warning("ingest.overloaded", inflight=admission.inflight)
+        raise ApiError(
+            503,
+            "overloaded",
+            "too many ingest requests in flight; retry shortly (batch events to send more per request)",
+            headers={"Retry-After": str(RETRY_AFTER_S)},
+        )
+    try:
+        yield
+    finally:
+        admission.release()
 
 
 def _batch(ctx: ApiContext, events: Any) -> List[Mapping[str, Any]]:
@@ -110,14 +136,15 @@ async def _ingest_and_dispatch(
 @router.post("/alerts", status_code=202, responses=_RESPONSES, summary="Push canonical alerts")
 async def ingest_alerts(request: Request, principal: Principal = Depends(require(INGEST))) -> JSONResponse:
     ctx = get_ctx(request)
-    payload = await _json_body(request)
-    if isinstance(payload, dict):
-        if set(payload) != {"alerts"}:
-            raise ApiError(400, "invalid_request", "expected a JSON array or an object with only 'alerts'")
-        payload = payload["alerts"]
-    events = _batch(ctx, payload)
-    assert principal.api_key_id is not None
-    return await _ingest_and_dispatch(ctx, principal, api_source_id(str(principal.api_key_id)), events)
+    with _admitted(ctx):
+        payload = await _json_body(request)
+        if isinstance(payload, dict):
+            if set(payload) != {"alerts"}:
+                raise ApiError(400, "invalid_request", "expected a JSON array or an object with only 'alerts'")
+            payload = payload["alerts"]
+        events = _batch(ctx, payload)
+        assert principal.api_key_id is not None
+        return await _ingest_and_dispatch(ctx, principal, api_source_id(str(principal.api_key_id)), events)
 
 
 @router.post(
@@ -129,6 +156,7 @@ async def ingest_webhook(
     ctx = get_ctx(request)
     if is_reserved_source_id(source_id) or not SOURCE_ID_PATTERN.match(source_id):
         raise ApiError(404, "source_not_found", "no push source with this id")
-    payload = await _json_body(request)
-    events = _batch(ctx, [payload] if isinstance(payload, dict) else payload)
-    return await _ingest_and_dispatch(ctx, principal, source_id, events)
+    with _admitted(ctx):
+        payload = await _json_body(request)
+        events = _batch(ctx, [payload] if isinstance(payload, dict) else payload)
+        return await _ingest_and_dispatch(ctx, principal, source_id, events)

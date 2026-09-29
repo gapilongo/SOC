@@ -96,6 +96,17 @@ def refused_by(state: Mapping[str, Any]) -> Optional[str]:
     return None
 
 
+LLM_NORMALIZED_FLAG = "llm_normalized"
+
+
+def llm_normalized(state: Mapping[str, Any]) -> bool:
+    """The alert was mapped by the LLM-fallback normalizer: its title, rule name and severity
+    were chosen by a model from untrusted text, so nothing automatic may close it."""
+    alert = state.get("alert")
+    flags = alert.get("flags") if isinstance(alert, Mapping) else None
+    return isinstance(flags, list) and LLM_NORMALIZED_FLAG in flags
+
+
 def route_after_gate(state: Mapping[str, Any]) -> GateRoute:
     gate = state.get("gate") or {}
     return "close" if gate.get("suppressed") else "triage"
@@ -115,7 +126,7 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
     or the fast LLM) is never enough to close them. For the rest, closing
     needs at least one rule-based false-positive signal besides the LLM's.
     """
-    if _is_high(state):
+    if _is_high(state) or llm_normalized(state):
         return "correlation"
     triage = state.get("triage") or {}
     if isinstance(triage.get("llm_refusal"), Mapping):
@@ -179,6 +190,10 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
     if threat < t.close_max_threat:
         if _is_high(state):
             return Decision("escalate", "high severity alerts are closed only by an analyst", None, "false_positive_review")
+        if llm_normalized(state):
+            return Decision(
+                "escalate", "the alert was normalised by a model; an analyst confirms benign closes", None, "llm_normalized"
+            )
         if rule_threat < t.close_max_threat:
             return Decision("close", "low threat corroborated by rules", "benign", "rule_corroborated_benign")
         return Decision("escalate", "low threat verdict lacks rule corroboration", None, "false_positive_review")

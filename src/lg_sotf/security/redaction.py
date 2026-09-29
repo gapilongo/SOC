@@ -194,6 +194,13 @@ class _Rule(NamedTuple):
 _MYSQL_TOOLS = r"mysql|mysqldump|mysqladmin|mysqlimport|mysqlshow|mysqlcheck|mysqlpump|mariadb(?:-dump|-admin)?"
 _ARG_GAP = r"[^\n|;&]{0,256}?"
 _FLAG_TRIGGERS = ("pass", "pwd", "secret", "token", "key")
+_DASH_P_TOOL_NAMES = (
+    "psexec", "psexec64", "paexec", "csexec", "evil-winrm", "crackmapexec", "cme", "nxc", "netexec",
+    "hydra", "medusa", "ncrack", "rdesktop", "winexe", "pth-winexe", "smbexec",
+)
+_DASH_P_TOOLS = "|".join(re.escape(t) for t in _DASH_P_TOOL_NAMES) + r"|docker\s+login|podman\s+login|az\s+login"
+_DASH_P_TRIGGERS = ("psexec", "paexec", "csexec", "winrm", "crackmapexec", "cme", "nxc", "netexec", "hydra",
+                    "medusa", "ncrack", "rdesktop", "winexe", "smbexec", "login")
 _LABEL_TRIGGERS = ("pass", "pwd", "secret", "token", "key", "session", "credential", "cookie", "auth", "hash", "conn", "sig")
 
 _RULES: Tuple[_Rule, ...] = (
@@ -301,14 +308,143 @@ _RULES: Tuple[_Rule, ...] = (
         ("smbclient", "rpcclient", "smbmap", "smbcacls"),
     ),
     _Rule(
-        re.compile(r"(?i)(?P<flag>\bConvertTo-SecureString\s+(?:-String\s+)?)(?P<val>\"[^\"]*\"|'[^']*')"),
+        # ConvertTo-SecureString [-String] <pw> / -AsPlainText "<pw>": skip switches, mask the value.
+        re.compile(
+            r"(?i)(?P<flag>\bConvertTo-SecureString(?:\s+-(?!String\b)[A-Za-z]+)*\s+(?:-String\s+)?)"
+            r"(?P<val>\"[^\"]*\"|'[^']*'|(?![-($])[^\s)\"']+)"
+        ),
         _mask_val,
         ("convertto-securestring",),
     ),
     _Rule(
-        re.compile(r"(?i)(?P<flag>\bnet1?(?:\.exe)?\s+user\s+(?:\"[^\"]+\"|\S+)\s+)(?P<val>(?![/*])(?:\"[^\"]*\"|\S+))"),
+        # net user [/add|/domain ...] <name> <password>: the password follows the user name.
+        re.compile(
+            r"(?i)(?P<flag>\bnet1?(?:\.exe)?\s+user\s+(?:/\S+\s+)*(?![/*])(?:\"[^\"]+\"|\S+)\s+)"
+            r"(?P<val>(?![/*])(?:\"[^\"]*\"|\S+))"
+        ),
         _mask_val,
         ("user",),
+    ),
+    _Rule(
+        # net use <share> <password> [/user:...] and net use <share> /user:<u> <password>.
+        re.compile(
+            r"(?i)\bnet1?(?:\.exe)?\s+use\s+(?:(?:[A-Za-z]:|\*)\s+)?\\\\\S+\s+"
+            r"(?:/(?!user:)\S+\s+)*(?P<val>(?![/*])(?:\"[^\"]*\"|\S+))"
+        ),
+        _mask_val,
+        ("use",),
+    ),
+    _Rule(
+        re.compile(
+            rf"(?i)\bnet1?(?:\.exe)?\s+use\b{_ARG_GAP}\s/user:(?:\"[^\"]+\"|\S+)\s+(?P<val>(?![/*])(?:\"[^\"]*\"|\S+))"
+        ),
+        _mask_val,
+        ("use",),
+    ),
+    _Rule(
+        # Lateral-movement / admin tools whose -p is the password (flag case-sensitive).
+        re.compile(
+            rf"(?i:\b(?:{_DASH_P_TOOLS})(?:\.exe|\.py)?\b){_ARG_GAP}\s-p\s+(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+        ),
+        _mask_val,
+        _DASH_P_TRIGGERS,
+    ),
+    _Rule(
+        re.compile(
+            rf"(?i:\b(?:sqlcmd|bcp|osql|isql|zip)(?:\.exe)?\b){_ARG_GAP}\s-P\s*(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+        ),
+        _mask_val,
+        ("sqlcmd", "bcp", "osql", "isql", "zip"),
+    ),
+    _Rule(
+        re.compile(
+            rf"(?i:\b(?:plink|pscp|psftp|putty|kitty)(?:\.exe)?\b){_ARG_GAP}\s-pw\s+(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+        ),
+        _mask_val,
+        ("plink", "pscp", "psftp", "putty", "kitty"),
+    ),
+    _Rule(
+        re.compile(
+            rf"(?i:\bldap(?:search|modify|add|delete|whoami|passwd|compare|modrdn)(?:\.exe)?\b){_ARG_GAP}"
+            r"\s-w\s+(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+        ),
+        _mask_val,
+        ("ldap",),
+    ),
+    _Rule(
+        # 7z -p<pw>, rar/winrar -p<pw> / -hp<pw> (attached; a bare -p prompts).
+        re.compile(
+            rf"(?i:\b(?:7z|7za|7zr|7zg|rar|winrar|unrar)(?:\.exe)?\b){_ARG_GAP}\s-h?p(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"'-][^\s\"']*)"
+        ),
+        _mask_val,
+        ("7z", "rar"),
+    ),
+    _Rule(
+        # Windows slash flags: xfreerdp /p:, cmdkey /pass:, wmic /password:, mimikatz /ntlm: /aes256: ...
+        re.compile(
+            r"(?i)(?<![\w/:])/(?:p|pw|pwd|pass|password|rp|ntlm|rc4|aes128|aes256|des|krbtgt)"
+            r":(?P<val>\"[^\"]*\"|'[^']*'|[^\s\"']+)"
+        ),
+        _mask_val,
+        ("/p", "/rp", "/ntlm", "/rc4", "/aes", "/des", "/krbtgt"),
+    ),
+    _Rule(
+        # schtasks /rp <pw> and /p <pw> (space separated).
+        re.compile(
+            rf"(?i:\bschtasks(?:\.exe)?\b){_ARG_GAP}\s/(?:rp|p)\s+(?P<val>(?!/)(?:\"[^\"]*\"|'[^']*'|\S+))"
+        ),
+        _mask_val,
+        ("schtasks",),
+    ),
+    _Rule(
+        # reg add ... /v DefaultPassword ... /d <pw> (Winlogon autologon).
+        re.compile(rf"(?i:\bDefaultPassword\b){_ARG_GAP}\s/d\s+(?P<val>\"[^\"]*\"|'[^']*'|\S+)"),
+        _mask_val,
+        ("defaultpassword",),
+    ),
+    _Rule(
+        # impacket target syntax: [domain/]user:password@host.
+        re.compile(r"(?<![\w/:.\\-])[\w.-]+/[\w.$-]+:(?P<val>[^\s@/\\\"'<>]+)@(?=[\w.\[-])"),
+        _mask_val,
+        ("@",),
+    ),
+    _Rule(
+        re.compile(
+            rf"(?i:\b(?:impacket-[\w-]+|(?:secretsdump|psexec|wmiexec|smbexec|atexec|dcomexec|mssqlclient|getTGT|getST|"
+            rf"GetUserSPNs|GetNPUsers|lookupsid|samrdump|rpcdump|reg|services|ticketer|smbclient)\.py)\b){_ARG_GAP}"
+            r"\s(?:[\w.-]+/)?[\w.$-]+:(?P<val>[^\s@/\\\"'<>]+)@"
+        ),
+        _mask_val,
+        ("impacket", ".py"),
+    ),
+    _Rule(
+        # echo <pw> | sudo -S
+        re.compile(r"(?i)\becho\s+(?P<val>\"[^\"]*\"|'[^']*'|[^\s|]+)\s*\|\s*sudo\b[^\n|;&]{0,64}?\s-S\b"),
+        _mask_val,
+        ("sudo",),
+    ),
+    _Rule(
+        # Azure SAS signatures and other signed-URL signatures.
+        re.compile(r"(?i)[?&](?:sig|x-amz-signature|signature)=(?P<val>(?!\[REDACTED)[^&\s\"'#<>]+)"),
+        _mask_val,
+        ("sig=", "signature="),
+    ),
+    _Rule(
+        # Incoming-webhook URLs are bearer credentials (Slack, Teams/Office 365, Discord).
+        re.compile(
+            r"(?i)(?P<h>\bhooks\.slack\.com/(?:services|workflows|triggers)/|"
+            r"\.webhook\.office\.com/webhookb2/|\bdiscord(?:app)?\.com/api/webhooks/)(?!\[REDACTED)[^\s\"'<>]+"
+        ),
+        lambda m: f"{m.group('h')}{REDACTED}",
+        ("hooks.slack.com", "webhook.office.com", "/api/webhooks/"),
+    ),
+    _Rule(
+        re.compile(
+            r"\b(?:glpat|glptt|gldt|glrt|glsoat)-[A-Za-z0-9_-]{20,}|\bnpm_[A-Za-z0-9]{36}\b|"
+            r"\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|\bxoxe(?:\.xox[a-z])?-[A-Za-z0-9-]{10,}"
+        ),
+        "[REDACTED:api_key]",
+        ("glpat-", "glptt-", "gldt-", "glrt-", "glsoat-", "npm_", "sg.", "xoxe"),
     ),
     _Rule(
         # The lookahead lists every label's first letter so most positions are rejected

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import List, Optional, Protocol, Sequence, Tuple
 
 from lg_sotf.core.events import EventPublisher, publish_event
-from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.repos import Repositories
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.producer import WorkQueue
@@ -46,21 +45,14 @@ async def dispatch_new_alerts(
     """
     if not alerts:
         return 0
-    to_enqueue: List[Tuple[str, str]] = []
-    async with repos.db.tenant_tx(tenant_id) as conn:
-        for alert in alerts:
-            run = await repos.runs.upsert_queued(tenant_id, alert.alert_id, conn=conn)
-            if run.status != "queued":
-                continue
-            try:
-                await repos.alerts.update_status(tenant_id, alert.alert_id, "queued", conn=conn)
-            except InvalidTransition as exc:
-                # The run is queued (e.g. recovered after a crash) but the alert moved on; the run decides.
-                log.info("dispatch.alert_status_kept", alert_id=alert.alert_id, status=exc.current)
-            to_enqueue.append((alert.alert_id, alert.severity))
-    for alert_id, severity in to_enqueue:
-        await queue.enqueue_process(tenant_id, alert_id, severity)
-        await publish_event(events, "alert.created", tenant_id, alert_id, {"status": "queued", "severity": severity})
+    severity = {a.alert_id: a.severity for a in alerts}
+    # One transaction with a fixed number of statements for the whole batch (PERF-3); an alert
+    # whose run left 'queued' is not enqueued, one whose alert row moved on keeps its status.
+    queued = await repos.runs.queue_alerts(tenant_id, list(severity))
+    to_enqueue: List[Tuple[str, str]] = [(a, severity[a]) for a in queued]
+    await queue.enqueue_process_many(tenant_id, to_enqueue)
+    for alert_id, sev in to_enqueue:
+        await publish_event(events, "alert.created", tenant_id, alert_id, {"status": "queued", "severity": sev})
     if to_enqueue:
         log.info("dispatch.enqueued", tenant_id=tenant_id, count=len(to_enqueue), skipped=len(alerts) - len(to_enqueue))
     return len(to_enqueue)

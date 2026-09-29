@@ -104,6 +104,15 @@ services:
     command: ["api"]
     environment:
       <<: *app-environment
+      # The only proxy whose X-Forwarded-For is trusted: the frontend's fixed address on the
+      # edge network. Without it every browser request would carry the frontend's address,
+      # so per-address login limits and audit entries would lump all users together.
+      LG_SOTF_API__FORWARDED_ALLOW_IPS: ${EDGE_FRONTEND_IP:-172.31.250.2}
+    networks:
+      default: {}
+      edge:
+        # Static as well: a dynamically assigned address could take the frontend's.
+        ipv4_address: ${EDGE_API_IP:-172.31.250.3}
     ports:
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
     depends_on:
@@ -200,6 +209,11 @@ services:
       LG_SOTF_OIDC_LABEL: ${FRONTEND_OIDC_LABEL:-}
       LG_SOTF_CSP_CONNECT_SRC: ${FRONTEND_CSP_CONNECT_SRC:-}
       LG_SOTF_HSTS_MAX_AGE: ${FRONTEND_HSTS_MAX_AGE:-}
+      # Address(es) of a TLS reverse proxy in front of this container, if any.
+      LG_SOTF_TRUSTED_PROXIES: ${FRONTEND_TRUSTED_PROXIES:-}
+    networks:
+      edge:
+        ipv4_address: ${EDGE_FRONTEND_IP:-172.31.250.2}
     ports:
       - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
     depends_on:
@@ -218,6 +232,15 @@ services:
       retries: 4
       start_period: 10s
     restart: unless-stopped
+
+networks:
+  default: {}
+  # frontend -> api only. Fixed addressing so the API can trust exactly the frontend's
+  # X-Forwarded-For (override EDGE_SUBNET/EDGE_FRONTEND_IP if the range is taken).
+  edge:
+    ipam:
+      config:
+        - subnet: ${EDGE_SUBNET:-172.31.250.0/29}
 
 volumes:
   pgdata:

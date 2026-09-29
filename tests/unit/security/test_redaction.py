@@ -333,6 +333,14 @@ def test_usage_token_counts_are_not_secrets() -> None:
         "a://u:" * 100_000,
         "--x-y-z-" * 100_000,
         "password" + " " * 500_000,
+        "net use " * 100_000,
+        "net user /a " * 60_000,
+        "psexec -u " * 80_000,
+        "a/b:" * 150_000,
+        "/p:" * 150_000,
+        "ConvertTo-SecureString -a " * 30_000,
+        "schtasks /rp " * 60_000,
+        "echo x | " * 80_000,
     ],
 )
 def test_new_rules_stay_linear(payload: str) -> None:
@@ -354,8 +362,114 @@ def test_every_rule_has_a_trigger_present_in_its_matches() -> None:
         "sk-" + "a" * 40, "ghp_" + "a" * 36, "xoxb-1234567890-abc", "sk_live_" + "a" * 20, "AIza" + "a" * 35,
         "lgk_" + "0" * 32 + "_" + "a" * 20, "Authorization: Bearer abcdef", "bearer abcdefghijklmnop",
         "Basic dXNlcjpwYXNz", "postgres://u:p@h/db", "--password x", "mysql -px", "sshpass -p x", "curl -u a:b",
-        "smbclient -U a%b", "ConvertTo-SecureString 'x'", "net user bob pw", "db_password=x",
+        "smbclient -U a%b", "ConvertTo-SecureString 'x'", "net user bob pw",
+        r"net use \\srv\c$ pw", r"net use \\srv\c$ /user:u pw", "psexec -p pw", "sqlcmd -P pw", "plink -pw pw",
+        "ldapsearch -w pw", "7z a -ppw", "/pass:pw", "schtasks /rp pw", "DefaultPassword /d pw", "dom/user:pw@host",
+        "wmiexec.py user:pw@host", "echo pw | sudo -S id", "?sig=abc", "hooks.slack.com/services/T/B/x",
+        "glpat-" + "a" * 20, "db_password=x",
     ]
     for rule, sample in zip(_RULES, samples, strict=True):
         assert rule.pattern.search(sample), (rule.pattern.pattern, sample)
         assert any(t in sample.casefold() for t in rule.triggers), (rule.triggers, sample)
+
+
+LATERAL_MOVEMENT_CREDENTIALS = [
+    r"psexec.exe \\ws-01 -u CORP\admin -p Winter2026! cmd.exe",
+    r'PsExec64.exe -accepteula \\10.0.0.5 -u admin -p "Winter2026! x" cmd',
+    r"paexec \\host -u admin -p Winter2026! cmd",
+    r"net use \\fs01\c$ /user:CORP\admin Winter2026!",
+    r"net use Z: \\fs01\share Winter2026! /user:CORP\admin",
+    r"schtasks /create /tn x /tr c:\x.exe /ru CORP\admin /rp Winter2026!",
+    r"schtasks /query /s srv /u admin /p Winter2026!",
+    r"xfreerdp /v:10.0.0.5 /u:admin /p:Winter2026!",
+    r"cmdkey /add:srv01 /user:admin /pass:Winter2026!",
+    r'sqlcmd -S db01 -U sa -P Winter2026! -Q "select 1"',
+    r"ldapsearch -x -D cn=admin,dc=corp -w Winter2026! -H ldap://dc01",
+    r"7z.exe a -pWinter2026! out.7z c:\data",
+    r"rar a -hpWinter2026! out.rar c:\data",
+    r"zip -P Winter2026! out.zip data",
+    r"echo Winter2026! | sudo -S id",
+    r"impacket-secretsdump corp/admin:Winter2026!@10.0.0.5",
+    r"wmiexec.py admin:Winter2026!@10.0.0.5",
+    r"evil-winrm -i 10.0.0.5 -u admin -p Winter2026!",
+    r"crackmapexec smb 10.0.0.0/24 -u admin -p Winter2026!",
+    r"nxc smb 10.0.0.5 -u admin -p Winter2026!",
+    r"hydra -l admin -p Winter2026! ssh://10.0.0.5",
+    r"docker login -u admin -p Winter2026! registry",
+    r"az login --service-principal -u appid -p Winter2026! --tenant t",
+    r"plink.exe -ssh admin@10.0.0.5 -pw Winter2026!",
+    r"pscp -pw Winter2026! file admin@host:/tmp",
+    r"rdesktop -u admin -p Winter2026! 10.0.0.5",
+    r'New-Object PSCredential("admin",(ConvertTo-SecureString -String Winter2026! -AsPlainText -Force))',
+    r'ConvertTo-SecureString -AsPlainText "Winter2026!" -Force',
+    r"net user /add bob Winter2026!",
+    r"net user /domain /add bob Winter2026!",
+    r"reg add HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon /v DefaultPassword /t REG_SZ /d Winter2026!",
+    r'mimikatz "sekurlsa::pth /user:admin /domain:corp /ntlm:Winter2026!"',
+]
+
+
+@pytest.mark.parametrize("text", LATERAL_MOVEMENT_CREDENTIALS)
+def test_lateral_movement_tool_passwords_are_removed(text: str) -> None:
+    """LLM-W6-03: short/slash password flags of common admin and attack tools."""
+    redacted, count = redact_text(text)
+    assert "Winter2026" not in redacted, redacted
+    assert count >= 1
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        (
+            "https://acct.blob.core.windows.net/c?sv=2021-06-08&sp=r&sig=AbCdEfGhIjKlMnOp0123456789%2B%2F%3D",
+            "AbCdEfGh",
+        ),
+        # Assembled at run time so the secret scanner (gitleaks) does not flag the fake values.
+        ("https://hooks.slack.com/" + "services/T0123ABCD/B0123ABCD/" + "abcdefghijklmnopqrstuvwx", "abcdefghijklmnop"),
+        ("token " + "glpat-" + "abcdefghijklmnopqrst used", "glpat-abc"),
+        ("npm_" + "abcdefghijklmnopqrstuvwxyz0123456789", "npm_abc"),
+        ("SG." + "abcdefghijklmnopqrstuv." + "abcdefghijklmnopqrstuvwxyz0123456789abcdefg", "SG.abc"),
+    ],
+)
+def test_signed_urls_webhooks_and_vendor_tokens_are_removed(text: str, secret: str) -> None:
+    redacted, _ = redact_text(text)
+    assert secret not in redacted
+
+
+def test_net_user_add_masks_the_password_not_the_user() -> None:
+    assert redact_text("net user /add bob Winter2026!") == ("net user /add bob [REDACTED]", 1)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        r"net use Z: \\fs01\share /persistent:yes",
+        r"net use \\srv\ipc$ /user:bob",
+        r"net use \\srv\ipc$ /delete",
+        "docker run -p 8080:80 nginx",
+        "7z a out.7z data",
+        "zip -r out.zip data",
+        "xcopy /p a b",
+        r"psexec \\host -s cmd",
+        "git@github.com:org/repo.git",
+        "net user /domain bob",
+        "schtasks /create /tn x /sc daily /ru SYSTEM",
+        "ConvertTo-SecureString $enc -Key $k",
+        "https://x.example/a/p:1",
+    ],
+)
+def test_tool_rules_keep_benign_command_lines(text: str) -> None:
+    assert redact_text(text) == (text, 0)
+
+
+def test_tool_passwords_never_reach_the_prompt() -> None:
+    from lg_sotf.llm.prompting import build_prompt
+
+    bundle = build_prompt(
+        "system",
+        "task",
+        {"command_lines": LATERAL_MOVEMENT_CREDENTIALS, "raw": {"process": LATERAL_MOVEMENT_CREDENTIALS[0]}},
+    )
+    text = "".join(str(m.content) for m in bundle.messages)
+    assert "Winter2026" not in text
+    assert bundle.redactions >= len(LATERAL_MOVEMENT_CREDENTIALS)

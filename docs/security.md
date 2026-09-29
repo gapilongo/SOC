@@ -87,7 +87,18 @@ Beyond the database:
 * Redis keys, streams and pub/sub channels carry the tenant id
   (`{prefix}:t:{tenant_id}:...`, `{prefix}:events:{tenant_id}`); WebSocket
   connections subscribe only to their principal's tenant channel.
-* LangGraph checkpoint threads are `{tenant_id}:{alert_id}`.
+* LangGraph checkpoint threads are `{tenant_id}:{alert_id}`, and the
+  checkpoint tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`)
+  are under the same `FORCE ROW LEVEL SECURITY` policy, keyed on the thread
+  id's tenant prefix (`lg-sotf migrate` applies it after LangGraph's
+  `setup()`); the worker's checkpointer sets `app.tenant_id` from the thread
+  id before every statement.
+* Live-event WebSockets re-check the token, the account and the tenant every
+  `api.ws_revalidate_s` (15 s): logout, deactivation, deletion and tenant
+  suspension close an open socket within that interval. Concurrent sockets
+  are capped per principal (`api.ws_max_per_principal`) and per tenant
+  (`api.ws_max_per_tenant`), so one tenant cannot use up a process's
+  subscriber slots.
 * Caches (verdict cache, enrichment cache) are keyed per tenant; enrichment
   results are never shared between tenants.
 * Indicator correlation uses per-tenant rows of HMAC-hashed values.
@@ -104,11 +115,14 @@ Beyond the database:
 * **Sessions**: short-lived HS256 access tokens (`auth.access_token_ttl_s`,
   15 minutes by default) carrying `jti`; opaque refresh tokens stored as
   SHA-256 hashes, in an `HttpOnly; Secure; SameSite=Strict` cookie scoped to
-  `/api/v1/auth`, rotated on every refresh. Reuse of a rotated refresh token
+  `/api/v1/auth`, rotated on every refresh; refresh and logout also refuse
+  browser requests from any other origin (a sibling subdomain is same-site). Reuse of a rotated refresh token
   revokes all of the user's sessions and is audited. Logout revokes the
   refresh token and blocks the presented access token until it expires. The
   user row is re-read on every request, so deactivation and role changes
-  apply immediately.
+  apply immediately (open WebSockets within `api.ws_revalidate_s`). Login
+  attempts are counted before the password is checked, so concurrent
+  requests cannot exceed the lockout budget.
 * **Single sign-on (OIDC)**: tokens from `auth.oidc_issuer` are verified
   against its JWKS (RS256/ES256 only, `aud` required); tenant and role come
   from configured claims; linking to a local account requires a verified
@@ -202,7 +216,16 @@ close a dangerous alert or trigger containment.
    `auto` for their risk level.
 5. **Severity policy.** Automation never closes a high or critical alert as
    benign; only an analyst decision, an admin-enabled suppression rule or an
-   analyst-confirmed verdict (not for critical) does. A response the policy
+   analyst-confirmed verdict (not for critical) does. A cached
+   analyst-confirmed verdict applies only up to the severity the analyst
+   decided (a benign medium never closes a high repeat), is dropped when an
+   analyst decides `true_positive` on that detection or a response is
+   planned for it, and admins can clear a tenant's cache
+   (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
+   false-positive decisions are bounded to the decided severity and below.
+   Alerts mapped by the optional LLM-fallback normalizer
+   (`llm_normalized`) have no trusted text, never use the verdict cache
+   and are never closed automatically. A response the policy
    started closes the alert as **malicious** once its actions complete
    (connector success or the tenant's dry run), at any severity; if an
    action fails or none completes, the alert is escalated instead. The
@@ -235,9 +258,22 @@ identity APIs directly.
   kind and be syntactically valid; IP blocks never target loopback,
   link-local, multicast, unspecified or reserved addresses (including
   IPv4-mapped and similar IPv6 forms), and private ranges only when the tenant
-  allows it; protected hosts, users, domains and CIDRs are never acted on,
-  whatever the spelling (IP literal forms, DN and `DOMAIN\user` forms,
-  Unicode normalisation).
+  allows it; protected hosts, users, domains, CIDRs, processes and file
+  hashes are never acted on, whatever the spelling (IP literal forms, DN and
+  `DOMAIN\user` forms, Unicode normalisation, URL hosts as browsers resolve
+  them: full-width digits, ideographic dots, `\` as a path separator,
+  percent-encoding, NAT64 prefixes); critical operating-system and
+  security-agent processes (`lsass.exe`, `csrss.exe`, `services.exe`,
+  `svchost.exe`, `explorer.exe`, `systemd`, EDR agents ...) are never
+  terminated.
+* **Targets**: parent/grandparent processes and their hashes are never
+  response targets; `terminate_process` and `quarantine_file` carry the
+  alert's hosts (`params.scope.hosts`) in the signed webhook body. With
+  rule evidence, automatic containment applies only to the targets that
+  evidence is about (the indicator with a malicious threat-intel or history
+  verdict, the executable and host a behavioural rule observed, the C2
+  destination); other entities of the same alert wait for approval
+  (`target_not_corroborated`).
 * **Rate limits**: a per-tenant hourly cap (bounded by the install's
   `response.max_actions_per_hour_per_tenant`) and per-action blast-radius
   limits, enforced atomically at execution.
@@ -256,8 +292,15 @@ identity APIs directly.
   feedback, the action ledger, daily LLM usage, and the audit log.
 * **Redaction**: secrets are removed from every event **before** it is
   stored or shown to a model: private keys, cloud and API keys, JWTs,
-  authorisation headers, credentials in connection strings and command lines,
-  values under secret-labelled keys. Hashes, GUIDs and other indicators stay
+  authorisation headers, credentials in connection strings and command lines
+  (long flags, and the short or slash password flags of common admin and
+  lateral-movement tools: PsExec/PAExec, evil-winrm, CrackMapExec/NetExec,
+  Hydra, `net use`/`net user`, `schtasks /rp`, `xfreerdp /p:`, `cmdkey
+  /pass:`, sqlcmd/bcp `-P`, plink/pscp `-pw`, ldapsearch `-w`, 7-Zip/RAR/zip,
+  Impacket `domain/user:password@host`, mimikatz `/ntlm:`, Winlogon
+  `DefaultPassword`), signed-URL signatures (Azure SAS `sig=`), incoming
+  webhook URLs (Slack, Teams, Discord), vendor tokens (GitLab, npm,
+  SendGrid, Slack), values under secret-labelled keys. Hashes, GUIDs and other indicators stay
   intact because analysts need them.
 * **Personal data is not redacted.** User names, email addresses, host
   names, IP addresses and command lines are the substance of triage; they are
@@ -292,7 +335,11 @@ a database trigger that blocks `UPDATE`, `DELETE` and `TRUNCATE` except for
 the retention job. Entries cover logins and session events, refresh-token
 reuse, user and API-key changes, source and settings changes, suppression
 rules, claims, decisions, approvals and response execution, escalation
-creation, and platform-admin cross-tenant access. Entries never contain
+creation, and platform-admin cross-tenant access. Accounts created outside
+the API (`lg-sotf migrate`'s bootstrap admin, `create-admin`, the first admin
+of `create-tenant`) are audited as `user.created` (actor `migrate`/`cli`),
+plus `platform.admin_granted` for platform admins; `lg-sotf enqueue` and
+`dlq requeue` record `alert.reprocess_requested`. Entries never contain
 secrets or raw alert bodies (they are redacted again before logging).
 Admins read them with `GET /api/v1/audit` and verify the chain with
 `GET /api/v1/audit/verify`. Export the audit log for the period of an
@@ -304,7 +351,7 @@ incident before retention removes it.
   `pip-audit` and Bandit in CI, Gitleaks on every change and a weekly
   full-history scan, Dependabot for GitHub Actions and Python dependencies.
 * The container image runs as a non-root user (uid 10001) with a read-only
-  root filesystem, no build tools and no pip; `dumb-init` as PID 1. Kubernetes
+  root filesystem, no build tools, no pip/setuptools and no setuid binaries; `dumb-init` as PID 1. Kubernetes
   manifests drop all capabilities and use the `RuntimeDefault` seccomp
   profile.
 

@@ -450,6 +450,7 @@ async def test_deferral_does_not_reset_the_retry_budget(
 
     engine = FakeEngine(behaviour)
     worker = _worker(s, repos.db, redis_client, engine)
+    await _dispatch(repos, s, redis_client, TENANT_B)  # another tenant competes, so the cap applies
     poison["id"] = await _dispatch(repos, s, redis_client, TENANT_A)
     others = [await _dispatch(repos, s, redis_client, TENANT_A) for _ in range(12)]
     async with running(worker):
@@ -519,3 +520,45 @@ async def test_drain_timeout_is_honoured_when_saturated(
     assert await _status(repos, TENANT_A, alert_id) == "running"
     streams = WorkQueue(redis_client, s).streams
     assert (await redis_client.xpending(streams.high, CONSUMER_GROUP))["pending"] == 1
+
+
+async def test_a_tenant_alone_uses_every_slot(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    """PERF-1: per_tenant_concurrency is a noisy-neighbour limit, not a cap on single-tenant installs."""
+    s = runtime_settings(worker={"concurrency": 4, "per_tenant_concurrency": 1})
+    engine = FakeEngine(returns("completed", delay=0.3))
+    worker = _worker(s, repos.db, redis_client, engine)
+    ids = [await _dispatch(repos, s, redis_client, TENANT_A) for _ in range(4)]
+    async with running(worker):
+        for alert_id in ids:
+            await eventually(lambda alert_id=alert_id: _status_is(repos, alert_id, "completed"))
+    assert engine.max_active[TENANT_A] == 4
+    assert worker.stats.deferred == 0
+
+
+async def test_heartbeat_stops_even_when_its_cancellation_is_swallowed(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    """H1: Python 3.11 wait_for (inside redis-py) can swallow cancel(); the run must still finish."""
+    s = runtime_settings()
+    engine = FakeEngine(returns("completed", delay=0.5))
+    worker = _worker(s, repos.db, redis_client, engine, lease_s=0.15)
+    real_touch = worker._consumer.touch
+
+    async def swallowing_touch(msg: Any) -> None:
+        try:
+            await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            return  # exactly what wait_for does when the inner command finished at that moment
+        await real_touch(msg)
+
+    worker._consumer.touch = swallowing_touch  # type: ignore[method-assign]
+    alert_id = await _dispatch(repos, s, redis_client, TENANT_A)
+    async with running(worker):
+        await eventually(lambda: _status_is(repos, alert_id, "completed"), within=10)
+        await eventually(lambda: _no_inflight(worker), within=10)
+
+
+async def _no_inflight(worker: Any) -> bool:
+    return worker.inflight == 0

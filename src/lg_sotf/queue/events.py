@@ -17,7 +17,6 @@ state. A bus accepts at most ``max_subscribers`` concurrent subscriptions.
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -53,7 +52,11 @@ _GLOB_SPECIAL = "\\*?[]"
 
 
 class SubscriberLimitReached(RuntimeError):
-    """The bus already serves ``max_subscribers`` subscriptions."""
+    """The bus already serves ``max_subscribers`` subscriptions (or a per-owner/tenant quota)."""
+
+
+class SubscriberQuotaReached(SubscriberLimitReached):
+    """This owner or tenant already holds its share of subscriptions; others are unaffected."""
 
 
 def make_event(
@@ -87,14 +90,29 @@ class EventBus:
         redis: Redis,
         settings: Optional[Settings] = None,
         *,
-        max_subscribers: int = DEFAULT_MAX_SUBSCRIBERS,
-        subscriber_buffer: int = DEFAULT_SUBSCRIBER_BUFFER,
+        max_subscribers: Optional[int] = None,
+        subscriber_buffer: Optional[int] = None,
+        max_per_tenant: Optional[int] = None,
+        max_per_owner: Optional[int] = None,
     ) -> None:
-        if max_subscribers < 1 or subscriber_buffer < 1:
-            raise ValueError("max_subscribers and subscriber_buffer must be >= 1")
+        settings = settings or get_settings()
+        api = settings.api
+        max_subscribers = api.ws_max_subscribers if max_subscribers is None else max_subscribers
+        subscriber_buffer = api.ws_subscriber_buffer if subscriber_buffer is None else subscriber_buffer
+        max_per_tenant = api.ws_max_per_tenant if max_per_tenant is None else max_per_tenant
+        max_per_owner = api.ws_max_per_principal if max_per_owner is None else max_per_owner
+        if min(max_subscribers, subscriber_buffer, max_per_tenant, max_per_owner) < 1:
+            raise ValueError("subscriber limits and buffer must be >= 1")
         self._redis = redis
-        self._prefix = (settings or get_settings()).redis.key_prefix
-        self._hub = _Hub(redis, f"{_glob_escape(self._prefix)}:events:*", max_subscribers, subscriber_buffer)
+        self._prefix = settings.redis.key_prefix
+        self._hub = _Hub(
+            redis,
+            f"{_glob_escape(self._prefix)}:events:*",
+            max_subscribers,
+            subscriber_buffer,
+            max_per_channel=max_per_tenant,
+            max_per_owner=max_per_owner,
+        )
 
     def channel(self, tenant_id: str) -> str:
         return f"{self._prefix}:events:{validate_tenant_id(tenant_id)}"
@@ -116,16 +134,21 @@ class EventBus:
         await self._redis.publish(channel, payload)
 
     @asynccontextmanager
-    async def subscribe(self, tenant_id: str) -> AsyncIterator[AsyncIterator[Dict[str, Any]]]:
+    async def subscribe(
+        self, tenant_id: str, *, owner: Optional[str] = None
+    ) -> AsyncIterator[AsyncIterator[Dict[str, Any]]]:
         """Iterate this tenant's events until the context exits.
 
         The subscription is live before the context is entered, so events
         published after entry are delivered. A lost connection is
         re-established with backoff (events published meanwhile are missed).
         Iteration ends early if this subscriber falls ``subscriber_buffer``
-        events behind. Raises :class:`SubscriberLimitReached` when the bus is full.
+        events behind. Raises :class:`SubscriberLimitReached` when the bus is full,
+        and :class:`SubscriberQuotaReached` when the tenant or ``owner`` (e.g. a
+        principal id) already holds its share, so one tenant cannot use up the
+        bus for the others.
         """
-        subscription = await self._hub.add(self.channel(tenant_id))
+        subscription = await self._hub.add(self.channel(tenant_id), owner=owner)
         try:
             yield subscription
         finally:
@@ -146,8 +169,9 @@ _END = _End()
 class Subscription:
     """One subscriber's bounded event buffer; an async iterator of event dicts."""
 
-    def __init__(self, channel: str, buffer: int) -> None:
+    def __init__(self, channel: str, buffer: int, owner: Optional[str] = None) -> None:
         self.channel = channel
+        self.owner = owner
         self.lagged = False
         self._queue: asyncio.Queue[Union[Dict[str, Any], _End]] = asyncio.Queue(maxsize=buffer + 1)
         self._buffer = buffer
@@ -190,12 +214,24 @@ class Subscription:
 class _Hub:
     """Shares one pattern subscription between all subscribers of a bus."""
 
-    def __init__(self, redis: Redis, pattern: str, max_subscribers: int, buffer: int) -> None:
+    def __init__(
+        self,
+        redis: Redis,
+        pattern: str,
+        max_subscribers: int,
+        buffer: int,
+        *,
+        max_per_channel: Optional[int] = None,
+        max_per_owner: Optional[int] = None,
+    ) -> None:
         self._redis = redis
         self._pattern = pattern
         self._max = max_subscribers
+        self._max_per_channel = max_per_channel or max_subscribers
+        self._max_per_owner = max_per_owner or max_subscribers
         self._buffer = buffer
         self._subs: Dict[str, Set[Subscription]] = {}
+        self._owners: Dict[str, int] = {}
         self._count = 0
         self._lock = asyncio.Lock()
         self._pubsub: Optional[PubSub] = None
@@ -205,15 +241,21 @@ class _Hub:
     def count(self) -> int:
         return self._count
 
-    async def add(self, channel: str) -> Subscription:
+    async def add(self, channel: str, owner: Optional[str] = None) -> Subscription:
         async with self._lock:
+            if owner is not None and self._owners.get(owner, 0) >= self._max_per_owner:
+                raise SubscriberQuotaReached(f"this principal already has {self._max_per_owner} subscriptions")
+            if len(self._subs.get(channel, ())) >= self._max_per_channel:
+                raise SubscriberQuotaReached(f"this tenant already has {self._max_per_channel} subscriptions")
             if self._count >= self._max:
                 raise SubscriberLimitReached(f"event bus already has {self._max} subscribers")
             if self._reader is None or self._reader.done():
                 await self._start()
-            sub = Subscription(channel, self._buffer)
+            sub = Subscription(channel, self._buffer, owner)
             self._subs.setdefault(channel, set()).add(sub)
             self._count += 1
+            if owner is not None:
+                self._owners[owner] = self._owners.get(owner, 0) + 1
             return sub
 
     async def remove(self, sub: Subscription) -> None:
@@ -237,6 +279,12 @@ class _Hub:
             return
         subs.discard(sub)
         self._count -= 1
+        if sub.owner is not None:
+            left = self._owners.get(sub.owner, 1) - 1
+            if left > 0:
+                self._owners[sub.owner] = left
+            else:
+                self._owners.pop(sub.owner, None)
         if not subs:
             del self._subs[sub.channel]
 
@@ -321,8 +369,13 @@ class _Hub:
             return
         if not isinstance(event, dict):
             return
+        # Each subscriber gets its own copy; decoding the small JSON payload again is several
+        # times cheaper than copy.deepcopy of the decoded event.
+        first = True
         for sub in list(subs):
-            if not sub.offer(copy.deepcopy(event)):
+            copy_ = event if first else json.loads(data)
+            first = False
+            if not sub.offer(copy_):
                 self._detach(sub)
                 if sub.lagged:
                     log.warning("events.subscriber_lagged", buffer=self._buffer)

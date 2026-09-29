@@ -10,6 +10,14 @@ import { Button, ErrorMessage, TextField } from '../components/ui';
 import { getConfig } from '../config';
 
 function loginErrorMessage(err: unknown): unknown {
+  if (err instanceof ApiError && err.status === 401 && err.code === 'tenant_required') {
+    return new ApiError({
+      status: 401,
+      code: err.code,
+      message: 'This account exists in several tenants. Enter the tenant and sign in again.',
+      requestId: err.requestId,
+    });
+  }
   if (err instanceof ApiError && err.status === 401) {
     return new ApiError({
       status: 401,

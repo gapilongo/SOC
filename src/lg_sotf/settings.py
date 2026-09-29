@@ -112,7 +112,10 @@ class LLMTierSettings(BaseModel):
     effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = None
     timeout_s: float = 60.0
     max_retries: int = 2
-    max_concurrency: int = 16
+    # Concurrent calls of this tier per process. None (the default) = worker.concurrency, so
+    # every run in flight can call the model at once; set a number only to respect a provider
+    # rate limit.
+    max_concurrency: Optional[int] = Field(default=None, ge=1)
 
 
 class FastTierSettings(LLMTierSettings):
@@ -124,7 +127,6 @@ class DeepTierSettings(LLMTierSettings):
     model: str = "claude-opus-5-5"
     max_tokens: int = 16_000
     timeout_s: float = 300.0
-    max_concurrency: int = 8
 
 
 class LLMSettings(BaseModel):
@@ -183,6 +185,17 @@ class APISettings(BaseModel):
     metrics_token: Optional[SecretStr] = None
     docs_enabled: bool = True
     forwarded_allow_ips: str = "127.0.0.1"
+    # Live-event WebSockets (per API process): concurrent sockets per principal and per
+    # tenant, the whole process, each subscriber's event buffer, and how often an open
+    # socket re-checks its token, account and tenant.
+    ws_max_per_principal: int = Field(default=5, ge=1)
+    ws_max_per_tenant: int = Field(default=100, ge=1)
+    ws_max_subscribers: int = Field(default=1_000, ge=1)
+    ws_subscriber_buffer: int = Field(default=256, ge=1)
+    ws_revalidate_s: float = Field(default=15.0, gt=0)
+    # Single-alert ingest admission: requests allowed to be in flight on the ingest routes at
+    # once (per API process); more get 503 + Retry-After immediately instead of queueing.
+    max_inflight_ingest: int = Field(default=64, ge=1)
 
 
 class WorkerSettings(BaseModel):
