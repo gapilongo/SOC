@@ -145,6 +145,7 @@ fi
 # --- trusted reverse proxies (http context, always generated) ------------------------
 # Only a listed proxy may set the client address (real_ip) and the original
 # scheme; for everyone else X-Forwarded-Proto is this connection's $scheme.
+# shellcheck disable=SC2016 # the $names below are nginx variables and must stay literal
 {
   echo 'geo $realip_remote_addr $lg_trusted_proxy {'
   echo '  default 0;'

@@ -1,0 +1,243 @@
+name: Release images
+
+# Publishes the backend and frontend images to GHCR and hands them to the
+# Deploy workflow (docs/cicd.md):
+#
+# * CI succeeded for a push to main -> build once for linux/amd64 and
+#   linux/arm64 (Oracle Ampere VMs), push ghcr.io/gapilongo/lg-sotf[-frontend]
+#   as sha-<7 hex> and main, then deploy that digest to the `dev` environment.
+# * A release tag vX.Y.Z is pushed -> nothing is rebuilt: the sha-<7 hex>
+#   manifests of the tagged commit (which went through main CI) are re-tagged
+#   vX.Y.Z and that same digest is deployed to the `uat` environment.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  push:
+    tags: ["v*.*.*"]
+
+# Jobs opt in to what they need; packages: write only where images are pushed.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-images-${{ github.event_name == 'push' && github.ref || 'main' }}
+  cancel-in-progress: false
+
+env:
+  APP_REPO: ghcr.io/gapilongo/lg-sotf
+  FRONTEND_REPO: ghcr.io/gapilongo/lg-sotf-frontend
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  build:
+    name: Build and push (amd64 + arm64)
+    # Only a green CI run of a push to main of this repository (not forks, not
+    # pull requests, not the weekly scheduled scan).
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.repository == 'gapilongo/SOC'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+      commit: ${{ steps.meta.outputs.commit }}
+      app_digest: ${{ steps.app.outputs.digest }}
+      frontend_digest: ${{ steps.frontend.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Image metadata
+        id: meta
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "unexpected head sha" >&2; exit 1; }
+          version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/lg_sotf/__init__.py)"
+          {
+            echo "commit=$HEAD_SHA"
+            echo "tag=sha-${HEAD_SHA:0:7}"
+            echo "version=${version:-0.0.0}+sha.${HEAD_SHA:0:7}"
+            echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Backend image
+        id: app
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ${{ env.APP_REPO }}:${{ steps.meta.outputs.tag }}
+            ${{ env.APP_REPO }}:main
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ steps.meta.outputs.commit }}
+            CREATED=${{ steps.meta.outputs.created }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+      - name: Frontend image
+        id: frontend
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: src/lg_front
+          platforms: ${{ env.PLATFORMS }}
+          push: true
+          tags: |
+            ${{ env.FRONTEND_REPO }}:${{ steps.meta.outputs.tag }}
+            ${{ env.FRONTEND_REPO }}:main
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ steps.meta.outputs.commit }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+      - name: Summary
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          APP_DIGEST: ${{ steps.app.outputs.digest }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          {
+            echo "### Images published ($TAG)"
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            echo "| \`$APP_REPO:$TAG\` | \`$APP_DIGEST\` |"
+            echo "| \`$FRONTEND_REPO:$TAG\` | \`$FRONTEND_DIGEST\` |"
+            echo ""
+            echo "Platforms: $PLATFORMS. Also tagged \`main\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-dev:
+    name: Deploy dev
+    needs: build
+    # Off until the dev VM exists: set the repository variable AUTO_DEPLOY_DEV=true
+    # (Settings > Secrets and variables > Actions > Variables). docs/cicd.md.
+    if: vars.AUTO_DEPLOY_DEV == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: dev
+      image_tag: ${{ needs.build.outputs.image_tag }}
+      commit: ${{ needs.build.outputs.commit }}
+      app_digest: ${{ needs.build.outputs.app_digest }}
+      frontend_digest: ${{ needs.build.outputs.frontend_digest }}
+    secrets: inherit
+
+  promote:
+    name: Promote sha image to release tag
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && github.repository == 'gapilongo/SOC'
+    runs-on: ubuntu-latest
+    # Waits (up to about 45 minutes) for the tagged commit's main build when the
+    # tag was pushed right after the merge.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.check.outputs.tag }}
+      commit: ${{ steps.check.outputs.commit }}
+      app_digest: ${{ steps.retag.outputs.app_digest }}
+      frontend_digest: ${{ steps.retag.outputs.frontend_digest }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check the tag
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::release tags look like v1.2.3 (got $TAG)"; exit 1; }
+          commit="$(git rev-parse "refs/tags/${TAG}^{commit}")"
+          # Only commits that are on main have been through CI and have images.
+          git merge-base --is-ancestor "$commit" origin/main \
+            || { echo "::error::$TAG ($commit) is not on main; tag a commit that main CI built"; exit 1; }
+          { echo "tag=$TAG"; echo "commit=$commit"; echo "sha_tag=sha-${commit:0:7}"; } >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Re-tag the existing manifests (no rebuild)
+        id: retag
+        env:
+          TAG: ${{ steps.check.outputs.tag }}
+          SHA_TAG: ${{ steps.check.outputs.sha_tag }}
+        run: |
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty'
+          }
+          for _ in $(seq 1 90); do
+            app="$(digest_of "$APP_REPO:$SHA_TAG" || true)"
+            fe="$(digest_of "$FRONTEND_REPO:$SHA_TAG" || true)"
+            [ -n "$app" ] && [ -n "$fe" ] && break
+            echo "waiting for $SHA_TAG images (main build still running?)"
+            sleep 30
+          done
+          [ -n "$app" ] && [ -n "$fe" ] || { echo "::error::no $SHA_TAG images; did Release images succeed for this commit?"; exit 1; }
+          docker buildx imagetools create --tag "$APP_REPO:$TAG" "$APP_REPO@$app"
+          docker buildx imagetools create --tag "$FRONTEND_REPO:$TAG" "$FRONTEND_REPO@$fe"
+          # The tag must now resolve to exactly the digest main built.
+          [ "$(digest_of "$APP_REPO:$TAG")" = "$app" ] && [ "$(digest_of "$FRONTEND_REPO:$TAG")" = "$fe" ] \
+            || { echo "::error::re-tagged digest differs"; exit 1; }
+          { echo "app_digest=$app"; echo "frontend_digest=$fe"; } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Promoted $SHA_TAG to $TAG"
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            echo "| \`$APP_REPO:$TAG\` | \`$app\` |"
+            echo "| \`$FRONTEND_REPO:$TAG\` | \`$fe\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-uat:
+    name: Deploy uat
+    needs: promote
+    # Off until the uat VM exists: set the repository variable AUTO_DEPLOY_UAT=true.
+    if: vars.AUTO_DEPLOY_UAT == 'true'
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      environment: uat
+      image_tag: ${{ needs.promote.outputs.image_tag }}
+      commit: ${{ needs.promote.outputs.commit }}
+      app_digest: ${{ needs.promote.outputs.app_digest }}
+      frontend_digest: ${{ needs.promote.outputs.frontend_digest }}
+    secrets: inherit

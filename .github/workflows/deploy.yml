@@ -1,0 +1,275 @@
+name: Deploy
+
+# Deploys published images to an environment's VM over SSH (docs/cicd.md).
+#
+# * Called by "Release images": dev after every green main build, uat after a
+#   vX.Y.Z tag has been promoted (same digest, never rebuilt).
+# * Run by hand (Actions > Deploy > Run workflow) to redeploy or roll back:
+#   pick the environment and an existing image tag (sha-<7 hex>, main or
+#   vX.Y.Z).
+#
+# The deploy bundle (compose files, Caddy templates, deploy/backup scripts) is
+# taken from the exact commit the images were built from, copied to the VM and
+# run there as the non-root deploy user. Secrets travel only on the SSH
+# session's stdin and are written on the VM to a 0600 env file; they are never
+# put on a command line or printed.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        type: string
+        required: true
+      image_tag:
+        type: string
+        required: true
+      commit:
+        type: string
+        required: false
+        default: ""
+      app_digest:
+        type: string
+        required: false
+        default: ""
+      frontend_digest:
+        type: string
+        required: false
+        default: ""
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy to
+        type: choice
+        options: [dev, uat]
+        required: true
+      image_tag:
+        description: "Image tag to deploy: sha-<7 hex>, main or vX.Y.Z (the previous one rolls back)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  APP_REPO: ghcr.io/gapilongo/lg-sotf
+  FRONTEND_REPO: ghcr.io/gapilongo/lg-sotf-frontend
+  REMOTE_ROOT: /opt/lg-sotf
+
+jobs:
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: ${{ inputs.environment }}
+      url: https://${{ vars.APP_DOMAIN }}
+    # One deploy per environment at a time; a queued one waits (never cancels
+    # a deploy half way through).
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      TARGET_ENV: ${{ inputs.environment }}
+      IMAGE_TAG: ${{ inputs.image_tag }}
+      INPUT_COMMIT: ${{ inputs.commit }}
+      INPUT_APP_DIGEST: ${{ inputs.app_digest }}
+      INPUT_FRONTEND_DIGEST: ${{ inputs.frontend_digest }}
+      APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER || 'deploy' }}
+      DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+    steps:
+      - name: Validate inputs and settings
+        env:
+          HAS_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
+          HAS_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS != '' }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          [[ "$TARGET_ENV" =~ ^(dev|uat)$ ]] || fail "environment must be dev or uat"
+          [[ "$IMAGE_TAG" =~ ^(main|sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] \
+            || fail "image_tag must be sha-<hex>, main or vX.Y.Z"
+          [ -z "$INPUT_COMMIT" ] || [[ "$INPUT_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "bad commit input"
+          for d in "$INPUT_APP_DIGEST" "$INPUT_FRONTEND_DIGEST"; do
+            [ -z "$d" ] || [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "bad digest input"
+          done
+          [[ "$APP_DOMAIN" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] \
+            || fail "set the APP_DOMAIN variable of the $TARGET_ENV environment (e.g. soc-dev.duckdns.org)"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]] \
+            || fail "set the DEPLOY_HOST variable of the $TARGET_ENV environment (VM public IP or DNS name)"
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || fail "bad DEPLOY_USER"
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || fail "bad DEPLOY_PORT"
+          [ "$HAS_SSH_KEY" = "true" ] || fail "missing secret DEPLOY_SSH_KEY in environment $TARGET_ENV"
+          [ "$HAS_KNOWN_HOSTS" = "true" ] || fail "missing secret DEPLOY_SSH_KNOWN_HOSTS in environment $TARGET_ENV"
+
+      - name: Check application secrets are present
+        env:
+          POSTGRES_SUPERUSER_PASSWORD: ${{ secrets.POSTGRES_SUPERUSER_PASSWORD }}
+          LGSOTF_OWNER_PASSWORD: ${{ secrets.LGSOTF_OWNER_PASSWORD }}
+          LGSOTF_APP_PASSWORD: ${{ secrets.LGSOTF_APP_PASSWORD }}
+          LG_SOTF_AUTH__JWT_SECRET: ${{ secrets.LG_SOTF_AUTH__JWT_SECRET }}
+          LG_SOTF_SECURITY__ENCRYPTION_KEYS: ${{ secrets.LG_SOTF_SECURITY__ENCRYPTION_KEYS }}
+          LG_SOTF_SECURITY__INDICATOR_HMAC_KEY: ${{ secrets.LG_SOTF_SECURITY__INDICATOR_HMAC_KEY }}
+          LG_SOTF_API__METRICS_TOKEN: ${{ secrets.LG_SOTF_API__METRICS_TOKEN }}
+          LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD }}
+          BOOTSTRAP_ADMIN_EMAIL: ${{ vars.BOOTSTRAP_ADMIN_EMAIL }}
+        run: |
+          missing=()
+          for k in POSTGRES_SUPERUSER_PASSWORD LGSOTF_OWNER_PASSWORD LGSOTF_APP_PASSWORD \
+                   LG_SOTF_AUTH__JWT_SECRET LG_SOTF_SECURITY__ENCRYPTION_KEYS \
+                   LG_SOTF_SECURITY__INDICATOR_HMAC_KEY LG_SOTF_API__METRICS_TOKEN \
+                   LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD BOOTSTRAP_ADMIN_EMAIL; do
+            [ -n "${!k}" ] || missing+=("$k")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::missing in environment $TARGET_ENV: ${missing[*]} (see docs/cicd.md)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve image digests and source commit
+        id: images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          # Read access for private packages; public packages need none.
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r '.digest // empty'
+          }
+          app="${INPUT_APP_DIGEST:-$(digest_of "$APP_REPO:$IMAGE_TAG")}"
+          fe="${INPUT_FRONTEND_DIGEST:-$(digest_of "$FRONTEND_REPO:$IMAGE_TAG")}"
+          [[ "$app" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "no image $APP_REPO:$IMAGE_TAG"
+          [[ "$fe" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "no image $FRONTEND_REPO:$IMAGE_TAG"
+          # The source commit is the image's own revision label (set by Release images).
+          commit="$INPUT_COMMIT"
+          if [ -z "$commit" ]; then
+            commit="$(docker buildx imagetools inspect "$APP_REPO@$app" --format '{{json .Image}}' \
+              | jq -r '(if has("config") then . else .["linux/amd64"] end).config.Labels["org.opencontainers.image.revision"] // empty')"
+          fi
+          [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || fail "cannot tell which commit built $APP_REPO:$IMAGE_TAG"
+          git cat-file -e "${commit}^{commit}" 2>/dev/null || fail "commit $commit is not in this repository"
+          git cat-file -e "${commit}:deploy/vm/deploy.sh" 2>/dev/null \
+            || fail "commit $commit predates deploy/vm; deploy a newer image"
+          {
+            echo "app_ref=$APP_REPO@$app"
+            echo "frontend_ref=$FRONTEND_REPO@$fe"
+            echo "app_digest=$app"
+            echo "frontend_digest=$fe"
+            echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+          docker logout ghcr.io >/dev/null
+
+      - name: Build the deploy bundle
+        env:
+          COMMIT: ${{ steps.images.outputs.commit }}
+        run: |
+          git archive --format=tar.gz -o "$RUNNER_TEMP/bundle.tgz" "$COMMIT" \
+            deploy/vm docker/docker-compose.yml docker/docker-compose.prod.yml \
+            docker/postgres/init-roles.sh docker/empty-ca.crt
+          tar -tzf "$RUNNER_TEMP/bundle.tgz" | sed 's/^/  /'
+
+      - name: Configure SSH (pinned host key)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          dir="$RUNNER_TEMP/ssh"
+          mkdir -p "$dir"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$dir/id_deploy"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" | tr -d '\r' > "$dir/known_hosts"
+          cat > "$dir/config" <<EOF
+          Host lgsotf-target
+            HostName $DEPLOY_HOST
+            Port $DEPLOY_PORT
+            User $DEPLOY_USER
+            IdentityFile $dir/id_deploy
+            IdentitiesOnly yes
+            UserKnownHostsFile $dir/known_hosts
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 20
+            ServerAliveInterval 15
+            ServerAliveCountMax 8
+          EOF
+          echo "SSH_CONFIG=$dir/config" >> "$GITHUB_ENV"
+          ssh -F "$dir/config" lgsotf-target true
+
+      - name: Upload the bundle
+        env:
+          COMMIT: ${{ steps.images.outputs.commit }}
+        run: |
+          release="$REMOTE_ROOT/env/$TARGET_ENV/releases/$COMMIT"
+          ssh -F "$SSH_CONFIG" lgsotf-target \
+            "set -eu; rm -rf '$release.tmp'; mkdir -p '$release.tmp'; tar -xzf - -C '$release.tmp'; rm -rf '$release'; mv '$release.tmp' '$release'" \
+            < "$RUNNER_TEMP/bundle.tgz"
+
+      - name: Deploy (automatic rollback on failed health checks)
+        env:
+          COMMIT: ${{ steps.images.outputs.commit }}
+          APP_REF: ${{ steps.images.outputs.app_ref }}
+          FRONTEND_REF: ${{ steps.images.outputs.frontend_ref }}
+          # Sent on stdin only (see deploy/vm/deploy.sh for the accepted keys).
+          POSTGRES_SUPERUSER_PASSWORD: ${{ secrets.POSTGRES_SUPERUSER_PASSWORD }}
+          LGSOTF_OWNER_PASSWORD: ${{ secrets.LGSOTF_OWNER_PASSWORD }}
+          LGSOTF_APP_PASSWORD: ${{ secrets.LGSOTF_APP_PASSWORD }}
+          LG_SOTF_AUTH__JWT_SECRET: ${{ secrets.LG_SOTF_AUTH__JWT_SECRET }}
+          LG_SOTF_SECURITY__ENCRYPTION_KEYS: ${{ secrets.LG_SOTF_SECURITY__ENCRYPTION_KEYS }}
+          LG_SOTF_SECURITY__INDICATOR_HMAC_KEY: ${{ secrets.LG_SOTF_SECURITY__INDICATOR_HMAC_KEY }}
+          LG_SOTF_API__METRICS_TOKEN: ${{ secrets.LG_SOTF_API__METRICS_TOKEN }}
+          LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL: ${{ vars.BOOTSTRAP_ADMIN_EMAIL }}
+          LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD: ${{ secrets.LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LG_SOTF_LLM__PROVIDER: ${{ vars.LLM_PROVIDER }}
+          ACME_EMAIL: ${{ vars.ACME_EMAIL }}
+          GHCR_USER: ${{ vars.GHCR_READ_USER }}
+          GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          keys=(POSTGRES_SUPERUSER_PASSWORD LGSOTF_OWNER_PASSWORD LGSOTF_APP_PASSWORD
+                LG_SOTF_AUTH__JWT_SECRET LG_SOTF_SECURITY__ENCRYPTION_KEYS LG_SOTF_SECURITY__INDICATOR_HMAC_KEY
+                LG_SOTF_API__METRICS_TOKEN LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD
+                ANTHROPIC_API_KEY LG_SOTF_LLM__PROVIDER ACME_EMAIL GHCR_USER GHCR_TOKEN)
+          release="$REMOTE_ROOT/env/$TARGET_ENV/releases/$COMMIT"
+          # printf is a shell builtin: values never appear in a process's argv.
+          for k in "${keys[@]}"; do
+            [ -z "${!k}" ] || printf '%s=%s\n' "$k" "${!k}"
+          done | ssh -F "$SSH_CONFIG" lgsotf-target \
+            "bash '$release/deploy/vm/deploy.sh' --env '$TARGET_ENV' --domain '$APP_DOMAIN' --root '$REMOTE_ROOT' --app-image '$APP_REF' --frontend-image '$FRONTEND_REF' --version '$IMAGE_TAG' --secrets-stdin"
+
+      - name: Job summary
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+          COMMIT: ${{ steps.images.outputs.commit }}
+          APP_REF: ${{ steps.images.outputs.app_ref }}
+          FRONTEND_REF: ${{ steps.images.outputs.frontend_ref }}
+        run: |
+          {
+            echo "### Deploy to \`$TARGET_ENV\`: $OUTCOME"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| URL | https://$APP_DOMAIN |"
+            echo "| Version (image tag) | \`$IMAGE_TAG\` |"
+            echo "| Commit | \`${COMMIT:-unresolved}\` |"
+            echo "| Backend | \`${APP_REF:-unresolved}\` |"
+            echo "| Frontend | \`${FRONTEND_REF:-unresolved}\` |"
+            echo ""
+            if [ "$OUTCOME" != "success" ]; then
+              echo "If the new version failed its health checks, the VM rolled back to the previous version"
+              echo "(see the Deploy step log). To roll back by hand, run this workflow with the previous tag."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the SSH key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/ssh" "$RUNNER_TEMP/bundle.tgz"

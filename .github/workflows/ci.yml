@@ -62,7 +62,7 @@ jobs:
           src/lg_sotf/services
           src/lg_sotf/ingestion
       - name: Shellcheck
-        run: shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh src/lg_front/docker/entrypoint.sh
+        run: shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh src/lg_front/docker/entrypoint.sh deploy/vm/bootstrap.sh deploy/vm/deploy.sh deploy/vm/backup.sh
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
@@ -225,6 +225,12 @@ jobs:
         run: |
           docker compose -f docker/docker-compose.yml config -q
           docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml config -q
+          # VM overlay (deploy/vm, docs/cicd.md) with the values deploy.sh renders.
+          APP_IMAGE=ghcr.io/gapilongo/lg-sotf:ci FRONTEND_IMAGE=ghcr.io/gapilongo/lg-sotf-frontend:ci \
+          LGSOTF_ENV=dev LGSOTF_ENV_DIR=/opt/lg-sotf/env/dev LG_SOTF_API__FORWARDED_ALLOW_IPS=172.31.250.10,172.31.251.2 \
+            docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
+            -f deploy/vm/docker-compose.vm.yml config -q
+          docker compose -f deploy/vm/docker-compose.edge.yml config -q
       - name: Stack smoke test (compose, HTTP API only)
         # Full customer path against the image built above: ingest, review, approvals, isolation,
         # sessions, worker SIGKILL/restart without losing alerts, Redis outage and recovery.

@@ -45,7 +45,9 @@ def _source_files() -> List[Path]:
 
 
 def _stages(text: str) -> List[str]:
-    return re.findall(r"^FROM\s+(\S+)(?:\s+AS\s+\S+)?", text, flags=re.MULTILINE | re.IGNORECASE)
+    return re.findall(
+        r"^FROM\s+(?:--platform=\S+\s+)?(\S+)(?:\s+AS\s+\S+)?", text, flags=re.MULTILINE | re.IGNORECASE
+    )
 
 
 def test_dockerfile_is_multi_stage_with_overridable_base_images() -> None:
@@ -54,6 +56,10 @@ def test_dockerfile_is_multi_stage_with_overridable_base_images() -> None:
     assert re.search(r"^ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:", text, re.MULTILINE)
     stages = _stages(text)
     assert stages == ["${NODE_IMAGE}", "${NGINX_IMAGE}"]
+    # Multi-arch builds: the static bundle is built natively on the build host;
+    # only the nginx runtime stage is per target platform.
+    assert "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build" in text
+    assert re.search(r"^FROM \$\{NGINX_IMAGE\} AS runtime$", text, re.MULTILINE)
     assert "COPY --from=build /app/dist /usr/share/nginx/html" in text
     # Reproducible install from the lockfile, with no install scripts.
     assert "npm ci --ignore-scripts" in text
