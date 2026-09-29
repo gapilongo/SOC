@@ -39,6 +39,7 @@ from lg_sotf.runtime.orphans import claim_orphaned_runs, oldest_undelivered_age_
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.runtime.worker import EventPublisherLike, sanitize_error
 from lg_sotf.services.dispatch import DispatchableAlert, dispatch_new_alerts
+from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -316,6 +317,7 @@ class Scheduler:
     # -- stale runs ----------------------------------------------------------
 
     async def sweep_stale_runs(self) -> None:
+        await self._settle_orphaned_actions()
         max_attempts = self._settings.worker.max_deliveries
         for _ in range(MAX_SWEEP_BATCHES):
             sweep = await self._repos.runs.requeue_stale_all_tenants(max_attempts=max_attempts, limit=SWEEP_BATCH)
@@ -327,6 +329,16 @@ class Scheduler:
                 log.info("scheduler.stale_runs", requeued=len(sweep.requeued), dead_lettered=len(sweep.dead_lettered))
             if len(sweep.requeued) + len(sweep.dead_lettered) < SWEEP_BATCH:
                 return
+
+    async def _settle_orphaned_actions(self) -> None:
+        # Actions left 'executing' by a dead-lettered run would otherwise stay there forever.
+        try:
+            settled = await ResponseService(self._repos, self._settings, self._events).fail_orphaned_executing()
+        except Exception as exc:  # noqa: BLE001 - retried on the next sweep
+            log.warning("scheduler.orphaned_actions_failed", error=type(exc).__name__)
+            return
+        if settled:
+            log.info("scheduler.orphaned_actions", settled=settled)
 
     async def _enqueue_requeued(self, run: WorkflowRun) -> None:
         try:
@@ -453,7 +465,7 @@ class Scheduler:
                 # An analyst claimed or decided it meanwhile (version moved on); nothing to do.
                 log.info("scheduler.sla_skipped", escalation_id=esc.id, error=type(exc).__name__)
                 return
-            log.info("scheduler.sla_breach_handled", escalation_id=esc.id, action=action, level=updated.level)
+            log.info("scheduler.sla_breach_handled", escalation_id=esc.id, action=action, escalation_level=updated.level)
             await self._publish(
                 esc.tenant_id,
                 make_event(

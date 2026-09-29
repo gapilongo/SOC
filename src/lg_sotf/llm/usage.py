@@ -282,6 +282,135 @@ class UsageRecorder:
             self._pending.clear()
 
 
+_TALLY_COUNTERS = (
+    "calls",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "refusals",
+    "errors",
+    "budget_exceeded",
+)
+MAX_TALLY_AGENTS = 16
+
+
+@dataclass
+class _AgentTally:
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    refusals: int = 0
+    errors: int = 0
+    budget_exceeded: int = 0
+    cost_usd: Decimal = field(default_factory=Decimal)
+
+
+@dataclass
+class UsageTally:
+    """Token and cost totals for one unit of work (an alert run, one agent invocation).
+
+    :func:`~lg_sotf.llm.structured.ainvoke_structured` adds every call it
+    makes when given a tally; agents persist the totals to
+    ``alerts.summary.llm_usage`` with :func:`merge_usage_summary`.
+    """
+
+    by_agent: Dict[str, _AgentTally] = field(default_factory=dict)
+
+    def _agent(self, agent: str) -> _AgentTally:
+        key = agent[:64]
+        tally = self.by_agent.get(key)
+        if tally is None:
+            if len(self.by_agent) >= MAX_TALLY_AGENTS:
+                key = "other"
+                tally = self.by_agent.setdefault(key, _AgentTally())
+            else:
+                tally = self.by_agent[key] = _AgentTally()
+        return tally
+
+    def add_call(self, agent: str, samples: Sequence[UsageSample], outcome: Outcome, cost: Decimal) -> None:
+        t = self._agent(agent)
+        t.calls += 1
+        for s in samples:
+            t.input_tokens += s.input_tokens
+            t.output_tokens += s.output_tokens
+            t.cache_read_tokens += s.cache_read_tokens
+            t.cache_write_tokens += s.cache_write_tokens
+        t.cost_usd += cost
+        if outcome == "refusal":
+            t.refusals += 1
+        elif outcome in ("error", "invalid_output"):
+            t.errors += 1
+
+    def add_budget_exceeded(self, agent: str) -> None:
+        self._agent(agent).budget_exceeded += 1
+
+    @property
+    def calls(self) -> int:
+        return sum(t.calls for t in self.by_agent.values())
+
+    @property
+    def cost_usd(self) -> Decimal:
+        return sum((t.cost_usd for t in self.by_agent.values()), Decimal(0))
+
+    def is_empty(self) -> bool:
+        return not any(t.calls or t.budget_exceeded for t in self.by_agent.values())
+
+    def as_summary(self) -> Dict[str, Any]:
+        """JSON-ready totals: ``{calls, ..., cost_usd, total_tokens, by_agent: {agent: {...}}}``."""
+        return merge_usage_summary({}, self)
+
+
+def _as_int(value: Any) -> int:
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else 0
+
+
+def _as_decimal(value: Any) -> Decimal:
+    if isinstance(value, bool) or not isinstance(value, (int, float, str, Decimal)):
+        return Decimal(0)
+    try:
+        amount = Decimal(str(value))
+    except ArithmeticError:
+        return Decimal(0)
+    return amount if amount.is_finite() and amount > 0 else Decimal(0)
+
+
+def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally) -> Dict[str, Any]:
+    """Add ``tally`` to a stored ``summary.llm_usage`` object and return the new object.
+
+    Unknown or malformed stored values are treated as zero, so a hand-edited
+    summary can never break processing.
+    """
+    stored: Mapping[str, Any] = existing if isinstance(existing, Mapping) else {}
+    raw_agents = stored.get("by_agent")
+    stored_agents: Mapping[str, Any] = raw_agents if isinstance(raw_agents, Mapping) else {}
+    agents: Dict[str, Dict[str, Any]] = {}
+    for name, value in list(stored_agents.items())[:MAX_TALLY_AGENTS]:
+        if isinstance(name, str) and isinstance(value, Mapping):
+            entry: Dict[str, Any] = {c: _as_int(value.get(c)) for c in _TALLY_COUNTERS}
+            entry["cost_usd"] = _as_decimal(value.get("cost_usd"))
+            agents[name[:64]] = entry
+    for name, t in tally.by_agent.items():
+        fresh: Dict[str, Any] = {**{c: 0 for c in _TALLY_COUNTERS}, "cost_usd": Decimal(0)}
+        entry = agents.setdefault(name, fresh)
+        for c in _TALLY_COUNTERS:
+            entry[c] += getattr(t, c)
+        entry["cost_usd"] += t.cost_usd
+    totals: Dict[str, Any] = {c: sum(a[c] for a in agents.values()) for c in _TALLY_COUNTERS}
+    cost = sum((a["cost_usd"] for a in agents.values()), Decimal(0))
+    totals["total_tokens"] = (
+        totals["input_tokens"] + totals["output_tokens"] + totals["cache_read_tokens"] + totals["cache_write_tokens"]
+    )
+    totals["cost_usd"] = float(cost.quantize(_COST_QUANTUM))
+    totals["by_agent"] = {
+        name: {**{c: a[c] for c in _TALLY_COUNTERS}, "cost_usd": float(a["cost_usd"].quantize(_COST_QUANTUM))}
+        for name, a in sorted(agents.items())
+    }
+    return totals
+
+
 def _row(key: _Key, agg: _Aggregate) -> LLMUsageRow:
     tenant_id, day, model, agent = key
     return LLMUsageRow(

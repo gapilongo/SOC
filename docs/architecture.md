@@ -220,6 +220,17 @@ Rules:
   policy `auto` for that risk level *and* guardrails passing.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
+* A model refusal at any stage escalates with reason `model_refused`; no
+  actions are planned from a refused analysis.
+* Related alerts (shared key entities or fingerprint within the grouping
+  window) attach to one open escalation; one analyst decision resumes the
+  parent and every attached run. A benign/false-positive decision is only
+  inherited by attached alerts whose own evidence does not contradict it;
+  otherwise the attached alert is detached into its own escalation.
+* A decision on an SLA-expired escalation is still accepted (audited with
+  `after_sla_expiry`), so expiry never strands an alert.
+* Approvals are per action; unmentioned actions stay pending unless the
+  request sets `reject_remaining`.
 
 ## 9. LLM layer (`lg_sotf.llm`)
 

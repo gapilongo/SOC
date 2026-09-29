@@ -4,8 +4,11 @@
 (``output_config.format``, via ``with_structured_output(method="json_schema")``)
 where the model supports them and tool calling elsewhere. It distinguishes a
 refusal (:class:`LLMRefusal`) from truncated or invalid output
-(:class:`LLMOutputError`), never repairs or clamps values, meters usage, and
-honours the per-tier concurrency slot and the tenant token budget.
+(:class:`LLMOutputError`), never repairs or clamps values itself, meters
+usage, and honours the per-tier concurrency slot and the tenant token budget.
+Schemas decide how strict they are: fields declared with
+:mod:`lg_sotf.llm.schema` truncate over-long text (the Anthropic API does not
+enforce ``maxLength``/``maxItems``), while numbers keep their range checks.
 """
 
 from __future__ import annotations
@@ -13,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Type, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -23,7 +27,7 @@ from redis.exceptions import RedisError
 from lg_sotf.llm.budget import USE_DEFAULT, BudgetLimit, Reservation, TokenBudget
 from lg_sotf.llm.client import Tier, llm_slot, model_capabilities, model_name_of, provider_of
 from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
-from lg_sotf.llm.usage import Outcome, UsageSample, extract_usage, get_usage_recorder
+from lg_sotf.llm.usage import Outcome, UsageSample, UsageTally, extract_usage, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings, get_settings
 
@@ -156,6 +160,7 @@ async def ainvoke_structured(
     settings: Optional[Settings] = None,
     budget: Optional[TokenBudget] = None,
     budget_limit: BudgetLimit = USE_DEFAULT,
+    tally: Optional[UsageTally] = None,
 ) -> T:
     """Invoke ``model`` and return a validated ``schema`` instance.
 
@@ -164,7 +169,8 @@ async def ainvoke_structured(
     With ``budget`` and ``tenant_id`` an estimate is reserved first and settled
     with the real token count afterwards. ``budget_limit`` is the tenant's
     daily limit: an int, ``None`` for unlimited, or ``USE_DEFAULT`` (the
-    default) for ``llm.daily_token_budget_per_tenant``.
+    default) for ``llm.daily_token_budget_per_tenant``. ``tally``, when
+    given, accumulates the call's tokens and cost (per-alert totals).
     """
     s = settings or get_settings()
     model_id = model_name_of(model)
@@ -178,6 +184,8 @@ async def ainvoke_structured(
             reservation = await budget.check_and_reserve(tenant_id, estimate, limit=budget_limit)
         except LLMBudgetExceeded:
             recorder.record(model=model_id, agent=agent, outcome="budget_exceeded", tenant_id=tenant_id)
+            if tally is not None:
+                tally.add_budget_exceeded(agent)
             log.warning("llm.budget_exceeded")
             raise
 
@@ -190,6 +198,8 @@ async def ainvoke_structured(
         # Cancellation (node timeouts) must also hand the reservation back.
         if not isinstance(exc, asyncio.CancelledError):
             recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)
+            if tally is not None:
+                tally.add_call(agent, [], "error", Decimal(0))
             log.warning(
                 "llm.call_failed", error_type=type(exc).__name__, latency_ms=round((time.perf_counter() - start) * 1000)
             )
@@ -200,6 +210,8 @@ async def ainvoke_structured(
 
     if not isinstance(result, Mapping):
         recorder.record(model=model_id, agent=agent, outcome="invalid_output", tenant_id=tenant_id)
+        if tally is not None:
+            tally.add_call(agent, [], "invalid_output", Decimal(0))
         if reservation is not None and budget is not None:
             await _settle(budget, reservation, 0)
         raise LLMOutputError(
@@ -208,6 +220,8 @@ async def ainvoke_structured(
     outcome, value, error = _classify(result, schema, model_id, agent)
     samples: List[UsageSample] = extract_usage(result.get("raw"), default_model=model_id)
     cost = recorder.record_samples(samples, agent=agent, outcome=outcome, tenant_id=tenant_id)
+    if tally is not None:
+        tally.add_call(agent, samples, outcome, cost)
     if reservation is not None and budget is not None:
         await _settle(budget, reservation, sum(sample.total_tokens for sample in samples))
 

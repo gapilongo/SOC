@@ -14,6 +14,10 @@ Safety rules enforced here (contract section 8):
   ``max_more_info_loops`` times; afterwards it goes back to an analyst.
 * Once an analyst has asked for more information, automation never closes
   or responds on its own: the case returns to the analyst.
+* A model refusal (``llm_refusal`` in the triage, correlation or analysis
+  digest) always ends with an analyst: triage never closes such an alert and
+  ``decide`` escalates it with code ``model_refused``, whatever the scores
+  the rules produced without the model.
 """
 
 from __future__ import annotations
@@ -78,6 +82,18 @@ def _is_high(state: Mapping[str, Any]) -> bool:
     return state.get("severity") in HIGH_SEVERITIES
 
 
+REFUSAL_DIGESTS = ("triage", "correlation", "analysis")
+
+
+def refused_by(state: Mapping[str, Any]) -> Optional[str]:
+    """The first agent (triage, correlation, analysis) whose model refused this alert, if any."""
+    for agent in REFUSAL_DIGESTS:
+        digest = state.get(agent)
+        if isinstance(digest, Mapping) and isinstance(digest.get("llm_refusal"), Mapping):
+            return agent
+    return None
+
+
 def route_after_gate(state: Mapping[str, Any]) -> GateRoute:
     gate = state.get("gate") or {}
     return "close" if gate.get("suppressed") else "triage"
@@ -100,6 +116,8 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
     if _is_high(state):
         return "correlation"
     triage = state.get("triage") or {}
+    if isinstance(triage.get("llm_refusal"), Mapping):
+        return "correlation"
     rule_fp = len(triage.get("rule_fp") or [])
     rule_tp = len(triage.get("rule_tp") or [])
     fp = rule_fp + len(triage.get("llm_fp") or [])
@@ -130,6 +148,9 @@ def route_after_correlation(state: Mapping[str, Any], t: RoutingThresholds) -> C
 def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
     if int(state.get("more_info_loops", 0)) > 0:
         return Decision("escalate", "analyst requested more information", None, "analyst_request")
+    refused = refused_by(state)
+    if refused is not None:
+        return Decision("escalate", f"the model declined to assess the alert ({refused})", None, "model_refused")
 
     triage = state.get("triage") or {}
     analysis = state.get("analysis") or {}

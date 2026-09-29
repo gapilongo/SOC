@@ -24,7 +24,7 @@ from lg_sotf.db.repos._base import (
 )
 
 SOURCE_TYPES = ("splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file")
-PUSH_SOURCE_TYPES = ("webhook",)
+PUSH_SOURCE_TYPES = ("webhook", "guardduty")
 SOURCE_HEALTH = ("unknown", "healthy", "degraded", "failing")
 
 FAILING_AFTER = 3

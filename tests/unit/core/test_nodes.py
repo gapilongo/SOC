@@ -11,6 +11,7 @@ import pytest
 from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.core.nodes import WorkflowNodes
 from lg_sotf.core.retry import is_transient
+from lg_sotf.core.routing import RoutingThresholds
 
 
 class Events:
@@ -47,6 +48,31 @@ async def test_inner_timeout_error_is_left_transient() -> None:
     with pytest.raises(TimeoutError) as info:
         await nodes()._wrap("triage", flaky, 5.0)(STATE)
     assert not isinstance(info.value, NodeTimeout) and is_transient(info.value)
+
+
+def evidence_nodes() -> WorkflowNodes:
+    wn = WorkflowNodes.__new__(WorkflowNodes)
+    wn.deps = SimpleNamespace(thresholds=RoutingThresholds())  # type: ignore[assignment]
+    return wn
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ({"analyst": {"decision": "true_positive"}}, "analyst"),
+        # An inherited group decision is not analyst evidence for this alert's assets.
+        ({"analyst": {"decision": "true_positive", "inherited_from": "a0"}, "analysis": {}}, "llm_only"),
+        ({"analysis": {"rule_corroborated": True, "rule_threat_score": 70}}, "rules"),
+        ({"analysis": {"rule_corroborated": False, "rule_threat_score": 95}}, "llm_only"),
+        # Digests from before rule_corroborated existed: the (capped) rule score decides.
+        ({"analysis": {"rule_threat_score": 85}}, "rules"),
+        ({"analysis": {"rule_threat_score": 79}}, "llm_only"),
+        # No analysis: triage rules never corroborate containment, whatever they scored.
+        ({"analysis": {}, "triage": {"rule_confidence": 100}}, "llm_only"),
+    ],
+)
+def test_containment_evidence(state: Dict[str, Any], expected: str) -> None:
+    assert evidence_nodes()._evidence(state) == expected  # type: ignore[arg-type]
 
 
 async def test_completed_node_records_a_small_event() -> None:

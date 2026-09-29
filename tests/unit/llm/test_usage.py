@@ -182,3 +182,42 @@ def test_extract_usage_without_metadata() -> None:
 
 def test_singleton() -> None:
     assert get_usage_recorder() is get_usage_recorder()
+
+
+# ------------------------------------------------------------------ per-alert totals
+
+
+def test_merge_usage_summary_adds_to_stored_totals() -> None:
+    from decimal import Decimal as D
+
+    from lg_sotf.llm.usage import UsageSample, UsageTally, merge_usage_summary
+
+    tally = UsageTally()
+    tally.add_call("triage", [UsageSample("claude-haiku-4-5", 100, 20, 0, 0)], "success", D("0.0002"))
+    tally.add_call("analysis", [UsageSample("claude-opus-5-5", 50, 10, 900, 100)], "success", D("0.01"))
+    tally.add_call("analysis", [], "refusal", D(0))
+    tally.add_budget_exceeded("correlation")
+    first = merge_usage_summary(None, tally)
+    assert first["calls"] == 3 and first["refusals"] == 1 and first["budget_exceeded"] == 1
+    assert first["input_tokens"] == 150 and first["cache_read_tokens"] == 900 and first["cache_write_tokens"] == 100
+    assert first["total_tokens"] == 150 + 30 + 900 + 100
+    assert first["cost_usd"] == 0.0102
+    assert set(first["by_agent"]) == {"analysis", "correlation", "triage"}
+
+    again = merge_usage_summary(first, tally)
+    assert again["calls"] == 6 and again["cost_usd"] == 0.0204
+    assert again["by_agent"]["triage"] == {**first["by_agent"]["triage"], "calls": 2, "input_tokens": 200,
+                                           "output_tokens": 40, "cost_usd": 0.0004}
+
+
+def test_merge_usage_summary_tolerates_malformed_stored_values() -> None:
+    from decimal import Decimal as D
+
+    from lg_sotf.llm.usage import UsageSample, UsageTally, merge_usage_summary
+
+    tally = UsageTally()
+    tally.add_call("triage", [UsageSample("m", 1, 1)], "success", D("0.5"))
+    stored = {"by_agent": {"triage": {"calls": "x", "cost_usd": "nan"}, 5: {}, "bad": "not a mapping"}, "calls": -3}
+    merged = merge_usage_summary(stored, tally)
+    assert merged["calls"] == 1 and merged["cost_usd"] == 0.5 and list(merged["by_agent"]) == ["triage"]
+    assert UsageTally().is_empty() and not tally.is_empty()

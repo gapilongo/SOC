@@ -162,6 +162,33 @@ def test_decide_always_escalates_after_an_analyst_asked_for_more_info() -> None:
     assert (d.route, d.code) == ("escalate", "analyst_request")
 
 
+REFUSAL = {"reason": "model_refused", "category": "cyber"}
+
+
+@pytest.mark.parametrize("agent", ["triage", "correlation", "analysis"])
+def test_a_model_refusal_always_escalates(agent: str) -> None:
+    # Scores that would otherwise respond automatically, and ones that would close.
+    respond = {"threat_score": 95, "rule_threat_score": 95, "verdict": "malicious"}
+    close = {"threat_score": 5, "rule_threat_score": 5, "verdict": "benign"}
+    for analysis in (respond, close):
+        s = state(severity="low", confidence=90, analysis=dict(analysis))
+        s[agent] = {**(s.get(agent) or {}), "llm_refusal": REFUSAL}
+        d = routing.decide(s, T)
+        assert (d.route, d.code, d.disposition) == ("escalate", "model_refused", None)
+        assert agent in d.reason
+    assert routing.refused_by(state()) is None
+
+
+def test_an_analyst_request_keeps_its_code_after_a_refusal() -> None:
+    s = state(more_info_loops=1, triage={"llm_refusal": REFUSAL})
+    assert routing.decide(s, T).code == "analyst_request"
+
+
+def test_triage_never_closes_an_alert_whose_model_refused() -> None:
+    tri = {**triage(5, 5, rule_fp=3), "llm_refusal": REFUSAL}
+    assert routing.route_after_triage(state(severity="low", triage=tri), T) == "correlation"
+
+
 def test_route_after_decide_rejects_missing_route() -> None:
     with pytest.raises(ValueError):
         routing.route_after_decide({"decision": {}})

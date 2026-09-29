@@ -3,7 +3,8 @@
 Only verdicts an analyst confirmed as benign (``false_positive`` or
 ``benign_positive``) are written. The gate uses a hit to close repeats of the
 same benign alert, except for critical alerts, which always go through the
-workflow.
+workflow. :meth:`VerdictCache.invalidate` removes a verdict (an analyst
+reversed a decision, or a suppression was withdrawn).
 """
 
 from __future__ import annotations
@@ -58,3 +59,9 @@ class VerdictCache:
         }
         await self._redis.set(self.key(tenant_id, fingerprint), json.dumps(value), ex=self._ttl_s)
         return True
+
+    async def invalidate(self, tenant_id: str, fingerprint: str) -> bool:
+        """Remove the cached verdict for ``fingerprint``; True when one existed."""
+        if not fingerprint:
+            return False
+        return bool(await self._redis.delete(self.key(tenant_id, fingerprint)))

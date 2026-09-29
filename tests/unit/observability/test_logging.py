@@ -60,6 +60,19 @@ def test_json_output_with_context(make_settings: Callable[..., Settings]) -> Non
     assert record["timestamp"].endswith("Z")
 
 
+def test_caller_fields_never_overwrite_or_spoof_record_fields(make_settings: Callable[..., Settings]) -> None:
+    stream = _configure(make_settings, service_name="lg-sotf-test")
+    get_logger("lg_sotf.test").warning(
+        "escalation.sla_breach_handled", level="L3", logger="spoofed", timestamp="then", service="evil", env="prod"
+    )
+    [record] = _lines(stream)
+    assert record["level"] == "warning" and record["level_"] == "L3"
+    assert record["logger"] == "lg_sotf.test" and record["logger_"] == "spoofed"
+    assert record["timestamp"].endswith("Z") and record["timestamp_"] == "then"
+    assert (record["service"], record["env"]) == ("lg-sotf-test", "test")
+    assert (record["service_"], record["env_"]) == ("evil", "prod")
+
+
 def test_stdlib_records_are_bridged(make_settings: Callable[..., Settings]) -> None:
     stream = _configure(make_settings)
     bind_context(thread_id="t1:a1")
@@ -198,3 +211,41 @@ def test_is_configured_detects_foreign_reconfiguration(make_settings: Callable[.
     assert is_configured()
     structlog.configure(processors=[structlog.processors.JSONRenderer()])
     assert not is_configured()
+
+
+def test_numeric_counts_under_plural_credential_names_are_kept(make_settings: Callable[..., Settings]) -> None:
+    """A retention report logs how many refresh tokens it deleted: a count, not a credential."""
+    stream = _configure(make_settings)
+    report = {"alerts": 4, "refresh_tokens": 12, "api_keys": 3, "complete": True, "dropped_partitions": []}
+    get_logger("x").info(
+        "retention.completed",
+        report=report,
+        refresh_tokens=7,
+        revokedApiKeys=2,
+        secrets=1.5,
+        tokens_by_kind=[{"refresh_tokens": 5}],
+    )
+    [record] = _lines(stream)
+    assert record["report"] == report
+    assert (record["refresh_tokens"], record["revokedApiKeys"], record["secrets"]) == (7, 2, 1.5)
+    assert record["tokens_by_kind"] == [{"refresh_tokens": 5}]
+
+
+def test_values_that_denote_a_credential_are_still_masked(make_settings: Callable[..., Settings]) -> None:
+    stream = _configure(make_settings)
+    get_logger("x").info(
+        "login",
+        password=123456,
+        token=987654321,
+        refresh_tokens="rt_live_4f9a8b7c6d5e4f3a2b1c",
+        api_keys=["lgk-a", "lgk-b"],
+        huge_count_like={"refresh_tokens": 4111111111111111},
+        nested={"session_token": 42, "passwords": True},
+    )
+    [record] = _lines(stream)
+    assert record["password"] == "[REDACTED]" and record["token"] == "[REDACTED]"
+    assert record["refresh_tokens"] == "[REDACTED]"
+    assert record["api_keys"] == "[REDACTED]"
+    assert record["huge_count_like"] == {"refresh_tokens": "[REDACTED]"}
+    assert record["nested"]["session_token"] == "[REDACTED]"
+    assert "4111111111111111" not in stream.getvalue() and "rt_live_4f9a8b7c6d5e4f3a2b1c" not in stream.getvalue()
