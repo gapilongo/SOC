@@ -77,7 +77,7 @@ compose_for() {  # $1 env; runs docker compose for that environment's current re
   local env="$1" rel
   shift
   rel="$(sed -n 's/^RELEASE_DIR=//p' "$ROOT/env/$env/state/current.env" | head -n 1)"
-  [ -n "$rel" ] && [ -d "$rel" ] || die "$env: no current release recorded"
+  if [ -z "$rel" ] || [ ! -d "$rel" ]; then die "$env: no current release recorded"; fi
   docker compose -p "lgsotf-$env" \
     -f "$rel/docker/docker-compose.yml" -f "$rel/docker/docker-compose.prod.yml" \
     -f "$rel/deploy/vm/docker-compose.vm.yml" --env-file "$ROOT/env/$env/.env" "$@"

@@ -71,13 +71,14 @@ jobs:
     services:
       postgres:
         image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        # The image makes POSTGRES_USER a superuser, and superusers bypass
+        # row-level security; the tests connect as a separate plain role.
         env:
-          POSTGRES_USER: soc
-          POSTGRES_PASSWORD: ci_only_password
-          POSTGRES_DB: soc_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only_superuser_password
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U soc -d soc_test"
+          --health-cmd "pg_isready -U postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -105,6 +106,13 @@ jobs:
         run: |
           pip install -r requirements-dev.txt
           pip install --no-deps -e .
+      - name: Create the non-superuser test role
+        env:
+          PGPASSWORD: ci_only_superuser_password
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB" \
+            -c "CREATE DATABASE soc_test OWNER soc"
       # tests/deploy renders the chart; without helm those tests skip.
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:

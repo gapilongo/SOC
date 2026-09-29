@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import AsyncIterator
 
 import asyncpg
+import psycopg
 import pytest
 import pytest_asyncio
 
@@ -27,6 +28,7 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.retention import purge_expired
+from lg_sotf.db.urls import to_libpq_url
 from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert
 from tests.integration.db.test_rls import TENANT_TABLES, seed_everything
 
@@ -183,6 +185,15 @@ async def test_runtime_role_cannot_weaken_the_schema(app_db: Database, app: Repo
             await conn.execute(sql)
 
 
+def _schema_owner(url: str) -> str:
+    with psycopg.connect(to_libpq_url(url), autocommit=True) as conn:
+        row = conn.execute(
+            "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid = 'public.tenants'::regclass"
+        ).fetchone()
+    assert row is not None
+    return str(row[0])
+
+
 async def test_grants_are_least_privilege(app_db: Database, migrated_database_url: str) -> None:
     async with app_db.connection() as conn:
 
@@ -196,7 +207,8 @@ async def test_grants_are_least_privilege(app_db: Database, migrated_database_ur
         assert not await can("tenants", "INSERT") and not await can("tenants", "DELETE")
         assert await can("checkpoints", "INSERT") and await can("checkpoint_writes", "DELETE")
         assert not await can("alembic_version", "UPDATE")
+    owner = await asyncio.to_thread(_schema_owner, migrated_database_url)
     with pytest.raises(ValueError):
-        await asyncio.to_thread(grant_runtime_privileges, "soc", migrated_database_url)
+        await asyncio.to_thread(grant_runtime_privileges, owner, migrated_database_url)
     with pytest.raises(ValueError):
         await asyncio.to_thread(grant_runtime_privileges, "no_such_role_xyz", migrated_database_url)

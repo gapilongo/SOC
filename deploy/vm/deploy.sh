@@ -127,7 +127,7 @@ done
 if [ -z "$SLOT" ]; then
   case "$ENV_NAME" in dev) SLOT=1 ;; uat) SLOT=2 ;; prod) SLOT=3 ;; *) die "--slot is required for environment $ENV_NAME" ;; esac
 fi
-[[ "$SLOT" =~ ^[0-9]+$ ]] && [ "$SLOT" -ge 1 ] && [ "$SLOT" -le 30 ] || die "--slot must be 1-30"
+if ! [[ "$SLOT" =~ ^[0-9]+$ ]] || [ "$SLOT" -lt 1 ] || [ "$SLOT" -gt 30 ]; then die "--slot must be 1-30"; fi
 [[ "$TLS_MODE" =~ ^(acme|internal)$ ]] || die "--tls must be acme or internal"
 [[ "$HTTP_PORT" =~ ^[0-9]{1,5}$ && "$HTTPS_PORT" =~ ^[0-9]{1,5}$ ]] || die "bad port"
 [[ "$HEALTH_TIMEOUT" =~ ^[0-9]{1,4}$ ]] || die "bad --health-timeout"
@@ -475,7 +475,7 @@ prune() {
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       case " ${keep_ids[*]} " in *" $line "*) continue ;; esac
-      docker image rm "$line" >/dev/null 2>&1 && log "removed old image $line" || true
+      if docker image rm "$line" >/dev/null 2>&1; then log "removed old image $line"; fi
     done < <(docker image ls --no-trunc --format '{{.ID}}' "$repo" | sort -u)
   done
   docker image prune -f >/dev/null 2>&1 || true
