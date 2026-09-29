@@ -43,7 +43,7 @@ def e2e_database_url(migrated_database_url: str) -> str:
 def e2e_settings(
     e2e_database_url: str, redis_url: str, make_settings: Callable[..., Settings], unique_prefix: str
 ) -> Callable[..., Settings]:
-    def build(**worker: Any) -> Settings:
+    def build(*, scheduler: Optional[Dict[str, Any]] = None, **worker: Any) -> Settings:
         return make_settings(
             database={"url": e2e_database_url, "pool_min": 1, "pool_max": 8},
             redis={"url": redis_url, "key_prefix": unique_prefix, "socket_timeout_s": 5.0},
@@ -59,7 +59,7 @@ def e2e_settings(
                 "drain_timeout_s": 5.0,
                 **worker,
             },
-            scheduler={"tick_s": 0.1},
+            scheduler={"tick_s": 0.1, **(scheduler or {})},
         )
 
     return build

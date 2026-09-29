@@ -1,0 +1,312 @@
+# LG-SOTF HTTP and WebSocket API
+
+This page summarises authentication, authorisation and the endpoints of the
+API process (`lg-sotf api`). The OpenAPI document is the source of truth for
+request and response schemas: it is served at `/api/v1/openapi.json`, with
+interactive docs at `/docs`, when `api.docs_enabled` is true (disable it in
+production if the schema should not be public).
+
+The API authenticates callers, scopes every query to the caller's tenant
+(PostgreSQL row-level security plus explicit `tenant_id` filters) and
+enqueues work for the workers. It never runs a workflow itself.
+
+## Conventions
+
+* Base path `/api/v1`; JSON request and response bodies.
+* Errors always have the shape
+  `{"error": {"code": "...", "message": "...", "request_id": "..."}}`;
+  validation errors (422) add `details`. Stack traces and internal messages
+  are never returned.
+
+  | Status | Typical `code` | When |
+  |---|---|---|
+  | 400 | `invalid_request`, `invalid_cursor`, `invalid_value`, `invalid_json`, `batch_too_large`, `search_window_too_large` | malformed input |
+  | 401 | `unauthorized`, `invalid_credentials`, `invalid_session` | missing, invalid, expired or revoked credentials |
+  | 403 | `forbidden` | role, scope or tenant does not allow the call |
+  | 404 | `not_found`, `source_not_found` | the object does not exist in the caller's tenant |
+  | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled` | stale `version`, duplicate, illegal state change |
+  | 413 | `payload_too_large` | body over the size limit |
+  | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `weak_password` | schema or policy validation failed |
+  | 429 | `rate_limited` | rate limit hit; see `Retry-After` |
+  | 503 | `service_unavailable`, `encryption_unavailable` | a dependency is down or not configured |
+
+* Every response carries `X-Request-ID` (the caller's value when it matches
+  `[A-Za-z0-9._:-]{8,128}`, otherwise a generated id), which is also in the
+  error body and in the server logs.
+* Lists that can grow without bound (`/alerts`, `/alerts/{id}/events`,
+  `/escalations`, `/actions`) use keyset pagination: pass the returned
+  `next_cursor` as `cursor`; `limit` is at most 200. Cursors are opaque.
+* Multi-valued filters repeat the parameter: `?status=queued&status=failed`.
+* Timestamps are ISO 8601; query timestamps without an offset are UTC.
+
+## Authentication
+
+Three kinds of credentials are accepted. All of them resolve to a
+*principal*: `{user_id | api_key_id, tenant_id, role, scopes, is_platform_admin}`.
+
+### Local users (password)
+
+* `POST /auth/login` with `{"email", "password", "tenant"?}` returns
+  `{"access_token", "token_type": "bearer", "expires_in", "user"}` and sets
+  the refresh cookie `lgsotf_refresh` (`HttpOnly; Secure; SameSite=Strict;
+  Path=/api/v1/auth`, lifetime `auth.refresh_token_ttl_s`).
+* The access token is an HS256 JWT (`iss`, `aud`, `exp`, `iat`, `jti`, `sub`
+  = user id, `tenant`, `role`), valid for `auth.access_token_ttl_s`. Send it
+  as `Authorization: Bearer <token>`. The user row is re-read on every
+  request, so deactivating a user or changing a role takes effect at once.
+* `POST /auth/refresh` (cookie) rotates the refresh token and returns a new
+  access token. Presenting an already-rotated refresh token is treated as
+  theft: every refresh token of that user is revoked, the attempt is written
+  to the audit log, and the caller must sign in again.
+* `POST /auth/logout` revokes the refresh token and, when the request also
+  carries the access token, blocks that token until it expires.
+* `GET /auth/me` returns the current principal.
+* Unknown emails, wrong passwords and disabled, locked or SSO-only accounts
+  all get the same `401 invalid_credentials` after the same amount of
+  argon2 work. After `auth.max_login_attempts` consecutive failures an
+  account is locked for `auth.lockout_minutes` (even the right password
+  fails meanwhile). An email registered in several tenants must pass
+  `tenant`.
+* The API never creates users implicitly. The first admin comes from
+  `lg-sotf migrate` (`auth.bootstrap_admin_*`) or `lg-sotf create-admin`;
+  further users are created through `/users`.
+
+### OIDC (single sign-on)
+
+When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
+
+* signature verified against the issuer's JWKS (`auth.oidc_jwks_url`, or
+  the `jwks_uri` of the issuer's discovery document), cached for 10 minutes
+  and refetched when a token names an unknown `kid` (key rotation);
+* only `RS256` and `ES256`, with the key type matching the algorithm;
+* `iss` must equal `auth.oidc_issuer`, `aud` must equal
+  `auth.oidc_audience` (required), `exp`/`iat` are checked;
+* the tenant comes from the `auth.oidc_tenant_claim` claim (default
+  `tenant_id`, falling back to `auth.oidc_default_tenant`), the role from
+  `auth.oidc_role_claim` (a string or a list; the highest of
+  `viewer`/`analyst`/`admin` wins; none of them means 403);
+* when the token's email (`auth.oidc_email_claim`) is verified by the IdP
+  (the `auth.oidc_email_verified_claim` claim, default `email_verified`, is
+  `true`) and a local user with that email exists in
+  that tenant, the principal is linked to it (a disabled local account
+  blocks the SSO login). An unverified or missing `email_verified` never
+  links. OIDC never grants platform-admin rights, even when linked to a
+  platform-admin account: platform admins sign in with local login. Claiming and deciding escalations and approving
+  actions are attributed to a person and need such a provisioned account;
+  create SSO-only users with `POST /users` without a password.
+
+### API keys
+
+* Format `lgk_<32 hex id>_<secret>`, sent as `X-API-Key: <key>` or
+  `Authorization: Bearer <key>`. Only a SHA-256 hash is stored; the key is
+  shown once, in the `POST /api-keys` response.
+* Scopes: `ingest` (the ingest endpoints), `read` (the viewer `GET`
+  endpoints), `write` (notes and creating suppression rules). API keys can
+  never use administrative endpoints or decide escalations and approvals.
+
+### Tenants and platform admins
+
+A principal acts on its own tenant. A platform admin
+(`users.is_platform_admin`) may send `X-Tenant-ID: <tenant>` to act on
+another tenant; every such request is recorded in that tenant's audit log
+(`platform_admin.tenant_access`). Anyone else sending a different
+`X-Tenant-ID` gets 403. Requests for suspended tenants get 403. Under an
+override, rows the admin creates (suppression rules, API keys) carry no
+`created_by` (the admin's account belongs to the home tenant; the audit log
+names the actor), and claiming, deciding escalations and approving or
+rejecting actions are refused with 403: those decisions belong to members of
+the tenant. Only a platform admin can modify or delete a platform-admin
+account; a tenant admin gets 403.
+
+## Roles
+
+| Role | May |
+|---|---|
+| `viewer` | read alerts, timelines, escalations, actions, suppressions, dashboard |
+| `analyst` | viewer + notes, create suppression rules, claim and decide escalations, approve/reject low and medium risk actions |
+| `admin` | everything in the tenant: users, API keys, sources, suppression management, tenant settings, reprocessing, LLM usage, high and critical risk approvals |
+
+The tenant's autonomy policy can disable approval of a risk level entirely.
+
+## Endpoints
+
+| Method | Path | Access |
+|---|---|---|
+| GET | `/healthz` (liveness), `/readyz` (database and Redis) | none |
+| GET | `/metrics` (Prometheus) | `Authorization: Bearer <api.metrics_token>` when configured |
+| POST | `/auth/login` | public |
+| POST | `/auth/refresh`, `/auth/logout` | refresh cookie |
+| GET | `/auth/me` | any principal |
+| POST | `/ingest/alerts` | API key `ingest` |
+| POST | `/ingest/webhook/{source_id}` | API key `ingest` |
+| GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
+| POST | `/alerts/{id}/notes` | analyst / `write` |
+| POST | `/alerts/{id}/reprocess` | admin |
+| GET | `/escalations`, `/escalations/{id}` | viewer / `read` |
+| POST | `/escalations/{id}/claim`, `/escalations/{id}/decision` | analyst (user account) |
+| GET | `/actions`, `/actions/{id}` | viewer / `read` |
+| POST | `/actions/{id}/approve`, `/actions/{id}/reject` | analyst (low/medium), admin (high/critical) |
+| GET, POST | `/sources`; GET, PATCH, DELETE `/sources/{id}`; POST `/sources/{id}/test` | admin |
+| GET | `/suppressions`, `/suppressions/{id}` | viewer / `read` |
+| POST | `/suppressions` | analyst / `write` |
+| PATCH, DELETE | `/suppressions/{id}` | admin |
+| GET, POST | `/users`; GET, PATCH, DELETE `/users/{id}` | admin |
+| GET, POST | `/api-keys`; DELETE `/api-keys/{id}` | admin |
+| GET, PATCH | `/tenant/settings` | admin |
+| GET | `/dashboard/summary` | viewer / `read` |
+| GET | `/usage/llm` | admin |
+| GET | `/audit`, `/audit/verify` | admin |
+| WS | `/ws?token=<access token>` | viewer |
+
+`/healthz`, `/readyz` and `/ws` are also served under `/api/v1`.
+`/metrics` is served at the root only, so an ingress that routes `/api`
+publicly never exposes it; set `api.metrics_token` (an empty value refuses every scrape) or keep the root path
+network-restricted. `/readyz` reports 503 only when the database is unreachable or
+Redis fails; a database whose pool is fully busy counts as ready.
+
+### Ingestion
+
+* `POST /ingest/alerts` takes canonical alerts (see
+  `lg_sotf.ingestion.normalizers.canonical`) as a JSON array or as
+  `{"alerts": [...]}`, at most `api.max_ingest_batch` per request and
+  `api.max_ingest_body_bytes` per body. They are stored under the source id
+  `api:<api key id>`.
+* `POST /ingest/webhook/{source_id}` takes a vendor-native JSON object (or an
+  array of them) for a push source (`webhook`, `guardduty`) registered in
+  the key's tenant; the source's configuration picks the normalizer.
+* Both answer `202` with one result per submitted event, in order:
+  `{"index", "status": "inserted"|"duplicate"|"rejected", "alert_id", "reason"}`,
+  plus totals and the number of alerts queued for the workers. Duplicates
+  (same source and source alert id) are never inserted twice.
+
+### Alerts
+
+`GET /alerts` filters: `status`, `severity`, `disposition`, `source_id`,
+`from`/`to` (ingestion time), `q` (title substring). A `q` search is limited
+to a window of at most 93 days (default: the 30 days before `to`); a wider
+window is a `400 search_window_too_large`. Notes are stored as `note`
+events on the alert timeline. `reprocess` requeues a finished alert (409
+while its run is active).
+
+### Escalations and actions
+
+* Claim and decision bodies carry the escalation's `version`; a stale
+  version is `409 conflict` (re-read and retry). Decisions on escalations
+  whose SLA expired are accepted and audited with `after_sla_expiry`.
+* `POST /escalations/{id}/decision`:
+  `{"decision": "true_positive"|"false_positive"|"benign_positive"|"needs_more_info",
+  "version", "notes"?, "approved_actions"?, "feedback"?, "suggest_suppression"?}`.
+  The decision resumes the escalation's alert and every alert attached to
+  it; the response lists them and how many resume messages were queued.
+* Approvals are per action: `POST /actions/{id}/approve` approves that
+  action only; the alert's other pending actions stay pending unless the
+  body sets `{"reject_remaining": true}`. The approver's role comes from the
+  principal, never from the request.
+* A response the policy chose on its own (no analyst `true_positive`
+  decision) closes the alert only when an action really `succeeded` through
+  a connector. When every approved action ran as `dry_run` (the default),
+  the alert is escalated again (L3, "automatic response left the threat
+  without a human or a completed action") and closes after that decision.
+
+### Sources
+
+Source credentials are write-only: send them in `secret` (an object) on
+create or update; they are encrypted with the install's keys, bound to the
+tenant and source, and responses only show `has_secret`. `"secret": null`
+removes them. Configuration keys that look like credentials are refused in
+`config`. A source is validated (configuration, required credentials and
+the outbound destination policy) before it is saved; `POST
+/sources/{id}/test` checks connectivity without ingesting.
+
+### Suppression rules
+
+Analysts (and `write` API keys) create rules; admins update, enable/disable
+and delete them. Only admins create rules that are active immediately: a rule
+created by an analyst or an API key is stored with `enabled: false` whatever
+the request says, and takes effect once an admin enables it (`PATCH
+{"enabled": true}`). Rules suggested from false-positive decisions are also
+created disabled. A rule whose every predicate matches any alert (all
+severities, a `.*` regex, a `/0` network) is refused with 422
+`invalid_rule`.
+
+### Users and API keys
+
+Passwords must have at least `auth.password_min_length` characters. Admins
+cannot change their own role or active status, delete themselves, or remove
+the tenant's last active admin; only platform admins grant the platform-admin
+flag. Password changes and deactivation revoke the user's refresh tokens.
+Password hashes and API key hashes are never returned.
+
+### Tenant settings
+
+`GET /tenant/settings` returns the settings with secrets replaced by
+`<name>_configured: true`. `PATCH` is a merge patch (`null` removes a key)
+over: `autonomy`, `protected_assets`, `protected_cidrs`, `response`
+(connector, webhook URL, `webhook_secret`, guardrail limits),
+`llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
+(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
+(`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
+they are stored and cannot be read back; ciphertext fields cannot be written
+directly. Invalid settings are refused with `422 invalid_settings` listing
+every problem.
+
+### Dashboard and usage
+
+`GET /dashboard/summary?window_hours=24` returns counts by status, severity
+and disposition, MTTA/MTTR, open escalations, workflow runs by status (the
+tenant's queue depth) and LLM tokens and cost; it is cached for 15 seconds
+per tenant and window. `GET /usage/llm?from=&to=` returns daily usage rows
+(at most 400 days).
+
+### Audit log
+
+`GET /audit` lists the tenant's audit entries newest first (keyset
+pagination with `cursor`, `limit` at most 200) with exact filters `action`,
+`resource_type`, `resource_id`, `actor_id` and a `from`/`to` time window.
+Each entry carries its `prev_hash` and `hash` (a SHA-256 chain per tenant).
+`GET /audit/verify?from=` recomputes the chain and answers
+`{"ok": true}` or `{"ok": false, "first_bad_id": <id>}`. Entries record who
+did what (logins, user and API key changes, sources, settings, suppression
+rules, claims, decisions, approvals and response execution, platform-admin
+`X-Tenant-ID` access); they never contain secrets or raw alert bodies.
+
+### Live events (WebSocket)
+
+Connect to `/ws?token=<access token>` (API keys are not accepted in URLs;
+browser connections must come from an allowed CORS origin). After a
+`{"type": "hello"}` message the socket receives the tenant's events
+(`alert.created`, `alert.updated`, `escalation.created`,
+`escalation.updated`, `action.updated`) and periodic `{"type": "ping"}`.
+Delivery is at-most-once: after a reconnect, re-read state from the REST
+API. The server closes the socket with code 4401 when the token expires
+(reconnect with a fresh token), 1013 when the client falls behind or the
+server is at capacity, and 1008 on policy violations.
+
+## Limits and hardening
+
+* Request bodies are limited to `api.max_body_bytes` (ingest:
+  `api.max_ingest_body_bytes`), enforced while the body streams in, so
+  chunked uploads cannot exceed it.
+* Fixed-window rate limits in Redis, per minute: `api.rate_limit_per_minute`
+  per principal, `api.ingest_rate_limit_per_minute` per API key on the
+  ingest endpoints, `api.login_rate_limit_per_minute` per (client address,
+  email) on login with a per-address cap of ten times that, and per refresh
+  token on refresh/logout. Failed authentications are counted per address:
+  once an address is over its budget, further *failing* requests get 429
+  instead of 401, and a credential that keeps failing is refused before it
+  is checked; credentials that verify are never throttled by other clients'
+  failures. Client addresses come from `X-Forwarded-For` only for proxies in
+  the server's `forwarded_allow_ips`; set it to the ingress controller's
+  addresses, otherwise every client shares the ingress address. Limited requests get `429` with `Retry-After`. If
+  Redis is unreachable, limits are not enforced (account lockout still
+  applies).
+* CORS allows only `api.cors_origins`, with credentials; a `*` entry is
+  ignored.
+* Responses carry `X-Content-Type-Options: nosniff`, `X-Frame-Options:
+  DENY`, a restrictive `Content-Security-Policy` (`frame-ancestors 'none'`),
+  `Referrer-Policy: no-referrer`, `Cache-Control: no-store` and, over HTTPS,
+  `Strict-Transport-Security`. Run behind a TLS-terminating proxy listed in
+  `api.forwarded_allow_ips` so the scheme and client address are correct.
+* Access logs are structured JSON (method, route template, status,
+  duration, client address, tenant, principal, request id); they never
+  contain bodies, query strings or credentials.

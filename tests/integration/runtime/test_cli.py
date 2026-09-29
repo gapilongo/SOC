@@ -124,6 +124,60 @@ def test_create_admin_prompts_with_confirmation(cli_env: str) -> None:
     assert ADMIN_PASSWORD not in result.output
 
 
+async def _tenant_state(url: str, tenant: str) -> Any:
+    db = _db(url)
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        audit = (await repos.audit.list(tenant, resource_type="tenant")).items
+        return await repos.tenants.get(tenant), await repos.users.list(tenant), [e.action for e in audit]
+    finally:
+        await db.close()
+
+
+def test_create_tenant_with_admin_and_duplicate_rejected(cli_env: str) -> None:
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+    args = ["create-tenant", "--id", "globex", "--name", "Globex Corp", "--admin-email", "Root@Globex.example"]
+
+    created = runner.invoke(cli, [*args, "--password-stdin"], input=f"{ADMIN_PASSWORD}\n")
+
+    assert created.exit_code == 0, created.output
+    assert "created tenant globex (Globex Corp)" in created.output
+    assert "created admin root@globex.example in tenant globex" in created.output
+    assert ADMIN_PASSWORD not in created.output
+    tenant, users, audited = asyncio.run(_tenant_state(cli_env, "globex"))
+    assert (tenant.name, tenant.status) == ("Globex Corp", "active")
+    assert [(u.email, u.role, u.is_platform_admin) for u in users] == [("root@globex.example", "admin", False)]
+    assert verify_password(users[0].password_hash, ADMIN_PASSWORD)
+    assert audited == ["tenant.created"]
+
+    duplicate = runner.invoke(cli, ["create-tenant", "--id", "globex", "--name", "Other"])
+    assert duplicate.exit_code != 0
+    assert "tenant 'globex' already exists; nothing was changed" in duplicate.output
+    assert asyncio.run(_tenant_state(cli_env, "globex"))[0].name == "Globex Corp"
+
+
+def test_create_tenant_validates_input(cli_env: str) -> None:
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+
+    bare = runner.invoke(cli, ["create-tenant", "--id", "initech", "--name", "Initech"])
+    assert bare.exit_code == 0, bare.output
+    assert "created admin" not in bare.output
+    assert asyncio.run(_tenant_state(cli_env, "initech"))[1] == []
+
+    for argv, message in (
+        (["--id", "Bad Id", "--name", "x"], "invalid tenant id 'Bad Id'"),
+        (["--id", "ok-id", "--name", "  "], "tenant name must be"),
+        (["--id", "ok-id", "--name", "x", "--password-stdin"], "--password-stdin needs --admin-email"),
+        (["--id", "ok-id", "--name", "x", "--admin-email", "a@b.example", "--password-stdin"], "at least"),
+    ):
+        result = runner.invoke(cli, ["create-tenant", *argv], input="short\n")
+        assert result.exit_code != 0, argv
+        assert message in result.output, (argv, result.output)
+
+
 async def _seed_alert(url: str) -> str:
     db = _db(url)
     await db.open()

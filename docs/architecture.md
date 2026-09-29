@@ -31,7 +31,7 @@ Postgres except in-flight queue entries, which are re-derivable from
 ```
 src/lg_sotf/
   settings.py            Typed settings (the only place config is read from env/YAML)
-  cli.py                 `lg-sotf api|worker|scheduler|migrate|eval|create-admin`
+  cli.py                 `lg-sotf api|worker|scheduler|migrate|eval|create-admin|create-tenant`
   core/config/manager.py ConfigManager facade over Settings (legacy .get("a.b") API for agents)
   db/                    asyncpg pool, tenancy (RLS) helpers, repositories
     migrations/          Alembic environment + versions
@@ -101,9 +101,9 @@ Single-role installs (development) use the owner role everywhere.
 Application code never issues tenant queries outside a scoped transaction:
 
 ```python
-async with db.tenant_tx(tenant_id) as conn:   # SET LOCAL app.tenant_id
+async with db.tenant_tx(tenant_id) as conn:  # SET LOCAL app.tenant_id
     ...
-async with db.system_tx() as conn:            # SET LOCAL app.bypass_rls = 'on' (scheduler/migrate only)
+async with db.system_tx() as conn:  # SET LOCAL app.bypass_rls = 'on' (scheduler/migrate only)
     ...
 ```
 
@@ -166,7 +166,12 @@ completed and older than `retention.checkpoints_days`.
   `enqueue_resume(tenant_id, alert_id, payload)`.
 * Consumer: `XREADGROUP` with `block_ms`; on success `XACK` + `XDEL`; on
   exception the entry stays pending and is reclaimed by `XAUTOCLAIM` after
-  `worker.visibility_timeout_s`. Deliveries > `worker.max_deliveries` → copied
+  `worker.visibility_timeout_s`. Each worker refreshes a liveness key
+  `{prefix}:q:consumers:{consumer}:alive` (TTL = run lease); entries pending
+  for a consumer whose key has expired are claimed by live workers at once
+  (`XCLAIM`), so a killed worker's backlog is recovered within about one
+  lease. The `workflow_runs` lease, not queue ownership, prevents double
+  execution. Deliveries > `worker.max_deliveries` → copied
   to `{prefix}:q:alerts:dlq`, run marked `dead_lettered`, acked.
 * Idempotency: the worker checks `workflow_runs` before running; a completed
   run is acked and skipped; an interrupted/partial run resumes from its
@@ -196,7 +201,10 @@ await_analyst: interrupt({"escalation_id": ...}) → route on decision:
 plan_response: build actions, write ledger (idempotent), apply guardrails →
              execute_actions (auto-allowed) and/or await_approval
 await_approval: interrupt({"action_ids": [...]}) → execute_actions | close
-execute_actions: run approved actions through connectors (idempotent via ledger)
+execute_actions: run every approved action through connectors (idempotent via
+             ledger), again until a pass finds none approved → await_approval
+             (actions still awaiting) | close | escalate (policy response
+             with a failed or no completed action)
 close:       write final alert row + summary + events
 ```
 
@@ -230,7 +238,17 @@ Rules:
 * A decision on an SLA-expired escalation is still accepted (audited with
   `after_sla_expiry`), so expiry never strands an alert.
 * Approvals are per action; unmentioned actions stay pending unless the
-  request sets `reject_remaining`.
+  request sets `reject_remaining`. An approval commits whenever the analyst
+  makes it, also while the run is not waiting: `execute_actions` treats
+  every `approved` action of the alert as pending work and runs it exactly
+  once (the ledger transition `approved → executing` decides the owner), and
+  the run closes only when nothing is `approved` or `awaiting_approval`.
+* Dry-run execution completes a response: when the policy chose the
+  response and its actions ran as `dry_run` (the tenant's or install's
+  dry-run mode) or `succeeded`, the alert closes with disposition
+  `malicious` and `summary.dry_run` records whether it was a dry run. Only a
+  `failed` action, or no completed action at all (all blocked/rejected),
+  sends a policy-chosen response to an analyst.
 
 ## 9. LLM layer (`lg_sotf.llm`)
 
@@ -293,6 +311,8 @@ Endpoints:
 | GET/PATCH | `/tenant/settings` (autonomy policy, protected assets, LLM budget) | admin |
 | GET | `/dashboard/summary` (counts by status/severity/disposition, MTTA/MTTR, queue depth, LLM cost; cached 15 s per tenant) | viewer |
 | GET | `/usage/llm` (daily usage/cost) | admin |
+| GET | `/audit` (hash-chained audit log; filters, keyset pagination), `/audit/verify` (recompute the tenant's chain) | admin |
+| POST | `/platform/tenants` (provision a tenant, optionally with its first admin; audited in the new and the home tenant) | platform admin |
 | WS | `/ws?token=<access token>` → tenant event stream | viewer |
 
 Middleware: request id, structured access log, security headers, CORS

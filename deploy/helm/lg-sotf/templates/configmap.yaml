@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lg-sotf.configMapName" . }}
+  labels:
+    {{- include "lg-sotf.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  settings.yaml: |
+    {{- include "lg-sotf.settingsYaml" . | nindent 4 }}

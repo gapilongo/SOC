@@ -1,112 +1,203 @@
-# docker/docker-compose.yaml
-version: '3.8'
+# LG-SOTF development / evaluation stack.
+#
+#   make up                    # or: docker compose -f docker/docker-compose.yml up -d --build
+#   make up PROFILES=frontend  # also build and run the web UI (once src/lg_front/Dockerfile exists)
+#
+# Runs PostgreSQL 16, Redis 7 (AOF), the one-shot migrate job, and the api,
+# worker and scheduler roles of the single lg-sotf image. The LLM provider
+# defaults to "fake" (deterministic, offline) so the stack works without an API
+# key; set LG_SOTF_LLM__PROVIDER=anthropic and ANTHROPIC_API_KEY in .env for
+# real triage.
+#
+# Settings come from, in order of precedence: the `environment:` entries below,
+# the repository .env file (optional; see .env.example), and the reference
+# config named by LG_SOTF_CONFIG_FILE (configs/development.yaml, which carries
+# published placeholder keys that staging/production refuse). For a two-role
+# database and production-style secrets add docker-compose.prod.yml.
+#
+# Image names are overridable so a registry mirror can be used, e.g.
+#   PYTHON_BASE_IMAGE=mirror.gcr.io/library/python:3.11-slim
+#   POSTGRES_IMAGE=mirror.gcr.io/library/postgres:16-alpine
+#   REDIS_IMAGE=mirror.gcr.io/library/redis:7-alpine
+
+name: lg-sotf
+
+x-app-build: &app-build
+  context: ..
+  dockerfile: docker/Dockerfile
+  args:
+    BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.11-slim}
+  secrets:
+    - build_ca
+
+x-app-environment: &app-environment
+  LG_SOTF_ENVIRONMENT: ${LG_SOTF_ENVIRONMENT:-development}
+  LG_SOTF_CONFIG_FILE: ${LG_SOTF_CONFIG_FILE-/app/configs/development.yaml}
+  LG_SOTF_DATABASE__URL: postgresql://soc:${POSTGRES_PASSWORD:-soc_dev_password}@postgres:5432/soc
+  LG_SOTF_REDIS__URL: redis://redis:6379/0
+  LG_SOTF_LLM__PROVIDER: ${LG_SOTF_LLM__PROVIDER:-fake}
+  LG_SOTF_API__HOST: 0.0.0.0
+  LG_SOTF_API__PORT: "8000"
+  LG_SOTF_OBSERVABILITY__LOG_FORMAT: ${LG_SOTF_OBSERVABILITY__LOG_FORMAT:-json}
+
+# Shared hardening for every lg-sotf container: non-root (image default),
+# read-only root filesystem with a private /tmp, no capabilities, no privilege
+# escalation.
+x-app: &app
+  image: ${APP_IMAGE:-lg-sotf:dev}
+  env_file:
+    - path: ../.env
+      required: false
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  init: false  # dumb-init is PID 1 inside the image
 
 services:
-  lg-sotf:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    container_name: lg-sotf
-    ports:
-      - "8000:8000"
-      - "8090:8090"  # Metrics
-      - "8081:8081"  # Health checks
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
-      - LG_SOTF_ENV=development
-      - DATABASE_CONNECTION_STRING=postgresql://lg_sotf:lg_sotf_dev_password@postgres:5432/lg_sotf_dev
-      - REDIS_CONNECTION_STRING=redis://redis:6379/0
-      - ENCRYPTION_KEY=dev_encryption_key_32_bytes_long___
-      - JWT_SECRET=dev_jwt_secret_32_bytes_long______
+      POSTGRES_USER: soc
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-soc_dev_password}
+      POSTGRES_DB: soc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -h 127.0.0.1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--save", ""]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    build: *app-build
+    command: ["migrate"]
+    environment:
+      <<: *app-environment
     depends_on:
       postgres:
         condition: service_healthy
+    # One-shot job: success is its exit code, not a health probe.
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  api:
+    <<: *app
+    command: ["api"]
+    environment:
+      <<: *app-environment
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
-    volumes:
-      - ../logs:/var/log/lg_sotf
-      - ../configs:/app/configs
-      - ../models:/app/models
-      - ../playbooks:/app/playbooks
-    restart: unless-stopped
-    networks:
-      - lg-sotf-network
-
-  postgres:
-    image: postgres:15
-    container_name: lg-sotf-postgres
-    environment:
-      - POSTGRES_DB=lg_sotf_dev
-      - POSTGRES_USER=lg_sotf
-      - POSTGRES_PASSWORD=lg_sotf_dev_password
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ../scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lg_sotf -d lg_sotf_dev"]
+      test: ["CMD", "python", "/usr/local/lib/lg-sotf/healthcheck.py"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 6
+      start_period: 30s
     restart: unless-stopped
-    networks:
-      - lg-sotf-network
 
-  redis:
-    image: redis:7-alpine
-    container_name: lg-sotf-redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-    restart: unless-stopped
-    networks:
-      - lg-sotf-network
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: lg-sotf-prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    restart: unless-stopped
-    networks:
-      - lg-sotf-network
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: lg-sotf-grafana
-    ports:
-      - "3000:3000"
+  worker:
+    <<: *app
+    command: ["worker"]
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning
+      <<: *app-environment
+    ports:
+      - "127.0.0.1:${WORKER_HEALTH_PORT:-9101}:9100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/lib/lg-sotf/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    # worker.drain_timeout_s (60) plus margin for in-flight runs to checkpoint.
+    stop_grace_period: 75s
     restart: unless-stopped
-    networks:
-      - lg-sotf-network
+
+  scheduler:
+    <<: *app
+    command: ["scheduler"]
+    environment:
+      <<: *app-environment
+    ports:
+      - "127.0.0.1:${SCHEDULER_HEALTH_PORT:-9102}:9100"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "/usr/local/lib/lg-sotf/healthcheck.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  # Optional web UI. The image is defined by src/lg_front/Dockerfile (owned by
+  # the frontend); enable with `--profile frontend` once that file exists. It is
+  # expected to serve the SPA as a non-root static server on port 8080.
+  frontend:
+    profiles: ["frontend"]
+    image: ${FRONTEND_IMAGE:-lg-sotf-frontend:dev}
+    build:
+      context: ../src/lg_front
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_BIND:-127.0.0.1}:${FRONTEND_PORT:-3000}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/ || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 10s
+    restart: unless-stopped
 
 volumes:
-  postgres_data:
-  redis_data:
-  prometheus_data:
-  grafana_data:
+  pgdata:
+  redisdata:
 
-networks:
-  lg-sotf-network:
-    driver: bridge
+secrets:
+  # Optional CA bundle for builds behind a TLS-intercepting proxy; the default
+  # is an empty file so ordinary builds need nothing.
+  build_ca:
+    file: ${BUILD_CA_FILE:-./empty-ca.crt}

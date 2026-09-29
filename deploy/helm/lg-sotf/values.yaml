@@ -1,0 +1,467 @@
+# Default values for the lg-sotf chart. See docs/deployment.md.
+#
+# Secrets are NEVER generated or stored by this chart. Create them first (for
+# example with `python scripts/generate_secrets.py --format k8s`, a sealed
+# secret, or External Secrets) and reference them under `secrets`.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/gapilongo/lg-sotf
+  # Defaults to the chart appVersion.
+  tag: ""
+  # Pin by digest in production (takes precedence over tag), e.g. sha256:abc...
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+commonLabels: {}
+commonAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Secrets (created outside the chart)
+# ---------------------------------------------------------------------------
+secrets:
+  # Runtime secret, loaded with envFrom into every component. Expected keys:
+  #   LG_SOTF_DATABASE__URL                 runtime role DSN (api/worker)
+  #   LG_SOTF_REDIS__URL                    redis:// or rediss:// URL
+  #   LG_SOTF_AUTH__JWT_SECRET              >= 32 bytes
+  #   LG_SOTF_SECURITY__ENCRYPTION_KEYS     Fernet key(s), comma separated
+  #   LG_SOTF_SECURITY__INDICATOR_HMAC_KEY  >= 16 bytes, never rotate casually
+  #   LG_SOTF_API__METRICS_TOKEN            bearer token for the API /metrics
+  #   ANTHROPIC_API_KEY (or OPENAI_API_KEY / GOOGLE_API_KEY / LG_SOTF_LLM__API_KEY)
+  # Optional: LG_SOTF_RESPONSE__WEBHOOK_SECRET.
+  # Empty means a Secret named "<release fullname>".
+  existingSecret: ""
+  # Schema-owner secret, loaded only into the migrate job and the scheduler.
+  # Key: LG_SOTF_DATABASE__MIGRATION_URL. Leave empty for single-role installs
+  # (the owner role is then database.url everywhere).
+  ownerSecret: ""
+  # Bootstrap admin, loaded only into the migrate job. Keys:
+  # LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL, LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD.
+  bootstrapSecret: ""
+
+# ---------------------------------------------------------------------------
+# Application settings (non-secret). Rendered to a ConfigMap as a YAML file
+# loaded through LG_SOTF_CONFIG_FILE; environment variables (the Secrets above,
+# extraEnv) take precedence. Structure mirrors lg_sotf.settings.Settings.
+# Secret-bearing keys are rejected by values.schema.json.
+# ---------------------------------------------------------------------------
+settings:
+  environment: production
+  database:
+    # Name of the runtime login role that `lg-sotf migrate` grants privileges
+    # to (two-role installs). Leave empty for single-role installs.
+    runtime_role: ""
+    pool_min: 2
+    pool_max: 10
+    command_timeout_s: 30
+    statement_timeout_ms: 30000
+    ssl_mode: require
+  redis:
+    key_prefix: lgsotf
+    max_connections: 64
+  llm:
+    enabled: true
+    provider: anthropic
+    allow_fake: false
+    fast:
+      model: claude-haiku-4-5
+      max_tokens: 1024
+      timeout_s: 60
+      max_retries: 3
+      max_concurrency: 16
+    deep:
+      model: claude-opus-5-5
+      max_tokens: 16000
+      timeout_s: 300
+      max_retries: 3
+      max_concurrency: 8
+    prompt_caching: true
+    daily_token_budget_per_tenant: 5000000
+  auth:
+    cookie_secure: true
+    access_token_ttl_s: 900
+    refresh_token_ttl_s: 1209600
+  api:
+    host: 0.0.0.0
+    port: 8000
+    public_url: https://soc.example.com
+    cors_origins: []
+    docs_enabled: false
+    # Proxies whose X-Forwarded-For/-Proto are trusted (IPs/CIDRs, comma
+    # separated). The client IP drives the per-IP login and auth-failure rate
+    # limits and the audit trail, so list ONLY the ingress controller pods or
+    # load balancer addresses, never the whole pod/cluster range (any pod in it
+    # could then forge its source IP). Nothing is trusted by default.
+    forwarded_allow_ips: "127.0.0.1"
+  worker:
+    concurrency: 16
+    per_tenant_concurrency: 8
+    max_deliveries: 5
+    drain_timeout_s: 60
+  scheduler:
+    leader_lease_s: 30
+  retention:
+    alerts_days: 90
+    events_days: 90
+    audit_days: 365
+    checkpoints_days: 30
+  observability:
+    log_level: INFO
+    log_format: json
+    metrics_enabled: true
+  response:
+    dry_run: true
+
+# Extra environment for every component (e.g. OTLP endpoint, proxies).
+extraEnv: []
+#  - name: LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT
+#    value: http://otel-collector.observability:4318
+extraEnvFrom: []
+extraVolumes: []
+extraVolumeMounts: []
+
+# ---------------------------------------------------------------------------
+# Shared pod settings
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # The application never talks to the Kubernetes API.
+  automountServiceAccountToken: false
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+# Size of the writable emptyDir mounted at /tmp (the root filesystem is read-only).
+tmpSizeLimit: 128Mi
+
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Applied to every component unless the component sets its own. Spreads
+# replicas across zones and nodes without blocking scheduling.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+  zone:
+    whenUnsatisfiable: ScheduleAnyway
+  hostname:
+    whenUnsatisfiable: ScheduleAnyway
+
+# ---------------------------------------------------------------------------
+# API (lg-sotf api)
+# ---------------------------------------------------------------------------
+api:
+  enabled: true
+  replicaCount: 2
+  containerPort: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+    annotations: {}
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    periodSeconds: 2
+    timeoutSeconds: 3
+    failureThreshold: 30
+  # Lets endpoints and load balancers stop routing before uvicorn shuts down.
+  preStopSleepSeconds: 5
+  terminationGracePeriodSeconds: 30
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: ""
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Worker (lg-sotf worker)
+# ---------------------------------------------------------------------------
+worker:
+  enabled: true
+  replicaCount: 2
+  healthPort: 9100
+  resources:
+    requests:
+      cpu: 500m
+      memory: 768Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 4
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    periodSeconds: 2
+    timeoutSeconds: 3
+    failureThreshold: 60
+  # Must exceed settings.worker.drain_timeout_s so in-flight runs checkpoint.
+  terminationGracePeriodSeconds: 90
+  # CPU-based HPA, used when keda.enabled is false.
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  # Queue-lag autoscaling with KEDA (requires the KEDA operator).
+  keda:
+    enabled: false
+    minReplicaCount: 1
+    maxReplicaCount: 20
+    pollingInterval: 15
+    cooldownPeriod: 300
+    # Target consumer-group lag per replica; roughly worker concurrency.
+    lagCount: "16"
+    activationLagCount: "0"
+    consumerGroup: workers
+    # host:port of Redis as reachable from the KEDA operator.
+    redisAddress: redis-master.redis.svc:6379
+    databaseIndex: 0
+    enableTLS: false
+    # Secret/key holding the Redis password, if any.
+    passwordSecret:
+      name: ""
+      key: ""
+    # Replica count KEDA holds when the scaler fails (KEDA fallback).
+    fallback:
+      failureThreshold: 3
+      replicas: 4
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Scheduler (lg-sotf scheduler): two replicas, one leader via a PostgreSQL
+# advisory lock; the follower takes over within scheduler.leader_lease_s.
+# ---------------------------------------------------------------------------
+scheduler:
+  enabled: true
+  replicaCount: 2
+  healthPort: 9100
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    periodSeconds: 15
+    timeoutSeconds: 3
+    failureThreshold: 4
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: health
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startupProbe:
+    httpGet:
+      path: /healthz
+      port: health
+    periodSeconds: 2
+    timeoutSeconds: 3
+    failureThreshold: 30
+  terminationGracePeriodSeconds: 45
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  topologySpreadConstraints: []
+
+# ---------------------------------------------------------------------------
+# Migrations (lg-sotf migrate): runs before install and before every upgrade.
+# ---------------------------------------------------------------------------
+migrate:
+  enabled: true
+  # true: Helm pre-install/pre-upgrade hook (also honoured by Argo CD as
+  # PreSync). false: an ordinary Job rendered with the release, named
+  # <fullname>-migrate-<digest of image+settings> so each upgrade creates a
+  # new Job, annotated with Argo CD sync-wave -1. Plain Helm does not order it
+  # before the Deployments; keep hooks on unless a GitOps tool orders syncs.
+  useHelmHooks: true
+  backoffLimit: 3
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Optional web UI (image built from src/lg_front/Dockerfile).
+# ---------------------------------------------------------------------------
+frontend:
+  enabled: false
+  replicaCount: 2
+  image:
+    repository: ghcr.io/gapilongo/lg-sotf-frontend
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    type: ClusterIP
+    port: 8080
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  podAnnotations: {}
+
+# ---------------------------------------------------------------------------
+# Ingress (optional). With the frontend enabled, "/" goes to the UI and
+# "/api" to the API; otherwise everything goes to the API.
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  #  cert-manager.io/cluster-issuer: letsencrypt
+  #  nginx.ingress.kubernetes.io/proxy-body-size: 10m
+  #  nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"   # websockets
+  hosts:
+    - soc.example.com
+  tls: []
+  #  - secretName: lg-sotf-tls
+  #    hosts: [soc.example.com]
+
+# ---------------------------------------------------------------------------
+# Prometheus Operator ServiceMonitors (optional).
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  labels: {}
+  # The API /metrics requires settings.api.metrics_token; the scrape reads it
+  # from this Secret key (defaults to the runtime secret).
+  apiBearerTokenSecret:
+    name: ""
+    key: LG_SOTF_API__METRICS_TOKEN
+
+# ---------------------------------------------------------------------------
+# NetworkPolicy (optional). Ingress: API port from `api.from` (required when
+# enabled: the trusted ingress controller / load balancer), plus the
+# Prometheus scrape from `metricsFrom` when serviceMonitor.enabled and the
+# chart's `helm test` pod when tests.enabled; health/metrics ports of the
+# worker and scheduler from `metricsFrom` (any source when empty). Egress (when enabled):
+# DNS, PostgreSQL, Redis, and HTTPS for LLM/SIEM/SOAR endpoints.
+# ---------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  api:
+    from: []
+    #  - namespaceSelector:
+    #      matchLabels:
+    #        kubernetes.io/metadata.name: ingress-nginx
+  metricsFrom: []
+  #  - namespaceSelector:
+  #      matchLabels:
+  #        kubernetes.io/metadata.name: monitoring
+  egress:
+    enabled: false
+    databasePort: 5432
+    redisPort: 6379
+    # Destinations for the database and Redis (default: anywhere).
+    databaseTo: []
+    redisTo: []
+    # HTTPS egress for the LLM provider, pull sources and webhooks.
+    httpsTo:
+      - ipBlock:
+          cidr: 0.0.0.0/0
+    extra: []
+
+# Helm test (`helm test <release>`): checks the API /readyz through its Service.
+tests:
+  enabled: true

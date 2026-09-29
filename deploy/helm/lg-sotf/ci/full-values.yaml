@@ -1,0 +1,80 @@
+# Every optional feature enabled; used by CI (helm lint/template + kubeconform)
+# and tests/deploy. Names below are examples, not real credentials.
+image:
+  repository: registry.example.com/lg-sotf
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+imagePullSecrets:
+  - name: registry-credentials
+
+commonLabels:
+  team: secops
+
+secrets:
+  existingSecret: lg-sotf-runtime
+  ownerSecret: lg-sotf-owner
+  bootstrapSecret: lg-sotf-bootstrap
+
+settings:
+  environment: production
+  database:
+    runtime_role: lgsotf_app
+    ssl_mode: verify-full
+  api:
+    public_url: https://soc.example.com
+    cors_origins: ["https://soc.example.com"]
+
+extraEnv:
+  - name: LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT
+    value: http://otel-collector.observability:4318
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/lg-sotf
+
+priorityClassName: lg-sotf-critical
+
+worker:
+  keda:
+    enabled: true
+    redisAddress: redis-master.redis.svc:6379
+    enableTLS: true
+    passwordSecret:
+      name: redis-auth
+      key: password
+
+frontend:
+  enabled: true
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - soc.example.com
+  tls:
+    - secretName: lg-sotf-tls
+      hosts: [soc.example.com]
+
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kube-prometheus-stack
+
+networkPolicy:
+  enabled: true
+  api:
+    from:
+      - namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: ingress-nginx
+  metricsFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: monitoring
+  egress:
+    enabled: true
+    databaseTo:
+      - ipBlock:
+          cidr: 10.20.0.0/16

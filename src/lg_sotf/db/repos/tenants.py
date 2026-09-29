@@ -56,6 +56,20 @@ class TenantsRepo(Repository):
                 raise Conflict(f"tenant already exists: {tenant_id}") from exc
         return Tenant.model_validate(dict(row))
 
+    async def provision(self, tenant_id: str, name: str) -> Tenant:
+        """Create a tenant through ``lgsotf_create_tenant`` (works for the runtime role); :class:`Conflict` if it exists.
+
+        The function inserts only the id and name, so the runtime role can
+        provision a tenant without INSERT on ``tenants`` or an RLS bypass.
+        Callers authorise the request (platform admins only).
+        """
+        validate_tenant_id(tenant_id)
+        async with self._lookup() as c:
+            row = await c.fetchrow("SELECT * FROM lgsotf_create_tenant($1, $2)", tenant_id, name)
+        if row is None:
+            raise Conflict(f"tenant already exists: {tenant_id}")
+        return Tenant.model_validate(dict(row))
+
     async def ensure(self, tenant_id: str, name: str) -> Tenant:
         """Create the tenant if missing and return it (bootstrap, idempotent)."""
         validate_tenant_id(tenant_id)

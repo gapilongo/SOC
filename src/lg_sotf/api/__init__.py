@@ -1,5 +1,5 @@
-"""LG-SOTF API package."""
+"""HTTP/WebSocket API (contract section 10). ``create_app`` is the uvicorn factory."""
 
-from .app import app, create_app
+from lg_sotf.api.app import create_app
 
-__all__ = ["app", "create_app"]
+__all__ = ["create_app"]

@@ -32,6 +32,7 @@ from lg_sotf.settings import get_settings
 
 __all__ = [
     "MIGRATIONS_DIR",
+    "PROVISIONING_FUNCTIONS",
     "RUNTIME_TABLE_PRIVILEGES",
     "alembic_config",
     "current_revision",
@@ -80,6 +81,7 @@ AUTH_LOOKUP_FUNCTIONS: Tuple[str, ...] = (
     "lgsotf_auth_api_key(uuid)",
     "lgsotf_auth_users_by_email(text)",
 )
+PROVISIONING_FUNCTIONS: Tuple[str, ...] = ("lgsotf_create_tenant(text, text)",)
 
 log = structlog.get_logger(__name__)
 
@@ -184,7 +186,7 @@ def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tabl
         )
     for seq in sequences:
         stmts.append(sql.SQL("GRANT USAGE ON SEQUENCE {} TO {}").format(sql.Identifier(*seq.split(".", 1)), who))
-    for fn in AUTH_LOOKUP_FUNCTIONS:
+    for fn in (*AUTH_LOOKUP_FUNCTIONS, *PROVISIONING_FUNCTIONS):
         stmts.append(sql.SQL("GRANT EXECUTE ON FUNCTION {} TO {}").format(sql.SQL(fn), who))
     return stmts
 

@@ -1,0 +1,125 @@
+# Production-like override: two database roles and real secrets.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
+#       --env-file .env up -d --build
+#
+# Differences from the development stack:
+# * PostgreSQL has a superuser used only for administration plus two login
+#   roles created by postgres/init-roles.sh on first start:
+#     lgsotf_owner  migrate + scheduler (database.migration_url)
+#     lgsotf_app    api + worker      (database.url, database.runtime_role)
+#   `lg-sotf migrate` grants lgsotf_app its least-privilege table grants, and
+#   row-level security cannot be bypassed from it.
+# * environment=staging, so every process runs settings.assert_safe(): the
+#   secrets below are mandatory, placeholder values are refused, and the dev
+#   YAML with its published keys is not loaded.
+# * No app container loads .env as an env_file (env_file is reset below):
+#   .env is read only for ${...} interpolation via --env-file, so the database
+#   passwords and the bootstrap admin password never reach the containers.
+#   Each service receives exactly:
+#     migrate    runtime + owner DSNs, app secrets, bootstrap admin
+#     scheduler  runtime + owner DSNs, app secrets
+#     api/worker runtime DSN (lgsotf_app), app secrets
+#   Optional settings listed under x-passthrough are forwarded from .env or the
+#   shell only when set; add further keys there rather than re-enabling
+#   env_file.
+#
+# Required in .env (generate with `make secrets`): POSTGRES_SUPERUSER_PASSWORD,
+# LGSOTF_OWNER_PASSWORD, LGSOTF_APP_PASSWORD, LG_SOTF_AUTH__JWT_SECRET,
+# LG_SOTF_SECURITY__ENCRYPTION_KEYS, LG_SOTF_SECURITY__INDICATOR_HMAC_KEY.
+# The fake LLM is allowed here only for demos (LG_SOTF_LLM__ALLOW_FAKE=true);
+# set LG_SOTF_LLM__PROVIDER=anthropic and ANTHROPIC_API_KEY for real use.
+# auth.cookie_secure is true, so browser logins need HTTPS in front of the API
+# (terminate TLS in a reverse proxy; see docs/deployment.md).
+
+x-prod-environment: &prod-environment
+  LG_SOTF_ENVIRONMENT: staging
+  LG_SOTF_CONFIG_FILE: ""
+  LG_SOTF_DATABASE__URL: postgresql://lgsotf_app:${LGSOTF_APP_PASSWORD:?set LGSOTF_APP_PASSWORD}@postgres:5432/lgsotf
+  LG_SOTF_DATABASE__RUNTIME_ROLE: lgsotf_app
+  LG_SOTF_REDIS__URL: redis://redis:6379/0
+  LG_SOTF_LLM__PROVIDER: ${LG_SOTF_LLM__PROVIDER:-fake}
+  LG_SOTF_LLM__ALLOW_FAKE: ${LG_SOTF_LLM__ALLOW_FAKE:-true}
+  LG_SOTF_AUTH__JWT_SECRET: ${LG_SOTF_AUTH__JWT_SECRET:?set LG_SOTF_AUTH__JWT_SECRET}
+  LG_SOTF_AUTH__COOKIE_SECURE: "true"
+  LG_SOTF_SECURITY__ENCRYPTION_KEYS: ${LG_SOTF_SECURITY__ENCRYPTION_KEYS:?set LG_SOTF_SECURITY__ENCRYPTION_KEYS}
+  LG_SOTF_SECURITY__INDICATOR_HMAC_KEY: ${LG_SOTF_SECURITY__INDICATOR_HMAC_KEY:?set LG_SOTF_SECURITY__INDICATOR_HMAC_KEY}
+  LG_SOTF_API__DOCS_ENABLED: "false"
+  LG_SOTF_OBSERVABILITY__LOG_FORMAT: json
+
+# Optional settings forwarded when set in .env or the shell (a key with no
+# value is passed through, and left unset in the container when undefined).
+x-passthrough: &passthrough
+  LG_SOTF_API__METRICS_TOKEN:
+  LG_SOTF_API__PUBLIC_URL:
+  LG_SOTF_API__CORS_ORIGINS:
+  LG_SOTF_API__FORWARDED_ALLOW_IPS:
+  LG_SOTF_AUTH__COOKIE_DOMAIN:
+  LG_SOTF_AUTH__OIDC_ISSUER:
+  LG_SOTF_AUTH__OIDC_AUDIENCE:
+  LG_SOTF_AUTH__OIDC_JWKS_URL:
+  LG_SOTF_AUTH__OIDC_DEFAULT_TENANT:
+  LG_SOTF_LLM__API_KEY:
+  LG_SOTF_LLM__BASE_URL:
+  LG_SOTF_LLM__FAST__MODEL:
+  LG_SOTF_LLM__DEEP__MODEL:
+  LG_SOTF_LLM__DAILY_TOKEN_BUDGET_PER_TENANT:
+  ANTHROPIC_API_KEY:
+  OPENAI_API_KEY:
+  GOOGLE_API_KEY:
+  LG_SOTF_RESPONSE__DRY_RUN:
+  LG_SOTF_RESPONSE__WEBHOOK_URL:
+  LG_SOTF_RESPONSE__WEBHOOK_SECRET:
+  LG_SOTF_WORKER__CONCURRENCY:
+  LG_SOTF_OBSERVABILITY__LOG_LEVEL:
+  LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT:
+
+x-owner-url: &owner-url postgresql://lgsotf_owner:${LGSOTF_OWNER_PASSWORD:?set LGSOTF_OWNER_PASSWORD}@postgres:5432/lgsotf
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?set POSTGRES_SUPERUSER_PASSWORD}
+      POSTGRES_DB: postgres
+      LGSOTF_OWNER_PASSWORD: ${LGSOTF_OWNER_PASSWORD:?set LGSOTF_OWNER_PASSWORD}
+      LGSOTF_APP_PASSWORD: ${LGSOTF_APP_PASSWORD:?set LGSOTF_APP_PASSWORD}
+      LGSOTF_DB: lgsotf
+    volumes:
+      - pgdata-prod:/var/lib/postgresql/data
+      - ./postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-init-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lgsotf -h 127.0.0.1"]
+
+  redis:
+    volumes:
+      - redisdata-prod:/data
+
+  migrate:
+    env_file: !reset []
+    environment:
+      <<: [*prod-environment, *passthrough]
+      LG_SOTF_DATABASE__MIGRATION_URL: *owner-url
+      # First admin, created once when the bootstrap tenant has no users.
+      LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL:
+      LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD:
+
+  scheduler:
+    env_file: !reset []
+    environment:
+      <<: [*prod-environment, *passthrough]
+      LG_SOTF_DATABASE__MIGRATION_URL: *owner-url
+
+  api:
+    env_file: !reset []
+    environment:
+      <<: [*prod-environment, *passthrough]
+
+  worker:
+    env_file: !reset []
+    environment:
+      <<: [*prod-environment, *passthrough]
+
+volumes:
+  pgdata-prod:
+  redisdata-prod:

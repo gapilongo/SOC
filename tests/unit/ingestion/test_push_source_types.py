@@ -8,8 +8,6 @@ scheduler polls it every interval, logs ``scheduler.poll_failed`` with
 
 from __future__ import annotations
 
-import pytest
-
 from lg_sotf.db.repos.sources import PUSH_SOURCE_TYPES
 from lg_sotf.ingestion.sources import PUSH_ONLY_TYPES
 

@@ -224,10 +224,25 @@ def test_response_routes() -> None:
     assert routing.route_after_execute({"awaiting_actions": [], "analyst": TP}) == "close"
 
 
-def test_policy_response_without_a_human_or_real_action_escalates() -> None:
+def test_policy_response_without_a_human_or_completed_action_escalates() -> None:
     assert routing.route_after_plan({"plan": {"blocked": ["c"]}, "analyst": None}) == "escalate"
-    dry = {"awaiting_actions": [], "analyst": None, "executed": {"a": "dry_run", "b": "blocked"}}
-    assert routing.route_after_execute(dry) == "escalate"
+    blocked = {"awaiting_actions": [], "analyst": None, "executed": {"a": "blocked", "b": "rejected"}}
+    assert routing.route_after_execute(blocked) == "escalate"
+    assert routing.route_after_execute({"awaiting_actions": [], "analyst": None, "executed": {}}) == "escalate"
     real = {"awaiting_actions": [], "analyst": None, "executed": {"a": "succeeded", "b": "dry_run"}}
     assert routing.route_after_execute(real) == "close"
     assert routing.route_after_execute({"awaiting_actions": ["x"], "analyst": None, "executed": {}}) == "await_approval"
+
+
+def test_policy_response_in_dry_run_mode_closes() -> None:
+    """The tenant chose dry-run: a policy response whose actions all ran as dry_run is complete."""
+    dry = {"awaiting_actions": [], "analyst": None, "executed": {"a": "dry_run", "b": "blocked"}}
+    assert routing.route_after_execute(dry) == "close"
+    assert routing.route_after_execute({**dry, "executed": {"a": "dry_run"}}) == "close"
+
+
+def test_policy_response_with_a_failed_action_escalates() -> None:
+    failed = {"awaiting_actions": [], "analyst": None, "executed": {"a": "succeeded", "b": "failed"}}
+    assert routing.route_after_execute(failed) == "escalate"
+    assert routing.route_after_execute({**failed, "executed": {"a": "dry_run", "b": "failed"}}) == "escalate"
+    assert routing.route_after_execute({**failed, "analyst": TP}) == "close"

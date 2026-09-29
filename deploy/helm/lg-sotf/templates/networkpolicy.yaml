@@ -1,0 +1,152 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- if not $np.api.from }}
+{{- fail "networkPolicy.api.from must list the trusted ingress controller / load balancer sources when networkPolicy.enabled is true (an empty list would admit every pod)" }}
+{{- end }}
+{{- if and .Values.serviceMonitor.enabled (not $np.metricsFrom) }}
+{{- fail "networkPolicy.metricsFrom must select the Prometheus pods when both networkPolicy.enabled and serviceMonitor.enabled are true (otherwise the API scrape is blocked)" }}
+{{- end }}
+{{- range $component := list "api" "frontend" }}
+{{- if (index $.Values $component).enabled }}
+{{- $c := dict "root" $ "component" $component }}
+---
+# {{ $component }}: HTTP only, from networkPolicy.api.from{{ if eq $component "api" }}, the Prometheus
+# scrape (serviceMonitor.enabled) and the chart's helm test pod (tests.enabled){{ end }}.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lg-sotf.componentName" $c }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - port: http
+          protocol: TCP
+      from:
+        {{- toYaml $np.api.from | nindent 8 }}
+    {{- if eq $component "api" }}
+    {{- if $.Values.serviceMonitor.enabled }}
+    # Prometheus scrape of /metrics (bearer token protected).
+    - ports:
+        - port: http
+          protocol: TCP
+      from:
+        {{- toYaml $np.metricsFrom | nindent 8 }}
+    {{- end }}
+    {{- if $.Values.tests.enabled }}
+    # `helm test` pod (templates/tests/api-readyz.yaml), same namespace.
+    - ports:
+        - port: http
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "lg-sotf.selectorLabels" (dict "root" $ "component" "test") | nindent 14 }}
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- range $component := list "worker" "scheduler" }}
+{{- if (index $.Values $component).enabled }}
+{{- $c := dict "root" $ "component" $component }}
+---
+# {{ $component }}: only the health/metrics port, from networkPolicy.metricsFrom
+# (any source when empty). It serves no application traffic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lg-sotf.componentName" $c }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - ports:
+        - port: health
+          protocol: TCP
+      {{- with $np.metricsFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.migrate.enabled }}
+{{- $c := dict "root" $ "component" "migrate" }}
+---
+# migrate: no inbound traffic.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lg-sotf.componentName" $c }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  policyTypes: ["Ingress"]
+{{- end }}
+{{- if $np.egress.enabled }}
+---
+# Egress for every lg-sotf pod: DNS, PostgreSQL, Redis, HTTPS (LLM provider,
+# pull sources, SOAR webhooks) and any extra rules.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "lg-sotf.fullname" . }}-egress
+  labels:
+    {{- include "lg-sotf.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "lg-sotf.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes: ["Egress"]
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: {{ $np.egress.databasePort }}
+          protocol: TCP
+      {{- with $np.egress.databaseTo }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    - ports:
+        - port: {{ $np.egress.redisPort }}
+          protocol: TCP
+      {{- with $np.egress.redisTo }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    # In-release API calls (helm test).
+    - ports:
+        - port: {{ .Values.api.containerPort }}
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              {{- include "lg-sotf.selectorLabels" (dict "root" $ "component" "api") | nindent 14 }}
+    - ports:
+        - port: 443
+          protocol: TCP
+      {{- with $np.egress.httpsTo }}
+      to:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with $np.egress.extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

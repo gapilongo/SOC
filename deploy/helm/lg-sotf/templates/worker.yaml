@@ -1,0 +1,203 @@
+{{- if .Values.worker.enabled }}
+{{- $c := dict "root" . "component" "worker" "values" .Values.worker }}
+{{- $name := include "lg-sotf.componentName" $c }}
+{{- $keda := .Values.worker.keda }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if not (or $keda.enabled .Values.worker.autoscaling.enabled) }}
+  replicas: {{ .Values.worker.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "lg-sotf.podLabels" $c | nindent 8 }}
+      annotations:
+        {{- include "lg-sotf.podAnnotations" $c | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "lg-sotf.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.worker.terminationGracePeriodSeconds }}
+      {{- include "lg-sotf.scheduling" $c | trim | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "lg-sotf.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker", "--metrics-port", "{{ .Values.worker.healthPort }}"]
+          ports:
+            - name: health
+              containerPort: {{ .Values.worker.healthPort }}
+              protocol: TCP
+          env:
+            {{- include "lg-sotf.env" . | nindent 12 }}
+          envFrom:
+            {{- include "lg-sotf.envFrom" (dict "root" . "owner" false "bootstrap" false) | nindent 12 }}
+          {{- with .Values.worker.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.worker.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.worker.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "lg-sotf.volumeMounts" . | nindent 12 }}
+      volumes:
+        {{- include "lg-sotf.volumes" (dict "root" . "configMap" (include "lg-sotf.configMapName" .)) | nindent 8 }}
+---
+# Headless Service for Prometheus scraping and NetworkPolicy targeting; the
+# worker receives no application traffic.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  clusterIP: None
+  selector:
+    {{- include "lg-sotf.selectorLabels" $c | nindent 4 }}
+  ports:
+    - name: health
+      port: {{ .Values.worker.healthPort }}
+      targetPort: health
+      protocol: TCP
+{{- if $keda.enabled }}
+{{- if $keda.passwordSecret.name }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ $name }}-redis
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: {{ $keda.passwordSecret.name }}
+      key: {{ required "worker.keda.passwordSecret.key is required when passwordSecret.name is set" $keda.passwordSecret.key }}
+{{- end }}
+---
+# Scales on consumer-group lag of both priority streams (Redis >= 7).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicaCount: {{ $keda.minReplicaCount }}
+  maxReplicaCount: {{ $keda.maxReplicaCount }}
+  pollingInterval: {{ $keda.pollingInterval }}
+  cooldownPeriod: {{ $keda.cooldownPeriod }}
+  {{- with $keda.fallback }}
+  fallback:
+    failureThreshold: {{ .failureThreshold }}
+    replicas: {{ .replicas }}
+  {{- end }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+  triggers:
+    {{- range $stream := list "high" "normal" }}
+    - type: redis-streams
+      metadata:
+        address: {{ $keda.redisAddress | quote }}
+        databaseIndex: {{ $keda.databaseIndex | quote }}
+        enableTLS: {{ $keda.enableTLS | quote }}
+        stream: {{ include "lg-sotf.redisStream" (dict "root" $ "stream" $stream) | quote }}
+        consumerGroup: {{ $keda.consumerGroup | quote }}
+        lagCount: {{ $keda.lagCount | quote }}
+        activationLagCount: {{ $keda.activationLagCount | quote }}
+      {{- if $keda.passwordSecret.name }}
+      authenticationRef:
+        name: {{ $name }}-redis
+      {{- end }}
+    {{- end }}
+{{- else if .Values.worker.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ .Values.worker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.worker.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.worker.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+{{- end }}
+{{- if .Values.worker.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "lg-sotf.componentLabels" $c | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.worker.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "lg-sotf.selectorLabels" $c | nindent 6 }}
+{{- end }}
+{{- end }}

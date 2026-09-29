@@ -1,0 +1,21 @@
+# Build context allowlist: the image needs only the pinned requirements, the
+# package metadata, the application source, the reference configs and the
+# health probe. Everything else (VCS data, local secrets, caches, tests,
+# frontend sources) stays out of the context and therefore out of the image.
+*
+
+!requirements.txt
+!pyproject.toml
+!setup.py
+!README.md
+!LICENSE
+!src/lg_sotf/
+!configs/
+!docker/healthcheck.py
+
+# Never ship bytecode, build metadata or local environment files.
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+**/.env
+**/.env.*

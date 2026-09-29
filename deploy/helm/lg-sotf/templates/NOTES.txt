@@ -1,0 +1,55 @@
+LG-SOTF {{ .Chart.AppVersion }} is deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Components:
+{{- if .Values.api.enabled }}
+  api        {{ include "lg-sotf.componentName" (dict "root" . "component" "api") }} (port {{ .Values.api.service.port }})
+{{- end }}
+{{- if .Values.worker.enabled }}
+  worker     {{ include "lg-sotf.componentName" (dict "root" . "component" "worker") }}{{ if .Values.worker.keda.enabled }} (KEDA, queue lag){{ end }}
+{{- end }}
+{{- if .Values.scheduler.enabled }}
+  scheduler  {{ include "lg-sotf.componentName" (dict "root" . "component" "scheduler") }} ({{ .Values.scheduler.replicaCount }} replicas, one leader)
+{{- end }}
+{{- if .Values.migrate.enabled }}
+  migrate    {{ include "lg-sotf.componentName" (dict "root" . "component" "migrate") }} ({{ if .Values.migrate.useHelmHooks }}pre-install/pre-upgrade hook{{ else }}Job{{ end }})
+{{- end }}
+{{- if .Values.frontend.enabled }}
+  frontend   {{ include "lg-sotf.componentName" (dict "root" . "component" "frontend") }}
+{{- end }}
+
+Secrets are not created by this chart. The pods read:
+  runtime secret  {{ include "lg-sotf.runtimeSecretName" . }}  (all components)
+{{- if .Values.secrets.ownerSecret }}
+  owner secret    {{ .Values.secrets.ownerSecret }}  (migrate, scheduler)
+{{- else }}
+  owner secret    (none: single-role database; the owner URL is LG_SOTF_DATABASE__URL)
+{{- end }}
+{{- if .Values.secrets.bootstrapSecret }}
+  bootstrap       {{ .Values.secrets.bootstrapSecret }}  (migrate)
+{{- end }}
+If a pod is stuck in CreateContainerConfigError, a referenced Secret is missing.
+
+Check the rollout:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} logs -l app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=migrate --tail=50
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+{{- if .Values.ingress.enabled }}
+
+URL: {{ if .Values.ingress.tls }}https{{ else }}http{{ end }}://{{ first .Values.ingress.hosts }}/
+{{- else if .Values.api.enabled }}
+
+Port-forward the API:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "lg-sotf.componentName" (dict "root" . "component" "api") }} 8000:{{ .Values.api.service.port }}
+{{- end }}
+{{- if and (eq (toString .Values.settings.environment) "production") (not .Values.ingress.tls) .Values.ingress.enabled }}
+
+WARNING: ingress.tls is empty. settings.auth.cookie_secure requires HTTPS; terminate TLS at the ingress or load balancer.
+{{- end }}
+
+{{- $fwd := toString (default "" .Values.settings.api.forwarded_allow_ips) }}
+{{- if or (contains "*" $fwd) (contains "0.0.0.0/0" $fwd) (regexMatch "/([0-9]|1[0-5])(,|$|\\s)" $fwd) }}
+
+WARNING: settings.api.forwarded_allow_ips ({{ $fwd }}) trusts X-Forwarded-For from a very wide range.
+Any pod in it can forge its client IP, bypassing per-IP login rate limits and falsifying audit records.
+List only the ingress controller pods or load balancer addresses.
+{{- end }}

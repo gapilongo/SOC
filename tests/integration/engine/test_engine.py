@@ -13,6 +13,10 @@ from lg_sotf.core.exceptions import InvalidResumePayload
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.services.connectors.base import ConnectorResult
+from lg_sotf.services.connectors.dry_run import DryRunConnector
+from lg_sotf.services.response import ResponseService
+from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
 from tests.integration.engine.conftest import RecordingEvents
@@ -464,6 +468,42 @@ async def test_actions_can_be_approved_one_at_a_time(engine: WorkflowEngine, rep
     assert stale.status == "completed" and final[pending[1]] == "rejected"
 
 
+async def test_approvals_committed_while_the_run_executes_are_all_executed(
+    engine: WorkflowEngine, engine_settings: Settings, repos: Repositories, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Approvals land between execute() and the awaiting() re-read, on two passes: every one still runs once."""
+    alert_id = await suspicious_alert(repos)
+    user_id = await analyst(repos)
+    first = await engine.run(TENANT_A, alert_id)
+    second = await decide(engine, repos, alert_id, first.interrupt["escalation_id"], "true_positive", user_id)
+    pending = list(second.interrupt["action_ids"])
+    assert len(pending) >= 3
+    review = ReviewService(repos, engine_settings)
+    late = [[pending[1]], pending[2:]]
+    original = ResponseService.awaiting
+
+    async def approve_meanwhile(self: ResponseService, *args: Any, **kwargs: Any) -> Any:
+        if late:
+            await review.approve_actions(TENANT_A, late.pop(0), user_id, "admin")
+        return await original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ResponseService, "awaiting", approve_meanwhile)
+    outcome = await _approve(engine, alert_id, user_id, [pending[0]])
+
+    assert not late
+    assert outcome.status == "completed" and outcome.alert_status == "closed"
+    final = {str(a.id): a for a in (await repos.actions.list(TENANT_A, alert_id=alert_id, limit=50)).items}
+    assert all(final[i].status == "dry_run" for i in pending)
+    audited = [
+        e.resource_id
+        for e in (await repos.audit.list(TENANT_A, resource_type="response_action", limit=200)).items
+        if e.action == "response_action.executing"
+    ]
+    assert sorted(i for i in audited if i in pending) == sorted(pending)
+    stale = await _approve(engine, alert_id, user_id, pending[1:])
+    assert stale.status == "completed"
+
+
 async def test_alert_at_ingestion_size_limits_runs_to_completion(engine: WorkflowEngine, repos: Repositories) -> None:
     entities = {
         "urls": [f"https://cdn{i}.example.com/" + "u" * 700 for i in range(50)],
@@ -552,22 +592,50 @@ async def test_action_left_executing_by_a_crash_is_finished(
     assert next(a for a in actions if a.id == stuck[0].id).status == "dry_run"
 
 
-async def test_policy_response_with_only_dry_run_actions_goes_to_an_analyst(
-    engine_factory: Any, engine_settings: Settings, repos: Repositories
-) -> None:
+async def _policy_response_alert(engine_factory: Any, engine_settings: Settings, repos: Repositories) -> tuple[WorkflowEngine, str]:
     settings = engine_settings.model_copy(update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}})
     engine = await engine_factory(settings=settings)
     await repos.tenants.update_settings(TENANT_A, {"autonomy": {"low": "auto"}})
     alert_id = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
                                 normalized={"entities": {}})
+    return engine, alert_id
+
+
+async def test_policy_response_with_only_dry_run_actions_closes_malicious(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories
+) -> None:
+    """The tenant runs in dry-run mode: the dry-run actions are the completed response."""
+    engine, alert_id = await _policy_response_alert(engine_factory, engine_settings, repos)
+
+    outcome = await engine.run(TENANT_A, alert_id)
+
+    assert outcome.status == "completed" and outcome.alert_status == "closed"
+    actions = (await repos.actions.list(TENANT_A, alert_id=alert_id, limit=50)).items
+    assert actions and {a.status for a in actions} == {"dry_run"}
+    assert await repos.escalations.get_active_for_alert(TENANT_A, alert_id) is None
+    alert = await repos.alerts.get(TENANT_A, alert_id)
+    assert alert.disposition == "malicious"
+    assert alert.summary["close_reason"] == "policy:response"
+    assert alert.summary["dry_run"] is True and alert.summary["actions"] == {"dry_run": len(actions)}
+
+
+async def test_policy_response_with_a_failed_action_goes_to_an_analyst(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, alert_id = await _policy_response_alert(engine_factory, engine_settings, repos)
+
+    async def fail(self: DryRunConnector, action: Any) -> ConnectorResult:
+        return ConnectorResult("failed", {"error": "connector_exception"})
+
+    monkeypatch.setattr(DryRunConnector, "execute", fail)
 
     outcome = await engine.run(TENANT_A, alert_id)
 
     assert outcome.status == "waiting_human" and outcome.alert_status == "waiting_human"
     actions = (await repos.actions.list(TENANT_A, alert_id=alert_id, limit=50)).items
-    assert actions and {a.status for a in actions} == {"dry_run"}
+    assert actions and {a.status for a in actions} == {"failed"}
     esc = await repos.escalations.get(TENANT_A, outcome.interrupt["escalation_id"])
-    assert "automatic response" in esc.reason
+    assert esc.reason == "an automatic response action failed"
     alert = await repos.alerts.get(TENANT_A, alert_id)
     assert alert.status == "waiting_human" and alert.disposition is None
 
