@@ -25,6 +25,15 @@ Per message (contract section 7 and the ``workflow_runs`` claim rules):
    pending for a retry. A resume payload the engine rejects
    (:class:`InvalidResumePayload`) is permanent: the run goes back to the
    state it was claimed from and only the message is dead-lettered.
+5. Messages of a suspended tenant are acked without claiming the run: a
+   queued run stays ``queued`` and a waiting run keeps waiting (its decision
+   is stored on the escalation). The recovery sweeps skip suspended tenants
+   and pick the runs up again once the tenant is reactivated. Tenant status
+   is cached for :data:`TENANT_STATUS_TTL_S`.
+
+A ``process`` run that finishes its automated triage (completed or waiting
+for a human) is counted in ``usage_daily.alerts_processed`` in the same
+transaction as its final status.
 """
 
 from __future__ import annotations
@@ -66,6 +75,8 @@ LIVENESS_GRACE_S = 30.0
 RUN_TIMEOUT_GRACE_S = 5.0
 # How long another tenant counts as "active" after its last run or deferral in this worker.
 TENANT_ACTIVITY_WINDOW_S = 30.0
+# How long a tenant's active/suspended status is trusted before it is read again.
+TENANT_STATUS_TTL_S = 15.0
 # A resume that arrives while its run is not (yet) waiting is retried after this backoff
 # (doubling per attempt) instead of idling until worker.visibility_timeout_s.
 RESUME_RETRY_BASE_S = 1.0
@@ -180,6 +191,7 @@ class Worker:
         self._inflight: Set[asyncio.Task[None]] = set()
         self._tenant_running: Dict[str, int] = {}
         self._tenant_seen: Dict[str, float] = {}
+        self._tenant_status: Dict[str, Tuple[float, bool]] = {}
         self._retries: Set[asyncio.Task[None]] = set()
         self._loop_tick = time.monotonic()
         self._running = False
@@ -378,8 +390,33 @@ class Worker:
         finally:
             self._release_tenant(msg.tenant_id)
 
+    async def _tenant_active(self, tenant_id: str) -> bool:
+        """Whether the tenant may run work (cached); unknown tenants and lookup errors count as active."""
+        now = time.monotonic()
+        hit = self._tenant_status.get(tenant_id)
+        if hit is not None and hit[0] > now:
+            return hit[1]
+        try:
+            active = (await self._repos.tenants.get(tenant_id)).is_active
+        except NotFound:
+            active = True  # runs.start finds no run and handles the message
+        except Exception as exc:  # noqa: BLE001 - runs.start surfaces a real database outage
+            log.warning("worker.tenant_status_unavailable", error=type(exc).__name__)
+            return True
+        if len(self._tenant_status) > 10_000:
+            self._tenant_status.clear()
+        self._tenant_status[tenant_id] = (now + TENANT_STATUS_TTL_S, active)
+        return active
+
     async def process(self, msg: Message) -> None:
         """Handle one message end to end (public for tests and tooling)."""
+        if not await self._tenant_active(msg.tenant_id):
+            # The run is left as it is; the sweeps re-enqueue it once the tenant is reactivated.
+            await self._consumer.ack(msg)
+            self.stats.skipped += 1
+            record_run("skipped")
+            log.info("worker.tenant_suspended_skipped", kind=msg.kind)
+            return
         try:
             claimed = await self._repos.runs.start(
                 msg.tenant_id, msg.alert_id, self.worker_id, lease_s=self._lease_s, kind=msg.kind
@@ -418,14 +455,21 @@ class Worker:
         if outcome.status not in ("completed", "waiting_human", "waiting_approval"):
             await self._record_failure(msg, ValueError(f"engine returned an unknown run status: {outcome.status!r}"))
             return
+        # A fresh triage pass (not a resume, not a run claimed back from waiting) is metered once.
+        metered = msg.kind == "process" and claimed.claimed_from not in WAITING_RUN_STATUSES
         try:
+            async with self._db.tenant_tx(msg.tenant_id) as conn:
+                if outcome.status == "completed":
+                    await self._repos.runs.complete(msg.tenant_id, msg.alert_id, worker_id=self.worker_id, conn=conn)
+                else:
+                    await self._repos.runs.mark_waiting(
+                        msg.tenant_id, msg.alert_id, outcome.status, worker_id=self.worker_id, conn=conn
+                    )
+                if metered:
+                    await self._repos.usage.add_processed(msg.tenant_id, msg.alert_id, conn=conn)
             if outcome.status == "completed":
-                await self._repos.runs.complete(msg.tenant_id, msg.alert_id, worker_id=self.worker_id)
                 self.stats.completed += 1
             else:
-                await self._repos.runs.mark_waiting(
-                    msg.tenant_id, msg.alert_id, outcome.status, worker_id=self.worker_id
-                )
                 self.stats.waiting += 1
         except LeaseLost:
             await self._consumer.ack(msg)

@@ -32,7 +32,12 @@ Push (:meth:`IngestionService.ingest`) is accepted for:
 * the reserved ids ``api`` and ``api:<suffix>`` when no source is registered
   under them, as canonical-format events (``POST /ingest/alerts``; the API
   chooses the id, e.g. :func:`api_source_id` of the API key, never the
-  client).
+  client);
+* the reserved id ``demo:samples`` (the onboarding sample alerts), also
+  canonical; its alerts are flagged ``sample`` and never metered.
+
+Every stored alert is counted in ``usage_daily`` (invoicing, daily quota) in
+the transaction that inserts it.
 
 Pushing to a pull source or to any other unregistered id raises
 :class:`SourceNotPushable`: alerts are deduplicated on ``(source_id,
@@ -57,6 +62,7 @@ import httpx
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import NewAlert, Repositories, Source
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.ingestion.errors import (
     IngestionError,
     NormalizationError,
@@ -96,6 +102,7 @@ _SURROGATE = re.compile("[\ud800-\udfff]")
 SOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 FLAG_RAW_TRUNCATED = "raw_truncated"
 FLAG_REDACTED = "secrets_redacted"
+FLAG_SAMPLE = "sample"
 MAX_CACHED_CONNECTORS = 512
 MAX_ERROR_CHARS = 500
 API_SOURCE_ID = "api"
@@ -167,8 +174,8 @@ class _CachedConnector:
 
 
 def is_reserved_source_id(source_id: str) -> bool:
-    """Ids reserved for the canonical push endpoint (``api``, ``api:<suffix>``)."""
-    return source_id == API_SOURCE_ID or source_id.startswith(API_SOURCE_PREFIX)
+    """Ids reserved by the server: the canonical push endpoint (``api``, ``api:<suffix>``) and the samples."""
+    return source_id in (API_SOURCE_ID, SAMPLE_SOURCE_ID) or source_id.startswith(API_SOURCE_PREFIX)
 
 
 def api_source_id(api_key_id: Optional[str] = None) -> str:
@@ -505,6 +512,8 @@ class IngestionService:
             flags.append(FLAG_RAW_TRUNCATED)
         if redactions:
             flags.append(FLAG_REDACTED)
+        if alert.source_id == SAMPLE_SOURCE_ID:
+            flags.append(FLAG_SAMPLE)
         alert = alert.model_copy(update={"raw": raw, "flags": flags})
         row = NewAlert(
             source_id=alert.source_id,
@@ -643,6 +652,8 @@ class IngestionService:
             for start in range(0, len(unique), batch):
                 chunk = [p.row for p in unique[start : start + batch]]
                 inserted_ids.update(await self._repos.alerts.insert_many_if_absent(tenant_id, chunk, conn=conn))
+            if inserted_ids and source_id != SAMPLE_SOURCE_ID:
+                await self._repos.usage.add_ingested(tenant_id, len(inserted_ids), conn=conn)
             dup_keys = [p.row.source_alert_id for p in unique if p.row.id not in inserted_ids]
             dup_keys.extend(in_batch_dupes.values())
             if dup_keys:

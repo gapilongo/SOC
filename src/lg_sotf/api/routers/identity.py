@@ -8,6 +8,8 @@
   platform admin can grant the platform-admin flag.
 * Changing a password or deactivating a user revokes their refresh tokens.
 * An API key's secret appears only in the create response.
+* Creating or reactivating an account beyond the tenant's ``max_users``
+  quota (active accounts) is refused with ``409 quota_exceeded``.
 """
 
 from __future__ import annotations
@@ -21,12 +23,14 @@ from lg_sotf.api.auth.deps import ADMIN, ADMIN_USER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.schemas import ApiKeyCreatedOut, ApiKeyCreateIn, ApiKeyOut, UserCreateIn, UserOut, UserUpdateIn
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import UNSET
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.security.hashing import ahash_password, generate_api_key
+from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
 
 users = APIRouter(prefix="/users", tags=["users"])
 api_keys = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -100,14 +104,20 @@ async def create_user(body: UserCreateIn, request: Request, principal: Principal
         check_password(ctx, body.password)
         password_hash = await ahash_password(body.password)
     try:
-        user = await ctx.repos.users.create(
-            principal.tenant_id,
-            email,
-            body.role,
-            password_hash=password_hash,
-            is_platform_admin=body.is_platform_admin,
-            is_active=body.is_active,
-        )
+        async with ctx.db.tenant_tx(principal.tenant_id) as conn:
+            if body.is_active:
+                await ensure_capacity(ctx.repos, principal.tenant_id, "max_users", conn=conn)
+            user = await ctx.repos.users.create(
+                principal.tenant_id,
+                email,
+                body.role,
+                password_hash=password_hash,
+                is_platform_admin=body.is_platform_admin,
+                is_active=body.is_active,
+                conn=conn,
+            )
+    except QuotaExceeded as exc:
+        raise quota_conflict(exc) from exc
     except Conflict as exc:
         raise ApiError(409, "conflict", "a user with this email already exists") from exc
     await _audit(ctx, principal, "user.created", "user", str(user.id), role=user.role, sso_only=password_hash is None)
@@ -143,6 +153,11 @@ async def update_user(
         )
         if demoting and await ctx.repos.users.count_active_admins(tenant_id, conn=conn) <= 1:
             raise ApiError(409, "last_admin", "the tenant must keep at least one active admin")
+        if body.is_active is True and not current.is_active:
+            try:
+                await ensure_capacity(ctx.repos, tenant_id, "max_users", conn=conn)
+            except QuotaExceeded as exc:
+                raise quota_conflict(exc) from exc
         user = await ctx.repos.users.update(
             tenant_id,
             user_id,

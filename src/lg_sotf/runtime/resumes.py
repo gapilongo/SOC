@@ -19,7 +19,8 @@ The scheduler's ``orphaned_runs`` job calls :func:`recover_lost_resumes` for
 runs that have waited like that longer than a threshold, and ``lg-sotf
 enqueue --resume`` does it for one alert. A duplicate of a message that was
 only delayed is harmless: the worker refuses a resume for a run that is no
-longer waiting.
+longer waiting. Suspended tenants are skipped (the worker would drop their
+messages); their decisions are recovered after reactivation.
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ _STRANDED_WAITING_SQL = """
 SELECT r.tenant_id, r.alert_id, r.status
 FROM workflow_runs r
 WHERE r.updated_at < now() - make_interval(secs => $1)
+  AND EXISTS (SELECT 1 FROM tenants t WHERE t.id = r.tenant_id AND t.status = 'active')
   AND (
     (r.status = 'waiting_human' AND EXISTS (
         SELECT 1 FROM escalations e

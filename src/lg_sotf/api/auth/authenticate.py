@@ -58,6 +58,10 @@ def forbidden(message: str) -> ApiError:
     return ApiError(403, "forbidden", message)
 
 
+def tenant_suspended() -> ApiError:
+    return ApiError(403, "tenant_suspended", "tenant is suspended")
+
+
 def client_ip(conn: HTTPConnection) -> str:
     return conn.client.host if conn.client else "unknown"
 
@@ -281,7 +285,8 @@ async def _require_active_tenant(ctx: ApiContext, tenant_id: str) -> None:
     if tenant is None:
         raise unauthorized("tenant does not exist")
     if tenant.status != "active":
-        raise forbidden("tenant is suspended")
+        # Users, SSO identities and API keys (ingest included) of a suspended tenant are refused.
+        raise tenant_suspended()
 
 
 async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principal: Principal) -> Principal:
