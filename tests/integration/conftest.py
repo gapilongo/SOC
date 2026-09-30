@@ -37,6 +37,7 @@ ALL_TABLES = (
     "sources",
     "api_keys",
     "refresh_tokens",
+    "user_mfa",
     "users",
     "tenants",
 )

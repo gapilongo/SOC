@@ -6,7 +6,13 @@ Accepted credentials, checked in this order:
 * ``Authorization: Bearer <access JWT>`` issued by ``POST /auth/login``
   (HS256); the user row is re-read on every request, so deactivation and
   role changes apply immediately, and logged-out tokens are refused;
-* ``Authorization: Bearer <OIDC JWT>`` from ``auth.oidc_issuer``.
+* ``Authorization: Bearer <OIDC JWT>`` from ``auth.oidc_issuer``. The role
+  comes from the ``auth.oidc_role_claim`` values through
+  ``auth.oidc_role_map`` (highest mapped role wins; ``auth.oidc_default_role``
+  when nothing maps; refused when that is unset too). With
+  ``auth.oidc_jit_provisioning`` a verified identity without a local account
+  gets one (linked by the IdP subject), and a provisioned account's stored
+  role follows the IdP on later sign-ins. OIDC never grants platform admin.
 
 Failed authentications are counted per client address and per (address,
 credential fingerprint). A credential that verifies is always accepted, so
@@ -21,24 +27,26 @@ from __future__ import annotations
 
 import hmac
 from datetime import UTC, datetime
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
 from redis.exceptions import RedisError
 from starlette.requests import HTTPConnection
 
-from lg_sotf.api.auth.oidc import OIDCError, OIDCUnavailable
-from lg_sotf.api.auth.principal import ROLE_RANK, Principal
+from lg_sotf.api.auth.oidc import OIDCError, OIDCIdentity, OIDCUnavailable
+from lg_sotf.api.auth.principal import ROLE_RANK, ROLES, Principal
 from lg_sotf.api.auth.tokens import InvalidToken, is_local_token
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
 from lg_sotf.api.ratelimit import RateDecision, rate_limited
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db.errors import NotFound
+from lg_sotf.db.errors import Conflict, NotFound
+from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger
 from lg_sotf.security.hashing import InvalidApiKey, hash_api_key, looks_like_api_key, parse_api_key, sha256_hex
+from lg_sotf.settings import AuthSettings
 
 log = get_logger(__name__)
 
@@ -48,6 +56,7 @@ AUTH_FAILURE_BUCKET = "authfail"
 MIN_AUTH_FAILURES_PER_MINUTE = 20
 _DUMMY_KEY_HASH = "0" * 64
 MAX_CREDENTIAL_CHARS = 8_192
+MAX_OIDC_SUBJECT_CHARS = 255
 
 
 def unauthorized(message: str = "authentication required") -> ApiError:
@@ -218,10 +227,12 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
     tenant_id = identity.tenant_id
     if not tenant_id or not is_valid_tenant_id(tenant_id):
         raise unauthorized("token carries no valid tenant")
-    known = [r for r in identity.roles if r in ROLE_RANK]
-    if not known:
+    role = map_oidc_role(ctx.settings.auth, identity.roles)
+    if role is None:
         raise forbidden("this identity has no LG-SOTF role")
-    role = max(known, key=lambda r: ROLE_RANK[r])
+    provisioned = await _provisioned_user(ctx, tenant_id, identity, role)
+    if provisioned is not None:
+        return _oidc_user_principal(identity, tenant_id, role, provisioned)
     # Blocking and linking are separate. A disabled local account with the
     # token's email blocks the token whether or not the IdP marks the email
     # verified (blocking can only hurt the token holder; IdPs such as Entra ID
@@ -239,8 +250,13 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
         if user is not None:
             if not user.is_active:
                 raise unauthorized("account is disabled")
-            if identity.email_verified:
+            # An account provisioned for another IdP subject is never linked by email.
+            if identity.email_verified and user.oidc_subject is None:
                 user_id = user.id
+        elif ctx.settings.auth.oidc_jit_provisioning and identity.email_verified:
+            created = await _provision(ctx, tenant_id, identity, role)
+            if created is not None:
+                return _oidc_user_principal(identity, tenant_id, role, created)
     return Principal(
         kind="user",
         tenant_id=tenant_id,
@@ -253,6 +269,85 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
         is_platform_admin=False,
         expires_at=datetime.fromtimestamp(identity.expires_at, UTC),
     )
+
+
+def map_oidc_role(auth: AuthSettings, values: List[str]) -> Optional[str]:
+    """The LG-SOTF role for these role-claim values (highest match), else ``auth.oidc_default_role``.
+
+    Without ``auth.oidc_role_map`` the claim must carry the role names themselves.
+    """
+    mapping: Dict[str, str] = dict(auth.oidc_role_map) if auth.oidc_role_map else {r: r for r in ROLES}
+    mapped = [mapping[v] for v in values if v in mapping and mapping[v] in ROLE_RANK]
+    if mapped:
+        return max(mapped, key=lambda r: ROLE_RANK[r])
+    return auth.oidc_default_role
+
+
+def _oidc_user_principal(identity: OIDCIdentity, tenant_id: str, role: str, user: User) -> Principal:
+    return Principal(
+        kind="user",
+        tenant_id=tenant_id,
+        home_tenant_id=tenant_id,
+        auth_method="oidc",
+        role=role,
+        user_id=user.id,
+        email=user.email,
+        subject=identity.subject,
+        # Never inherited over OIDC, whatever the local row says.
+        is_platform_admin=False,
+        expires_at=datetime.fromtimestamp(identity.expires_at, UTC),
+    )
+
+
+async def _provisioned_user(ctx: ApiContext, tenant_id: str, identity: OIDCIdentity, role: str) -> Optional[User]:
+    """The account provisioned for this IdP subject, its stored role synced to ``role`` (audited)."""
+    if len(identity.subject) > MAX_OIDC_SUBJECT_CHARS:
+        return None
+    user = await ctx.repos.users.get_by_oidc_subject(tenant_id, identity.subject)
+    if user is None:
+        return None
+    if not user.is_active:
+        raise unauthorized("account is disabled")
+    if user.role != role:
+        previous = user.role
+        user = await ctx.repos.users.update(tenant_id, user.id, role=role)
+        await AuditLogger(ctx.repos).record(
+            tenant_id,
+            "user.role_synced",
+            "user",
+            str(user.id),
+            actor_type="system",
+            actor_id="oidc",
+            details={"from": previous, "to": role, "via": "oidc_role_map"},
+        )
+        log.info("auth.oidc_role_synced", tenant_id=tenant_id, role=role)
+    return user
+
+
+async def _provision(ctx: ApiContext, tenant_id: str, identity: OIDCIdentity, role: str) -> Optional[User]:
+    """Just-in-time account for a verified identity (no password, never a platform admin)."""
+    if identity.email is None or len(identity.subject) > MAX_OIDC_SUBJECT_CHARS:
+        return None
+    try:
+        user = await ctx.repos.users.create(
+            tenant_id, identity.email, role, password_hash=None, is_platform_admin=False, oidc_subject=identity.subject
+        )
+    except ValueError:
+        return None
+    except Conflict:
+        # A concurrent first sign-in of the same subject won the race.
+        return await ctx.repos.users.get_by_oidc_subject(tenant_id, identity.subject)
+    await AuditLogger(ctx.repos).record(
+        tenant_id,
+        "user.provisioned",
+        "user",
+        str(user.id),
+        actor_type="system",
+        actor_id="oidc",
+        details={"role": role, "via": "oidc_jit", "email_domain": user.email.rpartition("@")[2]},
+    )
+    log.info("auth.oidc_user_provisioned", tenant_id=tenant_id, role=role)
+    return user
 
 
 async def _api_key_principal(ctx: ApiContext, presented: str) -> Principal:

@@ -39,6 +39,8 @@ class User(Record):
     failed_logins: int
     locked_until: Optional[datetime]
     last_login_at: Optional[datetime]
+    #: IdP ``sub`` of an account created or linked by OIDC just-in-time provisioning.
+    oidc_subject: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -64,6 +66,7 @@ class UsersRepo(Repository):
         password_hash: Optional[str] = None,
         is_platform_admin: bool = False,
         is_active: bool = True,
+        oidc_subject: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> User:
         check_choice(role, ROLES, "role")
@@ -72,8 +75,8 @@ class UsersRepo(Repository):
             try:
                 row = await c.fetchrow(
                     """
-                    INSERT INTO users (tenant_id, email, password_hash, role, is_platform_admin, is_active)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                    INSERT INTO users (tenant_id, email, password_hash, role, is_platform_admin, is_active, oidc_subject)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING *
                     """,
                     tenant_id,
@@ -82,6 +85,7 @@ class UsersRepo(Repository):
                     role,
                     is_platform_admin,
                     is_active,
+                    oidc_subject,
                 )
             except asyncpg.UniqueViolationError as exc:
                 raise Conflict("a user with this email already exists in the tenant") from exc
@@ -99,6 +103,15 @@ class UsersRepo(Repository):
         email = normalize_email(email)
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow("SELECT * FROM users WHERE tenant_id = $1 AND email = $2", tenant_id, email)
+        return to_model(User, row)
+
+    async def get_by_oidc_subject(
+        self, tenant_id: str, subject: str, *, conn: Optional[Connection] = None
+    ) -> Optional[User]:
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                "SELECT * FROM users WHERE tenant_id = $1 AND oidc_subject = $2", tenant_id, subject
+            )
         return to_model(User, row)
 
     async def find_by_email_all_tenants(self, email: str) -> List[User]:
@@ -147,6 +160,7 @@ class UsersRepo(Repository):
         is_active: bool = UNSET,
         password_hash: Optional[str] = UNSET,
         is_platform_admin: bool = UNSET,
+        oidc_subject: Optional[str] = UNSET,
         conn: Optional[Connection] = None,
     ) -> User:
         if role is not UNSET:
@@ -158,6 +172,7 @@ class UsersRepo(Repository):
                 "is_active": is_active,
                 "password_hash": password_hash,
                 "is_platform_admin": is_platform_admin,
+                "oidc_subject": oidc_subject,
             },
             params,
         )

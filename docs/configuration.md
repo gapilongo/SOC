@@ -179,10 +179,16 @@ Local accounts, sessions, OIDC single sign-on and the bootstrap tenant/admin.
 | `auth.oidc_audience` | `LG_SOTF_AUTH__OIDC_AUDIENCE` | string (optional) | unset | Expected `aud` of OIDC tokens. |
 | `auth.oidc_jwks_url` | `LG_SOTF_AUTH__OIDC_JWKS_URL` | string (optional) | unset | JWKS URL; discovered from the issuer when unset. |
 | `auth.oidc_tenant_claim` | `LG_SOTF_AUTH__OIDC_TENANT_CLAIM` | string | `tenant_id` | Claim holding the tenant id. |
-| `auth.oidc_role_claim` | `LG_SOTF_AUTH__OIDC_ROLE_CLAIM` | string | `roles` | Claim holding the role(s) (`admin`, `analyst`, `viewer`). |
+| `auth.oidc_role_claim` | `LG_SOTF_AUTH__OIDC_ROLE_CLAIM` | string | `roles` | Claim holding the role(s) or groups; values go through `auth.oidc_role_map` (without a map they must be `admin`, `analyst` or `viewer`). |
 | `auth.oidc_email_claim` | `LG_SOTF_AUTH__OIDC_EMAIL_CLAIM` | string | `email` | Claim holding the user's email. |
 | `auth.oidc_email_verified_claim` | `LG_SOTF_AUTH__OIDC_EMAIL_VERIFIED_CLAIM` | string | `email_verified` | Claim that must be true before the email is trusted. |
 | `auth.oidc_default_tenant` | `LG_SOTF_AUTH__OIDC_DEFAULT_TENANT` | string (optional) | unset | Tenant for tokens without a tenant claim (single-organisation installs). |
+| `auth.oidc_jit_provisioning` | `LG_SOTF_AUTH__OIDC_JIT_PROVISIONING` | boolean | `false` | Create a local account (no password, never a platform admin) on the first verified OIDC sign-in and keep its role in sync with the mapping. See docs/identity.md. |
+| `auth.oidc_role_map` | `LG_SOTF_AUTH__OIDC_ROLE_MAP` | mapping | `{}` | Role-claim value to role (`viewer`, `analyst`, `admin`), e.g. `{"SOC-Admins": "admin"}`; the highest match wins. Empty: the claim carries role names. |
+| `auth.oidc_default_role` | `LG_SOTF_AUTH__OIDC_DEFAULT_ROLE` | `viewer` \| `analyst` \| `admin` (optional) | unset | Role when no claim value maps; unset refuses the sign-in. |
+| `auth.require_mfa_for_platform_admins` | `LG_SOTF_AUTH__REQUIRE_MFA_FOR_PLATFORM_ADMINS` | boolean (optional) | unset | Platform admins must use TOTP MFA (forced enrollment at sign-in). Unset: on in staging and production, off in development and test. |
+| `auth.mfa_issuer` | `LG_SOTF_AUTH__MFA_ISSUER` | string | `LG-SOTF` | Issuer name shown in authenticator apps (`otpauth://` URI). |
+| `auth.mfa_challenge_ttl_s` | `LG_SOTF_AUTH__MFA_CHALLENGE_TTL_S` | integer | `300` | Lifetime of the MFA challenge token between password and code (30-900). |
 | `auth.bootstrap_admin_email` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL` | string (optional) | unset | `lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist. |
 | `auth.bootstrap_admin_password` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | secret (optional) | unset | Password of the bootstrap admin. Give it to the migrate job only, then remove it. |
 | `auth.bootstrap_tenant_id` | `LG_SOTF_AUTH__BOOTSTRAP_TENANT_ID` | string | `default` | Tenant created by `lg-sotf migrate`. |

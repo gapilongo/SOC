@@ -46,10 +46,16 @@ sample alerts under Getting started (docs/onboarding.md).
   access token and a refresh cookie; `POST /auth/refresh` renews the token,
   `POST /auth/logout` ends the session. Ten failed attempts lock the account
   for 15 minutes (install defaults).
+* **Two-step verification**: with MFA on (or required by your tenant), the
+  password is followed by a code from your authenticator app or a recovery
+  code. Set it up, renew recovery codes or turn it off under **Account
+  security**; an admin can reset it for a lost device (**Users and API
+  keys, Reset MFA**). See [identity.md](identity.md).
 * **Single sign-on**: if your organisation configured OIDC, sign in with your
   identity provider; your tenant and role come from token claims. To claim
   and decide escalations you also need a user record in the tenant (an admin
-  creates it without a password).
+  creates it without a password, or the install provisions it on your first
+  sign-in when just-in-time provisioning is on).
 
 ## Analyst workflows
 

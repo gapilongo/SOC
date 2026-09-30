@@ -7,6 +7,10 @@
   delete themselves, or leave the tenant without an active admin. Only a
   platform admin can grant the platform-admin flag.
 * Changing a password or deactivating a user revokes their refresh tokens.
+* ``POST /users/{id}/mfa/reset`` removes a user's MFA (lost device) and signs
+  them out everywhere. Admins reset users of their own tenant; only a
+  platform admin resets a platform admin (or, with ``X-Tenant-ID``, a user
+  of any tenant). Nobody resets their own MFA here (``/auth/mfa/disable``).
 * An API key's secret appears only in the create response.
 * Creating or reactivating an account beyond the tenant's ``max_users``
   quota (active accounts) is refused with ``409 quota_exceeded``.
@@ -14,7 +18,8 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -27,7 +32,7 @@ from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.schemas import ApiKeyCreatedOut, ApiKeyCreateIn, ApiKeyOut, UserCreateIn, UserOut, UserUpdateIn
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
-from lg_sotf.db.repos import UNSET
+from lg_sotf.db.repos import UNSET, User
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.security.hashing import ahash_password, generate_api_key
 from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
@@ -75,19 +80,30 @@ async def _audit(
 # ------------------------------------------------------------------ users
 
 
+def user_out(user: User, mfa: Dict[UUID, datetime]) -> UserOut:
+    """``UserOut`` with the MFA and provisioning flags (never the secret state itself)."""
+    return UserOut.model_validate(user).model_copy(
+        update={"mfa_enabled": user.id in mfa, "oidc_provisioned": user.oidc_subject is not None}
+    )
+
+
 @users.get("", response_model=List[UserOut], summary="List users")
 async def list_users(
     request: Request,
     include_inactive: bool = Query(default=True),
     principal: Principal = Depends(require(ADMIN)),
 ) -> List[UserOut]:
-    rows = await get_ctx(request).repos.users.list(principal.tenant_id, include_inactive=include_inactive, limit=1000)
-    return [UserOut.model_validate(u) for u in rows]
+    ctx = get_ctx(request)
+    rows = await ctx.repos.users.list(principal.tenant_id, include_inactive=include_inactive, limit=1000)
+    mfa = await ctx.repos.user_mfa.enabled_since(principal.tenant_id)
+    return [user_out(u, mfa) for u in rows]
 
 
 @users.get("/{user_id}", response_model=UserOut, summary="User detail")
 async def get_user(user_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))) -> UserOut:
-    return UserOut.model_validate(await get_ctx(request).repos.users.get(principal.tenant_id, user_id))
+    ctx = get_ctx(request)
+    user = await ctx.repos.users.get(principal.tenant_id, user_id)
+    return user_out(user, await ctx.repos.user_mfa.enabled_since(principal.tenant_id))
 
 
 @users.post("", status_code=201, response_model=UserOut, summary="Create a user")
@@ -184,7 +200,37 @@ async def update_user(
             },
             conn=conn,
         )
-    return UserOut.model_validate(user)
+    return user_out(user, await ctx.repos.user_mfa.enabled_since(tenant_id))
+
+
+@users.post("/{user_id}/mfa/reset", status_code=204, summary="Remove a user's MFA (lost device); signs them out")
+async def reset_user_mfa(user_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
+    ctx = get_ctx(request)
+    tenant_id = principal.tenant_id
+    if user_id == principal.user_id:
+        raise ApiError(403, "forbidden", "use /auth/mfa/disable for your own account")
+    async with ctx.db.tenant_tx(tenant_id) as conn:
+        current = await ctx.repos.users.get(tenant_id, user_id, conn=conn)
+        _guard_platform_admin_target(principal, current)
+        state = await ctx.repos.user_mfa.get(tenant_id, user_id, conn=conn)
+        await ctx.repos.user_mfa.delete(tenant_id, user_id, conn=conn)
+        revoked = await ctx.repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
+        await AuditLogger(ctx.repos).record(
+            tenant_id,
+            "auth.mfa_reset",
+            "user",
+            str(user_id),
+            actor_type=principal.actor_type,
+            actor_id=principal.actor_id,
+            details={
+                "was_enabled": state is not None and state.enabled,
+                "revoked_sessions": revoked,
+                "by_platform_admin": principal.is_platform_admin,
+                "actor_home_tenant_id": principal.home_tenant_id,
+            },
+            conn=conn,
+        )
+    return Response(status_code=204)
 
 
 @users.delete("/{user_id}", status_code=204, summary="Delete a user")

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -146,6 +146,10 @@ class LLMSettings(BaseModel):
     daily_token_budget_per_tenant: Optional[int] = None
 
 
+MAX_OIDC_ROLE_MAP_ENTRIES = 500
+MAX_OIDC_CLAIM_VALUE_CHARS = 256
+
+
 class AuthSettings(BaseModel):
     jwt_secret: Optional[SecretStr] = None
     jwt_issuer: str = "lg-sotf"
@@ -165,10 +169,32 @@ class AuthSettings(BaseModel):
     oidc_email_claim: str = "email"
     oidc_email_verified_claim: str = "email_verified"
     oidc_default_tenant: Optional[str] = None
+    # Just-in-time provisioning: a verified OIDC login with a tenant claim and no local account
+    # creates one (role from oidc_role_map). The map sends values of the oidc_role_claim claim to
+    # LG-SOTF roles; an empty map accepts the role names themselves. No match: oidc_default_role,
+    # or the login is refused when that is unset. OIDC never grants the platform-admin flag.
+    oidc_jit_provisioning: bool = False
+    oidc_role_map: Dict[str, Literal["viewer", "analyst", "admin"]] = Field(default_factory=dict)
+    oidc_default_role: Optional[Literal["viewer", "analyst", "admin"]] = None
+    # TOTP MFA. None: required for platform admins in staging/production, optional in
+    # development/test (see Settings.platform_admin_mfa_required).
+    require_mfa_for_platform_admins: Optional[bool] = None
+    mfa_issuer: str = Field(default="LG-SOTF", min_length=1, max_length=64)
+    mfa_challenge_ttl_s: int = Field(default=300, ge=30, le=900)
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[SecretStr] = None
     bootstrap_tenant_id: str = "default"
     bootstrap_tenant_name: str = "Default"
+
+
+    @field_validator("oidc_role_map")
+    @classmethod
+    def _bounded_role_map(cls, value: Dict[str, str]) -> Dict[str, str]:
+        if len(value) > MAX_OIDC_ROLE_MAP_ENTRIES:
+            raise ValueError(f"at most {MAX_OIDC_ROLE_MAP_ENTRIES} entries")
+        if any(not key or len(key) > MAX_OIDC_CLAIM_VALUE_CHARS for key in value):
+            raise ValueError(f"claim values must be 1-{MAX_OIDC_CLAIM_VALUE_CHARS} characters")
+        return value
 
 
 class APISettings(BaseModel):
@@ -348,6 +374,12 @@ class Settings(BaseSettings):
     @property
     def is_production(self) -> bool:
         return self.environment in ("staging", "production")
+
+    @property
+    def platform_admin_mfa_required(self) -> bool:
+        """``auth.require_mfa_for_platform_admins``, defaulting to on in staging/production."""
+        value = self.auth.require_mfa_for_platform_admins
+        return self.is_production if value is None else value
 
     def production_problems(self) -> List[str]:
         """Return reasons this configuration is unsafe to run in production."""

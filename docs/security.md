@@ -360,8 +360,8 @@ incident before retention removes it.
 * HS256 access tokens use one shared secret; rotating it invalidates access
   tokens (refresh tokens survive). There is no asymmetric signing or key id
   rotation window yet.
-* There is no built-in MFA for local accounts; use OIDC with your identity
-  provider's MFA for production.
+* Local accounts support TOTP MFA only (no WebAuthn/passkeys yet), and SAML
+  needs an OIDC broker; see [identity.md](identity.md).
 * Personal data in alerts is not pseudonymised before it reaches the model
   provider (section 7).
 * Rate limits fail open when Redis is unavailable (account lockout still

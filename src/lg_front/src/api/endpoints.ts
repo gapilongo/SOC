@@ -17,9 +17,13 @@ import type {
   DecisionOut,
   EscalationOut,
   JsonObject,
+  MfaConfirmOut,
+  MfaEnrollOut,
+  MfaStatusOut,
   OnboardingStatusOut,
   Page,
   PlatformEscalationOut,
+  RecoveryCodesOut,
   ReprocessOut,
   SampleAlertsOut,
   SourceCreateIn,
@@ -126,6 +130,7 @@ export const endpoints = {
   createUser: (api: ApiClient, body: UserCreateIn) => api.post<UserOut>('/users', body),
   updateUser: (api: ApiClient, id: string, body: UserUpdateIn) => api.patch<UserOut>(`/users/${enc(id)}`, body),
   deleteUser: (api: ApiClient, id: string) => api.del(`/users/${enc(id)}`),
+  resetUserMfa: (api: ApiClient, id: string) => api.post<void>(`/users/${enc(id)}/mfa/reset`),
 
   apiKeys: (api: ApiClient, includeRevoked: boolean, signal?: AbortSignal) =>
     api.get<ApiKeyOut[]>('/api-keys', { query: { include_revoked: includeRevoked }, signal }),
@@ -133,6 +138,11 @@ export const endpoints = {
     api.post<ApiKeyCreatedOut>('/api-keys', { name, scopes }),
   revokeApiKey: (api: ApiClient, id: string) => api.del(`/api-keys/${enc(id)}`),
 
+  mfaStatus: (api: ApiClient, signal?: AbortSignal) => api.get<MfaStatusOut>('/auth/mfa', { signal }),
+  mfaEnroll: (api: ApiClient) => api.post<MfaEnrollOut>('/auth/mfa/enroll', {}),
+  mfaConfirm: (api: ApiClient, code: string) => api.post<MfaConfirmOut>('/auth/mfa/confirm', { code }),
+  mfaDisable: (api: ApiClient, password: string, code: string) => api.post<void>('/auth/mfa/disable', { password, code }),
+  mfaRegenerate: (api: ApiClient, code: string) => api.post<RecoveryCodesOut>('/auth/mfa/recovery-codes', { code }),
   tenantSettings: (api: ApiClient, signal?: AbortSignal) => api.get<TenantSettingsOut>('/tenant/settings', { signal }),
   patchTenantSettings: (api: ApiClient, patch: JsonObject) => api.patch<TenantSettingsOut>('/tenant/settings', patch),
 

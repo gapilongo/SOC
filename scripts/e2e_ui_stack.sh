@@ -103,6 +103,10 @@ install -m 600 /dev/null "$ENV_FILE"
 python3 scripts/generate_secrets.py --append "$ENV_FILE" >/dev/null
 {
   echo "LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL=$ADMIN_EMAIL"
+  # The drivers sign the bootstrap platform admin in with a password only. MFA for platform
+  # admins is on by default in staging; the MFA flows are covered by tests/integration/api/test_mfa.py
+  # and the frontend tests, so this stack opts out explicitly (never do this in a deployment).
+  echo "LG_SOTF_AUTH__REQUIRE_MFA_FOR_PLATFORM_ADMINS=false"
   # The browser's origin: CORS and the WebSocket origin check.
   echo "LG_SOTF_API__CORS_ORIGINS=[\"$UI_URL\"]"
   echo "LG_SOTF_API__PUBLIC_URL=$UI_URL"
