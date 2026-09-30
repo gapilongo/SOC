@@ -97,6 +97,10 @@ describe('api client', () => {
     const api = createApiClient({ baseUrl: '', auth: bridge({ actingTenant: () => 'globex' }), fetchImpl });
     await api.get('/sources');
     expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'X-Tenant-ID')).toBe('globex');
+    // Platform endpoints act across tenants and never carry the override.
+    await api.get('/platform/tenants', { homeTenant: true });
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'X-Tenant-ID')).toBeUndefined();
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Authorization')).toBe('Bearer tok-1');
   });
 
   it('returns undefined for 204 responses', async () => {

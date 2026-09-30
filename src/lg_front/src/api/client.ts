@@ -33,6 +33,8 @@ export interface RequestOptions {
   credentials?: RequestCredentials;
   /** Extra headers. */
   headers?: Record<string, string>;
+  /** Never send the X-Tenant-ID override (platform endpoints act across tenants). */
+  homeTenant?: boolean;
 }
 
 export class ApiError extends Error {
@@ -178,7 +180,7 @@ export function createApiClient(opts: {
     };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
     if (token) headers.Authorization = `Bearer ${token}`;
-    const acting = options.anonymous ? null : opts.auth.actingTenant();
+    const acting = options.anonymous || options.homeTenant ? null : opts.auth.actingTenant();
     if (acting) headers['X-Tenant-ID'] = acting;
     let response: Response;
     try {

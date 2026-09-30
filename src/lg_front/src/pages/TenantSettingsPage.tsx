@@ -46,6 +46,8 @@ function useSave(onDone?: () => void) {
     mutationFn: (patch: JsonObject) => endpoints.patchTenantSettings(api, patch),
     onSuccess: (out) => {
       client.setQueryData(['tenant-settings'], out);
+      // Saving the settings completes the checklist's "autonomy reviewed" step.
+      void client.invalidateQueries({ queryKey: ['onboarding-status'] });
       toast.success('Settings saved.');
       onDone?.();
     },
@@ -296,6 +298,74 @@ function ReviewSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
+/** Merge patch for the retention section; an empty field removes that override. */
+export function retentionPatch(alerts: string, indicators: string, limits: { min_days: number; max_days: number }): JsonObject | Error {
+  const out: JsonObject = {};
+  for (const [key, label, value] of [
+    ['alerts_days', 'Alert retention', alerts],
+    ['indicators_days', 'Indicator retention', indicators],
+  ] as const) {
+    if (!value.trim()) {
+      out[key] = null;
+      continue;
+    }
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < limits.min_days || n > limits.max_days) {
+      return new Error(`${label} must be a whole number of days from ${limits.min_days} to ${limits.max_days}.`);
+    }
+    out[key] = n;
+  }
+  return { retention: out };
+}
+
+function RetentionSection({ data }: { data: TenantSettingsOut }) {
+  const retention = obj(data.settings.retention);
+  const limits = data.retention_limits ?? { min_days: 1, max_days: 99_999, alerts_days: 90, indicators_days: 30 };
+  const [alerts, setAlerts] = useState(typeof retention.alerts_days === 'number' ? String(retention.alerts_days) : '');
+  const [indicators, setIndicators] = useState(typeof retention.indicators_days === 'number' ? String(retention.indicators_days) : '');
+  const [localError, setLocalError] = useState<Error | null>(null);
+  const save = useSave();
+  const submit = () => {
+    setLocalError(null);
+    const patch = retentionPatch(alerts, indicators, limits);
+    if (patch instanceof Error) {
+      setLocalError(patch);
+      return;
+    }
+    save.mutate(patch);
+  };
+  return (
+    <Section
+      title="Data retention"
+      description={`How long this tenant's finished alerts and indicator sightings are kept before the nightly purge removes them. Allowed: ${limits.min_days} to ${limits.max_days} days; empty fields use the installation default.`}
+      onSubmit={submit}
+      busy={save.isPending}
+      error={localError ?? save.error}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          label="Closed alerts (days)"
+          type="number"
+          min={limits.min_days}
+          max={limits.max_days}
+          value={alerts}
+          onChange={(e) => setAlerts(e.target.value)}
+          hint={`Installation default: ${limits.alerts_days} days. Alert timelines and the audit log follow installation settings.`}
+        />
+        <TextField
+          label="Indicator sightings (days)"
+          type="number"
+          min={limits.min_days}
+          max={limits.max_days}
+          value={indicators}
+          onChange={(e) => setIndicators(e.target.value)}
+          hint={`Installation default: ${limits.indicators_days} days. Correlation looks back this far.`}
+        />
+      </div>
+    </Section>
+  );
+}
+
 export default function TenantSettingsPage() {
   const api = useApi();
   const q = useQuery({ queryKey: ['tenant-settings'], queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
@@ -323,6 +393,7 @@ export default function TenantSettingsPage() {
           <div className="space-y-5">
             <BudgetSection data={d} />
             <ReviewSection data={d} />
+            <RetentionSection data={d} />
           </div>
         </div>
       )}

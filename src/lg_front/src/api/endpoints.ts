@@ -17,8 +17,11 @@ import type {
   DecisionOut,
   EscalationOut,
   JsonObject,
+  OnboardingStatusOut,
   Page,
+  PlatformEscalationOut,
   ReprocessOut,
+  SampleAlertsOut,
   SourceCreateIn,
   SourceOut,
   SourceTestOut,
@@ -29,7 +32,10 @@ import type {
   TenantCreateIn,
   TenantCreatedOut,
   TenantSettingsOut,
+  TenantSummaryOut,
+  TenantUpdateIn,
   UsageOut,
+  UsageReportOut,
   UserCreateIn,
   UserOut,
   UserUpdateIn,
@@ -137,5 +143,25 @@ export const endpoints = {
     api.get<Page<AuditEntryOut>>('/audit', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),
   verifyAudit: (api: ApiClient, from?: string) => api.get<AuditVerifyOut>('/audit/verify', { query: { from } }),
 
-  createTenant: (api: ApiClient, body: TenantCreateIn) => api.post<TenantCreatedOut>('/platform/tenants', body),
+  // Platform endpoints act across tenants: they never carry the X-Tenant-ID override.
+  createTenant: (api: ApiClient, body: TenantCreateIn) =>
+    api.post<TenantCreatedOut>('/platform/tenants', body, { homeTenant: true }),
+  platformTenants: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<TenantSummaryOut[]>('/platform/tenants', { signal, homeTenant: true }),
+  updateTenant: (api: ApiClient, id: string, body: TenantUpdateIn) =>
+    api.patch<TenantSummaryOut>(`/platform/tenants/${enc(id)}`, body, { homeTenant: true }),
+  platformEscalations: (api: ApiClient, tenantId: string | undefined, cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<PlatformEscalationOut>>('/platform/escalations', {
+      query: { tenant_id: tenantId, cursor, limit: PAGE_SIZE },
+      signal,
+      homeTenant: true,
+    }),
+  platformUsage: (api: ApiClient, month: string, signal?: AbortSignal) =>
+    api.get<UsageReportOut>('/platform/usage', { query: { month }, signal, homeTenant: true }),
+
+  onboardingStatus: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<OnboardingStatusOut>('/onboarding/status', { signal }),
+  sendSampleAlerts: (api: ApiClient) => api.post<SampleAlertsOut>('/onboarding/sample-alerts'),
+  markAutonomyReviewed: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/autonomy-reviewed'),
+  dismissOnboarding: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/dismiss'),
 };

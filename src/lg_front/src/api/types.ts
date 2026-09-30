@@ -310,12 +310,21 @@ export interface ApiKeyCreatedOut extends ApiKeyOut {
   key: string;
 }
 
+/** Install-level bounds and defaults for the tenant `retention` settings (days). */
+export interface RetentionLimits {
+  min_days: number;
+  max_days: number;
+  alerts_days: number;
+  indicators_days: number;
+}
+
 export interface TenantSettingsOut {
   tenant_id: string;
   name: string;
   status: string;
   settings: JsonObject;
   updated_at: string;
+  retention_limits?: RetentionLimits | null;
 }
 
 export interface DashboardOut {
@@ -381,11 +390,19 @@ export interface AuditVerifyOut {
   since?: string | null;
 }
 
+export const TENANT_PROFILES = ['conservative', 'balanced', 'autonomous'] as const;
+export type TenantProfile = (typeof TENANT_PROFILES)[number];
+export const QUOTA_KEYS = ['max_alerts_per_day', 'max_sources', 'max_users'] as const;
+export type QuotaKey = (typeof QUOTA_KEYS)[number];
+export type Quotas = Record<QuotaKey, number | null>;
+
 export interface TenantCreateIn {
   id: string;
   name: string;
   admin_email?: string | null;
   admin_password?: string | null;
+  profile?: TenantProfile | null;
+  copy_settings_from?: string | null;
 }
 
 export interface TenantCreatedOut {
@@ -394,6 +411,115 @@ export interface TenantCreatedOut {
   status: string;
   created_at: string;
   admin?: UserOut | null;
+  settings_keys?: string[];
+}
+
+export interface TenantStats {
+  alerts_24h: number;
+  alerts_today: number;
+  last_ingest_at: string | null;
+  open_escalations: number;
+  overdue_escalations: number;
+  sla_breaches_24h: number;
+  /** Decimal serialized as a string. */
+  llm_cost_mtd_usd: string;
+  llm_tokens_mtd: number;
+  users: number;
+  sources: number;
+}
+
+export interface TenantSummaryOut {
+  id: string;
+  name: string;
+  status: 'active' | 'suspended' | string;
+  created_at: string;
+  updated_at: string;
+  quotas: Quotas;
+  quota_usage: Record<QuotaKey, { used: number; limit: number | null }>;
+  stats: TenantStats;
+}
+
+export interface TenantUpdateIn {
+  name?: string;
+  status?: 'active' | 'suspended';
+  quotas?: Partial<Quotas>;
+}
+
+export interface PlatformEscalationOut {
+  id: string;
+  tenant_id: string;
+  tenant_name: string;
+  tenant_status: string;
+  alert_id: string;
+  alert_title: string | null;
+  alert_severity: string | null;
+  level: string;
+  status: string;
+  priority: number;
+  reason: string;
+  assigned_to: string | null;
+  sla_deadline: string | null;
+  overdue: boolean;
+  created_at: string;
+}
+
+export interface TenantUsageOut {
+  tenant_id: string;
+  tenant_name: string;
+  tenant_status: string;
+  alerts_ingested: number;
+  alerts_processed: number;
+  alerts_rejected_quota: number;
+  llm_calls: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  llm_cost_usd: string;
+  active_users: number;
+  users: number;
+  sources: number;
+}
+
+export interface UsageReportOut {
+  month: string;
+  start: string;
+  end: string;
+  generated_at: string;
+  tenants: TenantUsageOut[];
+  totals: Record<string, number | string>;
+}
+
+export const ONBOARDING_STEPS = [
+  'source_connected',
+  'notifications_configured',
+  'teammate_invited',
+  'autonomy_reviewed',
+  'first_alert_triaged',
+] as const;
+
+export interface OnboardingStepOut {
+  id: string;
+  done: boolean;
+  available: boolean;
+}
+
+export interface OnboardingStatusOut {
+  tenant_id: string;
+  steps: OnboardingStepOut[];
+  completed: number;
+  total: number;
+  complete: boolean;
+  dismissed: boolean;
+  dismissed_at?: string | null;
+  samples_sent: boolean;
+}
+
+export interface SampleAlertsOut {
+  source_id: string;
+  received: number;
+  inserted: number;
+  duplicates: number;
+  enqueued: number;
+  alert_ids: string[];
 }
 
 /** Live event envelope pushed on /ws. */
