@@ -12,6 +12,14 @@ from lg_sotf.db.errors import DatabaseUnavailable, InvalidValue, PoolExhausted
 from lg_sotf.llm.errors import LLMOutputError, LLMRefusal, LLMUnavailable
 
 
+class CodeError(Exception):
+    """Like google-genai's APIError (Gemini): the HTTP status is in ``code``."""
+
+    def __init__(self, code: object) -> None:
+        super().__init__(f"code {code}")
+        self.code = code
+
+
 class StatusError(Exception):
     def __init__(self, status_code: int) -> None:
         super().__init__(f"status {status_code}")
@@ -32,6 +40,8 @@ class StatusError(Exception):
         StatusError(429),
         StatusError(503),
         StatusError(529),
+        CodeError(503),
+        CodeError(429),
     ],
 )
 def test_transient(exc: BaseException) -> None:
@@ -50,6 +60,9 @@ def test_transient(exc: BaseException) -> None:
         LLMUnavailable("disabled"),
         StatusError(400),
         StatusError(401),
+        CodeError(400),
+        CodeError("40001"),
+        CodeError(5),
         NodeTimeout("analysis", 420),
     ],
 )
@@ -91,3 +104,12 @@ def test_node_timeout_is_not_retried_even_though_caused_by_a_timeout() -> None:
 )
 def test_attempts_fit_the_worker_run_timeout(node_timeout: float, run_timeout: float, expected: int) -> None:
     assert attempts_within_budget(node_timeout, run_timeout) == expected
+
+
+def test_gemini_server_errors_are_transient() -> None:
+    errors = pytest.importorskip("google.genai.errors")
+    overloaded = errors.ServerError(503, {"error": {"code": 503, "message": "high demand", "status": "UNAVAILABLE"}})
+    assert is_transient(overloaded)
+    throttled = errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
+    assert is_transient(throttled)
+    assert not is_transient(errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT"}}))
