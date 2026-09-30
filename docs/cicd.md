@@ -243,6 +243,8 @@ Environment > **Add environment secret** / **Add environment variable**. Use
 | `LG_SOTF_API__METRICS_TOKEN` | yes | Generated. Bearer token for `/metrics` (not exposed publicly by Caddy) |
 | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | yes | Generated. Password of the first admin (at least 12 characters) |
 | `ANTHROPIC_API_KEY` | no | Real triage with Claude. Without it the deterministic `fake` model is used |
+| `GOOGLE_API_KEY` | no | Real triage with Gemini (free tier: synthetic alerts only, prompts may be used for training) |
+| `OPENAI_API_KEY` | no | Real triage with OpenAI or an OpenAI-compatible endpoint (`LLM_BASE_URL`) |
 | `GHCR_READ_TOKEN` | no | Only if the packages stay private (step 8): a classic personal access token with `read:packages` |
 | `TS_AUTHKEY` | first Funnel deploy | Only with `INGRESS=funnel` (section 16): a Tailscale auth key tagged `tag:soc`, not ephemeral. Used once to register the environment's node; the deploy stops early without it while the node has no state. May be deleted after the first successful deploy |
 | `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | with `DEPLOY_VIA_TAILSCALE` | Tailscale OAuth client (scope `auth_keys`, tag `tag:ci`) the runner uses to join the tailnet as an ephemeral node for the deploy |
@@ -284,7 +286,11 @@ Fernet key without keeping the old one makes stored credentials unreadable
 | `BOOTSTRAP_ADMIN_EMAIL` | yes | Email of the first admin account (created on the first deploy only) |
 | `DEPLOY_USER` | no | Default `deploy` |
 | `DEPLOY_PORT` | no | Default `22` |
-| `LLM_PROVIDER` | no | `anthropic`, `openai`, `gemini` or `fake`. Default: `anthropic` if `ANTHROPIC_API_KEY` is set, otherwise `fake` |
+| `LLM_PROVIDER` | no | `anthropic`, `openai`, `gemini` or `fake`. Default: the first of `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY` that is set (`anthropic`, `gemini`, `openai`), otherwise `fake` |
+| `LLM_FAST_MODEL`, `LLM_DEEP_MODEL` | no | Model names for the fast and deep tiers (default: the provider's defaults) |
+| `LLM_BASE_URL` | no | `https://` URL of an OpenAI-compatible endpoint for the `openai` provider |
+| `LLM_MAX_CONCURRENCY` | no | Concurrent LLM calls per tier and process, 1-64 (keep it low on free tiers) |
+| `WORKER_CONCURRENCY` | no | Alerts each worker triages at once, 1-64 |
 | `ACME_EMAIL` | no | Email for Let's Encrypt expiry notices |
 | `GHCR_READ_USER` | no | Your GitHub user name, with `GHCR_READ_TOKEN` |
 | `INGRESS` | no | `caddy` (default: Caddy and Let's Encrypt, this guide) or `funnel` (Tailscale Funnel, section 16; `APP_DOMAIN` is then `<machine>.<tailnet>.ts.net`) |

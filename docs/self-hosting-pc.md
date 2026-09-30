@@ -402,7 +402,7 @@ those not set yet in that environment), then:
 * sets the environment **variables** `DEPLOY_HOST` (the PC's tailnet
   address), `DEPLOY_USER=deploy`, `DEPLOY_PORT=22`,
   `APP_DOMAIN=soc-<env>.<tailnet>.ts.net`, `BOOTSTRAP_ADMIN_EMAIL`,
-  `LLM_PROVIDER` (`fake` until you add an Anthropic key), `INGRESS=funnel` and
+  `LLM_PROVIDER` (`fake` until you add an LLM key), `INGRESS=funnel` and
   `DEPLOY_VIA_TAILSCALE=true`;
 * sets the environment **secrets** `DEPLOY_SSH_KEY` and
   `DEPLOY_SSH_KNOWN_HOSTS` (from `~/.config/lg-sotf`), `TS_OAUTH_CLIENT_ID`,
@@ -429,6 +429,33 @@ deploy or after deleting the environment's database. Other options:
 (adds `ANTHROPIC_API_KEY`; the provider then defaults to `anthropic`),
 `--llm-provider`, `--auto-deploy` / `--no-auto-deploy`; `--help` lists them
 all.
+
+### Use a real LLM (optional)
+
+The provider follows the key you give: `ANTHROPIC_API_KEY` selects
+`anthropic`, otherwise `GOOGLE_API_KEY` selects `gemini`, otherwise
+`OPENAI_API_KEY` selects `openai`, otherwise the stack runs on `fake`. The
+`LLM_PROVIDER` variable overrides that choice. For a free test on dev with
+Google's Gemini free tier (key from <https://aistudio.google.com/apikey>, no
+card needed), save the key in a file and set:
+
+```bash
+gh secret set GOOGLE_API_KEY --env dev < ~/.config/lg-sotf/gemini-key
+gh variable set LLM_PROVIDER --env dev --body gemini
+gh variable set LLM_FAST_MODEL --env dev --body gemini-3.5-flash-lite
+gh variable set LLM_DEEP_MODEL --env dev --body gemini-2.5-flash
+gh variable set LLM_MAX_CONCURRENCY --env dev --body 2
+gh variable set WORKER_CONCURRENCY --env dev --body 2
+```
+
+The next deploy picks them up (re-run the last *Deploy* workflow to apply them
+at once). The free tier allows only a few requests per minute, hence the low
+concurrency; alerts wait in the queue instead of failing. **Google may use
+free-tier prompts to train its models: send only synthetic alerts to it**, never
+real customer data. `LLM_BASE_URL` (an `https://` URL) points the `openai`
+provider at any OpenAI-compatible endpoint. To go back to the fake model, set
+`LLM_PROVIDER` to `fake` and delete the key with
+`gh secret delete GOOGLE_API_KEY --env dev`.
 
 ## Step 6. First deploy and the day-one smoke test
 

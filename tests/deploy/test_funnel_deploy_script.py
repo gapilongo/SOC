@@ -568,3 +568,56 @@ def test_backup_uses_the_recorded_overlays(tmp_path: Path) -> None:
     compose = [c for c in h.calls() if c.startswith("compose -p lgsotf-dev ")]
     assert compose, proc.stderr
     assert all("docker-compose.funnel.yml" in c and "docker-compose.caddy.yml" not in c for c in compose)
+
+
+# --------------------------------------------------------------------------- LLM provider selection
+
+FAKE_GOOGLE_KEY = "test-suite-only-google-key-" + "g" * 12
+FAKE_ANTHROPIC_KEY = "test-suite-only-anthropic-key-" + "a" * 12
+
+
+@pytest.mark.parametrize(
+    ("extra", "provider", "allow_fake"),
+    [
+        ({}, "fake", "true"),
+        ({"GOOGLE_API_KEY": FAKE_GOOGLE_KEY}, "gemini", "false"),
+        ({"GOOGLE_API_KEY": FAKE_GOOGLE_KEY, "ANTHROPIC_API_KEY": FAKE_ANTHROPIC_KEY}, "anthropic", "false"),
+        ({"GOOGLE_API_KEY": FAKE_GOOGLE_KEY, "LG_SOTF_LLM__PROVIDER": "fake"}, "fake", "true"),
+    ],
+)
+def test_provider_follows_the_keys_given(h: Harness, extra: Dict[str, str], provider: str, allow_fake: str) -> None:
+    h.set("config_rc", "1")
+    h.run(*funnel_deploy(), values={**SECRETS, "TS_AUTHKEY": FAKE_AUTHKEY, **extra})
+    env = h.env_file()
+    assert (env["LG_SOTF_LLM__PROVIDER"], env["LG_SOTF_LLM__ALLOW_FAKE"]) == (provider, allow_fake)
+
+
+def test_model_and_concurrency_settings_reach_the_stack(h: Harness) -> None:
+    h.set("config_rc", "1")
+    tuning = {
+        "GOOGLE_API_KEY": FAKE_GOOGLE_KEY,
+        "LG_SOTF_LLM__FAST__MODEL": "gemini-3.5-flash-lite",
+        "LG_SOTF_LLM__DEEP__MODEL": "gemini-2.5-flash",
+        "LG_SOTF_LLM__FAST__MAX_CONCURRENCY": "2",
+        "LG_SOTF_LLM__DEEP__MAX_CONCURRENCY": "2",
+        "LG_SOTF_WORKER__CONCURRENCY": "2",
+    }
+    h.run(*funnel_deploy(), values={**SECRETS, "TS_AUTHKEY": FAKE_AUTHKEY, **tuning})
+    env = h.env_file()
+    for key, value in tuning.items():
+        assert env[key] == value
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("LG_SOTF_LLM__FAST__MODEL", "gemini flash; rm -rf /"),
+        ("LG_SOTF_LLM__DEEP__MAX_CONCURRENCY", "0"),
+        ("LG_SOTF_WORKER__CONCURRENCY", "65"),
+        ("LG_SOTF_LLM__BASE_URL", "http://api.example.com/v1"),
+    ],
+)
+def test_bad_llm_settings_are_refused(h: Harness, key: str, value: str) -> None:
+    proc = h.run(*funnel_deploy(), values={**SECRETS, "TS_AUTHKEY": FAKE_AUTHKEY, key: value})
+    assert proc.returncode == 2
+    assert key in proc.stderr + proc.stdout

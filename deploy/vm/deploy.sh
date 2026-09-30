@@ -118,6 +118,8 @@ ALLOWED_KEYS=(
   LG_SOTF_AUTH__JWT_SECRET LG_SOTF_SECURITY__ENCRYPTION_KEYS LG_SOTF_SECURITY__INDICATOR_HMAC_KEY
   LG_SOTF_API__METRICS_TOKEN LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD
   ANTHROPIC_API_KEY LG_SOTF_LLM__PROVIDER LG_SOTF_WORKER__CONCURRENCY LG_SOTF_OBSERVABILITY__LOG_LEVEL
+  GOOGLE_API_KEY OPENAI_API_KEY LG_SOTF_LLM__BASE_URL LG_SOTF_LLM__FAST__MODEL LG_SOTF_LLM__DEEP__MODEL
+  LG_SOTF_LLM__FAST__MAX_CONCURRENCY LG_SOTF_LLM__DEEP__MAX_CONCURRENCY
   ACME_EMAIL POSTGRES_IMAGE REDIS_IMAGE CADDY_IMAGE TS_AUTHKEY TS_IMAGE
   POSTGRES_MEM POSTGRES_CPUS REDIS_MEM REDIS_CPUS API_MEM API_CPUS WORKER_MEM WORKER_CPUS
   SCHEDULER_MEM SCHEDULER_CPUS FRONTEND_MEM FRONTEND_CPUS TS_MEM TS_CPUS
@@ -334,6 +336,14 @@ validate_values() {
   local provider="${VALUES[LG_SOTF_LLM__PROVIDER]:-}"
   [ -z "$provider" ] || [[ "$provider" =~ ^(anthropic|openai|gemini|fake)$ ]] \
     || die "LG_SOTF_LLM__PROVIDER must be anthropic, openai, gemini or fake"
+  for k in LG_SOTF_LLM__FAST__MODEL LG_SOTF_LLM__DEEP__MODEL; do
+    [ -z "${VALUES[$k]:-}" ] || [[ "${VALUES[$k]}" =~ ^[A-Za-z0-9._:/-]{1,100}$ ]] || die "$k is not a model name"
+  done
+  for k in LG_SOTF_LLM__FAST__MAX_CONCURRENCY LG_SOTF_LLM__DEEP__MAX_CONCURRENCY LG_SOTF_WORKER__CONCURRENCY; do
+    [ -z "${VALUES[$k]:-}" ] || [[ "${VALUES[$k]}" =~ ^([1-9]|[1-5][0-9]|6[0-4])$ ]] || die "$k must be 1-64"
+  done
+  [ -z "${VALUES[LG_SOTF_LLM__BASE_URL]:-}" ] || [[ "${VALUES[LG_SOTF_LLM__BASE_URL]}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?(/[A-Za-z0-9._~/-]*)?$ ]] \
+    || die "LG_SOTF_LLM__BASE_URL must be an https:// URL"
   for k in POSTGRES_IMAGE REDIS_IMAGE CADDY_IMAGE TS_IMAGE; do
     [ -z "${VALUES[$k]:-}" ] || [[ "${VALUES[$k]}" =~ $IMAGE_RE ]] || die "$k must be an image reference"
   done
@@ -348,7 +358,15 @@ render_env_file() {  # $1 app image, $2 frontend image
   local provider allow_fake k
   provider="${VALUES[LG_SOTF_LLM__PROVIDER]:-}"
   if [ -z "$provider" ]; then
-    if [ -n "${VALUES[ANTHROPIC_API_KEY]:-}" ]; then provider=anthropic; else provider=fake; fi
+    if [ -n "${VALUES[ANTHROPIC_API_KEY]:-}" ]; then
+      provider=anthropic
+    elif [ -n "${VALUES[GOOGLE_API_KEY]:-}" ]; then
+      provider=gemini
+    elif [ -n "${VALUES[OPENAI_API_KEY]:-}" ]; then
+      provider=openai
+    else
+      provider=fake
+    fi
   fi
   if [ "$provider" = "fake" ]; then allow_fake=true; else allow_fake=false; fi
   {
