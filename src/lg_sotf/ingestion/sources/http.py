@@ -43,6 +43,7 @@ from lg_sotf.ingestion.errors import (
     SourceProtocolError,
     SourceRateLimited,
     SourceRequestError,
+    SourceResponseTooLarge,
     SourceUnavailable,
 )
 from lg_sotf.ingestion.metrics import record_http_retry
@@ -361,7 +362,7 @@ class SourceHttpClient:
                 async for chunk in response.aiter_bytes():
                     total += len(chunk)
                     if total > self._max_response_bytes:
-                        raise SourceProtocolError(
+                        raise SourceResponseTooLarge(
                             f"{self.source_type} response exceeded {self._max_response_bytes} bytes"
                         )
                     chunks.append(chunk)

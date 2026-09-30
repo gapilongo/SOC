@@ -32,7 +32,32 @@ Coverage:
   newsletter full of threat words); response steering toward a domain
   controller; claimed authorisation.
 
-Use this set to test the pipeline and its safety policy. Do not quote its
+## Phishing set
+
+| File | Purpose |
+|---|---|
+| `phishing_v1.jsonl` | 39 **synthetic** user-reported emails (`source_type: email`, raw RFC 5322 text) |
+| `phishing_smoke_thresholds.yaml` | Regression gate for the phishing smoke run with the fake LLM |
+
+Messages use `example.com` as the internal domain, `.test` names for
+everyone else (plus `bit.ly` for the shortener signal; nothing is fetched)
+and documentation addresses. `_meta.tenant_settings` gives every evaluation
+tenant the internal domain, a protected brand, two executives and the
+trusted `authserv-id`. Coverage: 24 malicious, 11 benign, 4 inconclusive.
+Standard split: 18 malicious (lookalike, homoglyph and
+punycode domains, deceptive and raw-IP links, HTML/SVG/ISO/LNK/OneNote/macro/
+disguised executable/right-to-left-override attachments, encrypted and
+script-bearing archives, executive and brand impersonation, spoofed senders
+with Reply-To, a compromised internal account), 10 benign (authenticated
+internal notices, newsletters, vendor invoices, a direct push with the
+`reporter` parameter), 4 inconclusive and an adversarial split of 7
+(injection in plain text, in CSS-hidden HTML, zero-width obfuscated and with
+forged prompt tags; a forged "all pass" Authentication-Results header;
+response steering toward the organisation's own executive; a harmless
+awareness newsletter about phishing). Regenerate it by hand-editing the
+JSONL; keep every message synthetic.
+
+Use these sets to test the pipeline and its safety policy. Do not quote its
 numbers as detection accuracy. How to evaluate on real labelled data (the
 `analyst_feedback` export) and public benchmarks without committing them is
 described in `docs/evaluation.md`.

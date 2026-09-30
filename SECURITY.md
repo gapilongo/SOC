@@ -7,7 +7,7 @@ we treat vulnerabilities in it seriously. Thank you for reporting responsibly.
 
 | Version | Supported |
 |---|---|
-| 0.2.x (current release line: the rebuilt platform described in CHANGELOG.md) | Yes: security fixes |
+| 1.0.x (current release line, see CHANGELOG.md) | Yes: security fixes |
 | Earlier proof-of-concept code (before the 0.2.0 rebuild) | No |
 
 ## Reporting a vulnerability

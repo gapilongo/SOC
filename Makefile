@@ -109,6 +109,14 @@ smoke: ## Build the image and run the end-to-end stack smoke test (scripts/smoke
 		$(if $(BUILD_CA_FILE),BUILD_CA_FILE=$(abspath $(BUILD_CA_FILE)),) \
 		scripts/smoke_stack.sh
 
+.PHONY: quickstart
+quickstart: ## Demo stack + seeded alerts, timed to the first verdict (OLLAMA=qwen3:8b for a local model)
+	scripts/quickstart.sh $(if $(OLLAMA),--ollama $(OLLAMA),)
+
+.PHONY: quickstart-down
+quickstart-down: ## Stop the quickstart stack and delete its data and secrets
+	scripts/quickstart.sh --down
+
 .PHONY: migrate
 migrate: ## Run `lg-sotf migrate` in the stack (idempotent)
 	$(COMPOSE) run --rm migrate

@@ -42,6 +42,7 @@ MAX_MITRE_ITEMS = 32
 MAX_MITRE_CHARS = 128
 MAX_FLAGS = 32
 MAX_UNMAPPED_BYTES = 32_768
+MAX_EMAIL_SECTION_BYTES = 16_384
 TRUNCATION_SUFFIX = "...[truncated]"
 
 # Placeholders such as "unknown", "none" or "n/a" are deliberately absent: they
@@ -252,6 +253,10 @@ class CanonicalAlert(BaseModel):
     unmapped: Dict[str, Any] = Field(default_factory=dict)
     # Data-quality notes, e.g. "occurred_at_missing", "severity_defaulted", "raw_truncated".
     flags: List[str] = Field(default_factory=list)
+    # Email alerts only: the parsed facts of the reported message (sender, authentication results,
+    # URLs, attachment hashes, reporter), written by the email normalizer from the platform's own
+    # MIME parse. Other normalizers never set it, so it cannot be supplied by a pushed event.
+    email: Optional[Dict[str, Any]] = None
 
     @property
     def severity_id(self) -> int:
@@ -314,9 +319,15 @@ class CanonicalAlert(BaseModel):
     def _flags(cls, v: List[str]) -> List[str]:
         return _dedup_capped(v, 64, MAX_FLAGS)
 
+    @field_validator("email")
+    @classmethod
+    def _cap_email(cls, v: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        return None if v is None else cap_mapping(v, MAX_EMAIL_SECTION_BYTES)
+
     def normalized_document(self) -> Dict[str, Any]:
-        """JSON document stored in ``alerts.normalized`` (everything except ``raw``)."""
-        doc = self.model_dump(mode="json", exclude={"raw"})
+        """JSON document stored in ``alerts.normalized`` (everything except ``raw``; ``email`` only when set)."""
+        exclude = {"raw"} if self.email is not None else {"raw", "email"}
+        doc = self.model_dump(mode="json", exclude=exclude)
         doc["severity_id"] = self.severity_id
         return doc
 

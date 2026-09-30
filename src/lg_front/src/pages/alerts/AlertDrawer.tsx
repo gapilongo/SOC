@@ -9,10 +9,14 @@ import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
 import { DispositionBadge, SeverityBadge, StatusBadge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../components/Dialog';
+import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../components/Toast';
 import { Button, DefinitionList, EmptyState, ErrorMessage, JsonBlock, LoadingState, TextAreaField } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
 import { useKeysetList } from '../../lib/pagination';
+import { EvidenceActions } from './EvidenceActions';
+import { IncidentReportDialog } from './IncidentReportDialog';
+import { EmailPanel, emailSection } from './EmailPanel';
 
 function obj(value: unknown): JsonObject | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
@@ -154,6 +158,8 @@ function Reasoning({ summary }: { summary: JsonObject }) {
 function eventSummary(e: AlertEventOut): string {
   const d = e.data ?? {};
   if (e.event_type === 'note' && typeof d.text === 'string') return d.text;
+  // Integration events (ticket opened, resolved outside LG-SOTF) carry a readable note.
+  if (e.event_type.startsWith('ticket.') && typeof d.note === 'string') return d.note;
   const parts: string[] = [];
   for (const key of ['status', 'from', 'to', 'decision', 'reason', 'disposition', 'action_type', 'error']) {
     const v = d[key];
@@ -230,6 +236,19 @@ function NoteForm({ alertId }: { alertId: string }) {
   );
 }
 
+function Tickets({ alertId }: { alertId: string }) {
+  const api = useApi();
+  const q = useQuery({
+    queryKey: ['tickets', 'alert', alertId],
+    queryFn: ({ signal }) => endpoints.tickets(api, { alert_id: alertId }, signal),
+  });
+  if (q.isPending) return <LoadingState label="Loading tickets" />;
+  if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
+  const tickets = Array.isArray(q.data) ? q.data : [];
+  if (tickets.length === 0) return <p className="text-sm text-slate-400">No ticket is linked to this alert.</p>;
+  return <TicketLinks tickets={tickets} />;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-slate-800 py-4 first:border-t-0 first:pt-0">
@@ -242,6 +261,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function AlertBody({ alert }: { alert: AlertDetailOut }) {
   const normalized = obj(alert.normalized);
   const mitre = obj(normalized?.mitre);
+  const email = emailSection(normalized);
   return (
     <>
       <Section title="Overview">
@@ -267,6 +287,11 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
           <p className="mt-2 text-xs text-amber-200">Data quality flags: {list(normalized?.flags).join(', ')}</p>
         )}
       </Section>
+      {email && (
+        <Section title="Email">
+          <EmailPanel section={email} phishing={obj(obj(alert.summary?.triage)?.phishing)} />
+        </Section>
+      )}
       <Section title="Verdict and reasoning">
         <Reasoning summary={alert.summary ?? {}} />
       </Section>
@@ -278,6 +303,9 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
             {[...list(mitre.tactics), ...list(mitre.techniques)].join(', ')}
           </p>
         )}
+      </Section>
+      <Section title="Tickets">
+        <Tickets alertId={alert.id} />
       </Section>
       <Section title="Timeline">
         <Timeline alertId={alert.id} />
@@ -298,6 +326,7 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
   const client = useQueryClient();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [nis2, setNis2] = useState(false);
   const q = useQuery({
     queryKey: ['alert', alertId],
     queryFn: ({ signal }) => endpoints.alert(api, alertId as string, signal),
@@ -347,6 +376,17 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
       {a && (
         <>
           <AlertBody alert={a} />
+          <Section title="Evidence and reporting">
+            <EvidenceActions alertId={a.id} />
+            {can.addNote(principal) && (
+              <>
+                <Button size="sm" className="mt-3" onClick={() => setNis2(true)}>
+                  Draft NIS2 report
+                </Button>
+                <IncidentReportDialog alertId={a.id} open={nis2} onClose={() => setNis2(false)} />
+              </>
+            )}
+          </Section>
           {can.addNote(principal) && (
             <Section title="Notes">
               <NoteForm alertId={a.id} />

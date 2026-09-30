@@ -34,7 +34,10 @@ dead-lettered (operators handle those).
 
 Platform admins (an operator-level flag) can additionally create tenants and
 act on another tenant with the `X-Tenant-ID` header; such access is recorded
-in that tenant's audit log, and decisions stay with the tenant's members.
+in that tenant's audit log, and decisions stay with the tenant's members. The
+web app's MSSP console and header tenant switcher build on this
+(docs/mssp.md). New tenant admins find a getting-started checklist and
+sample alerts under Getting started (docs/onboarding.md).
 
 ## Signing in
 
@@ -43,10 +46,16 @@ in that tenant's audit log, and decisions stay with the tenant's members.
   access token and a refresh cookie; `POST /auth/refresh` renews the token,
   `POST /auth/logout` ends the session. Ten failed attempts lock the account
   for 15 minutes (install defaults).
+* **Two-step verification**: with MFA on (or required by your tenant), the
+  password is followed by a code from your authenticator app or a recovery
+  code. Set it up, renew recovery codes or turn it off under **Account
+  security**; an admin can reset it for a lost device (**Users and API
+  keys, Reset MFA**). See [identity.md](identity.md).
 * **Single sign-on**: if your organisation configured OIDC, sign in with your
   identity provider; your tenant and role come from token claims. To claim
   and decide escalations you also need a user record in the tenant (an admin
-  creates it without a password).
+  creates it without a password, or the install provisions it on your first
+  sign-in when just-in-time provisioning is on).
 
 ## Analyst workflows
 
@@ -140,6 +149,18 @@ analysts are stored disabled; an admin enables them. Matching alerts are
 closed as benign at the gate with `suppressed_by` recorded. Rules that
 would match everything are refused.
 
+### 6. Export evidence and draft incident reports
+
+In an alert's drawer, **Evidence and reporting** downloads the case evidence
+pack (JSON, or HTML to print to PDF): the alert, its timeline, each agent's
+reasoning and model, escalations, feedback, the response ledger, what was
+automated and what a person decided, and the related audit entries, with a
+digest and signature. **Draft NIS2 report** prepares the early warning,
+notification or final report from the case; fields you must complete are
+marked, and any model-written narrative is labelled "AI-drafted — review
+required". LG-SOTF never submits a report. See [compliance.md](compliance.md);
+to use LG-SOTF from Claude or another MCP client, see [mcp.md](mcp.md).
+
 ## Administrator workflows
 
 ### Users and access
@@ -175,6 +196,15 @@ would match everything are refused.
 Every ingest call answers per event (`inserted`, `duplicate`, `rejected` with
 a reason). Duplicates (same source and source alert id) are never processed
 twice.
+
+### Notify channels and open tickets
+
+Under **Integrations**, send escalations, SLA breaches, pending approvals and
+action outcomes to Slack, Microsoft Teams (Workflows), email or a signed
+webhook, and open a Jira or ServiceNow ticket for each escalation. Choose the
+events and the minimum severity, use **Test**, and check the **Log** for
+failed deliveries. Linked tickets appear in the alert drawer and on
+escalation cards. See [integrations.md](integrations.md) for each tool's setup.
 
 ### Set the response policy
 
@@ -247,3 +277,19 @@ Run the evaluation harness on your analysts' decisions before changing
 models, routing thresholds or autonomy (docs/evaluation.md). Watch the
 malicious false-negative rate (threats closed without a human) first, then
 the benign auto-close rate (analyst time saved).
+
+### Reports
+
+**Reports** (every role) shows, for a date range: *Value* (alerts handled
+without a human, estimated analyst hours saved, time to verdict, MTTA/MTTR,
+SLA breaches, LLM cost per alert), *Accuracy* (the AI verdict against your
+analysts' decisions, with the false-negative rate first and an explicit
+"insufficient data" warning below 30 decisions) and *Detections* (noisy
+rules with a tune-or-suppress suggestion; analysts can *Propose
+suppression*, which creates a disabled rule for an admin to enable).
+*Export CSV* downloads the value series or the detections table; *Open
+monthly report* shows a printable page for the month. Admins set the
+minutes an analyst spends per alert under Tenant settings > Reporting. To
+try another model on your own decided alerts before switching, run
+`lg-sotf eval --from-history --tenant <id> --days 30` (read-only). Every
+definition and limit: docs/reporting.md.

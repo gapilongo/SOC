@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, FrozenSet, List, Literal, Optional, Sequence
+from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple
 
 from lg_sotf.db.errors import InvalidTransition, LeaseLost, NotFound, RunNotClaimable
 from lg_sotf.db.repos._base import (
@@ -144,6 +144,26 @@ class RunsRepo(Repository):
                 )
         order = {a: i for i, a in enumerate(ids)}
         return sorted(queued, key=order.__getitem__)
+
+    async def list_queued(
+        self, tenant_id: str, *, limit: int = 1_000, conn: Optional[Connection] = None
+    ) -> List[Tuple[str, str]]:
+        """``(alert_id, severity)`` of the tenant's queued runs, oldest first (re-enqueue after a reactivation)."""
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT r.alert_id, a.severity FROM workflow_runs r
+                JOIN alerts a ON a.tenant_id = r.tenant_id AND a.id = r.alert_id
+                WHERE r.tenant_id = $1 AND r.status = 'queued'
+                ORDER BY r.updated_at
+                LIMIT $2
+                """,
+                tenant_id,
+                limit,
+            )
+        return [(r["alert_id"], r["severity"]) for r in rows]
 
     async def start(
         self,

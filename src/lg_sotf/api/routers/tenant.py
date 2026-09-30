@@ -1,5 +1,13 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys.
+"""``/tenant/settings`` (admin): the tenant's policy sections.
+
+Autonomy, protected assets, LLM budget, review policy, tool keys, retention,
+sign-in security, reporting assumptions and phishing context.
+
+``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
+and deep model tiers and reports provider, model, latency and a sanitized
+error per tier (:mod:`lg_sotf.services.llm_check`). It is rate limited per
+tenant, metered to the tenant as agent ``llm_test`` and audited.
 
 ``PATCH`` is a JSON merge patch over the stored settings: top-level keys
 replace (``null`` removes), and inside ``response`` and ``tools.<provider>``
@@ -10,11 +18,23 @@ keys merge so a patch does not drop stored secrets. Secrets are write-only:
 * ``tools.<provider>.api_key`` is stored encrypted as
   ``tools.<provider>.api_key_ciphertext``.
 
+``security.require_mfa`` (boolean) makes TOTP MFA mandatory for the
+tenant's local accounts: users without it can only enroll after their
+password until they have.
+
 Ciphertext fields cannot be written directly and are never returned; ``GET``
 shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
-and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`;
+and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`,
+the ``phishing`` section (protected brands, executives, trusted
+``authserv-id`` values) with :class:`~lg_sotf.core.phishing.PhishingSettings`;
 problems come back as 422 with ``details``.
+
+``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
+must stay within the install's ``retention.tenant_min_days`` ..
+``retention.tenant_max_days``; responses carry those bounds as
+``retention_limits``. Saving the settings marks the first-run checklist's
+"autonomy reviewed" step.
 """
 
 from __future__ import annotations
@@ -29,22 +49,48 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import TenantSettingsOut, VerdictCacheClearedOut
+from lg_sotf.api.ratelimit import rate_limited
+from lg_sotf.api.schemas import (
+    LLMTestOut,
+    LLMTierCheckOut,
+    RetentionLimitsOut,
+    TenantSettingsOut,
+    VerdictCacheClearedOut,
+)
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.core.phishing import validate_phishing_settings
 from lg_sotf.core.verdict_cache import VerdictCache
-from lg_sotf.db.repos import Tenant
+from lg_sotf.db.repos import LLMUsageDelta, Tenant
+from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
+from lg_sotf.services.llm_check import check_llm
+from lg_sotf.services.reporting import ReportingPolicy
 from lg_sotf.services.response import ResponsePolicyError, validate_response_settings
 from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
+log = get_logger(__name__)
 
 EDITABLE_KEYS = frozenset(
-    {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools"}
+    {
+        "response",
+        "protected_assets",
+        "protected_cidrs",
+        "autonomy",
+        "llm_daily_token_budget",
+        "review",
+        "tools",
+        "retention",
+        "security",
+        "reporting",
+        "phishing",
+    }
 )
+RETENTION_KEYS = ("alerts_days", "indicators_days")
 RESPONSE_KEYS = frozenset(
     {
         "connector",
@@ -61,10 +107,15 @@ RESPONSE_KEYS = frozenset(
     }
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
+SECURITY_KEYS = frozenset({"require_mfa"})
+# Saving either section counts as the onboarding "autonomy reviewed" step.
+AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
 MAX_INTERNAL_DOMAINS = 256
+LLM_TEST_BUCKET = "llm_test"
+LLM_TEST_PER_MINUTE = 6
 
 
 def redact_ciphertexts(value: Any) -> Any:
@@ -90,6 +141,16 @@ def _out(tenant: Tenant) -> TenantSettingsOut:
         status=tenant.status,
         settings=redact_ciphertexts(tenant.settings),
         updated_at=tenant.updated_at,
+    )
+
+
+def retention_limits(ctx: ApiContext) -> RetentionLimitsOut:
+    r = ctx.settings.retention
+    return RetentionLimitsOut(
+        min_days=r.tenant_min_days,
+        max_days=r.tenant_max_days,
+        alerts_days=r.alerts_days,
+        indicators_days=r.indicators_days,
     )
 
 
@@ -201,6 +262,73 @@ def _tools_section(
     return tools
 
 
+def _retention_section(ctx: ApiContext, current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """Per-tenant retention overrides, merged key by key (``null`` removes one; an empty section is dropped)."""
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("retention: must be an object")
+        return None
+    unknown = sorted(str(k)[:64] for k in set(patch) - set(RETENTION_KEYS))
+    if unknown:
+        problems.append(f"retention: unknown keys: {', '.join(unknown[:10])}")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    section = {k: v for k, v in section.items() if k in RETENTION_KEYS}
+    low, high = ctx.settings.retention.tenant_min_days, ctx.settings.retention.tenant_max_days
+    # Only the keys being set are checked: a value stored before the bounds changed is clamped at purge time
+    # and must not block edits of the other key.
+    for key in patch:
+        value = section.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high):
+            problems.append(f"retention.{key}: must be a whole number of days from {low} to {high}")
+    return section or None
+
+
+def _security_section(current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("security: must be an object")
+        return None
+    unknown = sorted(set(patch) - SECURITY_KEYS)
+    if unknown:
+        problems.append(f"security: unknown keys: {', '.join(str(k)[:64] for k in unknown[:10])}")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    if "require_mfa" in section and not isinstance(section["require_mfa"], bool):
+        problems.append("security.require_mfa: must be true or false")
+    return section
+
+
+def _reporting_section(current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """``reporting`` (value report assumptions): keys merge; ``null`` removes one (back to the default)."""
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("reporting: must be an object")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    try:
+        ReportingPolicy.model_validate(section)
+    except ValidationError as exc:
+        for error in exc.errors()[:5]:
+            where = ".".join(str(p) for p in error["loc"]) or "reporting"
+            problems.append(f"reporting.{where}: {error['msg']}"[:200])
+    return section
+
+
+def _phishing_section(value: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """The whole ``phishing`` section is replaced (it holds no secrets); ``null`` removes it."""
+    if value is None:
+        return None
+    try:
+        return validate_phishing_settings(value)
+    except ValueError as exc:
+        problems.append(str(exc))
+        return None
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -214,6 +342,14 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _response_section(ctx, tenant.id, current.get("response"), value, problems)
         elif key == "tools":
             patch[key] = _tools_section(ctx, tenant.id, current.get("tools"), value, problems)
+        elif key == "retention":
+            patch[key] = _retention_section(ctx, current.get("retention"), value, problems)
+        elif key == "security":
+            patch[key] = _security_section(current.get("security"), value, problems)
+        elif key == "reporting":
+            patch[key] = _reporting_section(current.get("reporting"), value, problems)
+        elif key == "phishing":
+            patch[key] = _phishing_section(value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET
@@ -249,7 +385,9 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
 
 @router.get("/settings", response_model=TenantSettingsOut, summary="Tenant settings (secrets redacted)")
 async def get_settings(request: Request, principal: Principal = Depends(require(ADMIN))) -> TenantSettingsOut:
-    return _out(await get_ctx(request).repos.tenants.get(principal.tenant_id))
+    ctx = get_ctx(request)
+    out = _out(await ctx.repos.tenants.get(principal.tenant_id))
+    return out.model_copy(update={"retention_limits": retention_limits(ctx)})
 
 
 @router.patch("/settings", response_model=TenantSettingsOut, summary="Merge-patch tenant settings")
@@ -276,8 +414,10 @@ async def patch_settings(
             details={"keys": sorted(patch)},
             conn=conn,
         )
+        if AUTONOMY_REVIEW_KEYS & patch.keys():
+            await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
     ctx.tenants.invalidate(tenant_id)
-    return _out(updated)
+    return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
 
 
 @router.delete(
@@ -298,3 +438,57 @@ async def clear_verdict_cache(request: Request, principal: Principal = Depends(r
         details={"removed": removed},
     )
     return VerdictCacheClearedOut(removed=removed)
+
+
+async def _flush_usage(ctx: ApiContext) -> None:
+    """Write the probe's metering now: the API process has no periodic usage flush of its own."""
+
+    async def sink(rows: List[LLMUsageRow]) -> None:
+        await ctx.repos.llm_usage.upsert_daily([LLMUsageDelta(**row) for row in rows])
+
+    try:
+        await get_usage_recorder().flush(sink)
+    except Exception as exc:  # noqa: BLE001 - the rows stay buffered for the next flush
+        log.warning("api.usage_flush_failed", error_type=type(exc).__name__)
+
+
+@router.post("/llm/test", response_model=LLMTestOut, summary="Send a tiny probe to the fast and deep model tiers")
+async def test_llm(request: Request, principal: Principal = Depends(require(ADMIN))) -> LLMTestOut:
+    ctx = get_ctx(request)
+    tenant_id = principal.tenant_id
+    # Each test costs up to two model calls on the shared provider account: keep it a manual action.
+    decision = await ctx.limiter.hit(LLM_TEST_BUCKET, tenant_id, LLM_TEST_PER_MINUTE, tenant_id=tenant_id)
+    if not decision.allowed:
+        raise rate_limited(decision)
+    report = await check_llm(ctx.settings, tenant_id)
+    await _flush_usage(ctx)
+    await AuditLogger(ctx.repos).record(
+        tenant_id,
+        "tenant.llm_tested",
+        "tenant",
+        tenant_id,
+        actor_type=principal.actor_type,
+        actor_id=principal.actor_id,
+        details={
+            "provider": report.provider,
+            "ok": report.ok,
+            "tiers": {t.tier: {"model": t.model, "ok": t.ok, "error_code": t.error_code} for t in report.tiers},
+        },
+    )
+    return LLMTestOut(
+        provider=report.provider,
+        enabled=report.enabled,
+        ok=report.ok,
+        tiers=[
+            LLMTierCheckOut(
+                tier=t.tier,
+                model=t.model,
+                ok=t.ok,
+                latency_ms=t.latency_ms,
+                structured_output=t.method,
+                error_code=t.error_code,
+                error=t.error,
+            )
+            for t in report.tiers
+        ],
+    )

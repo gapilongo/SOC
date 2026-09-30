@@ -6,17 +6,21 @@ import {
   Building2,
   ClipboardCheck,
   FileClock,
+  FileText,
   Filter,
   Gauge,
   KeyRound,
+  Lock,
   LogOut,
   Menu,
   Plug,
+  Rocket,
+  Send,
   Settings,
   ShieldAlert,
   X,
 } from 'lucide-react';
-import { Suspense, useEffect, useRef, useState, type FormEvent } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
 import { useAuth, useAuthStore } from '../auth/AuthContext';
@@ -25,7 +29,7 @@ import { can, isTenantOverride } from '../auth/roles';
 import { getConfig } from '../config';
 import type { Principal } from '../auth/store';
 import { useLive } from '../live/LiveProvider';
-import { useToast } from './Toast';
+import { ActingTenantBanner, TenantSwitcher } from './TenantSwitcher';
 import { Button, LoadingState, cx } from './ui';
 
 export interface NavItem {
@@ -37,16 +41,21 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: Gauge, allowed: can.view },
+  { to: '/getting-started', label: 'Getting started', icon: Rocket, allowed: can.admin },
   { to: '/alerts', label: 'Alerts', icon: Bell, allowed: can.view },
   { to: '/escalations', label: 'Escalations', icon: ShieldAlert, allowed: can.view },
   { to: '/actions', label: 'Actions and approvals', icon: ClipboardCheck, allowed: can.view },
   { to: '/suppressions', label: 'Suppressions', icon: Filter, allowed: can.view },
+  { to: '/reports', label: 'Reports', icon: FileText, allowed: can.view },
   { to: '/sources', label: 'Sources', icon: Plug, allowed: can.admin },
+  { to: '/integrations', label: 'Integrations', icon: Send, allowed: can.admin },
   { to: '/users', label: 'Users and API keys', icon: KeyRound, allowed: can.admin },
   { to: '/settings', label: 'Tenant settings', icon: Settings, allowed: can.admin },
   { to: '/usage', label: 'LLM usage', icon: BarChart3, allowed: can.admin },
   { to: '/audit', label: 'Audit log', icon: FileClock, allowed: can.admin },
-  { to: '/platform', label: 'Platform', icon: Building2, allowed: can.platform },
+  { to: '/platform', label: 'MSSP console', icon: Building2, allowed: can.platform },
+  // Your own account: not while acting on another tenant.
+  { to: '/account', label: 'Account security', icon: Lock, allowed: (p) => can.view(p) && !isTenantOverride(p) },
 ];
 
 function LiveIndicator() {
@@ -74,52 +83,6 @@ function LiveIndicator() {
       {label}
       {hint && <span className="sr-only">. {hint}</span>}
     </span>
-  );
-}
-
-function TenantSwitcher() {
-  const { principal } = useAuth();
-  const store = useAuthStore();
-  const toast = useToast();
-  const [value, setValue] = useState('');
-  if (!principal?.isPlatformAdmin) return null;
-  const override = isTenantOverride(principal);
-  const apply = (tenant: string | null) => {
-    try {
-      // Cached data of the previous tenant is dropped by bindQueryCacheToSession (App).
-      store.setActingTenant(tenant);
-      setValue('');
-      toast.info(tenant ? `Acting on tenant ${tenant}. Every request is recorded in that tenant's audit log.` : 'Back to your home tenant.');
-    } catch (err) {
-      toast.error(err);
-    }
-  };
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (value.trim()) apply(value.trim());
-  };
-  return (
-    <form onSubmit={submit} className="flex items-center gap-1" aria-label="Act on tenant">
-      <label htmlFor="acting-tenant" className="sr-only">
-        Tenant id to act on
-      </label>
-      <input
-        id="acting-tenant"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        placeholder="Act on tenant id"
-        pattern="[a-z0-9][a-z0-9_-]{1,62}"
-        className="w-36 rounded-md border border-slate-600 bg-slate-950 px-2 py-1 text-xs text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
-      />
-      <Button size="sm" type="submit">
-        Switch
-      </Button>
-      {override && (
-        <Button size="sm" variant="ghost" onClick={() => apply(null)}>
-          Home tenant
-        </Button>
-      )}
-    </form>
   );
 }
 
@@ -266,6 +229,7 @@ export function Layout() {
             </Button>
           </div>
         </header>
+        <ActingTenantBanner />
         <main id="main" ref={mainRef} tabIndex={-1} className="mx-auto max-w-[1600px] px-4 py-6 focus:outline-none sm:px-6">
           <Suspense fallback={<LoadingState />}>
             <Outlet />

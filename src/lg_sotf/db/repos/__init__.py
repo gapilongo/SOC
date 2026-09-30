@@ -32,12 +32,17 @@ from lg_sotf.db.repos.audit import AuditEntry, AuditRepo, ChainVerification
 from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
+from lg_sotf.db.repos.integrations import ExternalTicket, Integration, IntegrationsRepo, OutboxEntry
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
+from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
+from lg_sotf.db.repos.reports import ReportsRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
+from lg_sotf.db.repos.usage import UsageDay, UsageRepo
+from lg_sotf.db.repos.user_mfa import UserMfa, UserMfaRepo
 from lg_sotf.db.repos.users import User, UsersRepo
 
 
@@ -48,6 +53,7 @@ class Repositories:
     db: Database
     tenants: TenantsRepo
     users: UsersRepo
+    user_mfa: UserMfaRepo
     refresh_tokens: RefreshTokensRepo
     api_keys: ApiKeysRepo
     sources: SourcesRepo
@@ -61,6 +67,10 @@ class Repositories:
     indicators: IndicatorsRepo
     llm_usage: LLMUsageRepo
     audit: AuditRepo
+    usage: UsageRepo
+    platform: PlatformRepo
+    integrations: IntegrationsRepo
+    reports: ReportsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -68,6 +78,7 @@ class Repositories:
             db=db,
             tenants=TenantsRepo(db),
             users=UsersRepo(db),
+            user_mfa=UserMfaRepo(db),
             refresh_tokens=RefreshTokensRepo(db),
             api_keys=ApiKeysRepo(db),
             sources=SourcesRepo(db),
@@ -81,6 +92,10 @@ class Repositories:
             indicators=IndicatorsRepo(db),
             llm_usage=LLMUsageRepo(db),
             audit=AuditRepo(db),
+            usage=UsageRepo(db),
+            platform=PlatformRepo(db),
+            integrations=IntegrationsRepo(db),
+            reports=ReportsRepo(db),
         )
 
 
@@ -98,21 +113,28 @@ __all__ = [
     "ChainVerification",
     "DashboardCounts",
     "Escalation",
+    "ExternalTicket",
     "EscalationsRepo",
     "Feedback",
     "FeedbackRepo",
     "FeedbackStats",
     "IndicatorSighting",
     "IndicatorsRepo",
+    "Integration",
+    "IntegrationsRepo",
     "LLMUsageDay",
     "LLMUsageDelta",
     "LLMUsageRepo",
     "LLMUsageTotals",
     "NewAlert",
     "NewAlertEvent",
+    "PlatformEscalation",
+    "PlatformRepo",
+    "OutboxEntry",
     "RefreshToken",
     "RefreshTokensRepo",
     "RelatedAlert",
+    "ReportsRepo",
     "Repositories",
     "ResponseAction",
     "ResponseTimes",
@@ -123,9 +145,15 @@ __all__ = [
     "SuppressionRule",
     "SuppressionsRepo",
     "Tenant",
+    "TenantStats",
+    "TenantUsage",
     "TenantsRepo",
     "UNSET",
+    "UsageDay",
+    "UsageRepo",
     "User",
+    "UserMfa",
+    "UserMfaRepo",
     "UsersRepo",
     "WorkflowRun",
     "action_idempotency_key",

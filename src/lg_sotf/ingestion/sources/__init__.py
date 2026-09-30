@@ -16,6 +16,8 @@ from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.ingestion.sources.base import ConnectorDeps, FetchedPage, PullConnector, SourceHealth
 from lg_sotf.ingestion.sources.crowdstrike import CrowdStrikeConnector
 from lg_sotf.ingestion.sources.file import FileConnector
+from lg_sotf.ingestion.sources.imap import ImapConnector
+from lg_sotf.ingestion.sources.m365 import M365MailboxConnector
 from lg_sotf.ingestion.sources.qradar import QRadarConnector
 from lg_sotf.ingestion.sources.sentinel import SentinelConnector
 from lg_sotf.ingestion.sources.splunk import SplunkConnector
@@ -25,7 +27,16 @@ from lg_sotf.settings import Settings
 
 CONNECTORS: Dict[str, Type[PullConnector]] = {
     c.source_type: c
-    for c in (SplunkConnector, SentinelConnector, CrowdStrikeConnector, WazuhConnector, QRadarConnector, FileConnector)
+    for c in (
+        SplunkConnector,
+        SentinelConnector,
+        CrowdStrikeConnector,
+        WazuhConnector,
+        QRadarConnector,
+        FileConnector,
+        M365MailboxConnector,
+        ImapConnector,
+    )
 }
 PUSH_ONLY_TYPES = ("webhook", "guardduty")
 

@@ -6,6 +6,7 @@ from typing import List, Optional, Protocol, Sequence, Tuple
 
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.db.repos import Repositories
+from lg_sotf.integrations.outbox import enqueue_critical_alerts
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.producer import WorkQueue
 
@@ -48,7 +49,14 @@ async def dispatch_new_alerts(
     severity = {a.alert_id: a.severity for a in alerts}
     # One transaction with a fixed number of statements for the whole batch (PERF-3); an alert
     # whose run left 'queued' is not enqueued, one whose alert row moved on keeps its status.
-    queued = await repos.runs.queue_alerts(tenant_id, list(severity))
+    critical = {a for a, s in severity.items() if s == "critical"}
+    if critical:
+        # Critical alerts also notify subscribed integrations, in the same transaction (outbox).
+        async with repos.db.tenant_tx(tenant_id) as conn:
+            queued = await repos.runs.queue_alerts(tenant_id, list(severity), conn=conn)
+            await enqueue_critical_alerts(conn, tenant_id, [a for a in queued if a in critical])
+    else:
+        queued = await repos.runs.queue_alerts(tenant_id, list(severity))
     to_enqueue: List[Tuple[str, str]] = [(a, severity[a]) for a in queued]
     await queue.enqueue_process_many(tenant_id, to_enqueue)
     for alert_id, sev in to_enqueue:

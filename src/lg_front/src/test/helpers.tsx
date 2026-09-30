@@ -36,6 +36,9 @@ export function apiError(status: number, code: string, message = code, requestId
 export function fakeTransport(overrides: Partial<AuthTransport> = {}): AuthTransport {
   return {
     login: vi.fn(async () => token('login-token')),
+    verifyMfa: vi.fn(async () => token('mfa-token')),
+    enrollMfa: vi.fn(async () => ({ secret: 'JBSWY3DPEHPK3PXP', otpauth_uri: 'otpauth://totp/LG-SOTF:a?secret=JBSWY3DPEHPK3PXP', qr: null, expires_in: 900 })),
+    confirmMfa: vi.fn(async () => ({ recovery_codes: ['aaaaa-bbbbb'], session: token('enrolled-token') })),
     refresh: vi.fn(async () => {
       throw apiError(401, 'invalid_session');
     }),

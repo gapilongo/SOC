@@ -4,14 +4,83 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - Unreleased
+## [1.0.0] - 2026-09-30
+
+The first commercial release: the multi-tenant platform rebuild (tracked as
+0.2.0, never released on its own) plus the Release 1 product features below.
+
+### Added in 1.0
+
+- **Phishing triage** (`docs/phishing.md`): user-reported email ingestion
+  from `POST /api/v1/ingest/email`, a Microsoft 365 reporting mailbox
+  (`m365_mailbox` source, Graph) and any IMAPS mailbox (`imap` source);
+  a hardened MIME parser (nothing rendered, attachments hashed not stored,
+  explicit caps); phishing signals in triage and analysis (SPF/DKIM/DMARC,
+  reply-to and return-path mismatch, display-name impersonation, lookalike
+  and punycode domains, deceptive links, risky attachments); actions
+  `purge_message`, `block_sender`, `notify_reporter`; tenant settings
+  `phishing`; a 39-item synthetic phishing evaluation set.
+- **Integrations hub** (`docs/integrations.md`): Slack, Microsoft Teams
+  (Workflows), SMTP email and HMAC-signed webhook (`lg-sotf.event.v1`)
+  notifications for escalations, SLA breaches, pending approvals, action
+  outcomes and critical alerts, through a transactional outbox with retries,
+  backoff, dead-lettering and a delivery log; Jira (Cloud and Data Center)
+  and ServiceNow tickets, one per escalation, with decision comments and
+  external-resolution notes; `create_ticket` executes through them; Slack
+  interactive approve/reject under the web app's authorization rules.
+- **Self-hosted models** (`docs/local-llm.md`, `docs/air-gapped.md`):
+  `ollama` and `openai_compatible` providers, plain HTTP only for private
+  hosts, `llm.structured_output` with one schema-guided repair, local usage
+  metered at zero cost, `POST /api/v1/tenant/llm/test` and a "Test model"
+  button, `docker/docker-compose.ollama.yml`, and verified air-gap
+  bundle/load scripts; Gemini list prices.
+- **Quick start** (`docs/quickstart.md`): `make quickstart` /
+  `scripts/quickstart.sh` with 16 synthetic demo alerts and the measured time
+  to first verdict (2 min 13 s on the reference run, 2.1 s after ingest).
+- **Reports** (`docs/reporting.md`): value (handled without a human, analyst
+  hours saved via `reporting.minutes_per_alert`, time to verdict, MTTA/MTTR,
+  SLA breaches, cost per alert), accuracy against analyst decisions
+  (false-negative rate headline, confusion matrix, confidence ranges,
+  per-model breakdown), detection tuning with one-click suppression
+  proposals, a printable monthly report, CSV exports, dashboard value tiles,
+  and `lg-sotf eval --from-history` (side-effect-free backtest).
+- **MSSP operations** (`docs/mssp.md`, `docs/onboarding.md`): MSSP console
+  with per-tenant activity, SLA risk and quota usage; suspend and reactivate
+  (ingest, API keys, sessions and workers honour it, queued work is kept);
+  daily alert, source and user quotas; `usage_daily` metering and monthly
+  usage export; tenant profiles and policy copy; a tenant switcher;
+  per-tenant retention within install bounds; a getting-started checklist
+  with one-click sample alerts.
+- **Identity** (`docs/identity.md`): TOTP MFA for local accounts with
+  recovery codes, admin and CLI reset (`lg-sotf reset-mfa`), a tenant
+  `security.require_mfa` policy and `auth.require_mfa_for_platform_admins`;
+  OIDC role mapping from group claims and just-in-time provisioning.
+- **Compliance** (`docs/compliance.md`): signed case evidence packs
+  (`GET /alerts/{id}/evidence`, `lg-sotf evidence-verify`) with per-step
+  model provenance, the human-oversight trail and audit-chain proof; NIS2
+  incident report drafts for each Article 23 stage; streamed tenant data
+  export and erasure (`lg-sotf tenant-export`, `tenant-erase`).
+- **MCP server** (`docs/mcp.md`): `lg-sotf mcp`, a stdio Model Context
+  Protocol server over the REST API with a scoped API key.
+
+### Upgrade notes for 1.0
+
+- Migrations `0004` to `0008` run with the `migrate` role as usual.
+- Platform admins must enrol an authenticator app at their next sign-in in
+  staging and production. Set
+  `LG_SOTF_AUTH__REQUIRE_MFA_FOR_PLATFORM_ADMINS=false` to postpone it.
+- The scheduler now also delivers notifications and syncs tickets; it must
+  keep running (one leader) for integrations to work.
+- Response execution stays in dry run by default.
+
+### Platform rebuild (previously 0.2.0)
 
 A ground-up rebuild of the proof of concept into a multi-tenant platform
 that can be operated in production. Nothing of the 0.1 runtime is
 compatible: configuration, storage, APIs and deployment all changed. There is
 no automated migration from 0.1 data.
 
-### Added
+#### Added
 
 - **Process model**: one container image with `lg-sotf api`, `worker`,
   `scheduler` and `migrate` roles, plus operator commands (`create-tenant`,
@@ -93,21 +162,21 @@ no automated migration from 0.1 data.
   generated from the code, deployment, operations runbook, security model,
   user guide, evaluation guide.
 
-### Changed
+#### Changed
 
 - The analyst web application in `src/lg_front` is rebuilt as a client of
   the new API (see its README).
 - Configuration moved from `ConfigManager` YAML files to typed settings;
   `ConfigManager` remains as a thin read-only facade for agents.
 
-### Removed
+#### Removed
 
 - The proof-of-concept runtime (`app_initializer`, in-process queues and
   deduplication, schema creation at startup), empty placeholder modules and
   documentation, and dead files (`Backup/`, `test.html`,
   `test_claude_simple.py`, `test_claude_workflow.py`, `setup_api_key.sh`).
 
-### Security
+#### Security
 
 - See [docs/security.md](docs/security.md) for the threat model and
   controls, and [SECURITY.md](SECURITY.md) for vulnerability reporting.
@@ -127,7 +196,7 @@ no automated migration from 0.1 data.
   proxy's `X-Forwarded-For`; the runtime image carries no pip or setuid
   binaries; Helm refuses enrichment keys in values.
 
-### Fixed
+#### Fixed
 
 - Worker runs could wedge when a cancellation was swallowed inside redis-py
   on Python 3.11; cancelled polls, lost resume messages and stale resumes are

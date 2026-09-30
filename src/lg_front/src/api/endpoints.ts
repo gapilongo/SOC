@@ -2,6 +2,7 @@
 
 import type { ApiClient } from './client';
 import type {
+  AccuracyReportOut,
   ActionOut,
   AlertDetailOut,
   AlertEventOut,
@@ -14,11 +15,29 @@ import type {
   AuditVerifyOut,
   DashboardOut,
   DecisionIn,
+  DeliveryOut,
   DecisionOut,
+  DetectionsReportOut,
   EscalationOut,
+  IncidentReportOut,
+  IncidentReportStage,
+  IntegrationCreateIn,
+  IntegrationOut,
+  IntegrationTestOut,
+  IntegrationUpdateIn,
   JsonObject,
+  LlmTestOut,
+  MfaConfirmOut,
+  MfaEnrollOut,
+  MfaStatusOut,
+  OnboardingStatusOut,
   Page,
+  PlatformEscalationOut,
+  RecoveryCodesOut,
+  MonthlyReportOut,
+  ProposeSuppressionIn,
   ReprocessOut,
+  SampleAlertsOut,
   SourceCreateIn,
   SourceOut,
   SourceTestOut,
@@ -28,11 +47,18 @@ import type {
   SuppressionUpdateIn,
   TenantCreateIn,
   TenantCreatedOut,
+  TenantErasedOut,
+  TenantErasureStatusOut,
   TenantSettingsOut,
+  TenantSummaryOut,
+  TenantUpdateIn,
+  TicketOut,
   UsageOut,
+  UsageReportOut,
   UserCreateIn,
   UserOut,
   UserUpdateIn,
+  ValueReportOut,
 } from './types';
 
 export const PAGE_SIZE = 100;
@@ -120,6 +146,7 @@ export const endpoints = {
   createUser: (api: ApiClient, body: UserCreateIn) => api.post<UserOut>('/users', body),
   updateUser: (api: ApiClient, id: string, body: UserUpdateIn) => api.patch<UserOut>(`/users/${enc(id)}`, body),
   deleteUser: (api: ApiClient, id: string) => api.del(`/users/${enc(id)}`),
+  resetUserMfa: (api: ApiClient, id: string) => api.post<void>(`/users/${enc(id)}/mfa/reset`),
 
   apiKeys: (api: ApiClient, includeRevoked: boolean, signal?: AbortSignal) =>
     api.get<ApiKeyOut[]>('/api-keys', { query: { include_revoked: includeRevoked }, signal }),
@@ -127,8 +154,14 @@ export const endpoints = {
     api.post<ApiKeyCreatedOut>('/api-keys', { name, scopes }),
   revokeApiKey: (api: ApiClient, id: string) => api.del(`/api-keys/${enc(id)}`),
 
+  mfaStatus: (api: ApiClient, signal?: AbortSignal) => api.get<MfaStatusOut>('/auth/mfa', { signal }),
+  mfaEnroll: (api: ApiClient) => api.post<MfaEnrollOut>('/auth/mfa/enroll', {}),
+  mfaConfirm: (api: ApiClient, code: string) => api.post<MfaConfirmOut>('/auth/mfa/confirm', { code }),
+  mfaDisable: (api: ApiClient, password: string, code: string) => api.post<void>('/auth/mfa/disable', { password, code }),
+  mfaRegenerate: (api: ApiClient, code: string) => api.post<RecoveryCodesOut>('/auth/mfa/recovery-codes', { code }),
   tenantSettings: (api: ApiClient, signal?: AbortSignal) => api.get<TenantSettingsOut>('/tenant/settings', { signal }),
   patchTenantSettings: (api: ApiClient, patch: JsonObject) => api.patch<TenantSettingsOut>('/tenant/settings', patch),
+  testLlm: (api: ApiClient) => api.post<LlmTestOut>('/tenant/llm/test'),
 
   llmUsage: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
     api.get<UsageOut>('/usage/llm', { query: { from, to }, signal }),
@@ -137,5 +170,65 @@ export const endpoints = {
     api.get<Page<AuditEntryOut>>('/audit', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),
   verifyAudit: (api: ApiClient, from?: string) => api.get<AuditVerifyOut>('/audit/verify', { query: { from } }),
 
-  createTenant: (api: ApiClient, body: TenantCreateIn) => api.post<TenantCreatedOut>('/platform/tenants', body),
+  // Platform endpoints act across tenants: they never carry the X-Tenant-ID override.
+  createTenant: (api: ApiClient, body: TenantCreateIn) =>
+    api.post<TenantCreatedOut>('/platform/tenants', body, { homeTenant: true }),
+  platformTenants: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<TenantSummaryOut[]>('/platform/tenants', { signal, homeTenant: true }),
+  updateTenant: (api: ApiClient, id: string, body: TenantUpdateIn) =>
+    api.patch<TenantSummaryOut>(`/platform/tenants/${enc(id)}`, body, { homeTenant: true }),
+  platformEscalations: (api: ApiClient, tenantId: string | undefined, cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<PlatformEscalationOut>>('/platform/escalations', {
+      query: { tenant_id: tenantId, cursor, limit: PAGE_SIZE },
+      signal,
+      homeTenant: true,
+    }),
+  platformUsage: (api: ApiClient, month: string, signal?: AbortSignal) =>
+    api.get<UsageReportOut>('/platform/usage', { query: { month }, signal, homeTenant: true }),
+
+  onboardingStatus: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<OnboardingStatusOut>('/onboarding/status', { signal }),
+  sendSampleAlerts: (api: ApiClient) => api.post<SampleAlertsOut>('/onboarding/sample-alerts'),
+  markAutonomyReviewed: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/autonomy-reviewed'),
+  dismissOnboarding: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/dismiss'),
+
+  evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
+    api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
+  incidentReport: (api: ApiClient, id: string, stage: IncidentReportStage, includeAiNarrative: boolean) =>
+    api.post<IncidentReportOut>(`/alerts/${enc(id)}/incident-report`, { stage, include_ai_narrative: includeAiNarrative }),
+  tenantErasureStatus: (api: ApiClient, id: string) =>
+    api.get<TenantErasureStatusOut>(`/platform/tenants/${enc(id)}/erasure`, { homeTenant: true }),
+  exportTenant: (api: ApiClient, id: string) =>
+    api.post<Blob>(`/platform/tenants/${enc(id)}/export`, undefined, { responseType: 'blob', homeTenant: true }),
+  eraseTenant: (api: ApiClient, id: string) =>
+    api.request<TenantErasedOut>('DELETE', `/platform/tenants/${enc(id)}`, { body: { confirm: id }, homeTenant: true }),
+
+
+  integrations: (api: ApiClient, signal?: AbortSignal) => api.get<IntegrationOut[]>('/integrations', { signal }),
+  createIntegration: (api: ApiClient, body: IntegrationCreateIn) => api.post<IntegrationOut>('/integrations', body),
+  updateIntegration: (api: ApiClient, id: string, body: IntegrationUpdateIn) =>
+    api.patch<IntegrationOut>(`/integrations/${enc(id)}`, body),
+  deleteIntegration: (api: ApiClient, id: string) => api.del(`/integrations/${enc(id)}`),
+  testIntegration: (api: ApiClient, id: string) => api.post<IntegrationTestOut>(`/integrations/${enc(id)}/test`),
+  deliveries: (api: ApiClient, id: string, signal?: AbortSignal) =>
+    api.get<DeliveryOut[]>(`/integrations/${enc(id)}/deliveries`, { query: { limit: 100 }, signal }),
+  tickets: (api: ApiClient, filters: { alert_id?: string; escalation_id?: string[] }, signal?: AbortSignal) =>
+    api.get<TicketOut[]>('/tickets', { query: { ...filters }, signal }),
+
+  valueReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<ValueReportOut>('/reports/value', { query: { from, to }, signal }),
+  accuracyReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<AccuracyReportOut>('/reports/accuracy', { query: { from, to }, signal }),
+  detectionsReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<DetectionsReportOut>('/reports/detections', { query: { from, to }, signal }),
+  /** Server-side CSV of the value daily series or the detections table. */
+  reportCsv: (api: ApiClient, kind: 'value' | 'detections', from: string, to: string) =>
+    api.get<string>(`/reports/${kind}`, { query: { from, to, format: 'csv' }, responseType: 'text', headers: { Accept: 'text/csv' } }),
+  proposeSuppression: (api: ApiClient, body: ProposeSuppressionIn) =>
+    api.post<SuppressionOut>('/reports/detections/propose-suppression', body),
+  monthlyReport: (api: ApiClient, month: string, signal?: AbortSignal) =>
+    api.get<MonthlyReportOut>('/reports/monthly', { query: { month, format: 'json' }, signal }),
+  /** The self-contained monthly HTML report (to save and print). */
+  monthlyReportHtml: (api: ApiClient, month: string) =>
+    api.get<string>('/reports/monthly', { query: { month, format: 'html' }, responseType: 'text', headers: { Accept: 'text/html' } }),
 };

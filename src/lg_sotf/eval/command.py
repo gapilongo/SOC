@@ -6,6 +6,10 @@ evaluation could not run or produced nothing to judge (bad dataset,
 thresholds or baseline, a baseline from a different dataset or selection,
 unwritable report path, database, schema or Redis problem, every item
 errored).
+
+With ``from_history`` the items are not read from a dataset file: the
+tenant's analyst-decided alerts are replayed read-only through the current
+pipeline (:mod:`lg_sotf.eval.history`); reporting and gating are the same.
 """
 
 from __future__ import annotations
@@ -57,6 +61,8 @@ class EvalOptions:
     isolate: str = "splits"
     allow_baseline_mismatch: bool = False
     validate_only: bool = False
+    from_history: bool = False
+    days: int = 30
 
 
 def markdown_path(options: EvalOptions) -> Path:
@@ -127,6 +133,41 @@ def _stderr(message: str) -> None:
     print(message, file=sys.stderr)
 
 
+def history_selection(options: EvalOptions, limit: int) -> Dict[str, Any]:
+    return {
+        "splits": [],
+        "tags": [],
+        "limit": limit,
+        "isolation": "history",
+        "tenant_id": options.tenant_id,
+        "days": options.days,
+    }
+
+
+def _load_baseline(options: EvalOptions) -> Optional[Dict[str, Any]]:
+    if not options.baseline:
+        return None
+    try:
+        return load_report(options.baseline)
+    except (OSError, ValueError) as exc:
+        raise EvalCommandError(f"cannot read baseline report: {exc}") from exc
+
+
+def _check_baseline(
+    baseline: Dict[str, Any],
+    dataset: Dataset,
+    current: Dict[str, Any],
+    options: EvalOptions,
+    warn: Callable[[str], None],
+) -> None:
+    problems = baseline_mismatches(baseline, dataset, current)
+    if problems:
+        message = "baseline is not comparable with this run: " + "; ".join(problems)
+        if not options.allow_baseline_mismatch:
+            raise EvalCommandError(message + " (pass --allow-baseline-mismatch to compare anyway)")
+        warn("Warning: " + message)
+
+
 def _write_outputs(report: Dict[str, Any], gate_dict: Optional[Dict[str, Any]], json_path: str, md: Path) -> None:
     try:
         write_json(report, json_path)
@@ -151,6 +192,8 @@ def execute(
     """Run the command; returns the process exit code. Raises :class:`EvalCommandError` for exit code 2."""
     if not 1 <= options.concurrency <= MAX_CONCURRENCY:
         raise EvalCommandError(f"--concurrency must be between 1 and {MAX_CONCURRENCY}")
+    if options.from_history:
+        return execute_history(settings, options, echo, warn)
     if options.isolate not in ISOLATION_MODES:
         raise EvalCommandError(f"--isolate must be one of {', '.join(ISOLATION_MODES)}")
     try:
@@ -239,6 +282,106 @@ def execute(
     if report["metrics"]["scored"] == 0:
         raise EvalCommandError(
             f"every one of the {report['metrics']['items']} items errored; nothing was evaluated "
+            "(see the report's item errors)"
+        )
+    if gate_dict is not None and not gate_dict["passed"]:
+        return EXIT_GATE_FAILED
+    return EXIT_OK
+
+
+def execute_history(
+    settings: Settings,
+    options: EvalOptions,
+    echo: Callable[[str], None] = print,
+    warn: Callable[[str], None] = _stderr,
+) -> int:
+    """``--from-history``: replay the tenant's analyst-decided alerts read-only, then report and gate."""
+    from lg_sotf.eval.history import (
+        DEFAULT_HISTORY_LIMIT,
+        MAX_HISTORY_DAYS,
+        HistoryBacktestError,
+        run_history_backtest,
+    )
+
+    if options.dataset:
+        raise EvalCommandError("--from-history replays the tenant's own alerts; do not pass --dataset")
+    if not options.tenant_id:
+        raise EvalCommandError("--from-history needs --tenant (the tenant whose decided alerts are replayed)")
+    if options.splits or options.tags:
+        raise EvalCommandError("--split and --tag do not apply to --from-history")
+    if not 1 <= options.days <= MAX_HISTORY_DAYS:
+        raise EvalCommandError(f"--days must be between 1 and {MAX_HISTORY_DAYS}")
+    limit = options.limit or DEFAULT_HISTORY_LIMIT
+    try:
+        thresholds = load_thresholds(options.thresholds) if options.thresholds else None
+    except ThresholdsError as exc:
+        raise EvalCommandError(str(exc)) from exc
+    baseline = _load_baseline(options)
+    current_selection = history_selection(options, limit)
+    if options.validate_only:
+        echo(
+            f"history backtest options ok: tenant {options.tenant_id}, last {options.days} days, "
+            f"at most {limit} alerts"
+        )
+        return EXIT_OK
+    md = markdown_path(options)
+    check_writable(Path(options.report))
+    check_writable(md)
+    for label, raw in (("report", options.report), ("markdown report", str(md))):
+        tree = find_work_tree(Path(raw).resolve().parent)
+        if tree is not None:
+            warn(
+                f"Warning: the {label} {raw} is inside the git work tree {tree}; it describes customer alerts, "
+                "keep it out of version control."
+            )
+
+    def check(dataset: Dataset) -> None:
+        if baseline is not None:
+            _check_baseline(baseline, dataset, current_selection, options, warn)
+
+    def progress(done: int, total: int, result: ItemResult) -> None:
+        tail = f" ({result.error})" if result.error else ""
+        echo(
+            f"[{done}/{total}] {result.item_id}: {result.status}, predicted {result.predicted or 'n/a'}, "
+            f"analyst {result.expected}{tail}"
+        )
+
+    import asyncpg
+
+    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    try:
+        run = asyncio.run(
+            run_history_backtest(
+                settings,
+                tenant_id=options.tenant_id,
+                days=options.days,
+                limit=limit,
+                concurrency=options.concurrency,
+                progress=progress,
+                before_replay=check,
+            )
+        )
+    except (HistoryBacktestError, SecurityConfigError) as exc:
+        raise EvalCommandError(str(exc)) from exc
+    except DatabaseUnavailable as exc:
+        raise EvalCommandError(f"database unavailable: {exc}") from exc
+    except (DatabaseError, asyncpg.PostgresError) as exc:
+        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
+    report = build_report(run.results, dataset=run.dataset, run_info={**run.info, "selection": current_selection})
+    gate_dict: Optional[Dict[str, Any]] = None
+    if thresholds is not None:
+        gate = evaluate_gate(report, thresholds, baseline=baseline)
+        gate_dict = gate.as_dict()
+        report["gate"] = gate_dict
+    _write_outputs(report, gate_dict, options.report, md)
+    for line in summary_lines(report, gate_dict):
+        echo(line)
+    echo(f"report: {options.report}; markdown: {md}")
+    if report["metrics"]["scored"] == 0:
+        raise EvalCommandError(
+            f"every one of the {report['metrics']['items']} replays errored; nothing was evaluated "
             "(see the report's item errors)"
         )
     if gate_dict is not None and not gate_dict["passed"]:

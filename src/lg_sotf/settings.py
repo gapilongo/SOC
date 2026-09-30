@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -24,7 +24,11 @@ from pydantic_settings import (
 )
 
 Environment = Literal["development", "test", "staging", "production"]
-LLMProvider = Literal["anthropic", "openai", "gemini", "fake"]
+LLMProvider = Literal["anthropic", "openai", "gemini", "ollama", "openai_compatible", "fake"]
+# Self-hosted, OpenAI-compatible servers (Ollama, vLLM, llama.cpp, LM Studio, ...): the API key is
+# optional and their usage is metered at zero cost.
+SELF_HOSTED_PROVIDERS = frozenset({"ollama", "openai_compatible"})
+StructuredOutput = Literal["auto", "json_schema", "json_mode", "function_calling"]
 
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
@@ -134,6 +138,11 @@ class LLMSettings(BaseModel):
     provider: LLMProvider = "anthropic"
     api_key: Optional[SecretStr] = None
     base_url: Optional[str] = None
+    # How self-hosted providers return structured output: json_schema (response_format with the
+    # schema, constrained decoding where the server supports it), json_mode (response_format
+    # json_object) or function_calling. "auto" = json_schema. Cloud providers always use their
+    # native method.
+    structured_output: StructuredOutput = "auto"
     fast: FastTierSettings = Field(default_factory=FastTierSettings)
     deep: DeepTierSettings = Field(default_factory=DeepTierSettings)
     refusal_fallback: bool = True
@@ -144,6 +153,10 @@ class LLMSettings(BaseModel):
     max_list_items: int = 50
     prompt_caching: bool = True
     daily_token_budget_per_tenant: Optional[int] = None
+
+
+MAX_OIDC_ROLE_MAP_ENTRIES = 500
+MAX_OIDC_CLAIM_VALUE_CHARS = 256
 
 
 class AuthSettings(BaseModel):
@@ -165,10 +178,32 @@ class AuthSettings(BaseModel):
     oidc_email_claim: str = "email"
     oidc_email_verified_claim: str = "email_verified"
     oidc_default_tenant: Optional[str] = None
+    # Just-in-time provisioning: a verified OIDC login with a tenant claim and no local account
+    # creates one (role from oidc_role_map). The map sends values of the oidc_role_claim claim to
+    # LG-SOTF roles; an empty map accepts the role names themselves. No match: oidc_default_role,
+    # or the login is refused when that is unset. OIDC never grants the platform-admin flag.
+    oidc_jit_provisioning: bool = False
+    oidc_role_map: Dict[str, Literal["viewer", "analyst", "admin"]] = Field(default_factory=dict)
+    oidc_default_role: Optional[Literal["viewer", "analyst", "admin"]] = None
+    # TOTP MFA. None: required for platform admins in staging/production, optional in
+    # development/test (see Settings.platform_admin_mfa_required).
+    require_mfa_for_platform_admins: Optional[bool] = None
+    mfa_issuer: str = Field(default="LG-SOTF", min_length=1, max_length=64)
+    mfa_challenge_ttl_s: int = Field(default=300, ge=30, le=900)
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[SecretStr] = None
     bootstrap_tenant_id: str = "default"
     bootstrap_tenant_name: str = "Default"
+
+
+    @field_validator("oidc_role_map")
+    @classmethod
+    def _bounded_role_map(cls, value: Dict[str, str]) -> Dict[str, str]:
+        if len(value) > MAX_OIDC_ROLE_MAP_ENTRIES:
+            raise ValueError(f"at most {MAX_OIDC_ROLE_MAP_ENTRIES} entries")
+        if any(not key or len(key) > MAX_OIDC_CLAIM_VALUE_CHARS for key in value):
+            raise ValueError(f"claim values must be 1-{MAX_OIDC_CLAIM_VALUE_CHARS} characters")
+        return value
 
 
 class APISettings(BaseModel):
@@ -225,6 +260,17 @@ class RetentionSettings(BaseModel):
     indicators_days: int = 30
     llm_usage_days: int = 400
     checkpoints_days: int = 30
+    # Daily usage counters (invoicing, quotas).
+    usage_days: int = Field(default=400, ge=1)
+    # Bounds for the per-tenant ``retention.alerts_days``/``indicators_days`` overrides.
+    tenant_min_days: int = Field(default=7, ge=1, le=99_999)
+    tenant_max_days: int = Field(default=730, ge=1, le=99_999)
+
+    @model_validator(mode="after")
+    def _tenant_bounds(self) -> RetentionSettings:
+        if self.tenant_min_days > self.tenant_max_days:
+            raise ValueError("retention.tenant_min_days must not exceed retention.tenant_max_days")
+        return self
 
 
 class SecuritySettings(BaseModel):
@@ -261,6 +307,48 @@ class ResponseSettings(BaseModel):
     webhook_timeout_s: float = 15.0
 
 
+class MCPSettings(BaseModel):
+    """``lg-sotf mcp``: the LG-SOTF API the MCP server calls on the analyst's behalf.
+
+    Set the key with ``LG_SOTF_MCP__API_KEY`` (never a command-line argument): an
+    API key with the ``read`` scope, plus ``write`` for ``add_note``.
+    """
+
+    api_url: str = "http://127.0.0.1:8000"
+    api_key: Optional[SecretStr] = None
+    timeout_s: float = Field(default=30.0, gt=0, le=300)
+    max_retries: int = Field(default=2, ge=0, le=5)
+    max_response_bytes: int = Field(default=4_194_304, ge=1_024)
+    max_output_chars: int = Field(default=60_000, ge=1_000)
+
+
+class IntegrationsSettings(BaseModel):
+    """Outbound notifications and ticketing (``lg_sotf.integrations``); delivered by the scheduler."""
+
+    enabled: bool = True
+    # Links in notifications point here (``/alerts?alert=<id>``); defaults to api.public_url.
+    ui_base_url: Optional[str] = None
+    batch_size: int = Field(default=50, ge=1, le=500)
+    delivery_concurrency: int = Field(default=8, ge=1, le=64)
+    max_attempts: int = Field(default=8, ge=1, le=50)
+    backoff_base_s: float = Field(default=30.0, gt=0)
+    backoff_max_s: float = Field(default=3_600.0, gt=0)
+    max_age_hours: float = Field(default=24.0, gt=0)
+    http_timeout_s: float = Field(default=10.0, gt=0, le=120)
+    outbox_retention_days: int = Field(default=30, ge=1)
+    ticket_sync_interval_s: float = Field(default=300.0, ge=30)
+    ticket_sync_batch_per_tenant: int = Field(default=25, ge=1, le=500)
+    # Slack approvals by an SSO (OIDC-provisioned) account need a sign-in to LG-SOTF within this many hours.
+    slack_sso_max_age_hours: float = Field(default=12.0, gt=0, le=720)
+    smtp_host: Optional[str] = None
+    smtp_port: int = Field(default=587, ge=1, le=65_535)
+    smtp_security: Literal["starttls", "tls", "none"] = "starttls"
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[SecretStr] = None
+    smtp_from: Optional[str] = None
+    smtp_timeout_s: float = Field(default=15.0, gt=0, le=120)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LG_SOTF_",
@@ -285,6 +373,8 @@ class Settings(BaseSettings):
     security: SecuritySettings = SecuritySettings()
     observability: ObservabilitySettings = ObservabilitySettings()
     response: ResponseSettings = ResponseSettings()
+    mcp: MCPSettings = MCPSettings()
+    integrations: IntegrationsSettings = IntegrationsSettings()
 
     # Free-form tuning sections consumed by agents and routing.
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -338,6 +428,12 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment in ("staging", "production")
 
+    @property
+    def platform_admin_mfa_required(self) -> bool:
+        """``auth.require_mfa_for_platform_admins``, defaulting to on in staging/production."""
+        value = self.auth.require_mfa_for_platform_admins
+        return self.is_production if value is None else value
+
     def production_problems(self) -> List[str]:
         """Return reasons this configuration is unsafe to run in production."""
         problems: List[str] = []
@@ -350,14 +446,27 @@ class Settings(BaseSettings):
             problems.append("security.indicator_hmac_key must be set")
         if self.llm.enabled and self.llm.provider == "fake" and not self.llm.allow_fake:
             problems.append("llm.provider=fake is not allowed in production (set llm.allow_fake to override)")
-        if self.llm.enabled and self.llm.provider != "fake" and self.llm.api_key is None:
+        if (
+            self.llm.enabled
+            and self.llm.provider != "fake"
+            and self.llm.provider not in SELF_HOSTED_PROVIDERS
+            and self.llm.api_key is None
+        ):
             problems.append(f"llm.api_key (or the provider's standard env var) is required for {self.llm.provider}")
+        if self.llm.enabled and self.llm.provider != "fake":
+            from lg_sotf.llm.endpoint import base_url_problem
+
+            problem = base_url_problem(self)
+            if problem:
+                problems.append(problem)
         if "*" in self.api.cors_origins:
             problems.append("api.cors_origins must not contain '*'")
         if not self.auth.cookie_secure:
             problems.append("auth.cookie_secure must be true")
         if "soc_dev_password" in self.database.url.get_secret_value():
             problems.append("database.url uses the development password")
+        if self.integrations.smtp_host and self.integrations.smtp_security == "none":
+            problems.append("integrations.smtp_security=none sends mail and SMTP credentials in clear text")
         from lg_sotf.security.insecure import insecure_secret_problems
 
         problems.extend(insecure_secret_problems(self))

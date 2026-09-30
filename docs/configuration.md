@@ -38,8 +38,9 @@ With `environment` set to `staging` or `production`, every process calls
 
 * `auth.jwt_secret` is missing or shorter than 32 bytes;
 * `security.encryption_keys` or `security.indicator_hmac_key` is missing;
-* `llm.provider` is `fake` without `llm.allow_fake`, or a real provider has no
-  API key;
+* `llm.provider` is `fake` without `llm.allow_fake`, or a cloud provider has no
+  API key (`ollama` and `openai_compatible` need none), or `llm.base_url`
+  breaks the endpoint policy (docs/local-llm.md);
 * `api.cors_origins` contains `*`, or `auth.cookie_secure` is false;
 * `database.url` contains the development password;
 * any secret still has a value published in this repository (the placeholders
@@ -54,11 +55,15 @@ use environment variables from a secret store (see docs/deployment.md).
 
 Per-tenant policy (response autonomy, protected assets, allowed actions,
 blast-radius limits, connector choice, review SLAs and grouping, enrichment
-opt-in, LLM daily token budget) lives in the database (`tenants.settings`)
+opt-in, LLM daily token budget, `reporting.minutes_per_alert` for the value
+report's hours-saved estimate, see docs/reporting.md) lives in the database (`tenants.settings`)
 and is edited by tenant admins through `GET/PATCH /api/v1/tenant/settings`
 (docs/api.md). The install settings below provide defaults and hard limits
 for those tenant settings. Data retention is an install setting
-(`retention.*` below); the API cannot change it per tenant.
+(`retention.*` below); a tenant admin may override `alerts_days` and
+`indicators_days` for their tenant (`retention` in the tenant settings),
+within `retention.tenant_min_days` .. `retention.tenant_max_days`. The
+other retention periods apply to every tenant.
 
 ## Settings reference
 
@@ -116,9 +121,10 @@ Language model provider, tiers, prompt limits, budgets and pricing.
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
 | `llm.enabled` | `LG_SOTF_LLM__ENABLED` | boolean | `true` | Master switch. When false, agents run on rules only and nothing is sent to a model. |
-| `llm.provider` | `LG_SOTF_LLM__PROVIDER` | `anthropic` \| `openai` \| `gemini` \| `fake` | `anthropic` | `anthropic` (default), `openai`, `gemini` (optional extras) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`). |
-| `llm.api_key` | `LG_SOTF_LLM__API_KEY` | secret (optional) | unset | Provider API key. Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider. |
-| `llm.base_url` | `LG_SOTF_LLM__BASE_URL` | string (optional) | unset | Custom API endpoint (gateway or proxy). When set, Anthropic server-side refusal fallbacks are not requested. |
+| `llm.provider` | `LG_SOTF_LLM__PROVIDER` | `anthropic` \| `openai` \| `gemini` \| `ollama` \| `openai_compatible` \| `fake` | `anthropic` | `anthropic` (default), `openai`, `gemini` (optional extras), the self-hosted `ollama` and `openai_compatible` (vLLM, llama.cpp, LM Studio, ...; API key optional, metered as `local/<model>` at zero cost; see docs/local-llm.md) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`). |
+| `llm.api_key` | `LG_SOTF_LLM__API_KEY` | secret (optional) | unset | Provider API key (optional for `ollama` and `openai_compatible`). Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider. |
+| `llm.base_url` | `LG_SOTF_LLM__BASE_URL` | string (optional) | unset | Custom API endpoint (gateway, proxy or self-hosted server). Required for `openai_compatible`; `ollama` defaults to `http://ollama:11434/v1`. `http://` only to loopback, private (RFC 1918, CGNAT, ULA), docker service or `*.internal` hosts; metadata and link-local addresses and credentials in the URL are refused. When set, Anthropic server-side refusal fallbacks are not requested. |
+| `llm.structured_output` | `LG_SOTF_LLM__STRUCTURED_OUTPUT` | `auto` \| `json_schema` \| `json_mode` \| `function_calling` | `auto` | How `ollama` and `openai_compatible` return structured output: `json_schema` (`auto`; the schema as `response_format` and in the prompt), `json_mode` (`response_format: json_object`) or `function_calling`. JSON replies get one validation-and-repair retry. Cloud providers always use their native method. |
 | `llm.refusal_fallback` | `LG_SOTF_LLM__REFUSAL_FALLBACK` | boolean | `true` | Anthropic only: ask the API to retry a refused request on a fallback model (server-side fallback beta). A refusal that remains still escalates the alert. |
 | `llm.prices` | `LG_SOTF_LLM__PRICES` | mapping | `{}` | Price overrides per model id, merged over the built-in table: `{model: {input, output, cache_write, cache_read}}` in USD per million tokens (cache prices default to 1.25x and 0.1x input). Unknown models are metered at zero cost with a warning. |
 | `llm.allow_fake` | `LG_SOTF_LLM__ALLOW_FAKE` | boolean | `false` | Allow `provider=fake` in staging/production (demos only). |
@@ -176,10 +182,16 @@ Local accounts, sessions, OIDC single sign-on and the bootstrap tenant/admin.
 | `auth.oidc_audience` | `LG_SOTF_AUTH__OIDC_AUDIENCE` | string (optional) | unset | Expected `aud` of OIDC tokens. |
 | `auth.oidc_jwks_url` | `LG_SOTF_AUTH__OIDC_JWKS_URL` | string (optional) | unset | JWKS URL; discovered from the issuer when unset. |
 | `auth.oidc_tenant_claim` | `LG_SOTF_AUTH__OIDC_TENANT_CLAIM` | string | `tenant_id` | Claim holding the tenant id. |
-| `auth.oidc_role_claim` | `LG_SOTF_AUTH__OIDC_ROLE_CLAIM` | string | `roles` | Claim holding the role(s) (`admin`, `analyst`, `viewer`). |
+| `auth.oidc_role_claim` | `LG_SOTF_AUTH__OIDC_ROLE_CLAIM` | string | `roles` | Claim holding the role(s) or groups; values go through `auth.oidc_role_map` (without a map they must be `admin`, `analyst` or `viewer`). |
 | `auth.oidc_email_claim` | `LG_SOTF_AUTH__OIDC_EMAIL_CLAIM` | string | `email` | Claim holding the user's email. |
 | `auth.oidc_email_verified_claim` | `LG_SOTF_AUTH__OIDC_EMAIL_VERIFIED_CLAIM` | string | `email_verified` | Claim that must be true before the email is trusted. |
 | `auth.oidc_default_tenant` | `LG_SOTF_AUTH__OIDC_DEFAULT_TENANT` | string (optional) | unset | Tenant for tokens without a tenant claim (single-organisation installs). |
+| `auth.oidc_jit_provisioning` | `LG_SOTF_AUTH__OIDC_JIT_PROVISIONING` | boolean | `false` | Create a local account (no password, never a platform admin) on the first verified OIDC sign-in and keep its role in sync with the mapping. See docs/identity.md. |
+| `auth.oidc_role_map` | `LG_SOTF_AUTH__OIDC_ROLE_MAP` | mapping | `{}` | Role-claim value to role (`viewer`, `analyst`, `admin`), e.g. `{"SOC-Admins": "admin"}`; the highest match wins. Empty: the claim carries role names. |
+| `auth.oidc_default_role` | `LG_SOTF_AUTH__OIDC_DEFAULT_ROLE` | `viewer` \| `analyst` \| `admin` (optional) | unset | Role when no claim value maps; unset refuses the sign-in. |
+| `auth.require_mfa_for_platform_admins` | `LG_SOTF_AUTH__REQUIRE_MFA_FOR_PLATFORM_ADMINS` | boolean (optional) | unset | Platform admins must use TOTP MFA (forced enrollment at sign-in). Unset: on in staging and production, off in development and test. |
+| `auth.mfa_issuer` | `LG_SOTF_AUTH__MFA_ISSUER` | string | `LG-SOTF` | Issuer name shown in authenticator apps (`otpauth://` URI). |
+| `auth.mfa_challenge_ttl_s` | `LG_SOTF_AUTH__MFA_CHALLENGE_TTL_S` | integer | `300` | Lifetime of the MFA challenge token between password and code (30-900). |
 | `auth.bootstrap_admin_email` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL` | string (optional) | unset | `lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist. |
 | `auth.bootstrap_admin_password` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | secret (optional) | unset | Password of the bootstrap admin. Give it to the migrate job only, then remove it. |
 | `auth.bootstrap_tenant_id` | `LG_SOTF_AUTH__BOOTSTRAP_TENANT_ID` | string | `default` | Tenant created by `lg-sotf migrate`. |
@@ -196,7 +208,7 @@ HTTP API process.
 | `api.public_url` | `LG_SOTF_API__PUBLIC_URL` | string | `http://localhost:8000` | External URL of the API. An `https://` URL turns on HSTS. |
 | `api.cors_origins` | `LG_SOTF_API__CORS_ORIGINS` | list[string] | `["http://localhost:3000", "http://localhost:5173"]` | Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production. |
 | `api.max_body_bytes` | `LG_SOTF_API__MAX_BODY_BYTES` | integer | `1048576` | Request body limit for ordinary endpoints. |
-| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints. |
+| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints (`/ingest/email` allows up to `ingestion.email.max_message_bytes` when that is larger). |
 | `api.max_ingest_batch` | `LG_SOTF_API__MAX_INGEST_BATCH` | integer | `500` | Maximum events per `POST /ingest/alerts` call. |
 | `api.rate_limit_per_minute` | `LG_SOTF_API__RATE_LIMIT_PER_MINUTE` | integer | `600` | Requests per minute per principal. |
 | `api.ingest_rate_limit_per_minute` | `LG_SOTF_API__INGEST_RATE_LIMIT_PER_MINUTE` | integer | `6000` | Ingestion requests per minute per API key. |
@@ -245,12 +257,15 @@ Data retention, applied by the scheduler's maintenance job.
 
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
-| `retention.alerts_days` | `LG_SOTF_RETENTION__ALERTS_DAYS` | integer | `90` | Alerts (and their runs, escalations, actions) older than this are purged. |
+| `retention.alerts_days` | `LG_SOTF_RETENTION__ALERTS_DAYS` | integer | `90` | Alerts (and their runs, escalations, actions) older than this are purged. Tenants may override it with `retention.alerts_days` in their settings. |
 | `retention.events_days` | `LG_SOTF_RETENTION__EVENTS_DAYS` | integer | `90` | Alert timeline events. |
 | `retention.audit_days` | `LG_SOTF_RETENTION__AUDIT_DAYS` | integer | `365` | Audit log (hash chain per tenant); export before it ages out if you need longer. |
-| `retention.indicators_days` | `LG_SOTF_RETENTION__INDICATORS_DAYS` | integer | `30` | Indicator sightings used for correlation. |
+| `retention.indicators_days` | `LG_SOTF_RETENTION__INDICATORS_DAYS` | integer | `30` | Indicator sightings used for correlation. Tenants may override it with `retention.indicators_days`. |
 | `retention.llm_usage_days` | `LG_SOTF_RETENTION__LLM_USAGE_DAYS` | integer | `400` | Daily LLM usage rows. |
 | `retention.checkpoints_days` | `LG_SOTF_RETENTION__CHECKPOINTS_DAYS` | integer | `30` | LangGraph checkpoints of completed runs. |
+| `retention.usage_days` | `LG_SOTF_RETENTION__USAGE_DAYS` | integer | `400` | Daily usage counters (alerts ingested and processed per tenant; invoicing and quotas). |
+| `retention.tenant_min_days` | `LG_SOTF_RETENTION__TENANT_MIN_DAYS` | integer | `7` | Lowest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values below it are raised to it. |
+| `retention.tenant_max_days` | `LG_SOTF_RETENTION__TENANT_MAX_DAYS` | integer | `730` | Highest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values above it are lowered to it. |
 
 ### `security`
 
@@ -285,6 +300,46 @@ Response automation defaults and the install-wide SOAR webhook.
 | `response.webhook_url` | `LG_SOTF_RESPONSE__WEBHOOK_URL` | string (optional) | unset | Install-wide SOAR webhook (HMAC-signed POST) used by tenants that choose the `webhook` connector without their own URL. |
 | `response.webhook_secret` | `LG_SOTF_RESPONSE__WEBHOOK_SECRET` | secret (optional) | unset | HMAC secret of the install-wide webhook. |
 | `response.webhook_timeout_s` | `LG_SOTF_RESPONSE__WEBHOOK_TIMEOUT_S` | number | `15.0` | Timeout of one webhook call. |
+
+### `mcp`
+
+`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client (see [mcp.md](mcp.md)). Read by that command only.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `mcp.api_url` | `LG_SOTF_MCP__API_URL` | string | `http://127.0.0.1:8000` | Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only. |
+| `mcp.api_key` | `LG_SOTF_MCP__API_KEY` | secret (optional) | unset | API key the MCP server uses (`read` scope; `write` for notes). Environment only, never a command-line argument. |
+| `mcp.timeout_s` | `LG_SOTF_MCP__TIMEOUT_S` | number | `30.0` | Timeout of one API request. |
+| `mcp.max_retries` | `LG_SOTF_MCP__MAX_RETRIES` | integer | `2` | Retries of a read request on 429/502/503/504 or a connection error (writes are never retried). |
+| `mcp.max_response_bytes` | `LG_SOTF_MCP__MAX_RESPONSE_BYTES` | integer | `4194304` | Largest API response the MCP server reads. |
+| `mcp.max_output_chars` | `LG_SOTF_MCP__MAX_OUTPUT_CHARS` | integer | `60000` | Largest tool result handed to the model; longer results are truncated with a note. |
+
+### `integrations`
+
+Notifications and ticketing (docs/integrations.md): outbox delivery and ticket sync run in the scheduler; SMTP is configured per install, recipients per integration.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `integrations.enabled` | `LG_SOTF_INTEGRATIONS__ENABLED` | boolean | `true` | Run the scheduler's outbox delivery and ticket sync jobs. Events are queued whatever this says; turning it off only pauses delivery. |
+| `integrations.ui_base_url` | `LG_SOTF_INTEGRATIONS__UI_BASE_URL` | string (optional) | unset | Base URL of the web app for links in notifications (`/alerts?alert=<id>`). Defaults to `api.public_url` (the UI and API share a host in the shipped deployments). |
+| `integrations.batch_size` | `LG_SOTF_INTEGRATIONS__BATCH_SIZE` | integer | `50` | Outbox rows claimed per delivery pass. |
+| `integrations.delivery_concurrency` | `LG_SOTF_INTEGRATIONS__DELIVERY_CONCURRENCY` | integer | `8` | Deliveries in flight at once in the scheduler. |
+| `integrations.max_attempts` | `LG_SOTF_INTEGRATIONS__MAX_ATTEMPTS` | integer | `8` | Attempts before an outbox row is marked `dead`. |
+| `integrations.backoff_base_s` | `LG_SOTF_INTEGRATIONS__BACKOFF_BASE_S` | number | `30.0` | First retry delay; doubles with every attempt (with jitter). |
+| `integrations.backoff_max_s` | `LG_SOTF_INTEGRATIONS__BACKOFF_MAX_S` | number | `3600.0` | Longest retry delay (also caps a receiver's `Retry-After`). |
+| `integrations.max_age_hours` | `LG_SOTF_INTEGRATIONS__MAX_AGE_HOURS` | number | `24.0` | An event still undelivered after this long is marked `dead` instead of being sent late. |
+| `integrations.http_timeout_s` | `LG_SOTF_INTEGRATIONS__HTTP_TIMEOUT_S` | number | `10.0` | Timeout of one outbound integration request (Slack, Teams, webhook, Jira, ServiceNow). |
+| `integrations.outbox_retention_days` | `LG_SOTF_INTEGRATIONS__OUTBOX_RETENTION_DAYS` | integer | `30` | Sent and dead outbox rows are deleted after this many days. |
+| `integrations.ticket_sync_interval_s` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_INTERVAL_S` | number | `300.0` | How often the scheduler polls linked open tickets for their status. |
+| `integrations.ticket_sync_batch_per_tenant` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_BATCH_PER_TENANT` | integer | `25` | Tickets polled per tenant per sync pass (least recently synced first). |
+| `integrations.slack_sso_max_age_hours` | `LG_SOTF_INTEGRATIONS__SLACK_SSO_MAX_AGE_HOURS` | number | `12.0` | An OIDC-provisioned (SSO) account may approve or reject actions from Slack only if it signed in to LG-SOTF within this many hours. |
+| `integrations.smtp_host` | `LG_SOTF_INTEGRATIONS__SMTP_HOST` | string (optional) | unset | SMTP server for email integrations; email integrations fail until it is set. |
+| `integrations.smtp_port` | `LG_SOTF_INTEGRATIONS__SMTP_PORT` | integer | `587` | SMTP port (587 for STARTTLS, 465 for implicit TLS). |
+| `integrations.smtp_security` | `LG_SOTF_INTEGRATIONS__SMTP_SECURITY` | `starttls` \| `tls` \| `none` | `starttls` | `starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified. |
+| `integrations.smtp_username` | `LG_SOTF_INTEGRATIONS__SMTP_USERNAME` | string (optional) | unset | SMTP login (optional). |
+| `integrations.smtp_password` | `LG_SOTF_INTEGRATIONS__SMTP_PASSWORD` | secret (optional) | unset | SMTP password (optional). |
+| `integrations.smtp_from` | `LG_SOTF_INTEGRATIONS__SMTP_FROM` | string (optional) | unset | Sender address of notification emails. |
+| `integrations.smtp_timeout_s` | `LG_SOTF_INTEGRATIONS__SMTP_TIMEOUT_S` | number | `15.0` | SMTP connection and command timeout. |
 
 ### `routing`
 

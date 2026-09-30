@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Any, Coroutine, List, Optional, TypeVar
 
 import click
@@ -160,6 +161,22 @@ def create_admin(tenant_id: str, email: str, role: str, password_stdin: bool, pl
     click.echo(f"created {user.role} {user.email} in tenant {user.tenant_id} (id {user.id})")
 
 
+@cli.command("reset-mfa")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
+@click.option("--email", required=True, help="The user's login email.")
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def reset_mfa(tenant_id: str, email: str, yes: bool) -> None:
+    """Remove a user's MFA (lost device) and sign them out; audited. They enroll again at next sign-in."""
+    from lg_sotf.runtime.ops import reset_mfa as run_reset_mfa
+
+    settings = _prepare()
+    if not yes:
+        click.confirm(f"Remove MFA for {email} in tenant {tenant_id} and end their sessions?", abort=True)
+    report = _run(run_reset_mfa(settings, tenant_id=tenant_id, email=email))
+    state = "removed" if report.was_enabled else "was not enabled; pending enrollment cleared"
+    click.echo(f"MFA {state} for {report.email} (id {report.user_id}); {report.revoked_sessions} session(s) revoked")
+
+
 @cli.command("create-tenant")
 @click.option("--id", "tenant_id", required=True, help="Tenant id: 2-63 of a-z, 0-9, '-', '_'.")
 @click.option("--name", required=True, help="Display name.")
@@ -264,7 +281,25 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 
 
 @cli.command("eval")
-@click.option("--dataset", required=True, type=click.Path(dir_okay=False), help="Labelled JSONL dataset.")
+@click.option(
+    "--dataset",
+    default=None,
+    type=click.Path(dir_okay=False),
+    help="Labelled JSONL dataset (required unless --from-history).",
+)
+@click.option(
+    "--from-history",
+    "from_history",
+    is_flag=True,
+    help="Backtest: replay the --tenant's analyst-decided alerts through the current pipeline, read-only.",
+)
+@click.option(
+    "--days",
+    type=click.IntRange(1, 366),
+    default=30,
+    show_default=True,
+    help="With --from-history: alerts decided in the last N days.",
+)
 @click.option(
     "--report",
     default="eval-report.json",
@@ -277,8 +312,18 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 @click.option("--baseline", default=None, type=click.Path(dir_okay=False), help="Earlier JSON report for regressions.")
 @click.option("--split", "splits", multiple=True, help="Only items in this split (repeatable).")
 @click.option("--tag", "tags", multiple=True, help="Only items carrying this tag (repeatable; all must match).")
-@click.option("--limit", type=click.IntRange(1, None), default=None, help="Evaluate at most this many items.")
-@click.option("--tenant", "tenant_id", default=None, help="Id of the new tenant to evaluate in (default: generated).")
+@click.option(
+    "--limit",
+    type=click.IntRange(1, None),
+    default=None,
+    help="Evaluate at most this many items (--from-history: default 500, at most 10000).",
+)
+@click.option(
+    "--tenant",
+    "tenant_id",
+    default=None,
+    help="Id of the new tenant to evaluate in (default: generated); with --from-history the tenant to replay.",
+)
 @click.option("--concurrency", type=click.IntRange(1, 32), default=1, show_default=True, help="Items run at once.")
 @click.option(
     "--isolate",
@@ -294,7 +339,9 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 )
 @click.option("--validate-only", is_flag=True, help="Check the dataset, thresholds and baseline; run nothing.")
 def eval_command(
-    dataset: str,
+    dataset: Optional[str],
+    from_history: bool,
+    days: int,
     report: str,
     markdown: Optional[str],
     thresholds: Optional[str],
@@ -315,11 +362,22 @@ def eval_command(
     (one per split by default). Progress and the summary go to stdout, logs to
     stderr. Exit code 0: passed; 1: a threshold or regression check failed;
     2: could not run (or every item errored).
+
+    With --from-history --tenant T --days N, the items are the alerts analysts
+    decided in tenant T in the last N days, replayed through the current
+    pipeline and model with every side effect disabled (read-only database,
+    no escalations, notifications, actions or alert updates) and scored
+    against the analysts' decisions. Point the settings at the tenant's
+    database; nothing is written to it.
     """
     from lg_sotf.eval.command import EXIT_CANNOT_RUN, EvalCommandError, EvalOptions, execute
 
+    if not from_history and not dataset:
+        raise click.UsageError("Missing option '--dataset' (or pass --from-history --tenant T).")
+    if limit is not None and from_history and limit > 10_000:
+        raise click.UsageError("--limit may be at most 10000 with --from-history.")
     options = EvalOptions(
-        dataset=dataset,
+        dataset=dataset or "",
         report=report,
         markdown=markdown,
         thresholds=thresholds,
@@ -332,6 +390,8 @@ def eval_command(
         isolate=isolate,
         allow_baseline_mismatch=allow_baseline_mismatch,
         validate_only=validate_only,
+        from_history=from_history,
+        days=days,
     )
     settings = get_settings() if validate_only else _prepare()
     if not validate_only and "log_level" not in settings.observability.model_fields_set:
@@ -351,6 +411,81 @@ def eval_command(
         click.echo(f"Error: {exc}", err=True)
         sys.exit(EXIT_CANNOT_RUN)
     sys.exit(code)
+
+
+@cli.command("tenant-export")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
+@click.option(
+    "--output", required=True, type=click.Path(dir_okay=False, path_type=Path), help="ZIP file to write (mode 0600)."
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing file.")
+def tenant_export(tenant_id: str, output: Path, force: bool) -> None:
+    """Export a tenant's data as a ZIP of JSONL files (secrets removed; audited)."""
+    from lg_sotf.compliance.ops import tenant_export as run_export
+
+    settings = _prepare()
+    result = _run(run_export(settings, tenant_id=tenant_id, output=output, overwrite=force))
+    click.echo(f"exported tenant {tenant_id} to {result.path} ({result.bytes_written} bytes)")
+
+
+@cli.command("tenant-erase")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id (the tenant must be suspended).")
+@click.option("--confirm", required=True, help="Repeat the tenant id to confirm.")
+@click.option("--yes", is_flag=True, help="Do not ask for interactive confirmation.")
+def tenant_erase(tenant_id: str, confirm: str, yes: bool) -> None:
+    """Permanently erase a suspended tenant's data; the hash-chained audit log is kept (audited)."""
+    from lg_sotf.compliance.ops import tenant_erase as run_erase
+
+    if confirm != tenant_id:
+        raise click.UsageError("--confirm must repeat the tenant id exactly")
+    settings = _prepare()
+    if not yes:
+        click.confirm(
+            f"Permanently delete every alert, event, user, source and setting of tenant {tenant_id!r}?", abort=True
+        )
+    report = _run(run_erase(settings, tenant_id=tenant_id, confirm=confirm))
+    click.echo(json.dumps(report.as_dict(), default=str, indent=2, sort_keys=True))
+
+
+@cli.command("evidence-verify")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--allow-unsigned", is_flag=True, help="Accept a bundle without a signature (digest check only).")
+def evidence_verify(path: Path, allow_unsigned: bool) -> None:
+    """Verify an evidence pack's bundle_sha256 and HMAC signature with this install's key.
+
+    Exit code 0: valid; 1: the digest or signature does not match (or the
+    bundle is unsigned without --allow-unsigned).
+    """
+    from lg_sotf.compliance.ops import verify_evidence_file
+    from lg_sotf.runtime.ops import OperationError
+
+    settings = get_settings()
+    try:
+        document, result = verify_evidence_file(settings, path)
+    except OperationError as exc:
+        raise click.ClickException(str(exc)) from exc
+    integrity = document.get("integrity") or {}
+    click.echo(f"bundle_sha256: {integrity.get('bundle_sha256')} ({'matches' if result.digest_ok else 'MISMATCH'})")
+    click.echo(f"signature: {result.signature}")
+    ok = result.signed_ok or (allow_unsigned and result.digest_ok and result.signature == "absent")
+    if not ok:
+        sys.exit(1)
+
+
+@cli.command("mcp")
+def mcp() -> None:
+    """Run the Model Context Protocol server over stdio.
+
+    A thin client of the LG-SOTF REST API: set LG_SOTF_MCP__API_URL (the API's
+    base URL; https, or http for localhost) and LG_SOTF_MCP__API_KEY (an API
+    key with the 'read' scope, plus 'write' for add_note) in the environment
+    of the MCP client's server entry. The key is never accepted as an argument.
+    Logs go to stderr; stdout carries protocol messages only. See docs/mcp.md.
+    """
+    from lg_sotf.mcp.command import mcp_command
+
+    assert mcp_command.callback is not None  # noqa: S101 - defined by @click.command
+    mcp_command.callback()
 
 
 def main() -> None:

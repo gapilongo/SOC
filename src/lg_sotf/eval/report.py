@@ -22,6 +22,14 @@ SYNTHETIC_NOTE = (
     "The dataset is synthetic: hand-written alerts with labels assigned by construction. It exercises "
     "the pipeline; it says nothing about accuracy on real customer telemetry."
 )
+HISTORY_NOTE = (
+    "Backtest on this tenant's history: every item is an alert an analyst decided (expected = the analyst's final "
+    "decision), replayed through the current triage, correlation and analysis agents and routing policy with every "
+    "side effect disabled (read-only database, no escalations, notifications, actions or alert updates). Suppression "
+    "rules and the verdict cache are skipped; correlation and history see the tenant's data as of each alert's "
+    "ingestion; external threat-intelligence answers are today's. 'waiting_human' means the replay would have "
+    "escalated, 'waiting_approval' that the policy would have planned a response."
+)
 UNREVIEWED_NOTE = (
     "Runs that stopped for analyst review or action approval were recorded as 'unreviewed': the "
     "harness never supplies an analyst decision."
@@ -36,7 +44,7 @@ def build_report(
     generated_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     info = dict(run_info or {})
-    notes: List[str] = [UNREVIEWED_NOTE]
+    notes: List[str] = [HISTORY_NOTE if info.get("mode") == "history" else UNREVIEWED_NOTE]
     if info.get("llm_provider") == "fake":
         notes.insert(0, FAKE_MODEL_NOTE)
     if dataset.synthetic:

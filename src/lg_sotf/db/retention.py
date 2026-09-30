@@ -3,7 +3,9 @@
 Deletes run in bounded batches, each in its own short transaction, so the job
 never holds long locks or bloats a single transaction. Tenants may override
 ``alerts_days`` and ``indicators_days`` via ``settings.retention`` in their
-tenant settings; partitioned tables (``alert_events``, ``audit_log``) follow
+tenant settings (clamped to ``retention.tenant_min_days`` ..
+``retention.tenant_max_days``, so a value stored before the bounds changed
+never escapes them); partitioned tables (``alert_events``, ``audit_log``) follow
 the global setting because they are dropped a whole month at a time.
 
 Alerts expire when they ended (``closed`` since ``closed_at``, or ``failed``,
@@ -44,6 +46,7 @@ class RetentionReport:
     alerts: int = 0
     indicator_sightings: int = 0
     llm_usage_rows: int = 0
+    usage_rows: int = 0
     refresh_tokens: int = 0
     checkpoint_threads: int = 0
     default_partition_rows: int = 0
@@ -58,6 +61,7 @@ class RetentionReport:
             "alerts": self.alerts,
             "indicator_sightings": self.indicator_sightings,
             "llm_usage_rows": self.llm_usage_rows,
+            "usage_rows": self.usage_rows,
             "refresh_tokens": self.refresh_tokens,
             "checkpoint_threads": self.checkpoint_threads,
             "default_partition_rows": self.default_partition_rows,
@@ -67,18 +71,19 @@ class RetentionReport:
         }
 
 
-def _override_days(key: str) -> str:
+def _override_days(key: str, retention: RetentionSettings) -> str:
     if key not in _OVERRIDE_KEYS:
         raise ValueError(key)
+    low, high = int(retention.tenant_min_days), int(retention.tenant_max_days)
     return (
         f"CASE WHEN t.settings->'retention'->>'{key}' ~ '{_OVERRIDE_PATTERN}' "
-        f"THEN (t.settings->'retention'->>'{key}')::int END"
+        f"THEN LEAST(GREATEST((t.settings->'retention'->>'{key}')::int, {low}), {high}) END"
     )
 
 
-async def _min_days(db: Database, key: str, default_days: int) -> int:
+async def _min_days(db: Database, key: str, default_days: int, retention: RetentionSettings) -> int:
     async with db.system_tx(readonly=True) as c:
-        override = await c.fetchval(f"SELECT min({_override_days(key)}) FROM tenants t")  # noqa: S608
+        override = await c.fetchval(f"SELECT min({_override_days(key, retention)}) FROM tenants t")  # noqa: S608
     return default_days if override is None else min(default_days, int(override))
 
 
@@ -134,7 +139,7 @@ async def purge_expired(
         if has_checkpoints
         else ""
     )
-    min_alert_days = await _min_days(db, "alerts_days", retention.alerts_days)
+    min_alert_days = await _min_days(db, "alerts_days", retention.alerts_days, retention)
     ended = "CASE WHEN a.status = 'closed' THEN a.closed_at ELSE a.updated_at END"
     report.alerts, done = await _batched(
         db,
@@ -145,7 +150,7 @@ async def purge_expired(
             WHERE a.status IN ('closed', 'failed')
               AND {ended} < $1::timestamptz - make_interval(days => $2)
               AND {ended} < $1::timestamptz
-                  - make_interval(days => COALESCE({_override_days("alerts_days")}, $3))
+                  - make_interval(days => COALESCE({_override_days("alerts_days", retention)}, $3))
             LIMIT $4
         ){checkpoint_ctes}
         DELETE FROM alerts a USING doomed d WHERE a.tenant_id = d.tenant_id AND a.id = d.id
@@ -156,7 +161,7 @@ async def purge_expired(
     )
     report.complete &= done
 
-    min_indicator_days = await _min_days(db, "indicators_days", retention.indicators_days)
+    min_indicator_days = await _min_days(db, "indicators_days", retention.indicators_days, retention)
     report.indicator_sightings, done = await _batched(
         db,
         f"""
@@ -165,7 +170,7 @@ async def purge_expired(
             FROM indicator_sightings s JOIN tenants t ON t.id = s.tenant_id
             WHERE s.seen_at < $1::timestamptz - make_interval(days => $2)
               AND s.seen_at < $1::timestamptz
-                  - make_interval(days => COALESCE({_override_days("indicators_days")}, $3))
+                  - make_interval(days => COALESCE({_override_days("indicators_days", retention)}, $3))
             LIMIT $4
         )
         DELETE FROM indicator_sightings s USING doomed d
@@ -187,6 +192,20 @@ async def purge_expired(
         WHERE u.tenant_id = d.tenant_id AND u.day = d.day AND u.model = d.model AND u.agent = d.agent
         """,
         ((now - timedelta(days=retention.llm_usage_days)).date(),),
+        batch_size,
+        max_batches,
+    )
+    report.complete &= done
+
+    report.usage_rows, done = await _batched(
+        db,
+        """
+        DELETE FROM usage_daily u USING (
+            SELECT tenant_id, day FROM usage_daily WHERE day < $1 LIMIT $2
+        ) d
+        WHERE u.tenant_id = d.tenant_id AND u.day = d.day
+        """,
+        ((now - timedelta(days=retention.usage_days)).date(),),
         batch_size,
         max_batches,
     )

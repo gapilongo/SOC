@@ -41,6 +41,15 @@ removing zero-width and other format characters) as extra evidence: it adds
 the ``prompt_injection_suspected`` true-positive signal and discards the
 false-positive evidence taken from text. It never raises a score.
 
+Email alerts (``alert["email"]``, from the email normalizer) add the phishing
+signals of :mod:`lg_sotf.core.phishing`, computed against the tenant's
+internal domains, protected brands and executives: true-positive signals
+raise the full rules score (like description keywords, never the trusted
+score), and the one benign signal (an internal sender whose SPF, DKIM and
+DMARC all pass) lowers both. Injected text voids the benign signal. The
+subject is in an email alert's title, so the alert is flagged
+``title_from_message`` and its title gives no keyword evidence.
+
 Cost: the LLM is called only when the rule score is in the ambiguous band.
 When the rules alone would close the alert (routing's obvious-false-positive
 test), the rule confidence is at or below ``triage_llm_min`` (default
@@ -61,7 +70,9 @@ from pydantic import BaseModel, Field
 
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult, refusal_digest
 from lg_sotf.core import routing
+from lg_sotf.core.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.db.errors import NotFound
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 
 SEVERITY_WEIGHTS: Dict[str, int] = {"critical": 30, "high": 20, "medium": 10, "low": -10, "info": -20}
@@ -192,6 +203,8 @@ class TriageResult:
     threat_categories: List[str] = field(default_factory=list)
     reasoning: Optional[str] = None
     notes: List[str] = field(default_factory=list)
+    # Email alerts: sender authentication, lookalikes and suspicious links (lg_sotf.core.phishing).
+    phishing: Optional[Dict[str, Any]] = None
 
     def digest(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -200,6 +213,8 @@ class TriageResult:
             data["reasoning"] = data["reasoning"][:1_000]
         if data["llm_refusal"] is None:
             data.pop("llm_refusal")
+        if data["phishing"] is None:
+            data.pop("phishing")
         return data
 
 
@@ -233,18 +248,22 @@ def agent_refusal(result: LLMResult[Any], agent: str) -> Optional[Dict[str, Opti
     return None if digest is None else {**digest, "agent": agent}
 
 
-def _model_written(alert: Mapping[str, Any]) -> bool:
-    """Title and rule name came from the LLM-fallback normalizer, i.e. from untrusted text."""
+UNTRUSTED_TITLE_FLAGS = frozenset({"llm_normalized", "title_from_message"})
+
+
+def _untrusted_title(alert: Mapping[str, Any]) -> bool:
+    """Title and rule name carry untrusted text: chosen by the LLM-fallback normalizer, or an email's subject."""
     flags = alert.get("flags")
-    return isinstance(flags, list) and "llm_normalized" in flags
+    return isinstance(flags, list) and any(f in UNTRUSTED_TITLE_FLAGS for f in flags)
 
 
 def trusted_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
     """Whole words of the detection title and rule name (the fields FP signals may come from).
 
-    Empty for an LLM-normalised alert: a model chose those fields from attacker-shaped text.
+    Empty for an LLM-normalised alert (a model chose those fields from
+    attacker-shaped text) and for an email alert (the title is the subject).
     """
-    if _model_written(alert):
+    if _untrusted_title(alert):
         return frozenset()
     text = " ".join(str(alert.get(k) or "") for k in TRUSTED_TEXT_FIELDS).lower()
     return frozenset(t.strip(".:-") for t in _WORD_RE.findall(text))
@@ -252,7 +271,7 @@ def trusted_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
 
 def trusted_evidence_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
     """Alphanumeric words of the title and rule name (true-positive keywords that may make triage decisive)."""
-    if _model_written(alert):
+    if _untrusted_title(alert):
         return frozenset()
     text = " ".join(str(alert.get(k) or "") for k in TRUSTED_TEXT_FIELDS).lower()[:MAX_TP_TEXT_CHARS]
     return frozenset(_TP_WORD_RE.findall(text))
@@ -329,8 +348,8 @@ def _parse_time(value: Any) -> Optional[datetime]:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def _score(alert: Mapping[str, Any], tp_words: FrozenSet[str], injected: bool) -> int:
-    score = 50 + SEVERITY_WEIGHTS.get(str(alert.get("severity", "")).lower(), 0)
+def _score(alert: Mapping[str, Any], tp_words: FrozenSet[str], injected: bool, email_weight: int = 0) -> int:
+    score = 50 + SEVERITY_WEIGHTS.get(str(alert.get("severity", "")).lower(), 0) + email_weight
     words = trusted_words(alert) if not injected else frozenset()
     score += sum(weight for keyword, weight in TP_KEYWORD_WEIGHTS.items() if _has_word(tp_words, keyword))
     score += sum(weight for keyword, weight in FP_KEYWORD_WEIGHTS.items() if keyword in words)
@@ -342,30 +361,49 @@ def _score(alert: Mapping[str, Any], tp_words: FrozenSet[str], injected: bool) -
     return max(0, min(100, score))
 
 
-def rule_confidence(alert: Mapping[str, Any]) -> int:
-    """The full rules score: severity, keywords from every evidence field, source, time."""
-    return _score(alert, evidence_words(alert), injection_suspected(alert))
+def _email_signals(phishing: Optional[PhishingAssessment], injected: bool) -> Optional[PhishingAssessment]:
+    """Injected text voids the benign email signal (it never removes a true-positive one)."""
+    if phishing is None:
+        return None
+    return phishing.without_benign() if injected else phishing
 
 
-def trusted_rule_confidence(alert: Mapping[str, Any]) -> int:
+def rule_confidence(alert: Mapping[str, Any], *, phishing: Optional[PhishingAssessment] = None) -> int:
+    """The full rules score: severity, keywords from every evidence field, email signals, source, time."""
+    injected = injection_suspected(alert)
+    signals = _email_signals(phishing, injected)
+    return _score(alert, evidence_words(alert), injected, signals.weight if signals else 0)
+
+
+def trusted_rule_confidence(alert: Mapping[str, Any], *, phishing: Optional[PhishingAssessment] = None) -> int:
     """The rules score from fields an attacker does not write (true-positive keywords of title/rule name only).
 
-    Always at most :func:`rule_confidence`: the other evidence fields can only add.
+    Email signals count only with their benign weight. Always at most
+    :func:`rule_confidence`: the other evidence fields and signals can only add.
     """
-    return _score(alert, trusted_evidence_words(alert), injection_suspected(alert))
+    injected = injection_suspected(alert)
+    signals = _email_signals(phishing, injected)
+    return _score(alert, trusted_evidence_words(alert), injected, signals.benign_weight if signals else 0)
 
 
-def rule_indicators(alert: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
+def rule_indicators(
+    alert: Mapping[str, Any], *, phishing: Optional[PhishingAssessment] = None
+) -> Tuple[List[str], List[str]]:
     raw = _raw(alert)
     words = trusted_words(alert)
     evidence = evidence_words(alert)
     injected = injection_suspected(alert)
+    signals = _email_signals(phishing, injected)
     # Injected text voids false-positive evidence taken from text; the configured source id still counts.
     fp = [f"{k}_detected" for k in FP_KEYWORDS if k in words] if not injected else []
     if source_environment(alert) is not None:
         fp.append("test_environment")
+    if signals is not None:
+        fp += signals.fp
 
     tp = [INJECTION_SIGNAL] if injected else []
+    if signals is not None:
+        tp += signals.tp
     tp += [f"{k}_detected" for k in TP_KEYWORDS if _has_word(evidence, k)]
     entities = alert.get("entities") if isinstance(alert.get("entities"), Mapping) else {}
     if raw.get("file_hash") or (entities or {}).get("hashes"):
@@ -483,11 +521,27 @@ class TriageAgent(BaseAgent):
         async with AccountedRun(ctx):
             return await self._run(ctx, alert)
 
+    @staticmethod
+    async def phishing(ctx: AgentContext, alert: Mapping[str, Any]) -> Optional[PhishingAssessment]:
+        """Phishing signals for an email alert against the tenant's profile; ``None`` for other alerts."""
+        section = alert.get("email")
+        if not isinstance(section, Mapping):
+            return None
+        tenant_settings: Mapping[str, Any] = {}
+        if ctx.repos is not None:
+            try:
+                tenant_settings = (await ctx.repos.tenants.get(ctx.tenant_id)).settings or {}
+            except NotFound:
+                tenant_settings = {}
+        profile = PhishingProfile.from_settings(tenant_settings, ctx.settings.tools)
+        return _email_signals(assess(section, profile), injection_suspected(alert))
+
     async def _run(self, ctx: AgentContext, alert: Mapping[str, Any]) -> TriageResult:
         thresholds = RoutingThresholds.from_settings(ctx.settings.routing)
-        base = rule_confidence(alert)
-        trusted = trusted_rule_confidence(alert)
-        rule_fp, rule_tp = rule_indicators(alert)
+        phishing = await self.phishing(ctx, alert)
+        base = rule_confidence(alert, phishing=phishing)
+        trusted = trusted_rule_confidence(alert, phishing=phishing)
+        rule_fp, rule_tp = rule_indicators(alert, phishing=phishing)
         severity = str(alert.get("severity", "medium")).lower()
         decisive = decisive_reason(severity, base, rule_fp, rule_tp, ctx.settings.routing, trusted=trusted)
         llm: LLMResult[TriageAssessment]
@@ -526,6 +580,7 @@ class TriageAgent(BaseAgent):
             "rule_fp": rule_fp,
             "rule_tp": rule_tp,
             "notes": llm.notes,
+            "phishing": phishing.digest() if phishing is not None else None,
         }
         if a is None:
             if llm.refused:

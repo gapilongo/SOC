@@ -163,8 +163,8 @@ the file; reports built from a synthetic dataset carry a notice.
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | Unique id (letters, digits, `.`, `_`, `:`, `-`) |
-| `source_type` | yes | `canonical`, `splunk`, `crowdstrike`, `sentinel`, `wazuh`, `guardduty`, `qradar` or `webhook` |
-| `alert` | yes | The event exactly as that source sends it (canonical schema: `lg_sotf.ingestion.normalizers.canonical`) |
+| `source_type` | yes | `canonical`, `splunk`, `crowdstrike`, `sentinel`, `wazuh`, `guardduty`, `qradar`, `webhook` or `email` |
+| `alert` | yes | The event exactly as that source sends it (canonical schema: `lg_sotf.ingestion.normalizers.canonical`); for `email`, `{"mime": "<raw RFC 5322 message>", "reporter": "<optional address>"}`, ingested like `POST /ingest/email` |
 | `source_config` | `webhook` only | The generic webhook source config (`field_map`, `severity_map`, ...) |
 | `expected.disposition` | yes | Ground truth: `malicious`, `benign` or `inconclusive` (a human must look) |
 | `expected.route` | no | Expected policy route: `close`, `escalate` or `plan_response` |
@@ -175,6 +175,25 @@ the file; reports built from a synthetic dataset carry a notice.
 
 Loading is strict: an invalid or duplicate line stops the run with its line
 number (exit code 2), so a typo can never silently shrink a gated dataset.
+
+`_meta.tenant_settings` (optional) is merged into every evaluation tenant
+before the first item: `tools.internal_domains` and the `phishing` section
+(see `docs/phishing.md`). The shipped phishing set,
+`tests/fixtures/eval/phishing_v1.jsonl` (39 synthetic reported emails, with
+`phishing_smoke_thresholds.yaml`), uses it:
+
+```sh
+LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/phishing_v1.jsonl \
+    --report ~/lg-sotf-eval/phishing.json --thresholds tests/fixtures/eval/phishing_smoke_thresholds.yaml
+```
+
+### From the tenant's history (backtest)
+
+`lg-sotf eval --from-history --tenant T --days N [--limit M]` needs no
+dataset file: it replays the alerts analysts decided in tenant T in the last
+N days through the current pipeline and model, read-only and without any
+side effect, and reports with the same metrics, thresholds and baselines.
+See docs/reporting.md ("Backtest").
 
 ## Metrics
 
