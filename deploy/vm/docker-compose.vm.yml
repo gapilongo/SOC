@@ -1,8 +1,13 @@
-# VM overlay: the production-like stack on a single VM (docs/cicd.md).
+# VM overlay: the production-like stack on a single host (docs/cicd.md), shared
+# by both ingress modes of deploy/vm/deploy.sh:
 #
 #   docker compose -p lgsotf-<env> \
 #     -f docker/docker-compose.yml -f docker/docker-compose.prod.yml \
-#     -f deploy/vm/docker-compose.vm.yml --env-file <env dir>/.env up -d --wait
+#     -f deploy/vm/docker-compose.vm.yml -f deploy/vm/docker-compose.<ingress>.yml \
+#     --env-file <env dir>/.env up -d --wait
+#
+# where <ingress> is `caddy` (deploy.sh --ingress caddy, the default) or
+# `funnel` (--ingress funnel).
 #
 # deploy/vm/deploy.sh writes that .env and runs these commands; you do not need
 # to by hand. On top of docker-compose.prod.yml (two database roles, staging
@@ -11,12 +16,12 @@
 # * runs published images (APP_IMAGE / FRONTEND_IMAGE, pinned by digest) and
 #   never builds;
 # * always runs the frontend (no profile);
-# * publishes no host ports: the shared Caddy (docker-compose.edge.yml) reaches
-#   api and frontend over the external `lgsotf-proxy` network under the
-#   aliases <env>-api and <env>-frontend, so several environments can share one
-#   VM and ports 80/443;
-# * trusts X-Forwarded-For/-Proto only from the frontend and Caddy's fixed
-#   address (CADDY_IP);
+# * publishes no host ports: the ingress overlay decides how traffic arrives
+#   (docker-compose.caddy.yml: the shared Caddy of docker-compose.edge.yml over
+#   the external `lgsotf-proxy` network; docker-compose.funnel.yml: a
+#   Tailscale Funnel sidecar);
+# * trusts X-Forwarded-For/-Proto only from the addresses deploy.sh computes
+#   for the ingress (LG_SOTF_API__FORWARDED_ALLOW_IPS);
 # * sets memory/CPU limits sized so two environments fit on an Always Free
 #   Ampere VM (4 OCPU / 24 GB), restart policies and log rotation.
 #
@@ -69,9 +74,6 @@ services:
     ports: !reset []
     environment:
       LG_SOTF_API__FORWARDED_ALLOW_IPS: ${LG_SOTF_API__FORWARDED_ALLOW_IPS:?set LG_SOTF_API__FORWARDED_ALLOW_IPS}
-    networks:
-      proxy:
-        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-api"]
     deploy:
       resources:
         limits:
@@ -110,9 +112,6 @@ services:
     build: !reset null
     pull_policy: missing
     ports: !reset []
-    networks:
-      proxy:
-        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-frontend"]
     deploy:
       resources:
         limits:
@@ -120,8 +119,3 @@ services:
           memory: ${FRONTEND_MEM:-128m}
     logging: *vm-logging
     restart: unless-stopped
-
-networks:
-  proxy:
-    external: true
-    name: ${PROXY_NETWORK:-lgsotf-proxy}

@@ -42,6 +42,10 @@ regexes = [
   '''^eyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.c2lnbmF0dXJlLXZhbHVl$''',
   # Fake AWS session key ids in the evaluation fixtures (tests/fixtures/eval/synthetic_v1.jsonl).
   '''^ASIAEXAMPLEEXAMPLE\d{2}$''',
+  # Tailscale's PUBLIC apt signing-key fingerprint, verified by deploy/pc/setup-host.sh.
+  '''^2596A99EAAB33821893C0A79458CA832957F5868$''',
+  # Header-only prefix of the synthetic WebSocket token in tests/deploy/test_funnel_deploy_script.py.
+  '''^eyJhbGciOiJIUzI1NiJ9\.$''',
   # Truncated / synthetic PEM and PGP blocks in the redaction tests (escaped
   # "\n" in Python source followed by a stub body or a repetition expression).
   '''^-----BEGIN (RSA |PGP )?PRIVATE KEY( BLOCK)?-----\\n(MIIEowIBAAKCAQEA\\nabc\\n|" \* 8_000|" \+ "A" \* 500_000|lQOYBF\\n)''',

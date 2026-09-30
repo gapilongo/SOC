@@ -244,6 +244,8 @@ Environment > **Add environment secret** / **Add environment variable**. Use
 | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | yes | Generated. Password of the first admin (at least 12 characters) |
 | `ANTHROPIC_API_KEY` | no | Real triage with Claude. Without it the deterministic `fake` model is used |
 | `GHCR_READ_TOKEN` | no | Only if the packages stay private (step 8): a classic personal access token with `read:packages` |
+| `TS_AUTHKEY` | first Funnel deploy | Only with `INGRESS=funnel` (section 16): a Tailscale auth key tagged `tag:soc`, not ephemeral. Used once to register the environment's node; the deploy stops early without it while the node has no state. May be deleted after the first successful deploy |
+| `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` | with `DEPLOY_VIA_TAILSCALE` | Tailscale OAuth client (scope `auth_keys`, tag `tag:ci`) the runner uses to join the tailnet as an ephemeral node for the deploy |
 
 Generate the application secrets with the repository's script, once per
 environment, and load them with the GitHub CLI (`gh`), so nothing is typed by
@@ -285,6 +287,8 @@ Fernet key without keeping the old one makes stored credentials unreadable
 | `LLM_PROVIDER` | no | `anthropic`, `openai`, `gemini` or `fake`. Default: `anthropic` if `ANTHROPIC_API_KEY` is set, otherwise `fake` |
 | `ACME_EMAIL` | no | Email for Let's Encrypt expiry notices |
 | `GHCR_READ_USER` | no | Your GitHub user name, with `GHCR_READ_TOKEN` |
+| `INGRESS` | no | `caddy` (default: Caddy and Let's Encrypt, this guide) or `funnel` (Tailscale Funnel, section 16; `APP_DOMAIN` is then `<machine>.<tailnet>.ts.net`) |
+| `DEPLOY_VIA_TAILSCALE` | no | `true`: reach `DEPLOY_HOST` (a tailnet address) over Tailscale, see section 16. Default `false` |
 
 **One VM for both environments:** give dev and uat the same `DEPLOY_HOST`,
 `DEPLOY_SSH_KEY` and `DEPLOY_SSH_KNOWN_HOSTS`, and different `APP_DOMAIN`s.
@@ -510,3 +514,60 @@ reviewers on a `prod` environment) and change the platform:
   scheduled restore drill.
 * Zero-downtime updates (more than one api/worker instance behind the
   proxy), a WAF/DDoS protection in front, and a change and incident process.
+
+## 16. Alternative: a self-hosted PC behind Tailscale Funnel
+
+Without a cloud VM (or a credit card), dev and uat can run on your own
+computer, for example Docker Engine inside WSL2 on Windows. The complete
+walkthrough is [docs/self-hosting-pc.md](self-hosting-pc.md); what differs
+from the steps above:
+
+* **Ingress** (`INGRESS=funnel`): no public IP, open port or Caddy. Each
+  environment gets a Tailscale sidecar (`ts`, from
+  `deploy/vm/docker-compose.funnel.yml`) that publishes
+  `https://soc-dev.<tailnet>.ts.net` (uat: `soc-uat...`) with Tailscale
+  Funnel and a certificate Tailscale manages. The web app's nginx runs in the
+  sidecar's network namespace and routes `/api` to the api as usual. Set
+  `APP_DOMAIN` to that name and `TS_AUTHKEY` for the first deploy.
+* **Deploy route** (`DEPLOY_VIA_TAILSCALE=true`): the GitHub-hosted runner
+  joins your tailnet as an ephemeral `tag:ci` node (OAuth client in
+  `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET`) and uses the same pinned-host-key
+  SSH as above, to an SSH server that listens only on the PC's tailnet
+  address. `DEPLOY_HOST` is that `100.x.y.z` address, and the
+  `DEPLOY_SSH_KNOWN_HOSTS` lines must name it. No self-hosted runner: this
+  repository is public.
+* **Checks**: `deploy.sh` checks the application through the frontend's
+  nginx inside the stack, then that the Tailscale node is logged in under
+  `APP_DOMAIN` and that Funnel serves it, then (as a warning only, since DNS
+  for a new Funnel name can take about ten minutes) `https://<APP_DOMAIN>/healthz`
+  from the host. Exit status 4 means the version is deployed and healthy but
+  not published; the log names the likely cause (auth key, device approval,
+  machine name taken, HTTPS certificates or the `funnel` attribute missing
+  from the tailnet policy).
+* **Tailnet policy: reach the sidecars on tcp:443 only.** In userspace mode
+  a sidecar forwards a tailnet connection on any other port to 127.0.0.1
+  inside its namespace, where nginx listens on 8080 and trusts
+  `X-Forwarded-For` (it expects Funnel there). A grant of `*` to `tag:soc`
+  would let your own devices bypass Funnel and set any client address.
+  Grant your devices everything except the sidecars, and the sidecars only
+  on 443:
+
+  ```json
+  "grants": [
+    {"src": ["autogroup:member"], "dst": ["autogroup:self"], "ip": ["*"]},
+    {"src": ["autogroup:member"], "dst": ["tag:lgsotf-host"], "ip": ["*"]},
+    {"src": ["autogroup:member"], "dst": ["tag:soc"], "ip": ["tcp:443"]},
+    {"src": ["tag:ci"], "dst": ["tag:lgsotf-host"], "ip": ["tcp:22"]}
+  ]
+  ```
+* **Day-one test of live updates**: the web app's WebSocket carries the
+  access token in its query string (`/api/v1/ws?token=...`). After the first
+  deploy, sign in at `https://<APP_DOMAIN>` from a browser outside your
+  tailnet (a phone on mobile data) and check that the header shows a green
+  **Live**. "Live updates unavailable" means the upgrade or its query string
+  did not get through Funnel; report it with the browser's Network tab
+  entry for `/api/v1/ws`.
+* **Licence of the tunnel**: Tailscale's free Personal plan is for
+  non-commercial use. When the product becomes commercial, move to a paid
+  Tailscale plan or to zrok.io's free tier (reserved names, commercial use
+  allowed, but visitors first see an interstitial page).
