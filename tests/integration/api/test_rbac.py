@@ -59,12 +59,22 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/audit", "admin", None),
     ("GET", "/api/v1/audit/verify", "admin", None),
     ("POST", "/api/v1/platform/tenants", "platform_admin", {"id": "rbac-new", "name": "RBAC new"}),
+    ("GET", "/api/v1/integrations", "admin", None),
+    ("POST", "/api/v1/integrations", "admin", {"kind": "email", "name": "n"}),
+    ("GET", f"/api/v1/integrations/{U}", "admin", None),
+    ("PATCH", f"/api/v1/integrations/{U}", "admin", {"enabled": False}),
+    ("DELETE", f"/api/v1/integrations/{U}", "admin", None),
+    ("POST", f"/api/v1/integrations/{U}/test", "admin", None),
+    ("GET", f"/api/v1/integrations/{U}/deliveries", "admin", None),
+    ("GET", "/api/v1/tickets", "viewer", None),
 ]
 # Reachable without a bearer token (login, cookie-based refresh/logout); covered by test_auth.
 PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
+    # Authenticated by the Slack app's signing secret; covered by tests/integration/integrations/test_slack.py.
+    ("POST", "/api/v1/integrations/slack/interactions"),
 }
 
 USER_ROLES = {"viewer": 0, "analyst": 1, "admin": 2, "platform_admin": 2}
