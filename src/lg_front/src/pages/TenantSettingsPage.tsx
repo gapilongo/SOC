@@ -296,6 +296,29 @@ function ReviewSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
+function SecuritySection({ data }: { data: TenantSettingsOut }) {
+  const current = obj(data.settings.security).require_mfa === true;
+  const [requireMfa, setRequireMfa] = useState(current);
+  const save = useSave();
+  return (
+    <Section
+      title="Sign-in security"
+      saveLabel="Save sign-in security"
+      description="Local accounts (email and password). Single sign-on users get MFA from your identity provider."
+      onSubmit={() => save.mutate({ security: { require_mfa: requireMfa } })}
+      busy={save.isPending}
+      error={save.error}
+    >
+      <Checkbox
+        label="Require MFA for local accounts"
+        hint="Users without an authenticator app must set one up right after their password at the next sign-in; existing sessions of those users end at their next refresh."
+        checked={requireMfa}
+        onChange={(e) => setRequireMfa(e.target.checked)}
+      />
+    </Section>
+  );
+}
+
 export default function TenantSettingsPage() {
   const api = useApi();
   const q = useQuery({ queryKey: ['tenant-settings'], queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
@@ -321,6 +344,7 @@ export default function TenantSettingsPage() {
           <ResponseSection data={d} />
           <ProtectedSection data={d} />
           <div className="space-y-5">
+            <SecuritySection data={d} />
             <BudgetSection data={d} />
             <ReviewSection data={d} />
           </div>

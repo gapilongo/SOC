@@ -60,6 +60,9 @@ export interface UserOut {
   last_login_at?: string | null;
   created_at: string;
   updated_at: string;
+  mfa_enabled?: boolean;
+  /** Created by OIDC just-in-time provisioning; the identity provider owns the role. */
+  oidc_provisioned?: boolean;
 }
 
 export interface TokenOut {
@@ -67,6 +70,50 @@ export interface TokenOut {
   token_type?: 'bearer';
   expires_in: number;
   user: UserOut;
+  mfa_required?: false;
+  /** Set when the sign-in used a recovery code. */
+  recovery_codes_remaining?: number | null;
+}
+
+/** POST /auth/login when a second factor (or enrollment) must follow the password. */
+export interface MfaChallengeOut {
+  mfa_required: true;
+  mfa_token: string;
+  expires_in: number;
+  enrollment_required: boolean;
+  methods: Array<'totp' | 'recovery_code'>;
+}
+
+export type LoginOut = TokenOut | MfaChallengeOut;
+
+export function isMfaChallenge(out: LoginOut): out is MfaChallengeOut {
+  return (out as MfaChallengeOut).mfa_required === true;
+}
+
+export interface MfaEnrollOut {
+  secret: string;
+  otpauth_uri: string;
+  /** Rows of '1' (dark) and '0' (light) modules, no quiet zone; null when the URI is too long. */
+  qr?: string[] | null;
+  expires_in: number;
+}
+
+export interface MfaConfirmOut {
+  recovery_codes: string[];
+  session?: TokenOut | null;
+}
+
+export interface MfaStatusOut {
+  available: boolean;
+  enabled: boolean;
+  enabled_at?: string | null;
+  pending?: boolean;
+  recovery_codes_remaining?: number;
+  required: boolean;
+}
+
+export interface RecoveryCodesOut {
+  recovery_codes: string[];
 }
 
 export interface MeOut {

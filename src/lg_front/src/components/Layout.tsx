@@ -9,6 +9,7 @@ import {
   Filter,
   Gauge,
   KeyRound,
+  Lock,
   LogOut,
   Menu,
   Plug,
@@ -47,6 +48,8 @@ export const NAV_ITEMS: NavItem[] = [
   { to: '/usage', label: 'LLM usage', icon: BarChart3, allowed: can.admin },
   { to: '/audit', label: 'Audit log', icon: FileClock, allowed: can.admin },
   { to: '/platform', label: 'Platform', icon: Building2, allowed: can.platform },
+  // Your own account: not while acting on another tenant.
+  { to: '/account', label: 'Account security', icon: Lock, allowed: (p) => can.view(p) && !isTenantOverride(p) },
 ];
 
 function LiveIndicator() {

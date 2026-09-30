@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy, KeyRound, Pencil, Plus, Trash2, UserPlus } from 'lucide-react';
+import { Copy, KeyRound, Pencil, Plus, ShieldOff, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
@@ -217,6 +217,7 @@ export default function UsersPage() {
   const [showRevoked, setShowRevoked] = useState(false);
   const [editing, setEditing] = useState<UserOut | null | 'new'>(null);
   const [deleting, setDeleting] = useState<UserOut | null>(null);
+  const [resetting, setResetting] = useState<UserOut | null>(null);
   const [newKey, setNewKey] = useState(false);
   const [created, setCreated] = useState<ApiKeyCreatedOut | null>(null);
   const [revoking, setRevoking] = useState<ApiKeyOut | null>(null);
@@ -234,6 +235,18 @@ export default function UsersPage() {
     onError: (err) => {
       setDeleting(null);
       toast.error(err, 'Delete failed');
+    },
+  });
+  const resetMfa = useMutation({
+    mutationFn: (u: UserOut) => endpoints.resetUserMfa(api, u.id),
+    onSuccess: (_, u) => {
+      setResetting(null);
+      toast.success(`MFA reset for ${u.email}. They set it up again at their next sign-in if required.`);
+      void client.invalidateQueries({ queryKey: ['users'] });
+    },
+    onError: (err) => {
+      setResetting(null);
+      toast.error(err, 'Reset failed');
     },
   });
   const revoke = useMutation({
@@ -276,6 +289,7 @@ export default function UsersPage() {
                     <th scope="col" className="py-2 pr-3">Email</th>
                     <th scope="col" className="py-2 pr-3">Role</th>
                     <th scope="col" className="py-2 pr-3">Status</th>
+                    <th scope="col" className="py-2 pr-3">MFA</th>
                     <th scope="col" className="py-2 pr-3">Last sign-in</th>
                     <th scope="col" className="py-2 text-right">Actions</th>
                   </tr>
@@ -303,6 +317,15 @@ export default function UsersPage() {
                           </span>
                         )}
                       </td>
+                      <td className="py-2 pr-3" data-testid={`mfa-${u.id}`}>
+                        {u.mfa_enabled ? (
+                          <Badge tone="good">on</Badge>
+                        ) : u.oidc_provisioned ? (
+                          <Badge tone="info" title="Provisioned by single sign-on; the identity provider handles MFA.">SSO</Badge>
+                        ) : (
+                          <Badge>off</Badge>
+                        )}
+                      </td>
                       <td className="py-2 pr-3 text-slate-300" title={formatDateTime(u.last_login_at)}>
                         {u.last_login_at ? formatRelative(u.last_login_at) : 'never'}
                       </td>
@@ -311,6 +334,18 @@ export default function UsersPage() {
                           <Button size="sm" onClick={() => setEditing(u)} aria-label={`Edit ${u.email}`} icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />}>
                             Edit
                           </Button>
+                          {u.mfa_enabled && principal?.userId !== u.id && (
+                            <Button
+                              size="sm"
+                              disabled={u.is_platform_admin && !principal?.isPlatformAdmin}
+                              title={u.is_platform_admin && !principal?.isPlatformAdmin ? 'Only a platform admin can reset a platform admin' : undefined}
+                              onClick={() => setResetting(u)}
+                              aria-label={`Reset MFA of ${u.email}`}
+                              icon={<ShieldOff className="h-3.5 w-3.5" aria-hidden="true" />}
+                            >
+                              Reset MFA
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="danger"
@@ -411,6 +446,19 @@ export default function UsersPage() {
         onCancel={() => setDeleting(null)}
       >
         Delete <strong>{deleting?.email}</strong>? Their sessions end immediately. Consider deactivating instead to keep the account for audit context.
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={resetting !== null}
+        title="Reset MFA"
+        confirmLabel="Reset MFA"
+        danger
+        busy={resetMfa.isPending}
+        onConfirm={() => resetting && resetMfa.mutate(resetting)}
+        onCancel={() => setResetting(null)}
+      >
+        Remove two-step verification from <strong>{resetting?.email}</strong> (for a lost device)? Their sessions end now, their recovery codes stop
+        working, and they sign in with their password only until they set it up again. Confirm their identity out of band first. The reset is
+        recorded in the audit log.
       </ConfirmDialog>
       <ConfirmDialog
         open={revoking !== null}
