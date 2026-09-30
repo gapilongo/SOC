@@ -172,6 +172,20 @@ class UserMfaRepo(Repository):
             )
         return to_model(UserMfa, row)
 
+    async def rewrap_secret(
+        self, tenant_id: str, user_id: UUID, old: str, new: str, *, conn: Optional[Connection] = None
+    ) -> bool:
+        """Replace the active ciphertext (same secret, new encryption key) if it is still ``old``."""
+        async with self._tenant(tenant_id, conn) as c:
+            status = await c.execute(
+                "UPDATE user_mfa SET secret_ciphertext = $4 WHERE tenant_id = $1 AND user_id = $2 AND secret_ciphertext = $3",
+                tenant_id,
+                user_id,
+                old,
+                new,
+            )
+        return status.endswith(" 1")
+
     async def delete(self, tenant_id: str, user_id: UUID, *, conn: Optional[Connection] = None) -> bool:
         async with self._tenant(tenant_id, conn) as c:
             status = await c.execute("DELETE FROM user_mfa WHERE tenant_id = $1 AND user_id = $2", tenant_id, user_id)

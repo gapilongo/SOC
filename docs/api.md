@@ -50,6 +50,15 @@ Three kinds of credentials are accepted. All of them resolve to a
   `{"access_token", "token_type": "bearer", "expires_in", "user"}` and sets
   the refresh cookie `lgsotf_refresh` (`HttpOnly; Secure; SameSite=Strict;
   Path=/api/v1/auth`, lifetime `auth.refresh_token_ttl_s`).
+* With TOTP MFA enabled for the account (or required by
+  `security.require_mfa` / `auth.require_mfa_for_platform_admins`) the right
+  password returns `{"mfa_required": true, "mfa_token", "expires_in",
+  "enrollment_required", "methods"}` instead, and no cookie. The
+  `mfa_token` is not a session: `POST /auth/mfa/verify` with it and a TOTP
+  or recovery code returns the normal login response; with
+  `enrollment_required` it permits only `/auth/mfa/enroll` and
+  `/auth/mfa/confirm`. Wrong codes count toward the lockout. See
+  [identity.md](identity.md).
 * The access token is an HS256 JWT (`iss`, `aud`, `exp`, `iat`, `jti`, `sub`
   = user id, `tenant`, `role`), valid for `auth.access_token_ttl_s`. Send it
   as `Authorization: Bearer <token>`. The user row is re-read on every
@@ -71,7 +80,8 @@ Three kinds of credentials are accepted. All of them resolve to a
   several tenants is resolved by the password (each account keeps its own
   lockout count); when the password matches in more than one tenant the
   answer is `401 tenant_required` and the client must pass `tenant`.
-* The API never creates users implicitly. The first admin comes from
+* The API creates users implicitly only through OIDC just-in-time
+  provisioning (`auth.oidc_jit_provisioning`, off by default). The first admin comes from
   `lg-sotf migrate` (`auth.bootstrap_admin_*`) or `lg-sotf create-admin`;
   further users are created through `/users`.
 
@@ -87,8 +97,14 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
   `auth.oidc_audience` (required), `exp`/`iat` are checked;
 * the tenant comes from the `auth.oidc_tenant_claim` claim (default
   `tenant_id`, falling back to `auth.oidc_default_tenant`), the role from
-  `auth.oidc_role_claim` (a string or a list; the highest of
-  `viewer`/`analyst`/`admin` wins; none of them means 403);
+  `auth.oidc_role_claim` (a string or a list) mapped through
+  `auth.oidc_role_map` (without a map the values must be role names); the
+  highest mapped role wins, `auth.oidc_default_role` applies when nothing
+  maps, otherwise 403;
+* with `auth.oidc_jit_provisioning`, a verified identity without a local
+  account gets one (no password, linked by the IdP subject; audited as
+  `user.provisioned`), whose stored role follows the mapping on later
+  sign-ins (`user.role_synced`);
 * when the token's email (`auth.oidc_email_claim`) is verified by the IdP
   (the `auth.oidc_email_verified_claim` claim, default `email_verified`, is
   `true`) and a local user with that email exists in
@@ -97,7 +113,8 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
   verified; an unverified or missing `email_verified` never links. OIDC never grants platform-admin rights, even when linked to a
   platform-admin account: platform admins sign in with local login. Claiming and deciding escalations and approving
   actions are attributed to a person and need such a provisioned account;
-  create SSO-only users with `POST /users` without a password.
+  create SSO-only users with `POST /users` without a password, or turn on
+  just-in-time provisioning.
 
 ### API keys
 
@@ -141,6 +158,9 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/auth/login` | public |
 | POST | `/auth/refresh`, `/auth/logout` | refresh cookie |
 | GET | `/auth/me` | any principal |
+| POST | `/auth/mfa/verify` | MFA challenge token (body) |
+| POST | `/auth/mfa/enroll`, `/auth/mfa/confirm` | own account (local session), or the enrollment challenge token (body) |
+| GET | `/auth/mfa`; POST `/auth/mfa/disable`, `/auth/mfa/recovery-codes` | own account (local session) |
 | POST | `/ingest/alerts` | API key `ingest` |
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
 | GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
@@ -155,6 +175,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/suppressions` | analyst / `write` |
 | PATCH, DELETE | `/suppressions/{id}` | admin |
 | GET, POST | `/users`; GET, PATCH, DELETE `/users/{id}` | admin |
+| POST | `/users/{id}/mfa/reset` (remove MFA, end sessions; audited) | admin (platform admin for platform-admin accounts) |
 | GET, POST | `/api-keys`; DELETE `/api-keys/{id}` | admin |
 | GET, PATCH | `/tenant/settings` | admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
@@ -251,8 +272,9 @@ Password hashes and API key hashes are never returned.
 over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
-`llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
-(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
+`llm_daily_token_budget`, `review` (SLA and grouping policy), `tools`
+(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`) and
+`security` (`require_mfa`: force TOTP MFA for local accounts). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing

@@ -3,7 +3,8 @@
 * **Secrets** are encrypted with the install's ``SecretBox`` under a context
   bound to the tenant and user (``mfa:<tenant>:<user>``), so a ciphertext
   copied onto another account does not decrypt. They leave the server only
-  once, in the enrollment response.
+  once, in the enrollment response. After an encryption-key rotation a
+  secret is re-encrypted under the new primary key on its next use.
 * **Enrollment** stores a *pending* secret; it becomes active only when a
   code generated from it is confirmed. Confirmation returns ten recovery
   codes once; only their keyed hashes are stored
@@ -212,7 +213,18 @@ class MfaService:
             return None
         if not await self._ctx.repos.user_mfa.consume_step(user.tenant_id, user.id, step):
             return None  # a concurrent request used this step first
+        await self._rewrap(user, current.secret_ciphertext)
         return CodeCheck(method="totp")
+
+    async def _rewrap(self, user: User, ciphertext: str) -> None:
+        """After an encryption-key rotation, move the secret to the primary key on its next use."""
+        box = self._box()
+        if box.is_primary(ciphertext):
+            return
+        try:
+            await self._ctx.repos.user_mfa.rewrap_secret(user.tenant_id, user.id, ciphertext, box.rotate(ciphertext))
+        except DecryptionError:
+            log.warning("mfa.secret_rewrap_failed", tenant_id=user.tenant_id)
 
     async def audit_failure(self, user: User, reason: str, *, client_ip: Optional[str] = None) -> None:
         await self._audit_failure(user, reason, actor_type="user", actor_id=str(user.id), client_ip=client_ip)

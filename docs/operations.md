@@ -203,7 +203,9 @@ Comma-separated list: the **first** key encrypts, **all** keys decrypt.
 3. Re-encrypt stored values (source credentials, tenant webhook secrets,
    tenant enrichment keys) under the new key by re-saving them through the
    admin API (`PATCH /api/v1/sources/{id}` with the credentials, tenant
-   settings for webhook secrets). The library primitive is
+   settings for webhook secrets). TOTP MFA secrets re-encrypt themselves on
+   their next successful use; users who have not signed in with a code by
+   step 4 need an MFA reset (docs/identity.md). The library primitive is
    `SecretBox.rotate()`; there is no bulk re-encryption command yet.
 4. Only after every value is re-encrypted, remove `OLD` and roll again. A value
    still encrypted with a removed key cannot be decrypted (the source reports a

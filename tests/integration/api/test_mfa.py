@@ -459,3 +459,22 @@ async def test_cli_reset_is_audited(api: ApiHarness, clock: Clock) -> None:
     assert (entry.actor_type, entry.actor_id, entry.details["via"]) == ("system", "cli", "cli")
     with pytest.raises(OperationError):
         await reset_mfa(api.ctx.settings, tenant_id=TENANT_B, email="cli@a.example.com")
+
+
+async def test_secrets_move_to_a_new_encryption_key_on_their_next_use(make_api: Any, clock: Clock) -> None:
+    from lg_sotf.security.crypto import generate_key
+
+    api = await make_api()
+    user = await api.user(TENANT_A, "analyst", email="rotate@a.example.com")
+    secret, _ = await enroll(api, user, clock)
+    keys = api.ctx.settings.security.encryption_keys
+    assert keys is not None
+    rotated = await make_api(security={"encryption_keys": generate_key() + "," + keys.get_secret_value()})
+    box = rotated.ctx.secret_box
+    assert box is not None
+    before = (await rotated.repos.user_mfa.get(TENANT_A, user.id)).secret_ciphertext
+    assert before is not None and not box.is_primary(before)
+    token = await challenge(rotated, "rotate@a.example.com")
+    assert (await verify(rotated, token, code_now(secret, clock))).status_code == 200
+    after = (await rotated.repos.user_mfa.get(TENANT_A, user.id)).secret_ciphertext
+    assert after is not None and after != before and box.is_primary(after)
