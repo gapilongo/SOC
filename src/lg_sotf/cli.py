@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from pathlib import Path
 from typing import Any, Coroutine, List, Optional, TypeVar
 
 import click
@@ -351,6 +352,65 @@ def eval_command(
         click.echo(f"Error: {exc}", err=True)
         sys.exit(EXIT_CANNOT_RUN)
     sys.exit(code)
+
+
+@cli.command("tenant-export")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
+@click.option(
+    "--output", required=True, type=click.Path(dir_okay=False, path_type=Path), help="ZIP file to write (mode 0600)."
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing file.")
+def tenant_export(tenant_id: str, output: Path, force: bool) -> None:
+    """Export a tenant's data as a ZIP of JSONL files (secrets removed; audited)."""
+    from lg_sotf.compliance.ops import tenant_export as run_export
+
+    settings = _prepare()
+    result = _run(run_export(settings, tenant_id=tenant_id, output=output, overwrite=force))
+    click.echo(f"exported tenant {tenant_id} to {result.path} ({result.bytes_written} bytes)")
+
+
+@cli.command("tenant-erase")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id (the tenant must be suspended).")
+@click.option("--confirm", required=True, help="Repeat the tenant id to confirm.")
+@click.option("--yes", is_flag=True, help="Do not ask for interactive confirmation.")
+def tenant_erase(tenant_id: str, confirm: str, yes: bool) -> None:
+    """Permanently erase a suspended tenant's data; the hash-chained audit log is kept (audited)."""
+    from lg_sotf.compliance.ops import tenant_erase as run_erase
+
+    if confirm != tenant_id:
+        raise click.UsageError("--confirm must repeat the tenant id exactly")
+    settings = _prepare()
+    if not yes:
+        click.confirm(
+            f"Permanently delete every alert, event, user, source and setting of tenant {tenant_id!r}?", abort=True
+        )
+    report = _run(run_erase(settings, tenant_id=tenant_id, confirm=confirm))
+    click.echo(json.dumps(report.as_dict(), default=str, indent=2, sort_keys=True))
+
+
+@cli.command("evidence-verify")
+@click.argument("path", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+@click.option("--allow-unsigned", is_flag=True, help="Accept a bundle without a signature (digest check only).")
+def evidence_verify(path: Path, allow_unsigned: bool) -> None:
+    """Verify an evidence pack's bundle_sha256 and HMAC signature with this install's key.
+
+    Exit code 0: valid; 1: the digest or signature does not match (or the
+    bundle is unsigned without --allow-unsigned).
+    """
+    from lg_sotf.compliance.ops import verify_evidence_file
+    from lg_sotf.runtime.ops import OperationError
+
+    settings = get_settings()
+    try:
+        document, result = verify_evidence_file(settings, path)
+    except OperationError as exc:
+        raise click.ClickException(str(exc)) from exc
+    integrity = document.get("integrity") or {}
+    click.echo(f"bundle_sha256: {integrity.get('bundle_sha256')} ({'matches' if result.digest_ok else 'MISMATCH'})")
+    click.echo(f"signature: {result.signature}")
+    ok = result.signed_ok or (allow_unsigned and result.digest_ok and result.signature == "absent")
+    if not ok:
+        sys.exit(1)
 
 
 @cli.command("mcp")
