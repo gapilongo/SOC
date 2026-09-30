@@ -13,6 +13,7 @@ import { useToast } from '../../components/Toast';
 import { Button, DefinitionList, EmptyState, ErrorMessage, JsonBlock, LoadingState, TextAreaField } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
 import { useKeysetList } from '../../lib/pagination';
+import { EmailPanel, emailSection } from './EmailPanel';
 
 function obj(value: unknown): JsonObject | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
@@ -242,6 +243,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function AlertBody({ alert }: { alert: AlertDetailOut }) {
   const normalized = obj(alert.normalized);
   const mitre = obj(normalized?.mitre);
+  const email = emailSection(normalized);
   return (
     <>
       <Section title="Overview">
@@ -267,6 +269,11 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
           <p className="mt-2 text-xs text-amber-200">Data quality flags: {list(normalized?.flags).join(', ')}</p>
         )}
       </Section>
+      {email && (
+        <Section title="Email">
+          <EmailPanel section={email} phishing={obj(obj(alert.summary?.triage)?.phishing)} />
+        </Section>
+      )}
       <Section title="Verdict and reasoning">
         <Reasoning summary={alert.summary ?? {}} />
       </Section>
