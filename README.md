@@ -17,6 +17,12 @@ trail, metered LLM cost, Prometheus metrics, a Helm chart, and an evaluation
 harness that measures what the platform would miss before you change a model
 or a threshold.
 
+**Your data, your model.** LG-SOTF runs entirely on your infrastructure,
+including air-gapped networks, with Anthropic, OpenAI, Gemini or a model you
+host yourself (Ollama, vLLM, any OpenAI-compatible server). It measures its
+own accuracy against your analysts' decisions, and every case exports as a
+verifiable evidence pack.
+
 ## How it works
 
 ```mermaid
@@ -67,7 +73,43 @@ flowchart LR
     G --> C
 ```
 
-## Features in this release
+## What's new in 1.0
+
+* **Phishing triage**: user-reported emails from a Microsoft 365 reporting
+  mailbox, any IMAP mailbox (Google Workspace included) or
+  `POST /api/v1/ingest/email`; authentication results, lookalike domains,
+  display-name impersonation, deceptive links and risky attachments; purge
+  message, block sender and notify reporter actions ([docs](docs/phishing.md)).
+* **Integrations**: Slack, Microsoft Teams, email and signed-webhook
+  notifications; approve or reject actions from Slack; one Jira or
+  ServiceNow ticket per escalation, kept in sync ([docs](docs/integrations.md)).
+* **Self-hosted models and air-gapped installs**: Ollama/vLLM providers with
+  schema-constrained output and repair, zero-cost metering, a "Test model"
+  button, an Ollama compose overlay and verified offline bundles
+  ([local LLMs](docs/local-llm.md), [air-gapped](docs/air-gapped.md)).
+* **Proof of value**: reports for alerts handled without a human, analyst
+  hours saved, time to verdict, AI-versus-analyst accuracy (false-negative
+  rate first), noisy detection rules, a printable monthly report, and
+  `lg-sotf eval --from-history` to try a model on your own decided alerts
+  ([docs](docs/reporting.md)).
+* **MSSP console**: every tenant's activity, SLA risk and quota usage;
+  suspend and reactivate; daily alert, source and user quotas; monthly usage
+  export for invoicing; tenant profiles; a tenant switcher
+  ([docs](docs/mssp.md)).
+* **Identity**: TOTP MFA with recovery codes (required for platform admins
+  in staging and production, optional per tenant), OIDC group-to-role
+  mapping and just-in-time provisioning ([docs](docs/identity.md)).
+* **Compliance**: signed case evidence packs with the human-oversight trail
+  and audit-chain proof, NIS2 incident report drafts, GDPR tenant export and
+  erasure ([docs](docs/compliance.md)).
+* **MCP server**: `lg-sotf mcp` lets analysts work with LG-SOTF from Claude
+  or any MCP client ([docs](docs/mcp.md)).
+* **Quick start**: `make quickstart` goes from clone to triaged demo alerts
+  and prints the measured time to first verdict ([docs](docs/quickstart.md));
+  new tenants get a getting-started checklist and one-click sample alerts
+  ([docs](docs/onboarding.md)).
+
+## Features
 
 **Ingestion**
 * Pull connectors for Splunk (search jobs), IBM QRadar (offenses), Microsoft
@@ -143,12 +185,12 @@ flowchart LR
 
 ### Not in this release
 
-No built-in MFA for local accounts (use OIDC with your identity provider's
-MFA), no direct vendor EDR/firewall/IdP integrations (response goes through
-your SOAR), no self-service tenant data export or erasure, no model
-fine-tuning or automatic threshold learning, and no published accuracy
-figures on real customer data: measure on your own labelled alerts with the
-evaluation harness.
+No direct vendor EDR/firewall/IdP response integrations (containment goes
+through your SOAR; tickets and notifications are native), no native SAML
+(use an OIDC broker such as Keycloak or Entra ID), no WebAuthn/passkeys, no
+billing or self-service sign-up, no model fine-tuning or automatic threshold
+learning, and no published accuracy figures on real customer data: the
+accuracy report and `lg-sotf eval --from-history` measure it on yours.
 
 ## Screenshots
 
@@ -168,6 +210,12 @@ More pages (alerts, decision dialog, users, settings, usage, audit log) are
 in [docs/screenshots](docs/screenshots).
 
 ## Quickstart (Docker Compose)
+
+The fastest path is one command: `make quickstart` (or
+`scripts/quickstart.sh`) builds and starts the stack with the offline model,
+seeds 16 demo alerts and prints the web UI address and the measured time to
+the first verdict; `make quickstart OLLAMA=<model>` uses a local model. See
+[docs/quickstart.md](docs/quickstart.md). The manual steps follow.
 
 Requirements: Docker with Compose v2, GNU make, Python 3 (for the secret
 generator), `curl`.
@@ -383,6 +431,16 @@ container logs and that no page violates the Content-Security-Policy.
 | [Operations](docs/operations.md) | Runbooks, key rotation, incidents, dashboards and alerts |
 | [Security](docs/security.md) | Threat model and controls |
 | [Evaluation](docs/evaluation.md) | The evaluation harness |
+| [Quickstart](docs/quickstart.md) | One-command demo with measured time to first verdict |
+| [Phishing](docs/phishing.md) | Reported-email triage, mailbox sources |
+| [Integrations](docs/integrations.md) | Slack, Teams, email, webhooks, Jira, ServiceNow |
+| [Reporting](docs/reporting.md) | Value, accuracy and detection reports, backtest |
+| [MSSP operations](docs/mssp.md) | Console, suspension, quotas, usage metering |
+| [Onboarding](docs/onboarding.md) | Getting-started checklist, sample alerts |
+| [Identity](docs/identity.md) | MFA, OIDC role mapping and provisioning |
+| [Compliance](docs/compliance.md) | Evidence packs, NIS2 drafts, tenant export and erasure |
+| [Local LLMs](docs/local-llm.md) / [Air-gapped](docs/air-gapped.md) | Self-hosted models and offline installs |
+| [MCP server](docs/mcp.md) | Using LG-SOTF from Claude or another MCP client |
 | [Changelog](CHANGELOG.md) | Release notes |
 
 ## License
