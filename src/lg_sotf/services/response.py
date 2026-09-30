@@ -136,6 +136,7 @@ from lg_sotf.services.connectors import (
     ConnectorRegistry,
     ConnectorResult,
     DryRunConnector,
+    MisconfiguredConnector,
     tenant_response_settings,
 )
 from lg_sotf.settings import Settings
@@ -195,6 +196,9 @@ MAX_PROTECTED_ENTRY_CHARS = 256
 MAX_BLAST_RADIUS = 10_000
 MAX_TENANT_HOURLY_CAP = 100_000
 MAX_POLICY_PROBLEMS = 5
+# create_ticket runs through the tenant's ticketing integration when one is enabled (lg_sotf.integrations).
+TICKET_ACTION = "create_ticket"
+TICKET_CONNECTOR_NAME = "ticketing"
 # Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
 ACTION_EVENTS: Dict[str, str] = {
     "awaiting_approval": ACTION_AWAITING_APPROVAL,
@@ -1251,9 +1255,16 @@ class ResponseService:
         *,
         connectors: Optional[Mapping[str, Connector]] = None,
         registry: Optional[ConnectorRegistry] = None,
+        ticketing: Any = None,
     ) -> None:
-        """``connectors`` override built-in connectors by name (see :class:`ConnectorRegistry`)."""
+        """``connectors`` override built-in connectors by name (see :class:`ConnectorRegistry`).
+
+        ``ticketing`` (a :class:`~lg_sotf.integrations.ticketing.TicketService`)
+        executes ``create_ticket`` through the tenant's ticketing integration;
+        built on first use when not given.
+        """
         self._repos = repos
+        self._ticketing = ticketing
         self._settings = settings
         self._events = events
         self._audit = AuditLogger(repos)
@@ -1555,15 +1566,19 @@ class ResponseService:
         policy = self.policy(tenant.settings)
         connector = self.connector_for(tenant_id, tenant.settings)
         actions = await self._repos.actions.get_many(tenant_id, [UUID(str(i)) for i in action_ids])
+        mine = [a for a in actions if a.alert_id == alert_id]
+        tickets = await self._ticket_connector(tenant_id, tenant.settings, mine)
         loop = asyncio.get_running_loop()
         ends_at = loop.time() + (self._execution_budget_s if budget_s is None else budget_s)
         slots = asyncio.Semaphore(EXECUTION_CONCURRENCY)
 
         async def run(action: ResponseAction) -> str:
+            chosen = tickets if tickets is not None and action.action_type == TICKET_ACTION else connector
             async with slots:
-                return await self._execute_one(tenant_id, tenant.settings, action, connector, policy, now, ends_at)
+                return await self._execute_one(
+                    tenant_id, tenant.settings, action, chosen, policy, now, ends_at, tickets=tickets
+                )
 
-        mine = [a for a in actions if a.alert_id == alert_id]
         tasks = [asyncio.create_task(run(a)) for a in mine]
         try:
             statuses = await asyncio.gather(*tasks)
@@ -1584,11 +1599,18 @@ class ResponseService:
         policy: ResponsePolicy,
         now: Optional[datetime],
         ends_at: float,
+        *,
+        tickets: Optional[Connector] = None,
     ) -> str:
         if action.status == "executing":
             log.warning("response.resuming_interrupted_action", action_type=action.action_type)
             executing: Optional[ResponseAction] = action
-            runner = self._registry.named(tenant_id, tenant_settings, action.connector) if action.connector else connector
+            if action.connector == TICKET_CONNECTOR_NAME:
+                runner = tickets or MisconfiguredConnector(TICKET_CONNECTOR_NAME, "no enabled ticketing integration")
+            elif action.connector:
+                runner = self._registry.named(tenant_id, tenant_settings, action.connector)
+            else:
+                runner = connector
         elif action.status == "approved":
             executing = await self._claim(tenant_id, action, connector, policy, now)
             runner = connector
@@ -1608,6 +1630,26 @@ class ResponseService:
             )
             return await self._finish(tenant_id, executing, runner, result)
         return await self._run_connector(tenant_id, executing, runner, timeout_s=max(remaining, MIN_EXECUTION_S))
+
+    async def _ticket_connector(
+        self, tenant_id: str, tenant_settings: Mapping[str, Any], actions: Sequence[ResponseAction]
+    ) -> Optional[Connector]:
+        """The tenant's ticketing integration for ``create_ticket`` (live execution only), or ``None``.
+
+        Without an enabled ticketing integration, or while dry-run is forced,
+        ``create_ticket`` keeps the tenant's regular connector.
+        """
+        if not any(a.action_type == TICKET_ACTION for a in actions) or self._registry.forced_dry_run(tenant_settings):
+            return None
+        from lg_sotf.integrations.ticketing import TicketService, ticket_connector_for
+
+        if self._ticketing is None:
+            self._ticketing = TicketService(self._repos, self._settings, retries=1)
+        try:
+            return await ticket_connector_for(self._ticketing, self._repos, tenant_id)
+        except Exception as exc:  # noqa: BLE001 - a broken lookup must not fail the whole execution step
+            log.warning("response.ticketing_lookup_failed", error_type=type(exc).__name__)
+            return None
 
     async def fail_orphaned_executing(self, tenant_id: Optional[str] = None, *, limit: int = 100) -> int:
         """Record ``failed`` for actions left ``executing`` whose run will never finish them.

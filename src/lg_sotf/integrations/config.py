@@ -77,6 +77,10 @@ class _Common(_Model):
     rate_limit_per_minute: Optional[int] = Field(default=None, ge=1, le=600)
 
 
+class _Tls(_Common):
+    ca_cert_pem: Optional[str] = Field(default=None, max_length=20_000, description="Private CA (PEM) of the receiver.")
+
+
 # ------------------------------------------------------------------ configs
 
 
@@ -105,11 +109,15 @@ class EmailConfig(_Common):
         return list(dict.fromkeys(out))
 
 
-class WebhookConfig(_Common):
+class WebhookConfig(_Tls):
     url: str = Field(min_length=8, max_length=2048)
 
 
-class JiraConfig(_Common):
+class _Ticketing(_Tls):
+    response_actions: bool = Field(default=True, description="Use this integration for the create_ticket response action.")
+
+
+class JiraConfig(_Ticketing):
     base_url: str = Field(min_length=8, max_length=512, description="https://your-site.atlassian.net")
     deployment: Literal["cloud", "datacenter"] = "cloud"
     email: Optional[str] = Field(default=None, max_length=254, description="Account email (Cloud basic auth).")
@@ -143,7 +151,7 @@ class JiraConfig(_Common):
         return value
 
 
-class ServiceNowConfig(_Common):
+class ServiceNowConfig(_Ticketing):
     instance_url: str = Field(min_length=8, max_length=512, description="https://your-instance.service-now.com")
     username: str = Field(min_length=1, max_length=200)
     assignment_group: Optional[str] = Field(default=None, max_length=200)

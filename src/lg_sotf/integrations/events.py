@@ -115,8 +115,8 @@ def capped_entities(entities: Any) -> Dict[str, List[str]]:
         values = entities.get(kind)
         if not isinstance(values, (list, tuple)):
             continue
-        kept = [clean_text(v, MAX_ENTITY_CHARS) for v in values if isinstance(v, (str, int))][:MAX_ENTITIES_PER_KIND]
-        kept = [v for v in kept if v]
+        cleaned = [clean_text(v, MAX_ENTITY_CHARS) for v in values if isinstance(v, (str, int))][:MAX_ENTITIES_PER_KIND]
+        kept = [v for v in cleaned if v]
         if kept:
             out[kind] = kept
     return out
@@ -235,7 +235,7 @@ def with_links(payload: Mapping[str, Any], base_url: str) -> Dict[str, Any]:
 
 def make_test_event(tenant_id: str, integration_name: str) -> Dict[str, Any]:
     """Payload of the message ``POST /integrations/{id}/test`` sends (no tenant data in it)."""
-    alert = {
+    alert: Dict[str, Any] = {
         "id": "test",
         "title": f"LG-SOTF test message for integration {clean_text(integration_name, 200)}",
         "severity": "info",

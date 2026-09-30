@@ -624,17 +624,6 @@ class IntegrationsRepo(Repository):
         conn: Optional[Connection] = None,
     ) -> Optional[ExternalTicket]:
         """Store what the external system reported (or the sync error); returns the row before the change."""
-        params = Params(tenant_id, ticket_id)
-        sets = set_clauses(
-            {
-                "external_status": external_status[:200] if isinstance(external_status, str) else external_status,
-                "resolved": resolved,
-                "resolved_by": resolved_by[:200] if isinstance(resolved_by, str) else resolved_by,
-                "sync_error": truncate(sync_error, MAX_ERROR_CHARS),
-            },
-            params,
-        )
-        sets.append("last_synced_at = now()")
         async with self._tenant(tenant_id, conn) as c:
             before = await c.fetchrow(
                 "SELECT * FROM external_tickets WHERE tenant_id = $1 AND id = $2 FOR UPDATE", tenant_id, ticket_id
@@ -642,7 +631,23 @@ class IntegrationsRepo(Repository):
             if before is None:
                 return None
             await c.execute(
-                f"UPDATE external_tickets SET {', '.join(sets)} WHERE tenant_id = $1 AND id = $2",  # noqa: S608
-                *params.values,
+                """
+                UPDATE external_tickets SET
+                    external_status = CASE WHEN $3 THEN $4 ELSE external_status END,
+                    resolved = CASE WHEN $5 THEN $6 ELSE resolved END,
+                    resolved_by = CASE WHEN $7 THEN $8 ELSE resolved_by END,
+                    sync_error = $9,
+                    last_synced_at = now()
+                WHERE tenant_id = $1 AND id = $2
+                """,
+                tenant_id,
+                ticket_id,
+                external_status is not UNSET,
+                external_status[:200] if isinstance(external_status, str) else None,
+                resolved is not UNSET,
+                bool(resolved) if resolved is not UNSET else False,
+                resolved_by is not UNSET,
+                resolved_by[:200] if isinstance(resolved_by, str) else None,
+                truncate(sync_error, MAX_ERROR_CHARS),
             )
         return to_model(ExternalTicket, before)

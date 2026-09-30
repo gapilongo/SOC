@@ -8,6 +8,9 @@ Jobs (each in its own task, never overlapping with itself):
 * ``sla``            escalate (L1 -> L2 -> L3) or expire escalations past their SLA
 * ``maintenance``    create partitions ahead, purge expired data
 * ``metrics``        queue depth/pending and open escalation gauges
+* ``notifications``  deliver the integrations outbox (Slack, Teams, email, webhooks, tickets)
+* ``ticket_sync``    poll linked open tickets for external resolution
+* ``outbox_purge``   delete old sent/dead outbox rows
 
 The scheduler connects as the schema owner because the sweeps span tenants
 (``system_tx``) and maintenance runs DDL. On a graceful stop running jobs get
@@ -32,6 +35,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Escalation, Repositories, Source, WorkflowRun
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.retention import purge_expired
+from lg_sotf.integrations.delivery import OutboxDelivery, sync_tickets
 from lg_sotf.integrations.events import ESCALATION_SLA_BREACHED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import bound_context, get_logger
@@ -121,6 +125,7 @@ class Scheduler:
         lease: Optional[LeaderLease] = None,
         max_concurrent_polls: int = 8,
         stop_grace_s: float = DEFAULT_STOP_GRACE_S,
+        delivery: Optional[OutboxDelivery] = None,
     ) -> None:
         if max_concurrent_polls < 1:
             raise ValueError("max_concurrent_polls must be >= 1")
@@ -142,6 +147,7 @@ class Scheduler:
         self._stop = asyncio.Event()
         self._loop_tick = time.monotonic()
         self._running = False
+        self._delivery = delivery
         cfg = settings.scheduler
         self.jobs: Dict[str, _Job] = {
             job.name: job
@@ -158,6 +164,13 @@ class Scheduler:
                 _Job("metrics", METRICS_INTERVAL_S, self.export_metrics),
             )
         }
+        if settings.integrations.enabled:
+            for job in (
+                _Job("notifications", cfg.tick_s, self.deliver_notifications),
+                _Job("ticket_sync", settings.integrations.ticket_sync_interval_s, self.sync_tickets),
+                _Job("outbox_purge", cfg.maintenance_interval_s, self.purge_outbox),
+            ):
+                self.jobs[job.name] = job
 
     @property
     def repos(self) -> Repositories:
@@ -552,6 +565,30 @@ class Scheduler:
         if not report.complete:
             return min(INCOMPLETE_MAINTENANCE_RETRY_S, self._settings.scheduler.maintenance_interval_s)
         return None
+
+    # -- integrations ----------------------------------------------------------
+
+    def delivery(self) -> OutboxDelivery:
+        if self._delivery is None:
+            self._delivery = OutboxDelivery(self._repos, self._settings)
+        return self._delivery
+
+    async def deliver_notifications(self) -> None:
+        """Drain due outbox rows, a bounded number of batches per run (see lg_sotf.integrations.delivery)."""
+        batch = self._settings.integrations.batch_size
+        for _ in range(MAX_SWEEP_BATCHES):
+            if await self.delivery().run_once() < batch:
+                return
+
+    async def sync_tickets(self) -> None:
+        polled = await sync_tickets(self._repos, self._settings, self.delivery().tickets, self._events)
+        if polled:
+            log.info("scheduler.tickets_synced", polled=polled)
+
+    async def purge_outbox(self) -> None:
+        purged = await self.delivery().purge()
+        if purged:
+            log.info("scheduler.outbox_purged", deleted=purged)
 
     # -- metrics ---------------------------------------------------------------
 
