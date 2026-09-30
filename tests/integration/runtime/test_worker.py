@@ -121,7 +121,9 @@ async def _status_is(repos: Repositories, alert_id: str, status: str, tenant: st
 async def test_duplicate_message_for_completed_run_is_dropped(
     repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
 ) -> None:
-    s = runtime_settings()
+    # One message at a time: with concurrency the duplicate can meet the first run's live lease and
+    # correctly wait for the visibility timeout, which is a different case from the one tested here.
+    s = runtime_settings(worker={"concurrency": 1, "per_tenant_concurrency": 1})
     engine = FakeEngine(returns("completed"))
     alert_id = await _dispatch(repos, s, redis_client, TENANT_A)
     await WorkQueue(redis_client, s).enqueue_process(TENANT_A, alert_id, "high")
