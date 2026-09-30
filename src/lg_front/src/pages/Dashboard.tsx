@@ -10,6 +10,7 @@ import { can } from '../auth/roles';
 import { OnboardingBanner } from '../components/Onboarding';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, SelectField } from '../components/ui';
 import { formatDateTime, formatDuration, formatInt, formatUsd } from '../lib/format';
+import { formatHours, formatPct } from '../lib/reports';
 import { usePollInterval } from '../lib/visibility';
 import { useLive } from '../live/LiveProvider';
 
@@ -129,7 +130,19 @@ export default function DashboardPage() {
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {d && (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <Stat
+              label="Handled without human"
+              value={formatPct(d.handled_without_human_rate)}
+              hint={`${formatInt(d.handled_without_human ?? 0)} of ${formatInt((d.handled_without_human ?? 0) + (d.needed_human ?? 0))} finished alerts`}
+              to="/reports"
+            />
+            <Stat
+              label="Analyst hours saved"
+              value={formatHours(d.analyst_hours_saved ?? 0)}
+              hint={`Estimate: ${formatInt(d.minutes_per_alert ?? 15)} min per handled alert`}
+              to="/reports"
+            />
             <Stat label="Alerts" value={formatInt(d.alerts_total)} to="/alerts" />
             <Stat label="Open escalations" value={formatInt(d.open_escalations)} to="/escalations" />
             <Stat label="Queue depth" value={formatInt(d.queue_depth)} hint="Workflow runs waiting or running" />

@@ -16,6 +16,7 @@ from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import DashboardOut, UsageDayOut, UsageOut
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services.reporting import hours_saved, ratio, resolve_reporting_policy
 
 log = get_logger(__name__)
 
@@ -42,6 +43,9 @@ async def _compute(ctx: ApiContext, tenant_id: str, window_hours: int) -> Dashbo
         open_escalations = await repos.escalations.count_active(tenant_id, conn=conn)
         runs = await repos.runs.counts_by_status(tenant_id, active_only=True, conn=conn)
         usage_rows = await repos.llm_usage.list_range(tenant_id, since.date(), now.date(), conn=conn)
+        handled, needed = await repos.reports.automation_counts(tenant_id, since, now, conn=conn)
+        tenant = await repos.tenants.get(tenant_id, conn=conn)
+    minutes = resolve_reporting_policy(tenant.settings).minutes_per_alert
     return DashboardOut(
         window_hours=window_hours,
         since=since,
@@ -59,6 +63,11 @@ async def _compute(ctx: ApiContext, tenant_id: str, window_hours: int) -> Dashbo
         queue_depth=int(runs.get("queued", 0)),
         llm_cost_usd=float(sum((r.cost_usd for r in usage_rows), Decimal(0))),
         llm_tokens=sum(r.input_tokens + r.output_tokens for r in usage_rows),
+        handled_without_human=handled,
+        needed_human=needed,
+        handled_without_human_rate=ratio(handled, handled + needed),
+        analyst_hours_saved=hours_saved(handled, minutes),
+        minutes_per_alert=minutes,
     )
 
 

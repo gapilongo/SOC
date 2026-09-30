@@ -281,7 +281,25 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 
 
 @cli.command("eval")
-@click.option("--dataset", required=True, type=click.Path(dir_okay=False), help="Labelled JSONL dataset.")
+@click.option(
+    "--dataset",
+    default=None,
+    type=click.Path(dir_okay=False),
+    help="Labelled JSONL dataset (required unless --from-history).",
+)
+@click.option(
+    "--from-history",
+    "from_history",
+    is_flag=True,
+    help="Backtest: replay the --tenant's analyst-decided alerts through the current pipeline, read-only.",
+)
+@click.option(
+    "--days",
+    type=click.IntRange(1, 366),
+    default=30,
+    show_default=True,
+    help="With --from-history: alerts decided in the last N days.",
+)
 @click.option(
     "--report",
     default="eval-report.json",
@@ -294,8 +312,18 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 @click.option("--baseline", default=None, type=click.Path(dir_okay=False), help="Earlier JSON report for regressions.")
 @click.option("--split", "splits", multiple=True, help="Only items in this split (repeatable).")
 @click.option("--tag", "tags", multiple=True, help="Only items carrying this tag (repeatable; all must match).")
-@click.option("--limit", type=click.IntRange(1, None), default=None, help="Evaluate at most this many items.")
-@click.option("--tenant", "tenant_id", default=None, help="Id of the new tenant to evaluate in (default: generated).")
+@click.option(
+    "--limit",
+    type=click.IntRange(1, None),
+    default=None,
+    help="Evaluate at most this many items (--from-history: default 500, at most 10000).",
+)
+@click.option(
+    "--tenant",
+    "tenant_id",
+    default=None,
+    help="Id of the new tenant to evaluate in (default: generated); with --from-history the tenant to replay.",
+)
 @click.option("--concurrency", type=click.IntRange(1, 32), default=1, show_default=True, help="Items run at once.")
 @click.option(
     "--isolate",
@@ -311,7 +339,9 @@ def dlq_requeue(entry_ids: List[str]) -> None:
 )
 @click.option("--validate-only", is_flag=True, help="Check the dataset, thresholds and baseline; run nothing.")
 def eval_command(
-    dataset: str,
+    dataset: Optional[str],
+    from_history: bool,
+    days: int,
     report: str,
     markdown: Optional[str],
     thresholds: Optional[str],
@@ -332,11 +362,22 @@ def eval_command(
     (one per split by default). Progress and the summary go to stdout, logs to
     stderr. Exit code 0: passed; 1: a threshold or regression check failed;
     2: could not run (or every item errored).
+
+    With --from-history --tenant T --days N, the items are the alerts analysts
+    decided in tenant T in the last N days, replayed through the current
+    pipeline and model with every side effect disabled (read-only database,
+    no escalations, notifications, actions or alert updates) and scored
+    against the analysts' decisions. Point the settings at the tenant's
+    database; nothing is written to it.
     """
     from lg_sotf.eval.command import EXIT_CANNOT_RUN, EvalCommandError, EvalOptions, execute
 
+    if not from_history and not dataset:
+        raise click.UsageError("Missing option '--dataset' (or pass --from-history --tenant T).")
+    if limit is not None and from_history and limit > 10_000:
+        raise click.UsageError("--limit may be at most 10000 with --from-history.")
     options = EvalOptions(
-        dataset=dataset,
+        dataset=dataset or "",
         report=report,
         markdown=markdown,
         thresholds=thresholds,
@@ -349,6 +390,8 @@ def eval_command(
         isolate=isolate,
         allow_baseline_mismatch=allow_baseline_mismatch,
         validate_only=validate_only,
+        from_history=from_history,
+        days=days,
     )
     settings = get_settings() if validate_only else _prepare()
     if not validate_only and "log_level" not in settings.observability.model_fields_set:

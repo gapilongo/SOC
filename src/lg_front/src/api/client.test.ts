@@ -32,6 +32,14 @@ describe('api client', () => {
     expect(describeError(e)).toEqual({ message: 'tenant settings are invalid', requestId: 'req-abc-12345', details: e.detailMessages });
   });
 
+  it('returns the raw body for text responses (CSV and HTML exports)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('day,alerts\r\n2026-09-01,3\r\n', { status: 200, headers: { 'content-type': 'text/csv' } }));
+    const api = createApiClient({ baseUrl: '/api/v1', auth: bridge(), fetchImpl });
+    const text = await api.get<string>('/reports/value', { query: { format: 'csv' }, responseType: 'text' });
+    expect(text).toBe('day,alerts\r\n2026-09-01,3\r\n');
+    expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'Authorization')).toBe('Bearer tok-1');
+  });
+
   it('falls back to a generic message and the response request id for non-JSON errors', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'x-request-id': 'edge-req-99999' } }));
     const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });

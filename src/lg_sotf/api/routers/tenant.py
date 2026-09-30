@@ -1,5 +1,5 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys, retention.
+"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys, retention, security, reporting.
 
 ``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
 and deep model tiers and reports provider, model, latency and a sanitized
@@ -62,6 +62,7 @@ from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
 from lg_sotf.services.llm_check import check_llm
+from lg_sotf.services.reporting import ReportingPolicy
 from lg_sotf.services.response import ResponsePolicyError, validate_response_settings
 from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 
@@ -79,6 +80,7 @@ EDITABLE_KEYS = frozenset(
         "tools",
         "retention",
         "security",
+        "reporting",
     }
 )
 RETENTION_KEYS = ("alerts_days", "indicators_days")
@@ -290,6 +292,23 @@ def _security_section(current: Any, patch: Any, problems: List[str]) -> Optional
     return section
 
 
+def _reporting_section(current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """``reporting`` (value report assumptions): keys merge; ``null`` removes one (back to the default)."""
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("reporting: must be an object")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    try:
+        ReportingPolicy.model_validate(section)
+    except ValidationError as exc:
+        for error in exc.errors()[:5]:
+            where = ".".join(str(p) for p in error["loc"]) or "reporting"
+            problems.append(f"reporting.{where}: {error['msg']}"[:200])
+    return section
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -307,6 +326,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _retention_section(ctx, current.get("retention"), value, problems)
         elif key == "security":
             patch[key] = _security_section(current.get("security"), value, problems)
+        elif key == "reporting":
+            patch[key] = _reporting_section(current.get("reporting"), value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET

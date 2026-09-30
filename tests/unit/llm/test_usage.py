@@ -221,3 +221,35 @@ def test_merge_usage_summary_tolerates_malformed_stored_values() -> None:
     merged = merge_usage_summary(stored, tally)
     assert merged["calls"] == 1 and merged["cost_usd"] == 0.5 and list(merged["by_agent"]) == ["triage"]
     assert UsageTally().is_empty() and not tally.is_empty()
+
+
+def test_merge_usage_summary_records_provider_and_model_per_agent() -> None:
+    from decimal import Decimal as D
+
+    from lg_sotf.llm.usage import UsageSample, UsageTally, merge_usage_summary
+
+    tally = UsageTally()
+    tally.add_call(
+        "triage", [UsageSample("claude-haiku-4-5-20251001", 1, 1)], "success", D(0),
+        model="claude-haiku-4-5", provider="anthropic",
+    )
+    tally.add_call("analysis", [], "error", D(0), model="gpt-5", provider="openai")
+    tally.add_call("correlation", [], "error", D(0))
+    first = merge_usage_summary(None, tally)
+    # The served model (response metadata) wins over the requested one.
+    assert first["by_agent"]["triage"]["model"] == "claude-haiku-4-5-20251001"
+    assert first["by_agent"]["triage"]["provider"] == "anthropic"
+    assert first["by_agent"]["analysis"]["model"] == "gpt-5" and first["by_agent"]["analysis"]["provider"] == "openai"
+    assert "model" not in first["by_agent"]["correlation"]
+    # Stored values survive a merge without calls from that agent; a new call replaces them.
+    later = UsageTally()
+    later.add_call("analysis", [], "success", D(0), model="gemini-2.5-pro", provider="gemini")
+    merged = merge_usage_summary(first, later)
+    assert merged["by_agent"]["triage"]["model"] == "claude-haiku-4-5-20251001"
+    assert (merged["by_agent"]["analysis"]["model"], merged["by_agent"]["analysis"]["provider"]) == (
+        "gemini-2.5-pro",
+        "gemini",
+    )
+    stored = {"by_agent": {"triage": {"calls": 1, "model": 7, "provider": "x" * 100}}}
+    again = merge_usage_summary(stored, UsageTally())["by_agent"]["triage"]
+    assert "model" not in again and len(again["provider"]) == 32
