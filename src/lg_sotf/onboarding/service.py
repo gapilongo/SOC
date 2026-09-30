@@ -27,6 +27,7 @@ import asyncpg
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Tenant
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.integrations.config import NOTIFY_KINDS
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -84,12 +85,23 @@ class OnboardingStatus:
 
 
 async def _notifications_configured(conn: asyncpg.Connection, tenant_id: str) -> Optional[bool]:
-    """Whether the tenant has an integration row; ``None`` when the table does not exist or cannot be read."""
+    """Whether the tenant has an enabled notification integration (Slack, Teams, email, webhook).
+
+    Ticketing integrations and disabled rows do not count: they notify nobody.
+    ``None`` when the table does not exist or cannot be read.
+    """
     if await conn.fetchval("SELECT to_regclass('public.integrations') IS NOT NULL") is not True:
         return None
     try:
         async with conn.transaction():  # a savepoint: a refused read must not abort the whole check
-            return bool(await conn.fetchval("SELECT EXISTS (SELECT 1 FROM integrations WHERE tenant_id = $1)", tenant_id))
+            return bool(
+                await conn.fetchval(
+                    "SELECT EXISTS (SELECT 1 FROM integrations"
+                    " WHERE tenant_id = $1 AND enabled AND kind = ANY($2::text[]))",
+                    tenant_id,
+                    list(NOTIFY_KINDS),
+                )
+            )
     except asyncpg.PostgresError as exc:
         log.info("onboarding.integrations_unreadable", error_type=type(exc).__name__)
         return None

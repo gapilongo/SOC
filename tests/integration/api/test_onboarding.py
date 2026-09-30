@@ -105,6 +105,22 @@ async def test_notifications_step_uses_the_integrations_table_when_present(api: 
             await conn.execute("DROP TABLE IF EXISTS integrations")
 
 
+async def test_notifications_step_counts_only_enabled_notification_integrations(api: ApiHarness) -> None:
+    admin = await api.login_headers(TENANT_B, "admin")
+
+    async def done() -> bool:
+        return _steps(await _status(api, admin))["notifications_configured"]
+
+    assert await done() is False
+    await api.repos.integrations.create(TENANT_B, "jira", "tickets", config={"base_url": "https://jira.example.com"})
+    assert await done() is False
+    slack = await api.repos.integrations.create(TENANT_B, "slack", "soc", enabled=False)
+    assert await done() is False
+    await api.repos.integrations.update(TENANT_B, slack.id, enabled=True)
+    assert await done() is True
+    assert _steps(await _status(api, await api.login_headers(TENANT_A, "admin")))["notifications_configured"] is False
+
+
 async def test_sample_alerts_are_idempotent_flagged_and_not_metered(api: ApiHarness) -> None:
     admin = await api.login_headers(TENANT_B, "admin")
     first = await api.client.post("/api/v1/onboarding/sample-alerts", headers=admin)
