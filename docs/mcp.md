@@ -157,7 +157,7 @@ match `[A-Za-z0-9._:-]{1,256}` and are URL-encoded. `add_note` is marked
   </untrusted_alert_data>
   ```
 
-  Every `<` inside the JSON is escaped as `<` (still valid JSON), so the
+  Every `<` inside the JSON is escaped as `\u003c` (still valid JSON), so the
   data cannot close the block or open tags of its own. The `initialize`
   answer also carries instructions telling the client the same. This is a
   mitigation, not a guarantee: keep write tools behind the client's approval

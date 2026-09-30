@@ -47,6 +47,10 @@ SECTION_INTRO: Dict[str, str] = {
     "security": "Application keys. Required in staging and production.",
     "observability": "Logging, tracing and metrics.",
     "response": "Response automation defaults and the install-wide SOAR webhook.",
+    "mcp": (
+        "`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client "
+        "(see [mcp.md](mcp.md)). Read by that command only."
+    ),
     "routing": (
         "Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys "
         "are ignored, values are validated when a worker starts."
@@ -216,6 +220,13 @@ DESCRIPTIONS: Dict[str, str] = {
     "ingestion.http_backoff_max_s": "Pull connectors: maximum retry delay.",
     "ingestion.http_max_retry_after_s": "Pull connectors: a longer `Retry-After` ends the poll instead of sleeping.",
     "ingestion.allow_private_destinations": "Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source.",
+    # mcp (lg-sotf mcp)
+    "mcp.api_url": "Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only.",
+    "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes). Environment only, never a command-line argument.",
+    "mcp.timeout_s": "Timeout of one API request.",
+    "mcp.max_retries": "Retries of a read request on 429/502/503/504 or a connection error (writes are never retried).",
+    "mcp.max_response_bytes": "Largest API response the MCP server reads.",
+    "mcp.max_output_chars": "Largest tool result handed to the model; longer results are truncated with a note.",
 }
 
 Row = Tuple[str, str, str, str, str]
