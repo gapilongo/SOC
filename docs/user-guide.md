@@ -247,3 +247,19 @@ Run the evaluation harness on your analysts' decisions before changing
 models, routing thresholds or autonomy (docs/evaluation.md). Watch the
 malicious false-negative rate (threats closed without a human) first, then
 the benign auto-close rate (analyst time saved).
+
+### Reports
+
+**Reports** (every role) shows, for a date range: *Value* (alerts handled
+without a human, estimated analyst hours saved, time to verdict, MTTA/MTTR,
+SLA breaches, LLM cost per alert), *Accuracy* (the AI verdict against your
+analysts' decisions, with the false-negative rate first and an explicit
+"insufficient data" warning below 30 decisions) and *Detections* (noisy
+rules with a tune-or-suppress suggestion; analysts can *Propose
+suppression*, which creates a disabled rule for an admin to enable).
+*Export CSV* downloads the value series or the detections table; *Open
+monthly report* shows a printable page for the month. Admins set the
+minutes an analyst spends per alert under Tenant settings > Reporting. To
+try another model on your own decided alerts before switching, run
+`lg-sotf eval --from-history --tenant <id> --days 30` (read-only). Every
+definition and limit: docs/reporting.md.

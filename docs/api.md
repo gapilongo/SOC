@@ -160,6 +160,8 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
+| GET | `/reports/value`, `/reports/accuracy`, `/reports/detections`, `/reports/monthly` (docs/reporting.md) | viewer / `read` |
+| POST | `/reports/detections/propose-suppression` (creates a disabled rule) | analyst / `write` |
 | GET | `/audit`, `/audit/verify` | admin |
 | WS | `/ws?token=<access token>` | viewer |
 
@@ -251,7 +253,9 @@ Password hashes and API key hashes are never returned.
 over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
-`llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
+`llm_daily_token_budget`, `review` (SLA and grouping policy), `reporting`
+(`minutes_per_alert`, 1-480, default 15: the value report's hours-saved
+estimate) and `tools`
 (`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
@@ -265,8 +269,25 @@ so edits of different sub-keys of one section never overwrite each other.
 and disposition, MTTA/MTTR, open escalations, unfinished workflow runs by
 status (the tenant's queue depth; completed and dead-lettered runs are not
 counted) and LLM tokens and cost; it is cached for 15 seconds
-per tenant and window. `GET /usage/llm?from=&to=` returns daily usage rows
-(at most 400 days).
+per tenant and window. It also carries `handled_without_human`,
+`needed_human`, `handled_without_human_rate` and `analyst_hours_saved`
+(definitions in docs/reporting.md). `GET /usage/llm?from=&to=` returns daily
+usage rows (at most 400 days).
+
+### Reports
+
+`/reports/value`, `/reports/accuracy` and `/reports/detections` take
+`from`/`to` (UTC dates, at most 366 days, default the last 30; `400
+invalid_window` otherwise) and are cached for 60 seconds per tenant and
+window; value and detections also answer `format=csv`.
+`/reports/monthly?month=YYYY-MM` returns a self-contained HTML report (its
+own Content-Security-Policy allows only its inline stylesheet, by hash) or
+`format=json`. `POST /reports/detections/propose-suppression` with
+`{"source_id", "rule_field": "rule_name"|"title", "rule", "from"?, "to"?}`
+creates a disabled suppression suggestion (201; 200 with the existing rule
+when an identical unexpired one exists; `422 no_confirmed_benign` without
+an analyst-confirmed benign alert of that detection in the window). Metric
+definitions: docs/reporting.md.
 
 ### Audit log
 

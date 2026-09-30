@@ -54,7 +54,8 @@ use environment variables from a secret store (see docs/deployment.md).
 
 Per-tenant policy (response autonomy, protected assets, allowed actions,
 blast-radius limits, connector choice, review SLAs and grouping, enrichment
-opt-in, LLM daily token budget) lives in the database (`tenants.settings`)
+opt-in, LLM daily token budget, `reporting.minutes_per_alert` for the value
+report's hours-saved estimate, see docs/reporting.md) lives in the database (`tenants.settings`)
 and is edited by tenant admins through `GET/PATCH /api/v1/tenant/settings`
 (docs/api.md). The install settings below provide defaults and hard limits
 for those tenant settings. Data retention is an install setting
