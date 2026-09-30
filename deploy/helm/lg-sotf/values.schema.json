@@ -228,6 +228,8 @@
                 "anthropic",
                 "openai",
                 "gemini",
+                "ollama",
+                "openai_compatible",
                 "fake"
               ]
             },
