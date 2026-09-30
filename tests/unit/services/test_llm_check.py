@@ -90,7 +90,7 @@ def _status_error(status: int) -> openai.APIStatusError:
         (_status_error(503), "http_error", "server error"),
         (openai.APIConnectionError(message=LEAKY_BODY, request=httpx.Request("POST", "http://ollama:11434")), "connection", "could not connect"),
         (httpx.ConnectTimeout(LEAKY_BODY), "timeout", "did not answer"),
-        (asyncio.TimeoutError(), "timeout", "within 60 s"),
+        (TimeoutError(), "timeout", "within 60 s"),
         (LLMUnavailable("llm.api_key is not configured"), "unavailable", "llm.api_key"),
         (LLMRefusal("x", category="cyber"), "refusal", "declined"),
         (LLMOutputError("x", validation_errors=["status: literal_error"]), "invalid_output", "status: literal_error"),

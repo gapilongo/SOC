@@ -85,7 +85,7 @@ def _status_code(exc: BaseException) -> Optional[int]:
 
 def describe_error(exc: BaseException, timeout_s: float) -> Tuple[str, str]:
     """``(code, message)`` safe to show a tenant admin: no provider response text, URL or key."""
-    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+    if isinstance(exc, TimeoutError):
         return "timeout", f"no answer within {timeout_s:.0f} s"
     if isinstance(exc, LLMUnavailable):
         # Our own configuration messages; they never contain the key or the URL.
