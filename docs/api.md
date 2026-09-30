@@ -22,12 +22,12 @@ enqueues work for the workers. It never runs a workflow itself.
   |---|---|---|
   | 400 | `invalid_request`, `invalid_cursor`, `invalid_value`, `invalid_json`, `batch_too_large`, `search_window_too_large` | malformed input |
   | 401 | `unauthorized`, `invalid_credentials`, `invalid_session` | missing, invalid, expired or revoked credentials |
-  | 403 | `forbidden` | role, scope or tenant does not allow the call |
+  | 403 | `forbidden`, `tenant_suspended` | role, scope or tenant does not allow the call; the tenant is suspended |
   | 404 | `not_found`, `source_not_found` | the object does not exist in the caller's tenant |
-  | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled` | stale `version`, duplicate, illegal state change |
+  | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled`, `quota_exceeded` | stale `version`, duplicate, illegal state change, source or user quota reached |
   | 413 | `payload_too_large` | body over the size limit |
   | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `weak_password` | schema or policy validation failed |
-  | 429 | `rate_limited` | rate limit hit; see `Retry-After` |
+  | 429 | `rate_limited`, `quota_exceeded` | rate limit hit, or the tenant's daily alert quota is used up; see `Retry-After` |
   | 503 | `service_unavailable`, `encryption_unavailable` | a dependency is down or not configured |
 
 * Every response carries `X-Request-ID` (the caller's value when it matches
@@ -114,7 +114,8 @@ A principal acts on its own tenant. A platform admin
 (`users.is_platform_admin`) may send `X-Tenant-ID: <tenant>` to act on
 another tenant; every such request is recorded in that tenant's audit log
 (`platform_admin.tenant_access`). Anyone else sending a different
-`X-Tenant-ID` gets 403. Requests for suspended tenants get 403. Under an
+`X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
+get `403 tenant_suspended` (see docs/mssp.md). Under an
 override, rows the admin creates (suppression rules, API keys) carry no
 `created_by` (the admin's account belongs to the home tenant; the audit log
 names the actor), and claiming, deciding escalations and approving or
@@ -157,6 +158,8 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET, POST | `/users`; GET, PATCH, DELETE `/users/{id}` | admin |
 | GET, POST | `/api-keys`; DELETE `/api-keys/{id}` | admin |
 | GET, PATCH | `/tenant/settings` | admin |
+| GET | `/onboarding/status`; POST `/onboarding/sample-alerts`, `/onboarding/autonomy-reviewed`, `/onboarding/dismiss` (docs/onboarding.md) | admin |
+| POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
@@ -252,7 +255,10 @@ over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
 `llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
-(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
+(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`) and
+`retention` (`alerts_days`, `indicators_days`, merged key by key, within the
+install's `retention.tenant_min_days`..`tenant_max_days`, which responses
+return as `retention_limits`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
