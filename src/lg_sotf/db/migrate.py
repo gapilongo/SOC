@@ -31,7 +31,9 @@ from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_qu
 from lg_sotf.settings import get_settings
 
 __all__ = [
+    "ERASURE_FUNCTIONS",
     "MIGRATIONS_DIR",
+    "PLATFORM_FUNCTIONS",
     "PROVISIONING_FUNCTIONS",
     "RUNTIME_TABLE_PRIVILEGES",
     "alembic_config",
@@ -55,6 +57,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "alembic_version": ("SELECT",),
     "tenants": ("SELECT", "UPDATE"),
     "users": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "user_mfa": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     "refresh_tokens": ("SELECT", "INSERT", "UPDATE"),
     "api_keys": ("SELECT", "INSERT", "UPDATE"),
     "sources": ("SELECT", "INSERT", "UPDATE", "DELETE"),
@@ -67,7 +70,11 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "suppression_rules": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     "indicator_sightings": ("SELECT", "INSERT"),
     "llm_usage_daily": ("SELECT", "INSERT", "UPDATE"),
+    "usage_daily": ("SELECT", "INSERT", "UPDATE"),
     "audit_log": ("SELECT", "INSERT"),
+    "integrations": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "notification_outbox": ("SELECT", "INSERT", "UPDATE"),
+    "external_tickets": ("SELECT", "INSERT", "UPDATE"),
 }
 CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),
@@ -82,6 +89,15 @@ AUTH_LOOKUP_FUNCTIONS: Tuple[str, ...] = (
     "lgsotf_auth_users_by_email(text)",
 )
 PROVISIONING_FUNCTIONS: Tuple[str, ...] = ("lgsotf_create_tenant(text, text)",)
+# Cross-tenant aggregates behind the platform-admin endpoints (migration 0004).
+PLATFORM_FUNCTIONS: Tuple[str, ...] = (
+    "lgsotf_platform_tenants()",
+    "lgsotf_platform_tenant_stats(timestamptz)",
+    "lgsotf_platform_escalations(integer, timestamptz, text, text)",
+    "lgsotf_platform_usage(date, date)",
+)
+# Tenant erasure (platform admins, migration 0006): bounded batches of one suspended tenant's rows.
+ERASURE_FUNCTIONS: Tuple[str, ...] = ("lgsotf_erase_tenant_batch(text, integer)",)
 
 log = structlog.get_logger(__name__)
 
@@ -186,7 +202,7 @@ def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tabl
         )
     for seq in sequences:
         stmts.append(sql.SQL("GRANT USAGE ON SEQUENCE {} TO {}").format(sql.Identifier(*seq.split(".", 1)), who))
-    for fn in (*AUTH_LOOKUP_FUNCTIONS, *PROVISIONING_FUNCTIONS):
+    for fn in (*AUTH_LOOKUP_FUNCTIONS, *PROVISIONING_FUNCTIONS, *PLATFORM_FUNCTIONS, *ERASURE_FUNCTIONS):
         stmts.append(sql.SQL("GRANT EXECUTE ON FUNCTION {} TO {}").format(sql.SQL(fn), who))
     return stmts
 

@@ -120,6 +120,11 @@ class DestinationPolicy:
         await self.resolve_allowed(host, port, resolver)
 
 
+def ip_literal(value: str) -> Optional[IPAddress]:
+    """The address ``value`` spells (``[::1]`` and zone ids accepted), or None when it is a name."""
+    return _ip_literal(value)
+
+
 def _ip_literal(value: str) -> Optional[IPAddress]:
     try:
         return ipaddress.ip_address(value.strip("[]").split("%", 1)[0])

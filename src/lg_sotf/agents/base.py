@@ -46,6 +46,7 @@ from lg_sotf.llm import (
     merge_usage_summary,
 )
 from lg_sotf.llm.client import Tier
+from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
 from lg_sotf.settings import Settings, get_settings
@@ -75,6 +76,11 @@ class AgentContext:
     llm_budget_exceeded: bool = False
     usage: UsageTally = field(default_factory=UsageTally)
     refusals: List[Dict[str, Optional[str]]] = field(default_factory=list)
+    models: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    """Provider and model each agent called (``summary.llm_models``, evidence packs)."""
+    # False for a replay (the history backtest): agents read through ``repos`` but write nothing,
+    # neither LLM accounting on the alert nor indicator sightings.
+    persist: bool = True
 
 
 @dataclass
@@ -183,6 +189,7 @@ class BaseAgent:
         agent = self.name
         try:
             model = self.model_factory(tier, ctx.settings)
+            ctx.models[agent] = model_provenance(model, tier)
             prompt = build_prompt(
                 system, task, untrusted, context=context, cache_untrusted=cache_untrusted, settings=ctx.settings
             )
@@ -223,14 +230,16 @@ def refusal_digest(result: LLMResult[Any]) -> Optional[Dict[str, Optional[str]]]
 
 
 async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool) -> None:
-    """Add this run's LLM usage to ``alerts.summary.llm_usage`` (and budget/refusal flags).
+    """Add this run's LLM usage to ``alerts.summary.llm_usage`` (and budget/refusal flags, models used).
 
-    Writes nothing when the run made no LLM call, hit no budget limit and saw
-    no refusal. Nodes of one alert run one at a time, so the read-add-write
+    Writes nothing for a context with ``persist=False``, or when the run made
+    no LLM call, hit no budget limit and saw no refusal. Nodes of one alert run one at a time, so the read-add-write
     in one transaction cannot interleave with another agent's update.
     """
     newly_exceeded = ctx.llm_budget_exceeded and not budget_was_exceeded
-    if ctx.repos is None or (ctx.usage.is_empty() and not newly_exceeded and not ctx.refusals):
+    if not ctx.persist or ctx.repos is None or (
+        ctx.usage.is_empty() and not newly_exceeded and not ctx.refusals and not ctx.models
+    ):
         return
     repos = ctx.repos
     async with repos.db.tenant_tx(ctx.tenant_id) as conn:
@@ -245,6 +254,8 @@ async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool
             previous = summary.get("llm_refusals")
             kept = [r for r in previous if isinstance(r, Mapping)] if isinstance(previous, list) else []
             patch["llm_refusals"] = [*kept, *ctx.refusals][-MAX_REFUSALS_KEPT:]
+        if ctx.models:
+            patch["llm_models"] = merge_model_provenance(summary.get("llm_models"), ctx.models)
         await repos.alerts.update(ctx.tenant_id, ctx.alert_id, summary=patch, conn=conn)
 
 

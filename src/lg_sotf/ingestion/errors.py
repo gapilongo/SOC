@@ -69,3 +69,7 @@ class SourceRequestError(SourceError):
 
 class SourceProtocolError(SourceError):
     """The source answered with something that does not match its API."""
+
+
+class SourceResponseTooLarge(SourceProtocolError):
+    """A response body exceeded the client's size cap (the request is not retried)."""

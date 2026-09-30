@@ -47,6 +47,14 @@ SECTION_INTRO: Dict[str, str] = {
     "security": "Application keys. Required in staging and production.",
     "observability": "Logging, tracing and metrics.",
     "response": "Response automation defaults and the install-wide SOAR webhook.",
+    "mcp": (
+        "`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client "
+        "(see [mcp.md](mcp.md)). Read by that command only."
+    ),
+    "integrations": (
+        "Notifications and ticketing (docs/integrations.md): outbox delivery and ticket sync run in the scheduler; "
+        "SMTP is configured per install, recipients per integration."
+    ),
     "routing": (
         "Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys "
         "are ignored, values are validated when a worker starts."
@@ -75,9 +83,10 @@ DESCRIPTIONS: Dict[str, str] = {
     "redis.key_prefix": "Prefix of every key, stream and channel; lets several installs share one Redis.",
     "redis.socket_timeout_s": "Socket timeout for Redis commands.",
     "llm.enabled": "Master switch. When false, agents run on rules only and nothing is sent to a model.",
-    "llm.provider": "`anthropic` (default), `openai`, `gemini` (optional extras) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`).",
-    "llm.api_key": "Provider API key. Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider.",
-    "llm.base_url": "Custom API endpoint (gateway or proxy). When set, Anthropic server-side refusal fallbacks are not requested.",
+    "llm.provider": "`anthropic` (default), `openai`, `gemini` (optional extras), the self-hosted `ollama` and `openai_compatible` (vLLM, llama.cpp, LM Studio, ...; API key optional, metered as `local/<model>` at zero cost; see docs/local-llm.md) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`).",
+    "llm.api_key": "Provider API key (optional for `ollama` and `openai_compatible`). Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider.",
+    "llm.base_url": "Custom API endpoint (gateway, proxy or self-hosted server). Required for `openai_compatible`; `ollama` defaults to `http://ollama:11434/v1`. `http://` only to loopback, private (RFC 1918, CGNAT, ULA), docker service or `*.internal` hosts; metadata and link-local addresses and credentials in the URL are refused. When set, Anthropic server-side refusal fallbacks are not requested.",
+    "llm.structured_output": "How `ollama` and `openai_compatible` return structured output: `json_schema` (`auto`; the schema as `response_format` and in the prompt), `json_mode` (`response_format: json_object`) or `function_calling`. JSON replies get one validation-and-repair retry. Cloud providers always use their native method.",
     "llm.refusal_fallback": "Anthropic only: ask the API to retry a refused request on a fallback model (server-side fallback beta). A refusal that remains still escalates the alert.",
     "llm.prices": "Price overrides per model id, merged over the built-in table: `{model: {input, output, cache_write, cache_read}}` in USD per million tokens (cache prices default to 1.25x and 0.1x input). Unknown models are metered at zero cost with a warning.",
     "llm.allow_fake": "Allow `provider=fake` in staging/production (demos only).",
@@ -114,10 +123,28 @@ DESCRIPTIONS: Dict[str, str] = {
     "auth.oidc_audience": "Expected `aud` of OIDC tokens.",
     "auth.oidc_jwks_url": "JWKS URL; discovered from the issuer when unset.",
     "auth.oidc_tenant_claim": "Claim holding the tenant id.",
-    "auth.oidc_role_claim": "Claim holding the role(s) (`admin`, `analyst`, `viewer`).",
+    "auth.oidc_role_claim": (
+        "Claim holding the role(s) or groups; values go through `auth.oidc_role_map` (without a map they must be "
+        "`admin`, `analyst` or `viewer`)."
+    ),
     "auth.oidc_email_claim": "Claim holding the user's email.",
     "auth.oidc_email_verified_claim": "Claim that must be true before the email is trusted.",
     "auth.oidc_default_tenant": "Tenant for tokens without a tenant claim (single-organisation installs).",
+    "auth.oidc_jit_provisioning": (
+        "Create a local account (no password, never a platform admin) on the first verified OIDC sign-in and keep "
+        "its role in sync with the mapping. See docs/identity.md."
+    ),
+    "auth.oidc_role_map": (
+        "Role-claim value to role (`viewer`, `analyst`, `admin`), e.g. "
+        '`{"SOC-Admins": "admin"}`; the highest match wins. Empty: the claim carries role names.'
+    ),
+    "auth.oidc_default_role": "Role when no claim value maps; unset refuses the sign-in.",
+    "auth.require_mfa_for_platform_admins": (
+        "Platform admins must use TOTP MFA (forced enrollment at sign-in). Unset: on in staging and production, "
+        "off in development and test."
+    ),
+    "auth.mfa_issuer": "Issuer name shown in authenticator apps (`otpauth://` URI).",
+    "auth.mfa_challenge_ttl_s": "Lifetime of the MFA challenge token between password and code (30-900).",
     "auth.bootstrap_admin_email": "`lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist.",
     "auth.bootstrap_admin_password": "Password of the bootstrap admin. Give it to the migrate job only, then remove it.",
     "auth.bootstrap_tenant_id": "Tenant created by `lg-sotf migrate`.",
@@ -127,7 +154,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "api.public_url": "External URL of the API. An `https://` URL turns on HSTS.",
     "api.cors_origins": "Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production.",
     "api.max_body_bytes": "Request body limit for ordinary endpoints.",
-    "api.max_ingest_body_bytes": "Request body limit for ingestion endpoints.",
+    "api.max_ingest_body_bytes": "Request body limit for ingestion endpoints (`/ingest/email` allows up to `ingestion.email.max_message_bytes` when that is larger).",
     "api.max_ingest_batch": "Maximum events per `POST /ingest/alerts` call.",
     "api.rate_limit_per_minute": "Requests per minute per principal.",
     "api.ingest_rate_limit_per_minute": "Ingestion requests per minute per API key.",
@@ -155,12 +182,24 @@ DESCRIPTIONS: Dict[str, str] = {
     "scheduler.stale_run_sweep_interval_s": "Interval of the stale and orphaned run sweeps.",
     "scheduler.maintenance_interval_s": "Interval of partition and retention maintenance.",
     "scheduler.leader_lease_s": "Leader lock keep-alive; a standby takes over within about this time.",
-    "retention.alerts_days": "Alerts (and their runs, escalations, actions) older than this are purged.",
+    "retention.alerts_days": (
+        "Alerts (and their runs, escalations, actions) older than this are purged. "
+        "Tenants may override it with `retention.alerts_days` in their settings."
+    ),
     "retention.events_days": "Alert timeline events.",
     "retention.audit_days": "Audit log (hash chain per tenant); export before it ages out if you need longer.",
-    "retention.indicators_days": "Indicator sightings used for correlation.",
+    "retention.indicators_days": (
+        "Indicator sightings used for correlation. Tenants may override it with `retention.indicators_days`."
+    ),
     "retention.llm_usage_days": "Daily LLM usage rows.",
     "retention.checkpoints_days": "LangGraph checkpoints of completed runs.",
+    "retention.usage_days": "Daily usage counters (alerts ingested and processed per tenant; invoicing and quotas).",
+    "retention.tenant_min_days": (
+        "Lowest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values below it are raised to it."
+    ),
+    "retention.tenant_max_days": (
+        "Highest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values above it are lowered to it."
+    ),
     "security.encryption_keys": "Comma-separated Fernet keys: the first encrypts, all decrypt (rotation). Encrypts source credentials and tenant secrets.",
     "security.indicator_hmac_key": "HMAC key for stored indicator values (correlation). Changing it resets correlation history.",
     "observability.log_level": "Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).",
@@ -174,6 +213,26 @@ DESCRIPTIONS: Dict[str, str] = {
     "response.webhook_url": "Install-wide SOAR webhook (HMAC-signed POST) used by tenants that choose the `webhook` connector without their own URL.",
     "response.webhook_secret": "HMAC secret of the install-wide webhook.",
     "response.webhook_timeout_s": "Timeout of one webhook call.",
+    "integrations.enabled": "Run the scheduler's outbox delivery and ticket sync jobs. Events are queued whatever this says; turning it off only pauses delivery.",
+    "integrations.ui_base_url": "Base URL of the web app for links in notifications (`/alerts?alert=<id>`). Defaults to `api.public_url` (the UI and API share a host in the shipped deployments).",
+    "integrations.batch_size": "Outbox rows claimed per delivery pass.",
+    "integrations.delivery_concurrency": "Deliveries in flight at once in the scheduler.",
+    "integrations.max_attempts": "Attempts before an outbox row is marked `dead`.",
+    "integrations.backoff_base_s": "First retry delay; doubles with every attempt (with jitter).",
+    "integrations.backoff_max_s": "Longest retry delay (also caps a receiver's `Retry-After`).",
+    "integrations.max_age_hours": "An event still undelivered after this long is marked `dead` instead of being sent late.",
+    "integrations.http_timeout_s": "Timeout of one outbound integration request (Slack, Teams, webhook, Jira, ServiceNow).",
+    "integrations.outbox_retention_days": "Sent and dead outbox rows are deleted after this many days.",
+    "integrations.ticket_sync_interval_s": "How often the scheduler polls linked open tickets for their status.",
+    "integrations.ticket_sync_batch_per_tenant": "Tickets polled per tenant per sync pass (least recently synced first).",
+    "integrations.slack_sso_max_age_hours": "An OIDC-provisioned (SSO) account may approve or reject actions from Slack only if it signed in to LG-SOTF within this many hours.",
+    "integrations.smtp_host": "SMTP server for email integrations; email integrations fail until it is set.",
+    "integrations.smtp_port": "SMTP port (587 for STARTTLS, 465 for implicit TLS).",
+    "integrations.smtp_security": "`starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified.",
+    "integrations.smtp_username": "SMTP login (optional).",
+    "integrations.smtp_password": "SMTP password (optional).",
+    "integrations.smtp_from": "Sender address of notification emails.",
+    "integrations.smtp_timeout_s": "SMTP connection and command timeout.",
     "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
     "tools": "Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent.",
     "routing": "See the routing table below.",
@@ -216,6 +275,13 @@ DESCRIPTIONS: Dict[str, str] = {
     "ingestion.http_backoff_max_s": "Pull connectors: maximum retry delay.",
     "ingestion.http_max_retry_after_s": "Pull connectors: a longer `Retry-After` ends the poll instead of sleeping.",
     "ingestion.allow_private_destinations": "Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source.",
+    # mcp (lg-sotf mcp)
+    "mcp.api_url": "Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only.",
+    "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes). Environment only, never a command-line argument.",
+    "mcp.timeout_s": "Timeout of one API request.",
+    "mcp.max_retries": "Retries of a read request on 429/502/503/504 or a connection error (writes are never retried).",
+    "mcp.max_response_bytes": "Largest API response the MCP server reads.",
+    "mcp.max_output_chars": "Largest tool result handed to the model; longer results are truncated with a note.",
 }
 
 Row = Tuple[str, str, str, str, str]

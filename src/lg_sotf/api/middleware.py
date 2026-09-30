@@ -169,7 +169,10 @@ class SecurityHeadersMiddleware:
                 _set_header(headers, "Cross-Origin-Opener-Policy", "same-origin")
                 _set_header(headers, "Cross-Origin-Resource-Policy", "same-origin")
                 _set_header(headers, "Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-                _set_header(headers, "Content-Security-Policy", DOCS_CSP if docs else API_CSP)
+                # A response that sets its own, stricter-than-docs policy keeps it (the monthly HTML
+                # report allows only its inline stylesheet, by hash); everything else gets the default.
+                if not _has_header(headers, "Content-Security-Policy"):
+                    _set_header(headers, "Content-Security-Policy", DOCS_CSP if docs else API_CSP)
                 if not _has_header(headers, "Cache-Control"):
                     _set_header(headers, "Cache-Control", "no-store")
                 if https:

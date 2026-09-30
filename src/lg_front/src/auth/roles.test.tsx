@@ -81,10 +81,13 @@ describe('role checks mirror the API RBAC', () => {
 
   it('shows admin navigation only to admins and the platform page only to platform admins', () => {
     const labels = (p: Principal) => NAV_ITEMS.filter((i) => i.allowed(p)).map((i) => i.label);
-    expect(labels(principal({ role: 'viewer' }))).toEqual(['Dashboard', 'Alerts', 'Escalations', 'Actions and approvals', 'Suppressions']);
+    expect(labels(principal({ role: 'viewer' }))).toEqual(['Dashboard', 'Alerts', 'Escalations', 'Actions and approvals', 'Suppressions', 'Reports', 'Account security']);
     expect(labels(principal({ role: 'admin' }))).toContain('Audit log');
-    expect(labels(principal({ role: 'admin' }))).not.toContain('Platform');
-    expect(labels(principal({ role: 'admin', isPlatformAdmin: true }))).toContain('Platform');
+    expect(labels(principal({ role: 'admin' }))).toContain('Getting started');
+    expect(labels(principal({ role: 'admin' }))).not.toContain('MSSP console');
+    expect(labels(principal({ role: 'admin', isPlatformAdmin: true }))).toContain('MSSP console');
+    // The console works across tenants: it is hidden while acting on one.
+    expect(labels(principal({ role: 'admin', isPlatformAdmin: true, tenantId: 'globex' }))).not.toContain('MSSP console');
   });
 });
 

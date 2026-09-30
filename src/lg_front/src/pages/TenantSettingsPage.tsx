@@ -5,6 +5,7 @@ import { endpoints } from '../api/endpoints';
 import { AUTONOMY_MODES, RISK_LEVELS, type JsonObject, type TenantSettingsOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Badge } from '../components/Badge';
+import { LlmTestCard } from '../components/LlmTestCard';
 import { useToast } from '../components/Toast';
 import { Button, Card, Checkbox, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
 import { formatDateTime } from '../lib/format';
@@ -46,6 +47,8 @@ function useSave(onDone?: () => void) {
     mutationFn: (patch: JsonObject) => endpoints.patchTenantSettings(api, patch),
     onSuccess: (out) => {
       client.setQueryData(['tenant-settings'], out);
+      // Saving autonomy or response settings completes the checklist's "autonomy reviewed" step.
+      void client.invalidateQueries({ queryKey: ['onboarding-status'] });
       toast.success('Settings saved.');
       onDone?.();
     },
@@ -258,6 +261,38 @@ function BudgetSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
+function ReportingSection({ data }: { data: TenantSettingsOut }) {
+  const current = obj(data.settings.reporting).minutes_per_alert;
+  const [minutes, setMinutes] = useState(typeof current === 'number' ? String(current) : '');
+  const [localError, setLocalError] = useState<Error | null>(null);
+  const save = useSave();
+  const submit = () => {
+    setLocalError(null);
+    if (!minutes.trim()) {
+      save.mutate({ reporting: { minutes_per_alert: null } });
+      return;
+    }
+    const n = Number(minutes);
+    if (!Number.isInteger(n) || n < 1 || n > 480) {
+      setLocalError(new Error('Minutes per alert must be a whole number from 1 to 480.'));
+      return;
+    }
+    save.mutate({ reporting: { minutes_per_alert: n } });
+  };
+  return (
+    <Section
+      title="Reporting"
+      saveLabel="Save reporting"
+      description="Analyst hours saved = alerts handled without a human x minutes per alert / 60. Set the minutes an analyst typically spends triaging one alert; it is an estimate and is labelled as one in every report."
+      onSubmit={submit}
+      busy={save.isPending}
+      error={localError ?? save.error}
+    >
+      <TextField label="Minutes per alert" type="number" min={1} max={480} value={minutes} onChange={(e) => setMinutes(e.target.value)} hint="Empty uses the default (15)." wrapperClassName="max-w-xs" />
+    </Section>
+  );
+}
+
 function ReviewSection({ data }: { data: TenantSettingsOut }) {
   const review = obj(data.settings.review);
   const sla = obj(review.sla_minutes);
@@ -296,6 +331,173 @@ function ReviewSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
+/** Merge patch for the retention section; an empty field removes that override. */
+export function retentionPatch(alerts: string, indicators: string, limits: { min_days: number; max_days: number }): JsonObject | Error {
+  const out: JsonObject = {};
+  for (const [key, label, value] of [
+    ['alerts_days', 'Alert retention', alerts],
+    ['indicators_days', 'Indicator retention', indicators],
+  ] as const) {
+    if (!value.trim()) {
+      out[key] = null;
+      continue;
+    }
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < limits.min_days || n > limits.max_days) {
+      return new Error(`${label} must be a whole number of days from ${limits.min_days} to ${limits.max_days}.`);
+    }
+    out[key] = n;
+  }
+  return { retention: out };
+}
+
+function RetentionSection({ data }: { data: TenantSettingsOut }) {
+  const retention = obj(data.settings.retention);
+  const limits = data.retention_limits ?? { min_days: 1, max_days: 99_999, alerts_days: 90, indicators_days: 30 };
+  const [alerts, setAlerts] = useState(typeof retention.alerts_days === 'number' ? String(retention.alerts_days) : '');
+  const [indicators, setIndicators] = useState(typeof retention.indicators_days === 'number' ? String(retention.indicators_days) : '');
+  const [localError, setLocalError] = useState<Error | null>(null);
+  const save = useSave();
+  const submit = () => {
+    setLocalError(null);
+    const patch = retentionPatch(alerts, indicators, limits);
+    if (patch instanceof Error) {
+      setLocalError(patch);
+      return;
+    }
+    save.mutate(patch);
+  };
+  return (
+    <Section
+      title="Data retention"
+      description={`How long this tenant's finished alerts and indicator sightings are kept before the nightly purge removes them. Allowed: ${limits.min_days} to ${limits.max_days} days; empty fields use the installation default.`}
+      onSubmit={submit}
+      busy={save.isPending}
+      error={localError ?? save.error}
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <TextField
+          label="Closed alerts (days)"
+          type="number"
+          min={limits.min_days}
+          max={limits.max_days}
+          value={alerts}
+          onChange={(e) => setAlerts(e.target.value)}
+          hint={`Installation default: ${limits.alerts_days} days. Alert timelines and the audit log follow installation settings.`}
+        />
+        <TextField
+          label="Indicator sightings (days)"
+          type="number"
+          min={limits.min_days}
+          max={limits.max_days}
+          value={indicators}
+          onChange={(e) => setIndicators(e.target.value)}
+          hint={`Installation default: ${limits.indicators_days} days. Correlation looks back this far.`}
+        />
+      </div>
+    </Section>
+  );
+}
+
+/** Limits of the backend's PhishingSettings (lg_sotf.core.phishing). */
+export const PHISHING_FIELDS = [
+  { key: 'protected_brands', label: 'Protected brands', max: 200, maxChars: 253 },
+  { key: 'executives', label: 'Executives', max: 500, maxChars: 128 },
+  { key: 'trusted_authserv_ids', label: 'Trusted mail servers (authserv-id)', max: 20, maxChars: 255 },
+] as const;
+
+export type PhishingKey = (typeof PHISHING_FIELDS)[number]['key'];
+
+/** Replacement for the phishing section from one-entry-per-line text (commas are kept: "Smith, Jane"). */
+export function phishingPatch(text: Record<PhishingKey, string>): JsonObject | Error {
+  const section: Record<string, string[]> = {};
+  for (const { key, label, max, maxChars } of PHISHING_FIELDS) {
+    const entries = [...new Set(text[key].split('\n').map((l) => l.trim()).filter(Boolean))];
+    if (entries.length > max) return new Error(`${label}: at most ${max} entries.`);
+    const long = entries.find((e) => e.length > maxChars);
+    if (long) return new Error(`${label}: "${long.slice(0, 40)}..." is longer than ${maxChars} characters.`);
+    section[key] = entries;
+  }
+  return { phishing: Object.values(section).some((v) => v.length) ? section : null };
+}
+
+const PHISHING_HINTS: Record<PhishingKey, string> = {
+  protected_brands: 'Brand names or domains that the look-alike and display-name checks protect.',
+  executives: 'Display names attackers impersonate (CEO, CFO, ...).',
+  trusted_authserv_ids: 'Your own receiving mail servers; only their Authentication-Results header is trusted.',
+};
+
+const PHISHING_PLACEHOLDERS: Record<PhishingKey, string> = {
+  protected_brands: 'Example Bank\nexamplebank.example',
+  executives: 'Jane Smith',
+  trusted_authserv_ids: 'mx.corp.example',
+};
+
+function PhishingSection({ data }: { data: TenantSettingsOut }) {
+  const stored = obj(data.settings.phishing);
+  const [text, setText] = useState<Record<PhishingKey, string>>({
+    protected_brands: strings(stored.protected_brands).join('\n'),
+    executives: strings(stored.executives).join('\n'),
+    trusted_authserv_ids: strings(stored.trusted_authserv_ids).join('\n'),
+  });
+  const [localError, setLocalError] = useState<Error | null>(null);
+  const save = useSave();
+  const submit = () => {
+    setLocalError(null);
+    const patch = phishingPatch(text);
+    if (patch instanceof Error) {
+      setLocalError(patch);
+      return;
+    }
+    save.mutate(patch);
+  };
+  return (
+    <Section
+      title="Phishing context"
+      saveLabel="Save phishing context"
+      description="Used by the phishing signals on email alerts. One entry per line."
+      onSubmit={submit}
+      busy={save.isPending}
+      error={localError ?? save.error}
+    >
+      {PHISHING_FIELDS.map(({ key, label }) => (
+        <TextAreaField
+          key={key}
+          label={label}
+          rows={4}
+          value={text[key]}
+          onChange={(e) => setText({ ...text, [key]: e.target.value })}
+          placeholder={PHISHING_PLACEHOLDERS[key]}
+          hint={PHISHING_HINTS[key]}
+        />
+      ))}
+    </Section>
+  );
+}
+
+function SecuritySection({ data }: { data: TenantSettingsOut }) {
+  const current = obj(data.settings.security).require_mfa === true;
+  const [requireMfa, setRequireMfa] = useState(current);
+  const save = useSave();
+  return (
+    <Section
+      title="Sign-in security"
+      saveLabel="Save sign-in security"
+      description="Local accounts (email and password). Single sign-on users get MFA from your identity provider."
+      onSubmit={() => save.mutate({ security: { require_mfa: requireMfa } })}
+      busy={save.isPending}
+      error={save.error}
+    >
+      <Checkbox
+        label="Require MFA for local accounts"
+        hint="Users without an authenticator app must set one up right after their password at the next sign-in; existing sessions of those users end at their next refresh."
+        checked={requireMfa}
+        onChange={(e) => setRequireMfa(e.target.checked)}
+      />
+    </Section>
+  );
+}
+
 export default function TenantSettingsPage() {
   const api = useApi();
   const q = useQuery({ queryKey: ['tenant-settings'], queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
@@ -320,9 +522,14 @@ export default function TenantSettingsPage() {
           <AutonomySection data={d} />
           <ResponseSection data={d} />
           <ProtectedSection data={d} />
+          <PhishingSection data={d} />
           <div className="space-y-5">
+            <SecuritySection data={d} />
             <BudgetSection data={d} />
+            <LlmTestCard />
             <ReviewSection data={d} />
+            <RetentionSection data={d} />
+            <ReportingSection data={d} />
           </div>
         </div>
       )}

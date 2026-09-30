@@ -104,6 +104,38 @@ export const SOURCE_SPECS: Record<SourceType, TypeSpec> = {
     secrets: [],
     note: 'Push source: send events to POST /api/v1/ingest/webhook/<source id> with an API key that has the ingest scope.',
   },
+  m365_mailbox: {
+    label: 'Microsoft 365 reported-phish mailbox',
+    config: [
+      { key: 'azure_tenant_id', label: 'Azure tenant id or domain' },
+      { key: 'mailbox', label: 'Reporting mailbox', placeholder: 'phish-reports@example.com' },
+      { key: 'folder', label: 'Folder (well-known name or id)', placeholder: 'inbox' },
+      { key: 'after_processing', label: 'After processing (mark_read or move)', placeholder: 'mark_read' },
+      { key: 'processed_folder', label: 'Processed folder (move only)', placeholder: 'folder id or well-known name' },
+      { key: 'initial_lookback_s', label: 'First poll lookback (s)', number: true, placeholder: '3600' },
+    ],
+    secrets: [
+      { key: 'client_id', label: 'Application (client) id' },
+      { key: 'client_secret', label: 'Client secret' },
+    ],
+    note: 'Microsoft Graph with the Mail.ReadWrite application permission, limited to the reporting mailbox by an application access policy. See docs/phishing.md.',
+  },
+  imap: {
+    label: 'IMAP reported-phish mailbox (Google Workspace, other)',
+    config: [
+      { key: 'host', label: 'IMAP host', placeholder: 'imap.gmail.com' },
+      { key: 'port', label: 'Port (IMAPS)', number: true, placeholder: '993' },
+      { key: 'folder', label: 'Folder', placeholder: 'INBOX' },
+      { key: 'after_processing', label: 'After processing (mark_read or move)', placeholder: 'mark_read' },
+      { key: 'processed_folder', label: 'Processed folder (move only)' },
+      { key: 'initial_lookback_s', label: 'First poll lookback (s)', number: true, placeholder: '3600' },
+    ],
+    secrets: [
+      { key: 'username', label: 'Username' },
+      { key: 'password', label: 'Password or app password' },
+    ],
+    note: 'IMAPS only, certificates always verified. Trusted relay CIDRs (trusted_relays) and a private CA (ca_cert_pem) go in the additional configuration.',
+  },
   file: {
     label: 'File (development only)',
     config: [{ key: 'path', label: 'JSON Lines file path' }],

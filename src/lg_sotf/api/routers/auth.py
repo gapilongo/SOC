@@ -1,10 +1,15 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/auth``: login, refresh-token rotation, logout and the current principal."""
+"""``/auth``: login, refresh-token rotation, logout and the current principal.
+
+For an account with MFA (or one that policy requires to enroll) a correct
+password answers ``mfa_required: true`` with a short-lived challenge token
+instead of a session; ``/auth/mfa`` (:mod:`lg_sotf.api.routers.mfa`) finishes it.
+"""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Optional
+from typing import Optional, Union
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -21,11 +26,11 @@ from lg_sotf.api.auth.authenticate import (
 )
 from lg_sotf.api.auth.deps import ANY, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.auth.service import AuthService, invalid_session
+from lg_sotf.api.auth.service import AuthService, MfaChallenge, invalid_session
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
-from lg_sotf.api.schemas import LoginIn, MeOut, TokenOut, UserOut
+from lg_sotf.api.schemas import LoginIn, MeOut, MfaChallengeOut, TokenOut, UserOut
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -40,7 +45,7 @@ REFRESH_BUCKET = "refresh"
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_refresh_cookie(ctx: ApiContext, response: Response, token: str) -> None:
+def set_refresh_cookie(ctx: ApiContext, response: Response, token: str) -> None:
     auth = ctx.settings.auth
     response.set_cookie(
         REFRESH_COOKIE,
@@ -66,7 +71,7 @@ def _clear_refresh_cookie(ctx: ApiContext, response: Response) -> None:
     )
 
 
-def _login_ip_limit(ctx: ApiContext) -> int:
+def login_ip_limit(ctx: ApiContext) -> int:
     return ctx.settings.api.login_rate_limit_per_minute * LOGIN_IP_MULTIPLIER
 
 
@@ -75,7 +80,7 @@ async def _limit_login(ctx: ApiContext, request: Request, email: str) -> None:
 
     Keying by account keeps one client's failed attempts from locking out
     everyone else behind the same proxy address. The address cap counts only
-    failures (see :func:`_count_failed_login`), so many people signing in
+    failures (see :func:`count_failed_login`), so many people signing in
     correctly through one address are never refused by it, while password
     hashing work from a single failing source stays bounded. Per-account brute
     force is bounded by lockout as well.
@@ -84,13 +89,13 @@ async def _limit_login(ctx: ApiContext, request: Request, email: str) -> None:
     limit = ctx.settings.api.login_rate_limit_per_minute
     account = credential_fingerprint(email.strip().lower())
     await ctx.limiter.enforce(LOGIN_BUCKET, f"{ip}:{account}", limit)
-    blocked = await ctx.limiter.blocked(LOGIN_IP_BUCKET, ip, _login_ip_limit(ctx))
+    blocked = await ctx.limiter.blocked(LOGIN_IP_BUCKET, ip, login_ip_limit(ctx))
     if blocked is not None:
         raise rate_limited(blocked)
 
 
-async def _count_failed_login(ctx: ApiContext, request: Request) -> None:
-    await ctx.limiter.hit(LOGIN_IP_BUCKET, client_ip(request), _login_ip_limit(ctx))
+async def count_failed_login(ctx: ApiContext, request: Request) -> None:
+    await ctx.limiter.hit(LOGIN_IP_BUCKET, client_ip(request), login_ip_limit(ctx))
 
 
 def _origin_host(value: str) -> str:
@@ -132,17 +137,28 @@ async def _limit_session(ctx: ApiContext, request: Request, bucket: str, present
     await ctx.limiter.enforce(bucket, identity, ctx.settings.api.login_rate_limit_per_minute)
 
 
-@router.post("/login", response_model=TokenOut, summary="Sign in with email and password")
-async def login(body: LoginIn, request: Request, response: Response) -> TokenOut:
+@router.post(
+    "/login",
+    response_model=Union[TokenOut, MfaChallengeOut],
+    summary="Sign in with email and password (answers mfa_required when a second factor must follow)",
+)
+async def login(body: LoginIn, request: Request, response: Response) -> Union[TokenOut, MfaChallengeOut]:
     ctx = get_ctx(request)
     await _limit_login(ctx, request, body.email)
     try:
         session = await AuthService(ctx).login(body.email, body.password, body.tenant, client_ip=client_ip(request))
     except ApiError as exc:
         if exc.status_code == 401:
-            await _count_failed_login(ctx, request)
+            await count_failed_login(ctx, request)
         raise
-    _set_refresh_cookie(ctx, response, session.refresh.token)
+    if isinstance(session, MfaChallenge):
+        return MfaChallengeOut(
+            mfa_token=session.token.token,
+            expires_in=session.token.expires_in,
+            enrollment_required=session.enrollment_required,
+            methods=[] if session.enrollment_required else ["totp", "recovery_code"],
+        )
+    set_refresh_cookie(ctx, response, session.refresh.token)
     return TokenOut(
         access_token=session.access.token,
         expires_in=session.access.expires_in,
@@ -175,7 +191,7 @@ async def refresh(request: Request, response: Response) -> TokenOut:
         _clear_refresh_cookie(ctx, failure)
         exc.headers = {**(exc.headers or {}), "set-cookie": failure.headers["set-cookie"]}
         raise exc from None
-    _set_refresh_cookie(ctx, response, session.refresh.token)
+    set_refresh_cookie(ctx, response, session.refresh.token)
     return TokenOut(
         access_token=session.access.token,
         expires_in=session.access.expires_in,

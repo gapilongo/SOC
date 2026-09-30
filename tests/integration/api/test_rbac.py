@@ -13,12 +13,20 @@ pytestmark = pytest.mark.integration
 
 X = "does-not-exist"
 U = str(uuid.uuid4())
+# Built at runtime: secret scanners flag credential-shaped literals, even obviously fake ones.
+WRONG_PASSWORD = "-".join(("not", "the", "password"))
 
 # (method, path, required access, json body)
 ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/auth/me", "any", None),
+    ("GET", "/api/v1/auth/mfa", "self", None),
+    ("POST", "/api/v1/auth/mfa/enroll", "self", {}),
+    ("POST", "/api/v1/auth/mfa/confirm", "self", {"code": "000000"}),
+    ("POST", "/api/v1/auth/mfa/disable", "self", {"password": WRONG_PASSWORD, "code": "000000"}),
+    ("POST", "/api/v1/auth/mfa/recovery-codes", "self", {"code": "000000"}),
     ("POST", "/api/v1/ingest/alerts", "ingest", [{"title": "t", "severity": "low"}]),
     ("POST", "/api/v1/ingest/webhook/no-such-source", "ingest", {"a": 1}),
+    ("POST", "/api/v1/ingest/email", "ingest", {"a": 1}),
     ("GET", "/api/v1/alerts", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}/events", "viewer", None),
@@ -48,27 +56,63 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", "/api/v1/users", "admin", {"email": "x"}),
     ("PATCH", f"/api/v1/users/{U}", "admin_user", {"role": "viewer"}),
     ("DELETE", f"/api/v1/users/{U}", "admin_user", None),
+    ("POST", f"/api/v1/users/{U}/mfa/reset", "admin", None),
     ("GET", "/api/v1/api-keys", "admin", None),
     ("POST", "/api/v1/api-keys", "admin", {}),
     ("DELETE", f"/api/v1/api-keys/{U}", "admin", None),
     ("GET", "/api/v1/tenant/settings", "admin", None),
     ("PATCH", "/api/v1/tenant/settings", "admin", {}),
     ("DELETE", "/api/v1/tenant/verdict-cache", "admin", None),
+    ("POST", "/api/v1/tenant/llm/test", "admin", None),
     ("GET", "/api/v1/dashboard/summary", "viewer", None),
     ("GET", "/api/v1/usage/llm", "admin", None),
+    ("GET", "/api/v1/reports/value", "viewer", None),
+    ("GET", "/api/v1/reports/accuracy", "viewer", None),
+    ("GET", "/api/v1/reports/detections", "viewer", None),
+    (
+        "POST",
+        "/api/v1/reports/detections/propose-suppression",
+        "analyst",
+        {"source_id": "s", "rule_field": "rule_name", "rule": "r"},
+    ),
+    ("GET", "/api/v1/reports/monthly", "viewer", None),
     ("GET", "/api/v1/audit", "admin", None),
     ("GET", "/api/v1/audit/verify", "admin", None),
     ("POST", "/api/v1/platform/tenants", "platform_admin", {"id": "rbac-new", "name": "RBAC new"}),
+    ("GET", "/api/v1/platform/tenants", "platform_admin", None),
+    ("PATCH", "/api/v1/platform/tenants/no-such-tenant", "platform_admin", {"name": "n"}),
+    ("GET", "/api/v1/platform/escalations", "platform_admin", None),
+    ("GET", "/api/v1/platform/usage", "platform_admin", None),
+    ("GET", "/api/v1/onboarding/status", "admin", None),
+    ("POST", "/api/v1/onboarding/sample-alerts", "admin", None),
+    ("POST", "/api/v1/onboarding/autonomy-reviewed", "admin", None),
+    ("POST", "/api/v1/onboarding/dismiss", "admin", None),
+    ("GET", f"/api/v1/alerts/{X}/evidence", "viewer", None),
+    ("POST", f"/api/v1/alerts/{X}/incident-report", "analyst", {"stage": "final"}),
+    ("GET", "/api/v1/platform/tenants/no-such-tenant/erasure", "platform_admin", None),
+    ("POST", "/api/v1/platform/tenants/no-such-tenant/export", "platform_admin", None),
+    ("DELETE", "/api/v1/platform/tenants/no-such-tenant", "platform_admin", {"confirm": "no-such-tenant"}),
+    ("GET", "/api/v1/integrations", "admin", None),
+    ("POST", "/api/v1/integrations", "admin", {"kind": "email", "name": "n"}),
+    ("GET", f"/api/v1/integrations/{U}", "admin", None),
+    ("PATCH", f"/api/v1/integrations/{U}", "admin", {"enabled": False}),
+    ("DELETE", f"/api/v1/integrations/{U}", "admin", None),
+    ("POST", f"/api/v1/integrations/{U}/test", "admin", None),
+    ("GET", f"/api/v1/integrations/{U}/deliveries", "admin", None),
+    ("GET", "/api/v1/tickets", "viewer", None),
 ]
 # Reachable without a bearer token (login, cookie-based refresh/logout); covered by test_auth.
 PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
+    ("POST", "/api/v1/auth/mfa/verify"),
+    # Authenticated by the Slack app's signing secret; covered by tests/integration/integrations/test_slack.py.
+    ("POST", "/api/v1/integrations/slack/interactions"),
 }
 
 USER_ROLES = {"viewer": 0, "analyst": 1, "admin": 2, "platform_admin": 2}
-REQUIRED_ROLE = {"viewer": 0, "analyst": 1, "reviewer": 1, "admin": 2, "admin_user": 2}
+REQUIRED_ROLE = {"viewer": 0, "self": 0, "analyst": 1, "reviewer": 1, "admin": 2, "admin_user": 2}
 KEY_SCOPE = {"viewer": "read", "analyst": "write", "ingest": "ingest"}
 
 

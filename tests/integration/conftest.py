@@ -23,7 +23,11 @@ from lg_sotf.db.urls import database_name, to_libpq_url
 from tests.integration.db._support import TENANT_A, TENANT_B, db_settings
 
 ALL_TABLES = (
+    "external_tickets",
+    "notification_outbox",
+    "integrations",
     "audit_log",
+    "usage_daily",
     "llm_usage_daily",
     "indicator_sightings",
     "suppression_rules",
@@ -36,6 +40,7 @@ ALL_TABLES = (
     "sources",
     "api_keys",
     "refresh_tokens",
+    "user_mfa",
     "users",
     "tenants",
 )

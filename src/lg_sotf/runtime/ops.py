@@ -178,6 +178,48 @@ async def create_user(
 
 
 @dataclass
+class MfaResetReport:
+    user_id: str
+    email: str
+    was_enabled: bool
+    revoked_sessions: int
+
+
+async def reset_mfa(settings: Settings, *, tenant_id: str, email: str) -> MfaResetReport:
+    """Remove a user's MFA (lost device, break-glass) and end their sessions; audited as ``auth.mfa_reset``."""
+    if not is_valid_tenant_id(tenant_id):
+        raise OperationError(f"invalid tenant id {tenant_id!r}")
+    db = owner_database(settings, "lg-sotf-cli")
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        try:
+            user = await repos.users.get_by_email(tenant_id, email)
+        except ValueError as exc:
+            raise OperationError("email is not a valid address") from exc
+        if user is None:
+            raise OperationError(f"no user with this email in tenant {tenant_id!r}")
+        async with db.tenant_tx(tenant_id) as conn:
+            state = await repos.user_mfa.get(tenant_id, user.id, conn=conn)
+            await repos.user_mfa.delete(tenant_id, user.id, conn=conn)
+            revoked = await repos.refresh_tokens.revoke_all_for_user(tenant_id, user.id, conn=conn)
+            was_enabled = state is not None and state.enabled
+            await AuditLogger(repos).record(
+                tenant_id,
+                "auth.mfa_reset",
+                "user",
+                str(user.id),
+                actor_type="system",
+                actor_id="cli",
+                details={"was_enabled": was_enabled, "revoked_sessions": revoked, "via": "cli"},
+                conn=conn,
+            )
+        return MfaResetReport(user_id=str(user.id), email=user.email, was_enabled=was_enabled, revoked_sessions=revoked)
+    finally:
+        await db.close()
+
+
+@dataclass
 class TenantReport:
     tenant_id: str
     name: str

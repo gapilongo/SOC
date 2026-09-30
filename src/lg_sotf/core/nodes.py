@@ -26,6 +26,7 @@ from lg_sotf.core import routing
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.phishing import message_context
 from lg_sotf.core.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.core.suppression import alert_match_view, first_matching_rule
 from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
@@ -446,6 +447,7 @@ class WorkflowNodes:
             approver_role=analyst.get("approver_role") if is_tp else None,
             corroborated_targets=corroborated,
             hosts=[str(h) for h in (entities or {}).get("hosts") or [] if isinstance(h, str)],
+            message=message_context(alert),
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
         await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))

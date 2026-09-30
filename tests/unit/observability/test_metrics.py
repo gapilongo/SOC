@@ -24,6 +24,9 @@ CONTRACT_METRICS = {
     "lgsotf_llm_refusals_total": ("agent", "category"),
     "lgsotf_llm_skipped_total": ("agent", "reason"),
     "lgsotf_enrichment_lookups_total": ("provider", "status"),
+    # Integrations outbox and ticket sync (docs/integrations.md).
+    "lgsotf_integration_deliveries_total": ("kind", "outcome"),
+    "lgsotf_ticket_syncs_total": ("system", "outcome"),
 }
 FORBIDDEN_LABELS = {"tenant_id", "alert_id", "user_id", "request_id", "thread_id"}
 

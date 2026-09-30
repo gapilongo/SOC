@@ -5,7 +5,8 @@ Credentials (``secret``) are write-only: they are encrypted with the
 install's :class:`~lg_sotf.security.crypto.SecretBox`, bound to the tenant
 and source id, and never returned (responses carry ``has_secret``). A source
 is validated (configuration, credentials present, destination policy) before
-it is saved.
+it is saved. Creating a source beyond the tenant's ``max_sources`` quota is
+refused with ``409 quota_exceeded``.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.schemas import SourceCreateIn, SourceOut, SourceTestOut, SourceUpdateIn
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound
@@ -27,6 +29,7 @@ from lg_sotf.db.repos import Source
 from lg_sotf.ingestion.service import is_reserved_source_id
 from lg_sotf.ingestion.sources import encrypt_source_secret
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -101,7 +104,7 @@ async def create_source(
     tenant_id = principal.tenant_id
     source_id = body.id or str(uuid.uuid4())
     if is_reserved_source_id(source_id):
-        raise ApiError(422, "invalid_source", "source ids 'api' and 'api:*' are reserved")
+        raise ApiError(422, "invalid_source", "source ids 'api', 'api:*', 'email', 'email:*' and 'demo:samples' are reserved")
     _check_config(body.config)
     ciphertext = encrypt_source_secret(_box(ctx), tenant_id, source_id, body.secret) if body.secret else None
     draft = _draft(
@@ -116,16 +119,22 @@ async def create_source(
         poll_interval_s=body.poll_interval_s,
     )
     await ctx.ingestion.validate_source(tenant_id, draft)
-    source = await ctx.repos.sources.create(
-        tenant_id,
-        body.type,
-        body.name,
-        source_id=source_id,
-        config=body.config,
-        secret_ciphertext=ciphertext,
-        poll_interval_s=body.poll_interval_s,
-        enabled=body.enabled,
-    )
+    try:
+        async with ctx.db.tenant_tx(tenant_id) as conn:
+            await ensure_capacity(ctx.repos, tenant_id, "max_sources", conn=conn)
+            source = await ctx.repos.sources.create(
+                tenant_id,
+                body.type,
+                body.name,
+                source_id=source_id,
+                config=body.config,
+                secret_ciphertext=ciphertext,
+                poll_interval_s=body.poll_interval_s,
+                enabled=body.enabled,
+                conn=conn,
+            )
+    except QuotaExceeded as exc:
+        raise quota_conflict(exc) from exc
     await _audit(
         ctx, principal, "source.created", source.id, {"type": source.type, "has_secret": ciphertext is not None}
     )

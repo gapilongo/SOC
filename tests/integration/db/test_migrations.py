@@ -23,6 +23,7 @@ pytestmark = pytest.mark.asyncio
 
 TENANT_OWNED = (
     "users",
+    "user_mfa",
     "refresh_tokens",
     "api_keys",
     "sources",
@@ -35,7 +36,11 @@ TENANT_OWNED = (
     "suppression_rules",
     "indicator_sightings",
     "llm_usage_daily",
+    "usage_daily",
     "audit_log",
+    "integrations",
+    "notification_outbox",
+    "external_tickets",
 )
 
 
@@ -123,6 +128,10 @@ async def test_schema_hardening_invariants(migrated_database_url: str) -> None:
         "lgsotf_auth_api_key(uuid)",
         "lgsotf_auth_users_by_email(text)",
         "lgsotf_create_tenant(text, text)",
+        "lgsotf_platform_tenants()",
+        "lgsotf_platform_tenant_stats(timestamptz)",
+        "lgsotf_platform_escalations(integer, timestamptz, text, text)",
+        "lgsotf_platform_usage(date, date)",
     ):
         [(definer, public_exec)] = _query(
             url,

@@ -9,8 +9,15 @@
 | [Deployment](deployment.md) | Operators | Image, Docker Compose, Helm, two-role PostgreSQL, TLS, sizing, upgrades, backups |
 | [CI/CD](cicd.md) | Operators | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM (Caddy HTTPS), promotion, rollback, backups |
 | [Operations](operations.md) | Operators | Health, scaling, dead letters, stuck runs, retention, key rotation, incidents, dashboards and alerts |
+| [Identity](identity.md) | Tenant admins, operators, security reviewers | TOTP MFA, OIDC role mapping and just-in-time provisioning, SAML via a broker, recovery |
 | [Security](security.md) | Security reviewers, customers | Threat model, tenant isolation, authentication, secrets, prompt-injection defences, guardrails, data handling, audit |
+| [MSSP operations](mssp.md) | Platform admins | MSSP console, tenant switcher, suspension, quotas, usage metering and invoicing, tenant templates |
+| [Onboarding](onboarding.md) | Tenant admins | Getting-started checklist, sample alerts, per-tenant retention |
+| [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |
+| [MCP server](mcp.md) | Analysts | Using LG-SOTF from Claude Desktop, Claude Code or another MCP client |
+| [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
+| [Phishing triage](phishing.md) | Tenant admins, integrators | User-reported email: M365 and IMAP reporting mailboxes, the push API, phishing signals, response actions |
 
 Repository files: [README](../README.md), [CHANGELOG](../CHANGELOG.md),
 [SECURITY](../SECURITY.md) (vulnerability reporting),

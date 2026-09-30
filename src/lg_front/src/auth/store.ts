@@ -18,10 +18,14 @@
  *   becomes visible (timers are throttled in background tabs), and on a 401.
  * * A refresh the API refuses (401) ends the session with status `expired`;
  *   transient failures (network, 5xx, 429) keep the session and retry.
+ * * With MFA, `login` resolves to a challenge instead of a session. The
+ *   challenge token is handed back to the caller (the login page keeps it in
+ *   component state, never in storage); it is not a session and grants
+ *   nothing but the second step or, for forced enrollment, enrollment.
  */
 
 import { ApiError } from '../api/client';
-import type { MeOut, TokenOut, UserOut } from '../api/types';
+import { isMfaChallenge, type LoginOut, type MeOut, type MfaConfirmOut, type MfaEnrollOut, type TokenOut, type UserOut } from '../api/types';
 
 export type AuthStatus = 'initializing' | 'anonymous' | 'authenticated' | 'expired';
 export type AuthMethod = 'password' | 'oidc';
@@ -50,8 +54,30 @@ export interface IssuedToken {
   user?: UserOut;
 }
 
+/** The password was right; a second factor (or enrollment) must follow. */
+export interface MfaChallenge {
+  token: string;
+  expiresIn: number;
+  enrollmentRequired: boolean;
+  methods: Array<'totp' | 'recovery_code'>;
+}
+
+export type LoginResult = { status: 'authenticated' } | { status: 'mfa'; challenge: MfaChallenge };
+
+/** Forced enrollment confirmed: show the recovery codes, then `finish()` starts the session. */
+export interface EnrollmentResult {
+  recoveryCodes: string[];
+  finish(): void;
+}
+
 export interface AuthTransport {
-  login(email: string, password: string, tenant: string | null): Promise<TokenOut>;
+  login(email: string, password: string, tenant: string | null): Promise<LoginOut>;
+  /** POST /auth/mfa/verify: challenge token plus a TOTP or recovery code. */
+  verifyMfa(mfaToken: string, code: string): Promise<TokenOut>;
+  /** POST /auth/mfa/enroll with an enrollment challenge. */
+  enrollMfa(mfaToken: string): Promise<MfaEnrollOut>;
+  /** POST /auth/mfa/confirm with an enrollment challenge; the response carries the session. */
+  confirmMfa(mfaToken: string, code: string): Promise<MfaConfirmOut>;
   /** POST /auth/refresh with the cookie. Throws ApiError. */
   refresh(): Promise<TokenOut>;
   logout(token: string | null): Promise<void>;
@@ -193,10 +219,47 @@ export class AuthStore {
     if (!token && this.#state.status === 'initializing') this.#set({ status: 'anonymous' });
   }
 
-  async login(email: string, password: string, tenant: string | null): Promise<void> {
+  async login(email: string, password: string, tenant: string | null): Promise<LoginResult> {
     const out = await this.#deps.transport.login(email, password, tenant);
-    this.#oidcRefreshToken = null;
-    this.#accept({ token: out.access_token, expiresIn: out.expires_in }, principalFromUser(out.user, 'password'));
+    if (isMfaChallenge(out)) {
+      return {
+        status: 'mfa',
+        challenge: { token: out.mfa_token, expiresIn: out.expires_in, enrollmentRequired: out.enrollment_required, methods: out.methods },
+      };
+    }
+    this.#acceptPassword(out);
+    return { status: 'authenticated' };
+  }
+
+  /** Second sign-in step; resolves to the recovery codes left when one was used. */
+  async completeMfa(challenge: MfaChallenge, code: string): Promise<{ recoveryCodesRemaining: number | null }> {
+    const out = await this.#deps.transport.verifyMfa(challenge.token, code);
+    this.#acceptPassword(out);
+    return { recoveryCodesRemaining: out.recovery_codes_remaining ?? null };
+  }
+
+  /** Forced enrollment: a new authenticator secret for the challenged account. */
+  beginEnrollment(challenge: MfaChallenge): Promise<MfaEnrollOut> {
+    return this.#deps.transport.enrollMfa(challenge.token);
+  }
+
+  /**
+   * Confirm forced enrollment. The session is held back until `finish()` so
+   * the page can show the recovery codes before it navigates into the app.
+   */
+  async completeEnrollment(challenge: MfaChallenge, code: string): Promise<EnrollmentResult> {
+    const out = await this.#deps.transport.confirmMfa(challenge.token, code);
+    const session = out.session;
+    if (!session) throw new Error('the API did not return a session');
+    let done = false;
+    return {
+      recoveryCodes: out.recovery_codes,
+      finish: () => {
+        if (done) return;
+        done = true;
+        this.#acceptPassword(session);
+      },
+    };
   }
 
   /** Complete an OIDC sign-in: the API's view of the token becomes the principal. */
@@ -254,6 +317,11 @@ export class AuthStore {
   }
 
   // -- internals ----------------------------------------------------------------------
+
+  #acceptPassword(out: TokenOut): void {
+    this.#oidcRefreshToken = null;
+    this.#accept({ token: out.access_token, expiresIn: out.expires_in }, principalFromUser(out.user, 'password'));
+  }
 
   async #doRefresh(): Promise<string | null> {
     const wasAuthenticated = this.#state.status === 'authenticated';

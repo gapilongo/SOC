@@ -7,6 +7,8 @@ Contract section 1 makes Redis entries re-derivable from ``workflow_runs``;
 :func:`claim_orphaned_runs` is that derivation. Re-enqueueing a run that
 still has a message is harmless: the claim rules let exactly one of the
 duplicates execute and the retry budget lives on ``workflow_runs.attempt``.
+Suspended tenants are skipped: the worker leaves their work queued, and
+these sweeps hand it back to the workers once the tenant is reactivated.
 """
 
 from __future__ import annotations
@@ -25,8 +27,9 @@ from lg_sotf.settings import Settings
 _CLAIM_ORPHANS_SQL = """
 WITH picked AS (
     SELECT tenant_id, alert_id FROM workflow_runs
-    WHERE ($1::float8 IS NOT NULL AND status = 'queued' AND updated_at < now() - make_interval(secs => $1))
-       OR (status = 'failed' AND updated_at < now() - make_interval(secs => $2))
+    WHERE (($1::float8 IS NOT NULL AND status = 'queued' AND updated_at < now() - make_interval(secs => $1))
+           OR (status = 'failed' AND updated_at < now() - make_interval(secs => $2)))
+      AND tenant_id IN (SELECT id FROM tenants WHERE status = 'active')
     ORDER BY updated_at
     LIMIT $3
     FOR UPDATE SKIP LOCKED
@@ -91,6 +94,7 @@ _STRANDED_NEW_SQL = """
 SELECT a.tenant_id, a.id AS alert_id, a.severity
 FROM alerts a
 WHERE a.status = 'new' AND a.ingested_at < now() - make_interval(secs => $1)
+  AND a.tenant_id IN (SELECT id FROM tenants WHERE status = 'active')
   AND NOT EXISTS (SELECT 1 FROM workflow_runs r WHERE r.tenant_id = a.tenant_id AND r.alert_id = a.id)
 ORDER BY a.ingested_at
 LIMIT $2

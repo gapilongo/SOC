@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
@@ -50,6 +50,8 @@ from lg_sotf.core.routing import BENIGN_DECISIONS
 from lg_sotf.core.suppression import InvalidRule, validate_rule_match
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
+from lg_sotf.integrations.events import ESCALATION_DECIDED
+from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
 from lg_sotf.services.response import (
@@ -62,7 +64,7 @@ from lg_sotf.services.response import (
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
-    from lg_sotf.db.repos import Alert, Repositories, ResponseAction
+    from lg_sotf.db.repos import Alert, Repositories, ResponseAction, SuppressionRule
 
 log = get_logger(__name__)
 
@@ -321,6 +323,15 @@ class ReviewService:
             )
             if decision == "false_positive" and self._suggest(tenant.settings, suggest_suppression):
                 suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, user_id, now, conn)
+            await enqueue_event(
+                conn,
+                tenant_id,
+                ESCALATION_DECIDED,
+                alert_id=decided.alert_id,
+                dedupe_key=f"{ESCALATION_DECIDED}:{escalation_id}",
+                escalation=decided,
+                escalation_extra={"after_sla_expiry": late or None},
+            )
 
         requests = [
             ResumeRequest(
@@ -476,16 +487,74 @@ class ReviewService:
             "severity": {"in": severities},
         }
         try:
-            validate_rule_match(match)
+            rule, _ = await self.propose_suppression(
+                tenant_id,
+                name=f"Suggested from false positive (severity <= {alert.severity}): {alert.title}",
+                match=match,
+                actor_type="user",
+                actor_id=str(user_id),
+                created_by=user_id,
+                source_feedback_id=feedback_id,
+                details={"alert_id": alert.id, "escalation_id": escalation.id},
+                now=now,
+                conn=conn,
+            )
         except InvalidRule:
             log.warning("review.suppression_suggestion_invalid")
             return None
+        return rule.id
+
+    async def propose_suppression(
+        self,
+        tenant_id: str,
+        *,
+        name: str,
+        match: Mapping[str, Any],
+        actor_type: str,
+        actor_id: str,
+        created_by: Optional[UUID] = None,
+        source_feedback_id: Optional[str] = None,
+        details: Optional[Mapping[str, Any]] = None,
+        reuse_existing: bool = False,
+        now: Optional[datetime] = None,
+        conn: Any = None,
+    ) -> Tuple[SuppressionRule, bool]:
+        """Create a *disabled* suppression rule suggestion for an admin to review and enable.
+
+        Used for false-positive decisions and the detection-tuning report.
+        The rule expires after :data:`SUPPRESSION_SUGGESTION_DAYS` and the
+        suggestion is audited as ``suppression.suggested``. With
+        ``reuse_existing`` an unexpired rule with the same ``match`` is
+        returned instead of creating another one. Returns ``(rule,
+        created)``; raises :class:`InvalidRule` for a malformed ``match``.
+        """
+        validate_rule_match(match)
+        now = now or datetime.now(UTC)
+        if conn is None:
+            async with self._repos.db.tenant_tx(tenant_id) as tx:
+                return await self.propose_suppression(
+                    tenant_id,
+                    name=name,
+                    match=match,
+                    actor_type=actor_type,
+                    actor_id=actor_id,
+                    created_by=created_by,
+                    source_feedback_id=source_feedback_id,
+                    details=details,
+                    reuse_existing=reuse_existing,
+                    now=now,
+                    conn=tx,
+                )
+        if reuse_existing:
+            for existing in await self._repos.suppressions.list(tenant_id, include_disabled=True, conn=conn):
+                if existing.match == dict(match) and (existing.expires_at is None or existing.expires_at > now):
+                    return existing, False
         rule = await self._repos.suppressions.create(
             tenant_id,
-            f"Suggested from false positive (severity <= {alert.severity}): {alert.title}"[:200],
-            match,
-            created_by=user_id,
-            source_feedback_id=feedback_id,
+            name[:200],
+            dict(match),
+            created_by=created_by,
+            source_feedback_id=source_feedback_id,
             expires_at=now + timedelta(days=SUPPRESSION_SUGGESTION_DAYS),
             enabled=False,
             conn=conn,
@@ -495,12 +564,12 @@ class ReviewService:
             "suppression.suggested",
             "suppression_rule",
             rule.id,
-            actor_type="user",
-            actor_id=str(user_id),
-            details={"alert_id": alert.id, "escalation_id": escalation.id, "enabled": False},
+            actor_type=actor_type,
+            actor_id=actor_id,
+            details={**dict(details or {}), "enabled": False},
             conn=conn,
         )
-        return rule.id
+        return rule, True
 
     # ---------------------------------------------------------------- actions
 

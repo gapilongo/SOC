@@ -293,6 +293,8 @@ _TALLY_COUNTERS = (
     "budget_exceeded",
 )
 MAX_TALLY_AGENTS = 16
+MAX_MODEL_ID_CHARS = 128
+MAX_PROVIDER_CHARS = 32
 
 
 @dataclass
@@ -306,6 +308,9 @@ class _AgentTally:
     errors: int = 0
     budget_exceeded: int = 0
     cost_usd: Decimal = field(default_factory=Decimal)
+    # The model that answered this agent's latest call and its provider (per-model accuracy reports).
+    model: Optional[str] = None
+    provider: Optional[str] = None
 
 
 @dataclass
@@ -330,9 +335,24 @@ class UsageTally:
                 tally = self.by_agent[key] = _AgentTally()
         return tally
 
-    def add_call(self, agent: str, samples: Sequence[UsageSample], outcome: Outcome, cost: Decimal) -> None:
+    def add_call(
+        self,
+        agent: str,
+        samples: Sequence[UsageSample],
+        outcome: Outcome,
+        cost: Decimal,
+        *,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> None:
+        """Add one call. ``model`` is the requested model id; the served model (last sample) wins."""
         t = self._agent(agent)
         t.calls += 1
+        served = samples[-1].model if samples else model
+        if served:
+            t.model = served[:MAX_MODEL_ID_CHARS]
+        if provider:
+            t.provider = provider[:MAX_PROVIDER_CHARS]
         for s in samples:
             t.input_tokens += s.input_tokens
             t.output_tokens += s.output_tokens
@@ -381,7 +401,9 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
     """Add ``tally`` to a stored ``summary.llm_usage`` object and return the new object.
 
     Unknown or malformed stored values are treated as zero, so a hand-edited
-    summary can never break processing.
+    summary can never break processing. Each agent entry also carries the
+    ``provider`` and ``model`` of its latest call (when known), which the
+    accuracy report groups by.
     """
     stored: Mapping[str, Any] = existing if isinstance(existing, Mapping) else {}
     raw_agents = stored.get("by_agent")
@@ -391,6 +413,10 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
         if isinstance(name, str) and isinstance(value, Mapping):
             entry: Dict[str, Any] = {c: _as_int(value.get(c)) for c in _TALLY_COUNTERS}
             entry["cost_usd"] = _as_decimal(value.get("cost_usd"))
+            for key, limit in (("model", MAX_MODEL_ID_CHARS), ("provider", MAX_PROVIDER_CHARS)):
+                stored_text = value.get(key)
+                if isinstance(stored_text, str) and stored_text:
+                    entry[key] = stored_text[:limit]
             agents[name[:64]] = entry
     for name, t in tally.by_agent.items():
         fresh: Dict[str, Any] = {**{c: 0 for c in _TALLY_COUNTERS}, "cost_usd": Decimal(0)}
@@ -398,6 +424,10 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
         for c in _TALLY_COUNTERS:
             entry[c] += getattr(t, c)
         entry["cost_usd"] += t.cost_usd
+        if t.model:
+            entry["model"] = t.model
+        if t.provider:
+            entry["provider"] = t.provider
     totals: Dict[str, Any] = {c: sum(a[c] for a in agents.values()) for c in _TALLY_COUNTERS}
     cost = sum((a["cost_usd"] for a in agents.values()), Decimal(0))
     totals["total_tokens"] = (
@@ -405,7 +435,11 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
     )
     totals["cost_usd"] = float(cost.quantize(_COST_QUANTUM))
     totals["by_agent"] = {
-        name: {**{c: a[c] for c in _TALLY_COUNTERS}, "cost_usd": float(a["cost_usd"].quantize(_COST_QUANTUM))}
+        name: {
+            **{c: a[c] for c in _TALLY_COUNTERS},
+            "cost_usd": float(a["cost_usd"].quantize(_COST_QUANTUM)),
+            **{k: a[k] for k in ("provider", "model") if a.get(k)},
+        }
         for name, a in sorted(agents.items())
     }
     return totals

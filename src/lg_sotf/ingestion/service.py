@@ -32,7 +32,17 @@ Push (:meth:`IngestionService.ingest`) is accepted for:
 * the reserved ids ``api`` and ``api:<suffix>`` when no source is registered
   under them, as canonical-format events (``POST /ingest/alerts``; the API
   chooses the id, e.g. :func:`api_source_id` of the API key, never the
-  client).
+  client);
+* the reserved id ``demo:samples`` (the onboarding sample alerts), also
+  canonical; its alerts are flagged ``sample`` and never metered.
+
+Every stored alert is counted in ``usage_daily`` (invoicing, daily quota) in
+the transaction that inserts it.
+
+Raw emails (``POST /ingest/email``) go through :meth:`IngestionService.ingest_email`
+instead: the MIME is parsed here, in a worker thread, under the reserved ids
+``email`` and ``email:<suffix>`` (:func:`email_source_id`), and the parsed
+document takes the path above with the ``email`` normalizer.
 
 Pushing to a pull source or to any other unregistered id raises
 :class:`SourceNotPushable`: alerts are deduplicated on ``(source_id,
@@ -57,6 +67,8 @@ import httpx
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import NewAlert, Repositories, Source
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.ingestion.email import EmailLimits, EmailParseError, parse_email
 from lg_sotf.ingestion.errors import (
     IngestionError,
     NormalizationError,
@@ -71,7 +83,8 @@ from lg_sotf.ingestion.errors import (
 from lg_sotf.ingestion.fingerprint import compute_fingerprint
 from lg_sotf.ingestion.llm_fallback import llm_normalize
 from lg_sotf.ingestion.metrics import record_events, record_llm_normalization, record_poll
-from lg_sotf.ingestion.normalizers import NormalizeContext, Normalizer, get_normalizer, resolve_format
+from lg_sotf.ingestion.normalizers import EMAIL, NormalizeContext, Normalizer, get_normalizer, resolve_format
+from lg_sotf.ingestion.normalizers.email import email_error_event
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.ingestion.sources import (
     PUSH_ONLY_TYPES,
@@ -96,10 +109,13 @@ _SURROGATE = re.compile("[\ud800-\udfff]")
 SOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 FLAG_RAW_TRUNCATED = "raw_truncated"
 FLAG_REDACTED = "secrets_redacted"
+FLAG_SAMPLE = "sample"
 MAX_CACHED_CONNECTORS = 512
 MAX_ERROR_CHARS = 500
 API_SOURCE_ID = "api"
 API_SOURCE_PREFIX = "api:"
+EMAIL_SOURCE_ID = "email"
+EMAIL_SOURCE_PREFIX = "email:"
 PUSH_TYPES = PUSH_ONLY_TYPES
 UNREACHABLE_DETAIL = "source is unreachable or did not respond"
 
@@ -166,9 +182,18 @@ class _CachedConnector:
     retired: bool = False
 
 
+def is_email_source_id(source_id: str) -> bool:
+    """Ids reserved for the email push endpoint (``email``, ``email:<suffix>``)."""
+    return source_id == EMAIL_SOURCE_ID or source_id.startswith(EMAIL_SOURCE_PREFIX)
+
+
 def is_reserved_source_id(source_id: str) -> bool:
-    """Ids reserved for the canonical push endpoint (``api``, ``api:<suffix>``)."""
-    return source_id == API_SOURCE_ID or source_id.startswith(API_SOURCE_PREFIX)
+    """Ids reserved by the server: the push endpoints (``api``, ``api:<suffix>``, ``email``, ``email:<suffix>``) and the samples."""
+    return (
+        source_id in (API_SOURCE_ID, SAMPLE_SOURCE_ID)
+        or source_id.startswith(API_SOURCE_PREFIX)
+        or is_email_source_id(source_id)
+    )
 
 
 def api_source_id(api_key_id: Optional[str] = None) -> str:
@@ -176,6 +201,16 @@ def api_source_id(api_key_id: Optional[str] = None) -> str:
     if api_key_id is None:
         return API_SOURCE_ID
     source_id = f"{API_SOURCE_PREFIX}{api_key_id}"
+    if not SOURCE_ID_PATTERN.match(source_id):
+        raise ValueError("api key id is not usable in a source id")
+    return source_id
+
+
+def email_source_id(api_key_id: Optional[str] = None) -> str:
+    """The source id ``POST /ingest/email`` should use: ``email`` or ``email:<api key id>``."""
+    if api_key_id is None:
+        return EMAIL_SOURCE_ID
+    source_id = f"{EMAIL_SOURCE_PREFIX}{api_key_id}"
     if not SOURCE_ID_PATTERN.match(source_id):
         raise ValueError("api key id is not usable in a source id")
     return source_id
@@ -235,6 +270,10 @@ class IngestionService:
         self._repos = repos or Repositories.create(db)
         self._settings = settings or get_settings()
         self._options = IngestionOptions.from_settings(self._settings)
+        try:
+            self._email_limits = EmailLimits.from_settings(self._settings.ingestion)
+        except ValueError as exc:
+            raise SourceConfigError(str(exc)) from exc
         self._box = secret_box
         self._budget = budget
         self._deps = connector_deps
@@ -244,6 +283,10 @@ class IngestionService:
     @property
     def options(self) -> IngestionOptions:
         return self._options
+
+    @property
+    def email_limits(self) -> EmailLimits:
+        return self._email_limits
 
     # -- push ------------------------------------------------------------------
 
@@ -260,6 +303,8 @@ class IngestionService:
         except NotFound:
             source = None
         if source is None:
+            if is_email_source_id(source_id):
+                raise SourceNotPushable("raw emails are pushed with ingest_email (POST /ingest/email)")
             if not is_reserved_source_id(source_id):
                 raise SourceNotPushable(f"no push source {source_id} is registered")
             fmt = resolve_format(None)
@@ -270,6 +315,37 @@ class IngestionService:
             raise SourceDisabled(f"source {source_id} is disabled")
         fmt = resolve_format(source.type, source.config)
         return await self._ingest(tenant_id, source_id, source.type, fmt, source.config, events, page=None)
+
+    async def ingest_email(
+        self,
+        tenant_id: str,
+        source_id: str,
+        messages: Sequence[bytes],
+        *,
+        reporter: Optional[str] = None,
+    ) -> IngestResult:
+        """Parse raw RFC 5322 ``messages`` (user reports) and store them for the reserved ``source_id``.
+
+        Parsing runs in a worker thread under :attr:`email_limits`; a message
+        that cannot be parsed (too large, too deeply nested, malformed) is
+        rejected with the reason. ``reporter`` overrides the reporter read from
+        a forwarded report's envelope. Deduplication is on the message's
+        Message-ID plus the reporter.
+        """
+        if not SOURCE_ID_PATTERN.match(source_id or "") or not is_email_source_id(source_id):
+            raise ValueError("email pushes use the reserved source ids 'email' and 'email:<suffix>'")
+        received_at = datetime.now(UTC)
+        events: List[Dict[str, Any]] = []
+        for data in messages:
+            try:
+                events.append(
+                    await asyncio.to_thread(
+                        parse_email, data, limits=self._email_limits, reporter=reporter, received_at=received_at
+                    )
+                )
+            except EmailParseError as exc:
+                events.append(email_error_event(str(exc)))
+        return await self._ingest(tenant_id, source_id, EMAIL, EMAIL, {}, events, page=None)
 
     # -- pull ------------------------------------------------------------------
 
@@ -505,6 +581,8 @@ class IngestionService:
             flags.append(FLAG_RAW_TRUNCATED)
         if redactions:
             flags.append(FLAG_REDACTED)
+        if alert.source_id == SAMPLE_SOURCE_ID:
+            flags.append(FLAG_SAMPLE)
         alert = alert.model_copy(update={"raw": raw, "flags": flags})
         row = NewAlert(
             source_id=alert.source_id,
@@ -643,6 +721,8 @@ class IngestionService:
             for start in range(0, len(unique), batch):
                 chunk = [p.row for p in unique[start : start + batch]]
                 inserted_ids.update(await self._repos.alerts.insert_many_if_absent(tenant_id, chunk, conn=conn))
+            if inserted_ids and source_id != SAMPLE_SOURCE_ID:
+                await self._repos.usage.add_ingested(tenant_id, len(inserted_ids), conn=conn)
             dup_keys = [p.row.source_alert_id for p in unique if p.row.id not in inserted_ids]
             dup_keys.extend(in_batch_dupes.values())
             if dup_keys:

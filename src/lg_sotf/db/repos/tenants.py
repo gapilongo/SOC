@@ -1,4 +1,9 @@
-"""Tenants. Creation and listing are platform (system) operations."""
+"""Tenants. Creation, listing, status and quotas are platform operations.
+
+Listing goes through the ``lgsotf_platform_tenants`` function and updates run
+in the target tenant's own scope, so both work for the least-privilege
+runtime role (the API); the platform-admin check is the caller's.
+"""
 
 from __future__ import annotations
 
@@ -8,10 +13,22 @@ from typing import Any, Dict, List, Mapping, Optional
 import asyncpg
 
 from lg_sotf.db.errors import Conflict, NotFound
-from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, to_model, to_models
+from lg_sotf.db.pagination import Params
+from lg_sotf.db.repos._base import (
+    UNSET,
+    Connection,
+    Record,
+    Repository,
+    check_choice,
+    set_clauses,
+    to_model,
+    to_models,
+)
 from lg_sotf.db.tenancy import validate_tenant_id
 
 TENANT_STATUSES = ("active", "suspended")
+QUOTA_FIELDS = ("max_alerts_per_day", "max_sources", "max_users")
+ONBOARDING_MARKS = ("dismissed_at", "autonomy_reviewed_at", "samples_sent_at")
 
 
 class Tenant(Record):
@@ -21,6 +38,15 @@ class Tenant(Record):
     settings: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
+    # Quotas (``None`` = unlimited) and first-run checklist state (migration 0004).
+    max_alerts_per_day: Optional[int] = None
+    max_sources: Optional[int] = None
+    max_users: Optional[int] = None
+    onboarding: Dict[str, Any] = {}
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == "active"
 
 
 class TenantsRepo(Repository):
@@ -115,20 +141,82 @@ class TenantsRepo(Repository):
             raise NotFound("tenant", tenant_id)
         return tenant
 
-    async def set_status(self, tenant_id: str, status: str) -> Tenant:
+    async def set_status(self, tenant_id: str, status: str, *, conn: Optional[Connection] = None) -> Tenant:
         """Suspend or reactivate a tenant (platform operation)."""
-        validate_tenant_id(tenant_id)
-        check_choice(status, TENANT_STATUSES, "tenant status")
-        async with self._system() as c:
-            row = await c.fetchrow("UPDATE tenants SET status = $2 WHERE id = $1 RETURNING *", tenant_id, status)
+        return await self.update_admin(tenant_id, status=status, conn=conn)
+
+    async def update_admin(
+        self,
+        tenant_id: str,
+        *,
+        name: str = UNSET,
+        status: str = UNSET,
+        max_alerts_per_day: Optional[int] = UNSET,
+        max_sources: Optional[int] = UNSET,
+        max_users: Optional[int] = UNSET,
+        conn: Optional[Connection] = None,
+    ) -> Tenant:
+        """Change name, status or quotas (platform operation; ``None`` quota = unlimited)."""
+        if status is not UNSET:
+            check_choice(status, TENANT_STATUSES, "tenant status")
+        for label, value in (
+            ("max_alerts_per_day", max_alerts_per_day),
+            ("max_sources", max_sources),
+            ("max_users", max_users),
+        ):
+            if value is not UNSET and value is not None and (isinstance(value, bool) or value < 0):
+                raise ValueError(f"{label} must be a non-negative integer or None")
+        params = Params(tenant_id)
+        sets = set_clauses(
+            {
+                "name": name,
+                "status": status,
+                "max_alerts_per_day": max_alerts_per_day,
+                "max_sources": max_sources,
+                "max_users": max_users,
+            },
+            params,
+        )
+        if not sets:
+            return await self.get(tenant_id, conn=conn)
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                f"UPDATE tenants SET {', '.join(sets)} WHERE id = $1 RETURNING *",  # noqa: S608
+                *params.values,
+            )
+        tenant = to_model(Tenant, row)
+        if tenant is None:
+            raise NotFound("tenant", tenant_id)
+        return tenant
+
+    async def mark_onboarding(
+        self, tenant_id: str, mark: str, *, overwrite: bool = False, conn: Optional[Connection] = None
+    ) -> Tenant:
+        """Record a first-run checklist timestamp (``onboarding.<mark>``); kept as is when set unless ``overwrite``."""
+        check_choice(mark, ONBOARDING_MARKS, "onboarding mark")
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                """
+                UPDATE tenants
+                SET onboarding = CASE WHEN $3 OR NOT onboarding ? $2
+                                      THEN onboarding || jsonb_build_object($2::text, now())
+                                      ELSE onboarding END
+                WHERE id = $1
+                RETURNING *
+                """,
+                tenant_id,
+                mark,
+                overwrite,
+            )
         tenant = to_model(Tenant, row)
         if tenant is None:
             raise NotFound("tenant", tenant_id)
         return tenant
 
     async def list_all_tenants(self, *, status: Optional[str] = None) -> List[Tenant]:
+        """Every tenant, by id (``lgsotf_platform_tenants``; platform callers only)."""
         if status is not None:
             check_choice(status, TENANT_STATUSES, "tenant status")
-        async with self._system() as c:
-            rows = await c.fetch("SELECT * FROM tenants WHERE ($1::text IS NULL OR status = $1) ORDER BY id", status)
-        return to_models(Tenant, rows)
+        async with self._lookup() as c:
+            rows = await c.fetch("SELECT * FROM lgsotf_platform_tenants()")
+        return [t for t in to_models(Tenant, rows) if status is None or t.status == status]

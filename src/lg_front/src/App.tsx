@@ -23,11 +23,16 @@ const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage')
 const ActionsPage = lazy(() => import('./pages/ActionsPage'));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
+const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
 const AuditPage = lazy(() => import('./pages/AuditPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
 const PlatformPage = lazy(() => import('./pages/PlatformPage'));
+const GettingStartedPage = lazy(() => import('./pages/GettingStartedPage'));
+const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFound'));
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
@@ -55,6 +60,8 @@ export function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path={CALLBACK_PATH} element={<OidcCallbackPage />} />
+        {/* Printable report: outside the app layout so only the report prints. */}
+        <Route path="reports/monthly/:month" element={<RequireAuth><MonthlyReportPage /></RequireAuth>} />
         <Route
           element={
             <RequireAuth>
@@ -69,12 +76,16 @@ export function AppRoutes() {
           <Route path="escalations" element={<EscalationsPage />} />
           <Route path="actions" element={<ActionsPage />} />
           <Route path="suppressions" element={<SuppressionsPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route path="sources" element={<RequireRole allowed={can.admin}><SourcesPage /></RequireRole>} />
+          <Route path="integrations" element={<RequireRole allowed={can.admin}><IntegrationsPage /></RequireRole>} />
           <Route path="users" element={<RequireRole allowed={can.admin}><UsersPage /></RequireRole>} />
           <Route path="settings" element={<RequireRole allowed={can.admin}><TenantSettingsPage /></RequireRole>} />
           <Route path="usage" element={<RequireRole allowed={can.admin}><UsagePage /></RequireRole>} />
           <Route path="audit" element={<RequireRole allowed={can.admin}><AuditPage /></RequireRole>} />
           <Route path="platform" element={<RequireRole allowed={can.platform}><PlatformPage /></RequireRole>} />
+          <Route path="getting-started" element={<RequireRole allowed={can.admin}><GettingStartedPage /></RequireRole>} />
+          <Route path="account" element={<AccountSecurityPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

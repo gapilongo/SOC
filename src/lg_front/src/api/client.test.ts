@@ -32,6 +32,14 @@ describe('api client', () => {
     expect(describeError(e)).toEqual({ message: 'tenant settings are invalid', requestId: 'req-abc-12345', details: e.detailMessages });
   });
 
+  it('returns the raw body for text responses (CSV and HTML exports)', async () => {
+    const fetchImpl = vi.fn(async () => new Response('day,alerts\r\n2026-09-01,3\r\n', { status: 200, headers: { 'content-type': 'text/csv' } }));
+    const api = createApiClient({ baseUrl: '/api/v1', auth: bridge(), fetchImpl });
+    const text = await api.get<string>('/reports/value', { query: { format: 'csv' }, responseType: 'text' });
+    expect(text).toBe('day,alerts\r\n2026-09-01,3\r\n');
+    expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'Authorization')).toBe('Bearer tok-1');
+  });
+
   it('falls back to a generic message and the response request id for non-JSON errors', async () => {
     const fetchImpl = vi.fn(async () => new Response('<html>Bad gateway</html>', { status: 502, headers: { 'x-request-id': 'edge-req-99999' } }));
     const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
@@ -97,12 +105,45 @@ describe('api client', () => {
     const api = createApiClient({ baseUrl: '', auth: bridge({ actingTenant: () => 'globex' }), fetchImpl });
     await api.get('/sources');
     expect(headerOf(fetchImpl.mock.calls[0] as unknown[], 'X-Tenant-ID')).toBe('globex');
+    // Platform endpoints act across tenants and never carry the override.
+    await api.get('/platform/tenants', { homeTenant: true });
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'X-Tenant-ID')).toBeUndefined();
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Authorization')).toBe('Bearer tok-1');
   });
 
   it('returns undefined for 204 responses', async () => {
     const fetchImpl = vi.fn(async () => new Response(null, { status: 204 }));
     const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
     await expect(api.del('/users/1')).resolves.toBeUndefined();
+  });
+
+  it('reads text and blob bodies on request, after a refresh-and-retry on 401', async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return json(401, { error: { code: 'unauthorized', message: 'expired', request_id: 'r-00000001' } });
+      return new Response('<!doctype html><title>pack</title>', { status: 200, headers: { 'content-type': 'text/html' } });
+    });
+    const refresh = vi.fn(async () => 'tok-2');
+    const api = createApiClient({ baseUrl: '', auth: bridge({ refresh }), fetchImpl });
+    await expect(api.get<string>('/alerts/a-1/evidence', { query: { format: 'html' }, responseType: 'text' })).resolves.toBe(
+      '<!doctype html><title>pack</title>',
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Authorization')).toBe('Bearer tok-2');
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Accept')).toBe('*/*');
+
+    const blob = await api.post<Blob>('/platform/tenants/acme/export', undefined, { responseType: 'blob' });
+    expect(blob.type).toBe('text/html');
+    expect(await blob.text()).toContain('pack');
+  });
+
+  it('still parses the error envelope when a blob was requested', async () => {
+    const fetchImpl = vi.fn(async () => json(404, { error: { code: 'not_found', message: 'no such tenant', request_id: 'r-00000002' } }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.post('/platform/tenants/x/export', undefined, { responseType: 'blob' }).catch((x: unknown) => x)) as ApiError;
+    expect(e.code).toBe('not_found');
+    expect(e.message).toBe('no such tenant');
   });
 
   it('builds repeated multi-valued query parameters and skips empty ones', () => {

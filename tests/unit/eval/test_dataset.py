@@ -118,7 +118,8 @@ def test_synthetic_dataset_covers_classes_vendors_and_adversarial_cases(syntheti
     assert len(synthetic.items) >= 60
     dispositions = Counter(i.expected.disposition for i in synthetic.items)
     assert dispositions["malicious"] >= 20 and dispositions["benign"] >= 15 and dispositions["inconclusive"] >= 5
-    assert {i.source_type for i in synthetic.items} == set(SOURCE_TYPES)
+    # Email items live in their own set (phishing_v1.jsonl).
+    assert {i.source_type for i in synthetic.items} == set(SOURCE_TYPES) - {"email"}
     adversarial = [i for i in synthetic.items if i.split == "adversarial"]
     assert len(adversarial) >= 10
     assert sum(1 for i in adversarial if "prompt-injection" in i.tags) >= 8

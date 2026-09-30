@@ -10,6 +10,12 @@ severity, status, disposition, time, MITRE techniques, shared-indicator
 count) and makes at most one fast-tier LLM call with those digests to rate
 whether they look like one campaign. Without related alerts no call is made.
 
+Email alerts are correlated on what the message is about, not on the
+tenant's own infrastructure: domains and URLs of the tenant's internal
+domains (``tools.internal_domains``) are left out, as is the reporter (see
+:mod:`lg_sotf.agents.correlation.indicators`), so ordinary internal mail
+and a prolific reporter never look like a campaign.
+
 A refusal of that call leaves the alert's assessment open: its confidence is
 raised to the grey zone (``routing.correlation_grey_zone_min``) so it goes
 on to analysis and an analyst instead of an automatic close, and the digest
@@ -21,6 +27,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Mapping, Optional
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +35,7 @@ from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import agent_refusal
 from lg_sotf.core.exceptions import AgentError
+from lg_sotf.core.phishing import PhishingProfile
 from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.errors import NotFound
 from lg_sotf.llm.schema import clipped_list, clipped_str
@@ -107,6 +115,32 @@ class CorrelationAgent(BaseAgent):
         self.enable_llm = bool(self.get_config("enable_llm_correlation", True))
         self.llm_weight = float(self.get_config("llm_weight", 0.3))
 
+    @staticmethod
+    async def indicators(ctx: AgentContext, alert: Mapping[str, Any]) -> List[Indicator]:
+        """The alert's indicators; for email alerts without the tenant's own domains and links."""
+        indicators = extract_indicators(alert)
+        if not isinstance(alert.get("email"), Mapping) or ctx.repos is None:
+            return indicators
+        try:
+            tenant_settings = (await ctx.repos.tenants.get(ctx.tenant_id)).settings or {}
+        except NotFound:
+            tenant_settings = {}
+        profile = PhishingProfile.from_settings(tenant_settings, ctx.settings.tools)
+        if not profile.internal_domains:
+            return indicators
+
+        def internal(ind: Indicator) -> bool:
+            if ind.type == "domain":
+                return profile.is_internal(ind.value)
+            if ind.type == "url":
+                try:
+                    return profile.is_internal(urlsplit(ind.value).hostname)
+                except ValueError:
+                    return False
+            return False
+
+        return [i for i in indicators if not internal(i)]
+
     async def run(
         self,
         ctx: AgentContext,
@@ -129,9 +163,9 @@ class CorrelationAgent(BaseAgent):
         if ctx.repos is None:
             raise AgentError("correlation needs repositories in the agent context")
         now = now or datetime.now(UTC)
-        indicators = extract_indicators(alert)
+        indicators = await self.indicators(ctx, alert)
         hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
-        if hashed:
+        if hashed and ctx.persist:
             await ctx.repos.indicators.add_sightings(
                 ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
             )

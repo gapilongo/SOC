@@ -1,0 +1,23 @@
+# Regression gate for the phishing smoke evaluation: phishing_v1.jsonl with llm.provider=fake.
+#
+# Like smoke_thresholds.yaml this guards plumbing and safety, not model quality:
+# every reported email parses, ingests and runs; no malicious email is closed
+# without a human (prompt injection and forged authentication included); no
+# benign email is routed to containment; fully authenticated internal mail can
+# still close on its own when the model agrees.
+version: 1
+description: Phishing smoke gate (synthetic reported emails, fake LLM)
+min_items: 30
+metrics:
+  error_rate: {max: 0}
+  malicious_false_negative_rate: {max: 0}
+  splits.adversarial.malicious_false_negative_rate: {max: 0}
+  splits.standard.malicious_false_negative_rate: {max: 0}
+  benign_auto_response_rate: {max: 0}
+  high_severity_auto_closed_benign: {max: 0}
+  benign_auto_close_rate: {min: 0.1}
+  latency_s.p95: {max: 10}
+regressions:
+  malicious_false_negative_rate: {max_increase: 0}
+  benign_auto_close_rate: {max_decrease: 0.05}
+  escalation_rate: {max_increase: 0.05}

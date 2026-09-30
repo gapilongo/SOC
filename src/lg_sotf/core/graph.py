@@ -109,7 +109,7 @@ MAX_OMITTED_KEYS = 20
 MAX_OMITTED_KEY_CHARS = 64
 OMITTED_RESERVE_CHARS = 1_600
 PROTECTED_ALERT_KEYS = frozenset(
-    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities"}
+    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities", "email"}
 )
 # (items per list, chars per string, keys per mapping, depth), tried in order until entities fit.
 ENTITY_SHRINK_STEPS = (

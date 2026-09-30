@@ -22,12 +22,12 @@ enqueues work for the workers. It never runs a workflow itself.
   |---|---|---|
   | 400 | `invalid_request`, `invalid_cursor`, `invalid_value`, `invalid_json`, `batch_too_large`, `search_window_too_large` | malformed input |
   | 401 | `unauthorized`, `invalid_credentials`, `invalid_session` | missing, invalid, expired or revoked credentials |
-  | 403 | `forbidden` | role, scope or tenant does not allow the call |
+  | 403 | `forbidden`, `tenant_suspended` | role, scope or tenant does not allow the call; the tenant is suspended |
   | 404 | `not_found`, `source_not_found` | the object does not exist in the caller's tenant |
-  | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled` | stale `version`, duplicate, illegal state change |
+  | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled`, `quota_exceeded` | stale `version`, duplicate, illegal state change, source or user quota reached |
   | 413 | `payload_too_large` | body over the size limit |
-  | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `weak_password` | schema or policy validation failed |
-  | 429 | `rate_limited` | rate limit hit; see `Retry-After` |
+  | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `invalid_integration`, `weak_password` | schema or policy validation failed |
+  | 429 | `rate_limited`, `quota_exceeded` | rate limit hit, or the tenant's daily alert quota is used up; see `Retry-After` |
   | 503 | `service_unavailable`, `encryption_unavailable` | a dependency is down or not configured |
 
 * Every response carries `X-Request-ID` (the caller's value when it matches
@@ -50,6 +50,15 @@ Three kinds of credentials are accepted. All of them resolve to a
   `{"access_token", "token_type": "bearer", "expires_in", "user"}` and sets
   the refresh cookie `lgsotf_refresh` (`HttpOnly; Secure; SameSite=Strict;
   Path=/api/v1/auth`, lifetime `auth.refresh_token_ttl_s`).
+* With TOTP MFA enabled for the account (or required by
+  `security.require_mfa` / `auth.require_mfa_for_platform_admins`) the right
+  password returns `{"mfa_required": true, "mfa_token", "expires_in",
+  "enrollment_required", "methods"}` instead, and no cookie. The
+  `mfa_token` is not a session: `POST /auth/mfa/verify` with it and a TOTP
+  or recovery code returns the normal login response; with
+  `enrollment_required` it permits only `/auth/mfa/enroll` and
+  `/auth/mfa/confirm`. Wrong codes count toward the lockout. See
+  [identity.md](identity.md).
 * The access token is an HS256 JWT (`iss`, `aud`, `exp`, `iat`, `jti`, `sub`
   = user id, `tenant`, `role`), valid for `auth.access_token_ttl_s`. Send it
   as `Authorization: Bearer <token>`. The user row is re-read on every
@@ -71,7 +80,8 @@ Three kinds of credentials are accepted. All of them resolve to a
   several tenants is resolved by the password (each account keeps its own
   lockout count); when the password matches in more than one tenant the
   answer is `401 tenant_required` and the client must pass `tenant`.
-* The API never creates users implicitly. The first admin comes from
+* The API creates users implicitly only through OIDC just-in-time
+  provisioning (`auth.oidc_jit_provisioning`, off by default). The first admin comes from
   `lg-sotf migrate` (`auth.bootstrap_admin_*`) or `lg-sotf create-admin`;
   further users are created through `/users`.
 
@@ -87,8 +97,14 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
   `auth.oidc_audience` (required), `exp`/`iat` are checked;
 * the tenant comes from the `auth.oidc_tenant_claim` claim (default
   `tenant_id`, falling back to `auth.oidc_default_tenant`), the role from
-  `auth.oidc_role_claim` (a string or a list; the highest of
-  `viewer`/`analyst`/`admin` wins; none of them means 403);
+  `auth.oidc_role_claim` (a string or a list) mapped through
+  `auth.oidc_role_map` (without a map the values must be role names); the
+  highest mapped role wins, `auth.oidc_default_role` applies when nothing
+  maps, otherwise 403;
+* with `auth.oidc_jit_provisioning`, a verified identity without a local
+  account gets one (no password, linked by the IdP subject; audited as
+  `user.provisioned`), whose stored role follows the mapping on later
+  sign-ins (`user.role_synced`);
 * when the token's email (`auth.oidc_email_claim`) is verified by the IdP
   (the `auth.oidc_email_verified_claim` claim, default `email_verified`, is
   `true`) and a local user with that email exists in
@@ -97,7 +113,8 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
   verified; an unverified or missing `email_verified` never links. OIDC never grants platform-admin rights, even when linked to a
   platform-admin account: platform admins sign in with local login. Claiming and deciding escalations and approving
   actions are attributed to a person and need such a provisioned account;
-  create SSO-only users with `POST /users` without a password.
+  create SSO-only users with `POST /users` without a password, or turn on
+  just-in-time provisioning.
 
 ### API keys
 
@@ -114,7 +131,8 @@ A principal acts on its own tenant. A platform admin
 (`users.is_platform_admin`) may send `X-Tenant-ID: <tenant>` to act on
 another tenant; every such request is recorded in that tenant's audit log
 (`platform_admin.tenant_access`). Anyone else sending a different
-`X-Tenant-ID` gets 403. Requests for suspended tenants get 403. Under an
+`X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
+get `403 tenant_suspended` (see docs/mssp.md). Under an
 override, rows the admin creates (suppression rules, API keys) carry no
 `created_by` (the admin's account belongs to the home tenant; the audit log
 names the actor), and claiming, deciding escalations and approving or
@@ -141,8 +159,12 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/auth/login` | public |
 | POST | `/auth/refresh`, `/auth/logout` | refresh cookie |
 | GET | `/auth/me` | any principal |
+| POST | `/auth/mfa/verify` | MFA challenge token (body) |
+| POST | `/auth/mfa/enroll`, `/auth/mfa/confirm` | own account (local session), or the enrollment challenge token (body) |
+| GET | `/auth/mfa`; POST `/auth/mfa/disable`, `/auth/mfa/recovery-codes` | own account (local session) |
 | POST | `/ingest/alerts` | API key `ingest` |
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
+| POST | `/ingest/email` (raw `message/rfc822`, optional `?reporter=`) | API key `ingest` |
 | GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
@@ -155,12 +177,24 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/suppressions` | analyst / `write` |
 | PATCH, DELETE | `/suppressions/{id}` | admin |
 | GET, POST | `/users`; GET, PATCH, DELETE `/users/{id}` | admin |
+| POST | `/users/{id}/mfa/reset` (remove MFA, end sessions; audited) | admin (platform admin for platform-admin accounts) |
 | GET, POST | `/api-keys`; DELETE `/api-keys/{id}` | admin |
 | GET, PATCH | `/tenant/settings` | admin |
+| GET | `/onboarding/status`; POST `/onboarding/sample-alerts`, `/onboarding/autonomy-reviewed`, `/onboarding/dismiss` (docs/onboarding.md) | admin |
+| POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
+| POST | `/tenant/llm/test` (probe the fast and deep model tiers; 6 per tenant per minute; audited) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
+| GET | `/reports/value`, `/reports/accuracy`, `/reports/detections`, `/reports/monthly` (docs/reporting.md) | viewer / `read` |
+| POST | `/reports/detections/propose-suppression` (creates a disabled rule) | analyst / `write` |
 | GET | `/audit`, `/audit/verify` | admin |
+| GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
+| POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
+| GET | `/platform/tenants/{id}/erasure`; POST `/platform/tenants/{id}/export`; DELETE `/platform/tenants/{id}` | platform admin |
+| GET, POST | `/integrations`; GET, PATCH, DELETE `/integrations/{id}`; POST `/integrations/{id}/test`; GET `/integrations/{id}/deliveries` | admin |
+| GET | `/tickets?alert_id=` or `?escalation_id=` (linked Jira/ServiceNow tickets) | viewer / `read` |
+| POST | `/integrations/slack/interactions?tenant=&integration=` (Slack Interactivity; Slack signing secret, no bearer token) | Slack signature |
 | WS | `/ws?token=<access token>` | viewer |
 
 `/healthz`, `/readyz` and `/ws` are also served under `/api/v1`.
@@ -179,7 +213,13 @@ Redis fails; a database whose pool is fully busy counts as ready.
 * `POST /ingest/webhook/{source_id}` takes a vendor-native JSON object (or an
   array of them) for a push source (`webhook`, `guardduty`) registered in
   the key's tenant; the source's configuration picks the normalizer.
-* Both answer `202` with one result per submitted event, in order:
+* `POST /ingest/email` takes one raw email (`Content-Type: message/rfc822` or
+  `application/octet-stream`, at most `ingestion.email.max_message_bytes`,
+  10 MB by default), usually a user's report with the suspicious message
+  attached; `?reporter=<address>` names the reporting user. It is parsed
+  server-side and stored under `email:<api key id>`, deduplicated on the
+  reported message's Message-ID plus the reporter. See `docs/phishing.md`.
+* All three answer `202` with one result per submitted event, in order:
   `{"index", "status": "inserted"|"duplicate"|"rejected", "alert_id", "reason"}`,
   plus totals and the number of alerts queued for the workers. Duplicates
   (same source and source alert id) are never inserted twice.
@@ -251,13 +291,41 @@ Password hashes and API key hashes are never returned.
 over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
-`llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
-(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
+`llm_daily_token_budget`, `review` (SLA and grouping policy), `tools`
+(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`),
+`retention` (`alerts_days`, `indicators_days`, merged key by key, within the
+install's `retention.tenant_min_days`..`tenant_max_days`, which responses
+return as `retention_limits`), `security` (`require_mfa`: force TOTP MFA
+for local accounts), `reporting` (`minutes_per_alert`, 1-480, default 15:
+the value report's hours-saved estimate) and `phishing` (`protected_brands`,
+`executives`, `trusted_authserv_ids`; see `docs/phishing.md`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
 every problem. Concurrent `PATCH` requests are serialised on the tenant row,
 so edits of different sub-keys of one section never overwrite each other.
+
+### Model test
+
+`POST /tenant/llm/test` sends one tiny structured request (no alert data) to
+each model tier through the same path as triage and returns
+`{provider, enabled, ok, tiers: [{tier, model, ok, latency_ms,
+structured_output, error_code, error}]}`. `error_code` is one of
+`disabled`, `unavailable` (configuration), `timeout` (60 s per tier),
+`connection`, `http_error`, `refusal`, `invalid_output` or `error`; `error` is
+a message written by the server with a hint (never the provider's response
+text, URL or key). The calls are metered to the tenant as agent `llm_test`
+and every test writes a `tenant.llm_tested` audit entry. More than 6 tests per
+tenant per minute answer `429`.
+
+### Integrations
+
+Notification channels (Slack, Teams, email, signed webhook) and ticketing
+(Jira, ServiceNow); see `docs/integrations.md`. Credentials are write-only
+(`secrets: {field: configured}` in responses; `secret` on update is a merge
+patch). Invalid configuration is `422 invalid_integration`. `POST
+/integrations/{id}/test` sends a test message (ticketing: checks credentials
+and project) and logs it in the delivery log.
 
 ### Dashboard and usage
 
@@ -265,8 +333,25 @@ so edits of different sub-keys of one section never overwrite each other.
 and disposition, MTTA/MTTR, open escalations, unfinished workflow runs by
 status (the tenant's queue depth; completed and dead-lettered runs are not
 counted) and LLM tokens and cost; it is cached for 15 seconds
-per tenant and window. `GET /usage/llm?from=&to=` returns daily usage rows
-(at most 400 days).
+per tenant and window. It also carries `handled_without_human`,
+`needed_human`, `handled_without_human_rate` and `analyst_hours_saved`
+(definitions in docs/reporting.md). `GET /usage/llm?from=&to=` returns daily
+usage rows (at most 400 days).
+
+### Reports
+
+`/reports/value`, `/reports/accuracy` and `/reports/detections` take
+`from`/`to` (UTC dates, at most 366 days, default the last 30; `400
+invalid_window` otherwise) and are cached for 60 seconds per tenant and
+window; value and detections also answer `format=csv`.
+`/reports/monthly?month=YYYY-MM` returns a self-contained HTML report (its
+own Content-Security-Policy allows only its inline stylesheet, by hash) or
+`format=json`. `POST /reports/detections/propose-suppression` with
+`{"source_id", "rule_field": "rule_name"|"title", "rule", "from"?, "to"?}`
+creates a disabled suppression suggestion (201; 200 with the existing rule
+when an identical unexpired one exists; `422 no_confirmed_benign` without
+an analyst-confirmed benign alert of that detection in the window). Metric
+definitions: docs/reporting.md.
 
 ### Audit log
 
@@ -279,6 +364,20 @@ Each entry carries its `prev_hash` and `hash` (a SHA-256 chain per tenant).
 did what (logins, user and API key changes, sources, settings, suppression
 rules, claims, decisions, approvals and response execution, platform-admin
 `X-Tenant-ID` access); they never contain secrets or raw alert bodies.
+
+### Compliance
+
+`GET /alerts/{id}/evidence` returns the alert's evidence pack (JSON, or
+printable HTML with `format=html`) sealed with `integrity.bundle_sha256` and
+an HMAC signature; the export is audited and the digest is repeated in the
+`X-Evidence-Bundle-SHA256` header. `POST /alerts/{id}/incident-report` with
+`{"stage": "early_warning"|"notification"|"final", "include_ai_narrative"}`
+drafts a NIS2 Article 23 report (201; a draft only, never submitted).
+Platform admins export a tenant (`POST /platform/tenants/{id}/export`,
+streamed ZIP of JSONL files without secrets) and erase a *suspended* tenant
+(`DELETE /platform/tenants/{id}` with `{"confirm": "<id>"}`; 409
+`tenant_not_suspended`/`erasure_blocked`, 422 `confirmation_mismatch`); the
+audit log is retained. See [compliance.md](compliance.md).
 
 ### Live events (WebSocket)
 
