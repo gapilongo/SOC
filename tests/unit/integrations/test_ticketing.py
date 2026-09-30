@@ -186,3 +186,47 @@ async def test_client_errors_are_permanent_and_redacted(settings: Settings) -> N
     with pytest.raises(DeliveryError) as err:
         await client.create(draft_from_event(event(), "https://soc.example.com", "lgsotf-abc"))
     assert not err.value.retryable and "priority" in str(err.value) and "k" * 30 not in str(err.value)
+
+
+async def test_decision_sync_sees_a_create_that_finishes_concurrently(settings: Settings) -> None:
+    """The create's ticket lands between the two lookups: the decision must not be dropped as "no ticket"."""
+    from types import SimpleNamespace
+
+    from lg_sotf.integrations.ticketing import DeliveryDeferred, TicketService
+
+    ticket = _ticket("INC0010001")
+    state = {"create_done": False}
+    calls: List[str] = []
+
+    async def has_pending(*_: Any, **__: Any) -> bool:
+        calls.append("has_pending")
+        pending = not state["create_done"]
+        state["create_done"] = True  # the concurrent create finishes right after the first lookup
+        return pending
+
+    async def find_ticket(*_: Any, **__: Any) -> Any:
+        calls.append("find_ticket")
+        found = ticket if state["create_done"] else None
+        state["create_done"] = True
+        return found
+
+    commented: List[str] = []
+
+    class Client:
+        async def comment(self, _ticket: ExternalTicket, text: str) -> None:
+            commented.append(text)
+
+        async def resolve(self, _ticket: ExternalTicket, _text: str) -> None:
+            return None
+
+    repos = SimpleNamespace(integrations=SimpleNamespace(has_pending=has_pending, find_ticket=find_ticket))
+    service = TicketService(repos, settings)  # type: ignore[arg-type]
+    service.client = lambda _integration: Client()  # type: ignore[method-assign]
+    integration = SimpleNamespace(tenant_id="tenant-a", id=uuid.uuid4(), config={"comment_on_decision": True})
+    payload = {"alert": {"id": "alert-1"}, "escalation": {"decision": "needs_more_info"}}
+    try:
+        result = await service.sync_decision(integration, payload, escalation_id="esc-1")  # type: ignore[arg-type]
+    except DeliveryDeferred:
+        result = {"deferred": True}
+    assert result != {"skipped": "no_ticket"}, calls
+    assert result.get("deferred") or commented

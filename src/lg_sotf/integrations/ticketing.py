@@ -520,11 +520,17 @@ class TicketService:
         """Comment the analyst's decision on the escalation's ticket and resolve it when configured."""
         tenant_id = integration.tenant_id
         alert = payload.get("alert") if isinstance(payload.get("alert"), Mapping) else {}
+        # Check for an unfinished create BEFORE looking the ticket up: a create records its ticket before its
+        # outbox row is marked sent, so in this order a create finishing concurrently is always seen one way
+        # or the other. The reverse order could miss both and drop the decision comment.
+        create_pending = await self._repos.integrations.has_pending(
+            tenant_id, integration.id, "ticket_create", escalation_id=escalation_id
+        )
         ticket = await self._repos.integrations.find_ticket(
             tenant_id, integration.id, alert_id=str((alert or {}).get("id") or ""), escalation_id=escalation_id
         )
         if ticket is None or (ticket.escalation_id not in (None, escalation_id)):
-            if await self._repos.integrations.has_pending(tenant_id, integration.id, "ticket_create", escalation_id=escalation_id):
+            if create_pending:
                 raise DeliveryDeferred("the escalation's ticket is still being opened")
             return {"skipped": "no_ticket"}
         client = self.client(integration)
