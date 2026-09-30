@@ -217,6 +217,10 @@ can take seconds the first time; prefer monthly windows for routine use.
 
 ## Limits
 
+* **Sample alerts** (the onboarding "load sample alerts", source
+  `demo:samples`) are left out of the value, accuracy, detection and
+  backtest figures and the dashboard tiles. Escalation, SLA-breach and LLM
+  cost figures come from their own tables and still include them.
 * **Ingest duplicates** are dropped before they are stored, so they are not
   in these reports; they are counted in the Prometheus metric
   `lgsotf_ingest_events_total{outcome="duplicate"}`.
