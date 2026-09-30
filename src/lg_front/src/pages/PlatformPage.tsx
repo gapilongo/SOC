@@ -5,6 +5,7 @@ import { endpoints } from '../api/endpoints';
 import type { TenantCreatedOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Button, Card, ErrorMessage, PageHeader, TextField } from '../components/ui';
+import { TenantDataCard } from './platform/TenantDataCard';
 
 export default function PlatformPage() {
   const api = useApi();
@@ -66,6 +67,9 @@ export default function PlatformPage() {
           </Button>
         </form>
       </Card>
+      <div className="mt-5">
+        <TenantDataCard />
+      </div>
     </>
   );
 }

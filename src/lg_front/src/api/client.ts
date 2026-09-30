@@ -33,6 +33,8 @@ export interface RequestOptions {
   credentials?: RequestCredentials;
   /** Extra headers. */
   headers?: Record<string, string>;
+  /** How to read a successful body: parsed JSON (default), text, or a Blob (downloads). */
+  responseType?: 'json' | 'text' | 'blob';
 }
 
 export class ApiError extends Error {
@@ -172,7 +174,7 @@ export function createApiClient(opts: {
   async function send(method: string, path: string, options: RequestOptions, token: string | null) {
     const requestId = newRequestId();
     const headers: Record<string, string> = {
-      Accept: 'application/json',
+      Accept: options.responseType && options.responseType !== 'json' ? '*/*' : 'application/json',
       'X-Request-ID': requestId,
       ...(options.headers ?? {}),
     };
@@ -214,7 +216,9 @@ export function createApiClient(opts: {
     }
     if (!response.ok) throw await parseError(response, requestId);
     if (response.status === 204) return undefined as T;
+    if (options.responseType === 'blob') return (await response.blob()) as T;
     const text = await response.text();
+    if (options.responseType === 'text') return text as T;
     return (text ? JSON.parse(text) : undefined) as T;
   }
 

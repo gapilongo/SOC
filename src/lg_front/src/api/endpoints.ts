@@ -16,6 +16,8 @@ import type {
   DecisionIn,
   DecisionOut,
   EscalationOut,
+  IncidentReportOut,
+  IncidentReportStage,
   JsonObject,
   Page,
   ReprocessOut,
@@ -28,6 +30,8 @@ import type {
   SuppressionUpdateIn,
   TenantCreateIn,
   TenantCreatedOut,
+  TenantErasedOut,
+  TenantErasureStatusOut,
   TenantSettingsOut,
   UsageOut,
   UserCreateIn,
@@ -138,4 +142,14 @@ export const endpoints = {
   verifyAudit: (api: ApiClient, from?: string) => api.get<AuditVerifyOut>('/audit/verify', { query: { from } }),
 
   createTenant: (api: ApiClient, body: TenantCreateIn) => api.post<TenantCreatedOut>('/platform/tenants', body),
+  evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
+    api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
+  incidentReport: (api: ApiClient, id: string, stage: IncidentReportStage, includeAiNarrative: boolean) =>
+    api.post<IncidentReportOut>(`/alerts/${enc(id)}/incident-report`, { stage, include_ai_narrative: includeAiNarrative }),
+  tenantErasureStatus: (api: ApiClient, id: string) =>
+    api.get<TenantErasureStatusOut>(`/platform/tenants/${enc(id)}/erasure`),
+  exportTenant: (api: ApiClient, id: string) =>
+    api.post<Blob>(`/platform/tenants/${enc(id)}/export`, undefined, { responseType: 'blob' }),
+  eraseTenant: (api: ApiClient, id: string) =>
+    api.request<TenantErasedOut>('DELETE', `/platform/tenants/${enc(id)}`, { body: { confirm: id } }),
 };

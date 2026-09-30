@@ -13,6 +13,8 @@ import { useToast } from '../../components/Toast';
 import { Button, DefinitionList, EmptyState, ErrorMessage, JsonBlock, LoadingState, TextAreaField } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
 import { useKeysetList } from '../../lib/pagination';
+import { EvidenceActions } from './EvidenceActions';
+import { IncidentReportDialog } from './IncidentReportDialog';
 
 function obj(value: unknown): JsonObject | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
@@ -298,6 +300,7 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
   const client = useQueryClient();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [nis2, setNis2] = useState(false);
   const q = useQuery({
     queryKey: ['alert', alertId],
     queryFn: ({ signal }) => endpoints.alert(api, alertId as string, signal),
@@ -347,6 +350,17 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
       {a && (
         <>
           <AlertBody alert={a} />
+          <Section title="Evidence and reporting">
+            <EvidenceActions alertId={a.id} />
+            {can.addNote(principal) && (
+              <>
+                <Button size="sm" className="mt-3" onClick={() => setNis2(true)}>
+                  Draft NIS2 report
+                </Button>
+                <IncidentReportDialog alertId={a.id} open={nis2} onClose={() => setNis2(false)} />
+              </>
+            )}
+          </Section>
           {can.addNote(principal) && (
             <Section title="Notes">
               <NoteForm alertId={a.id} />
