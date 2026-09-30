@@ -58,8 +58,12 @@ LOCKED`, so a leader handover cannot send a row twice concurrently.
   `integrations.backoff_max_s`; a receiver's `Retry-After` is honoured).
 * A row becomes `dead` after `integrations.max_attempts` attempts, on a
   permanent error (a 4xx other than 408/425/429, a refused destination, a
-  redirect), when the integration is disabled or deleted or the tenant is
-  suspended, or when it is older than `integrations.max_age_hours`.
+  redirect), when the integration is disabled or deleted (or the tenant
+  deleted), or when it is older than `integrations.max_age_hours`.
+* A suspended tenant's rows wait: they keep their status and are looked at
+  again every five minutes without using an attempt (metric outcome
+  `deferred`), so reactivating the tenant delivers what is still within
+  `integrations.max_age_hours`; older rows become `dead`.
 * Rate limits: `config.rate_limit_per_minute` per integration (defaults:
   Slack 60, Teams 30, email 30, webhook 120, Jira and ServiceNow 60). A row
   over the limit waits without using an attempt.

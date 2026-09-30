@@ -13,7 +13,7 @@ import pytest
 
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
-from lg_sotf.integrations.delivery import sync_tickets
+from lg_sotf.integrations.delivery import DELIVERIES, sync_tickets
 from lg_sotf.integrations.outbox import enqueue_critical_alerts
 from lg_sotf.integrations.ticketing import TicketService
 from lg_sotf.queue.producer import WorkQueue
@@ -287,11 +287,54 @@ async def test_suspended_tenants_get_no_deliveries(
     await escalate(repos, settings)
     await repos.tenants.set_status(TENANT_A, "suspended")
     receiver = Receiver()
+    sched = scheduler(settings, repos, redis_client, receiver.delivery(repos, settings, box))
+    deferred = DELIVERIES.labels(kind="slack", outcome="deferred")
+    before = deferred._value.get()
+    await sched.deliver_notifications()
+    assert receiver.requests == []
+    # Deferred, not dead: status kept, no attempt used, looked at again in about five minutes.
+    [row] = await rows(repos)
+    assert (row["status"], row["attempts"], row["last_error"]) == ("pending", 0, None)
+    assert timedelta(minutes=4) < row["next_attempt_at"] - datetime.now(UTC) <= timedelta(minutes=5, seconds=5)
+    assert deferred._value.get() == before + 1
+
+    # Reactivated: the held row is delivered.
+    await repos.tenants.set_status(TENANT_A, "active")
+    async with repos.db.tenant_tx(TENANT_A) as conn:
+        await conn.execute("UPDATE notification_outbox SET next_attempt_at = now()")
+    await sched.deliver_notifications()
+    assert len(receiver.requests) == 1 and [r["status"] for r in await rows(repos)] == ["sent"]
+
+
+async def test_held_rows_of_a_suspended_tenant_still_expire(
+    repos: Repositories, integ_settings: Callable[..., Settings], box: SecretBox, redis_client: Any
+) -> None:
+    settings = integ_settings()
+    await add_integration(repos, box, TENANT_A, "slack", secret={"webhook_url": slack_url()})
+    await escalate(repos, settings)
+    await repos.tenants.set_status(TENANT_A, "suspended")
+    async with repos.db.tenant_tx(TENANT_A) as conn:
+        await conn.execute("UPDATE notification_outbox SET created_at = now() - interval '2 days'")
+    receiver = Receiver()
     await scheduler(settings, repos, redis_client, receiver.delivery(repos, settings, box)).deliver_notifications()
     assert receiver.requests == []
     assert [(r["status"], r["last_error"]) for r in await rows(repos)] == [
-        ("dead", "integration disabled or deleted, or tenant suspended")
+        ("dead", "expired: not delivered within integrations.max_age_hours")
     ]
+
+
+async def test_rows_of_a_disabled_integration_are_dead(
+    repos: Repositories, integ_settings: Callable[..., Settings], box: SecretBox, redis_client: Any
+) -> None:
+    settings = integ_settings()
+    integration = await add_integration(repos, box, TENANT_A, "slack", secret={"webhook_url": slack_url()})
+    await escalate(repos, settings)
+    await repos.tenants.set_status(TENANT_A, "suspended")
+    await repos.integrations.update(TENANT_A, integration.id, enabled=False)
+    receiver = Receiver()
+    await scheduler(settings, repos, redis_client, receiver.delivery(repos, settings, box)).deliver_notifications()
+    assert receiver.requests == []
+    assert [(r["status"], r["last_error"]) for r in await rows(repos)] == [("dead", "integration disabled or deleted")]
 
 
 async def test_onboarding_sample_alerts_never_reach_integrations(
