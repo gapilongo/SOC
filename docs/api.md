@@ -182,6 +182,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/onboarding/status`; POST `/onboarding/sample-alerts`, `/onboarding/autonomy-reviewed`, `/onboarding/dismiss` (docs/onboarding.md) | admin |
 | POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
+| POST | `/tenant/llm/test` (probe the fast and deep model tiers; 6 per tenant per minute; audited) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
 | GET | `/audit`, `/audit/verify` | admin |
@@ -289,6 +290,19 @@ they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
 every problem. Concurrent `PATCH` requests are serialised on the tenant row,
 so edits of different sub-keys of one section never overwrite each other.
+
+### Model test
+
+`POST /tenant/llm/test` sends one tiny structured request (no alert data) to
+each model tier through the same path as triage and returns
+`{provider, enabled, ok, tiers: [{tier, model, ok, latency_ms,
+structured_output, error_code, error}]}`. `error_code` is one of
+`disabled`, `unavailable` (configuration), `timeout` (60 s per tier),
+`connection`, `http_error`, `refusal`, `invalid_output` or `error`; `error` is
+a message written by the server with a hint (never the provider's response
+text, URL or key). The calls are metered to the tenant as agent `llm_test`
+and every test writes a `tenant.llm_tested` audit entry. More than 6 tests per
+tenant per minute answer `429`.
 
 ### Dashboard and usage
 

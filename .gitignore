@@ -33,3 +33,8 @@ package-lock.json
 .coverage.*
 coverage.xml
 junit.xml
+
+# scripts/quickstart.sh state (secrets, admin credentials, logs)
+.quickstart/
+# scripts/airgap/bundle.sh output
+lg-sotf-airgap-*/

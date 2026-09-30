@@ -24,7 +24,11 @@ from pydantic_settings import (
 )
 
 Environment = Literal["development", "test", "staging", "production"]
-LLMProvider = Literal["anthropic", "openai", "gemini", "fake"]
+LLMProvider = Literal["anthropic", "openai", "gemini", "ollama", "openai_compatible", "fake"]
+# Self-hosted, OpenAI-compatible servers (Ollama, vLLM, llama.cpp, LM Studio, ...): the API key is
+# optional and their usage is metered at zero cost.
+SELF_HOSTED_PROVIDERS = frozenset({"ollama", "openai_compatible"})
+StructuredOutput = Literal["auto", "json_schema", "json_mode", "function_calling"]
 
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
@@ -134,6 +138,11 @@ class LLMSettings(BaseModel):
     provider: LLMProvider = "anthropic"
     api_key: Optional[SecretStr] = None
     base_url: Optional[str] = None
+    # How self-hosted providers return structured output: json_schema (response_format with the
+    # schema, constrained decoding where the server supports it), json_mode (response_format
+    # json_object) or function_calling. "auto" = json_schema. Cloud providers always use their
+    # native method.
+    structured_output: StructuredOutput = "auto"
     fast: FastTierSettings = Field(default_factory=FastTierSettings)
     deep: DeepTierSettings = Field(default_factory=DeepTierSettings)
     refusal_fallback: bool = True
@@ -409,8 +418,19 @@ class Settings(BaseSettings):
             problems.append("security.indicator_hmac_key must be set")
         if self.llm.enabled and self.llm.provider == "fake" and not self.llm.allow_fake:
             problems.append("llm.provider=fake is not allowed in production (set llm.allow_fake to override)")
-        if self.llm.enabled and self.llm.provider != "fake" and self.llm.api_key is None:
+        if (
+            self.llm.enabled
+            and self.llm.provider != "fake"
+            and self.llm.provider not in SELF_HOSTED_PROVIDERS
+            and self.llm.api_key is None
+        ):
             problems.append(f"llm.api_key (or the provider's standard env var) is required for {self.llm.provider}")
+        if self.llm.enabled and self.llm.provider != "fake":
+            from lg_sotf.llm.endpoint import base_url_problem
+
+            problem = base_url_problem(self)
+            if problem:
+                problems.append(problem)
         if "*" in self.api.cors_origins:
             problems.append("api.cors_origins must not contain '*'")
         if not self.auth.cookie_secure:
