@@ -273,6 +273,9 @@ async def test_nis2_draft_for_each_stage(api: ApiHarness, stage: str) -> None:
     assert draft.data["ai_narrative"]["label"] == "AI-drafted — review required"
     [entry] = (await api.repos.audit.list(TENANT_A, action="alert.incident_report_drafted")).items
     assert entry.details["draft_sha256"] == draft.data["draft_sha256"] and entry.details["stage"] == stage
+    today = datetime.now(UTC).date()
+    usage = await api.repos.llm_usage.list_range(TENANT_A, today - timedelta(days=1), today + timedelta(days=1))
+    assert [(u.agent, u.calls) for u in usage] == [("nis2_report", 1)]
 
 
 async def test_nis2_draft_is_deterministic_without_ai_and_needs_analyst(api: ApiHarness) -> None:

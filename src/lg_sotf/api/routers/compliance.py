@@ -44,9 +44,9 @@ from lg_sotf.compliance.tenant_data import (
 )
 from lg_sotf.core.events import publish_event
 from lg_sotf.db.errors import NotFound
-from lg_sotf.db.repos import Tenant
+from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
-from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget
+from lg_sotf.llm import USE_DEFAULT, BudgetLimit, LLMUsageRow, TokenBudget, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -158,6 +158,22 @@ async def _budget_limit(ctx: Any, tenant_id: str) -> BudgetLimit:
     return limit if isinstance(limit, int) and not isinstance(limit, bool) else USE_DEFAULT
 
 
+async def _flush_llm_usage(ctx: Any) -> None:
+    """Write buffered LLM usage (this call's included) to ``llm_usage_daily``; best effort.
+
+    The API process has no periodic flusher like the worker's, so the
+    narrative's tokens and cost would otherwise never reach the usage report.
+    """
+
+    async def sink(rows: List[LLMUsageRow]) -> None:
+        await ctx.repos.llm_usage.upsert_daily([LLMUsageDelta(**row) for row in rows])
+
+    try:
+        await get_usage_recorder().flush(sink)
+    except Exception as exc:  # noqa: BLE001 - kept in the buffer for the next flush
+        log.warning("api.llm_usage_flush_failed", error_type=type(exc).__name__)
+
+
 def _clip(value: Optional[str]) -> Optional[str]:
     if value is None or len(value) <= MAX_EVENT_VALUE_CHARS:
         return value
@@ -190,6 +206,7 @@ async def incident_report(
             budget_limit=await _budget_limit(ctx, tenant_id),
         )
         narrative, narrative_error = result.narrative, result.error
+        await _flush_llm_usage(ctx)
     generated_at = datetime.now(UTC)
     draft = {"stage": body.stage, "fields": fields, "ai_narrative": narrative}
     draft_sha256 = hashlib.sha256(

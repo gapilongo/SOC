@@ -140,6 +140,18 @@ analysts are stored disabled; an admin enables them. Matching alerts are
 closed as benign at the gate with `suppressed_by` recorded. Rules that
 would match everything are refused.
 
+### 6. Export evidence and draft incident reports
+
+In an alert's drawer, **Evidence and reporting** downloads the case evidence
+pack (JSON, or HTML to print to PDF): the alert, its timeline, each agent's
+reasoning and model, escalations, feedback, the response ledger, what was
+automated and what a person decided, and the related audit entries, with a
+digest and signature. **Draft NIS2 report** prepares the early warning,
+notification or final report from the case; fields you must complete are
+marked, and any model-written narrative is labelled "AI-drafted — review
+required". LG-SOTF never submits a report. See [compliance.md](compliance.md);
+to use LG-SOTF from Claude or another MCP client, see [mcp.md](mcp.md).
+
 ## Administrator workflows
 
 ### Users and access
