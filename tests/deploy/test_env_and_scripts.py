@@ -255,12 +255,17 @@ def test_only_useful_scripts_remain() -> None:
     scripts = sorted(p.relative_to(REPO_ROOT / "scripts").as_posix() for p in (REPO_ROOT / "scripts").rglob("*")
                      if p.is_file() and "__pycache__" not in p.parts)
     assert scripts == [
+        "airgap/bundle.sh",
+        "airgap/load.sh",
         "ci/bandit-baseline.json",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
+        "demo/alerts.json",
+        "demo/seed_demo.py",
         "e2e_ui_stack.sh",
         "generate_secrets.py",
         "load_test.py",
+        "quickstart.sh",
         "smoke_stack.py",
         "smoke_stack.sh",
     ]
