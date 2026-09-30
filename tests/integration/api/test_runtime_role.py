@@ -67,6 +67,10 @@ async def test_api_end_to_end_as_runtime_role(make_api: Callable, migrated_datab
         ),
         ("POST", f"/api/v1/alerts/{alert_id}/notes", {"text": "n"}),
         ("GET", "/api/v1/usage/llm", None),
+        ("GET", "/api/v1/reports/value", None),
+        ("GET", "/api/v1/reports/accuracy", None),
+        ("GET", "/api/v1/reports/detections", None),
+        ("GET", "/api/v1/reports/monthly", None),
     ):
         response = await api.client.request(method, path, json=body, headers=headers)
         assert response.status_code < 300, f"{method} {path}: {response.text}"

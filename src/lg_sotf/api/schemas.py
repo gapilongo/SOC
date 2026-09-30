@@ -406,6 +406,12 @@ class DashboardOut(BaseModel):
     queue_depth: int
     llm_cost_usd: float
     llm_tokens: int
+    # Value tiles (definitions: lg_sotf.services.reporting, docs/reporting.md).
+    handled_without_human: int = 0
+    needed_human: int = 0
+    handled_without_human_rate: Optional[float] = None
+    analyst_hours_saved: float = 0.0
+    minutes_per_alert: int = 15
 
 
 class UsageDayOut(Out):

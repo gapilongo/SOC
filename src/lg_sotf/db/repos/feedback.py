@@ -41,6 +41,10 @@ class FeedbackStats(Record):
     correlation_helpful_rate: Optional[float]
     analysis_accuracy: Optional[float]
     avg_review_duration_s: Optional[float]
+    # How many feedback rows answered each question (the rates' denominators).
+    triage_rated: int = 0
+    correlation_rated: int = 0
+    analysis_rated: int = 0
 
 
 class FeedbackRepo(Repository):
@@ -121,10 +125,16 @@ class FeedbackRepo(Repository):
         return to_models(Feedback, rows)
 
     async def decision_stats(
-        self, tenant_id: str, since: datetime, *, conn: Optional[Connection] = None
+        self,
+        tenant_id: str,
+        since: datetime,
+        *,
+        until: Optional[datetime] = None,
+        conn: Optional[Connection] = None,
     ) -> FeedbackStats:
-        """Decision counts and agent-quality rates for feedback created since ``since``."""
+        """Decision counts and agent-quality rates for feedback created in ``[since, until)``."""
         require_aware(since, "since")
+        require_aware(until, "until")
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow(
                 """
@@ -134,19 +144,24 @@ class FeedbackRepo(Repository):
                     avg(correlation_helpful::int) AS correlation_helpful_rate,
                     avg(analysis_accurate::int) AS analysis_accuracy,
                     avg(review_duration_s) AS avg_review_duration_s,
+                    count(triage_correct) AS triage_rated,
+                    count(correlation_helpful) AS correlation_rated,
+                    count(analysis_accurate) AS analysis_rated,
                     COALESCE(
                         (SELECT jsonb_object_agg(decision, n) FROM (
                             SELECT decision, count(*) AS n FROM analyst_feedback
                             WHERE tenant_id = $1 AND created_at >= $2
+                              AND ($3::timestamptz IS NULL OR created_at < $3)
                             GROUP BY decision
                         ) d),
                         '{}'::jsonb
                     ) AS by_decision
                 FROM analyst_feedback
-                WHERE tenant_id = $1 AND created_at >= $2
+                WHERE tenant_id = $1 AND created_at >= $2 AND ($3::timestamptz IS NULL OR created_at < $3)
                 """,
                 tenant_id,
                 since,
+                until,
             )
 
         def _f(value: object) -> Optional[float]:
@@ -159,4 +174,7 @@ class FeedbackRepo(Repository):
             correlation_helpful_rate=_f(row["correlation_helpful_rate"]),
             analysis_accuracy=_f(row["analysis_accuracy"]),
             avg_review_duration_s=_f(row["avg_review_duration_s"]),
+            triage_rated=row["triage_rated"],
+            correlation_rated=row["correlation_rated"],
+            analysis_rated=row["analysis_rated"],
         )

@@ -29,6 +29,7 @@ from lg_sotf.api.routers import (
     identity,
     ingest,
     platform,
+    reports,
     review,
     sources,
     suppressions,
@@ -172,6 +173,7 @@ def create_app(
         dashboard.usage,
         audit.router,
         platform.router,
+        reports.router,
     ):
         api.include_router(router)
     app.include_router(health.router)

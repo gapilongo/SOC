@@ -34,6 +34,7 @@ from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
+from lg_sotf.db.repos.reports import ReportsRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
@@ -61,6 +62,7 @@ class Repositories:
     indicators: IndicatorsRepo
     llm_usage: LLMUsageRepo
     audit: AuditRepo
+    reports: ReportsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -81,6 +83,7 @@ class Repositories:
             indicators=IndicatorsRepo(db),
             llm_usage=LLMUsageRepo(db),
             audit=AuditRepo(db),
+            reports=ReportsRepo(db),
         )
 
 
@@ -113,6 +116,7 @@ __all__ = [
     "RefreshToken",
     "RefreshTokensRepo",
     "RelatedAlert",
+    "ReportsRepo",
     "Repositories",
     "ResponseAction",
     "ResponseTimes",
