@@ -310,6 +310,23 @@ export interface ApiKeyCreatedOut extends ApiKeyOut {
   key: string;
 }
 
+export interface LlmTierCheckOut {
+  tier: 'fast' | 'deep';
+  model: string;
+  ok: boolean;
+  latency_ms: number;
+  structured_output: string | null;
+  error_code: string | null;
+  error: string | null;
+}
+
+export interface LlmTestOut {
+  provider: string;
+  enabled: boolean;
+  ok: boolean;
+  tiers: LlmTierCheckOut[];
+}
+
 export interface TenantSettingsOut {
   tenant_id: string;
   name: string;

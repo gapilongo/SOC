@@ -5,6 +5,7 @@ import { endpoints } from '../api/endpoints';
 import { AUTONOMY_MODES, RISK_LEVELS, type JsonObject, type TenantSettingsOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Badge } from '../components/Badge';
+import { LlmTestCard } from '../components/LlmTestCard';
 import { useToast } from '../components/Toast';
 import { Button, Card, Checkbox, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
 import { formatDateTime } from '../lib/format';
@@ -322,6 +323,7 @@ export default function TenantSettingsPage() {
           <ProtectedSection data={d} />
           <div className="space-y-5">
             <BudgetSection data={d} />
+            <LlmTestCard />
             <ReviewSection data={d} />
           </div>
         </div>

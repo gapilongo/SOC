@@ -17,6 +17,7 @@ import type {
   DecisionOut,
   EscalationOut,
   JsonObject,
+  LlmTestOut,
   Page,
   ReprocessOut,
   SourceCreateIn,
@@ -129,6 +130,7 @@ export const endpoints = {
 
   tenantSettings: (api: ApiClient, signal?: AbortSignal) => api.get<TenantSettingsOut>('/tenant/settings', { signal }),
   patchTenantSettings: (api: ApiClient, patch: JsonObject) => api.patch<TenantSettingsOut>('/tenant/settings', patch),
+  testLlm: (api: ApiClient) => api.post<LlmTestOut>('/tenant/llm/test'),
 
   llmUsage: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
     api.get<UsageOut>('/usage/llm', { query: { from, to }, signal }),
