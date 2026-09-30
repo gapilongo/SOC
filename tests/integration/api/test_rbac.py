@@ -54,6 +54,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/tenant/settings", "admin", None),
     ("PATCH", "/api/v1/tenant/settings", "admin", {}),
     ("DELETE", "/api/v1/tenant/verdict-cache", "admin", None),
+    ("POST", "/api/v1/tenant/llm/test", "admin", None),
     ("GET", "/api/v1/dashboard/summary", "viewer", None),
     ("GET", "/api/v1/usage/llm", "admin", None),
     ("GET", "/api/v1/audit", "admin", None),
