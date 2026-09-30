@@ -174,6 +174,7 @@ async def ainvoke_structured(
     """
     s = settings or get_settings()
     model_id = model_name_of(model)
+    provider = provider_of(model)
     recorder = get_usage_recorder()
     log = logger.bind(agent=agent, tier=tier, model=model_id)
 
@@ -199,7 +200,7 @@ async def ainvoke_structured(
         if not isinstance(exc, asyncio.CancelledError):
             recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)
             if tally is not None:
-                tally.add_call(agent, [], "error", Decimal(0))
+                tally.add_call(agent, [], "error", Decimal(0), model=model_id, provider=provider)
             log.warning(
                 "llm.call_failed", error_type=type(exc).__name__, latency_ms=round((time.perf_counter() - start) * 1000)
             )
@@ -211,7 +212,7 @@ async def ainvoke_structured(
     if not isinstance(result, Mapping):
         recorder.record(model=model_id, agent=agent, outcome="invalid_output", tenant_id=tenant_id)
         if tally is not None:
-            tally.add_call(agent, [], "invalid_output", Decimal(0))
+            tally.add_call(agent, [], "invalid_output", Decimal(0), model=model_id, provider=provider)
         if reservation is not None and budget is not None:
             await _settle(budget, reservation, 0)
         raise LLMOutputError(
@@ -221,7 +222,7 @@ async def ainvoke_structured(
     samples: List[UsageSample] = extract_usage(result.get("raw"), default_model=model_id)
     cost = recorder.record_samples(samples, agent=agent, outcome=outcome, tenant_id=tenant_id)
     if tally is not None:
-        tally.add_call(agent, samples, outcome, cost)
+        tally.add_call(agent, samples, outcome, cost, model=model_id, provider=provider)
     if reservation is not None and budget is not None:
         await _settle(budget, reservation, sum(sample.total_tokens for sample in samples))
 
