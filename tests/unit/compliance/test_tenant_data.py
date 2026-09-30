@@ -9,8 +9,10 @@ from typing import Any, Callable
 
 from lg_sotf.compliance import tenant_data
 from lg_sotf.compliance.tenant_data import EXPORT_TABLES, _page_sql, _Sink, strip_secrets
+from lg_sotf.llm.client import get_chat_model
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
+from lg_sotf.llm.structured import usage_model_id
 from lg_sotf.settings import Settings
 
 
@@ -74,3 +76,11 @@ def test_model_provenance_is_bounded_and_merged(make_settings: Callable[..., Set
     assert merged["triage"] == {"provider": "fake", "model": "new", "tier": "fast"}
     assert "bad" not in merged and merged["n"] == {} and merged["analysis"] == entry
     assert merge_model_provenance(None, {}) == {}
+
+
+def test_model_provenance_uses_the_usage_model_id(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings(llm={"provider": "ollama", "fast": {"model": "qwen3:8b", "max_tokens": 900}})
+    model = get_chat_model("fast", s)
+    entry = model_provenance(model, "fast")
+    assert entry == {"provider": "ollama", "model": usage_model_id(model), "tier": "fast"}
+    assert entry["model"] == "local/qwen3:8b"

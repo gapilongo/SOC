@@ -15,6 +15,7 @@ import pytest
 
 from lg_sotf.core.suppression import alert_match_view, first_matching_rule
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.services.report_render import REPORT_CSS
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
@@ -479,6 +480,30 @@ async def test_dashboard_shows_value_tiles(api: ApiHarness) -> None:
     assert body["handled_without_human"] == 2 and body["needed_human"] == 1
     assert body["handled_without_human_rate"] == pytest.approx(2 / 3)
     assert body["analyst_hours_saved"] == pytest.approx(0.5) and body["minutes_per_alert"] == 15
+
+
+async def test_sample_alerts_are_left_out_of_every_report(api: ApiHarness) -> None:
+    repos = api.repos
+    ids = {}
+    for source in ("splunk", SAMPLE_SOURCE_ID):
+        alert_id = await seed_alert(repos, TENANT_A, D1 + timedelta(hours=1), disposition="benign", closed_after_s=5,
+                                    summary={"analyst_decision": "false_positive"}, source_id=source, rule="R")
+        esc = await seed_escalation(repos, TENANT_A, alert_id, D1 + timedelta(hours=2), summary={"verdict": "benign"})
+        await repos.feedback.create(TENANT_A, esc, alert_id, "false_positive")
+        ids[source] = alert_id
+    start, end = D1, D1 + timedelta(days=1)
+    now_end = datetime.now(UTC) + timedelta(minutes=1)
+
+    assert [r.ingested for r in await repos.reports.value_daily(TENANT_A, start, end)] == [1]
+    assert sum(await repos.reports.automation_counts(TENANT_A, start, end)) == 1
+    assert [d.source_id for d in await repos.reports.detections(TENANT_A, start, end)] == ["splunk"]
+    assert await repos.reports.detection(
+        TENANT_A, start, end, source_id=SAMPLE_SOURCE_ID, rule_field="rule_name", rule="R"
+    ) is None
+    decided = await repos.reports.decided_alerts(TENANT_A, D1 - timedelta(days=1))
+    assert [d.alert.id for d in decided] == [ids["splunk"]]
+    groups = await repos.reports.accuracy_groups(TENANT_A, start, now_end, low_score=30, high_score=80)
+    assert sum(g.n for g in groups) == 1
 
 
 def test_window_dates_are_utc_days() -> None:

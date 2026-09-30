@@ -34,6 +34,11 @@ def test_every_profile_passes_the_settings_validation(profile: str) -> None:
     assert PROFILES[profile]["autonomy"]["low"] != "changed", "callers get a copy"
 
 
+def test_only_the_conservative_profile_requires_mfa() -> None:
+    assert profile_settings("conservative")["security"] == {"require_mfa": True}
+    assert all("security" not in profile_settings(p) for p in ("balanced", "autonomous"))
+
+
 def test_profiles_grow_in_autonomy() -> None:
     order = {"disabled": 0, "approval": 1, "auto": 2}
     levels = [sum(order[v] for v in PROFILES[p]["autonomy"].values()) for p in ("conservative", "balanced", "autonomous")]
@@ -63,6 +68,9 @@ def test_copyable_settings_keep_policy_and_drop_secrets_destinations_and_assets(
             "internal_domains": ["corp.example"],
         },
         "integrations": {"slack": {"token_ciphertext": "v1:jkl"}},
+        "security": {"require_mfa": True, "future_key": "x"},
+        "reporting": {"minutes_per_alert": 12},
+        "phishing": {"protected_brands": ["Customer B"], "executives": ["B CEO"]},
     }
     copied = copyable_settings(source)
     assert copied == {
@@ -70,6 +78,8 @@ def test_copyable_settings_keep_policy_and_drop_secrets_destinations_and_assets(
         "review": {"sla_minutes": {"L1": 10}},
         "llm_daily_token_budget": 10,
         "retention": {"alerts_days": 30},
+        "security": {"require_mfa": True},
+        "reporting": {"minutes_per_alert": 12},
         "response": {"dry_run": False, "blast_radius": {"block_ip": 2}, "autonomy": {"high": "approval"}},
         "tools": {"virustotal": {"enabled": True}},
     }

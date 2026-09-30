@@ -8,6 +8,7 @@ import json
 import zipfile
 from datetime import UTC, datetime, timedelta
 from typing import Any, Callable, Dict, List, Tuple
+from uuid import uuid4
 
 import pytest
 
@@ -15,6 +16,7 @@ from lg_sotf.compliance.canonical import canonical_bytes, seal, sha256_hex, sign
 from lg_sotf.compliance.tenant_data import export_tenant_zip
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import User
+from lg_sotf.db.repos.integrations import NewOutboxEntry
 from lg_sotf.queue.streams import QueueStreams, encode_work
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
@@ -308,7 +310,7 @@ async def test_nis2_draft_without_llm_reports_why(make_api: Callable[..., Any]) 
 
 # ------------------------------------------------------------------ tenant export
 
-SECRET_MARKERS = ("source", "webhook", "toolkey")
+SECRET_MARKERS = ("source", "webhook", "toolkey", "integration", "integration_token")
 
 
 async def _seed_tenant_with_secrets(api: ApiHarness, tenant_id: str) -> Tuple[User, Dict[str, str]]:
@@ -334,6 +336,35 @@ async def _seed_tenant_with_secrets(api: ApiHarness, tenant_id: str) -> Tuple[Us
     return user, markers
 
 
+async def _seed_integration_data(api: ApiHarness, tenant_id: str, alert_id: str, markers: Dict[str, str]) -> None:
+    """Integration (secret + credential-named config key), outbox row, ticket, usage and an SSO user."""
+    repos = api.repos
+    integration = await repos.integrations.create(
+        tenant_id,
+        "jira",
+        "tickets",
+        config={"base_url": "https://jira.example.com", "api_token": markers["integration_token"]},
+        secret_ciphertext=markers["integration"],
+    )
+    await repos.users.create(tenant_id, f"sso@{tenant_id}.example.com", "analyst", oidc_subject="idp-subject-1")
+    await repos.integrations.enqueue(
+        tenant_id,
+        [
+            NewOutboxEntry(
+                integration_id=integration.id,
+                event_id=uuid4(),
+                event_type="alert.escalated",
+                operation="ticket_create",
+                dedupe_key="export-test",
+                alert_id=alert_id,
+                payload={"alert_id": alert_id},
+            )
+        ],
+    )
+    await repos.integrations.add_ticket(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
+    await repos.usage.add_ingested(tenant_id, 3)
+
+
 def _unzip(data: bytes) -> Dict[str, bytes]:
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
         assert archive.testzip() is None
@@ -343,7 +374,8 @@ def _unzip(data: bytes) -> Dict[str, bytes]:
 async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) -> None:
     platform = await api.user(TENANT_A, "admin", email="platform@a.example.com", platform_admin=True)
     _, markers = await _seed_tenant_with_secrets(api, TENANT_B)
-    await seed_case(api, TENANT_B)
+    case = await seed_case(api, TENANT_B)
+    await _seed_integration_data(api, TENANT_B, case["alert_id"], markers)
     await make_alert(api.repos, TENANT_A, title="tenant-a-only-alert")
 
     response = await api.client.post(f"/api/v1/platform/tenants/{TENANT_B}/export", headers=api.auth(platform))
@@ -354,6 +386,7 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     files = _unzip(response.content)
     expected = {"tenant.json", "manifest.json", "users.jsonl", "api_keys.jsonl", "sources.jsonl", "alerts.jsonl",
                 "alert_events.jsonl", "escalations.jsonl", "feedback.jsonl", "actions.jsonl", "suppressions.jsonl",
+                "integrations.jsonl", "notification_outbox.jsonl", "external_tickets.jsonl", "usage_daily.jsonl",
                 "audit_log.jsonl"}
     assert set(files) == expected
     blob = b"".join(files.values())
@@ -366,14 +399,22 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     assert tenant["settings"]["tools"]["virustotal"]["api_key_configured"] is True
     users = [json.loads(line) for line in files["users.jsonl"].splitlines()]
     assert {u["email"] for u in users} >= {f"owner@{TENANT_B}.example.com"}
-    assert all(set(u) == {"id", "tenant_id", "email", "role", "is_platform_admin", "is_active", "last_login_at",
-                          "created_at", "updated_at"} for u in users)
+    assert all(set(u) == {"id", "tenant_id", "email", "role", "is_platform_admin", "is_active", "oidc_subject",
+                          "last_login_at", "created_at", "updated_at"} for u in users)
+    assert {u["email"]: u["oidc_subject"] for u in users}[f"sso@{TENANT_B}.example.com"] == "idp-subject-1"
+    [integration] = [json.loads(line) for line in files["integrations.jsonl"].splitlines()]
+    assert integration["has_secret"] is True and "secret_ciphertext" not in integration
+    assert integration["config"]["base_url"] == "https://jira.example.com"
+    assert integration["config"]["api_token"] != markers["integration_token"]
     [source] = [json.loads(line) for line in files["sources.jsonl"].splitlines()]
     assert source["has_secret"] is True and source["tenant_id"] == TENANT_B
     manifest = json.loads(files["manifest.json"])
     counts = {f["file"]: f["rows"] for f in manifest["files"]}
     assert counts["alerts.jsonl"] == 1 and counts["alert_events.jsonl"] == 4 and counts["actions.jsonl"] == 3
     assert counts["escalations.jsonl"] == 1 and counts["feedback.jsonl"] == 1
+    assert counts["notification_outbox.jsonl"] == 1 and counts["external_tickets.jsonl"] == 1
+    [usage] = [json.loads(line) for line in files["usage_daily.jsonl"].splitlines()]
+    assert usage["alerts_ingested"] == 3
     for entry in manifest["files"]:
         assert sha256_hex(files[entry["file"]]) == entry["sha256"]
     for name in expected - {"tenant.json", "manifest.json"}:

@@ -214,7 +214,14 @@ one:
   use password sign-in), never a platform admin;
 * linked to the IdP subject (`sub`), not to the email, so a later token of
   another subject with the same email is never linked to it;
-* audited as `user.provisioned` (actor `system/oidc`).
+* audited as `user.provisioned` (actor `system/oidc`);
+* counted against the tenant's `max_users` quota: when the tenant is full the
+  sign-in is refused with `409 quota_exceeded` (the same error an admin gets
+  when creating a user), and nothing is written.
+
+A suspended tenant (including an erased one) is refused with
+`403 tenant_suspended` before any provisioning or role sync, so no account
+or audit row is written for it.
 
 On every later request the stored role follows the mapping; a change is
 audited as `user.role_synced`. The IdP is the source of truth for these

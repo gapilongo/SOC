@@ -14,6 +14,9 @@ one is driven by an existing per-tenant time index:
   (``ix_analyst_feedback_created``);
 * LLM cost from ``llm_usage_daily`` (primary key).
 
+Built-in sample alerts (:data:`SAMPLE_SOURCE_ID`) are left out of every
+alert-based figure, as they are out of usage and invoicing.
+
 Callers bound the window (the API allows at most 366 days) and cache the
 results; see :mod:`lg_sotf.services.reporting` for the metric definitions.
 """
@@ -26,6 +29,7 @@ from typing import Dict, List, Optional, Tuple
 
 from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware
 from lg_sotf.db.repos.alerts import SEVERITIES, Alert
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 
 # Human involvement in a response: an action that waited for (or got) a person's approval or
 # rejection. Policy auto-approvals carry POLICY_APPROVER (lg_sotf.services.response).
@@ -64,7 +68,7 @@ flags AS (
         WHERE e.tenant_id = a.tenant_id AND e.alert_id = a.id AND e.ts >= $2
           AND e.event_type = 'node.completed' AND e.node = 'triage'
     ) v ON true
-    WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3
+    WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
 ),
 classified AS (
     SELECT f.*,
@@ -122,7 +126,7 @@ flags AS (
            a.summary->>'escalation_id' IS NOT NULL AS escalated
     FROM alerts a
     LEFT JOIN human_actions h ON h.alert_id = a.id
-    WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3
+    WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
 )
 SELECT count(*) FILTER (WHERE status = 'closed' AND NOT analyst_decided AND NOT human_action) AS handled,
        count(*) FILTER (WHERE analyst_decided OR human_action OR status IN ('waiting_human', 'waiting_approval')
@@ -189,7 +193,7 @@ scored AS (
            CASE WHEN jsonb_typeof(a.summary->'llm_usage'->'calls') = 'number'
                 THEN (a.summary->'llm_usage'->>'calls')::float8 > 0 ELSE false END AS llm_used
     FROM final fin
-    JOIN alerts a ON a.tenant_id = $1 AND a.id = fin.alert_id
+    JOIN alerts a ON a.tenant_id = $1 AND a.id = fin.alert_id AND a.source_id <> $6
     CROSS JOIN LATERAL (
         SELECT e.summary FROM escalations e
         WHERE e.tenant_id = $1 AND e.alert_id = fin.alert_id
@@ -230,7 +234,7 @@ SELECT a.source_id,
            AS max_confirmed_benign_rank
 FROM alerts a
 CROSS JOIN LATERAL (SELECT array_position($4::text[], a.severity) - 1 AS rank) s
-WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3
+WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
   {filter}
 GROUP BY 1, 2, 3
 ORDER BY volume DESC, a.source_id, rule
@@ -238,9 +242,9 @@ LIMIT {limit}
 """
 
 _DETECTION_FILTER = """
-  AND a.source_id = $5
-  AND COALESCE(NULLIF(a.normalized->>'rule_name', ''), a.title) = $6
-  AND (CASE WHEN NULLIF(a.normalized->>'rule_name', '') IS NOT NULL THEN 'rule_name' ELSE 'title' END) = $7
+  AND a.source_id = $6
+  AND COALESCE(NULLIF(a.normalized->>'rule_name', ''), a.title) = $7
+  AND (CASE WHEN NULLIF(a.normalized->>'rule_name', '') IS NOT NULL THEN 'rule_name' ELSE 'title' END) = $8
 """
 
 # Same labelling as docs/tools/export_feedback.sql: the alert's latest decision other than needs_more_info.
@@ -254,7 +258,7 @@ WITH final AS (
 SELECT a.*, fin.decision AS analyst_decision, fin.created_at AS decided_at
 FROM final fin
 JOIN alerts a ON a.tenant_id = $1 AND a.id = fin.alert_id
-WHERE fin.decision <> 'needs_more_info'
+WHERE fin.decision <> 'needs_more_info' AND a.source_id <> $4
 ORDER BY fin.created_at, fin.id
 LIMIT $3
 """
@@ -336,7 +340,7 @@ class ReportsRepo(Repository):
         """Outcome counts per UTC ingestion day for alerts ingested in ``[start, end)``."""
         _window(start, end)
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_VALUE_SQL, tenant_id, start, end, POLICY_APPROVER)
+            rows = await c.fetch(_VALUE_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
         return [ValueDayRow.model_validate(dict(r)) for r in rows]
 
     async def automation_counts(
@@ -345,7 +349,7 @@ class ReportsRepo(Repository):
         """``(handled_without_human, needed_human)`` for alerts ingested in ``[start, end)``."""
         _window(start, end)
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(_AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER)
+            row = await c.fetchrow(_AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
         return int(row["handled"]), int(row["needed"])
 
     async def escalations_daily(
@@ -396,7 +400,9 @@ class ReportsRepo(Repository):
         """
         _window(start, end)
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_ACCURACY_SQL, tenant_id, start, end, float(low_score), float(high_score))
+            rows = await c.fetch(
+                _ACCURACY_SQL, tenant_id, start, end, float(low_score), float(high_score), SAMPLE_SOURCE_ID
+            )
         return [AccuracyGroupRow.model_validate(dict(r)) for r in rows]
 
     async def detections(
@@ -415,7 +421,7 @@ class ReportsRepo(Repository):
         # ``filter`` and ``limit`` are fixed SQL text / a validated int, never caller strings.
         sql = _DETECTIONS_SQL.format(filter="", limit=int(limit))
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(sql, tenant_id, start, end, list(SEVERITIES))
+            rows = await c.fetch(sql, tenant_id, start, end, list(SEVERITIES), SAMPLE_SOURCE_ID)
         return [DetectionRow.model_validate(dict(r)) for r in rows]
 
     async def detection(
@@ -435,7 +441,9 @@ class ReportsRepo(Repository):
             raise ValueError("rule_field must be 'rule_name' or 'title'")
         sql = _DETECTIONS_SQL.format(filter=_DETECTION_FILTER, limit=1)
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(sql, tenant_id, start, end, list(SEVERITIES), source_id, rule, rule_field)
+            row = await c.fetchrow(
+                sql, tenant_id, start, end, list(SEVERITIES), SAMPLE_SOURCE_ID, source_id, rule, rule_field
+            )
         return None if row is None else DetectionRow.model_validate(dict(row))
 
     async def decided_alerts(
@@ -446,7 +454,7 @@ class ReportsRepo(Repository):
         if not 1 <= limit <= MAX_HISTORY_ALERTS:
             raise ValueError(f"limit must be between 1 and {MAX_HISTORY_ALERTS}")
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_HISTORY_SQL, tenant_id, since, limit)
+            rows = await c.fetch(_HISTORY_SQL, tenant_id, since, limit, SAMPLE_SOURCE_ID)
         out: List[DecidedAlert] = []
         for r in rows:
             data = dict(r)

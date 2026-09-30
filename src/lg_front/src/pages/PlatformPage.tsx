@@ -52,7 +52,7 @@ const QUOTA_LABELS: Record<QuotaKey, string> = {
 };
 
 const PROFILE_HELP: Record<string, string> = {
-  conservative: 'every action needs approval; high and critical risk never run',
+  conservative: 'every action needs approval; high and critical risk never run; MFA required',
   balanced: 'low-risk actions run on their own, the rest need approval',
   autonomous: 'low and medium risk run on their own; high and critical need approval',
 };

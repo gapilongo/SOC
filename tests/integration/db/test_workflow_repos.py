@@ -356,6 +356,26 @@ class TestEscalations:
         assert (await repos.escalations.cancel(TENANT_B, e2.id)).status == "cancelled"
         assert await repos.escalations.count_active_all_tenants() == 0
 
+    async def test_sla_sweep_skips_suspended_tenants_and_reactivation_extends(self, repos: Repositories) -> None:
+        a1 = await make_alert(repos, TENANT_A)
+        a2 = await make_alert(repos, TENANT_B)
+        a3 = await make_alert(repos, TENANT_B)
+        e1, _ = await repos.escalations.create_or_attach(TENANT_A, a1, reason="r", sla_deadline=T0)
+        e2, _ = await repos.escalations.create_or_attach(TENANT_B, a2, reason="r", sla_deadline=T0)
+        far = T0 + timedelta(days=3)
+        e3, _ = await repos.escalations.create_or_attach(TENANT_B, a3, reason="r", sla_deadline=far)
+        await repos.tenants.set_status(TENANT_B, "suspended")
+        breached = await repos.escalations.find_sla_breached_all_tenants(now=T0 + timedelta(minutes=1))
+        assert [e.id for e in breached] == [e1.id]
+
+        deadlines = {"L1": T0 + timedelta(hours=1), "L2": T0 + timedelta(hours=2), "L3": T0 + timedelta(hours=3)}
+        assert await repos.escalations.extend_sla_deadlines(TENANT_B, deadlines) == 1
+        moved = await repos.escalations.get(TENANT_B, e2.id)
+        assert (moved.sla_deadline, moved.version) == (deadlines["L1"], e2.version)
+        # Never shortened; other tenants untouched.
+        assert (await repos.escalations.get(TENANT_B, e3.id)).sla_deadline == far
+        assert (await repos.escalations.get(TENANT_A, e1.id)).sla_deadline == T0
+
     async def test_list_filters_and_pagination(self, repos: Repositories) -> None:
         ids = []
         for i in range(7):

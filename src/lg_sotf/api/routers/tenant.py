@@ -108,6 +108,8 @@ RESPONSE_KEYS = frozenset(
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
 SECURITY_KEYS = frozenset({"require_mfa"})
+# Saving either section counts as the onboarding "autonomy reviewed" step.
+AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
@@ -412,7 +414,8 @@ async def patch_settings(
             details={"keys": sorted(patch)},
             conn=conn,
         )
-        await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
+        if AUTONOMY_REVIEW_KEYS & patch.keys():
+            await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
     ctx.tenants.invalidate(tenant_id)
     return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
 

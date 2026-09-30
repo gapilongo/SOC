@@ -176,3 +176,42 @@ async def test_hand_made_accounts_keep_their_stored_role(make_api: Any, idp: IdP
     assert me.json()["user_id"] == str(local.id) and me.json()["role"] == "admin"
     assert (await api.repos.users.get(TENANT_A, local.id)).role == "viewer"
     assert not await _audit(api, "user.provisioned")
+
+
+async def test_a_suspended_tenant_gains_no_accounts_or_audit_rows(make_api: Any, idp: IdP) -> None:
+    api = await _jit_api(make_api, idp)
+    await api.repos.tenants.set_status(TENANT_A, "suspended")
+    refused = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Analysts"])))
+    assert refused.status_code == 403 and refused.json()["error"]["code"] == "tenant_suspended"
+    assert await api.repos.users.list(TENANT_A) == []
+    assert (await api.repos.audit.list(TENANT_A)).items == []
+
+
+async def test_a_suspended_tenant_does_not_sync_roles(make_api: Any, idp: IdP) -> None:
+    api = await _jit_api(make_api, idp)
+    assert (await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Viewers"])))).status_code == 200
+    user = await api.repos.users.get_by_oidc_subject(TENANT_A, "entra-oid-1")
+    assert user is not None
+    audit_before = len((await api.repos.audit.list(TENANT_A)).items)
+    await api.repos.tenants.set_status(TENANT_A, "suspended")
+    api.ctx.tenants.invalidate(TENANT_A)
+    refused = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
+    assert refused.status_code == 403
+    assert (await api.repos.users.get(TENANT_A, user.id)).role == "viewer"
+    assert len((await api.repos.audit.list(TENANT_A)).items) == audit_before
+
+
+async def test_provisioning_respects_the_user_quota(make_api: Any, idp: IdP) -> None:
+    api = await _jit_api(make_api, idp)
+    await api.user(TENANT_A, "admin", email="adm@a.example.com")
+    await api.repos.tenants.update_admin(TENANT_A, max_users=1)
+    refused = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Analysts"])))
+    assert refused.status_code == 409, refused.text
+    error = refused.json()["error"]
+    assert error["code"] == "quota_exceeded" and error["details"][0]["quota"] == "max_users"
+    assert await api.repos.users.get_by_oidc_subject(TENANT_A, "entra-oid-1") is None
+    assert not await _audit(api, "user.provisioned")
+
+    await api.repos.tenants.update_admin(TENANT_A, max_users=2)
+    assert (await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Analysts"])))).status_code == 200
+    assert await api.repos.users.get_by_oidc_subject(TENANT_A, "entra-oid-1") is not None

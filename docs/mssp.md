@@ -81,20 +81,26 @@ tenant. `lg-sotf migrate` grants them to `database.runtime_role`.
 | Pull sources | Not polled; their cursors stay where they were. |
 | Queued work | Workers acknowledge the tenant's queue messages without claiming the run: queued runs stay `queued`, waiting runs keep waiting, and analyst decisions already recorded stay on their escalation. |
 | Recovery sweeps | Skip the tenant (orphaned, stranded and lost-resume sweeps). |
+| Escalation SLAs | Frozen: the SLA sweep skips the tenant, so nothing is escalated or expired while nobody can work it. |
 | Live WebSockets | Closed at the next revalidation. |
 | Platform admins | Can still act on the tenant with `X-Tenant-ID` (to investigate or export). |
 
 Nothing is deleted. Reactivating (`{"status": "active"}`) re-enqueues the
 tenant's queued runs at once (up to 10,000; the orphan sweep picks up any
-remainder) and the resume sweep re-sends recorded decisions. Each API
+remainder), the resume sweep re-sends recorded decisions, and every open or
+claimed escalation gets a fresh SLA deadline of *now + its level's SLA*
+(`review.sla_minutes`; a deadline already later than that is kept). The
+number of escalations moved is recorded as `sla_deadlines_reset` in the
+`tenant.reactivated` audit entry. Restarting the clock (rather than adding
+the suspended time back) is deliberate: it needs no record of when the
+suspension started, and it gives the returning team a full SLA window
+instead of a queue of escalations that breach on the next sweep. Each API
 process caches tenant status for 15 seconds and each worker for 15 seconds,
 so other processes follow a status change within that time.
 
 Queued work is left queued rather than failed so a suspension for
 non-payment or a contract pause is reversible without re-ingesting.
-Retention still applies to a suspended tenant, and the scheduler's SLA sweep
-keeps escalating and expiring its open escalations (nobody works them while
-it is suspended).
+Retention still applies to a suspended tenant.
 
 ## Quotas
 
@@ -158,17 +164,22 @@ spreadsheet would run as a formula are prefixed with `'`.
 
   Every profile keeps `response.dry_run: true`: actions are recorded, never
   executed, until the tenant configures its connector and switches dry run
-  off.
+  off. `conservative` also sets `security.require_mfa: true`: local
+  accounts enrol a TOTP factor at their first sign-in (SSO users get MFA
+  from their IdP). `balanced` and `autonomous` leave MFA to the tenant
+  admin, as a plain new tenant does.
 * `copy_settings_from: <tenant id>`: copies the policy of an existing
   tenant: `autonomy`, `review`, `llm_daily_token_budget`, `retention`,
+  `security.require_mfa`, `reporting` (minutes per alert),
   `response.dry_run`, `allowed_actions`, `max_actions_per_hour`,
   `blast_radius`, `autonomy`, `allow_internal_ip_blocks`, and which
   enrichment tools are enabled. Never copied: secrets (webhook secret, tool
   API keys, any `*_ciphertext`), destinations (connector, webhook URL, CA
   certificate) and anything that describes the source customer (protected
-  assets, `protected_cidrs`, `tools.internal_domains`). Copying those would
-  send one customer's response actions to another customer's endpoint or
-  leak its asset names.
+  assets, `protected_cidrs`, `tools.internal_domains`, and the `phishing`
+  section: protected brands, executives, trusted mail servers). Copying those
+  would send one customer's response actions to another customer's endpoint
+  or leak its asset and staff names.
 
 The response lists the seeded keys (`settings_keys`); the audit entries name
 the profile or source tenant.

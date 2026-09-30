@@ -93,7 +93,9 @@ be analysed; otherwise `low`.
 
 ## Tenant settings
 
-`PATCH /api/v1/tenant/settings` (admin, audited):
+`PATCH /api/v1/tenant/settings` (admin, audited), or **Tenant settings,
+Phishing context** in the UI (one entry per line; saving replaces the whole
+`phishing` section):
 
 ```json
 {

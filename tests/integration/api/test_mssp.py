@@ -139,6 +139,29 @@ async def test_suspension_blocks_ingest_keys_and_logins_and_reactivation_requeue
     assert (await api.repos.audit.list(TENANT_B, action="tenant.reactivated")).items
 
 
+async def test_reactivation_restarts_open_escalation_sla_clocks(api: ApiHarness) -> None:
+    headers = await _platform(api)
+    await api.repos.tenants.update_settings(TENANT_B, {"review": {"sla_minutes": {"L2": 90}}})
+    now = datetime.now(UTC)
+    lapsed, _ = await api.repos.escalations.create_or_attach(
+        TENANT_B, await make_alert(api.repos, TENANT_B), reason="r", level="L2", sla_deadline=now - timedelta(hours=2)
+    )
+    far = now + timedelta(days=2)
+    later, _ = await api.repos.escalations.create_or_attach(
+        TENANT_B, await make_alert(api.repos, TENANT_B), reason="r", sla_deadline=far
+    )
+    for status in ("suspended", "active"):
+        changed = await api.client.patch(f"/api/v1/platform/tenants/{TENANT_B}", json={"status": status}, headers=headers)
+        assert changed.status_code == 200, changed.text
+
+    moved = (await api.repos.escalations.get(TENANT_B, lapsed.id)).sla_deadline
+    assert moved is not None and timedelta(minutes=89) < moved - now < timedelta(minutes=92)
+    assert (await api.repos.escalations.get(TENANT_B, later.id)).sla_deadline == far
+    entry = (await api.repos.audit.list(TENANT_B, action="tenant.reactivated")).items[0]
+    assert entry.details["sla_deadlines_reset"] == 1
+    assert "sla_deadlines_reset" not in (await api.repos.audit.list(TENANT_B, action="tenant.suspended")).items[0].details
+
+
 async def test_update_validation(api: ApiHarness) -> None:
     headers = await _platform(api)
     for body in (
@@ -302,7 +325,8 @@ async def test_profiles_seed_settings(api: ApiHarness) -> None:
         "/api/v1/platform/tenants", json={"id": "safe-co", "name": "Safe", "profile": "conservative"}, headers=headers
     )
     assert conservative.status_code == 201
-    assert (await api.repos.tenants.get("safe-co")).settings["autonomy"]["high"] == "disabled"
+    safe = (await api.repos.tenants.get("safe-co")).settings
+    assert safe["autonomy"]["high"] == "disabled" and safe["security"] == {"require_mfa": True}
 
     for body in (
         {"id": "nope", "name": "N", "profile": "yolo"},
@@ -334,6 +358,9 @@ async def test_copy_settings_copies_policy_but_never_secrets_or_destinations(api
                 "max_actions_per_hour": 7,
             },
             "tools": {"virustotal": {"enabled": True, "api_key": "test-" + "k" * 24}, "internal_domains": ["b.example"]},
+            "security": {"require_mfa": True},
+            "reporting": {"minutes_per_alert": 12},
+            "phishing": {"protected_brands": ["customer-b.example"], "executives": ["Customer B Chief"]},
         },
         headers=admin_b,
     )
@@ -352,9 +379,10 @@ async def test_copy_settings_copies_policy_but_never_secrets_or_destinations(api
     assert copied["llm_daily_token_budget"] == 5_000_000 and copied["retention"] == {"alerts_days": 120}
     assert copied["response"] == {"dry_run": False, "max_actions_per_hour": 7}
     assert copied["tools"] == {"virustotal": {"enabled": True}}
-    assert "protected_assets" not in copied
+    assert copied["security"] == {"require_mfa": True} and copied["reporting"] == {"minutes_per_alert": 12}
+    assert "protected_assets" not in copied and "phishing" not in copied
     text = json.dumps(copied)
-    for leaked in ("ciphertext", "customer-b", "test-s", "test-k", "b.example"):
+    for leaked in ("ciphertext", "customer-b", "Customer B", "test-s", "test-k", "b.example"):
         assert leaked not in text
     copied_audit = (await api.repos.audit.list(TENANT_B, action="platform.settings_copied")).items
     assert copied_audit and copied_audit[0].details["to_tenant"] == "clone"
