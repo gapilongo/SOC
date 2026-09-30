@@ -42,6 +42,7 @@ from lg_sotf.api.routers import (
 )
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.ingestion.email import EmailLimits
 from lg_sotf.observability.logging import configure_logging, get_logger, is_configured
 from lg_sotf.observability.tracing import setup_tracing, shutdown_tracing
 from lg_sotf.settings import Settings, get_settings
@@ -50,6 +51,7 @@ log = get_logger(__name__)
 
 API_PREFIX = "/api/v1"
 INGEST_PREFIX = f"{API_PREFIX}/ingest/"
+EMAIL_INGEST_PATH = f"{API_PREFIX}/ingest/email"
 ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-Tenant-ID", "X-Request-ID"]
 EXPOSED_HEADERS = ["X-Request-ID", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"]
 
@@ -196,8 +198,15 @@ def create_app(
 
     max_body = s.api.max_body_bytes
     max_ingest = max(s.api.max_ingest_body_bytes, max_body)
+    try:
+        # A raw reported message may be as large as ingestion.email.max_message_bytes (the route enforces that).
+        max_email = max(max_ingest, EmailLimits.from_settings(s.ingestion).max_message_bytes)
+    except ValueError:
+        max_email = max_ingest  # invalid email settings are reported by the ingestion service
 
     def limit_for(path: str) -> int:
+        if path.rstrip("/") == EMAIL_INGEST_PATH:
+            return max_email
         return max_ingest if path.startswith(INGEST_PREFIX) else max_body
 
     # Added innermost first: the last one added wraps everything.

@@ -208,7 +208,7 @@ HTTP API process.
 | `api.public_url` | `LG_SOTF_API__PUBLIC_URL` | string | `http://localhost:8000` | External URL of the API. An `https://` URL turns on HSTS. |
 | `api.cors_origins` | `LG_SOTF_API__CORS_ORIGINS` | list[string] | `["http://localhost:3000", "http://localhost:5173"]` | Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production. |
 | `api.max_body_bytes` | `LG_SOTF_API__MAX_BODY_BYTES` | integer | `1048576` | Request body limit for ordinary endpoints. |
-| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints. |
+| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints (`/ingest/email` allows up to `ingestion.email.max_message_bytes` when that is larger). |
 | `api.max_ingest_batch` | `LG_SOTF_API__MAX_INGEST_BATCH` | integer | `500` | Maximum events per `POST /ingest/alerts` call. |
 | `api.rate_limit_per_minute` | `LG_SOTF_API__RATE_LIMIT_PER_MINUTE` | integer | `600` | Requests per minute per principal. |
 | `api.ingest_rate_limit_per_minute` | `LG_SOTF_API__INGEST_RATE_LIMIT_PER_MINUTE` | integer | `6000` | Ingestion requests per minute per API key. |

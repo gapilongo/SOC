@@ -154,7 +154,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "api.public_url": "External URL of the API. An `https://` URL turns on HSTS.",
     "api.cors_origins": "Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production.",
     "api.max_body_bytes": "Request body limit for ordinary endpoints.",
-    "api.max_ingest_body_bytes": "Request body limit for ingestion endpoints.",
+    "api.max_ingest_body_bytes": "Request body limit for ingestion endpoints (`/ingest/email` allows up to `ingestion.email.max_message_bytes` when that is larger).",
     "api.max_ingest_batch": "Maximum events per `POST /ingest/alerts` call.",
     "api.rate_limit_per_minute": "Requests per minute per principal.",
     "api.ingest_rate_limit_per_minute": "Ingestion requests per minute per API key.",
