@@ -143,6 +143,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/auth/me` | any principal |
 | POST | `/ingest/alerts` | API key `ingest` |
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
+| POST | `/ingest/email` (raw `message/rfc822`, optional `?reporter=`) | API key `ingest` |
 | GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
@@ -179,7 +180,13 @@ Redis fails; a database whose pool is fully busy counts as ready.
 * `POST /ingest/webhook/{source_id}` takes a vendor-native JSON object (or an
   array of them) for a push source (`webhook`, `guardduty`) registered in
   the key's tenant; the source's configuration picks the normalizer.
-* Both answer `202` with one result per submitted event, in order:
+* `POST /ingest/email` takes one raw email (`Content-Type: message/rfc822` or
+  `application/octet-stream`, at most `ingestion.email.max_message_bytes`,
+  10 MB by default), usually a user's report with the suspicious message
+  attached; `?reporter=<address>` names the reporting user. It is parsed
+  server-side and stored under `email:<api key id>`, deduplicated on the
+  reported message's Message-ID plus the reporter. See `docs/phishing.md`.
+* All three answer `202` with one result per submitted event, in order:
   `{"index", "status": "inserted"|"duplicate"|"rejected", "alert_id", "reason"}`,
   plus totals and the number of alerts queued for the workers. Duplicates
   (same source and source alert id) are never inserted twice.
@@ -251,8 +258,10 @@ Password hashes and API key hashes are never returned.
 over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `processes`, `hashes`), `protected_cidrs`, `response`
 (connector, webhook URL, `webhook_secret`, guardrail limits),
-`llm_daily_token_budget`, `review` (SLA and grouping policy) and `tools`
-(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`). Secrets
+`llm_daily_token_budget`, `review` (SLA and grouping policy), `tools`
+(`<provider>.api_key`, `<provider>.enabled`, `internal_domains`) and
+`phishing` (`protected_brands`, `executives`, `trusted_authserv_ids`; see
+`docs/phishing.md`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
