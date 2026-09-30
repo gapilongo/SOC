@@ -189,7 +189,12 @@ then pinned to the checked address with the host name kept for SNI and
 certificate checks. On-premises servers on private addresses need the
 install-level `ingestion.allow_private_destinations`. The cursor is the
 mailbox's UIDVALIDITY and the last UID; sizes are checked (`RFC822.SIZE`)
-before a bounded partial fetch. OAuth (XOAUTH2) is not supported yet.
+before a bounded partial fetch. What the server sends is bounded as well: a
+literal larger than `max_message_bytes` (plus 64 KiB), a line over 1 MB or
+a response over a literal plus 8 MiB ends the poll unread, and one poll's
+session is limited to `poll_timeout_s` (source config, default 900, 10 to
+3600), checked before every socket read. OAuth (XOAUTH2) is not supported
+yet.
 
 ## Pushing reports from your own tooling
 
