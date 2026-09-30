@@ -68,6 +68,7 @@ from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.repos.alerts import SEVERITIES
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
+from lg_sotf.llm.pricing import LOCAL_PREFIX
 from lg_sotf.observability.logging import get_logger
 
 if TYPE_CHECKING:
@@ -232,10 +233,15 @@ def ai_class(verdict: Optional[str], score_band: Optional[str]) -> AiClass:
 
 
 def model_key(row: AccuracyGroupRow) -> str:
-    """``provider/model`` of the analysis agent (else triage); rules-only and unrecorded alerts apart."""
+    """``provider/model`` of the analysis agent (else triage); rules-only and unrecorded alerts apart.
+
+    Self-hosted models are recorded as ``local/<model>`` (the usage id); the
+    provider already says where it ran, so ``ollama/local/x`` becomes
+    ``ollama/x``, the same key as rows recorded before the ids were aligned.
+    """
     for provider, model in ((row.analysis_provider, row.analysis_model), (row.triage_provider, row.triage_model)):
         if model:
-            return f"{provider}/{model}" if provider else model
+            return f"{provider}/{model.removeprefix(LOCAL_PREFIX)}" if provider else model
     return "unrecorded" if row.llm_used else "rules only"
 
 

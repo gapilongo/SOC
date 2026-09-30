@@ -176,6 +176,9 @@ def test_model_key() -> None:
     assert model_key(_group(analysis_provider="openai", analysis_model="gpt-x", triage_model="t")) == "openai/gpt-x"
     assert model_key(_group(triage_provider="gemini", triage_model="flash")) == "gemini/flash"
     assert model_key(_group(analysis_model="bare")) == "bare"
+    # Self-hosted models are recorded under their usage id; the key is not double-prefixed.
+    local = _group(analysis_provider="ollama", analysis_model="local/qwen3:8b")
+    assert model_key(local) == model_key(_group(analysis_provider="ollama", analysis_model="qwen3:8b")) == "ollama/qwen3:8b"
     assert model_key(_group(llm_used=True)) == "unrecorded"
     assert model_key(_group()) == "rules only"
 
