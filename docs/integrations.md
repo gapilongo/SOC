@@ -29,6 +29,10 @@ on). Ticketing integrations accept only `escalation.created` (open a ticket)
 and `escalation.decided` (comment and optionally resolve); they may also set
 `config.min_level` (`L1`/`L2`/`L3`) to open tickets only from that level.
 
+Onboarding sample alerts (source `demo:samples`) never raise events, and a
+`create_ticket` action on one runs as a dry run, so trying the product
+never pages anyone or opens a real ticket.
+
 ### Reliable delivery (outbox)
 
 Events are written to `notification_outbox` **in the same database

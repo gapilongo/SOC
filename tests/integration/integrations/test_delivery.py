@@ -11,8 +11,10 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from lg_sotf.db.repos import Repositories
+from lg_sotf.db.repos import NewAlert, Repositories
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.delivery import sync_tickets
+from lg_sotf.integrations.outbox import enqueue_critical_alerts
 from lg_sotf.integrations.ticketing import TicketService
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.runtime.scheduler import Scheduler
@@ -290,3 +292,44 @@ async def test_suspended_tenants_get_no_deliveries(
     assert [(r["status"], r["last_error"]) for r in await rows(repos)] == [
         ("dead", "integration disabled or deleted, or tenant suspended")
     ]
+
+
+async def test_onboarding_sample_alerts_never_reach_integrations(
+    repos: Repositories, integ_settings: Callable[..., Settings], box: SecretBox
+) -> None:
+    settings = integ_settings(response={"dry_run": False})
+    await repos.tenants.update_settings(TENANT_A, {"autonomy": {"low": "auto"}, "response": {"dry_run": False}})
+    await add_integration(repos, box, TENANT_A, "servicenow", config=SNOW_CONFIG, secret={"password": "p" * 20},
+                          events=("escalation.created",))
+    await add_integration(repos, box, TENANT_A, "slack", secret={"webhook_url": slack_url()},
+                          events=("alert.critical_received", "escalation.created", "action.executed"))
+    sample = NewAlert(
+        source_id=SAMPLE_SOURCE_ID, source_alert_id=uuid4().hex, fingerprint=f"fp-{uuid4().hex}", title="Sample",
+        severity="critical", occurred_at=datetime.now(UTC), raw={"vendor": "demo"},
+        normalized={"title": "Sample", "severity": "critical", "entities": {}},
+    )
+    [sample_id] = await repos.alerts.insert_many_if_absent(TENANT_A, [sample])
+    real_id = await add_alert(repos, TENANT_A, severity="critical")
+
+    async with repos.db.tenant_tx(TENANT_A) as conn:
+        assert await enqueue_critical_alerts(conn, TENANT_A, [sample_id]) == 0
+        assert await enqueue_critical_alerts(conn, TENANT_A, [real_id]) == 1  # control: real alerts still notify
+    await EscalationService(repos, None, settings).open_or_attach(
+        TENANT_A, sample_id, severity="critical", confidence=30, threat_score=60, reason="review"
+    )
+    assert [r["alert_id"] for r in await rows(repos)] == [real_id]
+
+    # create_ticket on a sample runs as a dry run, never through the ticketing integration.
+    receiver = Receiver()
+    responses = ResponseService(
+        repos, settings, ticketing=TicketService(repos, settings, http=receiver.http(settings), secret_box=box)
+    )
+    plan = await responses.plan(
+        TENANT_A, sample_id, PlanContext(severity="high", title="t", evidence="rules", recommended_actions=["create_ticket"])
+    )
+    statuses = await responses.execute(TENANT_A, sample_id, plan.auto)
+    ledger = {a.action_type: a for a in (await repos.actions.list(TENANT_A, alert_id=sample_id)).items}
+    ticket_action = ledger["create_ticket"]
+    assert statuses[str(ticket_action.id)] == "dry_run" and ticket_action.connector == "dry_run"
+    assert receiver.requests == [] and await repos.integrations.tickets(TENANT_A, alert_id=sample_id) == []
+    assert [r["alert_id"] for r in await rows(repos)] == [real_id]

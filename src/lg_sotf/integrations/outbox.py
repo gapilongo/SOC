@@ -22,6 +22,9 @@ Matching (per enabled integration):
   least ``config.min_level`` -> ``ticket_create``; ``escalation.decided`` in
   ``events`` -> ``ticket_update`` (a comment and, when configured, the
   resolve transition on the escalation's ticket).
+
+Onboarding sample alerts (source ``demo:samples``) never reach an
+integration: they would page on-call staff and open real tickets.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.db.repos.integrations import ENQUEUE_SQL, NewOutboxEntry
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import NOTIFY_KINDS, TICKETING_KINDS
 from lg_sotf.integrations.events import (
     ALERT_CRITICAL_RECEIVED,
@@ -53,7 +57,7 @@ _INTEGRATIONS_SQL = """
 _ALERTS_SQL = """
     SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
            summary, jsonb_build_object('entities', normalized->'entities') AS normalized
-    FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])
+    FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[]) AND source_id IS DISTINCT FROM $3
 """
 
 
@@ -81,7 +85,7 @@ async def _matching(conn: Any, tenant_id: str, event_type: str) -> List[Mapping[
 
 
 async def _alerts(conn: Any, tenant_id: str, alert_ids: Sequence[str]) -> Dict[str, Mapping[str, Any]]:
-    rows = await conn.fetch(_ALERTS_SQL, tenant_id, list(alert_ids))
+    rows = await conn.fetch(_ALERTS_SQL, tenant_id, list(alert_ids), SAMPLE_SOURCE_ID)
     return {str(r["id"]): dict(r) for r in rows}
 
 
