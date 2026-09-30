@@ -275,3 +275,18 @@ async def test_sla_breach_is_announced(
             for r in queued] == [("escalation.sla_breached", "L2", "L1")]
     await sched.deliver_notifications()
     assert json.loads(receiver.requests[0].content)["blocks"][0]["text"]["text"].startswith("Escalation SLA breached")
+
+
+async def test_suspended_tenants_get_no_deliveries(
+    repos: Repositories, integ_settings: Callable[..., Settings], box: SecretBox, redis_client: Any
+) -> None:
+    settings = integ_settings()
+    await add_integration(repos, box, TENANT_A, "slack", secret={"webhook_url": slack_url()})
+    await escalate(repos, settings)
+    await repos.tenants.set_status(TENANT_A, "suspended")
+    receiver = Receiver()
+    await scheduler(settings, repos, redis_client, receiver.delivery(repos, settings, box)).deliver_notifications()
+    assert receiver.requests == []
+    assert [(r["status"], r["last_error"]) for r in await rows(repos)] == [
+        ("dead", "integration disabled or deleted, or tenant suspended")
+    ]

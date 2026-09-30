@@ -171,10 +171,17 @@ class OutboxDelivery:
         return len(entries)
 
     async def _integrations(self, entries: List[OutboxEntry]) -> Dict[Tuple[str, UUID], Optional[Integration]]:
+        """The claimed rows' integrations; ``None`` for a deleted one or any of a suspended tenant."""
+        active: Dict[str, bool] = {}
+        for tenant_id in {e.tenant_id for e in entries}:
+            try:
+                active[tenant_id] = (await self._repos.tenants.get(tenant_id)).status == "active"
+            except NotFound:
+                active[tenant_id] = False
         found: Dict[Tuple[str, UUID], Optional[Integration]] = {}
         for key in {(e.tenant_id, e.integration_id) for e in entries}:
             try:
-                found[key] = await self._repos.integrations.get(*key)
+                found[key] = await self._repos.integrations.get(*key) if active[key[0]] else None
             except NotFound:
                 found[key] = None
         return found
@@ -220,7 +227,7 @@ class OutboxDelivery:
     async def deliver(self, entry: OutboxEntry, integration: Optional[Integration]) -> Outcome:
         """Deliver one claimed row and say what to record (never raises for delivery errors)."""
         if integration is None or not integration.enabled:
-            return Outcome("dead", error="integration disabled or deleted", metric="dead")
+            return Outcome("dead", error="integration disabled or deleted, or tenant suspended", metric="dead")
         if datetime.now(UTC) - entry.created_at > timedelta(hours=self._cfg.max_age_hours):
             return Outcome("dead", error="expired: not delivered within integrations.max_age_hours", metric="dead")
         wait = self._limiter.acquire(integration.id, rate_limit_per_minute(integration.kind, integration.config))
