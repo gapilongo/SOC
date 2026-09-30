@@ -105,6 +105,19 @@ async def test_notifications_step_uses_the_integrations_table_when_present(api: 
             await conn.execute("DROP TABLE IF EXISTS integrations")
 
 
+async def test_only_autonomy_or_response_settings_mark_autonomy_reviewed(api: ApiHarness) -> None:
+    admin = await api.login_headers(TENANT_B, "admin")
+
+    async def save(body: Dict[str, Any]) -> bool:
+        response = await api.client.patch("/api/v1/tenant/settings", json=body, headers=admin)
+        assert response.status_code == 200, response.text
+        return _steps(await _status(api, admin))["autonomy_reviewed"]
+
+    assert await save({"llm_daily_token_budget": 1_000_000}) is False
+    assert await save({"security": {"require_mfa": False}}) is False
+    assert await save({"response": {"dry_run": True}}) is True
+
+
 async def test_notifications_step_counts_only_enabled_notification_integrations(api: ApiHarness) -> None:
     admin = await api.login_headers(TENANT_B, "admin")
 

@@ -17,7 +17,7 @@ step is done; the page stays available.
 | `source_connected` | A source is registered, or an alert from a real source (not the samples) has arrived | `/sources` |
 | `notifications_configured` | The tenant has an enabled Slack, Teams, email or webhook integration (ticketing integrations do not count) | `/integrations` |
 | `teammate_invited` | The tenant has more than one user account | `/users` |
-| `autonomy_reviewed` | An admin saved the tenant settings, or chose **Mark reviewed** | `/settings` |
+| `autonomy_reviewed` | An admin saved the autonomy or response settings, or chose **Mark reviewed** | `/settings` |
 | `first_alert_triaged` | An alert (sample alerts included) has a disposition or is closed | `/alerts` |
 
 The state is computed by the API from the tenant's own data on every request
