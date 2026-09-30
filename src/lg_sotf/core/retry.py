@@ -65,6 +65,12 @@ def _status_code(exc: BaseException) -> Optional[int]:
     if status is None:
         response = getattr(exc, "response", None)
         status = getattr(response, "status_code", None)
+    if status is None:
+        # google-genai (Gemini) errors carry the HTTP status as ``code``. Other libraries use ``code`` for
+        # non-HTTP values (SQLSTATE strings, errno), so only an integer in the HTTP range counts.
+        code = getattr(exc, "code", None)
+        if isinstance(code, int) and not isinstance(code, bool) and 100 <= code <= 599:
+            status = code
     return status if isinstance(status, int) else None
 
 

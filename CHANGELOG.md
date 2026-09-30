@@ -73,6 +73,12 @@ The first commercial release: the multi-tenant platform rebuild (tracked as
   keep running (one leader) for integrations to work.
 - Response execution stays in dry run by default.
 
+### Fixed in 1.0
+
+- Gemini "503 high demand" and "429 resource exhausted" errors are now retried
+  like other providers' transient errors, instead of failing the run until
+  the message is redelivered (found in the Dev smoke test).
+
 ### Platform rebuild (previously 0.2.0)
 
 A ground-up rebuild of the proof of concept into a multi-tenant platform
