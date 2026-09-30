@@ -17,6 +17,7 @@ import {
   type JsonObject,
 } from '../api/types';
 import { useApi } from '../auth/AuthContext';
+import { getConfig } from '../config';
 import { Badge, type Tone } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../components/Dialog';
 import { useToast } from '../components/Toast';
@@ -212,6 +213,13 @@ export function buildIntegrationConfig(kind: IntegrationKind, values: Record<str
   return out;
 }
 
+/** Where the Slack app posts button clicks (the API authenticates them with the app's signing secret). */
+export function slackRequestUrl(integration: IntegrationOut): string {
+  const base = getConfig().apiBaseUrl || window.location.origin;
+  const query = new URLSearchParams({ tenant: integration.tenant_id, integration: integration.id });
+  return `${base}/api/v1/integrations/slack/interactions?${query.toString()}`;
+}
+
 function IntegrationForm({ integration, onClose }: { integration: IntegrationOut | null; onClose: () => void }) {
   const api = useApi();
   const client = useQueryClient();
@@ -317,6 +325,12 @@ function IntegrationForm({ integration, onClose }: { integration: IntegrationOut
           <Checkbox label="Enabled" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="self-end" />
         </div>
         <p className="text-sm text-slate-300">{spec.note}</p>
+        {kind === 'slack' && editing && flags.interactive_approvals && (
+          <p className="text-xs text-slate-300">
+            Slack app Interactivity Request URL:{' '}
+            <code className="select-all break-all rounded bg-slate-800 px-1 py-0.5">{slackRequestUrl(integration)}</code>
+          </p>
+        )}
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-slate-200">Events</legend>
           <div className="grid gap-2 sm:grid-cols-2">

@@ -7,6 +7,10 @@ and the integration id, and never returned (responses carry
 ``secrets: {field: configured}``). On update, ``secret`` is a merge patch:
 a value replaces that field, ``null`` removes it, absent fields are kept.
 Every change and every test is written to the audit log.
+
+``POST /integrations/slack/interactions`` is the Request URL of a Slack
+app's Interactivity: it is authenticated by the app's signing secret, not
+by a bearer token (see :mod:`lg_sotf.integrations.slack`).
 """
 
 from __future__ import annotations
@@ -17,16 +21,19 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db.errors import NotFound
+from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry
 from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.integrations.channels import send_notification
 from lg_sotf.integrations.config import (
     NOTIFY_KINDS,
@@ -49,8 +56,20 @@ from lg_sotf.integrations.events import (
     ui_base_url,
 )
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp, tls_verify
+from lg_sotf.integrations.slack import (
+    MAX_BODY_BYTES,
+    REPLAY_TTL_S,
+    SlackRequestError,
+    outcome_text,
+    parse_interaction,
+    replay_key,
+    reply,
+    verified_email,
+    verify_slack_request,
+)
 from lg_sotf.integrations.ticketing import ticket_client
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services.review import REVIEWER_ROLES, ReviewDenied
 
 log = get_logger(__name__)
 
@@ -242,6 +261,103 @@ def _http(request: Request) -> IntegrationHttp:
 async def list_integrations(request: Request, principal: Principal = Depends(require(ADMIN))) -> List[IntegrationOut]:
     ctx = get_ctx(request)
     return [integration_out(ctx, i) for i in await ctx.repos.integrations.list(principal.tenant_id)]
+
+
+@router.post(
+    "/slack/interactions",
+    status_code=200,
+    summary="Slack Interactivity Request URL (approve or reject actions from Slack)",
+    response_class=Response,
+)
+async def slack_interactions(
+    request: Request,
+    tenant: str = Query(max_length=63),
+    integration: UUID = Query(),
+) -> Response:
+    """Verified with the Slack app's signing secret (v0 HMAC, 5-minute window, replay cache); see the module docstring."""
+    ctx = get_ctx(request)
+    denied = ApiError(401, "unauthorized", "invalid Slack request")
+    client = request.client.host if request.client else "unknown"
+    await ctx.limiter.enforce("slack", client, ctx.settings.api.rate_limit_per_minute)
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise ApiError(413, "payload_too_large", "Slack interaction payload too large")
+    if not is_valid_tenant_id(tenant):
+        raise denied
+    tenant_row = await ctx.tenants.get(tenant)
+    if tenant_row is None or tenant_row.status != "active":
+        raise denied
+    try:
+        item = await ctx.repos.integrations.get(tenant, integration)
+        secret = decrypt_secret(ctx.secret_box, tenant, item.id, item.secret_ciphertext)
+    except (NotFound, IntegrationConfigError):
+        raise denied from None
+    if item.kind != "slack" or not item.enabled or not item.config.get("interactive_approvals"):
+        raise denied
+    signing_secret, bot_token = secret.get("signing_secret"), secret.get("bot_token")
+    signature = request.headers.get("X-Slack-Signature")
+    if not signing_secret or not bot_token or not signature:
+        raise denied
+    if not verify_slack_request(signing_secret, request.headers.get("X-Slack-Request-Timestamp"), body, signature):
+        log.warning("integrations.slack_signature_invalid")
+        raise denied
+    if not await ctx.redis.set(replay_key(ctx.prefix, tenant, signature), b"1", nx=True, ex=REPLAY_TTL_S):
+        log.warning("integrations.slack_replay_refused")
+        raise denied
+    try:
+        interaction = parse_interaction(body)
+    except SlackRequestError as exc:
+        return JSONResponse({"response_type": "ephemeral", "text": f"LG-SOTF: {exc}"})
+    http = _http(request)
+    user = None
+    acted = None
+    outcome = "unmapped_user"
+    try:
+        email = await verified_email(http, bot_token, interaction.slack_user_id)
+        found = await ctx.repos.users.get_by_email(tenant, email) if email else None
+        if found is not None and found.is_active and found.role in REVIEWER_ROLES:
+            user = found
+            review = ctx.review.approve_actions if interaction.approve else ctx.review.reject_actions
+            resumes = await review(tenant, [interaction.action_id], found.id, found.role)
+            await enqueue_resumes(ctx, tenant, resumes)
+            acted = await ctx.repos.actions.get(tenant, interaction.action_id)
+            outcome = acted.status
+    except ReviewDenied:
+        outcome = "denied"
+    except InvalidTransition:
+        outcome = "not_pending"
+    except NotFound:
+        outcome = "not_found"
+    except DeliveryError:
+        outcome = "slack_api_error"
+    await AuditLogger(ctx.repos).record(
+        tenant,
+        "integration.slack_interaction",
+        "response_action",
+        str(interaction.action_id),
+        actor_type="user" if user is not None else "system",
+        actor_id=str(user.id) if user is not None else f"slack:{interaction.slack_user_id}",
+        details={
+            "integration_id": str(item.id),
+            "slack_user_id": interaction.slack_user_id,
+            "slack_team_id": interaction.slack_team_id,
+            "requested": "approve" if interaction.approve else "reject",
+            "outcome": outcome,
+        },
+    )
+    messages = {
+        "unmapped_user": "LG-SOTF: your Slack account is not linked to an active analyst or admin of this tenant "
+        "(the verified Slack email must match an LG-SOTF user).",
+        "denied": "LG-SOTF: your role may not decide this action (high and critical risk need an admin).",
+        "not_pending": "LG-SOTF: this action is no longer awaiting approval.",
+        "not_found": "LG-SOTF: this action no longer exists.",
+        "slack_api_error": "LG-SOTF: your Slack user could not be looked up; check the bot token and its users:read.email scope.",
+    }
+    text = messages.get(outcome) or outcome_text(
+        interaction.approve, outcome, {"type": acted.action_type, "target": acted.target} if acted is not None else {}
+    )
+    await reply(http, interaction.response_url, text)
+    return Response(status_code=200)
 
 
 @router.get("/{integration_id}", response_model=IntegrationOut, summary="Integration detail")

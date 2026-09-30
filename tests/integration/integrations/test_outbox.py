@@ -106,7 +106,7 @@ async def test_decisions_actions_and_critical_alerts_are_queued(
     plan = await responses.plan(
         TENANT_A, alert_id,
         PlanContext(severity="high", title="t", evidence="analyst", recommended_actions=["isolate_host"],
-                    hosts=["ws-042"], entities={"hosts": ["ws-042"]}),
+                    hosts=["ws-042"], entities={"host": ["ws-042"]}),
     )
     assert plan.awaiting
     critical = await add_alert(repos, TENANT_A, severity="critical")
