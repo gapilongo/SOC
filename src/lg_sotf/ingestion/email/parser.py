@@ -549,9 +549,14 @@ def parse_email(
     subject = _clean_text(_decoded("subject", _first(headers, "subject") or ""), MAX_SUBJECT_CHARS)
     message_id = _message_id(_first(headers, "message-id"))
 
-    plain = " ".join(scan.plain)
-    visible = plain if plain.strip() else " ".join(scan.html_text)
-    visible = _SPACE_RE.sub(" ", visible).strip()
+    # The HTML text is what the recipient saw (including text hidden with CSS, which the model and the
+    # injection checks must see too). A plain-text alternative that says something else is appended:
+    # a sender can put different content in each part.
+    html_text = _SPACE_RE.sub(" ", " ".join(scan.html_text)).strip()
+    plain_text = _SPACE_RE.sub(" ", " ".join(scan.plain)).strip()
+    visible = html_text or plain_text
+    if html_text and plain_text and plain_text not in html_text:
+        visible = f"{html_text} {plain_text}"
     _wording(scan, subject)
     body_hash = hashlib.sha256(visible.encode("utf-8", "surrogatepass")).hexdigest()
 
