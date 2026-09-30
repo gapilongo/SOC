@@ -38,8 +38,9 @@ With `environment` set to `staging` or `production`, every process calls
 
 * `auth.jwt_secret` is missing or shorter than 32 bytes;
 * `security.encryption_keys` or `security.indicator_hmac_key` is missing;
-* `llm.provider` is `fake` without `llm.allow_fake`, or a real provider has no
-  API key;
+* `llm.provider` is `fake` without `llm.allow_fake`, or a cloud provider has no
+  API key (`ollama` and `openai_compatible` need none), or `llm.base_url`
+  breaks the endpoint policy (docs/local-llm.md);
 * `api.cors_origins` contains `*`, or `auth.cookie_secure` is false;
 * `database.url` contains the development password;
 * any secret still has a value published in this repository (the placeholders
@@ -116,9 +117,10 @@ Language model provider, tiers, prompt limits, budgets and pricing.
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
 | `llm.enabled` | `LG_SOTF_LLM__ENABLED` | boolean | `true` | Master switch. When false, agents run on rules only and nothing is sent to a model. |
-| `llm.provider` | `LG_SOTF_LLM__PROVIDER` | `anthropic` \| `openai` \| `gemini` \| `fake` | `anthropic` | `anthropic` (default), `openai`, `gemini` (optional extras) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`). |
-| `llm.api_key` | `LG_SOTF_LLM__API_KEY` | secret (optional) | unset | Provider API key. Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider. |
-| `llm.base_url` | `LG_SOTF_LLM__BASE_URL` | string (optional) | unset | Custom API endpoint (gateway or proxy). When set, Anthropic server-side refusal fallbacks are not requested. |
+| `llm.provider` | `LG_SOTF_LLM__PROVIDER` | `anthropic` \| `openai` \| `gemini` \| `ollama` \| `openai_compatible` \| `fake` | `anthropic` | `anthropic` (default), `openai`, `gemini` (optional extras), the self-hosted `ollama` and `openai_compatible` (vLLM, llama.cpp, LM Studio, ...; API key optional, metered as `local/<model>` at zero cost; see docs/local-llm.md) or `fake` (deterministic offline heuristic for tests and demos; refused in staging/production unless `llm.allow_fake`). |
+| `llm.api_key` | `LG_SOTF_LLM__API_KEY` | secret (optional) | unset | Provider API key (optional for `ollama` and `openai_compatible`). Falls back to `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GOOGLE_API_KEY` for the chosen provider. |
+| `llm.base_url` | `LG_SOTF_LLM__BASE_URL` | string (optional) | unset | Custom API endpoint (gateway, proxy or self-hosted server). Required for `openai_compatible`; `ollama` defaults to `http://ollama:11434/v1`. `http://` only to loopback, private (RFC 1918, CGNAT, ULA), docker service or `*.internal` hosts; metadata and link-local addresses and credentials in the URL are refused. When set, Anthropic server-side refusal fallbacks are not requested. |
+| `llm.structured_output` | `LG_SOTF_LLM__STRUCTURED_OUTPUT` | `auto` \| `json_schema` \| `json_mode` \| `function_calling` | `auto` | How `ollama` and `openai_compatible` return structured output: `json_schema` (`auto`; the schema as `response_format` and in the prompt), `json_mode` (`response_format: json_object`) or `function_calling`. JSON replies get one validation-and-repair retry. Cloud providers always use their native method. |
 | `llm.refusal_fallback` | `LG_SOTF_LLM__REFUSAL_FALLBACK` | boolean | `true` | Anthropic only: ask the API to retry a refused request on a fallback model (server-side fallback beta). A refusal that remains still escalates the alert. |
 | `llm.prices` | `LG_SOTF_LLM__PRICES` | mapping | `{}` | Price overrides per model id, merged over the built-in table: `{model: {input, output, cache_write, cache_read}}` in USD per million tokens (cache prices default to 1.25x and 0.1x input). Unknown models are metered at zero cost with a warning. |
 | `llm.allow_fake` | `LG_SOTF_LLM__ALLOW_FAKE` | boolean | `false` | Allow `provider=fake` in staging/production (demos only). |

@@ -1,0 +1,138 @@
+# Local LLM overlay: triage on a model served by Ollama inside the stack.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.ollama.yml up -d
+#   # production-like: -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.ollama.yml
+#
+# The ollama service is attached only to the `llm` network, which is internal:
+# no published port, no route out of the host. The api and worker reach it as
+# http://ollama:11434/v1 (plain HTTP is allowed there because `ollama` is a
+# docker service name; see docs/local-llm.md). Prompts and alert data never
+# leave the machine.
+#
+# Because it has no egress, the server cannot download models itself. Put them
+# into the ollama-models volume first:
+#   connected host:  docker compose -f docker/docker-compose.yml -f docker/docker-compose.ollama.yml \
+#                        --profile ollama-pull run --rm ollama-pull
+#   air-gapped host: scripts/airgap/load.sh (restores the models saved by scripts/airgap/bundle.sh)
+#
+# Variables (.env or the shell):
+#   OLLAMA_MODEL            fast-tier model (default qwen3:8b)
+#   OLLAMA_DEEP_MODEL       deep-tier model (default: OLLAMA_MODEL)
+#   OLLAMA_STRUCTURED_OUTPUT  json_schema (default) | json_mode | function_calling
+#   OLLAMA_CONTEXT_LENGTH   context window per request (default 16384; prompts reach
+#                           ~10k tokens, and Ollama silently truncates past its window)
+#   OLLAMA_NUM_PARALLEL     requests served at once per model, also the per-tier
+#                           concurrency of the app (default 2)
+#   OLLAMA_TIMEOUT_S        per-call timeout of both tiers (default 600: CPU inference is slow)
+#   OLLAMA_KEEP_ALIVE       how long a model stays loaded after use (default 24h)
+#   OLLAMA_IMAGE            image override (e.g. a registry mirror or the -rocm tag)
+#
+# NVIDIA GPU: install the NVIDIA Container Toolkit and uncomment `deploy:` below.
+
+x-ollama-image: &ollama-image ${OLLAMA_IMAGE:-ollama/ollama:0.35.0@sha256:2a6e883b917fc543389599dae79918f5cac9e1438890506982f44aa4f5625d01}
+
+x-llm-environment: &llm-environment
+  LG_SOTF_LLM__PROVIDER: ollama
+  LG_SOTF_LLM__BASE_URL: http://ollama:11434/v1
+  LG_SOTF_LLM__STRUCTURED_OUTPUT: ${OLLAMA_STRUCTURED_OUTPUT:-json_schema}
+  LG_SOTF_LLM__FAST__MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+  LG_SOTF_LLM__DEEP__MODEL: ${OLLAMA_DEEP_MODEL:-${OLLAMA_MODEL:-qwen3:8b}}
+  LG_SOTF_LLM__FAST__MAX_TOKENS: "2048"
+  LG_SOTF_LLM__DEEP__MAX_TOKENS: "8192"
+  LG_SOTF_LLM__FAST__TIMEOUT_S: ${OLLAMA_TIMEOUT_S:-600}
+  LG_SOTF_LLM__DEEP__TIMEOUT_S: ${OLLAMA_TIMEOUT_S:-600}
+  LG_SOTF_LLM__FAST__MAX_CONCURRENCY: ${OLLAMA_NUM_PARALLEL:-2}
+  LG_SOTF_LLM__DEEP__MAX_CONCURRENCY: ${OLLAMA_NUM_PARALLEL:-2}
+  # Anthropic cache_control breakpoints mean nothing to Ollama.
+  LG_SOTF_LLM__PROMPT_CACHING: "false"
+
+x-ollama-environment: &ollama-environment
+  OLLAMA_HOST: 0.0.0.0:11434
+  OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-16384}
+  OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-2}
+  OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-24h}
+
+services:
+  ollama:
+    image: *ollama-image
+    environment:
+      <<: *ollama-environment
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - llm
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # `ollama list` asks the running server, so it fails until the API answers.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    restart: unless-stopped
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # One-shot model download for connected hosts (profile `ollama-pull`): a private
+  # server on the default network (which has egress) pulls OLLAMA_MODEL and
+  # OLLAMA_DEEP_MODEL into the shared volume, then exits.
+  ollama-pull:
+    profiles: ["ollama-pull"]
+    image: *ollama-image
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        ollama serve >/tmp/ollama-serve.log 2>&1 &
+        tries=0
+        until ollama list >/dev/null 2>&1; do
+          tries=$$((tries + 1))
+          [ "$$tries" -lt 60 ] || { echo "ollama did not start" >&2; exit 1; }
+          sleep 1
+        done
+        for model in $$PULL_MODELS; do ollama pull "$$model"; done
+        ollama list
+    environment:
+      OLLAMA_HOST: 127.0.0.1:11434
+      PULL_MODELS: ${OLLAMA_MODEL:-qwen3:8b} ${OLLAMA_DEEP_MODEL:-}
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - default
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  api:
+    environment:
+      <<: *llm-environment
+    networks:
+      llm: {}
+
+  worker:
+    environment:
+      <<: *llm-environment
+    networks:
+      default: {}
+      llm: {}
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+networks:
+  # No external connectivity: only the api, worker and ollama are attached.
+  llm:
+    internal: true
+
+volumes:
+  ollama-models:
