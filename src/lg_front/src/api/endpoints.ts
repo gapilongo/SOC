@@ -2,6 +2,7 @@
 
 import type { ApiClient } from './client';
 import type {
+  AccuracyReportOut,
   ActionOut,
   AlertDetailOut,
   AlertEventOut,
@@ -15,9 +16,12 @@ import type {
   DashboardOut,
   DecisionIn,
   DecisionOut,
+  DetectionsReportOut,
   EscalationOut,
   JsonObject,
+  MonthlyReportOut,
   Page,
+  ProposeSuppressionIn,
   ReprocessOut,
   SourceCreateIn,
   SourceOut,
@@ -33,6 +37,7 @@ import type {
   UserCreateIn,
   UserOut,
   UserUpdateIn,
+  ValueReportOut,
 } from './types';
 
 export const PAGE_SIZE = 100;
@@ -138,4 +143,21 @@ export const endpoints = {
   verifyAudit: (api: ApiClient, from?: string) => api.get<AuditVerifyOut>('/audit/verify', { query: { from } }),
 
   createTenant: (api: ApiClient, body: TenantCreateIn) => api.post<TenantCreatedOut>('/platform/tenants', body),
+
+  valueReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<ValueReportOut>('/reports/value', { query: { from, to }, signal }),
+  accuracyReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<AccuracyReportOut>('/reports/accuracy', { query: { from, to }, signal }),
+  detectionsReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<DetectionsReportOut>('/reports/detections', { query: { from, to }, signal }),
+  /** Server-side CSV of the value daily series or the detections table. */
+  reportCsv: (api: ApiClient, kind: 'value' | 'detections', from: string, to: string) =>
+    api.get<string>(`/reports/${kind}`, { query: { from, to, format: 'csv' }, responseType: 'text', headers: { Accept: 'text/csv' } }),
+  proposeSuppression: (api: ApiClient, body: ProposeSuppressionIn) =>
+    api.post<SuppressionOut>('/reports/detections/propose-suppression', body),
+  monthlyReport: (api: ApiClient, month: string, signal?: AbortSignal) =>
+    api.get<MonthlyReportOut>('/reports/monthly', { query: { month, format: 'json' }, signal }),
+  /** The self-contained monthly HTML report (to save and print). */
+  monthlyReportHtml: (api: ApiClient, month: string) =>
+    api.get<string>('/reports/monthly', { query: { month, format: 'html' }, responseType: 'text', headers: { Accept: 'text/html' } }),
 };

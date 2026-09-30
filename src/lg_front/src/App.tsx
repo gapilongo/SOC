@@ -27,6 +27,8 @@ const UsersPage = lazy(() => import('./pages/UsersPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
 const AuditPage = lazy(() => import('./pages/AuditPage'));
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
+const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
 const PlatformPage = lazy(() => import('./pages/PlatformPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFound'));
 
@@ -55,6 +57,8 @@ export function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path={CALLBACK_PATH} element={<OidcCallbackPage />} />
+        {/* Printable report: outside the app layout so only the report prints. */}
+        <Route path="reports/monthly/:month" element={<RequireAuth><MonthlyReportPage /></RequireAuth>} />
         <Route
           element={
             <RequireAuth>
@@ -69,6 +73,7 @@ export function AppRoutes() {
           <Route path="escalations" element={<EscalationsPage />} />
           <Route path="actions" element={<ActionsPage />} />
           <Route path="suppressions" element={<SuppressionsPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route path="sources" element={<RequireRole allowed={can.admin}><SourcesPage /></RequireRole>} />
           <Route path="users" element={<RequireRole allowed={can.admin}><UsersPage /></RequireRole>} />
           <Route path="settings" element={<RequireRole allowed={can.admin}><TenantSettingsPage /></RequireRole>} />

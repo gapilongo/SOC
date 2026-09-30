@@ -33,6 +33,8 @@ export interface RequestOptions {
   credentials?: RequestCredentials;
   /** Extra headers. */
   headers?: Record<string, string>;
+  /** `text` returns the body as a string (CSV and HTML exports) instead of parsing JSON. */
+  responseType?: 'json' | 'text';
 }
 
 export class ApiError extends Error {
@@ -215,6 +217,7 @@ export function createApiClient(opts: {
     if (!response.ok) throw await parseError(response, requestId);
     if (response.status === 204) return undefined as T;
     const text = await response.text();
+    if (options.responseType === 'text') return text as T;
     return (text ? JSON.parse(text) : undefined) as T;
   }
 

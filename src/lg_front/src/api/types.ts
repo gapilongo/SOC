@@ -335,6 +335,12 @@ export interface DashboardOut {
   queue_depth: number;
   llm_cost_usd: number;
   llm_tokens: number;
+  /** Value tiles (definitions in docs/reporting.md). */
+  handled_without_human?: number;
+  needed_human?: number;
+  handled_without_human_rate?: number | null;
+  analyst_hours_saved?: number;
+  minutes_per_alert?: number;
 }
 
 export interface UsageDayOut {
@@ -403,4 +409,149 @@ export interface LiveEvent {
   alert_id: string | null;
   data: JsonObject;
   ts: string;
+}
+
+// ------------------------------------------------------------------ reports
+
+/** One day (or the window's totals) of the value report; rates are fractions, null when undefined. */
+export interface ValueMetrics {
+  alerts_ingested: number;
+  handled_without_human: number;
+  needed_human: number;
+  in_progress: number;
+  handled_without_human_rate: number | null;
+  analyst_hours_saved: number;
+  auto_closed_benign: number;
+  auto_contained: number;
+  auto_contained_dry_run: number;
+  escalated: number;
+  human_decided: number;
+  suppressed_by_rule: number;
+  verdict_cache_hits: number;
+  grouped_into_escalation: number;
+  mean_time_to_verdict_s: number | null;
+  verdicts: number;
+  mtta_s: number | null;
+  escalations_created: number;
+  acknowledged: number;
+  mttr_s: number | null;
+  mttr_auto_s: number | null;
+  mttr_human_s: number | null;
+  resolved: number;
+  sla_breaches: number;
+  llm_cost_usd: number;
+  llm_cost_per_alert_usd: number | null;
+}
+
+export interface ValueDay extends ValueMetrics {
+  day: string;
+}
+
+export interface ValueReportOut {
+  from: string;
+  to: string;
+  generated_at: string;
+  minutes_per_alert: number;
+  totals: ValueMetrics;
+  escalations_breached: number;
+  days: ValueDay[];
+  notes: string[];
+}
+
+export type DataStatus = 'ok' | 'insufficient_data';
+
+export interface AccuracyBlock {
+  samples: number;
+  status: DataStatus;
+  /** confusion_matrix[analyst class][AI class] */
+  confusion_matrix: Record<string, Record<string, number>>;
+  agreement: number;
+  agreement_rate: number | null;
+  agreement_ci95: [number, number] | null;
+  analyst_malicious: number;
+  false_negatives: number;
+  false_negative_rate: number | null;
+  false_negative_ci95: [number, number] | null;
+  analyst_benign: number;
+  false_positives: number;
+  false_positive_rate: number | null;
+  ai_inconclusive: number;
+  ai_inconclusive_rate: number | null;
+}
+
+export interface FeedbackRate {
+  rate: number | null;
+  samples: number;
+  status: DataStatus;
+}
+
+export interface AccuracyReportOut {
+  from: string;
+  to: string;
+  generated_at: string;
+  min_samples: number;
+  low_score_below: number;
+  high_score_from: number;
+  overall: AccuracyBlock;
+  by_model: Array<{ model: string; accuracy: AccuracyBlock }>;
+  feedback: {
+    total: number;
+    by_decision: Record<string, number>;
+    triage_correct: FeedbackRate;
+    analysis_accurate: FeedbackRate;
+    correlation_helpful: FeedbackRate;
+    avg_review_duration_s: number | null;
+  };
+  notes: string[];
+}
+
+export type DetectionSuggestion = 'tune_rule' | 'candidate_suppression';
+
+export interface DetectionOut {
+  source_id: string;
+  rule_field: 'rule_name' | 'title';
+  rule: string;
+  volume: number;
+  decided: number;
+  benign: number;
+  benign_rate: number | null;
+  malicious: number;
+  auto_closed: number;
+  analyst_false_positive: number;
+  analyst_benign_positive: number;
+  analyst_true_positive: number;
+  median_severity: string | null;
+  max_severity: string | null;
+  max_confirmed_benign_severity: string | null;
+  suggestion: DetectionSuggestion | null;
+  reason: string;
+  can_propose_suppression: boolean;
+}
+
+export interface DetectionsReportOut {
+  from: string;
+  to: string;
+  generated_at: string;
+  detections: DetectionOut[];
+  truncated: boolean;
+  limit: number;
+  notes: string[];
+}
+
+export interface ProposeSuppressionIn {
+  source_id: string;
+  rule_field: 'rule_name' | 'title';
+  rule: string;
+  from?: string;
+  to?: string;
+}
+
+export interface MonthlyReportOut {
+  tenant_id: string;
+  tenant_name: string;
+  month: string;
+  generated_at: string;
+  value: ValueReportOut;
+  accuracy: AccuracyReportOut;
+  detections: DetectionsReportOut;
 }

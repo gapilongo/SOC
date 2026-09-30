@@ -61,12 +61,12 @@ tr { break-inside: avoid; }
 .muted { color: #475569; }
 .notes li { margin-bottom: 4px; }
 svg.bars { width: 100%; height: auto; }
-svg.bars rect.all { fill: #cbd5e1; }
-svg.bars rect.auto { fill: #0369a1; }
+svg.bars rect.auto { fill: #2a78d6; }
+svg.bars rect.human { fill: #eb6834; }
 svg.bars text { font-size: 9px; fill: #475569; }
 .legend span { display: inline-block; width: 10px; height: 10px; margin: 0 4px 0 12px; vertical-align: middle; }
-.legend .all { background: #cbd5e1; }
-.legend .auto { background: #0369a1; }
+.legend .auto { background: #2a78d6; }
+.legend .human { background: #eb6834; }
 .rule { word-break: break-word; }
 footer { margin-top: 28px; font-size: 11px; color: #475569; border-top: 1px solid #e2e8f0; padding-top: 8px; }
 @media print { body { padding: 0; } h2 { break-after: avoid; } }
@@ -173,26 +173,37 @@ def _table(headers: Sequence[Tuple[str, bool]], rows: Iterable[Sequence[str]], c
 
 
 def _bars(days: Sequence[ValueDay]) -> str:
-    """Ingested (grey) and handled-without-human (blue) per day, as SVG geometry (no style attributes)."""
+    """Handled without a human (blue) stacked under needed a human (orange) per day, as SVG geometry.
+
+    The two hues are a validated colour-blind-safe pair; a 2 px gap separates the segments and the
+    legend names both, so identity never rests on colour alone.
+    """
     if not days:
         return ""
     width, height, pad_b = 900, 150, 16
-    peak = max(1, *(d.alerts_ingested for d in days))
+    peak = max(1, *(d.handled_without_human + d.needed_human for d in days))
     step = width / len(days)
     bar = max(1.0, step - 2)
+    plot = height - pad_b
     parts: List[str] = []
     label_every = max(1, len(days) // 10)
     for i, d in enumerate(days):
         x = i * step + 1
-        for cls, n in (("all", d.alerts_ingested), ("auto", d.handled_without_human)):
-            h = (height - pad_b) * n / peak
-            parts.append(f'<rect class="{cls}" x="{x:.1f}" y="{height - pad_b - h:.1f}" width="{bar:.1f}" height="{h:.1f}"/>')
+        auto = plot * d.handled_without_human / peak
+        human = plot * d.needed_human / peak
+        gap = 2.0 if auto > 0 and human > 0 else 0.0
+        if auto > 0:
+            parts.append(f'<rect class="auto" x="{x:.1f}" y="{plot - auto:.1f}" width="{bar:.1f}" height="{auto:.1f}"/>')
+        if human > 0:
+            top = plot - auto - gap - human
+            parts.append(f'<rect class="human" x="{x:.1f}" y="{top:.1f}" width="{bar:.1f}" height="{human:.1f}"/>')
         if i % label_every == 0:
             parts.append(f'<text x="{x:.1f}" y="{height - 3}">{_e(d.day.strftime("%d"))}</text>')
-    label = f"Alerts ingested and handled without a human per day, peak {peak:,}"
+    label = f"Alerts handled without a human and alerts that needed a human per day, peak {peak:,}"
     return (
         f'<svg class="bars" viewBox="0 0 {width} {height}" role="img" aria-label="{_e(label)}">{"".join(parts)}</svg>'
-        '<div class="legend muted"><span class="all"></span>Ingested<span class="auto"></span>Handled without a human</div>'
+        '<div class="legend muted"><span class="auto"></span>Handled without a human'
+        '<span class="human"></span>Needed a human</div>'
     )
 
 

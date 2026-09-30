@@ -258,6 +258,38 @@ function BudgetSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
+function ReportingSection({ data }: { data: TenantSettingsOut }) {
+  const current = obj(data.settings.reporting).minutes_per_alert;
+  const [minutes, setMinutes] = useState(typeof current === 'number' ? String(current) : '');
+  const [localError, setLocalError] = useState<Error | null>(null);
+  const save = useSave();
+  const submit = () => {
+    setLocalError(null);
+    if (!minutes.trim()) {
+      save.mutate({ reporting: { minutes_per_alert: null } });
+      return;
+    }
+    const n = Number(minutes);
+    if (!Number.isInteger(n) || n < 1 || n > 480) {
+      setLocalError(new Error('Minutes per alert must be a whole number from 1 to 480.'));
+      return;
+    }
+    save.mutate({ reporting: { minutes_per_alert: n } });
+  };
+  return (
+    <Section
+      title="Reporting"
+      saveLabel="Save reporting"
+      description="Analyst hours saved = alerts handled without a human x minutes per alert / 60. Set the minutes an analyst typically spends triaging one alert; it is an estimate and is labelled as one in every report."
+      onSubmit={submit}
+      busy={save.isPending}
+      error={localError ?? save.error}
+    >
+      <TextField label="Minutes per alert" type="number" min={1} max={480} value={minutes} onChange={(e) => setMinutes(e.target.value)} hint="Empty uses the default (15)." wrapperClassName="max-w-xs" />
+    </Section>
+  );
+}
+
 function ReviewSection({ data }: { data: TenantSettingsOut }) {
   const review = obj(data.settings.review);
   const sla = obj(review.sla_minutes);
@@ -323,6 +355,7 @@ export default function TenantSettingsPage() {
           <div className="space-y-5">
             <BudgetSection data={d} />
             <ReviewSection data={d} />
+            <ReportingSection data={d} />
           </div>
         </div>
       )}
