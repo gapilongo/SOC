@@ -148,6 +148,9 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ExportTable("notification_outbox.jsonl", "notification_outbox", "*", _ID_UUID),
     ExportTable("external_tickets.jsonl", "external_tickets", "*", _ID_UUID),
     ExportTable("usage_daily.jsonl", "usage_daily", "*", (("day", "date"),)),
+    ExportTable(
+        "llm_usage_daily.jsonl", "llm_usage_daily", "*", (("day", "date"), ("model", "text"), ("agent", "text"))
+    ),
     ExportTable("audit_log.jsonl", "audit_log", "*", _ID_BIGINT),
 )
 

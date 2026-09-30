@@ -185,7 +185,7 @@ The archive holds JSON Lines files, one object per row: `users.jsonl`,
 `api_keys.jsonl`, `sources.jsonl`, `alerts.jsonl`, `alert_events.jsonl`,
 `escalations.jsonl`, `feedback.jsonl`, `actions.jsonl`, `suppressions.jsonl`,
 `integrations.jsonl`, `notification_outbox.jsonl` (delivery summaries),
-`external_tickets.jsonl`, `usage_daily.jsonl` and `audit_log.jsonl`, plus `tenant.json` (name, status, settings) and
+`external_tickets.jsonl`, `usage_daily.jsonl`, `llm_usage_daily.jsonl` and `audit_log.jsonl`, plus `tenant.json` (name, status, settings) and
 `manifest.json` (row count and SHA-256 of every file, who exported and when).
 
 Secrets are never exported:
