@@ -17,7 +17,7 @@ One container image, four process roles, selected by `lg-sotf <role>`:
 |---|---|---|---|
 | API | `lg-sotf api` | horizontally (HPA on CPU/RPS) | REST + WebSocket, auth, tenant scoping, enqueues work. Never runs a workflow in-process. |
 | Worker | `lg-sotf worker` | horizontally (KEDA on queue lag) | Consumes the alert queue, runs the LangGraph workflow with a Postgres checkpointer, resumes interrupted runs. |
-| Scheduler | `lg-sotf scheduler` | 2 replicas, one active (leader lease) | Polls pull-based sources and enqueues alerts, sweeps SLAs and stale runs, retention and partition maintenance, exports queue gauges. |
+| Scheduler | `lg-sotf scheduler` | 2 replicas, one active (leader lease) | Polls pull-based sources and enqueues alerts, sweeps SLAs and stale runs, retention and partition maintenance, exports queue gauges, delivers the integrations outbox and polls linked tickets. |
 | Migrate | `lg-sotf migrate` | one-shot job | Alembic `upgrade head`, LangGraph checkpointer `setup()`, bootstrap tenant/admin. |
 
 Supporting services: PostgreSQL 15+ (system of record, checkpoints, RLS
@@ -135,6 +135,9 @@ next two partitions ahead and drops expired ones.
 | `suppression_rules` | `id` PK, `tenant_id`, `name`, `match JSONB` (field → value/regex/cidr predicates), `disposition` (benign), `created_by`, `source_feedback_id`, `expires_at`, `hit_count`, `last_hit_at`, `enabled` |
 | `indicator_sightings` | `tenant_id`, `indicator_type`, `value_hash` (HMAC-SHA256 with per-install key), `value_display` (truncated, redacted), `alert_id`, `seen_at`. Index (`tenant_id`, `indicator_type`, `value_hash`, `seen_at DESC`). Correlation reads this instead of scanning JSONB |
 | `llm_usage_daily` | PK (`tenant_id`, `day`, `model`, `agent`); `calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd NUMERIC(12,6)`, `refusals`, `errors` (UPSERT) |
+| `integrations` | `id UUID` PK, `tenant_id`, `kind` (slack/teams/email/webhook/jira/servicenow), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `events TEXT[]`, `min_severity` (docs/integrations.md) |
+| `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
+| `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in

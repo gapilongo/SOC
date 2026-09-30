@@ -10,6 +10,7 @@
 | [CI/CD](cicd.md) | Operators | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM (Caddy HTTPS), promotion, rollback, backups |
 | [Operations](operations.md) | Operators | Health, scaling, dead letters, stuck runs, retention, key rotation, incidents, dashboards and alerts |
 | [Security](security.md) | Security reviewers, customers | Threat model, tenant isolation, authentication, secrets, prompt-injection defences, guardrails, data handling, audit |
+| [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
 
 Repository files: [README](../README.md), [CHANGELOG](../CHANGELOG.md),

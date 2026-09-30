@@ -176,6 +176,15 @@ Every ingest call answers per event (`inserted`, `duplicate`, `rejected` with
 a reason). Duplicates (same source and source alert id) are never processed
 twice.
 
+### Notify channels and open tickets
+
+Under **Integrations**, send escalations, SLA breaches, pending approvals and
+action outcomes to Slack, Microsoft Teams (Workflows), email or a signed
+webhook, and open a Jira or ServiceNow ticket for each escalation. Choose the
+events and the minimum severity, use **Test**, and check the **Log** for
+failed deliveries. Linked tickets appear in the alert drawer and on
+escalation cards. See [integrations.md](integrations.md) for each tool's setup.
+
 ### Set the response policy
 
 `PATCH /tenant/settings` (merge patch; `GET` shows the current values with
