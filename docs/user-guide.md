@@ -34,7 +34,10 @@ dead-lettered (operators handle those).
 
 Platform admins (an operator-level flag) can additionally create tenants and
 act on another tenant with the `X-Tenant-ID` header; such access is recorded
-in that tenant's audit log, and decisions stay with the tenant's members.
+in that tenant's audit log, and decisions stay with the tenant's members. The
+web app's MSSP console and header tenant switcher build on this
+(docs/mssp.md). New tenant admins find a getting-started checklist and
+sample alerts under Getting started (docs/onboarding.md).
 
 ## Signing in
 

@@ -58,7 +58,10 @@ opt-in, LLM daily token budget) lives in the database (`tenants.settings`)
 and is edited by tenant admins through `GET/PATCH /api/v1/tenant/settings`
 (docs/api.md). The install settings below provide defaults and hard limits
 for those tenant settings. Data retention is an install setting
-(`retention.*` below); the API cannot change it per tenant.
+(`retention.*` below); a tenant admin may override `alerts_days` and
+`indicators_days` for their tenant (`retention` in the tenant settings),
+within `retention.tenant_min_days` .. `retention.tenant_max_days`. The
+other retention periods apply to every tenant.
 
 ## Settings reference
 
@@ -245,12 +248,15 @@ Data retention, applied by the scheduler's maintenance job.
 
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
-| `retention.alerts_days` | `LG_SOTF_RETENTION__ALERTS_DAYS` | integer | `90` | Alerts (and their runs, escalations, actions) older than this are purged. |
+| `retention.alerts_days` | `LG_SOTF_RETENTION__ALERTS_DAYS` | integer | `90` | Alerts (and their runs, escalations, actions) older than this are purged. Tenants may override it with `retention.alerts_days` in their settings. |
 | `retention.events_days` | `LG_SOTF_RETENTION__EVENTS_DAYS` | integer | `90` | Alert timeline events. |
 | `retention.audit_days` | `LG_SOTF_RETENTION__AUDIT_DAYS` | integer | `365` | Audit log (hash chain per tenant); export before it ages out if you need longer. |
-| `retention.indicators_days` | `LG_SOTF_RETENTION__INDICATORS_DAYS` | integer | `30` | Indicator sightings used for correlation. |
+| `retention.indicators_days` | `LG_SOTF_RETENTION__INDICATORS_DAYS` | integer | `30` | Indicator sightings used for correlation. Tenants may override it with `retention.indicators_days`. |
 | `retention.llm_usage_days` | `LG_SOTF_RETENTION__LLM_USAGE_DAYS` | integer | `400` | Daily LLM usage rows. |
 | `retention.checkpoints_days` | `LG_SOTF_RETENTION__CHECKPOINTS_DAYS` | integer | `30` | LangGraph checkpoints of completed runs. |
+| `retention.usage_days` | `LG_SOTF_RETENTION__USAGE_DAYS` | integer | `400` | Daily usage counters (alerts ingested and processed per tenant; invoicing and quotas). |
+| `retention.tenant_min_days` | `LG_SOTF_RETENTION__TENANT_MIN_DAYS` | integer | `7` | Lowest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values below it are raised to it. |
+| `retention.tenant_max_days` | `LG_SOTF_RETENTION__TENANT_MAX_DAYS` | integer | `730` | Highest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values above it are lowered to it. |
 
 ### `security`
 

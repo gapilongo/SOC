@@ -107,7 +107,7 @@ class AuthService:
         if tenant is None or tenant.status != "active":
             await self._ctx.repos.users.release_login_attempt(user.tenant_id, user.id)
             await self._audit_failure(user, "tenant_suspended", client_ip)
-            raise ApiError(403, "forbidden", "tenant is suspended")
+            raise ApiError(403, "tenant_suspended", "tenant is suspended")
         succeeded = await self._ctx.repos.users.record_login_success(user.tenant_id, user.id)
         if succeeded is None:
             # Concurrent failures locked the account while this password was being checked.

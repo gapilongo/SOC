@@ -59,6 +59,14 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/audit", "admin", None),
     ("GET", "/api/v1/audit/verify", "admin", None),
     ("POST", "/api/v1/platform/tenants", "platform_admin", {"id": "rbac-new", "name": "RBAC new"}),
+    ("GET", "/api/v1/platform/tenants", "platform_admin", None),
+    ("PATCH", "/api/v1/platform/tenants/no-such-tenant", "platform_admin", {"name": "n"}),
+    ("GET", "/api/v1/platform/escalations", "platform_admin", None),
+    ("GET", "/api/v1/platform/usage", "platform_admin", None),
+    ("GET", "/api/v1/onboarding/status", "admin", None),
+    ("POST", "/api/v1/onboarding/sample-alerts", "admin", None),
+    ("POST", "/api/v1/onboarding/autonomy-reviewed", "admin", None),
+    ("POST", "/api/v1/onboarding/dismiss", "admin", None),
 ]
 # Reachable without a bearer token (login, cookie-based refresh/logout); covered by test_auth.
 PUBLIC_ENDPOINTS = {

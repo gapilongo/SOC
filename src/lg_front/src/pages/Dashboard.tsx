@@ -5,7 +5,9 @@ import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
 import { ALERT_STATUSES, DISPOSITIONS, SEVERITIES } from '../api/types';
-import { useApi } from '../auth/AuthContext';
+import { useApi, useAuth } from '../auth/AuthContext';
+import { can } from '../auth/roles';
+import { OnboardingBanner } from '../components/Onboarding';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, SelectField } from '../components/ui';
 import { formatDateTime, formatDuration, formatInt, formatUsd } from '../lib/format';
 import { usePollInterval } from '../lib/visibility';
@@ -95,9 +97,11 @@ export default function DashboardPage() {
     refetchIntervalInBackground: false,
   });
   const d = q.data;
+  const { principal } = useAuth();
 
   return (
     <>
+      {can.admin(principal) && <OnboardingBanner />}
       <PageHeader
         title="Dashboard"
         description={d ? `Updated ${formatDateTime(d.generated_at)}. Figures cover alerts ingested since ${formatDateTime(d.since)}.` : undefined}

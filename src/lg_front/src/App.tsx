@@ -28,6 +28,7 @@ const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
 const AuditPage = lazy(() => import('./pages/AuditPage'));
 const PlatformPage = lazy(() => import('./pages/PlatformPage'));
+const GettingStartedPage = lazy(() => import('./pages/GettingStartedPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFound'));
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
@@ -75,6 +76,7 @@ export function AppRoutes() {
           <Route path="usage" element={<RequireRole allowed={can.admin}><UsagePage /></RequireRole>} />
           <Route path="audit" element={<RequireRole allowed={can.admin}><AuditPage /></RequireRole>} />
           <Route path="platform" element={<RequireRole allowed={can.platform}><PlatformPage /></RequireRole>} />
+          <Route path="getting-started" element={<RequireRole allowed={can.admin}><GettingStartedPage /></RequireRole>} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

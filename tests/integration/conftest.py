@@ -24,6 +24,7 @@ from tests.integration.db._support import TENANT_A, TENANT_B, db_settings
 
 ALL_TABLES = (
     "audit_log",
+    "usage_daily",
     "llm_usage_daily",
     "indicator_sightings",
     "suppression_rules",
