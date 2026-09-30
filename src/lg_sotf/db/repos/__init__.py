@@ -38,6 +38,7 @@ from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
+from lg_sotf.db.repos.user_mfa import UserMfa, UserMfaRepo
 from lg_sotf.db.repos.users import User, UsersRepo
 
 
@@ -48,6 +49,7 @@ class Repositories:
     db: Database
     tenants: TenantsRepo
     users: UsersRepo
+    user_mfa: UserMfaRepo
     refresh_tokens: RefreshTokensRepo
     api_keys: ApiKeysRepo
     sources: SourcesRepo
@@ -68,6 +70,7 @@ class Repositories:
             db=db,
             tenants=TenantsRepo(db),
             users=UsersRepo(db),
+            user_mfa=UserMfaRepo(db),
             refresh_tokens=RefreshTokensRepo(db),
             api_keys=ApiKeysRepo(db),
             sources=SourcesRepo(db),
@@ -126,6 +129,8 @@ __all__ = [
     "TenantsRepo",
     "UNSET",
     "User",
+    "UserMfa",
+    "UserMfaRepo",
     "UsersRepo",
     "WorkflowRun",
     "action_idempotency_key",

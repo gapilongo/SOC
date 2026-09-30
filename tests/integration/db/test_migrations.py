@@ -23,6 +23,7 @@ pytestmark = pytest.mark.asyncio
 
 TENANT_OWNED = (
     "users",
+    "user_mfa",
     "refresh_tokens",
     "api_keys",
     "sources",

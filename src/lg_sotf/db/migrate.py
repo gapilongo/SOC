@@ -55,6 +55,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "alembic_version": ("SELECT",),
     "tenants": ("SELECT", "UPDATE"),
     "users": ("SELECT", "INSERT", "UPDATE", "DELETE"),
+    "user_mfa": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     "refresh_tokens": ("SELECT", "INSERT", "UPDATE"),
     "api_keys": ("SELECT", "INSERT", "UPDATE"),
     "sources": ("SELECT", "INSERT", "UPDATE", "DELETE"),
