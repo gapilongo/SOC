@@ -1,5 +1,8 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys, retention, security, reporting.
+"""``/tenant/settings`` (admin): the tenant's policy sections.
+
+Autonomy, protected assets, LLM budget, review policy, tool keys, retention,
+sign-in security, reporting assumptions and phishing context.
 
 ``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
 and deep model tiers and reports provider, model, latency and a sanitized
@@ -22,7 +25,9 @@ password until they have.
 Ciphertext fields cannot be written directly and are never returned; ``GET``
 shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
-and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`;
+and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`,
+the ``phishing`` section (protected brands, executives, trusted
+``authserv-id`` values) with :class:`~lg_sotf.core.phishing.PhishingSettings`;
 problems come back as 422 with ``details``.
 
 ``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
@@ -53,6 +58,7 @@ from lg_sotf.api.schemas import (
     VerdictCacheClearedOut,
 )
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.core.phishing import validate_phishing_settings
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
@@ -81,6 +87,7 @@ EDITABLE_KEYS = frozenset(
         "retention",
         "security",
         "reporting",
+        "phishing",
     }
 )
 RETENTION_KEYS = ("alerts_days", "indicators_days")
@@ -309,6 +316,17 @@ def _reporting_section(current: Any, patch: Any, problems: List[str]) -> Optiona
     return section
 
 
+def _phishing_section(value: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """The whole ``phishing`` section is replaced (it holds no secrets); ``null`` removes it."""
+    if value is None:
+        return None
+    try:
+        return validate_phishing_settings(value)
+    except ValueError as exc:
+        problems.append(str(exc))
+        return None
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -328,6 +346,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _security_section(current.get("security"), value, problems)
         elif key == "reporting":
             patch[key] = _reporting_section(current.get("reporting"), value, problems)
+        elif key == "phishing":
+            patch[key] = _phishing_section(value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET

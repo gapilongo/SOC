@@ -3,7 +3,8 @@
 Each item is ingested with :class:`~lg_sotf.ingestion.service.IngestionService`
 (canonical items through the reserved ``api`` source, vendor items through a
 push source of that format, generic webhook items through a source with the
-item's field map) and processed with
+item's field map, email items as raw messages through the reserved
+``email:eval`` source, exactly as ``POST /ingest/email`` does) and processed with
 :meth:`~lg_sotf.core.workflow.WorkflowEngine.run`: the same graph,
 checkpointer, agents, routing policy, escalation and response services a
 worker uses, minus the queue.
@@ -50,7 +51,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
-from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService
+from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, IngestResult, email_source_id
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -62,6 +63,7 @@ Progress = Callable[[int, int, ItemResult], None]
 Isolation = Literal["splits", "none"]
 ISOLATION_MODES: Tuple[str, ...] = ("splits", "none")
 MAX_TENANT_ID_CHARS = 63
+EMAIL_EVAL_SOURCE = email_source_id("eval")
 
 
 class EvalSetupError(RuntimeError):
@@ -140,8 +142,7 @@ class EvalRunner:
         )
         started = time.perf_counter()
         try:
-            source_id = await self._source_for(item)
-            ingested = await self.ingestion.ingest(self.tenant_id, source_id, [dict(item.alert)])
+            ingested = await self._ingest(item)
             outcome = ingested.items[0] if ingested.items else None
             if outcome is None or outcome.status != "inserted" or outcome.alert_id is None:
                 status = outcome.status if outcome is not None else "missing"
@@ -229,9 +230,20 @@ class EvalRunner:
                 data={"waiting_for": run.status, "item_id": result.item_id[:128]},
             )
 
+    async def _ingest(self, item: EvalItem) -> IngestResult:
+        source_id = await self._source_for(item)
+        if item.source_type == "email":
+            message = item.email
+            return await self.ingestion.ingest_email(
+                self.tenant_id, source_id, [message.mime.encode("utf-8")], reporter=message.reporter
+            )
+        return await self.ingestion.ingest(self.tenant_id, source_id, [dict(item.alert)])
+
     async def _source_for(self, item: EvalItem) -> str:
         if item.source_type == "canonical":
             return API_SOURCE_ID
+        if item.source_type == "email":
+            return EMAIL_EVAL_SOURCE
         if item.source_type in VENDOR_PUSH_FORMATS:
             config: Dict[str, Any] = {"format": item.source_type}
         else:
@@ -275,6 +287,12 @@ def group_by_split(items: Sequence[EvalItem]) -> List[Tuple[str, List[EvalItem]]
     for item in items:
         groups.setdefault(item.split, []).append(item)
     return list(groups.items())
+
+
+async def apply_tenant_settings(repos: Repositories, tenant_id: str, patch: Mapping[str, Any]) -> None:
+    """Merge the dataset's ``_meta.tenant_settings`` into a fresh evaluation tenant."""
+    if patch:
+        await repos.tenants.update_settings(tenant_id, dict(patch))
 
 
 @dataclass
@@ -394,6 +412,8 @@ async def run_evaluation(
             except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
                 raise EvalSetupError(f"cannot create evaluation tenant {tenant!r}: {exc}") from exc
         repos = Repositories.create(db)
+        for tenant, _ in plan:
+            await apply_tenant_settings(repos, tenant, dataset.tenant_settings)
         total = len(dataset.items)
         done = 0
 

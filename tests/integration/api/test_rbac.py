@@ -24,6 +24,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", "/api/v1/auth/mfa/recovery-codes", "self", {"code": "000000"}),
     ("POST", "/api/v1/ingest/alerts", "ingest", [{"title": "t", "severity": "low"}]),
     ("POST", "/api/v1/ingest/webhook/no-such-source", "ingest", {"a": 1}),
+    ("POST", "/api/v1/ingest/email", "ingest", {"a": 1}),
     ("GET", "/api/v1/alerts", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}/events", "viewer", None),

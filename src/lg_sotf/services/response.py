@@ -46,7 +46,10 @@ actions can never be approved later):
    Teredo or IPv4-compatible IPv6 addresses), and target private/CGNAT/ULA
    addresses only when the tenant sets ``allow_internal_ip_blocks``;
 5. protected hosts, users, domains (and their subdomains) and CIDRs are never
-   acted on, whatever the target's spelling: IP literals in host, domain and
+   acted on, whatever the target's spelling (sender addresses are checked by
+   their domain and as a whole address; senders of the tenant's own
+   ``tools.internal_domains`` are never blocked: disable or reset the account
+   instead): IP literals in host, domain and
    URL targets (including the decimal/hex/octal IPv4 forms browsers accept
    and IPv6 forms embedding an IPv4 address) are checked against protected
    CIDRs; domain and URL hosts are checked against protected host names;
@@ -124,6 +127,7 @@ from pydantic import (
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
+from lg_sotf.core.phishing import plan_email_entities
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES
 from lg_sotf.integrations.events import ACTION_AWAITING_APPROVAL, ACTION_EXECUTED, ACTION_FAILED
@@ -174,7 +178,7 @@ log = get_logger(__name__)
 
 Autonomy = Literal["auto", "approval", "disabled"]
 Evidence = Literal["rules", "llm_only", "analyst"]
-TargetKind = Literal["ip", "domain", "url", "hash", "user", "host", "process", "alert"]
+TargetKind = Literal["ip", "domain", "url", "hash", "user", "host", "process", "alert", "email", "message"]
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 IPNetwork = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
 RISK_LEVELS = ("low", "medium", "high", "critical")
@@ -237,6 +241,8 @@ class ActionSpec:
     risk: str
     containment: bool
     description: str
+    # An entity kind the plan must have for the action to be proposed (its values go into the params).
+    requires: Optional[str] = None
 
 
 ACTION_CATALOG: Dict[str, ActionSpec] = {
@@ -252,6 +258,13 @@ ACTION_CATALOG: Dict[str, ActionSpec] = {
     "collect_forensics": ActionSpec("host", "low", False, "Collect forensic evidence from a host"),
     "create_ticket": ActionSpec("alert", "low", False, "Open an incident ticket"),
     "send_alert": ActionSpec("alert", "low", False, "Notify the SOC channel"),
+    "block_sender": ActionSpec("email", "medium", True, "Block a sender address in the mail gateway"),
+    "purge_message": ActionSpec(
+        "message", "high", True, "Remove a message (by Message-ID, sender and subject) from every mailbox"
+    ),
+    "notify_reporter": ActionSpec(
+        "alert", "low", False, "Tell the user who reported the email what was found", requires="reporter"
+    ),
 }
 
 ACTION_TARGET_KINDS: Dict[str, FrozenSet[str]] = {name: frozenset({spec.target_kind}) for name, spec in ACTION_CATALOG.items()}
@@ -264,6 +277,8 @@ DEFAULT_BLAST_RADIUS: Dict[str, int] = {
     "revoke_sessions": 10,
     "terminate_process": 20,
     "quarantine_file": 20,
+    "purge_message": 10,
+    "block_sender": 20,
 }
 
 GUARDRAIL_REASONS: Dict[str, str] = {
@@ -278,6 +293,9 @@ GUARDRAIL_REASONS: Dict[str, str] = {
     "invalid_host": "the target is not a valid host name",
     "invalid_user": "the target is not a valid user name",
     "invalid_process": "the target is not a valid process name",
+    "invalid_email": "the target is not an email address",
+    "invalid_message": "the target is not an Internet Message-ID",
+    "internal_sender": "senders of the tenant's own domains are never blocked (disable or reset the account instead)",
     "unroutable_ip": "loopback, link-local, multicast, unspecified and reserved addresses are never blocked",
     "non_public_ip": "private/internal addresses are blocked only when the tenant allows internal IP blocks",
     "protected_asset": "the target is on the tenant's protected assets list",
@@ -292,6 +310,12 @@ GUARDRAIL_REASONS: Dict[str, str] = {
 }
 
 PLAYBOOKS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
+    # First: an email alert's category is "phishing", whatever its attachment or link is about.
+    (
+        "phishing",
+        ("phishing", "spear phishing", "spearphishing", "business email compromise", "credential harvesting"),
+        ("purge_message", "block_sender", "block_url", "notify_reporter", "create_ticket"),
+    ),
     (
         "credential_access",
         ("mimikatz", "credential dump", "credential_dump", "lsass", "credential access", "kerberoast", "dcsync"),
@@ -334,10 +358,15 @@ RECOMMENDATION_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = tuple(
         (r"\brevoke\b.*\bsession", "revoke_sessions"),
         (r"\bforensic", "collect_forensics"),
         (r"\bticket\b", "create_ticket"),
+        (r"\bblock\b.*\bsenders?\b", "block_sender"),
+        (r"\b(purge|remove|delete|pull)\b.*\b(message|email|e-mail)s?\b", "purge_message"),
+        (r"\b(notify|inform|tell)\b.*\breporter\b", "notify_reporter"),
     )
 )
 
 _HASH_RE = re.compile(r"^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128})$")
+_EMAIL_RE = re.compile(r"^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@(?=.{1,253}$)[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})+$")
+_MESSAGE_ID_RE = re.compile(r"^<?[\x21-\x3b\x3d\x3f-\x7e]{1,995}>?$")
 _DOMAIN_RE = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(?:\.(?!-)[a-z0-9-]{1,63}(?<!-))+$")
 _NAME_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,256}$")
 _HOST_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
@@ -397,6 +426,8 @@ class PlanContext:
     # Hosts the alert concerns; host-local actions (terminate_process, quarantine_file) are
     # scoped to them in the ledger params and the signed webhook body.
     hosts: Sequence[str] = ()
+    # Email alerts: sender and subject of the reported message, so a purge never matches by id alone.
+    message: Mapping[str, str] = field(default_factory=dict)
 
 
 HOST_SCOPED_ACTIONS = frozenset({"terminate_process", "quarantine_file"})
@@ -415,6 +446,8 @@ def target_key(kind: str, value: str) -> Tuple[str, ...]:
     if kind == "ip":
         address = parse_address(value)
         return (str(address),) if address is not None else (_clean(value),)
+    if kind == "message":
+        return (value.strip(),)
     return (_clean(value),)
 
 
@@ -467,6 +500,8 @@ def plan_entities(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
     by_kind: Dict[str, List[str]] = {}
     for indicator in extract_indicators(alert):
         by_kind.setdefault(indicator.type, []).append(indicator.value)
+    # Email alerts: sender and Reply-To addresses, the message and the reporter.
+    by_kind.update(plan_email_entities(alert))
     lineage = lineage_only_values(alert.get("raw"))
     if lineage:
         # Parent/grandparent processes and their hashes are the context of the detection, not
@@ -521,6 +556,17 @@ def candidate_targets(action_type: str, entities: Mapping[str, Sequence[str]], a
     return list(dict.fromkeys(str(t) for t in targets))[:MAX_TARGETS_PER_TYPE]
 
 
+def action_params(action_type: str, target: str, ctx: PlanContext) -> Dict[str, Any]:
+    """Extra ledger params an action needs besides its target (what the connector must match on)."""
+    spec = ACTION_CATALOG[action_type]
+    params: Dict[str, Any] = {}
+    if spec.requires:
+        params[spec.requires] = str(list(ctx.entities.get(spec.requires) or [""])[0])[:320]
+    if spec.target_kind == "message":
+        params["match"] = {"internet_message_id": target, **{k: str(v)[:320] for k, v in ctx.message.items()}}
+    return params
+
+
 def build_candidates(ctx: PlanContext, alert_id: str) -> Tuple[str, List[Candidate]]:
     threat_type, playbook = detect_threat_type(
         [ctx.title, ctx.category or "", *ctx.threat_texts, *ctx.recommended_actions]
@@ -528,8 +574,12 @@ def build_candidates(ctx: PlanContext, alert_id: str) -> Tuple[str, List[Candida
     wanted = list(playbook) + [a for a in actions_from_recommendations(ctx.recommended_actions) if a not in playbook]
     candidates: List[Candidate] = []
     for action_type in wanted:
+        requires = ACTION_CATALOG[action_type].requires
+        if requires and not ctx.entities.get(requires):
+            continue
         for target in candidate_targets(action_type, ctx.entities, alert_id):
-            candidates.append(Candidate(action_type, target, {"playbook": threat_type}))
+            params = {"playbook": threat_type, **action_params(action_type, target, ctx)}
+            candidates.append(Candidate(action_type, target, params))
     return threat_type, candidates[:MAX_ACTIONS]
 
 
@@ -561,6 +611,10 @@ def validate_target(kind: str, target: str) -> Optional[str]:
         return None if _HOST_RE.match(target) else "invalid_host"
     if kind in ("user", "process"):
         return None if _NAME_RE.match(target) else f"invalid_{kind}"
+    if kind == "email":
+        return None if _EMAIL_RE.match(target.lower()) else "invalid_email"
+    if kind == "message":
+        return None if _MESSAGE_ID_RE.match(target) else "invalid_message"
     if kind == "alert":
         return None if target.startswith("alert:") else "invalid_target"
     return "invalid_target"
@@ -923,7 +977,10 @@ class ProtectedAssets:
         Categories: ``host``/``user``/``domain``/``cidr``/``process``/``hash``
         and ``critical_process`` (the built-in never-terminate list). IP and
         host targets are checked against CIDRs and host names; domain targets
-        and URL hosts (canonicalised) also against protected domains.
+        and URL hosts (canonicalised) also against protected domains; sender
+        addresses by their domain (and subdomains) and as a whole address
+        against protected users (a bare account name such as ``admin`` does
+        not protect ``admin@`` every domain).
         """
         if kind == "process":
             if critical_process(target):
@@ -943,6 +1000,12 @@ class ProtectedAssets:
                 if category is not None:
                     return category
             return None
+        if kind == "email":
+            address = _clean(target)
+            if address in self._users.exact or any(fnmatch.fnmatchcase(address, p) for p in self._users.patterns):
+                return "user"
+            domain = address.rsplit("@", 1)[-1]
+            return self._address_match(domain, as_domain=True)
         return None
 
 
@@ -1141,6 +1204,8 @@ class ResponsePolicy:
     max_actions_per_hour: int = 50
     blast_radius: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_BLAST_RADIUS))
     problems: Tuple[str, ...] = ()
+    # The tenant's own mail domains (tools.internal_domains, tenant and install): never blocked as senders.
+    internal_domains: Tuple[str, ...] = ()
 
     @classmethod
     def resolve(cls, tenant_settings: Mapping[str, Any], settings: Settings) -> ResponsePolicy:
@@ -1170,7 +1235,23 @@ class ResponsePolicy:
             max_actions_per_hour=install_cap if tenant_cap is None else min(tenant_cap, install_cap),
             blast_radius=blast,
             problems=tuple(problems[:MAX_POLICY_PROBLEMS]),
+            internal_domains=_internal_domains(tenant_settings, settings),
         )
+
+    def internal_sender(self, address: str) -> bool:
+        domain = _domain_key(address.rsplit("@", 1)[-1])
+        return any(domain == d or domain.endswith("." + d) for d in self.internal_domains)
+
+
+def _internal_domains(tenant_settings: Mapping[str, Any], settings: Settings) -> Tuple[str, ...]:
+    tools = tenant_settings.get("tools")
+    values: List[Any] = []
+    for source in (tools if isinstance(tools, Mapping) else {}, settings.tools or {}):
+        entries = source.get("internal_domains")
+        if isinstance(entries, list):
+            values.extend(entries)
+    domains = (_domain_key(v.strip().lstrip("*.")) for v in values if isinstance(v, str) and v.strip())
+    return tuple(dict.fromkeys(d for d in domains if d))
 
 
 @dataclass(frozen=True)
@@ -1217,6 +1298,8 @@ def check_guardrails(
     category = policy.protected.match(kind, target)
     if category is not None:
         return GuardrailBlock("protected_asset", f"matches a protected {category} entry")
+    if kind == "email" and policy.internal_sender(target):
+        return GuardrailBlock("internal_sender", "")
     if policy.autonomy.get(spec.risk) == "disabled":
         return GuardrailBlock("autonomy_disabled", f"{spec.risk} risk")
     return None

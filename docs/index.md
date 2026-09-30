@@ -17,6 +17,7 @@
 | [MCP server](mcp.md) | Analysts | Using LG-SOTF from Claude Desktop, Claude Code or another MCP client |
 | [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
+| [Phishing triage](phishing.md) | Tenant admins, integrators | User-reported email: M365 and IMAP reporting mailboxes, the push API, phishing signals, response actions |
 
 Repository files: [README](../README.md), [CHANGELOG](../CHANGELOG.md),
 [SECURITY](../SECURITY.md) (vulnerability reporting),

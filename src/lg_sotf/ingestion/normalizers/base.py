@@ -178,8 +178,12 @@ class AlertBuilder:
         default_severity: Optional[Severity] = DEFAULT_SEVERITY,
         extra_unmapped: Optional[Mapping[str, Any]] = None,
         hash_exclude: Iterable[str] = (),
+        email: Optional[Dict[str, Any]] = None,
     ) -> CanonicalAlert:
-        """``hash_exclude``: volatile top-level keys ignored when the id falls back to a hash."""
+        """``hash_exclude``: volatile top-level keys ignored when the id falls back to a hash.
+
+        ``email`` is the email section (only the email normalizer sets it).
+        """
         if not title:
             raise NormalizationError("event has no usable title")
         if severity is None:
@@ -222,6 +226,7 @@ class AlertBuilder:
                 mitre=self.mitre.build(),
                 unmapped=unmapped,
                 flags=self.flags,
+                email=email,
             )
         except ValidationError as exc:
             fields = sorted({".".join(str(p) for p in err["loc"]) for err in exc.errors()})

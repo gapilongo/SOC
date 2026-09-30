@@ -164,6 +164,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/auth/mfa`; POST `/auth/mfa/disable`, `/auth/mfa/recovery-codes` | own account (local session) |
 | POST | `/ingest/alerts` | API key `ingest` |
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
+| POST | `/ingest/email` (raw `message/rfc822`, optional `?reporter=`) | API key `ingest` |
 | GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
@@ -212,7 +213,13 @@ Redis fails; a database whose pool is fully busy counts as ready.
 * `POST /ingest/webhook/{source_id}` takes a vendor-native JSON object (or an
   array of them) for a push source (`webhook`, `guardduty`) registered in
   the key's tenant; the source's configuration picks the normalizer.
-* Both answer `202` with one result per submitted event, in order:
+* `POST /ingest/email` takes one raw email (`Content-Type: message/rfc822` or
+  `application/octet-stream`, at most `ingestion.email.max_message_bytes`,
+  10 MB by default), usually a user's report with the suspicious message
+  attached; `?reporter=<address>` names the reporting user. It is parsed
+  server-side and stored under `email:<api key id>`, deduplicated on the
+  reported message's Message-ID plus the reporter. See `docs/phishing.md`.
+* All three answer `202` with one result per submitted event, in order:
   `{"index", "status": "inserted"|"duplicate"|"rejected", "alert_id", "reason"}`,
   plus totals and the number of alerts queued for the workers. Duplicates
   (same source and source alert id) are never inserted twice.
@@ -289,8 +296,9 @@ over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 `retention` (`alerts_days`, `indicators_days`, merged key by key, within the
 install's `retention.tenant_min_days`..`tenant_max_days`, which responses
 return as `retention_limits`), `security` (`require_mfa`: force TOTP MFA
-for local accounts) and `reporting` (`minutes_per_alert`, 1-480, default 15:
-the value report's hours-saved estimate). Secrets
+for local accounts), `reporting` (`minutes_per_alert`, 1-480, default 15:
+the value report's hours-saved estimate) and `phishing` (`protected_brands`,
+`executives`, `trusted_authserv_ids`; see `docs/phishing.md`). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing

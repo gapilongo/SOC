@@ -1,13 +1,15 @@
 """Labelled evaluation datasets (JSONL).
 
 One JSON object per line. An optional first line ``{"_meta": {...}}``
-describes the file (``synthetic``, ``description``, ``version``); every other
-line is an :class:`EvalItem`::
+describes the file (``synthetic``, ``description``, ``version`` and optional
+``tenant_settings`` applied to every evaluation tenant: ``tools.internal_domains``
+and the ``phishing`` section); every other line is an :class:`EvalItem`::
 
     {"id": "syn-007",
      "source_type": "crowdstrike",          # canonical | splunk | crowdstrike | sentinel |
-                                            # wazuh | guardduty | qradar | webhook
-     "alert": {...},                        # the event exactly as the source sends it
+                                            # wazuh | guardduty | qradar | webhook | email
+     "alert": {...},                        # the event exactly as the source sends it; for
+                                            # email: {"mime": "<RFC 5322 text>", "reporter": "..."}
      "source_config": {...},                # webhook (generic field map) only
      "expected": {"disposition": "malicious",   # malicious | benign | inconclusive
                   "route": "escalate",          # optional: close | escalate | plan_response
@@ -29,13 +31,17 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence
+from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
+
+from lg_sotf.core.phishing import PhishingSettings
 
 Disposition = Literal["malicious", "benign", "inconclusive"]
 Route = Literal["close", "escalate", "plan_response"]
-SourceType = Literal["canonical", "splunk", "crowdstrike", "sentinel", "wazuh", "guardduty", "qradar", "webhook"]
+SourceType = Literal[
+    "canonical", "splunk", "crowdstrike", "sentinel", "wazuh", "guardduty", "qradar", "webhook", "email"
+]
 
 DISPOSITIONS: tuple[str, ...] = ("malicious", "benign", "inconclusive")
 ROUTES: tuple[str, ...] = ("close", "escalate", "plan_response")
@@ -48,6 +54,7 @@ SOURCE_TYPES: tuple[str, ...] = (
     "guardduty",
     "qradar",
     "webhook",
+    "email",
 )
 DEFAULT_SPLIT = "standard"
 ADVERSARIAL_SPLIT = "adversarial"
@@ -58,6 +65,38 @@ _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 class DatasetError(ValueError):
     """The dataset file cannot be used as is."""
+
+
+MAX_MIME_CHARS = 1_000_000
+DomainName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=253)]
+
+
+class EvalTools(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    internal_domains: List[DomainName] = Field(default_factory=list, max_length=256)
+
+
+class EvalTenantSettings(BaseModel):
+    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tools: Optional[EvalTools] = None
+    phishing: Optional[PhishingSettings] = None
+
+    def patch(self) -> Dict[str, Any]:
+        """The tenant settings merge patch (only the sections that were given)."""
+        return self.model_dump(exclude_none=True)
+
+
+class EmailAlert(BaseModel):
+    """The ``alert`` of an ``email`` item: the raw message as text, and optionally who reported it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    mime: str = Field(min_length=1, max_length=MAX_MIME_CHARS)
+    reporter: Optional[str] = Field(default=None, max_length=320)
 
 
 class Expected(BaseModel):
@@ -113,6 +152,8 @@ class EvalItem(BaseModel):
             raise ValueError("source_type 'webhook' needs source_config (the generic field map)")
         if self.source_type != "webhook" and self.source_config is not None:
             raise ValueError("source_config is only used with source_type 'webhook'")
+        if self.source_type == "email":
+            EmailAlert.model_validate(self.alert)
         annotators = [label.annotator for label in self.labels]
         if len(set(annotators)) != len(annotators):
             raise ValueError("each annotator may label an item once")
@@ -121,6 +162,11 @@ class EvalItem(BaseModel):
     @property
     def is_adversarial(self) -> bool:
         return self.split == ADVERSARIAL_SPLIT or ADVERSARIAL_SPLIT in self.tags
+
+    @property
+    def email(self) -> EmailAlert:
+        """The raw message of an ``email`` item."""
+        return EmailAlert.model_validate(self.alert)
 
 
 @dataclass
@@ -133,6 +179,12 @@ class Dataset:
     @property
     def synthetic(self) -> bool:
         return bool(self.meta.get("synthetic"))
+
+    @property
+    def tenant_settings(self) -> Dict[str, Any]:
+        """``_meta.tenant_settings`` as a validated merge patch (empty when absent)."""
+        raw = self.meta.get("tenant_settings")
+        return EvalTenantSettings.model_validate(raw).patch() if raw else {}
 
     def splits(self) -> Dict[str, int]:
         counts: Dict[str, int] = {}
@@ -185,6 +237,14 @@ def parse_dataset(text: str, *, path: Optional[str] = None) -> Dataset:
             if not isinstance(data["_meta"], dict) or len(data) != 1:
                 raise DatasetError(f"{where}:{lineno}: _meta must be the only key and hold an object")
             meta = dict(data["_meta"])
+            if meta.get("tenant_settings") is not None:
+                try:
+                    EvalTenantSettings.model_validate(meta["tenant_settings"])
+                except ValidationError as exc:
+                    problems = "; ".join(
+                        f"{'.'.join(str(p) for p in e['loc']) or 'tenant_settings'}: {e['msg']}" for e in exc.errors()[:5]
+                    )
+                    raise DatasetError(f"{where}:{lineno}: invalid _meta.tenant_settings ({problems})") from None
             continue
         try:
             item = EvalItem.model_validate(data)

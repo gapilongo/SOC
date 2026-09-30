@@ -31,7 +31,7 @@ export const ACTION_STATUSES = [
 ] as const;
 export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
 export const DECISIONS = ['true_positive', 'false_positive', 'benign_positive', 'needs_more_info'] as const;
-export const SOURCE_TYPES = ['splunk', 'qradar', 'sentinel', 'wazuh', 'crowdstrike', 'guardduty', 'webhook', 'file'] as const;
+export const SOURCE_TYPES = ['splunk', 'qradar', 'sentinel', 'wazuh', 'crowdstrike', 'guardduty', 'webhook', 'file', 'm365_mailbox', 'imap'] as const;
 export const API_KEY_SCOPES = ['ingest', 'read', 'write'] as const;
 export const AUTONOMY_MODES = ['auto', 'approval', 'disabled'] as const;
 
