@@ -1,0 +1,24 @@
+# Caddy ingress (deploy/vm/deploy.sh --ingress caddy, the default; docs/cicd.md).
+#
+# Added after docker-compose.vm.yml: the api and the frontend join the shared
+# external `lgsotf-proxy` network under the aliases <env>-api and
+# <env>-frontend, where the single Caddy of docker-compose.edge.yml routes each
+# environment's hostname (ports 80/443, Let's Encrypt). Several environments
+# can share one host this way. deploy.sh trusts X-Forwarded-For/-Proto from
+# the frontend and from Caddy's fixed address (CADDY_IP).
+
+services:
+  api:
+    networks:
+      proxy:
+        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-api"]
+
+  frontend:
+    networks:
+      proxy:
+        aliases: ["${LGSOTF_ENV:?set LGSOTF_ENV}-frontend"]
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-lgsotf-proxy}

@@ -379,6 +379,7 @@ container logs and that no page violates the Content-Security-Policy.
 | [Configuration](docs/configuration.md) | Every setting |
 | [Deployment](docs/deployment.md) | Image, Compose, Helm, PostgreSQL roles, TLS, sizing, upgrades, backups |
 | [CI/CD](docs/cicd.md) | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM, promotion, rollback, backups |
+| [Self-hosting on a PC](docs/self-hosting-pc.md) | Dev and uat on your own Windows PC (WSL2, Tailscale Funnel), no cloud account |
 | [Operations](docs/operations.md) | Runbooks, key rotation, incidents, dashboards and alerts |
 | [Security](docs/security.md) | Threat model and controls |
 | [Evaluation](docs/evaluation.md) | The evaluation harness |

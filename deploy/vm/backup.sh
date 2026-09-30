@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Nightly PostgreSQL backups of the LG-SOTF environments on this VM, with
+# Nightly PostgreSQL backups of the LG-SOTF environments on this host, with
 # retention, an integrity check and an optional copy to OCI Object Storage.
 # deploy.sh installs this script as <root>/bin/backup.sh; bootstrap.sh
 # installs a systemd timer that runs `backup.sh --all` every night as the
@@ -74,13 +74,23 @@ fi
 [ "${#ENVS[@]}" -gt 0 ] || die "give --env NAME or --all"
 
 compose_for() {  # $1 env; runs docker compose for that environment's current release
-  local env="$1" rel
+  local env="$1" rel ingress state="$ROOT/env/$1/state/current.env"
   shift
-  rel="$(sed -n 's/^RELEASE_DIR=//p' "$ROOT/env/$env/state/current.env" | head -n 1)"
+  rel="$(sed -n 's/^RELEASE_DIR=//p' "$state" | head -n 1)"
   if [ -z "$rel" ] || [ ! -d "$rel" ]; then die "$env: no current release recorded"; fi
-  docker compose -p "lgsotf-$env" \
-    -f "$rel/docker/docker-compose.yml" -f "$rel/docker/docker-compose.prod.yml" \
-    -f "$rel/deploy/vm/docker-compose.vm.yml" --env-file "$ROOT/env/$env/.env" "$@"
+  # The same files deploy.sh used: `up` in a restore must not rewire the ingress.
+  ingress="$(sed -n 's/^INGRESS=//p' "$state" | head -n 1)"
+  local files=(
+    -f "$rel/docker/docker-compose.yml"
+    -f "$rel/docker/docker-compose.prod.yml"
+    -f "$rel/deploy/vm/docker-compose.vm.yml"
+  )
+  if [ "$ingress" = "funnel" ]; then
+    files+=(-f "$rel/deploy/vm/docker-compose.funnel.yml")
+  elif [ -f "$rel/deploy/vm/docker-compose.caddy.yml" ]; then
+    files+=(-f "$rel/deploy/vm/docker-compose.caddy.yml")
+  fi
+  docker compose -p "lgsotf-$env" "${files[@]}" --env-file "$ROOT/env/$env/.env" "$@"
 }
 
 backup_one() {
@@ -146,7 +156,7 @@ SQL
 
 for env in "${ENVS[@]}"; do
   [[ "$env" =~ ^[a-z][a-z0-9]{0,11}$ ]] || die "bad environment name"
-  [ -f "$ROOT/env/$env/state/current.env" ] || die "$env is not deployed on this VM"
+  [ -f "$ROOT/env/$env/state/current.env" ] || die "$env is not deployed on this host"
   if [ "$LIST" -eq 1 ]; then
     ls -lh "$ROOT/backups/$env" 2>/dev/null || log "$env: no backups yet"
   elif [ -n "$RESTORE" ]; then

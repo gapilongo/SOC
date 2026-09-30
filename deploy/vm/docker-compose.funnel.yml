@@ -1,0 +1,118 @@
+# Tailscale Funnel ingress (deploy/vm/deploy.sh --ingress funnel;
+# docs/self-hosting-pc.md): public HTTPS at https://<TS_HOSTNAME>.<tailnet>.ts.net
+# without a public IP address, an open port or a certificate to manage.
+#
+# Added after docker-compose.vm.yml:
+#
+# * `ts` runs tailscaled in userspace-networking mode (no NET_ADMIN, no
+#   /dev/net/tun). It joins the tailnet once with TS_AUTHKEY (a tagged,
+#   non-ephemeral key; TS_AUTH_ONCE: later starts reuse the stored identity)
+#   and keeps that identity in an external volume (TS_STATE_VOLUME) that
+#   deploys, rollbacks and `docker compose down -v` never delete: a new state
+#   would register a second machine (soc-dev-1) and request new certificates.
+# * /config/serve.json (deploy/vm/tailscale/serve.json, copied by deploy.sh
+#   into <env dir>/tailscale; a directory mount so atomic replacements are
+#   seen) turns on Funnel for :443 with a single "/" handler proxying to
+#   http://127.0.0.1:8080. Funnel sets X-Forwarded-For to the real client and
+#   X-Forwarded-Proto: https.
+# * The frontend (nginx on 8080) runs in ts's network namespace
+#   (network_mode: service:ts), so 127.0.0.1:8080 is nginx; nginx routes /api
+#   (REST and the /api/v1/ws WebSocket) to the api exactly as in every other
+#   setup and trusts X-Forwarded-* from 127.0.0.1 only. The frontend's fixed
+#   edge address (EDGE_FRONTEND_IP), the one the api trusts, now belongs to ts.
+# * Nothing publishes a host port and no Caddy runs.
+# * Inside the tailnet the node is reachable on every port the tailnet policy
+#   allows: in userspace mode tailscaled forwards a connection to its tailnet
+#   address on any port without a serve handler to 127.0.0.1:<port> here, so
+#   a peer allowed more than tcp:443 reaches nginx on :8080 (and the health
+#   endpoint on :9002) directly, from 127.0.0.1, the address nginx trusts for
+#   X-Forwarded-For. The policy in docs/cicd.md (section 16) grants tag:soc
+#   tcp:443 only.
+#
+# Docker leaves a container that shares another container's network namespace
+# with nothing but a loopback interface when that other container restarts (a
+# crash, the restart policy, `docker restart`). The frontend's health check
+# therefore stops nginx when its namespace has no other interface; the restart
+# policy then starts it again inside ts's new namespace. A full `docker compose
+# up` (what deploy.sh runs) that recreates ts (new image or settings) recreates
+# the frontend with it; `up <ts only>` stops the frontend and leaves it
+# stopped until the next full `up` or deploy.
+
+x-vm-logging: &vm-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  ts:
+    image: ${TS_IMAGE:-tailscale/tailscale:v1.102.5@sha256:c507f3a2a6ab1cabd8d809b98edeb41edbd5c3fb6ad9632ffd098b4c7d0b4065}
+    environment:
+      # Used only while the node is logged out (first boot); empty afterwards is fine.
+      TS_AUTHKEY: ${TS_AUTHKEY:-}
+      TS_AUTH_ONCE: "true"
+      TS_HOSTNAME: ${TS_HOSTNAME:?set TS_HOSTNAME}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SOCKET: /tmp/tailscaled.sock
+      TS_USERSPACE: "true"
+      TS_ACCEPT_DNS: "false"
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_ENABLE_HEALTH_CHECK: "true"
+      TS_LOCAL_ADDR_PORT: 127.0.0.1:9002
+      # containerboot exits when the node is not up within this time, and every
+      # restart of ts detaches the frontend (see above): wait for a slow network
+      # or a pending device approval instead of the 60 s default.
+      TS_BOOT_TIMEOUT: 10m
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ${LGSOTF_ENV_DIR:?set LGSOTF_ENV_DIR}/tailscale:/config:ro
+    networks:
+      edge:
+        # The address the api trusts for X-Forwarded-For (the frontend's, whose
+        # traffic leaves through this namespace).
+        ipv4_address: ${EDGE_FRONTEND_IP:?set EDGE_FRONTEND_IP}
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      # /var/run/tailscale: containerboot links the CLI's default socket there.
+      - /run:size=1m,mode=0755
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    # No compose health check: without a key the node stays logged out and
+    # `up --wait` would fail before the application could be checked.
+    # deploy.sh checks the login state, the name and Funnel after the
+    # application checks (`tailscale status`, `tailscale funnel status`).
+    deploy:
+      resources:
+        limits:
+          cpus: "${TS_CPUS:-0.25}"
+          memory: ${TS_MEM:-128m}
+    logging: *vm-logging
+    restart: unless-stopped
+
+  frontend:
+    network_mode: service:ts
+    # The base file puts the frontend on `edge` with a fixed address; ts owns
+    # that membership now (a service using another's namespace has no networks).
+    networks: !reset {}
+    depends_on:
+      ts:
+        condition: service_started
+        # `docker compose restart ts` also restarts the frontend.
+        restart: true
+    environment:
+      # Funnel's proxy connects from 127.0.0.1 inside the shared namespace.
+      LG_SOTF_TRUSTED_PROXIES: "127.0.0.1"
+      LG_SOTF_HSTS_MAX_AGE: ${FRONTEND_HSTS_MAX_AGE:-63072000}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          grep -qv -e '|' -e '^ *lo:' /proc/net/dev || { kill 1; exit 1; };
+          wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1
+
+volumes:
+  tailscale-state:
+    external: true
+    name: ${TS_STATE_VOLUME:?set TS_STATE_VOLUME}

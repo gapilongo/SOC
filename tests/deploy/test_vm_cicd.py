@@ -215,7 +215,9 @@ def test_secrets_are_never_printed_or_passed_as_arguments() -> None:
 
 def test_every_value_the_workflow_sends_is_accepted_by_deploy_sh() -> None:
     deploy = next(s for _, s in steps(workflow(DEPLOY)) if s.get("name", "").startswith("Deploy"))
-    sent = set(re.search(r"keys=\(([^)]*)\)", deploy["run"], re.S).group(1).split())  # type: ignore[union-attr]
+    lists = re.findall(r"keys\+?=\(([^)]*)\)", deploy["run"], re.S)
+    assert lists, "the deploy step lists the keys it sends"
+    sent = {key for chunk in lists for key in chunk.split()}
     script = (VM / "deploy.sh").read_text()
     accepted = set(re.search(r"ALLOWED_KEYS=\(([^)]*)\)", script, re.S).group(1).split())  # type: ignore[union-attr]
     transient = set(re.search(r"TRANSIENT_KEYS=\(([^)]*)\)", script, re.S).group(1).split())  # type: ignore[union-attr]
@@ -352,15 +354,22 @@ def test_vm_overlay_runs_registry_images_behind_the_shared_edge() -> None:
         assert services[name]["restart"] == "unless-stopped"
     for name, svc in services.items():
         assert svc["deploy"]["resources"]["limits"]["memory"], name
-    assert overlay["networks"]["proxy"]["external"] is True
-    assert services["api"]["networks"]["proxy"]["aliases"] == ["${LGSOTF_ENV:?set LGSOTF_ENV}-api"]
+    # Ingress wiring lives in the per-mode overlays, not in the shared one.
+    assert "networks" not in overlay
+    assert all("networks" not in svc for svc in services.values())
+    caddy = load(VM / "docker-compose.caddy.yml")
+    assert caddy["networks"]["proxy"]["external"] is True
+    assert caddy["networks"]["proxy"]["name"] == "${PROXY_NETWORK:-lgsotf-proxy}"
+    assert caddy["services"]["api"]["networks"]["proxy"]["aliases"] == ["${LGSOTF_ENV:?set LGSOTF_ENV}-api"]
+    assert caddy["services"]["frontend"]["networks"]["proxy"]["aliases"] == ["${LGSOTF_ENV:?set LGSOTF_ENV}-frontend"]
+    assert set(caddy["services"]) == {"api", "frontend"}, "the Caddy overlay only adds the proxy network"
 
 
 @requires_compose
 def test_vm_overlay_resolves_on_top_of_the_production_override() -> None:
     cfg = compose_config(
         str(DOCKER_DIR / "docker-compose.yml"), str(DOCKER_DIR / "docker-compose.prod.yml"),
-        str(VM / "docker-compose.vm.yml"), env=VM_ENV,
+        str(VM / "docker-compose.vm.yml"), str(VM / "docker-compose.caddy.yml"), env=VM_ENV,
     )
     services = cfg["services"]
     assert set(services) == {"postgres", "redis", "migrate", "api", "worker", "scheduler", "frontend"}
@@ -375,6 +384,8 @@ def test_vm_overlay_resolves_on_top_of_the_production_override() -> None:
     init = [v for v in services["postgres"]["volumes"] if v["target"].endswith("10-init-roles.sh")]
     assert [v["source"] for v in init] == ["/opt/lg-sotf/env/dev/postgres/init-roles.sh"]
     assert set(services["api"]["networks"]) == {"default", "edge", "proxy"}
+    assert set(services["frontend"]["networks"]) == {"edge", "proxy"}
+    assert cfg["networks"]["proxy"] == {"name": "lgsotf-proxy", "ipam": {}, "external": True}
 
 
 @requires_compose
@@ -417,3 +428,6 @@ def test_bundle_contains_what_deploy_sh_needs() -> None:
                  "docker/postgres/init-roles.sh", "docker/empty-ca.crt"):
         assert path in deploy["run"]
         assert (REPO_ROOT / path).exists(), path
+    # Both ingress modes travel inside deploy/vm.
+    for path in ("docker-compose.caddy.yml", "docker-compose.funnel.yml", "tailscale/serve.json", "caddy"):
+        assert (VM / path).exists(), path

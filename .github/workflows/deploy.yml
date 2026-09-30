@@ -1,6 +1,7 @@
 name: Deploy
 
-# Deploys published images to an environment's VM over SSH (docs/cicd.md).
+# Deploys published images to an environment's host over SSH (docs/cicd.md;
+# a self-hosted PC behind Tailscale Funnel: docs/self-hosting-pc.md).
 #
 # * Called by "Release images": dev after every green main build, uat after a
 #   vX.Y.Z tag has been promoted (same digest, never rebuilt).
@@ -11,8 +12,14 @@ name: Deploy
 # The deploy bundle (compose files, Caddy templates, deploy/backup scripts) is
 # taken from the exact commit the images were built from, copied to the VM and
 # run there as the non-root deploy user. Secrets travel only on the SSH
-# session's stdin and are written on the VM to a 0600 env file; they are never
-# put on a command line or printed.
+# session's stdin and are written on the host to a 0600 env file; they are
+# never put on a command line or printed.
+#
+# Per-environment variables choose the ingress (INGRESS: caddy, the default,
+# or funnel) and whether the runner first joins the owner's tailnet as an
+# ephemeral tag:ci node to reach an SSH server that listens only on the
+# host's tailnet address (DEPLOY_VIA_TAILSCALE=true, with the
+# TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET secrets).
 
 on:
   workflow_call:
@@ -81,11 +88,15 @@ jobs:
       DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER || 'deploy' }}
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+      INGRESS: ${{ vars.INGRESS || 'caddy' }}
+      DEPLOY_VIA_TAILSCALE: ${{ vars.DEPLOY_VIA_TAILSCALE || 'false' }}
     steps:
       - name: Validate inputs and settings
         env:
           HAS_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY != '' }}
           HAS_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS != '' }}
+          HAS_TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID != '' }}
+          HAS_TS_OAUTH_SECRET: ${{ secrets.TS_OAUTH_SECRET != '' }}
         run: |
           fail() { echo "::error::$*"; exit 1; }
           [[ "$TARGET_ENV" =~ ^(dev|uat)$ ]] || fail "environment must be dev or uat"
@@ -103,6 +114,18 @@ jobs:
           [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]] || fail "bad DEPLOY_PORT"
           [ "$HAS_SSH_KEY" = "true" ] || fail "missing secret DEPLOY_SSH_KEY in environment $TARGET_ENV"
           [ "$HAS_KNOWN_HOSTS" = "true" ] || fail "missing secret DEPLOY_SSH_KNOWN_HOSTS in environment $TARGET_ENV"
+          [[ "$INGRESS" =~ ^(caddy|funnel)$ ]] || fail "the INGRESS variable must be caddy or funnel"
+          if [ "$INGRESS" = "funnel" ]; then
+            [[ "${APP_DOMAIN,,}" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.[a-z0-9]([a-z0-9-]*[a-z0-9])?\.ts\.net$ ]] \
+              || fail "with INGRESS=funnel, APP_DOMAIN must be <machine name>.<tailnet>.ts.net (e.g. soc-dev.tail1234.ts.net)"
+          elif [[ "${APP_DOMAIN,,}" =~ (^|\.)ts\.net$ ]]; then
+            fail "APP_DOMAIN $APP_DOMAIN is a Tailscale name: *.ts.net names are served only by INGRESS=funnel (set the INGRESS variable of the $TARGET_ENV environment to funnel)"
+          fi
+          [[ "$DEPLOY_VIA_TAILSCALE" =~ ^(true|false)$ ]] || fail "the DEPLOY_VIA_TAILSCALE variable must be true or false"
+          if [ "$DEPLOY_VIA_TAILSCALE" = "true" ]; then
+            [ "$HAS_TS_OAUTH_CLIENT_ID" = "true" ] || fail "DEPLOY_VIA_TAILSCALE=true needs the secret TS_OAUTH_CLIENT_ID in environment $TARGET_ENV"
+            [ "$HAS_TS_OAUTH_SECRET" = "true" ] || fail "DEPLOY_VIA_TAILSCALE=true needs the secret TS_OAUTH_SECRET in environment $TARGET_ENV"
+          fi
 
       - name: Check application secrets are present
         env:
@@ -159,12 +182,21 @@ jobs:
           git cat-file -e "${commit}^{commit}" 2>/dev/null || fail "commit $commit is not in this repository"
           git cat-file -e "${commit}:deploy/vm/deploy.sh" 2>/dev/null \
             || fail "commit $commit predates deploy/vm; deploy a newer image"
+          # Bundles from before the ingress option only know Caddy (and no --ingress flag).
+          if git cat-file -e "${commit}:deploy/vm/docker-compose.funnel.yml" 2>/dev/null; then
+            ingress_supported=true
+          else
+            ingress_supported=false
+            [ "$INGRESS" = "caddy" ] \
+              || fail "commit $commit predates the Tailscale Funnel ingress; deploy a newer image"
+          fi
           {
             echo "app_ref=$APP_REPO@$app"
             echo "frontend_ref=$FRONTEND_REPO@$fe"
             echo "app_digest=$app"
             echo "frontend_digest=$fe"
             echo "commit=$commit"
+            echo "ingress_supported=$ingress_supported"
           } >> "$GITHUB_OUTPUT"
           docker logout ghcr.io >/dev/null
 
@@ -176,6 +208,21 @@ jobs:
             deploy/vm docker/docker-compose.yml docker/docker-compose.prod.yml \
             docker/postgres/init-roles.sh docker/empty-ca.crt
           tar -tzf "$RUNNER_TEMP/bundle.tgz" | sed 's/^/  /'
+
+      # Ephemeral node tagged tag:ci (the tailnet policy lets it reach only
+      # tag:lgsotf-host on tcp:22); logged out again by the action's post step.
+      # No cache: binaries restored from the Actions cache (a key any workflow
+      # of this repository can write) are installed without the checksum check
+      # a download gets, and run as root in a job holding every deploy secret.
+      - name: Join the tailnet (ephemeral tag:ci node)
+        if: env.DEPLOY_VIA_TAILSCALE == 'true'
+        uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ env.DEPLOY_HOST }}
+          use-cache: "false"
 
       - name: Configure SSH (pinned host key)
         env:
@@ -233,17 +280,27 @@ jobs:
           ACME_EMAIL: ${{ vars.ACME_EMAIL }}
           GHCR_USER: ${{ vars.GHCR_READ_USER }}
           GHCR_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+          # Funnel only; needed for the first deploy of the environment's node.
+          TS_AUTHKEY: ${{ secrets.TS_AUTHKEY }}
+          INGRESS_SUPPORTED: ${{ steps.images.outputs.ingress_supported }}
         run: |
           keys=(POSTGRES_SUPERUSER_PASSWORD LGSOTF_OWNER_PASSWORD LGSOTF_APP_PASSWORD
                 LG_SOTF_AUTH__JWT_SECRET LG_SOTF_SECURITY__ENCRYPTION_KEYS LG_SOTF_SECURITY__INDICATOR_HMAC_KEY
                 LG_SOTF_API__METRICS_TOKEN LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD
                 ANTHROPIC_API_KEY LG_SOTF_LLM__PROVIDER ACME_EMAIL GHCR_USER GHCR_TOKEN)
+          if [ "$INGRESS" = "funnel" ]; then
+            keys+=(TS_AUTHKEY)
+          fi
+          ingress_opt=""
+          if [ "$INGRESS_SUPPORTED" = "true" ]; then
+            ingress_opt="--ingress '$INGRESS'"
+          fi
           release="$REMOTE_ROOT/env/$TARGET_ENV/releases/$COMMIT"
           # printf is a shell builtin: values never appear in a process's argv.
           for k in "${keys[@]}"; do
             [ -z "${!k}" ] || printf '%s=%s\n' "$k" "${!k}"
           done | ssh -F "$SSH_CONFIG" lgsotf-target \
-            "bash '$release/deploy/vm/deploy.sh' --env '$TARGET_ENV' --domain '$APP_DOMAIN' --root '$REMOTE_ROOT' --app-image '$APP_REF' --frontend-image '$FRONTEND_REF' --version '$IMAGE_TAG' --secrets-stdin"
+            "bash '$release/deploy/vm/deploy.sh' --env '$TARGET_ENV' --domain '$APP_DOMAIN' $ingress_opt --root '$REMOTE_ROOT' --app-image '$APP_REF' --frontend-image '$FRONTEND_REF' --version '$IMAGE_TAG' --secrets-stdin"
 
       - name: Job summary
         if: always()
@@ -252,21 +309,43 @@ jobs:
           COMMIT: ${{ steps.images.outputs.commit }}
           APP_REF: ${{ steps.images.outputs.app_ref }}
           FRONTEND_REF: ${{ steps.images.outputs.frontend_ref }}
+          HAS_TS_AUTHKEY: ${{ secrets.TS_AUTHKEY != '' }}
         run: |
+          case "$INGRESS" in
+            funnel) ingress_label="Tailscale Funnel" ;;
+            *) ingress_label="Caddy (Let's Encrypt)" ;;
+          esac
+          route="SSH to $DEPLOY_HOST"
+          if [ "$DEPLOY_VIA_TAILSCALE" = "true" ]; then
+            route="SSH over the tailnet to $DEPLOY_HOST"
+          fi
+          authkey_note=""
+          [ "$HAS_TS_AUTHKEY" = "true" ] || authkey_note="missing"
           {
             echo "### Deploy to \`$TARGET_ENV\`: $OUTCOME"
             echo ""
             echo "| | |"
             echo "|---|---|"
             echo "| URL | https://$APP_DOMAIN |"
+            echo "| Ingress | \`$INGRESS\` ($ingress_label) |"
+            echo "| Deploy route | $route |"
             echo "| Version (image tag) | \`$IMAGE_TAG\` |"
             echo "| Commit | \`${COMMIT:-unresolved}\` |"
             echo "| Backend | \`${APP_REF:-unresolved}\` |"
             echo "| Frontend | \`${FRONTEND_REF:-unresolved}\` |"
             echo ""
+            if [ "$INGRESS" = "funnel" ] && [ "$authkey_note" = "missing" ]; then
+              echo "> **Note:** the \`TS_AUTHKEY\` secret is not set. That is fine once this environment's Tailscale node"
+              echo "> has registered; the first Funnel deploy (or one after its state was lost) needs it and stops early without it."
+              echo ""
+            fi
             if [ "$OUTCOME" != "success" ]; then
-              echo "If the new version failed its health checks, the VM rolled back to the previous version"
+              echo "If the new version failed its health checks, the host rolled back to the previous version"
               echo "(see the Deploy step log). To roll back by hand, run this workflow with the previous tag."
+              if [ "$INGRESS" = "funnel" ]; then
+                echo "An \"INGRESS FAILED\" line in the log means the version is deployed and healthy but Tailscale"
+                echo "Funnel does not publish it; the lines after it name the likely cause."
+              fi
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

@@ -31,6 +31,7 @@ Hosted dev and uat environments (images published to GHCR for amd64 and
 arm64, deployed over SSH to an Oracle Cloud Always Free VM behind Caddy,
 promotion by release tag, automatic rollback) are described in
 [cicd.md](cicd.md).
+To host them on your own Windows PC instead (WSL2, Tailscale Funnel), see [self-hosting-pc.md](self-hosting-pc.md).
 
 ## 1. The image
 
