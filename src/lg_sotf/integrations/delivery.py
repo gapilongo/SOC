@@ -24,9 +24,13 @@ One pass (:meth:`OutboxDelivery.run_once`):
    jitter (``integrations.backoff_base_s`` doubling up to
    ``backoff_max_s``, at least the receiver's ``Retry-After``); ``dead``
    after ``integrations.max_attempts`` attempts, on a permanent error (a 4xx
-   other than 408/425/429, a refused destination), for a disabled
-   integration, or when the event is older than
-   ``integrations.max_age_hours``.
+   other than 408/425/429, a refused destination), for a disabled or
+   deleted integration (or a deleted tenant), or when the event is older
+   than ``integrations.max_age_hours``. A suspended tenant's rows are
+   deferred instead (status kept, retried every
+   :data:`SUSPENDED_RETRY_S` without using an attempt, metric outcome
+   ``deferred``), so reactivating the tenant delivers what is still within
+   ``max_age_hours``.
 
 ``last_error`` is redacted and truncated; it never contains a webhook URL
 or credentials.
@@ -39,7 +43,7 @@ import random
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple
 from uuid import UUID
 
 from prometheus_client import Counter
@@ -77,6 +81,7 @@ TICKET_SYNCS = Counter(
 )
 
 CLAIM_LEASE_S = 300.0
+SUSPENDED_RETRY_S = 300.0
 SYNC_ACTOR = "scheduler"
 MAX_SYNC_TOTAL = 1_000
 
@@ -160,37 +165,47 @@ class OutboxDelivery:
         entries = await self._repos.integrations.claim_due_all_tenants(limit=self._cfg.batch_size, lease_s=CLAIM_LEASE_S)
         if not entries:
             return 0
-        integrations = await self._integrations(entries)
+        integrations, suspended = await self._integrations(entries)
         slots = asyncio.Semaphore(self._cfg.delivery_concurrency)
 
         async def one(entry: OutboxEntry) -> None:
             async with slots:
-                await self._process(entry, integrations.get((entry.tenant_id, entry.integration_id)))
+                await self._process(
+                    entry, integrations.get((entry.tenant_id, entry.integration_id)),
+                    suspended=entry.tenant_id in suspended,
+                )
 
         await asyncio.gather(*(one(e) for e in entries))
         return len(entries)
 
-    async def _integrations(self, entries: List[OutboxEntry]) -> Dict[Tuple[str, UUID], Optional[Integration]]:
-        """The claimed rows' integrations; ``None`` for a deleted one or any of a suspended tenant."""
-        active: Dict[str, bool] = {}
+    async def _integrations(
+        self, entries: List[OutboxEntry]
+    ) -> Tuple[Dict[Tuple[str, UUID], Optional[Integration]], Set[str]]:
+        """The claimed rows' integrations (``None`` for a deleted one or a deleted tenant) and the suspended tenants."""
+        exists: Dict[str, bool] = {}
+        suspended: Set[str] = set()
         for tenant_id in {e.tenant_id for e in entries}:
             try:
-                active[tenant_id] = (await self._repos.tenants.get(tenant_id)).status == "active"
+                status = (await self._repos.tenants.get(tenant_id)).status
             except NotFound:
-                active[tenant_id] = False
+                exists[tenant_id] = False
+                continue
+            exists[tenant_id] = True
+            if status != "active":
+                suspended.add(tenant_id)
         found: Dict[Tuple[str, UUID], Optional[Integration]] = {}
         for key in {(e.tenant_id, e.integration_id) for e in entries}:
             try:
-                found[key] = await self._repos.integrations.get(*key) if active[key[0]] else None
+                found[key] = await self._repos.integrations.get(*key) if exists[key[0]] else None
             except NotFound:
                 found[key] = None
-        return found
+        return found, suspended
 
-    async def _process(self, entry: OutboxEntry, integration: Optional[Integration]) -> None:
+    async def _process(self, entry: OutboxEntry, integration: Optional[Integration], *, suspended: bool = False) -> None:
         with bound_context(tenant_id=entry.tenant_id, alert_id=entry.alert_id):
             kind = integration.kind if integration is not None else "unknown"
             try:
-                outcome = await self.deliver(entry, integration)
+                outcome = await self.deliver(entry, integration, suspended=suspended)
             except Exception as exc:  # noqa: BLE001 - an unexpected failure is retried like a transient one
                 log.warning("integrations.delivery_crashed", kind=kind, error_type=type(exc).__name__)
                 outcome = self._failure(entry, safe_error(exc), retryable=True)
@@ -224,12 +239,20 @@ class OutboxDelivery:
             delay = max(delay, min(retry_after, self._cfg.backoff_max_s))
         return Outcome("failed", retry_in_s=delay, error=error, metric="retry")
 
-    async def deliver(self, entry: OutboxEntry, integration: Optional[Integration]) -> Outcome:
-        """Deliver one claimed row and say what to record (never raises for delivery errors)."""
+    async def deliver(
+        self, entry: OutboxEntry, integration: Optional[Integration], *, suspended: bool = False
+    ) -> Outcome:
+        """Deliver one claimed row and say what to record (never raises for delivery errors).
+
+        ``suspended``: the row's tenant is suspended; the row waits (see the module docs).
+        """
         if integration is None or not integration.enabled:
-            return Outcome("dead", error="integration disabled or deleted, or tenant suspended", metric="dead")
+            return Outcome("dead", error="integration disabled or deleted", metric="dead")
         if datetime.now(UTC) - entry.created_at > timedelta(hours=self._cfg.max_age_hours):
             return Outcome("dead", error="expired: not delivered within integrations.max_age_hours", metric="dead")
+        if suspended:
+            return Outcome(entry.status, retry_in_s=SUSPENDED_RETRY_S, refund=True, metric="deferred",
+                           error=entry.last_error)
         wait = self._limiter.acquire(integration.id, rate_limit_per_minute(integration.kind, integration.config))
         if wait > 0:
             return Outcome(entry.status, retry_in_s=max(1.0, wait), refund=True, metric="deferred",

@@ -29,6 +29,10 @@ on). Ticketing integrations accept only `escalation.created` (open a ticket)
 and `escalation.decided` (comment and optionally resolve); they may also set
 `config.min_level` (`L1`/`L2`/`L3`) to open tickets only from that level.
 
+Onboarding sample alerts (source `demo:samples`) never raise events, and a
+`create_ticket` action on one runs as a dry run, so trying the product
+never pages anyone or opens a real ticket.
+
 ### Reliable delivery (outbox)
 
 Events are written to `notification_outbox` **in the same database
@@ -54,8 +58,12 @@ LOCKED`, so a leader handover cannot send a row twice concurrently.
   `integrations.backoff_max_s`; a receiver's `Retry-After` is honoured).
 * A row becomes `dead` after `integrations.max_attempts` attempts, on a
   permanent error (a 4xx other than 408/425/429, a refused destination, a
-  redirect), when the integration is disabled or deleted or the tenant is
-  suspended, or when it is older than `integrations.max_age_hours`.
+  redirect), when the integration is disabled or deleted (or the tenant
+  deleted), or when it is older than `integrations.max_age_hours`.
+* A suspended tenant's rows wait: they keep their status and are looked at
+  again every five minutes without using an attempt (metric outcome
+  `deferred`), so reactivating the tenant delivers what is still within
+  `integrations.max_age_hours`; older rows become `dead`.
 * Rate limits: `config.rate_limit_per_minute` per integration (defaults:
   Slack 60, Teams 30, email 30, webhook 120, Jira and ServiceNow 60). A row
   over the limit waits without using an attempt.
@@ -75,6 +83,13 @@ The admin page shows each integration's delivery log (also
   `security.encryption_keys`, bound to the tenant and the integration id, and
   never returned (the API reports `secrets: {field: configured}`). On update,
   `secret` is a merge patch: a value replaces that field, `null` removes it.
+* A stored credential never follows a new destination: an update that
+  changes where or as whom it is used (Jira `base_url`, `deployment`,
+  `email`; ServiceNow `instance_url`, `username`; webhook `url`; any
+  `ca_cert_pem`) must carry that credential again (`secret.api_token`,
+  `secret.password`, `secret.signing_secret`), otherwise it is refused with
+  422 `invalid_integration`. Slack and Teams webhook URLs are the credential
+  themselves.
 * Every outbound HTTP request goes through the destination policy used by
   the pull sources: `https` only in staging and production, loopback,
   link-local and cloud metadata addresses always refused, private ranges only
@@ -126,6 +141,22 @@ capped entities, and an **Open in LG-SOTF** button.
    nobody what the tenant's autonomy policy disables. Each verified click is
    audited (`integration.slack_interaction`); a second click changes nothing.
    The clicking user gets an ephemeral reply with the outcome.
+4. A click from Slack involves no LG-SOTF sign-in, so two sign-in rules are
+   checked for the mapped user before it decides anything (approve or
+   reject):
+   * **MFA policy.** When MFA is required for the account (the tenant's
+     `security.require_mfa`, or a platform admin under
+     `auth.require_mfa_for_platform_admins`) and it has not enrolled, the
+     click is refused (outcome `mfa_required`); the user is told to enroll
+     in the web app first.
+   * **Recent SSO sign-in.** An account provisioned by OIDC (single sign-on)
+     must have signed in to LG-SOTF within
+     `integrations.slack_sso_max_age_hours` (install setting, default 12);
+     otherwise the click is refused (outcome `sso_login_required`). An
+     identity disabled at the IdP therefore stops approving from Slack at
+     most that long after its last use of the web app. Every accepted OIDC
+     token refreshes the account's last sign-in (at most every five
+     minutes).
 
 ### Microsoft Teams
 

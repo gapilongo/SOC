@@ -330,3 +330,71 @@ def test_url_helpers() -> None:
     assert link_mismatch("Click here", "evil.test") is None
     assert link_mismatch("www.example.com", "cdn.example.com") is None
     assert defang("HTTPS://Evil.Test:8443/a.b?c.d") == "hxxpS://Evil[.]Test:8443/a.b?c.d"
+
+
+# -- parser cost ------------------------------------------------------------------------
+
+
+def _headers(name: str, count: int, width: int = 16_000) -> bytes:
+    value = ", ".join(f"user{i}@example.com" for i in range(width // 18))[:width]
+    return f"{name}: {value}\r\n".encode() * count
+
+
+def _forward(inner: bytes) -> bytes:
+    return (
+        b"From: Bob <bob@example.com>\r\nTo: phish@example.com\r\nSubject: FW: suspicious\r\nMIME-Version: 1.0\r\n"
+        b"Content-Type: multipart/mixed; boundary=OUTER\r\n\r\n--OUTER\r\nContent-Type: text/plain\r\n\r\nsee\r\n"
+        b"--OUTER\r\nContent-Type: message/rfc822\r\n\r\n" + inner + b"\r\n--OUTER--\r\n"
+    )
+
+
+def _timed(data: bytes) -> tuple[Dict[str, Any], float]:
+    import time
+
+    start = time.perf_counter()
+    doc = parse(data)
+    return doc, time.perf_counter() - start
+
+
+def test_megabytes_of_recipient_headers_parse_quickly_and_recipients_are_capped() -> None:
+    # About 2 MB of To/Cc headers: the joined value used to go through the stdlib address parser whole
+    # (super-linear: minutes of CPU and gigabytes of memory).
+    inner = (
+        _headers("To", 128) + _headers("Cc", 8)
+        + b"From: sender@partner.test\r\nSubject: hi\r\nMessage-ID: <m1@partner.test>\r\n\r\nbody\r\n"
+    )
+    assert len(inner) > 2_000_000
+    for data in (inner, _forward(inner)):
+        doc, elapsed = _timed(data)
+        assert elapsed < 5.0
+        assert len(doc["to"]) == EmailLimits().max_recipients and doc["to"][0] == "user0@example.com"
+        assert "header_truncated" in doc["flags"]
+
+
+def test_an_attached_message_with_huge_headers_is_hashed_without_reparsing_them() -> None:
+    # A forwarded report whose message carries another message as an attachment: that attachment is hashed,
+    # not analysed, so no header cap applies to its (single, 2 MB) To header or its Content-Type.
+    params = "; ".join(f"p{i}=v{i}" for i in range(150_000))
+    attached = (
+        _headers("To", 1, width=2_000_000) + f"Content-Type: text/plain; {params}\r\n".encode()
+        + b"From: x@partner.test\r\nSubject: s\r\n\r\nbody\r\n"
+    )
+    inner = (
+        b"From: sender@partner.test\r\nSubject: hi\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=INNER"
+        b"\r\n\r\n--INNER\r\nContent-Type: text/plain\r\n\r\nhello\r\n--INNER\r\nContent-Type: message/rfc822\r\n\r\n"
+        + attached + b"\r\n--INNER--\r\n"
+    )
+    doc, elapsed = _timed(_forward(inner))
+    assert elapsed < 5.0
+    [attachment] = doc["attachments"]
+    assert attachment["sniffed_type"] == "message"
+    # Measured as received: the part (its own short headers, then the message; line endings normalised).
+    assert 0 <= attachment["size"] - len(attached.replace(b"\r\n", b"\n")) <= 64
+
+
+def test_a_huge_content_type_parses_quickly() -> None:
+    params = "; ".join(f"p{i}=v{i}" for i in range(150_000))
+    data = f"From: sender@partner.test\r\nContent-Type: text/plain; {params}\r\n\r\nhello\r\n".encode()
+    doc, elapsed = _timed(data)
+    assert elapsed < 5.0
+    assert doc["body"]["excerpt"] == "hello"

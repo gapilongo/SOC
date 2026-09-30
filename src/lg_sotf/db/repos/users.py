@@ -287,6 +287,19 @@ class UsersRepo(Repository):
                 user_id,
             )
 
+    async def record_sign_in(
+        self, tenant_id: str, user_id: UUID, *, now: Optional[datetime] = None, conn: Optional[Connection] = None
+    ) -> None:
+        """Set ``last_login_at`` for a sign-in that is not a password check (an accepted OIDC token)."""
+        require_aware(now, "now")
+        async with self._tenant(tenant_id, conn) as c:
+            await c.execute(
+                "UPDATE users SET last_login_at = COALESCE($3::timestamptz, now()) WHERE tenant_id = $1 AND id = $2",
+                tenant_id,
+                user_id,
+                now,
+            )
+
     async def record_login_success(
         self,
         tenant_id: str,

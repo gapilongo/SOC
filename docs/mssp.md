@@ -82,6 +82,7 @@ tenant. `lg-sotf migrate` grants them to `database.runtime_role`.
 | Queued work | Workers acknowledge the tenant's queue messages without claiming the run: queued runs stay `queued`, waiting runs keep waiting, and analyst decisions already recorded stay on their escalation. |
 | Recovery sweeps | Skip the tenant (orphaned, stranded and lost-resume sweeps). |
 | Escalation SLAs | Frozen: the SLA sweep skips the tenant, so nothing is escalated or expired while nobody can work it. |
+| Integration deliveries | Held (retried every five minutes); delivered after reactivation if still within `integrations.max_age_hours`. |
 | Live WebSockets | Closed at the next revalidation. |
 | Platform admins | Can still act on the tenant with `X-Tenant-ID` (to investigate or export). |
 

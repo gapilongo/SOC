@@ -208,7 +208,7 @@ HTTP API process.
 | `api.public_url` | `LG_SOTF_API__PUBLIC_URL` | string | `http://localhost:8000` | External URL of the API. An `https://` URL turns on HSTS. |
 | `api.cors_origins` | `LG_SOTF_API__CORS_ORIGINS` | list[string] | `["http://localhost:3000", "http://localhost:5173"]` | Allowed browser origins (JSON list in environment variables). `*` is refused in staging/production. |
 | `api.max_body_bytes` | `LG_SOTF_API__MAX_BODY_BYTES` | integer | `1048576` | Request body limit for ordinary endpoints. |
-| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints. |
+| `api.max_ingest_body_bytes` | `LG_SOTF_API__MAX_INGEST_BODY_BYTES` | integer | `10485760` | Request body limit for ingestion endpoints (`/ingest/email` allows up to `ingestion.email.max_message_bytes` when that is larger). |
 | `api.max_ingest_batch` | `LG_SOTF_API__MAX_INGEST_BATCH` | integer | `500` | Maximum events per `POST /ingest/alerts` call. |
 | `api.rate_limit_per_minute` | `LG_SOTF_API__RATE_LIMIT_PER_MINUTE` | integer | `600` | Requests per minute per principal. |
 | `api.ingest_rate_limit_per_minute` | `LG_SOTF_API__INGEST_RATE_LIMIT_PER_MINUTE` | integer | `6000` | Ingestion requests per minute per API key. |
@@ -332,6 +332,7 @@ Notifications and ticketing (docs/integrations.md): outbox delivery and ticket s
 | `integrations.outbox_retention_days` | `LG_SOTF_INTEGRATIONS__OUTBOX_RETENTION_DAYS` | integer | `30` | Sent and dead outbox rows are deleted after this many days. |
 | `integrations.ticket_sync_interval_s` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_INTERVAL_S` | number | `300.0` | How often the scheduler polls linked open tickets for their status. |
 | `integrations.ticket_sync_batch_per_tenant` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_BATCH_PER_TENANT` | integer | `25` | Tickets polled per tenant per sync pass (least recently synced first). |
+| `integrations.slack_sso_max_age_hours` | `LG_SOTF_INTEGRATIONS__SLACK_SSO_MAX_AGE_HOURS` | number | `12.0` | An OIDC-provisioned (SSO) account may approve or reject actions from Slack only if it signed in to LG-SOTF within this many hours. |
 | `integrations.smtp_host` | `LG_SOTF_INTEGRATIONS__SMTP_HOST` | string (optional) | unset | SMTP server for email integrations; email integrations fail until it is set. |
 | `integrations.smtp_port` | `LG_SOTF_INTEGRATIONS__SMTP_PORT` | integer | `587` | SMTP port (587 for STARTTLS, 465 for implicit TLS). |
 | `integrations.smtp_security` | `LG_SOTF_INTEGRATIONS__SMTP_SECURITY` | `starttls` \| `tls` \| `none` | `starttls` | `starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified. |

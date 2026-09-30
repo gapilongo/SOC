@@ -130,6 +130,7 @@ from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.phishing import plan_email_entities
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.events import ACTION_AWAITING_APPROVAL, ACTION_EXECUTED, ACTION_FAILED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
@@ -1650,7 +1651,7 @@ class ResponseService:
         connector = self.connector_for(tenant_id, tenant.settings)
         actions = await self._repos.actions.get_many(tenant_id, [UUID(str(i)) for i in action_ids])
         mine = [a for a in actions if a.alert_id == alert_id]
-        tickets = await self._ticket_connector(tenant_id, tenant.settings, mine)
+        tickets = await self._ticket_connector(tenant_id, alert_id, tenant.settings, mine)
         loop = asyncio.get_running_loop()
         ends_at = loop.time() + (self._execution_budget_s if budget_s is None else budget_s)
         slots = asyncio.Semaphore(EXECUTION_CONCURRENCY)
@@ -1715,12 +1716,13 @@ class ResponseService:
         return await self._run_connector(tenant_id, executing, runner, timeout_s=max(remaining, MIN_EXECUTION_S))
 
     async def _ticket_connector(
-        self, tenant_id: str, tenant_settings: Mapping[str, Any], actions: Sequence[ResponseAction]
+        self, tenant_id: str, alert_id: str, tenant_settings: Mapping[str, Any], actions: Sequence[ResponseAction]
     ) -> Optional[Connector]:
         """The tenant's ticketing integration for ``create_ticket`` (live execution only), or ``None``.
 
         Without an enabled ticketing integration, or while dry-run is forced,
-        ``create_ticket`` keeps the tenant's regular connector.
+        ``create_ticket`` keeps the tenant's regular connector. For an
+        onboarding sample alert it is a dry run: a sample never opens a real ticket.
         """
         if not any(a.action_type == TICKET_ACTION for a in actions) or self._registry.forced_dry_run(tenant_settings):
             return None
@@ -1729,6 +1731,8 @@ class ResponseService:
         if self._ticketing is None:
             self._ticketing = TicketService(self._repos, self._settings, retries=1)
         try:
+            if (await self._repos.alerts.get(tenant_id, alert_id)).source_id == SAMPLE_SOURCE_ID:
+                return DryRunConnector()
             return await ticket_connector_for(self._ticketing, self._repos, tenant_id)
         except Exception as exc:  # noqa: BLE001 - a broken lookup must not fail the whole execution step
             log.warning("response.ticketing_lookup_failed", error_type=type(exc).__name__)

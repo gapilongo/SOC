@@ -59,6 +59,8 @@ MIN_AUTH_FAILURES_PER_MINUTE = 20
 _DUMMY_KEY_HASH = "0" * 64
 MAX_CREDENTIAL_CHARS = 8_192
 MAX_OIDC_SUBJECT_CHARS = 255
+# A provisioned account's last_login_at is refreshed by accepted OIDC tokens at most this often.
+OIDC_SIGN_IN_RECORD_S = 300
 
 
 def unauthorized(message: str = "authentication required") -> ApiError:
@@ -237,6 +239,7 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
         raise forbidden("this identity has no LG-SOTF role")
     provisioned = await _provisioned_user(ctx, tenant_id, identity, role)
     if provisioned is not None:
+        await _record_oidc_sign_in(ctx, provisioned)
         return _oidc_user_principal(identity, tenant_id, role, provisioned)
     # Blocking and linking are separate. A disabled local account with the
     # token's email blocks the token whether or not the IdP marks the email
@@ -261,6 +264,7 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
         elif ctx.settings.auth.oidc_jit_provisioning and identity.email_verified:
             created = await _provision(ctx, tenant_id, identity, role)
             if created is not None:
+                await _record_oidc_sign_in(ctx, created)
                 return _oidc_user_principal(identity, tenant_id, role, created)
     return Principal(
         kind="user",
@@ -286,6 +290,14 @@ def map_oidc_role(auth: AuthSettings, values: List[str]) -> Optional[str]:
     if mapped:
         return max(mapped, key=lambda r: ROLE_RANK[r])
     return auth.oidc_default_role
+
+
+async def _record_oidc_sign_in(ctx: ApiContext, user: User) -> None:
+    """Keep ``last_login_at`` of a provisioned account current (Slack approvals require a recent SSO sign-in)."""
+    last = user.last_login_at
+    if last is not None and (datetime.now(UTC) - last).total_seconds() < OIDC_SIGN_IN_RECORD_S:
+        return
+    await ctx.repos.users.record_sign_in(user.tenant_id, user.id)
 
 
 def _oidc_user_principal(identity: OIDCIdentity, tenant_id: str, role: str, user: User) -> Principal:

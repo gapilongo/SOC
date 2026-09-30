@@ -241,8 +241,11 @@ class FakeImap:
         self.connected: Optional[Tuple[str, str, int]] = None
         self.logged_out = False
 
-    def factory(self, host: str, address: str, port: int, context: ssl.SSLContext, timeout: float) -> FakeImap:
+    def factory(self, host: str, address: str, port: int, context: ssl.SSLContext, timeout: float, *,
+                max_literal: int, lifetime_s: float) -> FakeImap:
         assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname and timeout > 0
+        # The body literal is bounded by ingestion.email.max_message_bytes (20 000 in these tests) plus slack.
+        assert 20_000 < max_literal <= 20_000 + 128 * 1024 and lifetime_s == 900
         self.connected = (host, address, port)
         return self
 
@@ -369,6 +372,8 @@ async def test_imap_refuses_forbidden_destinations(settings: Settings) -> None:
         ({**IMAP, "folder": "Ünicode"}, "folder"),
         ({**IMAP, "tls_verify": False}, "TLS"),
         ({**IMAP, "after_processing": "move"}, "processed_folder"),
+        ({**IMAP, "poll_timeout_s": 5}, "poll_timeout_s"),
+        ({**IMAP, "poll_timeout_s": 86_400}, "poll_timeout_s"),
     ],
 )
 def test_imap_config_validation(settings: Settings, config: Dict[str, Any], message: str) -> None:

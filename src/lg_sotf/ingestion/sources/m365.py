@@ -33,6 +33,7 @@ verification, timeouts, bounded retries, response caps).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import re
 from datetime import datetime
@@ -168,12 +169,14 @@ class M365MailboxConnector(PullConnector):
 
     # -- events ------------------------------------------------------------------
 
-    def _event(self, item: Mapping[str, Any], message_id: str, received: Optional[datetime], data: Optional[bytes],
-               error: Optional[str]) -> Dict[str, Any]:
+    async def _event(self, item: Mapping[str, Any], message_id: str, received: Optional[datetime],
+                     data: Optional[bytes], error: Optional[str]) -> Dict[str, Any]:
         transport = {"source": self.source_type, "mailbox_message_id": message_id[:256]}
         if data is not None and error is None:
             try:
-                return parse_email(
+                # CPU-bound on untrusted input: off the event loop, like the push path.
+                return await asyncio.to_thread(
+                    parse_email,
                     data,
                     limits=self._limits,
                     received_at=received,
@@ -233,7 +236,7 @@ class M365MailboxConnector(PullConnector):
                     data = await self._mime(message_id)
                 except SourceResponseTooLarge:
                     error = f"message is larger than {self._limits.max_message_bytes} bytes"
-                events.append(self._event(item, message_id, received, data, error))
+                events.append(await self._event(item, message_id, received, data, error))
                 ids.append(message_id)
                 if received is not None and received > newest:
                     newest = received

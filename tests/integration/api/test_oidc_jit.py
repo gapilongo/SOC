@@ -84,6 +84,21 @@ async def test_first_sign_in_provisions_a_usable_account(make_api: Any, idp: IdP
     assert listed["jit.user@a.example.com"]["oidc_provisioned"] is True
 
 
+async def test_accepted_tokens_keep_the_last_sign_in_of_a_provisioned_account_current(make_api: Any, idp: IdP) -> None:
+    # Slack approvals by SSO accounts rely on last_login_at (integrations.slack_sso_max_age_hours).
+    api = await _jit_api(make_api, idp)
+    token = _token(idp, ["SOC-Analysts"])
+    assert (await api.client.get(f"{API}/auth/me", headers=bearer(token))).status_code == 200
+    user = await api.repos.users.get_by_oidc_subject(TENANT_A, "entra-oid-1")
+    assert user is not None and user.last_login_at is not None
+    assert datetime.now(UTC) - user.last_login_at < timedelta(minutes=1)
+    old = datetime.now(UTC) - timedelta(hours=20)
+    await api.repos.users.record_sign_in(TENANT_A, user.id, now=old)
+    assert (await api.client.get(f"{API}/auth/me", headers=bearer(token))).status_code == 200
+    refreshed = await api.repos.users.get(TENANT_A, user.id)
+    assert refreshed.last_login_at is not None and refreshed.last_login_at > old + timedelta(hours=19)
+
+
 async def test_role_follows_the_mapping_on_later_sign_ins(make_api: Any, idp: IdP) -> None:
     api = await _jit_api(make_api, idp)
     assert (await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Viewers"])))).status_code == 200

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -62,8 +64,11 @@ async def setup(api: ApiHarness, box: SecretBox, *, interactive: bool = True) ->
 
 
 def click(action_id: str, slack_user: str, *, approve: bool = True) -> bytes:
+    # Every Slack click carries its own trigger_id, so two clicks never share a body (or a signature)
+    # even within the same second: the replay cache refuses only a true replay.
     payload = {
         "type": "block_actions",
+        "trigger_id": uuid4().hex,
         "user": {"id": slack_user, "username": "someone"},
         "team": {"id": "T0"},
         "response_url": RESPONSE_URL,
@@ -98,12 +103,17 @@ async def test_admin_approves_high_risk_action_from_slack(api: ApiHarness, box: 
     reply = [r for r in receiver.requests if r.url.host == "hooks.slack.com"]
     assert json.loads(reply[-1].content)["response_type"] == "ephemeral" and "approved" in json.loads(reply[-1].content)["text"]
 
-    # A replayed request is refused; a second genuine click is idempotent.
-    assert (await post(api, path, body, ids["signing"], signature=response.request.headers["X-Slack-Signature"],
-                       ts=int(response.request.headers["X-Slack-Request-Timestamp"]))).status_code == 401
-    again = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"], ts=int(time.time()) - 1)
+    # A true replay (same body, timestamp and signature) is refused.
+    first_ts = int(response.request.headers["X-Slack-Request-Timestamp"])
+    replay = await post(api, path, body, ids["signing"], signature=response.request.headers["X-Slack-Signature"],
+                        ts=first_ts)
+    assert replay.status_code == 401
+    # A second genuine click (its own body and timestamp) is accepted and changes nothing.
+    again = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"], ts=first_ts - 5)
     assert again.status_code == 200
     assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "approved"
+    outcomes = [e.details["outcome"] for e in (await api.repos.audit.list(TENANT_A, action="integration.slack_interaction")).items]
+    assert outcomes == ["approved", "approved"]  # the replay was refused before it was audited as a click
 
 
 async def test_same_authorisation_rules_as_the_ui(api: ApiHarness, box: SecretBox) -> None:
@@ -138,3 +148,57 @@ async def test_integration_without_interactivity_accepts_nothing(api: ApiHarness
     response = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])
     assert response.status_code == 401
     assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+
+
+def _replies(receiver: Receiver) -> List[str]:
+    return [json.loads(r.content)["text"] for r in receiver.requests if r.url.host == "hooks.slack.com"]
+
+
+async def _outcomes(api: ApiHarness) -> List[str]:
+    entries = await api.repos.audit.list(TENANT_A, action="integration.slack_interaction")
+    return sorted(e.details["outcome"] for e in entries.items)
+
+
+async def test_tenant_mfa_policy_applies_to_slack_approvals(api: ApiHarness, box: SecretBox) -> None:
+    path, ids, receiver = await setup(api, box)
+    await api.repos.tenants.update_settings(TENANT_A, {"security": {"require_mfa": True}})
+    api.ctx.tenants.invalidate(TENANT_A)
+    refused = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])
+    assert refused.status_code == 200
+    assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+    assert "multi-factor" in _replies(receiver)[-1]
+    assert await _outcomes(api) == ["mfa_required"]
+
+    # Once the admin has enrolled, the same click is accepted.
+    admin = await api.repos.users.get_by_email(TENANT_A, "boss@tenant-a.example.com")
+    assert admin is not None
+    await api.repos.user_mfa.set_pending(TENANT_A, admin.id, "pending-ciphertext")
+    await api.repos.user_mfa.activate(TENANT_A, admin.id, pending_ciphertext="pending-ciphertext", step=1,
+                                      recovery_code_hashes=[])
+    accepted = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])
+    assert accepted.status_code == 200
+    assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "approved"
+
+
+async def test_sso_accounts_need_a_recent_sign_in_to_approve_from_slack(api: ApiHarness, box: SecretBox) -> None:
+    path, ids, receiver = await setup(api, box)
+    SLACK_USERS["USSO"] = {"email": "sso-admin@tenant-a.example.com", "confirmed": True}
+    try:
+        sso = await api.repos.users.create(TENANT_A, "sso-admin@tenant-a.example.com", "admin", password_hash=None,
+                                           oidc_subject="idp-subject-1")
+        # Never signed in, then last signed in beyond integrations.slack_sso_max_age_hours (12): refused.
+        refused = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"])
+        assert refused.status_code == 200 and "single sign-on" in _replies(receiver)[-1]
+        await api.repos.users.record_sign_in(TENANT_A, sso.id, now=datetime.now(UTC) - timedelta(hours=13))
+        stale = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"])
+        assert stale.status_code == 200
+        assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+
+        await api.repos.users.record_sign_in(TENANT_A, sso.id, now=datetime.now(UTC) - timedelta(hours=1))
+        fresh = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"])
+        assert fresh.status_code == 200
+        action = await api.repos.actions.get(TENANT_A, ids["isolate_host"])
+        assert action.status == "approved" and action.approved_by == str(sso.id)
+        assert await _outcomes(api) == ["approved", "sso_login_required", "sso_login_required"]
+    finally:
+        SLACK_USERS.pop("USSO", None)

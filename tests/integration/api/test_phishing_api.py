@@ -57,6 +57,29 @@ async def test_push_a_reported_email(api: ApiHarness) -> None:
     assert other_tenant.json()["inserted"] == 1
 
 
+async def test_email_push_body_limit_follows_the_email_message_limit(make_api) -> None:
+    # A larger ingestion.email.max_message_bytes applies to /ingest/email even when it exceeds
+    # api.max_ingest_body_bytes; other ingest routes keep the API limit.
+    api = await make_api(
+        api={"max_body_bytes": 16 * 1024, "max_ingest_body_bytes": 32 * 1024},
+        ingestion={"email": {"max_message_bytes": 256 * 1024}},
+    )
+    _, token = await api.api_key(TENANT_A)
+    headers = {"X-API-Key": token, **RFC822}
+    big = reported(subject="Large report " + "x" * 10)
+    big = big.replace(b"Reporting this one.", b"Reporting this one. " + b"padding " * 12_000)
+    assert 64 * 1024 < len(big) < 256 * 1024
+    accepted = await api.client.post("/api/v1/ingest/email", content=big, headers=headers)
+    assert accepted.status_code == 202, accepted.text
+    too_big = await api.client.post("/api/v1/ingest/email", content=b"x" * (300 * 1024), headers=headers)
+    assert too_big.status_code == 413
+    alerts = await api.client.post(
+        "/api/v1/ingest/alerts", content=b"[" + b" " * (64 * 1024) + b"]",
+        headers={"X-API-Key": token, "Content-Type": "application/json"},
+    )
+    assert alerts.status_code == 413
+
+
 async def test_push_validation(api: ApiHarness) -> None:
     _, token = await api.api_key(TENANT_A)
     key = {"X-API-Key": token}

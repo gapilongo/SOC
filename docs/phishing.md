@@ -189,7 +189,12 @@ then pinned to the checked address with the host name kept for SNI and
 certificate checks. On-premises servers on private addresses need the
 install-level `ingestion.allow_private_destinations`. The cursor is the
 mailbox's UIDVALIDITY and the last UID; sizes are checked (`RFC822.SIZE`)
-before a bounded partial fetch. OAuth (XOAUTH2) is not supported yet.
+before a bounded partial fetch. What the server sends is bounded as well: a
+literal larger than `max_message_bytes` (plus 64 KiB), a line over 1 MB or
+a response over a literal plus 8 MiB ends the poll unread, and one poll's
+session is limited to `poll_timeout_s` (source config, default 900, 10 to
+3600), checked before every socket read. OAuth (XOAUTH2) is not supported
+yet.
 
 ## Pushing reports from your own tooling
 
@@ -233,12 +238,14 @@ domains and protected users (full addresses) are never blocked.
 |---|---|---|
 | `max_message_bytes` | 10485760 | Larger messages are refused (push: 413; pull: an `email_unparsed` alert) |
 | `max_parts` / `max_depth` | 200 / 8 | MIME parts visited and nesting followed; messages with implausibly many boundaries are refused |
-| `max_headers` / `max_header_chars` | 1000 / 16384 | Headers read and length of each value (truncated, flagged) |
+| `max_headers` / `max_header_chars` | 1000 / 16384 | Headers read and length of each value (truncated, flagged); all `To` (and all `Cc`) headers together are also held to `max_header_chars` |
 | `max_received` / `max_auth_results` | 30 / 10 | `Received` hops and `Authentication-Results` headers read |
 | `max_recipients` | 100 | To/Cc addresses read |
 | `max_urls` / `max_attachments` | 100 / 50 | Links and attachments recorded (flagged when reached) |
 | `max_body_excerpt_chars` | 4096 | Body text kept in `raw` (1,500 characters in the email section) |
 | `max_scan_chars` / `max_total_scan_chars` | 1000000 / 4000000 | Text scanned for links and wording per part and per message |
+
+Headers the parser library interprets itself (`Content-Type`, `Content-Disposition`) are read up to 4096 characters, and a message attached to the reported one is hashed as received, without re-parsing its headers, so parsing time stays bounded by the message size.
 
 ## Evaluation
 

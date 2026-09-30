@@ -221,6 +221,16 @@ REQUIRED_SECRETS: Dict[str, Tuple[str, ...]] = {
     "servicenow": ("password",),
 }
 
+# Config fields that decide where, or as whom, a separately stored credential is used (the signing secret signs
+# what goes to the webhook URL; the Jira token and ServiceNow password are sent to the instance). Changing one
+# requires the credential again in the same update, so a stored credential never follows a new destination.
+# Slack and Teams webhook URLs are themselves the credential; the Slack bot token only goes to slack.com.
+SECRET_BOUND_CONFIG: Dict[str, Tuple[Tuple[str, ...], str]] = {
+    "webhook": (("url", "ca_cert_pem"), "signing_secret"),
+    "jira": (("base_url", "deployment", "email", "ca_cert_pem"), "api_token"),
+    "servicenow": (("instance_url", "username", "ca_cert_pem"), "password"),
+}
+
 
 def secret_fields(kind: str) -> Tuple[str, ...]:
     return tuple(SECRET_MODELS[kind].model_fields)
@@ -293,6 +303,23 @@ def validate_events(kind: str, events: List[str]) -> List[str]:
     return list(dict.fromkeys(events))
 
 
+def check_secret_binding(
+    kind: str, current: Mapping[str, Any], config: Mapping[str, Any], secret_patch: Mapping[str, Any]
+) -> None:
+    """Refuse a config change that would send the stored credential to a new destination or identity."""
+    bound = SECRET_BOUND_CONFIG.get(kind)
+    if bound is None:
+        return
+    fields, secret = bound
+    changed = [f for f in fields if current.get(f) != config.get(f)]
+    value = secret_patch.get(secret)
+    if changed and not (isinstance(value, str) and value.strip()):
+        raise IntegrationConfigError(
+            f"changing config.{', config.'.join(changed)} requires secret.{secret} in the same request "
+            "(a stored credential is never sent to a new destination)"
+        )
+
+
 def merge_secret(current: Mapping[str, str], patch: Mapping[str, Any]) -> Dict[str, Any]:
     """Merge-patch semantics for secrets: a value replaces, ``null`` removes, absent keys are kept."""
     merged: Dict[str, Any] = dict(current)
@@ -340,8 +367,10 @@ __all__ = [
     "KINDS",
     "LEVELS",
     "NOTIFY_KINDS",
+    "SECRET_BOUND_CONFIG",
     "SECRET_MODELS",
     "TICKETING_KINDS",
+    "check_secret_binding",
     "decrypt_secret",
     "encrypt_secret",
     "merge_secret",
