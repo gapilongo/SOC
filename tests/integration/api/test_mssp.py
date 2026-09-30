@@ -139,6 +139,29 @@ async def test_suspension_blocks_ingest_keys_and_logins_and_reactivation_requeue
     assert (await api.repos.audit.list(TENANT_B, action="tenant.reactivated")).items
 
 
+async def test_reactivation_restarts_open_escalation_sla_clocks(api: ApiHarness) -> None:
+    headers = await _platform(api)
+    await api.repos.tenants.update_settings(TENANT_B, {"review": {"sla_minutes": {"L2": 90}}})
+    now = datetime.now(UTC)
+    lapsed, _ = await api.repos.escalations.create_or_attach(
+        TENANT_B, await make_alert(api.repos, TENANT_B), reason="r", level="L2", sla_deadline=now - timedelta(hours=2)
+    )
+    far = now + timedelta(days=2)
+    later, _ = await api.repos.escalations.create_or_attach(
+        TENANT_B, await make_alert(api.repos, TENANT_B), reason="r", sla_deadline=far
+    )
+    for status in ("suspended", "active"):
+        changed = await api.client.patch(f"/api/v1/platform/tenants/{TENANT_B}", json={"status": status}, headers=headers)
+        assert changed.status_code == 200, changed.text
+
+    moved = (await api.repos.escalations.get(TENANT_B, lapsed.id)).sla_deadline
+    assert moved is not None and timedelta(minutes=89) < moved - now < timedelta(minutes=92)
+    assert (await api.repos.escalations.get(TENANT_B, later.id)).sla_deadline == far
+    entry = (await api.repos.audit.list(TENANT_B, action="tenant.reactivated")).items[0]
+    assert entry.details["sla_deadlines_reset"] == 1
+    assert "sla_deadlines_reset" not in (await api.repos.audit.list(TENANT_B, action="tenant.suspended")).items[0].details
+
+
 async def test_update_validation(api: ApiHarness) -> None:
     headers = await _platform(api)
     for body in (

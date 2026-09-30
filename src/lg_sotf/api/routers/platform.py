@@ -14,8 +14,9 @@
 * ``PATCH /platform/tenants/{id}``: name, status (``active``/``suspended``)
   and quotas. Suspension refuses the tenant's users, SSO identities and API
   keys (``403 tenant_suspended``, ingest included), stops its pull sources
-  and leaves its queued work queued; reactivation hands the queued runs back
-  to the workers. Other API processes see a status change within their
+  and leaves its queued work queued and its escalations' SLA clocks frozen
+  (the SLA sweep skips it); reactivation hands the queued runs back to the
+  workers and restarts the open escalations' SLA clocks. Other API processes see a status change within their
   tenant cache TTL (15 s).
 * ``GET /platform/escalations``: open and claimed escalations of every
   tenant, soonest SLA deadline first.
@@ -49,10 +50,13 @@ from lg_sotf.api.schemas import In, Out, PageOut, UserOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import Tenant, TenantStats
+from lg_sotf.db.repos._base import Connection
+from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.hashing import ahash_password
+from lg_sotf.services.escalation import resolve_review_policy
 from lg_sotf.services.tenancy import Profile, copyable_settings, profile_settings, quotas_of
 
 log = get_logger(__name__)
@@ -359,6 +363,19 @@ async def _requeue_queued_runs(ctx: ApiContext, tenant_id: str) -> int:
     return len(queued)
 
 
+async def _reset_sla_deadlines(ctx: ApiContext, tenant: Tenant, conn: Connection) -> int:
+    """Restart the SLA clock of a reactivated tenant's open escalations (now + the level's SLA).
+
+    The sweep skips suspended tenants, so without this every escalation whose
+    deadline passed during the suspension would jump a level on the next
+    sweep. Deadlines are only ever pushed out, never shortened.
+    """
+    policy = resolve_review_policy(tenant.settings, ctx.settings)
+    now = datetime.now(UTC)
+    deadlines = {level: now + timedelta(minutes=policy.sla_minutes[level]) for level in ESCALATION_LEVELS}
+    return await ctx.repos.escalations.extend_sla_deadlines(tenant.id, deadlines, conn=conn)
+
+
 @router.patch("/tenants/{tenant_id}", response_model=TenantSummaryOut, summary="Rename, suspend/reactivate or set quotas")
 async def update_tenant(
     tenant_id: str, body: TenantUpdateIn, request: Request, principal: Principal = Depends(require(PLATFORM_ADMIN))
@@ -393,6 +410,9 @@ async def update_tenant(
             if status_changed
             else "tenant.updated"
         )
+        extra: Dict[str, Any] = {}
+        if status_changed and updated.is_active:
+            extra["sla_deadlines_reset"] = await _reset_sla_deadlines(ctx, updated, conn)
         await AuditLogger(ctx.repos).record(
             tenant_id,
             action,
@@ -400,7 +420,7 @@ async def update_tenant(
             tenant_id,
             actor_type=principal.actor_type,
             actor_id=principal.actor_id,
-            details={"home_tenant_id": principal.home_tenant_id, "changes": diff},
+            details={"home_tenant_id": principal.home_tenant_id, "changes": diff, **extra},
             conn=conn,
         )
     ctx.tenants.invalidate(tenant_id)

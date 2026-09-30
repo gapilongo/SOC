@@ -340,19 +340,52 @@ class EscalationsRepo(Repository):
     async def find_sla_breached_all_tenants(
         self, *, now: Optional[datetime] = None, limit: int = 100
     ) -> List[Escalation]:
+        """Active escalations past their deadline, in active tenants only.
+
+        A suspended tenant's escalations are frozen: nobody can act on them,
+        so the sweep must not escalate or expire them (see
+        :meth:`extend_sla_deadlines` for reactivation).
+        """
         require_aware(now, "now")
         async with self._system() as c:
             rows = await c.fetch(
                 """
-                SELECT * FROM escalations
-                WHERE status IN ('open', 'claimed') AND sla_deadline < COALESCE($1::timestamptz, now())
-                ORDER BY sla_deadline
+                SELECT e.* FROM escalations e
+                JOIN tenants t ON t.id = e.tenant_id AND t.status = 'active'
+                WHERE e.status IN ('open', 'claimed') AND e.sla_deadline < COALESCE($1::timestamptz, now())
+                ORDER BY e.sla_deadline
                 LIMIT $2
                 """,
                 now,
                 limit,
             )
         return to_models(Escalation, rows)
+
+    async def extend_sla_deadlines(
+        self, tenant_id: str, deadlines: Mapping[str, datetime], *, conn: Optional[Connection] = None
+    ) -> int:
+        """Give every active escalation at least ``deadlines[level]``; the number of rows moved.
+
+        Used on tenant reactivation. A deadline is never shortened, the
+        version is left alone (a deadline move is not a state change an
+        analyst's pending claim or decision should conflict with).
+        """
+        for level in ESCALATION_LEVELS:
+            require_aware(deadlines[level], "deadline")
+        async with self._tenant(tenant_id, conn) as c:
+            status = await c.execute(
+                """
+                UPDATE escalations
+                SET sla_deadline = CASE level WHEN 'L1' THEN $2::timestamptz WHEN 'L2' THEN $3::timestamptz
+                                              ELSE $4::timestamptz END
+                WHERE tenant_id = $1 AND status IN ('open', 'claimed') AND sla_deadline IS NOT NULL
+                  AND sla_deadline < CASE level WHEN 'L1' THEN $2::timestamptz WHEN 'L2' THEN $3::timestamptz
+                                                ELSE $4::timestamptz END
+                """,
+                tenant_id,
+                *(deadlines[level] for level in ESCALATION_LEVELS),
+            )
+        return int(status.split()[-1])
 
     async def count_active(self, tenant_id: str, *, conn: Optional[Connection] = None) -> int:
         async with self._tenant(tenant_id, conn) as c:
