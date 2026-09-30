@@ -77,15 +77,18 @@ class IndicatorsRepo(Repository):
         indicators: Sequence[Tuple[str, str]],
         *,
         since: datetime,
+        until: Optional[datetime] = None,
         limit: int = 20,
         exclude_alert_id: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> List[RelatedAlert]:
-        """Alerts sharing any of ``indicators`` (type, value_hash) seen since ``since``.
+        """Alerts sharing any of ``indicators`` (type, value_hash) seen since ``since`` (and before ``until``).
 
-        Ordered by number of shared indicators, then recency.
+        Ordered by number of shared indicators, then recency. ``until`` gives a
+        point-in-time view (the history backtest).
         """
         require_aware(since, "since")
+        require_aware(until, "until")
         if limit < 1 or limit > 500:
             raise ValueError("limit must be between 1 and 500")
         unique = list(dict.fromkeys(indicators))[:MAX_QUERY_INDICATORS]
@@ -102,6 +105,7 @@ class IndicatorsRepo(Repository):
                   ON s.tenant_id = $1 AND s.indicator_type = q.t AND s.value_hash = q.h
                 WHERE s.seen_at >= $4
                   AND ($5::text IS NULL OR s.alert_id <> $5)
+                  AND ($7::timestamptz IS NULL OR s.seen_at < $7)
                 GROUP BY s.alert_id
                 ORDER BY shared_indicator_count DESC, last_seen DESC, s.alert_id
                 LIMIT $6
@@ -112,6 +116,7 @@ class IndicatorsRepo(Repository):
                 since,
                 exclude_alert_id,
                 limit,
+                until,
             )
         return to_models(RelatedAlert, rows)
 

@@ -75,6 +75,9 @@ class AgentContext:
     llm_budget_exceeded: bool = False
     usage: UsageTally = field(default_factory=UsageTally)
     refusals: List[Dict[str, Optional[str]]] = field(default_factory=list)
+    # False for a replay (the history backtest): agents read through ``repos`` but write nothing,
+    # neither LLM accounting on the alert nor indicator sightings.
+    persist: bool = True
 
 
 @dataclass
@@ -225,12 +228,12 @@ def refusal_digest(result: LLMResult[Any]) -> Optional[Dict[str, Optional[str]]]
 async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool) -> None:
     """Add this run's LLM usage to ``alerts.summary.llm_usage`` (and budget/refusal flags).
 
-    Writes nothing when the run made no LLM call, hit no budget limit and saw
-    no refusal. Nodes of one alert run one at a time, so the read-add-write
+    Writes nothing for a context with ``persist=False``, or when the run made
+    no LLM call, hit no budget limit and saw no refusal. Nodes of one alert run one at a time, so the read-add-write
     in one transaction cannot interleave with another agent's update.
     """
     newly_exceeded = ctx.llm_budget_exceeded and not budget_was_exceeded
-    if ctx.repos is None or (ctx.usage.is_empty() and not newly_exceeded and not ctx.refusals):
+    if not ctx.persist or ctx.repos is None or (ctx.usage.is_empty() and not newly_exceeded and not ctx.refusals):
         return
     repos = ctx.repos
     async with repos.db.tenant_tx(ctx.tenant_id) as conn:

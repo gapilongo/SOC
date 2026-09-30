@@ -131,7 +131,7 @@ class CorrelationAgent(BaseAgent):
         now = now or datetime.now(UTC)
         indicators = extract_indicators(alert)
         hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
-        if hashed:
+        if hashed and ctx.persist:
             await ctx.repos.indicators.add_sightings(
                 ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
             )
