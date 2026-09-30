@@ -164,17 +164,22 @@ spreadsheet would run as a formula are prefixed with `'`.
 
   Every profile keeps `response.dry_run: true`: actions are recorded, never
   executed, until the tenant configures its connector and switches dry run
-  off.
+  off. `conservative` also sets `security.require_mfa: true`: local
+  accounts enrol a TOTP factor at their first sign-in (SSO users get MFA
+  from their IdP). `balanced` and `autonomous` leave MFA to the tenant
+  admin, as a plain new tenant does.
 * `copy_settings_from: <tenant id>`: copies the policy of an existing
   tenant: `autonomy`, `review`, `llm_daily_token_budget`, `retention`,
+  `security.require_mfa`, `reporting` (minutes per alert),
   `response.dry_run`, `allowed_actions`, `max_actions_per_hour`,
   `blast_radius`, `autonomy`, `allow_internal_ip_blocks`, and which
   enrichment tools are enabled. Never copied: secrets (webhook secret, tool
   API keys, any `*_ciphertext`), destinations (connector, webhook URL, CA
   certificate) and anything that describes the source customer (protected
-  assets, `protected_cidrs`, `tools.internal_domains`). Copying those would
-  send one customer's response actions to another customer's endpoint or
-  leak its asset names.
+  assets, `protected_cidrs`, `tools.internal_domains`, and the `phishing`
+  section: protected brands, executives, trusted mail servers). Copying those
+  would send one customer's response actions to another customer's endpoint
+  or leak its asset and staff names.
 
 The response lists the seeded keys (`settings_keys`); the audit entries name
 the profile or source tenant.

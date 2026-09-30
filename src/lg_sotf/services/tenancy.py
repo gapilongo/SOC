@@ -4,13 +4,16 @@ Templates seed a new tenant's settings:
 
 * ``profile``: one of :data:`PROFILES`. Every profile keeps response actions
   in dry-run; live execution is switched on per tenant once its connector is
-  configured, never by a template.
+  configured, never by a template. ``conservative`` also requires MFA for
+  local sign-in (``security.require_mfa``).
 * ``copy_settings_from``: the policy of an existing tenant (autonomy, review,
-  LLM budget, retention, the non-destination parts of ``response`` and which
-  enrichment tools are enabled). Secrets are never copied, nor is anything
-  that identifies the source customer or points at its systems (webhook URL
-  and CA, protected assets, internal domains): copying those would send one
-  customer's actions to another's endpoint or leak its asset names.
+  LLM budget, retention, ``security.require_mfa``, reporting assumptions,
+  the non-destination parts of ``response`` and which enrichment tools are
+  enabled). Secrets are never copied, nor is anything that identifies the
+  source customer or points at its systems (webhook URL and CA, protected
+  assets, internal domains, the ``phishing`` brands, executives and trusted
+  mail servers): copying those would send one customer's actions to
+  another's endpoint or leak its asset names.
 
 Quotas (``tenants.max_*``, ``NULL`` = unlimited) are set by platform admins:
 
@@ -37,6 +40,8 @@ PROFILES: Dict[str, Dict[str, Any]] = {
         "autonomy": {"low": "approval", "medium": "approval", "high": "disabled", "critical": "disabled"},
         "response": {"dry_run": True, "max_actions_per_hour": 10},
         "review": {"sla_minutes": {"L1": 30, "L2": 60, "L3": 120}, "suggest_suppressions": True},
+        # Local accounts enrol a TOTP factor at their first sign-in (SSO users get MFA from their IdP).
+        "security": {"require_mfa": True},
     },
     # Low-risk containment runs on its own; everything else waits for approval.
     "balanced": {
@@ -52,7 +57,9 @@ PROFILES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-COPIED_KEYS = ("autonomy", "review", "llm_daily_token_budget", "retention")
+# Never "phishing": its brands, executives and mail servers identify the customer.
+COPIED_KEYS = ("autonomy", "review", "llm_daily_token_budget", "retention", "reporting")
+COPIED_SECURITY_KEYS = ("require_mfa",)
 COPIED_RESPONSE_KEYS = (
     "dry_run",
     "allowed_actions",
@@ -87,6 +94,11 @@ def copyable_settings(source: Mapping[str, Any]) -> Dict[str, Any]:
     for key in COPIED_KEYS:
         if source.get(key) is not None:
             out[key] = copy.deepcopy(source[key])
+    security = source.get("security")
+    if isinstance(security, Mapping):
+        policy_flags = {k: security[k] for k in COPIED_SECURITY_KEYS if isinstance(security.get(k), bool)}
+        if policy_flags:
+            out["security"] = policy_flags
     response = source.get("response")
     if isinstance(response, Mapping):
         policy = {k: copy.deepcopy(response[k]) for k in COPIED_RESPONSE_KEYS if response.get(k) is not None}
