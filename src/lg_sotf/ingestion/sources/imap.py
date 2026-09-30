@@ -281,13 +281,14 @@ class ImapConnector(PullConnector):
             typ, _ = await self._call(session.expunge)
         _ok(typ, "EXPUNGE")
 
-    def _event(self, uidvalidity: int, uid: int, data: Optional[bytes], error: Optional[str],
-               received: Optional[datetime]) -> Dict[str, Any]:
+    async def _event(self, uidvalidity: int, uid: int, data: Optional[bytes], error: Optional[str],
+                     received: Optional[datetime]) -> Dict[str, Any]:
         transport = {"source": self.source_type, "uidvalidity": uidvalidity, "uid": uid}
         if data is not None and error is None:
             try:
-                return parse_email(
-                    data, limits=self._limits, received_at=received, trusted_relays=self._trusted, transport=transport
+                # CPU-bound on untrusted input: off the event loop, like the push path.
+                return await asyncio.to_thread(
+                    parse_email, data, limits=self._limits, received_at=received, trusted_relays=self._trusted, transport=transport
                 )
             except EmailParseError as exc:
                 error = str(exc)
@@ -324,7 +325,7 @@ class ImapConnector(PullConnector):
                     length, received = facts.get(uid, (0, None))
                     too_large = f"message is larger than {self._limits.max_message_bytes} bytes"
                     if length > self._limits.max_message_bytes:
-                        events.append(self._event(uidvalidity, uid, None, too_large, received))
+                        events.append(await self._event(uidvalidity, uid, None, too_large, received))
                         continue
                     body = await self._body(session, uid)
                     error: Optional[str] = None
@@ -332,7 +333,7 @@ class ImapConnector(PullConnector):
                         error = "message body was not returned"
                     elif len(body) > self._limits.max_message_bytes:
                         body, error = None, too_large
-                    events.append(self._event(uidvalidity, uid, body, error, received))
+                    events.append(await self._event(uidvalidity, uid, body, error, received))
                 yield FetchedPage(events, _cursor(uidvalidity, chunk[-1], chunk), self.deps.now())
                 # The page is committed: acknowledge its messages.
                 await self._ack(session, chunk)

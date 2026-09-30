@@ -40,6 +40,7 @@ from datetime import UTC, datetime
 from email import policy
 from email.message import EmailMessage, Message
 from email.parser import BytesParser
+from email.policy import EmailPolicy
 from email.utils import getaddresses, parsedate_to_datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
@@ -80,6 +81,9 @@ _WANTED_HEADERS = frozenset(
         "authentication-results", "received", "received-spf",
     }
 )
+# Longest header value the stdlib parses on its own (Content-Type, Content-Disposition, ... of every part, several
+# times each): generous for real RFC 2231 file names, small enough that parsing cost stays bounded.
+MAX_MIME_HEADER_CHARS = 4_096
 _ADDRESS_HEADERS = frozenset({"from", "sender", "reply-to", "to", "cc"})
 _FOLD_RE = re.compile(r"\r?\n[ \t]+")
 _SPACE_RE = re.compile(r"\s+")
@@ -104,6 +108,18 @@ CREDENTIAL_WORDING: Tuple[Tuple[str, re.Pattern[str]], ...] = tuple(
         ("wire_transfer", r"\b(?:wire|bank)\s+transfer\b.{0,80}\b(?:urgent|today|asap|immediately)\b"),
     )
 )
+
+
+class _BoundedPolicy(EmailPolicy):
+    """``policy.default`` whose own header parsing sees at most :data:`MAX_MIME_HEADER_CHARS` of a value."""
+
+    def header_fetch_parse(self, name: str, value: Any) -> Any:
+        if isinstance(value, str) and len(value) > MAX_MIME_HEADER_CHARS:
+            value = value[:MAX_MIME_HEADER_CHARS]
+        return super().header_fetch_parse(name, value)
+
+
+_POLICY = _BoundedPolicy()
 
 
 class EmailParseError(ValueError):
@@ -258,6 +274,29 @@ def _addresses(name: str, raw: str, limit: int) -> List[Dict[str, str]]:
     return out
 
 
+def _address_list(name: str, values: Sequence[str], limits: EmailLimits, flags: Set[str]) -> List[Dict[str, str]]:
+    """Addresses of a repeatable header (To, Cc), all instances together bounded by ``max_header_chars``.
+
+    The stdlib address parser is super-linear in its input, so the joined
+    value is capped before parsing (each instance is already capped alone).
+    A cut value ends at the last complete list separator.
+    """
+    budget = limits.max_header_chars
+    parts: List[str] = []
+    used = 0
+    for value in values:
+        if used + len(value) > budget:
+            flags.add("header_truncated")
+            room = value[: max(0, budget - used)]
+            cut = room.rfind(",")
+            if cut > 0:
+                parts.append(room[:cut])
+            break
+        parts.append(value)
+        used += len(value) + 3
+    return _addresses(name, " , ".join(parts), limits.max_recipients)
+
+
 def _first(headers: Mapping[str, List[str]], key: str) -> Optional[str]:
     values = headers.get(key)
     return values[0] if values else None
@@ -314,10 +353,17 @@ def _text_of(part: Message) -> str:
     return ""
 
 
+# Serialises a parsed part as it was received: the default policy re-folds long header lines, which runs the
+# (super-linear) structured header parsers over values that no header cap has bounded.
+_VERBATIM = _POLICY.clone(refold_source="none")
+
+
 def _payload_bytes(part: Message) -> bytes:
     if part.get_content_type() == "message/rfc822" or part.is_multipart():
+        # The stdlib parser keeps no raw offsets; serialising without re-folding reproduces the received
+        # bytes (up to line endings) in linear time.
         try:
-            return part.as_bytes(policy=policy.default)
+            return part.as_bytes(policy=_VERBATIM)
         except Exception:  # noqa: BLE001 - an unserialisable embedded message is recorded without content
             return b""
     payload = part.get_payload(decode=True)
@@ -461,7 +507,7 @@ def _parse_bytes(data: bytes, limits: EmailLimits) -> EmailMessage:
     if data.count(b"\n--") > limits.max_parts * BOUNDARY_LINES_FACTOR:
         raise EmailParseError("message has too many MIME parts")
     try:
-        msg = BytesParser(policy=policy.default).parsebytes(data)
+        msg = BytesParser(policy=_POLICY).parsebytes(data)
     except RecursionError as exc:
         raise EmailParseError("message nesting is too deep") from exc
     except Exception as exc:  # noqa: BLE001 - the stdlib parser is lenient; anything it raises is a malformed message
@@ -544,8 +590,8 @@ def parse_email(
     reply_to = _addresses("reply-to", _first(headers, "reply-to") or "", 5)
     # Return-Path holds one address; the "sender" header class parses exactly that shape.
     return_path = _addresses("sender", _first(headers, "return-path") or "", 1)
-    to = _addresses("to", " , ".join(headers.get("to", [])), limits.max_recipients)
-    cc = _addresses("cc", " , ".join(headers.get("cc", [])), limits.max_recipients)
+    to = _address_list("to", headers.get("to", []), limits, scan.flags)
+    cc = _address_list("cc", headers.get("cc", []), limits, scan.flags)
     subject = _clean_text(_decoded("subject", _first(headers, "subject") or ""), MAX_SUBJECT_CHARS)
     message_id = _message_id(_first(headers, "message-id"))
 
