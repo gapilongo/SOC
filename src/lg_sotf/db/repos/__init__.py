@@ -33,11 +33,13 @@ from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
+from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
+from lg_sotf.db.repos.usage import UsageDay, UsageRepo
 from lg_sotf.db.repos.users import User, UsersRepo
 
 
@@ -61,6 +63,8 @@ class Repositories:
     indicators: IndicatorsRepo
     llm_usage: LLMUsageRepo
     audit: AuditRepo
+    usage: UsageRepo
+    platform: PlatformRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -81,6 +85,8 @@ class Repositories:
             indicators=IndicatorsRepo(db),
             llm_usage=LLMUsageRepo(db),
             audit=AuditRepo(db),
+            usage=UsageRepo(db),
+            platform=PlatformRepo(db),
         )
 
 
@@ -110,6 +116,8 @@ __all__ = [
     "LLMUsageTotals",
     "NewAlert",
     "NewAlertEvent",
+    "PlatformEscalation",
+    "PlatformRepo",
     "RefreshToken",
     "RefreshTokensRepo",
     "RelatedAlert",
@@ -123,8 +131,12 @@ __all__ = [
     "SuppressionRule",
     "SuppressionsRepo",
     "Tenant",
+    "TenantStats",
+    "TenantUsage",
     "TenantsRepo",
     "UNSET",
+    "UsageDay",
+    "UsageRepo",
     "User",
     "UsersRepo",
     "WorkflowRun",

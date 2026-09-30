@@ -225,6 +225,17 @@ class RetentionSettings(BaseModel):
     indicators_days: int = 30
     llm_usage_days: int = 400
     checkpoints_days: int = 30
+    # Daily usage counters (invoicing, quotas).
+    usage_days: int = Field(default=400, ge=1)
+    # Bounds for the per-tenant ``retention.alerts_days``/``indicators_days`` overrides.
+    tenant_min_days: int = Field(default=7, ge=1, le=99_999)
+    tenant_max_days: int = Field(default=730, ge=1, le=99_999)
+
+    @model_validator(mode="after")
+    def _tenant_bounds(self) -> RetentionSettings:
+        if self.tenant_min_days > self.tenant_max_days:
+            raise ValueError("retention.tenant_min_days must not exceed retention.tenant_max_days")
+        return self
 
 
 class SecuritySettings(BaseModel):

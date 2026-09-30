@@ -256,7 +256,11 @@ class SourcesRepo(Repository):
         return source
 
     async def list_due_sources_all_tenants(self, *, now: Optional[datetime] = None, limit: int = 100) -> List[Source]:
-        """Enabled pull sources of active tenants whose next poll is due."""
+        """Enabled pull sources of active tenants whose next poll is due.
+
+        Tenants that used up today's ``max_alerts_per_day`` quota are left out:
+        their cursors stay put and the events are fetched on the next UTC day.
+        """
         require_aware(now, "now")
         async with self._system() as c:
             rows = await c.fetch(
@@ -265,6 +269,10 @@ class SourcesRepo(Repository):
                 JOIN tenants t ON t.id = s.tenant_id
                 WHERE s.enabled
                   AND t.status = 'active'
+                  AND (t.max_alerts_per_day IS NULL OR COALESCE((
+                        SELECT u.alerts_ingested FROM usage_daily u
+                        WHERE u.tenant_id = t.id AND u.day = (now() AT TIME ZONE 'UTC')::date
+                      ), 0) < t.max_alerts_per_day)
                   AND s.type <> ALL($1::text[])
                   AND (s.next_poll_at IS NULL OR s.next_poll_at <= COALESCE($2::timestamptz, now()))
                 ORDER BY s.next_poll_at NULLS FIRST, s.tenant_id, s.id

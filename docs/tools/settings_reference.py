@@ -155,12 +155,24 @@ DESCRIPTIONS: Dict[str, str] = {
     "scheduler.stale_run_sweep_interval_s": "Interval of the stale and orphaned run sweeps.",
     "scheduler.maintenance_interval_s": "Interval of partition and retention maintenance.",
     "scheduler.leader_lease_s": "Leader lock keep-alive; a standby takes over within about this time.",
-    "retention.alerts_days": "Alerts (and their runs, escalations, actions) older than this are purged.",
+    "retention.alerts_days": (
+        "Alerts (and their runs, escalations, actions) older than this are purged. "
+        "Tenants may override it with `retention.alerts_days` in their settings."
+    ),
     "retention.events_days": "Alert timeline events.",
     "retention.audit_days": "Audit log (hash chain per tenant); export before it ages out if you need longer.",
-    "retention.indicators_days": "Indicator sightings used for correlation.",
+    "retention.indicators_days": (
+        "Indicator sightings used for correlation. Tenants may override it with `retention.indicators_days`."
+    ),
     "retention.llm_usage_days": "Daily LLM usage rows.",
     "retention.checkpoints_days": "LangGraph checkpoints of completed runs.",
+    "retention.usage_days": "Daily usage counters (alerts ingested and processed per tenant; invoicing and quotas).",
+    "retention.tenant_min_days": (
+        "Lowest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values below it are raised to it."
+    ),
+    "retention.tenant_max_days": (
+        "Highest per-tenant `alerts_days`/`indicators_days` a tenant admin may set; stored values above it are lowered to it."
+    ),
     "security.encryption_keys": "Comma-separated Fernet keys: the first encrypts, all decrypt (rotation). Encrypts source credentials and tenant secrets.",
     "security.indicator_hmac_key": "HMAC key for stored indicator values (correlation). Changing it resets correlation history.",
     "observability.log_level": "Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).",
