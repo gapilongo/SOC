@@ -183,20 +183,21 @@ Platform admins export all of a tenant's data:
 
 The archive holds JSON Lines files, one object per row: `users.jsonl`,
 `api_keys.jsonl`, `sources.jsonl`, `alerts.jsonl`, `alert_events.jsonl`,
-`escalations.jsonl`, `feedback.jsonl`, `actions.jsonl`, `suppressions.jsonl`
-and `audit_log.jsonl`, plus `tenant.json` (name, status, settings) and
+`escalations.jsonl`, `feedback.jsonl`, `actions.jsonl`, `suppressions.jsonl`,
+`integrations.jsonl`, `notification_outbox.jsonl` (delivery summaries),
+`external_tickets.jsonl`, `usage_daily.jsonl` and `audit_log.jsonl`, plus `tenant.json` (name, status, settings) and
 `manifest.json` (row count and SHA-256 of every file, who exported and when).
 
 Secrets are never exported:
 
 * users come from a column allow-list: no password hash, no lockout
   counters, and nothing added later such as MFA secrets;
-* API keys without their hash; sources without their encrypted credentials
-  (`has_secret: true` instead);
+* API keys without their hash; sources and integrations without their
+  encrypted credentials (`has_secret: true` instead);
 * tenant settings with every `*_ciphertext` value replaced by
   `*_configured: true`;
-* source configuration, settings and action parameters and results also go
-  through the credential redactor.
+* source and integration configuration, settings and action parameters and
+  results also go through the credential redactor.
 
 Rows are read in keyset-ordered batches, each in its own short transaction,
 and compressed as they stream, so memory use does not grow with the tenant.

@@ -7,9 +7,10 @@ Export
     into the archive as they arrive, so memory stays bounded whatever the
     tenant's size. Secrets never leave: users are exported from a column
     allow-list (no password hash, no lockout counters, nothing added later
-    such as MFA secrets), sources without ``secret_ciphertext``, tenant
+    such as MFA secrets), sources and integrations without
+    ``secret_ciphertext`` (``has_secret`` instead), tenant
     settings without ``*_ciphertext`` values, and connector parameters and
-    results, source configuration and settings go through the credential
+    results, source and integration configuration and settings go through the credential
     redactor as well. ``manifest.json``, written last, lists every file
     with its row count and SHA-256.
 
@@ -110,7 +111,7 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ExportTable(
         "users.jsonl",
         "users",
-        "id, tenant_id, email, role, is_platform_admin, is_active, last_login_at, created_at, updated_at",
+        "id, tenant_id, email, role, is_platform_admin, is_active, oidc_subject, last_login_at, created_at, updated_at",
         _ID_UUID,
     ),
     ExportTable(
@@ -135,6 +136,18 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ExportTable("feedback.jsonl", "analyst_feedback", "*", _ID_TEXT),
     ExportTable("actions.jsonl", "response_actions", "*", _ID_UUID, _redact_fields("params", "result")),
     ExportTable("suppressions.jsonl", "suppression_rules", "*", _ID_TEXT),
+    ExportTable(
+        "integrations.jsonl",
+        "integrations",
+        "id, tenant_id, kind, name, enabled, config, events, min_severity, created_by, created_at, updated_at, "
+        "(secret_ciphertext IS NOT NULL) AS has_secret",
+        _ID_UUID,
+        _redact_fields("config"),
+    ),
+    # Delivery summaries only (the outbox never stores the rendered message or credentials).
+    ExportTable("notification_outbox.jsonl", "notification_outbox", "*", _ID_UUID),
+    ExportTable("external_tickets.jsonl", "external_tickets", "*", _ID_UUID),
+    ExportTable("usage_daily.jsonl", "usage_daily", "*", (("day", "date"),)),
     ExportTable("audit_log.jsonl", "audit_log", "*", _ID_BIGINT),
 )
 
@@ -246,7 +259,7 @@ async def export_tenant_zip(
             "files": manifest_files,
             "excluded": [
                 "password hashes, API key hashes, MFA and other authentication secrets",
-                "encrypted source credentials and tenant secrets (shown as has_secret / *_configured)",
+                "encrypted source and integration credentials and tenant secrets (shown as has_secret / *_configured)",
                 "LangGraph checkpoints (internal workflow state), queue entries and caches",
             ],
         }
