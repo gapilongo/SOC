@@ -376,7 +376,8 @@ to `audit_log`.
   `lgsotf_node_seconds{node}`, `lgsotf_llm_calls_total{model,agent,outcome}`,
   `lgsotf_llm_tokens_total{model,kind}`, `lgsotf_llm_cost_usd_total{model}`,
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
-  `lgsotf_llm_slot_wait_seconds{tier}`.
+  `lgsotf_llm_slot_wait_seconds{tier}`,
+  `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`.
 * Tracing: OpenTelemetry, OTLP exporter when `observability.otlp_endpoint` set.
 
 ## 14. Testing conventions
