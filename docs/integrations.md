@@ -75,6 +75,13 @@ The admin page shows each integration's delivery log (also
   `security.encryption_keys`, bound to the tenant and the integration id, and
   never returned (the API reports `secrets: {field: configured}`). On update,
   `secret` is a merge patch: a value replaces that field, `null` removes it.
+* A stored credential never follows a new destination: an update that
+  changes where or as whom it is used (Jira `base_url`, `deployment`,
+  `email`; ServiceNow `instance_url`, `username`; webhook `url`; any
+  `ca_cert_pem`) must carry that credential again (`secret.api_token`,
+  `secret.password`, `secret.signing_secret`), otherwise it is refused with
+  422 `invalid_integration`. Slack and Teams webhook URLs are the credential
+  themselves.
 * Every outbound HTTP request goes through the destination policy used by
   the pull sources: `https` only in staging and production, loopback,
   link-local and cloud metadata addresses always refused, private ranges only

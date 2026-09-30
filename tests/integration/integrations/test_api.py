@@ -178,3 +178,56 @@ async def test_tickets_are_listed_for_viewers_of_the_tenant(api: ApiHarness, mak
     assert (await api.client.get("/api/v1/tickets", headers=viewer)).status_code == 400
     other = await api.login_headers(TENANT_B, "viewer")
     assert (await api.client.get(f"/api/v1/tickets?alert_id={alert_id}", headers=other)).json() == []
+
+
+_JIRA = {"base_url": "https://acme.atlassian.net", "email": "bot@acme.com", "project_key": "SOC"}
+_SNOW = {"instance_url": "https://acme.service-now.com", "username": "lgsotf"}
+
+
+@pytest.mark.parametrize(
+    ("kind", "config", "secret_field", "change"),
+    [
+        ("jira", _JIRA, "api_token", {"base_url": "https://collector.example.net"}),
+        ("jira", _JIRA, "api_token", {"email": "someone@example.net"}),
+        ("jira", _JIRA, "api_token", {"deployment": "datacenter"}),
+        ("servicenow", _SNOW, "password", {"instance_url": "https://collector.example.net"}),
+        ("servicenow", _SNOW, "password", {"username": "admin"}),
+        ("webhook", {"url": "https://soar.example.com/hook"}, "signing_secret", {"url": "https://collector.example.net/x"}),
+    ],
+)
+async def test_redirecting_a_stored_credential_requires_it_again(
+    api: ApiHarness, kind: str, config: dict, secret_field: str, change: dict
+) -> None:
+    receiver = Receiver()
+    _stub(api, receiver)
+    headers = await api.login_headers(TENANT_A, "admin")
+    created = await api.client.post(
+        "/api/v1/integrations",
+        json={"kind": kind, "name": kind, "config": config, "secret": {secret_field: fake_secret(kind)}},
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    integration_id = created.json()["id"]
+    path = f"/api/v1/integrations/{integration_id}"
+    refused = await api.client.patch(path, json={"config": {**config, **change}}, headers=headers)
+    assert refused.status_code == 422, refused.text
+    error = refused.json()["error"]
+    assert error["code"] == "invalid_integration" and f"secret.{secret_field}" in error["message"]
+    assert (await api.repos.integrations.get(TENANT_A, integration_id)).config == created.json()["config"]
+    # Rotating another secret field does not count as re-entering the bound credential.
+    if kind == "jira":
+        other = await api.client.patch(path, json={"config": {**config, **change}, "secret": {"api_token": None}},
+                                       headers=headers)
+        assert other.status_code == 422
+    assert receiver.requests == []
+
+    # Unrelated config changes keep the stored credential; re-entering it allows the new destination.
+    unrelated = {"jira": {"issue_type": "Bug"}, "servicenow": {"category": "security"}, "webhook": {"rate_limit_per_minute": 10}}
+    kept = await api.client.patch(path, json={"config": {**config, **unrelated[kind]}}, headers=headers)
+    assert kept.status_code == 200, kept.text
+    fresh = fake_secret("new")
+    moved = await api.client.patch(
+        path, json={"config": {**config, **change}, "secret": {secret_field: fresh}}, headers=headers
+    )
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["secrets"][secret_field] is True and fresh not in moved.text

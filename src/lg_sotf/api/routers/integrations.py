@@ -38,6 +38,7 @@ from lg_sotf.integrations.channels import send_notification
 from lg_sotf.integrations.config import (
     NOTIFY_KINDS,
     IntegrationConfigError,
+    check_secret_binding,
     decrypt_secret,
     encrypt_secret,
     merge_secret,
@@ -413,6 +414,10 @@ async def update_integration(
     changes: Dict[str, Any] = {name: getattr(body, name) for name in ("name", "enabled", "min_severity") if name in fields}
     if "config" in fields and body.config is not None:
         changes["config"] = _check_config(ctx, current.kind, body.config)
+        try:
+            check_secret_binding(current.kind, current.config, changes["config"], body.secret or {})
+        except IntegrationConfigError as exc:
+            raise _invalid(exc) from None
     if "events" in fields:
         changes["events"] = _events(current.kind, body.events)
     changed_secrets: List[str] = []
