@@ -128,7 +128,7 @@ from pydantic import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.phishing import plan_email_entities
-from lg_sotf.db.errors import AlreadyInState, InvalidTransition, NotFound
+from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.events import ACTION_AWAITING_APPROVAL, ACTION_EXECUTED, ACTION_FAILED
@@ -1726,16 +1726,13 @@ class ResponseService:
         """
         if not any(a.action_type == TICKET_ACTION for a in actions) or self._registry.forced_dry_run(tenant_settings):
             return None
-        try:
-            if (await self._repos.alerts.get(tenant_id, alert_id)).source_id == SAMPLE_SOURCE_ID:
-                return DryRunConnector()
-        except NotFound:
-            pass
         from lg_sotf.integrations.ticketing import TicketService, ticket_connector_for
 
         if self._ticketing is None:
             self._ticketing = TicketService(self._repos, self._settings, retries=1)
         try:
+            if (await self._repos.alerts.get(tenant_id, alert_id)).source_id == SAMPLE_SOURCE_ID:
+                return DryRunConnector()
             return await ticket_connector_for(self._ticketing, self._repos, tenant_id)
         except Exception as exc:  # noqa: BLE001 - a broken lookup must not fail the whole execution step
             log.warning("response.ticketing_lookup_failed", error_type=type(exc).__name__)
