@@ -1,11 +1,11 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, Download, Hand, Gavel } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
 import { endpoints, type EscalationFilters } from '../../api/endpoints';
-import { ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut } from '../../api/types';
+import { ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut, type TicketOut } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can, escalationDecisionBlockedReason } from '../../auth/roles';
 import { Badge, SeverityBadge, StatusBadge } from '../../components/Badge';
@@ -14,6 +14,7 @@ import { Button, EmptyState, ErrorMessage, LoadingState, PageHeader, ToggleGroup
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../../lib/csv';
 import { formatCountdown, formatDateTime, shortId } from '../../lib/format';
 import { ListNotice } from '../../components/ListNotice';
+import { TicketLinks } from '../../components/TicketLinks';
 import { useKeysetList } from '../../lib/pagination';
 import { useNow } from '../../lib/useNow';
 import { usePollInterval } from '../../lib/visibility';
@@ -58,11 +59,13 @@ function EscalationCard({
   now,
   onOpenAlert,
   onDecide,
+  tickets = [],
 }: {
   e: EscalationOut;
   now: number;
   onOpenAlert: (id: string) => void;
   onDecide: (e: EscalationOut) => void;
+  tickets?: TicketOut[];
 }) {
   const api = useApi();
   const { principal } = useAuth();
@@ -129,6 +132,7 @@ function EscalationCard({
         <Button size="sm" variant="ghost" onClick={() => onOpenAlert(e.alert_id)}>
           View alert {shortId(e.alert_id)}
         </Button>
+        <TicketLinks tickets={tickets} />
         {related.length > 0 && (
           <details className="text-xs text-slate-300">
             <summary className="cursor-pointer rounded px-2 py-1 hover:bg-slate-800">{related.length} related alert(s)</summary>
@@ -186,6 +190,19 @@ export default function EscalationsPage() {
     refetchInterval: interval,
   });
 
+  // Linked Jira/ServiceNow tickets of the listed escalations, in one request.
+  const escalationIds = list.items.map((e) => e.id).slice(0, 200);
+  const tickets = useQuery({
+    queryKey: ['tickets', 'escalations', escalationIds],
+    queryFn: ({ signal }) => endpoints.tickets(api, { escalation_id: escalationIds }, signal),
+    enabled: escalationIds.length > 0,
+    refetchInterval: interval,
+  });
+  const ticketsByEscalation = new Map<string, TicketOut[]>();
+  for (const t of Array.isArray(tickets.data) ? tickets.data : []) {
+    if (t.escalation_id) ticketsByEscalation.set(t.escalation_id, [...(ticketsByEscalation.get(t.escalation_id) ?? []), t]);
+  }
+
   const setMulti = (key: string, values: string[]) =>
     setParams(
       (prev) => {
@@ -223,7 +240,14 @@ export default function EscalationsPage() {
       {list.isSuccess && list.items.length === 0 && <EmptyState title="The queue is empty">No escalations match these filters.</EmptyState>}
       <ul className="space-y-3" aria-label="Escalation queue">
         {list.items.map((e) => (
-          <EscalationCard key={e.id} e={e} now={now} onOpenAlert={setAlertId} onDecide={setDeciding} />
+          <EscalationCard
+            key={e.id}
+            e={e}
+            now={now}
+            onOpenAlert={setAlertId}
+            onDecide={setDeciding}
+            tickets={ticketsByEscalation.get(e.id)}
+          />
         ))}
       </ul>
       {list.hasNextPage && (

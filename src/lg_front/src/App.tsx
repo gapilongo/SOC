@@ -23,6 +23,7 @@ const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage')
 const ActionsPage = lazy(() => import('./pages/ActionsPage'));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
+const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
 const UsagePage = lazy(() => import('./pages/UsagePage'));
@@ -70,6 +71,7 @@ export function AppRoutes() {
           <Route path="actions" element={<ActionsPage />} />
           <Route path="suppressions" element={<SuppressionsPage />} />
           <Route path="sources" element={<RequireRole allowed={can.admin}><SourcesPage /></RequireRole>} />
+          <Route path="integrations" element={<RequireRole allowed={can.admin}><IntegrationsPage /></RequireRole>} />
           <Route path="users" element={<RequireRole allowed={can.admin}><UsersPage /></RequireRole>} />
           <Route path="settings" element={<RequireRole allowed={can.admin}><TenantSettingsPage /></RequireRole>} />
           <Route path="usage" element={<RequireRole allowed={can.admin}><UsagePage /></RequireRole>} />

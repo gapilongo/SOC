@@ -14,8 +14,13 @@ import type {
   AuditVerifyOut,
   DashboardOut,
   DecisionIn,
+  DeliveryOut,
   DecisionOut,
   EscalationOut,
+  IntegrationCreateIn,
+  IntegrationOut,
+  IntegrationTestOut,
+  IntegrationUpdateIn,
   JsonObject,
   Page,
   ReprocessOut,
@@ -29,6 +34,7 @@ import type {
   TenantCreateIn,
   TenantCreatedOut,
   TenantSettingsOut,
+  TicketOut,
   UsageOut,
   UserCreateIn,
   UserOut,
@@ -138,4 +144,15 @@ export const endpoints = {
   verifyAudit: (api: ApiClient, from?: string) => api.get<AuditVerifyOut>('/audit/verify', { query: { from } }),
 
   createTenant: (api: ApiClient, body: TenantCreateIn) => api.post<TenantCreatedOut>('/platform/tenants', body),
+
+  integrations: (api: ApiClient, signal?: AbortSignal) => api.get<IntegrationOut[]>('/integrations', { signal }),
+  createIntegration: (api: ApiClient, body: IntegrationCreateIn) => api.post<IntegrationOut>('/integrations', body),
+  updateIntegration: (api: ApiClient, id: string, body: IntegrationUpdateIn) =>
+    api.patch<IntegrationOut>(`/integrations/${enc(id)}`, body),
+  deleteIntegration: (api: ApiClient, id: string) => api.del(`/integrations/${enc(id)}`),
+  testIntegration: (api: ApiClient, id: string) => api.post<IntegrationTestOut>(`/integrations/${enc(id)}/test`),
+  deliveries: (api: ApiClient, id: string, signal?: AbortSignal) =>
+    api.get<DeliveryOut[]>(`/integrations/${enc(id)}/deliveries`, { query: { limit: 100 }, signal }),
+  tickets: (api: ApiClient, filters: { alert_id?: string; escalation_id?: string[] }, signal?: AbortSignal) =>
+    api.get<TicketOut[]>('/tickets', { query: { ...filters }, signal }),
 };

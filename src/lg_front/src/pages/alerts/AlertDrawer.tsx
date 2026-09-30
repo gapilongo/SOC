@@ -9,6 +9,7 @@ import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
 import { DispositionBadge, SeverityBadge, StatusBadge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../components/Dialog';
+import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../components/Toast';
 import { Button, DefinitionList, EmptyState, ErrorMessage, JsonBlock, LoadingState, TextAreaField } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
@@ -154,6 +155,8 @@ function Reasoning({ summary }: { summary: JsonObject }) {
 function eventSummary(e: AlertEventOut): string {
   const d = e.data ?? {};
   if (e.event_type === 'note' && typeof d.text === 'string') return d.text;
+  // Integration events (ticket opened, resolved outside LG-SOTF) carry a readable note.
+  if (e.event_type.startsWith('ticket.') && typeof d.note === 'string') return d.note;
   const parts: string[] = [];
   for (const key of ['status', 'from', 'to', 'decision', 'reason', 'disposition', 'action_type', 'error']) {
     const v = d[key];
@@ -230,6 +233,19 @@ function NoteForm({ alertId }: { alertId: string }) {
   );
 }
 
+function Tickets({ alertId }: { alertId: string }) {
+  const api = useApi();
+  const q = useQuery({
+    queryKey: ['tickets', 'alert', alertId],
+    queryFn: ({ signal }) => endpoints.tickets(api, { alert_id: alertId }, signal),
+  });
+  if (q.isPending) return <LoadingState label="Loading tickets" />;
+  if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
+  const tickets = Array.isArray(q.data) ? q.data : [];
+  if (tickets.length === 0) return <p className="text-sm text-slate-400">No ticket is linked to this alert.</p>;
+  return <TicketLinks tickets={tickets} />;
+}
+
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="border-t border-slate-800 py-4 first:border-t-0 first:pt-0">
@@ -278,6 +294,9 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
             {[...list(mitre.tactics), ...list(mitre.techniques)].join(', ')}
           </p>
         )}
+      </Section>
+      <Section title="Tickets">
+        <Tickets alertId={alert.id} />
       </Section>
       <Section title="Timeline">
         <Timeline alertId={alert.id} />
