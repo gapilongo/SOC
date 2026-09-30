@@ -434,3 +434,20 @@ class UsageOut(BaseModel):
 
 class VerdictCacheClearedOut(BaseModel):
     removed: int
+
+
+class LLMTierCheckOut(BaseModel):
+    tier: Literal["fast", "deep"]
+    model: str
+    ok: bool
+    latency_ms: int
+    structured_output: Optional[str] = None
+    error_code: Optional[str] = None
+    error: Optional[str] = None
+
+
+class LLMTestOut(BaseModel):
+    provider: str
+    enabled: bool
+    ok: bool
+    tiers: List[LLMTierCheckOut]

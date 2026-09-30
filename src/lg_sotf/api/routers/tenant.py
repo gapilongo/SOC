@@ -1,6 +1,11 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
 """``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys.
 
+``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
+and deep model tiers and reports provider, model, latency and a sanitized
+error per tier (:mod:`lg_sotf.services.llm_check`). It is rate limited per
+tenant, metered to the tenant as agent ``llm_test`` and audited.
+
 ``PATCH`` is a JSON merge patch over the stored settings: top-level keys
 replace (``null`` removes), and inside ``response`` and ``tools.<provider>``
 keys merge so a patch does not drop stored secrets. Secrets are write-only:
@@ -29,18 +34,23 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import TenantSettingsOut, VerdictCacheClearedOut
+from lg_sotf.api.ratelimit import rate_limited
+from lg_sotf.api.schemas import LLMTestOut, LLMTierCheckOut, TenantSettingsOut, VerdictCacheClearedOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
-from lg_sotf.db.repos import Tenant
+from lg_sotf.db.repos import LLMUsageDelta, Tenant
+from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
+from lg_sotf.services.llm_check import check_llm
 from lg_sotf.services.response import ResponsePolicyError, validate_response_settings
 from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
+log = get_logger(__name__)
 
 EDITABLE_KEYS = frozenset(
     {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools"}
@@ -65,6 +75,8 @@ CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
 MAX_INTERNAL_DOMAINS = 256
+LLM_TEST_BUCKET = "llm_test"
+LLM_TEST_PER_MINUTE = 6
 
 
 def redact_ciphertexts(value: Any) -> Any:
@@ -298,3 +310,57 @@ async def clear_verdict_cache(request: Request, principal: Principal = Depends(r
         details={"removed": removed},
     )
     return VerdictCacheClearedOut(removed=removed)
+
+
+async def _flush_usage(ctx: ApiContext) -> None:
+    """Write the probe's metering now: the API process has no periodic usage flush of its own."""
+
+    async def sink(rows: List[LLMUsageRow]) -> None:
+        await ctx.repos.llm_usage.upsert_daily([LLMUsageDelta(**row) for row in rows])
+
+    try:
+        await get_usage_recorder().flush(sink)
+    except Exception as exc:  # noqa: BLE001 - the rows stay buffered for the next flush
+        log.warning("api.usage_flush_failed", error_type=type(exc).__name__)
+
+
+@router.post("/llm/test", response_model=LLMTestOut, summary="Send a tiny probe to the fast and deep model tiers")
+async def test_llm(request: Request, principal: Principal = Depends(require(ADMIN))) -> LLMTestOut:
+    ctx = get_ctx(request)
+    tenant_id = principal.tenant_id
+    # Each test costs up to two model calls on the shared provider account: keep it a manual action.
+    decision = await ctx.limiter.hit(LLM_TEST_BUCKET, tenant_id, LLM_TEST_PER_MINUTE, tenant_id=tenant_id)
+    if not decision.allowed:
+        raise rate_limited(decision)
+    report = await check_llm(ctx.settings, tenant_id)
+    await _flush_usage(ctx)
+    await AuditLogger(ctx.repos).record(
+        tenant_id,
+        "tenant.llm_tested",
+        "tenant",
+        tenant_id,
+        actor_type=principal.actor_type,
+        actor_id=principal.actor_id,
+        details={
+            "provider": report.provider,
+            "ok": report.ok,
+            "tiers": {t.tier: {"model": t.model, "ok": t.ok, "error_code": t.error_code} for t in report.tiers},
+        },
+    )
+    return LLMTestOut(
+        provider=report.provider,
+        enabled=report.enabled,
+        ok=report.ok,
+        tiers=[
+            LLMTierCheckOut(
+                tier=t.tier,
+                model=t.model,
+                ok=t.ok,
+                latency_ms=t.latency_ms,
+                structured_output=t.method,
+                error_code=t.error_code,
+                error=t.error,
+            )
+            for t in report.tiers
+        ],
+    )
