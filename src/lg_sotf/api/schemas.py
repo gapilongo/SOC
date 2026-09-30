@@ -378,12 +378,22 @@ class ApiKeyCreatedOut(ApiKeyOut):
 # ----------------------------------------------------------------- tenant
 
 
+class RetentionLimitsOut(BaseModel):
+    """Install-level bounds and defaults for the tenant ``retention`` settings (days)."""
+
+    min_days: int
+    max_days: int
+    alerts_days: int
+    indicators_days: int
+
+
 class TenantSettingsOut(BaseModel):
     tenant_id: str
     name: str
     status: str
     settings: Dict[str, Any]
     updated_at: datetime
+    retention_limits: Optional[RetentionLimitsOut] = None
 
 
 # -------------------------------------------------------------- dashboard

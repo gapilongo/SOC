@@ -1,5 +1,5 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys.
+"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys, retention.
 
 ``PATCH`` is a JSON merge patch over the stored settings: top-level keys
 replace (``null`` removes), and inside ``response`` and ``tools.<provider>``
@@ -15,6 +15,12 @@ shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
 and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`;
 problems come back as 422 with ``details``.
+
+``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
+must stay within the install's ``retention.tenant_min_days`` ..
+``retention.tenant_max_days``; responses carry those bounds as
+``retention_limits``. Saving the settings marks the first-run checklist's
+"autonomy reviewed" step.
 """
 
 from __future__ import annotations
@@ -29,7 +35,7 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import TenantSettingsOut, VerdictCacheClearedOut
+from lg_sotf.api.schemas import RetentionLimitsOut, TenantSettingsOut, VerdictCacheClearedOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Tenant
@@ -43,8 +49,18 @@ from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
 EDITABLE_KEYS = frozenset(
-    {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools"}
+    {
+        "response",
+        "protected_assets",
+        "protected_cidrs",
+        "autonomy",
+        "llm_daily_token_budget",
+        "review",
+        "tools",
+        "retention",
+    }
 )
+RETENTION_KEYS = ("alerts_days", "indicators_days")
 RESPONSE_KEYS = frozenset(
     {
         "connector",
@@ -90,6 +106,16 @@ def _out(tenant: Tenant) -> TenantSettingsOut:
         status=tenant.status,
         settings=redact_ciphertexts(tenant.settings),
         updated_at=tenant.updated_at,
+    )
+
+
+def retention_limits(ctx: ApiContext) -> RetentionLimitsOut:
+    r = ctx.settings.retention
+    return RetentionLimitsOut(
+        min_days=r.tenant_min_days,
+        max_days=r.tenant_max_days,
+        alerts_days=r.alerts_days,
+        indicators_days=r.indicators_days,
     )
 
 
@@ -201,6 +227,27 @@ def _tools_section(
     return tools
 
 
+def _retention_section(ctx: ApiContext, current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """Per-tenant retention overrides, merged key by key (``null`` removes one; an empty section is dropped)."""
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("retention: must be an object")
+        return None
+    unknown = sorted(str(k)[:64] for k in set(patch) - set(RETENTION_KEYS))
+    if unknown:
+        problems.append(f"retention: unknown keys: {', '.join(unknown[:10])}")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    section = {k: v for k, v in section.items() if k in RETENTION_KEYS}
+    low, high = ctx.settings.retention.tenant_min_days, ctx.settings.retention.tenant_max_days
+    for key in RETENTION_KEYS:
+        value = section.get(key)
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high):
+            problems.append(f"retention.{key}: must be a whole number of days from {low} to {high}")
+    return section or None
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -214,6 +261,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _response_section(ctx, tenant.id, current.get("response"), value, problems)
         elif key == "tools":
             patch[key] = _tools_section(ctx, tenant.id, current.get("tools"), value, problems)
+        elif key == "retention":
+            patch[key] = _retention_section(ctx, current.get("retention"), value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET
@@ -249,7 +298,9 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
 
 @router.get("/settings", response_model=TenantSettingsOut, summary="Tenant settings (secrets redacted)")
 async def get_settings(request: Request, principal: Principal = Depends(require(ADMIN))) -> TenantSettingsOut:
-    return _out(await get_ctx(request).repos.tenants.get(principal.tenant_id))
+    ctx = get_ctx(request)
+    out = _out(await ctx.repos.tenants.get(principal.tenant_id))
+    return out.model_copy(update={"retention_limits": retention_limits(ctx)})
 
 
 @router.patch("/settings", response_model=TenantSettingsOut, summary="Merge-patch tenant settings")
@@ -276,8 +327,9 @@ async def patch_settings(
             details={"keys": sorted(patch)},
             conn=conn,
         )
+        await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
     ctx.tenants.invalidate(tenant_id)
-    return _out(updated)
+    return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
 
 
 @router.delete(
