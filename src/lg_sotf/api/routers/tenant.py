@@ -1,5 +1,5 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys.
+"""``/tenant/settings`` (admin): autonomy policy, protected assets, LLM budget, review policy, tool keys, phishing.
 
 ``PATCH`` is a JSON merge patch over the stored settings: top-level keys
 replace (``null`` removes), and inside ``response`` and ``tools.<provider>``
@@ -13,7 +13,9 @@ keys merge so a patch does not drop stored secrets. Secrets are write-only:
 Ciphertext fields cannot be written directly and are never returned; ``GET``
 shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
-and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`;
+and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`,
+the ``phishing`` section (protected brands, executives, trusted
+``authserv-id`` values) with :class:`~lg_sotf.core.phishing.PhishingSettings`;
 problems come back as 422 with ``details``.
 """
 
@@ -31,6 +33,7 @@ from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import TenantSettingsOut, VerdictCacheClearedOut
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.core.phishing import validate_phishing_settings
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Tenant
 from lg_sotf.security.crypto import SecretBox
@@ -43,7 +46,7 @@ from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
 EDITABLE_KEYS = frozenset(
-    {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools"}
+    {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools", "phishing"}
 )
 RESPONSE_KEYS = frozenset(
     {
@@ -201,6 +204,17 @@ def _tools_section(
     return tools
 
 
+def _phishing_section(value: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    """The whole ``phishing`` section is replaced (it holds no secrets); ``null`` removes it."""
+    if value is None:
+        return None
+    try:
+        return validate_phishing_settings(value)
+    except ValueError as exc:
+        problems.append(str(exc))
+        return None
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -214,6 +228,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _response_section(ctx, tenant.id, current.get("response"), value, problems)
         elif key == "tools":
             patch[key] = _tools_section(ctx, tenant.id, current.get("tools"), value, problems)
+        elif key == "phishing":
+            patch[key] = _phishing_section(value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET

@@ -14,7 +14,9 @@ T = TypeVar("T")
 Role = Literal["viewer", "analyst", "admin"]
 Scope = Literal["ingest", "read", "write"]
 Decision = Literal["true_positive", "false_positive", "benign_positive", "needs_more_info"]
-SourceType = Literal["splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file"]
+SourceType = Literal[
+    "splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file", "m365_mailbox", "imap"
+]
 
 
 class Out(BaseModel):

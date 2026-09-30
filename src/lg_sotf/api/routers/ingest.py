@@ -7,6 +7,12 @@ They are stored under the source id ``api:<api key id>`` (chosen by the
 server, never the client). ``POST /ingest/webhook/{source_id}`` takes a
 vendor-native payload (one JSON object or an array of them) for a push
 source (``webhook``/``guardduty``) registered in the key's tenant.
+``POST /ingest/email`` takes one raw email (``message/rfc822`` or
+``application/octet-stream``, at most ``ingestion.email.max_message_bytes``),
+usually a user's report with the suspicious message attached; the optional
+``reporter`` query parameter names the reporting user. It is parsed
+server-side and stored under ``email:<api key id>``, deduplicated on the
+reported message's Message-ID plus the reporter.
 
 New alerts are queued for the workers before the 202 response; the response
 lists one result per submitted event, in order. At most
@@ -20,9 +26,9 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from typing import Any, Iterator, List, Mapping
+from typing import Any, Iterator, List, Mapping, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from lg_sotf.api.auth.deps import INGEST, require
@@ -31,7 +37,14 @@ from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import IngestItemOut, IngestOut
 from lg_sotf.db.pagination import MAX_PAGE_SIZE
-from lg_sotf.ingestion.service import SOURCE_ID_PATTERN, IngestResult, api_source_id, is_reserved_source_id
+from lg_sotf.ingestion.entities import normalize_email
+from lg_sotf.ingestion.service import (
+    SOURCE_ID_PATTERN,
+    IngestResult,
+    api_source_id,
+    email_source_id,
+    is_reserved_source_id,
+)
 from lg_sotf.models.alert import IngestedAlert
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.dispatch import dispatch_new_alerts
@@ -59,6 +72,7 @@ async def _json_body(request: Request) -> Any:
 
 
 RETRY_AFTER_S = 1
+EMAIL_CONTENT_TYPES = frozenset({"message/rfc822", "application/octet-stream"})
 
 
 @contextmanager
@@ -115,13 +129,19 @@ async def _stranded_duplicates(
 async def _ingest_and_dispatch(
     ctx: ApiContext, principal: Principal, source_id: str, events: List[Mapping[str, Any]]
 ) -> JSONResponse:
+    result: IngestResult = await ctx.ingestion.ingest(principal.tenant_id, source_id, events)
+    return await _dispatch(ctx, principal, source_id, len(events), result)
+
+
+async def _dispatch(
+    ctx: ApiContext, principal: Principal, source_id: str, received: int, result: IngestResult
+) -> JSONResponse:
     tenant_id = principal.tenant_id
-    result: IngestResult = await ctx.ingestion.ingest(tenant_id, source_id, events)
     to_dispatch = list(result.inserted) + await _stranded_duplicates(ctx, tenant_id, source_id, result)
     enqueued = await dispatch_new_alerts(ctx.repos, ctx.queue, tenant_id, to_dispatch, events=ctx.events)
     body = IngestOut(
         source_id=source_id,
-        received=len(events),
+        received=received,
         inserted=len(result.inserted),
         duplicates=result.duplicates,
         rejected=len(result.rejected),
@@ -160,3 +180,38 @@ async def ingest_webhook(
         payload = await _json_body(request)
         events = _batch(ctx, [payload] if isinstance(payload, dict) else payload)
         return await _ingest_and_dispatch(ctx, principal, source_id, events)
+
+
+@router.post(
+    "/email",
+    status_code=202,
+    responses=_RESPONSES,
+    summary="Push one raw email (a user-reported message) for phishing triage",
+)
+async def ingest_email(
+    request: Request,
+    reporter: Optional[str] = Query(
+        default=None, max_length=320, description="Email address of the user who reported the message"
+    ),
+    principal: Principal = Depends(require(INGEST)),
+) -> JSONResponse:
+    ctx = get_ctx(request)
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+    if content_type not in EMAIL_CONTENT_TYPES:
+        raise ApiError(415, "unsupported_media_type", "send the raw message as message/rfc822")
+    reporter_address: Optional[str] = None
+    if reporter is not None:
+        reporter_address = normalize_email(reporter)
+        if reporter_address is None:
+            raise ApiError(422, "validation_error", "reporter must be an email address")
+    with _admitted(ctx):
+        raw = await request.body()
+        if not raw:
+            raise ApiError(400, "invalid_request", "request body is empty")
+        limit = ctx.ingestion.email_limits.max_message_bytes
+        if len(raw) > limit:
+            raise ApiError(413, "payload_too_large", f"message is larger than {limit} bytes")
+        assert principal.api_key_id is not None
+        source_id = email_source_id(str(principal.api_key_id))
+        result = await ctx.ingestion.ingest_email(principal.tenant_id, source_id, [raw], reporter=reporter_address)
+        return await _dispatch(ctx, principal, source_id, 1, result)

@@ -101,7 +101,7 @@ async def create_source(
     tenant_id = principal.tenant_id
     source_id = body.id or str(uuid.uuid4())
     if is_reserved_source_id(source_id):
-        raise ApiError(422, "invalid_source", "source ids 'api' and 'api:*' are reserved")
+        raise ApiError(422, "invalid_source", "source ids 'api', 'api:*', 'email' and 'email:*' are reserved")
     _check_config(body.config)
     ciphertext = encrypt_source_secret(_box(ctx), tenant_id, source_id, body.secret) if body.secret else None
     draft = _draft(

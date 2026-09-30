@@ -27,6 +27,17 @@ directory). Without them the score is capped just below the threshold and
 response on such an alert always waits for a human. The model's own verdict
 never becomes a rule indicator.
 
+Email alerts. The strong phishing signals triage found
+(:data:`lg_sotf.core.phishing.EVIDENCE_SIGNALS`: a DMARC failure, display-name
+impersonation, a lookalike domain, deceptive or raw-IP links, a risky
+attachment) are behavioural observations of the message and count as
+evidence (weight 1 each, so two corroborate). What they corroborate is the
+message, the links and lookalike domains, and the sender only when its
+identity is authenticated or its domain is a lookalike: a spoofed sender is
+someone else's address. The benign signal (an internal, fully
+authenticated sender) lowers the rule score further so a benign model
+verdict can be corroborated.
+
 Refusals. When any model call for the alert was refused (triage,
 correlation or this agent), the verdict is ``inconclusive`` and the digest
 carries ``llm_refusal``, so routing sends the case to an analyst rather than
@@ -53,6 +64,13 @@ from lg_sotf.agents.analysis.react import (
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
+from lg_sotf.core.phishing import (
+    ANALYSIS_BENIGN_ADJUSTMENT,
+    EVIDENCE_SIGNALS,
+    benign_from_triage,
+    corroborated_email_targets,
+    evidence_from_triage,
+)
 from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.security.redaction import redact_text
@@ -79,6 +97,7 @@ STRONG_INDICATORS = frozenset(
         "temp_directory_execution",
         "prior_malicious_history",
         "threat_intel_malicious",
+        *EVIDENCE_SIGNALS,
     }
 )
 # Evidence that can corroborate an automatic response, with its weight; see the module docs.
@@ -87,6 +106,7 @@ EVIDENCE_WEIGHTS: Dict[str, int] = {
     "prior_malicious_history": 2,
     "suspicious_port_usage": 1,
     "temp_directory_execution": 1,
+    **{signal: 1 for signal in sorted(EVIDENCE_SIGNALS)},
 }
 CORROBORATION_WEIGHT = 2
 _WORDS_RE = re.compile(r"[a-z0-9]+")
@@ -246,7 +266,7 @@ _HOST_FIELDS = ("hostname", "host", "computer_name", "device_name")
 
 def corroborated_targets(
     alert: Mapping[str, Any], indicators: Sequence[str], history: Sequence[Tuple[Indicator, EnrichmentResult]],
-    observations: Sequence[Any],
+    observations: Sequence[Any], triage: Optional[Mapping[str, Any]] = None,
 ) -> List[List[str]]:
     """``[kind, value]`` pairs the rule evidence is *about* (per-target corroboration).
 
@@ -254,8 +274,10 @@ def corroborated_targets(
     were returned for. A temp-directory execution corroborates that
     executable (its base name and the event's primary file hash) and the
     alert's hosts; a C2-port connection corroborates the destination address
-    and the hosts. Nothing here corroborates parent processes, other
-    processes or other addresses mentioned in the same alert.
+    and the hosts; strong phishing signals corroborate the email targets of
+    :func:`lg_sotf.core.phishing.corroborated_email_targets`. Nothing here
+    corroborates parent processes, other processes or other addresses
+    mentioned in the same alert.
     """
     out: List[List[str]] = []
     for ind, result in history:
@@ -279,6 +301,8 @@ def corroborated_targets(
         out.append(["ip", str(raw["destination_ip"])])
     if behavioural:
         out += [["host", h] for h in hosts]
+    if any(i in EVIDENCE_SIGNALS for i in indicators):
+        out += corroborated_email_targets(alert, triage or {})
     unique = list(dict.fromkeys((k, v) for k, v in out if v))
     return [[k, v] for k, v in unique[:MAX_CORROBORATED_TARGETS]]
 
@@ -311,6 +335,8 @@ def rule_threat_score(
     if related:
         score += min(20, 2 * related + (5 if correlation.get("score", 0) > 80 else 0))
     score -= min(40, 10 * len(triage.get("rule_fp") or []))
+    if benign_from_triage(triage):
+        score += ANALYSIS_BENIGN_ADJUSTMENT
     if source_environment(alert) is not None:
         score -= 15
     score += 8 * sum(1 for i in indicators if i in STRONG_INDICATORS)
@@ -486,7 +512,8 @@ class AnalysisAgent(BaseAgent):
             {"kind": ind.type, "value": _display(ind.value), **res.as_dict()} for ind, res in history
         ]
         threshold = RoutingThresholds.from_settings(ctx.settings.routing).response_threshold
-        base_indicators = rule_threat_indicators(alert, correlation, evidence_indicators(history, ()))
+        email_evidence = evidence_from_triage(triage)
+        base_indicators = rule_threat_indicators(alert, correlation, evidence_indicators(history, ()) + email_evidence)
         base_rule_score = rule_threat_score(
             alert, triage, correlation, base_indicators, response_threshold=threshold
         )
@@ -537,7 +564,9 @@ class AnalysisAgent(BaseAgent):
             else:
                 run.stop_reason = "llm_unavailable"
 
-        indicators = rule_threat_indicators(alert, correlation, evidence_indicators(history, run.observations))
+        indicators = rule_threat_indicators(
+            alert, correlation, evidence_indicators(history, run.observations) + email_evidence
+        )
         corroborated = is_corroborated(alert, triage, indicators)
         rule_score = rule_threat_score(
             alert, triage, correlation, indicators, response_threshold=threshold, corroborated=corroborated
@@ -549,7 +578,7 @@ class AnalysisAgent(BaseAgent):
             "rule_corroborated": corroborated,
             "rule_evidence": rule_evidence(indicators) if corroborated else [],
             "corroborated_targets": (
-                corroborated_targets(alert, indicators, history, run.observations) if corroborated else []
+                corroborated_targets(alert, indicators, history, run.observations, triage) if corroborated else []
             ),
             "threat_indicators": indicators,
             "tool_steps": run.lookups,
