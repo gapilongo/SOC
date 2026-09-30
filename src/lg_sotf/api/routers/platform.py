@@ -10,7 +10,7 @@
   SECURITY DEFINER function (migration 0002). The creation is audited in the
   new tenant and in the platform admin's home tenant.
 * ``GET /platform/tenants``: every tenant with its status, quotas and
-  activity figures (``lgsotf_platform_tenant_stats``, migration 0105).
+  activity figures (``lgsotf_platform_tenant_stats``, migration 0004).
 * ``PATCH /platform/tenants/{id}``: name, status (``active``/``suspended``)
   and quotas. Suspension refuses the tenant's users, SSO identities and API
   keys (``403 tenant_suspended``, ingest included), stops its pull sources

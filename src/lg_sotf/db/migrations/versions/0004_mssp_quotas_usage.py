@@ -13,7 +13,7 @@
   runtime role (which cannot bypass RLS) read exactly these aggregates and
   nothing else; the platform-admin check and the audit entry are the API's.
 
-Revision ID: 0105
+Revision ID: 0004
 Revises: 0003
 Create Date: 2026-09-30
 """
@@ -26,7 +26,7 @@ from alembic import op
 
 from lg_sotf.db.partitions import TENANT_POLICY_PREDICATE
 
-revision: str = "0105"
+revision: str = "0004"
 down_revision: Union[str, None] = "0003"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

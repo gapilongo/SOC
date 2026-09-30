@@ -1,4 +1,4 @@
-"""Cross-tenant aggregates for platform admins (the ``lgsotf_platform_*`` functions, migration 0105).
+"""Cross-tenant aggregates for platform admins (the ``lgsotf_platform_*`` functions, migration 0004).
 
 Every method spans tenants. The functions are SECURITY DEFINER, so they work
 for the least-privilege runtime role, which cannot read other tenants
@@ -67,7 +67,7 @@ class TenantUsage(Record):
 
 class PlatformRepo(Repository):
     async def tenant_stats(self, *, now: Optional[datetime] = None) -> List[TenantStats]:
-        """Per-tenant activity figures (see migration 0105 for the definitions), by tenant id."""
+        """Per-tenant activity figures (see migration 0004 for the definitions), by tenant id."""
         require_aware(now, "now")
         async with self._lookup() as c:
             rows = await c.fetch("SELECT * FROM lgsotf_platform_tenant_stats($1)", now or datetime.now(UTC))

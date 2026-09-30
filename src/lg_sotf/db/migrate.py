@@ -84,7 +84,7 @@ AUTH_LOOKUP_FUNCTIONS: Tuple[str, ...] = (
     "lgsotf_auth_users_by_email(text)",
 )
 PROVISIONING_FUNCTIONS: Tuple[str, ...] = ("lgsotf_create_tenant(text, text)",)
-# Cross-tenant aggregates behind the platform-admin endpoints (migration 0105).
+# Cross-tenant aggregates behind the platform-admin endpoints (migration 0004).
 PLATFORM_FUNCTIONS: Tuple[str, ...] = (
     "lgsotf_platform_tenants()",
     "lgsotf_platform_tenant_stats(timestamptz)",

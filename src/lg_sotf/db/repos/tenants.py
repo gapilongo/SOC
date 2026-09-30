@@ -38,7 +38,7 @@ class Tenant(Record):
     settings: Dict[str, Any]
     created_at: datetime
     updated_at: datetime
-    # Quotas (``None`` = unlimited) and first-run checklist state (migration 0105).
+    # Quotas (``None`` = unlimited) and first-run checklist state (migration 0004).
     max_alerts_per_day: Optional[int] = None
     max_sources: Optional[int] = None
     max_users: Optional[int] = None

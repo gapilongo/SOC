@@ -66,7 +66,7 @@ escalations and expiries recorded by the scheduler), `llm_cost_mtd_usd`,
 The API runs as the least-privilege runtime database role, which cannot read
 across tenants. The cross-tenant figures come from four `SECURITY DEFINER`
 functions (`lgsotf_platform_tenants`, `lgsotf_platform_tenant_stats`,
-`lgsotf_platform_escalations`, `lgsotf_platform_usage`, migration 0105) that
+`lgsotf_platform_escalations`, `lgsotf_platform_usage`, migration 0004) that
 return aggregates only; each figure is an index range scan within one
 tenant. `lg-sotf migrate` grants them to `database.runtime_role`.
 
