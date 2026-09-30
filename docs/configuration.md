@@ -332,6 +332,7 @@ Notifications and ticketing (docs/integrations.md): outbox delivery and ticket s
 | `integrations.outbox_retention_days` | `LG_SOTF_INTEGRATIONS__OUTBOX_RETENTION_DAYS` | integer | `30` | Sent and dead outbox rows are deleted after this many days. |
 | `integrations.ticket_sync_interval_s` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_INTERVAL_S` | number | `300.0` | How often the scheduler polls linked open tickets for their status. |
 | `integrations.ticket_sync_batch_per_tenant` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_BATCH_PER_TENANT` | integer | `25` | Tickets polled per tenant per sync pass (least recently synced first). |
+| `integrations.slack_sso_max_age_hours` | `LG_SOTF_INTEGRATIONS__SLACK_SSO_MAX_AGE_HOURS` | number | `12.0` | An OIDC-provisioned (SSO) account may approve or reject actions from Slack only if it signed in to LG-SOTF within this many hours. |
 | `integrations.smtp_host` | `LG_SOTF_INTEGRATIONS__SMTP_HOST` | string (optional) | unset | SMTP server for email integrations; email integrations fail until it is set. |
 | `integrations.smtp_port` | `LG_SOTF_INTEGRATIONS__SMTP_PORT` | integer | `587` | SMTP port (587 for STARTTLS, 465 for implicit TLS). |
 | `integrations.smtp_security` | `LG_SOTF_INTEGRATIONS__SMTP_SECURITY` | `starttls` \| `tls` \| `none` | `starttls` | `starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified. |

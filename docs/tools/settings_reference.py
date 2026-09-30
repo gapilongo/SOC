@@ -225,6 +225,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "integrations.outbox_retention_days": "Sent and dead outbox rows are deleted after this many days.",
     "integrations.ticket_sync_interval_s": "How often the scheduler polls linked open tickets for their status.",
     "integrations.ticket_sync_batch_per_tenant": "Tickets polled per tenant per sync pass (least recently synced first).",
+    "integrations.slack_sso_max_age_hours": "An OIDC-provisioned (SSO) account may approve or reject actions from Slack only if it signed in to LG-SOTF within this many hours.",
     "integrations.smtp_host": "SMTP server for email integrations; email integrations fail until it is set.",
     "integrations.smtp_port": "SMTP port (587 for STARTTLS, 465 for implicit TLS).",
     "integrations.smtp_security": "`starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified.",

@@ -338,6 +338,8 @@ class IntegrationsSettings(BaseModel):
     outbox_retention_days: int = Field(default=30, ge=1)
     ticket_sync_interval_s: float = Field(default=300.0, ge=30)
     ticket_sync_batch_per_tenant: int = Field(default=25, ge=1, le=500)
+    # Slack approvals by an SSO (OIDC-provisioned) account need a sign-in to LG-SOTF within this many hours.
+    slack_sso_max_age_hours: float = Field(default=12.0, gt=0, le=720)
     smtp_host: Optional[str] = None
     smtp_port: int = Field(default=587, ge=1, le=65_535)
     smtp_security: Literal["starttls", "tls", "none"] = "starttls"

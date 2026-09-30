@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode
 
 import httpx
@@ -138,3 +139,57 @@ async def test_integration_without_interactivity_accepts_nothing(api: ApiHarness
     response = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])
     assert response.status_code == 401
     assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+
+
+def _replies(receiver: Receiver) -> List[str]:
+    return [json.loads(r.content)["text"] for r in receiver.requests if r.url.host == "hooks.slack.com"]
+
+
+async def _outcomes(api: ApiHarness) -> List[str]:
+    entries = await api.repos.audit.list(TENANT_A, action="integration.slack_interaction")
+    return sorted(e.details["outcome"] for e in entries.items)
+
+
+async def test_tenant_mfa_policy_applies_to_slack_approvals(api: ApiHarness, box: SecretBox) -> None:
+    path, ids, receiver = await setup(api, box)
+    await api.repos.tenants.update_settings(TENANT_A, {"security": {"require_mfa": True}})
+    api.ctx.tenants.invalidate(TENANT_A)
+    refused = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])
+    assert refused.status_code == 200
+    assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+    assert "multi-factor" in _replies(receiver)[-1]
+    assert await _outcomes(api) == ["mfa_required"]
+
+    # Once the admin has enrolled, the same click is accepted.
+    admin = await api.repos.users.get_by_email(TENANT_A, "boss@tenant-a.example.com")
+    assert admin is not None
+    await api.repos.user_mfa.set_pending(TENANT_A, admin.id, "pending-ciphertext")
+    await api.repos.user_mfa.activate(TENANT_A, admin.id, pending_ciphertext="pending-ciphertext", step=1,
+                                      recovery_code_hashes=[])
+    accepted = await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"], ts=int(time.time()) - 1)
+    assert accepted.status_code == 200
+    assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "approved"
+
+
+async def test_sso_accounts_need_a_recent_sign_in_to_approve_from_slack(api: ApiHarness, box: SecretBox) -> None:
+    path, ids, receiver = await setup(api, box)
+    SLACK_USERS["USSO"] = {"email": "sso-admin@tenant-a.example.com", "confirmed": True}
+    try:
+        sso = await api.repos.users.create(TENANT_A, "sso-admin@tenant-a.example.com", "admin", password_hash=None,
+                                           oidc_subject="idp-subject-1")
+        # Never signed in, then last signed in beyond integrations.slack_sso_max_age_hours (12): refused.
+        refused = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"])
+        assert refused.status_code == 200 and "single sign-on" in _replies(receiver)[-1]
+        await api.repos.users.record_sign_in(TENANT_A, sso.id, now=datetime.now(UTC) - timedelta(hours=13))
+        stale = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"], ts=int(time.time()) - 1)
+        assert stale.status_code == 200
+        assert (await api.repos.actions.get(TENANT_A, ids["isolate_host"])).status == "awaiting_approval"
+
+        await api.repos.users.record_sign_in(TENANT_A, sso.id, now=datetime.now(UTC) - timedelta(hours=1))
+        fresh = await post(api, path, click(ids["isolate_host"], "USSO"), ids["signing"], ts=int(time.time()) - 2)
+        assert fresh.status_code == 200
+        action = await api.repos.actions.get(TENANT_A, ids["isolate_host"])
+        assert action.status == "approved" and action.approved_by == str(sso.id)
+        assert await _outcomes(api) == ["approved", "sso_login_required", "sso_login_required"]
+    finally:
+        SLACK_USERS.pop("USSO", None)

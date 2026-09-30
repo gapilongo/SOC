@@ -16,7 +16,7 @@ by a bearer token (see :mod:`lg_sotf.integrations.slack`).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
@@ -25,13 +25,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
+from lg_sotf.api.auth.mfa import MfaService
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
-from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry
+from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry, User
 from lg_sotf.db.repos.integrations import NewOutboxEntry
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.integrations.channels import send_notification
@@ -258,6 +259,26 @@ def _http(request: Request) -> IntegrationHttp:
     return injected if injected is not None else IntegrationHttp(get_ctx(request).settings)
 
 
+async def slack_approver_refusal(ctx: ApiContext, user: User) -> Optional[str]:
+    """Why ``user`` may not decide actions from Slack, where no LG-SOTF sign-in happens (``None``: allowed).
+
+    * ``mfa_required``: MFA policy applies to the account (tenant ``security.require_mfa``) and it has not
+      enrolled; the web app would not let it past sign-in either.
+    * ``sso_login_required``: an SSO (OIDC-provisioned) account whose last sign-in is older than
+      ``integrations.slack_sso_max_age_hours``, so an identity disabled at the IdP stops approving soon after.
+    """
+    if user.oidc_subject is None:
+        mfa = MfaService(ctx)
+        state = await mfa.state(user)
+        if not (state is not None and state.enabled) and await mfa.required_for(user):
+            return "mfa_required"
+        return None
+    max_age = timedelta(hours=ctx.settings.integrations.slack_sso_max_age_hours)
+    if user.last_login_at is None or datetime.now(UTC) - user.last_login_at > max_age:
+        return "sso_login_required"
+    return None
+
+
 @router.get("", response_model=List[IntegrationOut], summary="List integrations")
 async def list_integrations(request: Request, principal: Principal = Depends(require(ADMIN))) -> List[IntegrationOut]:
     ctx = get_ctx(request)
@@ -318,11 +339,15 @@ async def slack_interactions(
         found = await ctx.repos.users.get_by_email(tenant, email) if email else None
         if found is not None and found.is_active and found.role in REVIEWER_ROLES:
             user = found
-            review = ctx.review.approve_actions if interaction.approve else ctx.review.reject_actions
-            resumes = await review(tenant, [interaction.action_id], found.id, found.role)
-            await enqueue_resumes(ctx, tenant, resumes)
-            acted = await ctx.repos.actions.get(tenant, interaction.action_id)
-            outcome = acted.status
+            refusal = await slack_approver_refusal(ctx, found)
+            if refusal is not None:
+                outcome = refusal
+            else:
+                review = ctx.review.approve_actions if interaction.approve else ctx.review.reject_actions
+                resumes = await review(tenant, [interaction.action_id], found.id, found.role)
+                await enqueue_resumes(ctx, tenant, resumes)
+                acted = await ctx.repos.actions.get(tenant, interaction.action_id)
+                outcome = acted.status
     except ReviewDenied:
         outcome = "denied"
     except InvalidTransition:
@@ -353,6 +378,10 @@ async def slack_interactions(
         "not_pending": "LG-SOTF: this action is no longer awaiting approval.",
         "not_found": "LG-SOTF: this action no longer exists.",
         "slack_api_error": "LG-SOTF: your Slack user could not be looked up; check the bot token and its users:read.email scope.",
+        "mfa_required": "LG-SOTF: this tenant requires multi-factor authentication. Enroll an authenticator in the "
+        "LG-SOTF web app before approving or rejecting actions from Slack.",
+        "sso_login_required": "LG-SOTF: sign in to the LG-SOTF web app with single sign-on (at least every "
+        f"{ctx.settings.integrations.slack_sso_max_age_hours:g} hours) before approving or rejecting actions from Slack.",
     }
     text = messages.get(outcome) or outcome_text(
         interaction.approve, outcome, {"type": acted.action_type, "target": acted.target} if acted is not None else {}
