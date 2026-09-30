@@ -26,7 +26,7 @@ enqueues work for the workers. It never runs a workflow itself.
   | 404 | `not_found`, `source_not_found` | the object does not exist in the caller's tenant |
   | 409 | `conflict`, `invalid_transition`, `already_in_state`, `last_admin`, `run_active`, `source_disabled`, `quota_exceeded` | stale `version`, duplicate, illegal state change, source or user quota reached |
   | 413 | `payload_too_large` | body over the size limit |
-  | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `weak_password` | schema or policy validation failed |
+  | 422 | `validation_error`, `invalid_settings`, `invalid_source`, `invalid_rule`, `invalid_integration`, `weak_password` | schema or policy validation failed |
   | 429 | `rate_limited`, `quota_exceeded` | rate limit hit, or the tenant's daily alert quota is used up; see `Retry-After` |
   | 503 | `service_unavailable`, `encryption_unavailable` | a dependency is down or not configured |
 
@@ -189,6 +189,9 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
 | GET | `/platform/tenants/{id}/erasure`; POST `/platform/tenants/{id}/export`; DELETE `/platform/tenants/{id}` | platform admin |
+| GET, POST | `/integrations`; GET, PATCH, DELETE `/integrations/{id}`; POST `/integrations/{id}/test`; GET `/integrations/{id}/deliveries` | admin |
+| GET | `/tickets?alert_id=` or `?escalation_id=` (linked Jira/ServiceNow tickets) | viewer / `read` |
+| POST | `/integrations/slack/interactions?tenant=&integration=` (Slack Interactivity; Slack signing secret, no bearer token) | Slack signature |
 | WS | `/ws?token=<access token>` | viewer |
 
 `/healthz`, `/readyz` and `/ws` are also served under `/api/v1`.
@@ -303,6 +306,15 @@ a message written by the server with a hint (never the provider's response
 text, URL or key). The calls are metered to the tenant as agent `llm_test`
 and every test writes a `tenant.llm_tested` audit entry. More than 6 tests per
 tenant per minute answer `429`.
+
+### Integrations
+
+Notification channels (Slack, Teams, email, signed webhook) and ticketing
+(Jira, ServiceNow); see `docs/integrations.md`. Credentials are write-only
+(`secrets: {field: configured}` in responses; `secret` on update is a merge
+patch). Invalid configuration is `422 invalid_integration`. `POST
+/integrations/{id}/test` sends a test message (ticketing: checks credentials
+and project) and logs it in the delivery log.
 
 ### Dashboard and usage
 

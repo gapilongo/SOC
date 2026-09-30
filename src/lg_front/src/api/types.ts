@@ -631,6 +631,95 @@ export interface TenantErasedOut {
   audit_entries_retained: number;
 }
 
+// ------------------------------------------------------------ integrations
+
+export const INTEGRATION_KINDS = ['slack', 'teams', 'email', 'webhook', 'jira', 'servicenow'] as const;
+export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
+export const TICKETING_KINDS: readonly IntegrationKind[] = ['jira', 'servicenow'];
+export const INTEGRATION_EVENTS = [
+  'escalation.created',
+  'escalation.sla_breached',
+  'escalation.decided',
+  'action.awaiting_approval',
+  'action.executed',
+  'action.failed',
+  'alert.critical_received',
+] as const;
+export const TICKETING_EVENTS = ['escalation.created', 'escalation.decided'] as const;
+
+export interface IntegrationOut {
+  id: string;
+  tenant_id: string;
+  kind: IntegrationKind;
+  name: string;
+  enabled: boolean;
+  events: string[];
+  min_severity: string;
+  config: JsonObject;
+  /** Which credential fields are configured; values are never returned. */
+  secrets: Record<string, boolean>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IntegrationCreateIn {
+  kind: IntegrationKind;
+  name: string;
+  enabled?: boolean;
+  events?: string[];
+  min_severity?: string;
+  config?: JsonObject;
+  secret?: Record<string, string | null>;
+}
+
+export interface IntegrationUpdateIn {
+  name?: string;
+  enabled?: boolean;
+  events?: string[];
+  min_severity?: string;
+  config?: JsonObject;
+  /** Merge patch: a value replaces that credential, null removes it. */
+  secret?: Record<string, string | null>;
+}
+
+export interface IntegrationTestOut {
+  ok: boolean;
+  detail: string;
+  http_status?: number | null;
+}
+
+export interface DeliveryOut {
+  id: string;
+  event_id: string;
+  event_type: string;
+  operation: string;
+  status: 'pending' | 'sent' | 'failed' | 'dead';
+  attempts: number;
+  next_attempt_at: string;
+  last_error?: string | null;
+  result?: JsonObject | null;
+  alert_id?: string | null;
+  escalation_id?: string | null;
+  title?: string | null;
+  created_at: string;
+  sent_at?: string | null;
+}
+
+export interface TicketOut {
+  id: string;
+  integration_id: string;
+  system: string;
+  alert_id: string;
+  escalation_id?: string | null;
+  external_key: string;
+  external_url?: string | null;
+  external_status?: string | null;
+  resolved: boolean;
+  resolved_by?: string | null;
+  last_synced_at?: string | null;
+  created_at: string;
+}
+
 /** Live event envelope pushed on /ws. */
 export interface LiveEvent {
   type: 'alert.created' | 'alert.updated' | 'escalation.created' | 'escalation.updated' | 'action.updated';

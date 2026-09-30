@@ -322,6 +322,31 @@ class MCPSettings(BaseModel):
     max_output_chars: int = Field(default=60_000, ge=1_000)
 
 
+class IntegrationsSettings(BaseModel):
+    """Outbound notifications and ticketing (``lg_sotf.integrations``); delivered by the scheduler."""
+
+    enabled: bool = True
+    # Links in notifications point here (``/alerts?alert=<id>``); defaults to api.public_url.
+    ui_base_url: Optional[str] = None
+    batch_size: int = Field(default=50, ge=1, le=500)
+    delivery_concurrency: int = Field(default=8, ge=1, le=64)
+    max_attempts: int = Field(default=8, ge=1, le=50)
+    backoff_base_s: float = Field(default=30.0, gt=0)
+    backoff_max_s: float = Field(default=3_600.0, gt=0)
+    max_age_hours: float = Field(default=24.0, gt=0)
+    http_timeout_s: float = Field(default=10.0, gt=0, le=120)
+    outbox_retention_days: int = Field(default=30, ge=1)
+    ticket_sync_interval_s: float = Field(default=300.0, ge=30)
+    ticket_sync_batch_per_tenant: int = Field(default=25, ge=1, le=500)
+    smtp_host: Optional[str] = None
+    smtp_port: int = Field(default=587, ge=1, le=65_535)
+    smtp_security: Literal["starttls", "tls", "none"] = "starttls"
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[SecretStr] = None
+    smtp_from: Optional[str] = None
+    smtp_timeout_s: float = Field(default=15.0, gt=0, le=120)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LG_SOTF_",
@@ -347,6 +372,7 @@ class Settings(BaseSettings):
     observability: ObservabilitySettings = ObservabilitySettings()
     response: ResponseSettings = ResponseSettings()
     mcp: MCPSettings = MCPSettings()
+    integrations: IntegrationsSettings = IntegrationsSettings()
 
     # Free-form tuning sections consumed by agents and routing.
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
@@ -437,6 +463,8 @@ class Settings(BaseSettings):
             problems.append("auth.cookie_secure must be true")
         if "soc_dev_password" in self.database.url.get_secret_value():
             problems.append("database.url uses the development password")
+        if self.integrations.smtp_host and self.integrations.smtp_security == "none":
+            problems.append("integrations.smtp_security=none sends mail and SMTP credentials in clear text")
         from lg_sotf.security.insecure import insecure_secret_problems
 
         problems.extend(insecure_secret_problems(self))

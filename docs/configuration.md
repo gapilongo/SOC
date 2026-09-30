@@ -313,6 +313,32 @@ Response automation defaults and the install-wide SOAR webhook.
 | `mcp.max_response_bytes` | `LG_SOTF_MCP__MAX_RESPONSE_BYTES` | integer | `4194304` | Largest API response the MCP server reads. |
 | `mcp.max_output_chars` | `LG_SOTF_MCP__MAX_OUTPUT_CHARS` | integer | `60000` | Largest tool result handed to the model; longer results are truncated with a note. |
 
+### `integrations`
+
+Notifications and ticketing (docs/integrations.md): outbox delivery and ticket sync run in the scheduler; SMTP is configured per install, recipients per integration.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `integrations.enabled` | `LG_SOTF_INTEGRATIONS__ENABLED` | boolean | `true` | Run the scheduler's outbox delivery and ticket sync jobs. Events are queued whatever this says; turning it off only pauses delivery. |
+| `integrations.ui_base_url` | `LG_SOTF_INTEGRATIONS__UI_BASE_URL` | string (optional) | unset | Base URL of the web app for links in notifications (`/alerts?alert=<id>`). Defaults to `api.public_url` (the UI and API share a host in the shipped deployments). |
+| `integrations.batch_size` | `LG_SOTF_INTEGRATIONS__BATCH_SIZE` | integer | `50` | Outbox rows claimed per delivery pass. |
+| `integrations.delivery_concurrency` | `LG_SOTF_INTEGRATIONS__DELIVERY_CONCURRENCY` | integer | `8` | Deliveries in flight at once in the scheduler. |
+| `integrations.max_attempts` | `LG_SOTF_INTEGRATIONS__MAX_ATTEMPTS` | integer | `8` | Attempts before an outbox row is marked `dead`. |
+| `integrations.backoff_base_s` | `LG_SOTF_INTEGRATIONS__BACKOFF_BASE_S` | number | `30.0` | First retry delay; doubles with every attempt (with jitter). |
+| `integrations.backoff_max_s` | `LG_SOTF_INTEGRATIONS__BACKOFF_MAX_S` | number | `3600.0` | Longest retry delay (also caps a receiver's `Retry-After`). |
+| `integrations.max_age_hours` | `LG_SOTF_INTEGRATIONS__MAX_AGE_HOURS` | number | `24.0` | An event still undelivered after this long is marked `dead` instead of being sent late. |
+| `integrations.http_timeout_s` | `LG_SOTF_INTEGRATIONS__HTTP_TIMEOUT_S` | number | `10.0` | Timeout of one outbound integration request (Slack, Teams, webhook, Jira, ServiceNow). |
+| `integrations.outbox_retention_days` | `LG_SOTF_INTEGRATIONS__OUTBOX_RETENTION_DAYS` | integer | `30` | Sent and dead outbox rows are deleted after this many days. |
+| `integrations.ticket_sync_interval_s` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_INTERVAL_S` | number | `300.0` | How often the scheduler polls linked open tickets for their status. |
+| `integrations.ticket_sync_batch_per_tenant` | `LG_SOTF_INTEGRATIONS__TICKET_SYNC_BATCH_PER_TENANT` | integer | `25` | Tickets polled per tenant per sync pass (least recently synced first). |
+| `integrations.smtp_host` | `LG_SOTF_INTEGRATIONS__SMTP_HOST` | string (optional) | unset | SMTP server for email integrations; email integrations fail until it is set. |
+| `integrations.smtp_port` | `LG_SOTF_INTEGRATIONS__SMTP_PORT` | integer | `587` | SMTP port (587 for STARTTLS, 465 for implicit TLS). |
+| `integrations.smtp_security` | `LG_SOTF_INTEGRATIONS__SMTP_SECURITY` | `starttls` \| `tls` \| `none` | `starttls` | `starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified. |
+| `integrations.smtp_username` | `LG_SOTF_INTEGRATIONS__SMTP_USERNAME` | string (optional) | unset | SMTP login (optional). |
+| `integrations.smtp_password` | `LG_SOTF_INTEGRATIONS__SMTP_PASSWORD` | secret (optional) | unset | SMTP password (optional). |
+| `integrations.smtp_from` | `LG_SOTF_INTEGRATIONS__SMTP_FROM` | string (optional) | unset | Sender address of notification emails. |
+| `integrations.smtp_timeout_s` | `LG_SOTF_INTEGRATIONS__SMTP_TIMEOUT_S` | number | `15.0` | SMTP connection and command timeout. |
+
 ### `routing`
 
 Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys are ignored, values are validated when a worker starts.

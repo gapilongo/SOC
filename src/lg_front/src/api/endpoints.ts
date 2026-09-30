@@ -14,10 +14,15 @@ import type {
   AuditVerifyOut,
   DashboardOut,
   DecisionIn,
+  DeliveryOut,
   DecisionOut,
   EscalationOut,
   IncidentReportOut,
   IncidentReportStage,
+  IntegrationCreateIn,
+  IntegrationOut,
+  IntegrationTestOut,
+  IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
   MfaConfirmOut,
@@ -43,6 +48,7 @@ import type {
   TenantSettingsOut,
   TenantSummaryOut,
   TenantUpdateIn,
+  TicketOut,
   UsageOut,
   UsageReportOut,
   UserCreateIn,
@@ -191,4 +197,16 @@ export const endpoints = {
     api.post<Blob>(`/platform/tenants/${enc(id)}/export`, undefined, { responseType: 'blob', homeTenant: true }),
   eraseTenant: (api: ApiClient, id: string) =>
     api.request<TenantErasedOut>('DELETE', `/platform/tenants/${enc(id)}`, { body: { confirm: id }, homeTenant: true }),
+
+
+  integrations: (api: ApiClient, signal?: AbortSignal) => api.get<IntegrationOut[]>('/integrations', { signal }),
+  createIntegration: (api: ApiClient, body: IntegrationCreateIn) => api.post<IntegrationOut>('/integrations', body),
+  updateIntegration: (api: ApiClient, id: string, body: IntegrationUpdateIn) =>
+    api.patch<IntegrationOut>(`/integrations/${enc(id)}`, body),
+  deleteIntegration: (api: ApiClient, id: string) => api.del(`/integrations/${enc(id)}`),
+  testIntegration: (api: ApiClient, id: string) => api.post<IntegrationTestOut>(`/integrations/${enc(id)}/test`),
+  deliveries: (api: ApiClient, id: string, signal?: AbortSignal) =>
+    api.get<DeliveryOut[]>(`/integrations/${enc(id)}/deliveries`, { query: { limit: 100 }, signal }),
+  tickets: (api: ApiClient, filters: { alert_id?: string; escalation_id?: string[] }, signal?: AbortSignal) =>
+    api.get<TicketOut[]>('/tickets', { query: { ...filters }, signal }),
 };

@@ -51,6 +51,10 @@ SECTION_INTRO: Dict[str, str] = {
         "`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client "
         "(see [mcp.md](mcp.md)). Read by that command only."
     ),
+    "integrations": (
+        "Notifications and ticketing (docs/integrations.md): outbox delivery and ticket sync run in the scheduler; "
+        "SMTP is configured per install, recipients per integration."
+    ),
     "routing": (
         "Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys "
         "are ignored, values are validated when a worker starts."
@@ -209,6 +213,25 @@ DESCRIPTIONS: Dict[str, str] = {
     "response.webhook_url": "Install-wide SOAR webhook (HMAC-signed POST) used by tenants that choose the `webhook` connector without their own URL.",
     "response.webhook_secret": "HMAC secret of the install-wide webhook.",
     "response.webhook_timeout_s": "Timeout of one webhook call.",
+    "integrations.enabled": "Run the scheduler's outbox delivery and ticket sync jobs. Events are queued whatever this says; turning it off only pauses delivery.",
+    "integrations.ui_base_url": "Base URL of the web app for links in notifications (`/alerts?alert=<id>`). Defaults to `api.public_url` (the UI and API share a host in the shipped deployments).",
+    "integrations.batch_size": "Outbox rows claimed per delivery pass.",
+    "integrations.delivery_concurrency": "Deliveries in flight at once in the scheduler.",
+    "integrations.max_attempts": "Attempts before an outbox row is marked `dead`.",
+    "integrations.backoff_base_s": "First retry delay; doubles with every attempt (with jitter).",
+    "integrations.backoff_max_s": "Longest retry delay (also caps a receiver's `Retry-After`).",
+    "integrations.max_age_hours": "An event still undelivered after this long is marked `dead` instead of being sent late.",
+    "integrations.http_timeout_s": "Timeout of one outbound integration request (Slack, Teams, webhook, Jira, ServiceNow).",
+    "integrations.outbox_retention_days": "Sent and dead outbox rows are deleted after this many days.",
+    "integrations.ticket_sync_interval_s": "How often the scheduler polls linked open tickets for their status.",
+    "integrations.ticket_sync_batch_per_tenant": "Tickets polled per tenant per sync pass (least recently synced first).",
+    "integrations.smtp_host": "SMTP server for email integrations; email integrations fail until it is set.",
+    "integrations.smtp_port": "SMTP port (587 for STARTTLS, 465 for implicit TLS).",
+    "integrations.smtp_security": "`starttls` (default), `tls` (implicit TLS) or `none` (refused in staging/production). Certificates are always verified.",
+    "integrations.smtp_username": "SMTP login (optional).",
+    "integrations.smtp_password": "SMTP password (optional).",
+    "integrations.smtp_from": "Sender address of notification emails.",
+    "integrations.smtp_timeout_s": "SMTP connection and command timeout.",
     "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
     "tools": "Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent.",
     "routing": "See the routing table below.",
