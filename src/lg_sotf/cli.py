@@ -353,6 +353,22 @@ def eval_command(
     sys.exit(code)
 
 
+@cli.command("mcp")
+def mcp() -> None:
+    """Run the Model Context Protocol server over stdio.
+
+    A thin client of the LG-SOTF REST API: set LG_SOTF_MCP__API_URL (the API's
+    base URL; https, or http for localhost) and LG_SOTF_MCP__API_KEY (an API
+    key with the 'read' scope, plus 'write' for add_note) in the environment
+    of the MCP client's server entry. The key is never accepted as an argument.
+    Logs go to stderr; stdout carries protocol messages only. See docs/mcp.md.
+    """
+    from lg_sotf.mcp.command import mcp_command
+
+    assert mcp_command.callback is not None  # noqa: S101 - defined by @click.command
+    mcp_command.callback()
+
+
 def main() -> None:
     cli(prog_name="lg-sotf")
 
