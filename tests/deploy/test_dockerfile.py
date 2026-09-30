@@ -178,3 +178,14 @@ def test_runtime_image_drops_the_base_images_pip_and_setuid_bits() -> None:
     assert "pip uninstall -y -q pip setuptools wheel" in runtime
     assert "-perm /6000 -exec chmod a-s" in runtime
     assert runtime.index("pip uninstall") < runtime.index("USER 10001")
+
+
+def test_the_image_ships_every_llm_provider() -> None:
+    """llm.provider is a runtime setting: the image must not need a rebuild to switch it."""
+    pinned = {
+        line.split("==", 1)[0].lower().replace("_", "-")
+        for line in (REPO_ROOT / "requirements.txt").read_text().splitlines()
+        if "==" in line and not line.lstrip().startswith("#")
+    }
+    for package in ("langchain-anthropic", "langchain-openai", "langchain-google-genai"):
+        assert package in pinned, f"{package} is missing from requirements.txt"
