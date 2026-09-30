@@ -10,10 +10,13 @@ of one *suspended* tenant's rows at a time, and nothing else:
   has rows of the tenant, and returns that table and the count; callers loop
   until it returns no table, so a large tenant is erased in many short
   transactions instead of one huge one;
-* tables are visited children first: any table with a ``tenant_id`` column
-  that this function does not know by name (added by a later migration)
-  comes first, then the known tables in dependency order, then the LangGraph
-  checkpoint tables (thread ids ``{tenant}:{alert}``);
+* tables are visited children first, so a batch never cascades: the order
+  is computed from the foreign keys in ``pg_constraint`` (a table is visited
+  only once no remaining table references it), over every table with a
+  ``tenant_id`` column. Ties keep a fixed order: tables this function does
+  not know by name (added by a later migration) alphabetically, then the
+  known tables. The LangGraph checkpoint tables (thread ids
+  ``{tenant}:{alert}``) come last;
 * ``audit_log`` is never touched: it is append-only by design and its
   trigger would refuse anyway. The ``tenants`` row stays too (the audit rows
   reference it); once nothing else is left its settings, which may hold
@@ -50,7 +53,10 @@ DECLARE
         'sources', 'api_keys', 'refresh_tokens', 'users'
     ];
     checkpoint_tables TEXT[] := ARRAY['checkpoint_writes', 'checkpoint_blobs', 'checkpoints'];
-    ordered TEXT[];
+    candidates TEXT[];
+    remaining TEXT[];
+    leaves TEXT[];
+    ordered TEXT[] := ARRAY[]::text[];
     t TEXT;
     n BIGINT;
 BEGIN
@@ -67,13 +73,37 @@ BEGIN
             USING ERRCODE = 'object_not_in_prerequisite_state';
     END IF;
 
-    SELECT array_agg(c.relname::text ORDER BY c.relname) INTO ordered
+    SELECT array_agg(c.relname::text ORDER BY c.relname) INTO candidates
     FROM pg_class c
     JOIN pg_namespace ns ON ns.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
     WHERE ns.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
       AND c.relname::text <> ALL (known) AND c.relname::text NOT IN ('tenants', 'audit_log');
-    ordered := COALESCE(ordered, ARRAY[]::text[]) || known;
+    candidates := COALESCE(candidates, ARRAY[]::text[]) || known;
+
+    -- Children first: repeatedly take the tables that no other remaining table references. Deleting a
+    -- batch of parent rows first would cascade to an unbounded number of child rows in one statement.
+    remaining := candidates;
+    WHILE cardinality(remaining) > 0 LOOP
+        SELECT array_agg(rel ORDER BY array_position(candidates, rel)) INTO leaves
+        FROM unnest(remaining) AS rel
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM pg_constraint con
+            JOIN pg_class child ON child.oid = con.conrelid
+            JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+            JOIN pg_class parent ON parent.oid = con.confrelid
+            JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+            WHERE con.contype = 'f' AND child_ns.nspname = 'public' AND parent_ns.nspname = 'public'
+              AND parent.relname::text = rel AND child.relname::text <> rel
+              AND child.relname::text = ANY (remaining)
+        );
+        IF leaves IS NULL THEN
+            leaves := remaining;  -- a reference cycle: what is left keeps the fixed order
+        END IF;
+        ordered := ordered || leaves;
+        remaining := ARRAY(SELECT rel FROM unnest(remaining) AS rel WHERE rel <> ALL (leaves));
+    END LOOP;
 
     FOREACH t IN ARRAY ordered LOOP
         EXECUTE format(

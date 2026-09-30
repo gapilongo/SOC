@@ -230,7 +230,8 @@ keys, users and their refresh tokens, and tables added by later releases),
 the LangGraph checkpoints of the tenant's threads, the tenant's Redis keys
 (`{prefix}:t:{tenant}:*`, found with `SCAN`) and its entries in the work and
 dead-letter streams. The database side runs in bounded batches, children
-first, each in its own transaction, through the `lgsotf_erase_tenant_batch`
+first (the order follows the schema's foreign keys, so deleting a batch
+never cascades to further rows), each in its own transaction, through the `lgsotf_erase_tenant_batch`
 function (the API's least-privilege database role cannot delete these rows
 directly). An interrupted erasure can be run again and continues.
 

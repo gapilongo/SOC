@@ -17,6 +17,7 @@ from lg_sotf.compliance.tenant_data import export_tenant_zip
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import User
 from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.integrations.events import TEST_EVENT
 from lg_sotf.queue.streams import QueueStreams, encode_work
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
@@ -594,6 +595,56 @@ async def test_erasure_removes_all_tenant_data_and_nothing_else(api: ApiHarness,
         "DELETE", f"/api/v1/platform/tenants/{TENANT_B}", json={"confirm": TENANT_B}, headers=api.auth(platform)
     )
     assert repeat.status_code == 200 and repeat.json()["deleted"] == {}
+
+
+async def _seed_integration(api: ApiHarness, tenant_id: str, alert_id: str, *, deliveries: int) -> None:
+    """An integration with its delivery log and a linked ticket (both cascade from the integration)."""
+    repos = api.repos
+    integration = await repos.integrations.create(
+        tenant_id, "jira", "Jira", integration_id=uuid4(), config={}, secret_ciphertext=None,
+        events=["escalation.created"], min_severity="low",
+    )
+    for _ in range(deliveries):
+        event_id = uuid4()
+        entry = NewOutboxEntry(
+            integration_id=integration.id, event_id=event_id, event_type=TEST_EVENT, operation="test",
+            dedupe_key=f"{TEST_EVENT}:{event_id}", payload={},
+        )
+        await repos.integrations.record_test(tenant_id, entry, ok=True, error=None, result=None)
+    await repos.integrations.add_ticket(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
+
+
+async def test_erasure_batches_visit_children_first_and_never_cascade(
+    api: ApiHarness, migrated_database_url: str
+) -> None:
+    seeded = await _prepare_two_tenants(api, migrated_database_url)
+    for tenant_id in (TENANT_A, TENANT_B):
+        await _seed_integration(api, tenant_id, seeded[tenant_id]["alert_id"], deliveries=5)
+    before_a = await _row_counts(api, TENANT_A)
+    await api.repos.tenants.set_status(TENANT_B, "suspended")
+
+    def total(counts: Dict[str, int]) -> int:
+        return sum(n for t, n in counts.items() if t != "audit_log")
+
+    remaining = total(await _row_counts(api, TENANT_B))
+    visited: List[str] = []
+    while True:
+        async with api.ctx.db.connection() as conn:
+            row = await conn.fetchrow("SELECT * FROM lgsotf_erase_tenant_batch($1, 1)", TENANT_B)
+        if row is None:
+            break
+        left = total(await _row_counts(api, TENANT_B))
+        # One row per batch, cascades included: a parent is only visited once its children are gone.
+        assert (row["deleted"], remaining - left) == (1, 1), (row["table_name"], visited)
+        visited.append(row["table_name"])
+        remaining = left
+
+    assert remaining == 0
+    children = [i for i, t in enumerate(visited) if t in ("notification_outbox", "external_tickets")]
+    assert len(children) == 6 and max(children) < visited.index("integrations")
+    after_b = await _row_counts(api, TENANT_B)
+    assert {t: n for t, n in after_b.items() if n and t != "audit_log"} == {}
+    assert await _row_counts(api, TENANT_A) == before_a
 
 
 RUNTIME_ROLE = "pg_database_owner"
