@@ -199,3 +199,9 @@ async def test_retention_bounds_are_install_settings(make_api: Any) -> None:
     over = await api.client.patch("/api/v1/tenant/settings", json={"retention": {"indicators_days": 11}}, headers=admin)
     assert over.status_code == 422
     assert "from 1 to 10" in over.json()["error"]["details"][0]
+
+    # A value stored before the bounds tightened does not block editing the other key (the purge clamps it).
+    await api.repos.tenants.update_settings(TENANT_B, {"retention": {"alerts_days": 500}})
+    other = await api.client.patch("/api/v1/tenant/settings", json={"retention": {"indicators_days": 5}}, headers=admin)
+    assert other.status_code == 200, other.text
+    assert other.json()["settings"]["retention"] == {"alerts_days": 500, "indicators_days": 5}

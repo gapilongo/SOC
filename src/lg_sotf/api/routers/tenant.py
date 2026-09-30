@@ -241,7 +241,9 @@ def _retention_section(ctx: ApiContext, current: Any, patch: Any, problems: List
     section = _merge(current if isinstance(current, Mapping) else {}, patch)
     section = {k: v for k, v in section.items() if k in RETENTION_KEYS}
     low, high = ctx.settings.retention.tenant_min_days, ctx.settings.retention.tenant_max_days
-    for key in RETENTION_KEYS:
+    # Only the keys being set are checked: a value stored before the bounds changed is clamped at purge time
+    # and must not block edits of the other key.
+    for key in patch:
         value = section.get(key)
         if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high):
             problems.append(f"retention.{key}: must be a whole number of days from {low} to {high}")
