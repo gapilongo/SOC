@@ -17,6 +17,11 @@ U = str(uuid.uuid4())
 # (method, path, required access, json body)
 ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/auth/me", "any", None),
+    ("GET", "/api/v1/auth/mfa", "self", None),
+    ("POST", "/api/v1/auth/mfa/enroll", "self", {}),
+    ("POST", "/api/v1/auth/mfa/confirm", "self", {"code": "000000"}),
+    ("POST", "/api/v1/auth/mfa/disable", "self", {"password": "not-it", "code": "000000"}),
+    ("POST", "/api/v1/auth/mfa/recovery-codes", "self", {"code": "000000"}),
     ("POST", "/api/v1/ingest/alerts", "ingest", [{"title": "t", "severity": "low"}]),
     ("POST", "/api/v1/ingest/webhook/no-such-source", "ingest", {"a": 1}),
     ("GET", "/api/v1/alerts", "viewer", None),
@@ -48,6 +53,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", "/api/v1/users", "admin", {"email": "x"}),
     ("PATCH", f"/api/v1/users/{U}", "admin_user", {"role": "viewer"}),
     ("DELETE", f"/api/v1/users/{U}", "admin_user", None),
+    ("POST", f"/api/v1/users/{U}/mfa/reset", "admin", None),
     ("GET", "/api/v1/api-keys", "admin", None),
     ("POST", "/api/v1/api-keys", "admin", {}),
     ("DELETE", f"/api/v1/api-keys/{U}", "admin", None),
@@ -65,10 +71,11 @@ PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
+    ("POST", "/api/v1/auth/mfa/verify"),
 }
 
 USER_ROLES = {"viewer": 0, "analyst": 1, "admin": 2, "platform_admin": 2}
-REQUIRED_ROLE = {"viewer": 0, "analyst": 1, "reviewer": 1, "admin": 2, "admin_user": 2}
+REQUIRED_ROLE = {"viewer": 0, "self": 0, "analyst": 1, "reviewer": 1, "admin": 2, "admin_user": 2}
 KEY_SCOPE = {"viewer": "read", "analyst": "write", "ingest": "ingest"}
 
 

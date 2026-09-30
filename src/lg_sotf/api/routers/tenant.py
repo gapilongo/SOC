@@ -10,6 +10,10 @@ keys merge so a patch does not drop stored secrets. Secrets are write-only:
 * ``tools.<provider>.api_key`` is stored encrypted as
   ``tools.<provider>.api_key_ciphertext``.
 
+``security.require_mfa`` (boolean) makes TOTP MFA mandatory for the
+tenant's local accounts: users without it can only enroll after their
+password until they have.
+
 Ciphertext fields cannot be written directly and are never returned; ``GET``
 shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
@@ -43,7 +47,16 @@ from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
 EDITABLE_KEYS = frozenset(
-    {"response", "protected_assets", "protected_cidrs", "autonomy", "llm_daily_token_budget", "review", "tools"}
+    {
+        "response",
+        "protected_assets",
+        "protected_cidrs",
+        "autonomy",
+        "llm_daily_token_budget",
+        "review",
+        "tools",
+        "security",
+    }
 )
 RESPONSE_KEYS = frozenset(
     {
@@ -61,6 +74,7 @@ RESPONSE_KEYS = frozenset(
     }
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
+SECURITY_KEYS = frozenset({"require_mfa"})
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
@@ -201,6 +215,22 @@ def _tools_section(
     return tools
 
 
+def _security_section(current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
+    if patch is None:
+        return None
+    if not isinstance(patch, Mapping):
+        problems.append("security: must be an object")
+        return None
+    unknown = sorted(set(patch) - SECURITY_KEYS)
+    if unknown:
+        problems.append(f"security: unknown keys: {', '.join(str(k)[:64] for k in unknown[:10])}")
+        return None
+    section = _merge(current if isinstance(current, Mapping) else {}, patch)
+    if "require_mfa" in section and not isinstance(section["require_mfa"], bool):
+        problems.append("security.require_mfa: must be true or false")
+    return section
+
+
 def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dict[str, Any]:
     """The validated top-level merge patch to store (raises 422 listing every problem)."""
     problems: List[str] = []
@@ -214,6 +244,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _response_section(ctx, tenant.id, current.get("response"), value, problems)
         elif key == "tools":
             patch[key] = _tools_section(ctx, tenant.id, current.get("tools"), value, problems)
+        elif key == "security":
+            patch[key] = _security_section(current.get("security"), value, problems)
         elif key == "llm_daily_token_budget":
             if value is not None and (
                 isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET

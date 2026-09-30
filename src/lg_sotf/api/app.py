@@ -28,6 +28,7 @@ from lg_sotf.api.routers import (
     health,
     identity,
     ingest,
+    mfa,
     platform,
     review,
     sources,
@@ -159,6 +160,7 @@ def create_app(
     api = APIRouter(prefix=API_PREFIX)
     for router in (
         auth.router,
+        mfa.router,
         ingest.router,
         alerts.router,
         review.escalations,

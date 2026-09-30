@@ -114,10 +114,28 @@ DESCRIPTIONS: Dict[str, str] = {
     "auth.oidc_audience": "Expected `aud` of OIDC tokens.",
     "auth.oidc_jwks_url": "JWKS URL; discovered from the issuer when unset.",
     "auth.oidc_tenant_claim": "Claim holding the tenant id.",
-    "auth.oidc_role_claim": "Claim holding the role(s) (`admin`, `analyst`, `viewer`).",
+    "auth.oidc_role_claim": (
+        "Claim holding the role(s) or groups; values go through `auth.oidc_role_map` (without a map they must be "
+        "`admin`, `analyst` or `viewer`)."
+    ),
     "auth.oidc_email_claim": "Claim holding the user's email.",
     "auth.oidc_email_verified_claim": "Claim that must be true before the email is trusted.",
     "auth.oidc_default_tenant": "Tenant for tokens without a tenant claim (single-organisation installs).",
+    "auth.oidc_jit_provisioning": (
+        "Create a local account (no password, never a platform admin) on the first verified OIDC sign-in and keep "
+        "its role in sync with the mapping. See docs/identity.md."
+    ),
+    "auth.oidc_role_map": (
+        "Role-claim value to role (`viewer`, `analyst`, `admin`), e.g. "
+        '`{"SOC-Admins": "admin"}`; the highest match wins. Empty: the claim carries role names.'
+    ),
+    "auth.oidc_default_role": "Role when no claim value maps; unset refuses the sign-in.",
+    "auth.require_mfa_for_platform_admins": (
+        "Platform admins must use TOTP MFA (forced enrollment at sign-in). Unset: on in staging and production, "
+        "off in development and test."
+    ),
+    "auth.mfa_issuer": "Issuer name shown in authenticator apps (`otpauth://` URI).",
+    "auth.mfa_challenge_ttl_s": "Lifetime of the MFA challenge token between password and code (30-900).",
     "auth.bootstrap_admin_email": "`lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist.",
     "auth.bootstrap_admin_password": "Password of the bootstrap admin. Give it to the migrate job only, then remove it.",
     "auth.bootstrap_tenant_id": "Tenant created by `lg-sotf migrate`.",

@@ -52,6 +52,9 @@ class UserOut(Out):
     last_login_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    mfa_enabled: bool = False
+    #: Created by OIDC just-in-time provisioning (role follows the identity provider).
+    oidc_provisioned: bool = False
 
 
 class TokenOut(BaseModel):
@@ -59,6 +62,72 @@ class TokenOut(BaseModel):
     token_type: Literal["bearer"] = "bearer"  # noqa: S105 - OAuth token type, not a secret
     expires_in: int
     user: UserOut
+    mfa_required: Literal[False] = False
+    #: Set when this sign-in used a recovery code: how many are left.
+    recovery_codes_remaining: Optional[int] = None
+
+
+class MfaChallengeOut(BaseModel):
+    """The password was right; finish with ``POST /auth/mfa/verify`` (or enroll when ``enrollment_required``)."""
+
+    mfa_required: Literal[True] = True
+    mfa_token: str
+    expires_in: int
+    enrollment_required: bool
+    methods: List[Literal["totp", "recovery_code"]]
+
+
+class MfaVerifyIn(In):
+    mfa_token: str = Field(min_length=1, max_length=4_096)
+    code: str = Field(min_length=1, max_length=32, description="A 6-digit TOTP code or a recovery code.")
+
+
+class MfaEnrollIn(In):
+    mfa_token: Optional[str] = Field(
+        default=None, max_length=4_096, description="The enrollment challenge from login; omit with a session."
+    )
+
+
+class MfaEnrollOut(BaseModel):
+    secret: str = Field(description="Base32 TOTP secret for manual entry. Shown once.")
+    otpauth_uri: str
+    qr: Optional[List[str]] = Field(
+        default=None, description="QR code of otpauth_uri as rows of '1' (dark) and '0' (light), no quiet zone."
+    )
+    expires_in: int
+
+
+class MfaConfirmIn(In):
+    code: str = Field(min_length=1, max_length=32)
+    mfa_token: Optional[str] = Field(default=None, max_length=4_096)
+
+
+class MfaConfirmOut(BaseModel):
+    recovery_codes: List[str] = Field(description="Single-use recovery codes. Shown once.")
+    #: The new session when enrollment completed a sign-in (``mfa_token`` was given).
+    session: Optional[TokenOut] = None
+
+
+class MfaCodeIn(In):
+    code: str = Field(min_length=1, max_length=32)
+
+
+class MfaDisableIn(In):
+    password: str = Field(min_length=1, max_length=1_024)
+    code: str = Field(min_length=1, max_length=32)
+
+
+class RecoveryCodesOut(BaseModel):
+    recovery_codes: List[str]
+
+
+class MfaStatusOut(BaseModel):
+    available: bool = Field(description="MFA applies to this account (local password sign-in).")
+    enabled: bool
+    enabled_at: Optional[datetime] = None
+    pending: bool = False
+    recovery_codes_remaining: int = 0
+    required: bool = Field(description="Policy (tenant or platform-admin rule) requires MFA for this account.")
 
 
 class MeOut(BaseModel):

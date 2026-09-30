@@ -160,6 +160,22 @@ def create_admin(tenant_id: str, email: str, role: str, password_stdin: bool, pl
     click.echo(f"created {user.role} {user.email} in tenant {user.tenant_id} (id {user.id})")
 
 
+@cli.command("reset-mfa")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
+@click.option("--email", required=True, help="The user's login email.")
+@click.option("--yes", is_flag=True, help="Do not ask for confirmation.")
+def reset_mfa(tenant_id: str, email: str, yes: bool) -> None:
+    """Remove a user's MFA (lost device) and sign them out; audited. They enroll again at next sign-in."""
+    from lg_sotf.runtime.ops import reset_mfa as run_reset_mfa
+
+    settings = _prepare()
+    if not yes:
+        click.confirm(f"Remove MFA for {email} in tenant {tenant_id} and end their sessions?", abort=True)
+    report = _run(run_reset_mfa(settings, tenant_id=tenant_id, email=email))
+    state = "removed" if report.was_enabled else "was not enabled; pending enrollment cleared"
+    click.echo(f"MFA {state} for {report.email} (id {report.user_id}); {report.revoked_sessions} session(s) revoked")
+
+
 @cli.command("create-tenant")
 @click.option("--id", "tenant_id", required=True, help="Tenant id: 2-63 of a-z, 0-9, '-', '_'.")
 @click.option("--name", required=True, help="Display name.")
