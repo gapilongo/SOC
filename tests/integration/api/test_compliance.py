@@ -582,3 +582,19 @@ async def test_erasure_and_export_work_as_the_runtime_role(
 
     assert response.status_code == 200, response.text
     await _assert_erased(owner, {**before_a, "audit_log": before_a["audit_log"] + 4, "users": before_a["users"] + 2})
+
+
+async def test_erase_function_is_a_locked_down_security_definer(api: ApiHarness) -> None:
+    fn = "lgsotf_erase_tenant_batch(text, integer)"
+    async with api.ctx.db.connection() as conn:
+        definer, public_exec = await conn.fetchrow(
+            "SELECT p.prosecdef, has_function_privilege('pg_monitor', $1, 'EXECUTE') "
+            "FROM pg_proc p WHERE p.oid = $1::regprocedure",
+            fn,
+        )
+        assert definer is True and public_exec is False
+        for limit in (0, 100_001):
+            with pytest.raises(Exception, match="batch size"):
+                await conn.fetch("SELECT * FROM lgsotf_erase_tenant_batch($1, $2)", TENANT_B, limit)
+        with pytest.raises(Exception, match="tenant not found"):
+            await conn.fetch("SELECT * FROM lgsotf_erase_tenant_batch('no-such-tenant', 10)")

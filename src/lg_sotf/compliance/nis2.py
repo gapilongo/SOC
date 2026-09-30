@@ -79,7 +79,7 @@ DEADLINES = {
 MAX_IOCS = 50
 MAX_ASSETS = 25
 MAX_VALUE_CHARS = 4_000
-IOC_KINDS = ("ips", "domains", "urls", "hashes", "emails")
+IOC_KINDS = {"ips": "ip", "domains": "domain", "urls": "url", "hashes": "hash", "emails": "email"}
 ASSET_KINDS = ("hosts", "users")
 DONE_STATUSES = frozenset({"succeeded", "dry_run"})
 PENDING_STATUSES = frozenset({"proposed", "awaiting_approval", "approved", "executing"})
@@ -222,9 +222,9 @@ def _asset_text(normalized: Mapping[str, Any]) -> str:
 def _iocs(case: CaseData) -> List[str]:
     entities = _obj(_obj(case.alert.normalized).get("entities"))
     out: List[str] = []
-    for kind in IOC_KINDS:
+    for kind, label in IOC_KINDS.items():
         for value in _strings(entities.get(kind), MAX_IOCS):
-            item = f"{kind[:-1] if kind.endswith('s') else kind}: {value}"
+            item = f"{label}: {value}"
             if item not in out:
                 out.append(item)
     for display in case.indicator_displays:
