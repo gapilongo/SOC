@@ -5,6 +5,11 @@ Only low-cardinality indicator types are indexed: ``ip``, ``domain``, ``url``,
 alert's ``entities`` and from a fixed list of well-known raw field names,
 never from arbitrary scalar fields. Every value is syntax-checked and the
 number of indicators per type and per alert is capped.
+
+The reporter of a user-reported email (``alert["email"]["reporter"]``, kept in
+``entities.users``) is context, not an indicator: every report from the same
+person would otherwise correlate as one campaign, and response planning would
+target the person who reported the threat.
 """
 
 from __future__ import annotations
@@ -106,10 +111,14 @@ def _scalar(item: Any) -> Optional[str]:
 def extract_indicators(alert: Mapping[str, Any]) -> List[Indicator]:
     """Deduplicated, validated indicators in a stable order."""
     candidates: List[Tuple[str, Any]] = []
+    email = alert.get("email")
+    reporter = email.get("reporter") if isinstance(email, Mapping) else None
     entities = alert.get("entities")
     if isinstance(entities, Mapping):
         for key, itype in ENTITY_KEYS.items():
             for item in _values(entities.get(key) or []):
+                if itype == "user" and isinstance(reporter, str) and isinstance(item, str) and item.lower() == reporter:
+                    continue
                 candidates.append((itype, item))
     raw = alert.get("raw")
     if isinstance(raw, Mapping):
