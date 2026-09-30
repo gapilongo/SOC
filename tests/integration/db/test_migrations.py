@@ -36,6 +36,9 @@ TENANT_OWNED = (
     "indicator_sightings",
     "llm_usage_daily",
     "audit_log",
+    "integrations",
+    "notification_outbox",
+    "external_tickets",
 )
 
 

@@ -50,6 +50,8 @@ from lg_sotf.core.routing import BENIGN_DECISIONS
 from lg_sotf.core.suppression import InvalidRule, validate_rule_match
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
+from lg_sotf.integrations.events import ESCALATION_DECIDED
+from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
 from lg_sotf.services.response import (
@@ -321,6 +323,15 @@ class ReviewService:
             )
             if decision == "false_positive" and self._suggest(tenant.settings, suggest_suppression):
                 suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, user_id, now, conn)
+            await enqueue_event(
+                conn,
+                tenant_id,
+                ESCALATION_DECIDED,
+                alert_id=decided.alert_id,
+                dedupe_key=f"{ESCALATION_DECIDED}:{escalation_id}",
+                escalation=decided,
+                escalation_extra={"after_sla_expiry": late or None},
+            )
 
         requests = [
             ResumeRequest(

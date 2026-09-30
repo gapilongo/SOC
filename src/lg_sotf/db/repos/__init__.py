@@ -32,6 +32,7 @@ from lg_sotf.db.repos.audit import AuditEntry, AuditRepo, ChainVerification
 from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
+from lg_sotf.db.repos.integrations import ExternalTicket, Integration, IntegrationsRepo, OutboxEntry
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
@@ -61,6 +62,7 @@ class Repositories:
     indicators: IndicatorsRepo
     llm_usage: LLMUsageRepo
     audit: AuditRepo
+    integrations: IntegrationsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -81,6 +83,7 @@ class Repositories:
             indicators=IndicatorsRepo(db),
             llm_usage=LLMUsageRepo(db),
             audit=AuditRepo(db),
+            integrations=IntegrationsRepo(db),
         )
 
 
@@ -98,18 +101,22 @@ __all__ = [
     "ChainVerification",
     "DashboardCounts",
     "Escalation",
+    "ExternalTicket",
     "EscalationsRepo",
     "Feedback",
     "FeedbackRepo",
     "FeedbackStats",
     "IndicatorSighting",
     "IndicatorsRepo",
+    "Integration",
+    "IntegrationsRepo",
     "LLMUsageDay",
     "LLMUsageDelta",
     "LLMUsageRepo",
     "LLMUsageTotals",
     "NewAlert",
     "NewAlertEvent",
+    "OutboxEntry",
     "RefreshToken",
     "RefreshTokensRepo",
     "RelatedAlert",

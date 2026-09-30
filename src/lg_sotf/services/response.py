@@ -126,6 +126,8 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES
+from lg_sotf.integrations.events import ACTION_AWAITING_APPROVAL, ACTION_EXECUTED, ACTION_FAILED
+from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
 from lg_sotf.services.connectors import (
@@ -193,6 +195,13 @@ MAX_PROTECTED_ENTRY_CHARS = 256
 MAX_BLAST_RADIUS = 10_000
 MAX_TENANT_HOURLY_CAP = 100_000
 MAX_POLICY_PROBLEMS = 5
+# Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
+ACTION_EVENTS: Dict[str, str] = {
+    "awaiting_approval": ACTION_AWAITING_APPROVAL,
+    "succeeded": ACTION_EXECUTED,
+    "dry_run": ACTION_EXECUTED,
+    "failed": ACTION_FAILED,
+}
 # Execution: parallel connector calls per node run, and the share of the node timeout they may use.
 EXECUTION_CONCURRENCY = 4
 EXECUTION_BUDGET_FRACTION = 0.75
@@ -1812,6 +1821,15 @@ class ResponseService:
         actor_id: Optional[str] = None,
         conn: Any = None,
     ) -> None:
+        event_type = ACTION_EVENTS.get(action.status)
+        if conn is None and event_type is not None:
+            # The integration event must commit with the audit entry: give both one transaction.
+            async with self._repos.db.tenant_tx(tenant_id) as scoped:
+                await self._record_transition(
+                    tenant_id, action, audit_action, details, actor_type=actor_type, actor_id=actor_id, conn=scoped
+                )
+            await self.publish_action(tenant_id, action)
+            return
         await self._audit.record(
             tenant_id,
             audit_action,
@@ -1829,6 +1847,15 @@ class ResponseService:
             },
             conn=conn,
         )
+        if event_type is not None:
+            await enqueue_event(
+                conn,
+                tenant_id,
+                event_type,
+                alert_id=action.alert_id,
+                dedupe_key=f"{event_type}:{action.id}",
+                action=action,
+            )
         record_action(action.action_type, action.status)
         if conn is None:
             # Inside a caller's transaction the caller publishes after commit (publish_action).

@@ -32,6 +32,8 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Escalation, Repositories, Source, WorkflowRun
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.retention import purge_expired
+from lg_sotf.integrations.events import ESCALATION_SLA_BREACHED
+from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import set_escalations_open, set_queue_depth, set_queue_pending
 from lg_sotf.queue.consumer import queue_stats
@@ -515,6 +517,15 @@ class Scheduler:
                             "status": updated.status,
                         },
                         conn=conn,
+                    )
+                    await enqueue_event(
+                        conn,
+                        esc.tenant_id,
+                        ESCALATION_SLA_BREACHED,
+                        alert_id=esc.alert_id,
+                        dedupe_key=f"{ESCALATION_SLA_BREACHED}:{esc.id}:{updated.version}",
+                        escalation=updated,
+                        escalation_extra={"from_level": esc.level, "sla_expired": updated.status == "expired" or None},
                     )
             except (Conflict, NotFound) as exc:
                 # An analyst claimed or decided it meanwhile (version moved on); nothing to do.

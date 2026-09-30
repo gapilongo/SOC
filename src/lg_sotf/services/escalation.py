@@ -65,6 +65,8 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.routing import BENIGN_DECISIONS
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
+from lg_sotf.integrations.events import ESCALATION_CREATED, ESCALATION_DECIDED
+from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -438,6 +440,19 @@ class EscalationService:
                         details={"alert_id": alert_id, "level": level, "priority": priority, "reason_code": reason_code},
                         conn=conn,
                     )
+                    await enqueue_event(
+                        conn,
+                        tenant_id,
+                        ESCALATION_CREATED,
+                        alert_id=alert_id,
+                        dedupe_key=f"{ESCALATION_CREATED}:{escalation.id}",
+                        escalation=escalation,
+                        alert_overrides={
+                            "confidence": confidence,
+                            "threat_score": threat_score,
+                            "verdict": body.get("verdict"),
+                        },
+                    )
         if attached_from is not None:
             data = {
                 "escalation_id": escalation.id,
@@ -613,6 +628,15 @@ class EscalationService:
                     },
                     conn=conn,
                 )
+                await enqueue_event(
+                    conn,
+                    tenant_id,
+                    ESCALATION_CREATED,
+                    alert_id=alert_id,
+                    dedupe_key=f"{ESCALATION_CREATED}:{escalation.id}",
+                    escalation=escalation,
+                    alert_overrides={"confidence": confidence, "threat_score": threat_score},
+                )
         if created:
             log.info("escalation.alert_detached", reason=reason_code, escalation_level=level)
             await self._publish(
@@ -647,29 +671,43 @@ class EscalationService:
         if not esc.is_active:
             return esc
         user_id = _as_uuid(decided_by)
-        if user_id is not None:
-            updated = await self._repos.escalations.decide(
+        async with self._repos.db.tenant_tx(tenant_id) as conn:
+            if user_id is not None:
+                updated = await self._repos.escalations.decide(
+                    tenant_id,
+                    escalation_id,
+                    decision=decision,
+                    decided_by=user_id,
+                    expected_version=esc.version,
+                    notes=notes,
+                    approved_actions=list(approved_actions),
+                    conn=conn,
+                )
+                action = "escalation.decided"
+            else:
+                updated = await self._repos.escalations.cancel(
+                    tenant_id, escalation_id, expected_version=esc.version, conn=conn
+                )
+                action = "escalation.cancelled"
+            await self._audit.record(
                 tenant_id,
+                action,
+                "escalation",
                 escalation_id,
-                decision=decision,
-                decided_by=user_id,
-                expected_version=esc.version,
-                notes=notes,
-                approved_actions=list(approved_actions),
+                actor_type="system",
+                actor_id="workflow",
+                details={"alert_id": esc.alert_id, "decision": decision, "decided_by": decided_by[:128]},
+                conn=conn,
             )
-            action = "escalation.decided"
-        else:
-            updated = await self._repos.escalations.cancel(tenant_id, escalation_id, expected_version=esc.version)
-            action = "escalation.cancelled"
-        await self._audit.record(
-            tenant_id,
-            action,
-            "escalation",
-            escalation_id,
-            actor_type="system",
-            actor_id="workflow",
-            details={"alert_id": esc.alert_id, "decision": decision, "decided_by": decided_by[:128]},
-        )
+            if updated.status == "decided":
+                await enqueue_event(
+                    conn,
+                    tenant_id,
+                    ESCALATION_DECIDED,
+                    alert_id=updated.alert_id,
+                    dedupe_key=f"{ESCALATION_DECIDED}:{escalation_id}",
+                    escalation=updated,
+                )
         await self._publish(tenant_id, "escalation.updated", esc.alert_id, {"escalation_id": escalation_id, "status": updated.status})
         return updated
 
