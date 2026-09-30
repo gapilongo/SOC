@@ -569,6 +569,51 @@ export interface SampleAlertsOut {
   alert_ids: string[];
 }
 
+/** NIS2 incident report draft (`POST /alerts/{id}/incident-report`). */
+export type IncidentReportStage = 'early_warning' | 'notification' | 'final';
+
+export interface IncidentReportField {
+  key: string;
+  label: string;
+  value: string | null;
+  source: 'case_data' | 'requires_human' | 'ai_drafted';
+  required: boolean;
+  help?: string | null;
+}
+
+export interface IncidentReportOut {
+  alert_id: string;
+  stage: string;
+  event_id: number;
+  generated_at: string;
+  disclaimer: string;
+  deadline_hint: string;
+  fields: IncidentReportField[];
+  ai_narrative: { text: string; label: string; provider: string; model: string } | null;
+  ai_narrative_error?: string | null;
+  html: string;
+}
+
+/** `GET /platform/tenants/{id}/erasure`: whether a tenant can be erased now. */
+export interface TenantErasureStatusOut {
+  tenant_id: string;
+  name: string;
+  status: string;
+  erasable: boolean;
+  blockers: string[];
+  erased_at: string | null;
+}
+
+/** `DELETE /platform/tenants/{id}` result. */
+export interface TenantErasedOut {
+  tenant_id: string;
+  erased_at: string;
+  deleted: Record<string, number>;
+  redis_keys: number;
+  queue_entries: number;
+  audit_entries_retained: number;
+}
+
 /** Live event envelope pushed on /ws. */
 export interface LiveEvent {
   type: 'alert.created' | 'alert.updated' | 'escalation.created' | 'escalation.updated' | 'action.updated';

@@ -109,6 +109,35 @@ describe('api client', () => {
     await expect(api.del('/users/1')).resolves.toBeUndefined();
   });
 
+  it('reads text and blob bodies on request, after a refresh-and-retry on 401', async () => {
+    let calls = 0;
+    const fetchImpl = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) return json(401, { error: { code: 'unauthorized', message: 'expired', request_id: 'r-00000001' } });
+      return new Response('<!doctype html><title>pack</title>', { status: 200, headers: { 'content-type': 'text/html' } });
+    });
+    const refresh = vi.fn(async () => 'tok-2');
+    const api = createApiClient({ baseUrl: '', auth: bridge({ refresh }), fetchImpl });
+    await expect(api.get<string>('/alerts/a-1/evidence', { query: { format: 'html' }, responseType: 'text' })).resolves.toBe(
+      '<!doctype html><title>pack</title>',
+    );
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Authorization')).toBe('Bearer tok-2');
+    expect(headerOf(fetchImpl.mock.calls[1] as unknown[], 'Accept')).toBe('*/*');
+
+    const blob = await api.post<Blob>('/platform/tenants/acme/export', undefined, { responseType: 'blob' });
+    expect(blob.type).toBe('text/html');
+    expect(await blob.text()).toContain('pack');
+  });
+
+  it('still parses the error envelope when a blob was requested', async () => {
+    const fetchImpl = vi.fn(async () => json(404, { error: { code: 'not_found', message: 'no such tenant', request_id: 'r-00000002' } }));
+    const api = createApiClient({ baseUrl: '', auth: bridge(), fetchImpl });
+    const e = (await api.post('/platform/tenants/x/export', undefined, { responseType: 'blob' }).catch((x: unknown) => x)) as ApiError;
+    expect(e.code).toBe('not_found');
+    expect(e.message).toBe('no such tenant');
+  });
+
   it('builds repeated multi-valued query parameters and skips empty ones', () => {
     expect(buildQuery({ status: ['queued', 'failed'], q: '', cursor: undefined, limit: 100, from: null })).toBe('?status=queued&status=failed&limit=100');
     expect(buildQuery({})).toBe('');

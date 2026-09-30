@@ -298,6 +298,19 @@ Response automation defaults and the install-wide SOAR webhook.
 | `response.webhook_secret` | `LG_SOTF_RESPONSE__WEBHOOK_SECRET` | secret (optional) | unset | HMAC secret of the install-wide webhook. |
 | `response.webhook_timeout_s` | `LG_SOTF_RESPONSE__WEBHOOK_TIMEOUT_S` | number | `15.0` | Timeout of one webhook call. |
 
+### `mcp`
+
+`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client (see [mcp.md](mcp.md)). Read by that command only.
+
+| Setting | Environment variable | Type | Default | Description |
+|---|---|---|---|---|
+| `mcp.api_url` | `LG_SOTF_MCP__API_URL` | string | `http://127.0.0.1:8000` | Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only. |
+| `mcp.api_key` | `LG_SOTF_MCP__API_KEY` | secret (optional) | unset | API key the MCP server uses (`read` scope; `write` for notes). Environment only, never a command-line argument. |
+| `mcp.timeout_s` | `LG_SOTF_MCP__TIMEOUT_S` | number | `30.0` | Timeout of one API request. |
+| `mcp.max_retries` | `LG_SOTF_MCP__MAX_RETRIES` | integer | `2` | Retries of a read request on 429/502/503/504 or a connection error (writes are never retried). |
+| `mcp.max_response_bytes` | `LG_SOTF_MCP__MAX_RESPONSE_BYTES` | integer | `4194304` | Largest API response the MCP server reads. |
+| `mcp.max_output_chars` | `LG_SOTF_MCP__MAX_OUTPUT_CHARS` | integer | `60000` | Largest tool result handed to the model; longer results are truncated with a note. |
+
 ### `routing`
 
 Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys are ignored, values are validated when a worker starts.

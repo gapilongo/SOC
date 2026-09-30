@@ -16,6 +16,8 @@ import type {
   DecisionIn,
   DecisionOut,
   EscalationOut,
+  IncidentReportOut,
+  IncidentReportStage,
   JsonObject,
   MfaConfirmOut,
   MfaEnrollOut,
@@ -35,6 +37,8 @@ import type {
   SuppressionUpdateIn,
   TenantCreateIn,
   TenantCreatedOut,
+  TenantErasedOut,
+  TenantErasureStatusOut,
   TenantSettingsOut,
   TenantSummaryOut,
   TenantUpdateIn,
@@ -174,4 +178,15 @@ export const endpoints = {
   sendSampleAlerts: (api: ApiClient) => api.post<SampleAlertsOut>('/onboarding/sample-alerts'),
   markAutonomyReviewed: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/autonomy-reviewed'),
   dismissOnboarding: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/dismiss'),
+
+  evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
+    api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
+  incidentReport: (api: ApiClient, id: string, stage: IncidentReportStage, includeAiNarrative: boolean) =>
+    api.post<IncidentReportOut>(`/alerts/${enc(id)}/incident-report`, { stage, include_ai_narrative: includeAiNarrative }),
+  tenantErasureStatus: (api: ApiClient, id: string) =>
+    api.get<TenantErasureStatusOut>(`/platform/tenants/${enc(id)}/erasure`, { homeTenant: true }),
+  exportTenant: (api: ApiClient, id: string) =>
+    api.post<Blob>(`/platform/tenants/${enc(id)}/export`, undefined, { responseType: 'blob', homeTenant: true }),
+  eraseTenant: (api: ApiClient, id: string) =>
+    api.request<TenantErasedOut>('DELETE', `/platform/tenants/${enc(id)}`, { body: { confirm: id }, homeTenant: true }),
 };

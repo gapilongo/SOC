@@ -298,6 +298,21 @@ class ResponseSettings(BaseModel):
     webhook_timeout_s: float = 15.0
 
 
+class MCPSettings(BaseModel):
+    """``lg-sotf mcp``: the LG-SOTF API the MCP server calls on the analyst's behalf.
+
+    Set the key with ``LG_SOTF_MCP__API_KEY`` (never a command-line argument): an
+    API key with the ``read`` scope, plus ``write`` for ``add_note``.
+    """
+
+    api_url: str = "http://127.0.0.1:8000"
+    api_key: Optional[SecretStr] = None
+    timeout_s: float = Field(default=30.0, gt=0, le=300)
+    max_retries: int = Field(default=2, ge=0, le=5)
+    max_response_bytes: int = Field(default=4_194_304, ge=1_024)
+    max_output_chars: int = Field(default=60_000, ge=1_000)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LG_SOTF_",
@@ -322,6 +337,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = SecuritySettings()
     observability: ObservabilitySettings = ObservabilitySettings()
     response: ResponseSettings = ResponseSettings()
+    mcp: MCPSettings = MCPSettings()
 
     # Free-form tuning sections consumed by agents and routing.
     agents: Dict[str, Dict[str, Any]] = Field(default_factory=dict)

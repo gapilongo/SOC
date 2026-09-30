@@ -185,6 +185,9 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
 | GET | `/audit`, `/audit/verify` | admin |
+| GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
+| POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
+| GET | `/platform/tenants/{id}/erasure`; POST `/platform/tenants/{id}/export`; DELETE `/platform/tenants/{id}` | platform admin |
 | WS | `/ws?token=<access token>` | viewer |
 
 `/healthz`, `/readyz` and `/ws` are also served under `/api/v1`.
@@ -307,6 +310,20 @@ Each entry carries its `prev_hash` and `hash` (a SHA-256 chain per tenant).
 did what (logins, user and API key changes, sources, settings, suppression
 rules, claims, decisions, approvals and response execution, platform-admin
 `X-Tenant-ID` access); they never contain secrets or raw alert bodies.
+
+### Compliance
+
+`GET /alerts/{id}/evidence` returns the alert's evidence pack (JSON, or
+printable HTML with `format=html`) sealed with `integrity.bundle_sha256` and
+an HMAC signature; the export is audited and the digest is repeated in the
+`X-Evidence-Bundle-SHA256` header. `POST /alerts/{id}/incident-report` with
+`{"stage": "early_warning"|"notification"|"final", "include_ai_narrative"}`
+drafts a NIS2 Article 23 report (201; a draft only, never submitted).
+Platform admins export a tenant (`POST /platform/tenants/{id}/export`,
+streamed ZIP of JSONL files without secrets) and erase a *suspended* tenant
+(`DELETE /platform/tenants/{id}` with `{"confirm": "<id>"}`; 409
+`tenant_not_suspended`/`erasure_blocked`, 422 `confirmation_mismatch`); the
+audit log is retained. See [compliance.md](compliance.md).
 
 ### Live events (WebSocket)
 

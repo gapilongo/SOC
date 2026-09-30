@@ -34,12 +34,14 @@ import { formatCountdown, formatInt, formatRelative, formatUsd } from '../lib/fo
 import { useKeysetList } from '../lib/pagination';
 import { useNow } from '../lib/useNow';
 import { usePollInterval } from '../lib/visibility';
+import { TenantDataCard } from './platform/TenantDataCard';
 
 const TABS = [
   { id: 'tenants', label: 'Tenants' },
   { id: 'escalations', label: 'Escalation queue' },
   { id: 'usage', label: 'Usage' },
   { id: 'create', label: 'Create tenant' },
+  { id: 'data', label: 'Tenant data' },
 ] as const;
 type TabId = (typeof TABS)[number]['id'];
 
@@ -641,6 +643,7 @@ export default function PlatformPage() {
         {tab === 'escalations' && <EscalationsTab />}
         {tab === 'usage' && <UsageTab />}
         {tab === 'create' && <CreateTenantTab />}
+        {tab === 'data' && <TenantDataCard />}
       </div>
     </>
   );
