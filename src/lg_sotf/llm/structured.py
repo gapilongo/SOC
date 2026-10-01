@@ -28,11 +28,12 @@ import asyncio
 import functools
 import json
 import math
+import random
 import re
 import time
 from dataclasses import replace
 from decimal import Decimal
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Type, TypeVar
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -59,6 +60,39 @@ from lg_sotf.settings import Settings, get_settings
 T = TypeVar("T", bound=BaseModel)
 
 logger = get_logger(__name__)
+
+#: Retries of one model call that failed fast with a transient provider error (429, 5xx, connection).
+#: These fail within seconds, so retrying here costs little; the node-level retry policy may
+#: allow only one attempt of a long node (analysis), which would otherwise turn a brief
+#: "high demand" 503 into a failed run that waits for message redelivery.
+TRANSIENT_RETRY_DELAYS_S: Tuple[float, ...] = (2.0, 6.0)
+_FAST_RETRY_STATUSES = frozenset({429}) | frozenset(range(500, 600))
+
+
+def _fails_fast_and_transient(exc: BaseException) -> bool:
+    """A provider error worth retrying within the call: HTTP 429/5xx or a refused connection.
+
+    Timeouts are excluded: they have already used the call's time budget, and the node-level
+    policy decides about those. ``code`` covers google-genai errors, ``status_code`` the others.
+    """
+    current: Optional[BaseException] = exc
+    for _ in range(4):
+        if current is None or isinstance(current, (TimeoutError, asyncio.TimeoutError)):
+            return False
+        if "timeout" in type(current).__name__.lower():
+            return False
+        status = getattr(current, "status_code", None)
+        if status is None:
+            status = getattr(getattr(current, "response", None), "status_code", None)
+        if status is None:
+            code = getattr(current, "code", None)
+            status = code if isinstance(code, int) and not isinstance(code, bool) else None
+        if isinstance(status, int) and status in _FAST_RETRY_STATUSES:
+            return True
+        if isinstance(current, ConnectionError) or type(current).__name__ in ("ConnectError", "APIConnectionError"):
+            return True
+        current = current.__cause__
+    return False
 
 _TRUNCATION_REASONS = frozenset({"max_tokens", "length", "MAX_TOKENS", "model_context_window_exceeded"})
 _SAFETY_FINISH_REASONS = frozenset(
@@ -389,8 +423,26 @@ async def ainvoke_structured(
         attempt += 1
         start = time.perf_counter()
         try:
-            async with llm_slot(tier, s):
-                result = await invoke(attempt_messages)
+            for retry, delay_s in enumerate((*TRANSIENT_RETRY_DELAYS_S, None)):
+                try:
+                    async with llm_slot(tier, s):
+                        result = await invoke(attempt_messages)
+                    break
+                except Exception as exc:  # noqa: BLE001 - classified below; cancellation is not an Exception
+                    if delay_s is None or not _fails_fast_and_transient(exc):
+                        raise
+                    recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)
+                    if tally is not None:
+                        tally.add_call(agent, [], "error", Decimal(0), model=model_id, provider=provider)
+                    wait_s = delay_s * random.uniform(0.8, 1.2)  # noqa: S311 - jitter, not security
+                    log.warning(
+                        "llm.call_retrying",
+                        error_type=type(exc).__name__,
+                        attempt=attempt,
+                        retry=retry + 1,
+                        delay_s=round(wait_s, 1),
+                    )
+                    await asyncio.sleep(wait_s)
         except BaseException as exc:
             # Cancellation (node timeouts) must also hand the reservation back.
             if not isinstance(exc, asyncio.CancelledError):

@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-10-01
+
+### Fixed
+
+- A model call that fails fast with a transient provider error (HTTP 429,
+  5xx such as Gemini's "503 high demand", or a refused connection) is now
+  retried twice within the call (about 2 s and 6 s apart). Before, the
+  analysis step's retry budget allowed a single attempt, so such an error
+  failed the run and the alert waited about 20 minutes for redelivery.
+  Timeouts are still left to the node policy.
+
 ## [1.2.0] - 2026-10-01
 
 MCP for testers and analysts: Phases 0 and 0.5 of the approved MCP
