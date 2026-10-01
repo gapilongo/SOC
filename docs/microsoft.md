@@ -161,7 +161,7 @@ separate axis that proves it by re-query:
 | `pending` | not decided yet; checked again with backoff |
 | `verified` | a re-read shows the change in effect (for example the account is disabled, the isolation machine action completed) |
 | `failed` | the observed state contradicts the change (the machine action ended `Failed`/`TimeOut`/`Cancelled`, a synced user was re-enabled) |
-| `inconclusive` | the check could not be completed: `deadline`, `permission_denied` (403 on the read), `credentials`, `integration_unavailable`, `no_verifier`; or `rolled_back`: a rollback of the action was approved, so the change is being undone on purpose (audited, no alert or event) |
+| `inconclusive` | the check could not be completed: `deadline`, `permission_denied` (403 on the read), `credentials`, `integration_unavailable`, `no_verifier`; or `rolled_back`: a rollback of the action is executing or succeeded, so the change is being undone on purpose (audited, no alert or event). While the rollback is only approved (it may still expire or be blocked), the verification stays `pending` (`rollback_approved`) and is checked again later |
 | (none) | not applicable: dry runs, webhook and ticketing actions, failed actions |
 
 A synchronous write that an inline re-read disproves is recorded as

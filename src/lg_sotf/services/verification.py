@@ -29,11 +29,14 @@ A final outcome writes, in one transaction, the audit entry
 (``action.verified`` / ``action.verification_failed``) and, for failed or
 inconclusive, the ``action.verification_failed`` integration event.
 
-An action being rolled back (its rollback is approved, executing or
-succeeded) is no longer verified: the rollback undoes on purpose what the
-check would look for. Its verification ends ``inconclusive`` with reason
-``rolled_back``, audited, without a timeline entry or an event (it is not
-a failure).
+An action being rolled back (its rollback is executing or succeeded) is no
+longer verified: the rollback undoes on purpose what the check would look
+for. Its verification ends ``inconclusive`` with reason ``rolled_back``,
+audited, without a timeline entry or an event (it is not a failure). While
+the rollback is only approved, the check waits instead (a check could see
+the undo begin, and the rollback may still expire or be blocked when it is
+claimed): the verification stays ``pending`` (reason ``rollback_approved``)
+and is checked again with the usual backoff, never past the deadline.
 
 :meth:`VerificationService.recheck` (``POST /actions/{id}/verify``) re-opens
 a final verification for one more hour of checks.
@@ -61,7 +64,9 @@ log = get_logger(__name__)
 
 CLAIM_LEASE_S = 120.0
 # A rollback in these statuses is undoing (or has undone) the original: its checks would report the undo.
-ROLLING_BACK_STATUSES = frozenset({"approved", "executing", "succeeded"})
+ROLLING_BACK_STATUSES = frozenset({"executing", "succeeded"})
+# An approved rollback may still run, expire or be blocked at its claim: the original's check waits for it.
+ROLLBACK_PENDING_STATUSES = frozenset({"approved"})
 MAX_BACKOFF_S = 900.0
 DEFAULT_FIRST_CHECK_S = 30.0
 RECHECK_WINDOW_S = 3_600.0
@@ -161,6 +166,9 @@ class VerificationService:
                 tenant_id, action, "inconclusive", {"reason": "rolled_back", "rollback_id": str(rollback.id)},
                 notify=False,
             )
+        if rollback is not None and rollback.status in ROLLBACK_PENDING_STATUSES:
+            waiting = {"reason": "rollback_approved", "rollback_id": str(rollback.id)}
+            return await self._pending(tenant_id, action, waiting, None, datetime.now(UTC))
         if snapshot is None:
             snapshot = await self._snapshot(tenant_id)
         now = datetime.now(UTC)

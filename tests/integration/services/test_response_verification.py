@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from datetime import UTC, datetime
 from typing import Any, Dict, Iterator, List
 from uuid import UUID, uuid4
 
@@ -149,6 +150,40 @@ async def test_a_rollback_still_awaiting_approval_does_not_stop_verification(
         TENANT_A, action.id, user=admin, role="admin", reason="false positive", approve=False,
     )
     assert rollback.status == "awaiting_approval"
+    machine_action(env, "Succeeded")
+    await env.make_verifications_due()
+    await env.run_verify()
+    assert (await env.get(action)).verification == "verified"
+
+
+async def test_an_approved_rollback_holds_verification_until_it_runs_and_a_lapsed_one_lets_it_resume(
+    microsoft_env: MicrosoftEnvFactory,
+) -> None:
+    env = await microsoft_env(ISO)
+    action = await executed(env)
+    admin = (await env.repos.users.create(TENANT_A, f"admin-{uuid4().hex[:6]}@example.com", "admin")).id
+    rollback, _, _ = await RollbackService(env.service).request(
+        TENANT_A, action.id, user=admin, role="admin", reason="false positive",
+    )
+    assert rollback.status == "approved"
+    reads = len(env.fake.api_requests())
+    await env.make_verifications_due()
+    assert await env.run_verify() == 1
+    held = await env.get(action)
+    # Not checked (the undo may begin any moment) and not ended (the approval may still lapse): pushed back.
+    assert held.verification == "pending" and held.verify_after is not None and held.verify_after > datetime.now(UTC)
+    assert held.verification_detail == {"first_check_s": 5.0, "reason": "rollback_approved",
+                                        "rollback_id": str(rollback.id)}
+    assert len(env.fake.api_requests()) == reads
+    assert "response_action.verification_inconclusive" not in await audit_actions(env.repos, action.id)
+
+    # The approval expires before the scheduler claims the rollback: the original is verified after all.
+    async with env.repos.db.system_tx() as conn:
+        await conn.execute("UPDATE response_actions SET approved_at = now() - interval '2 days' WHERE id = $1",
+                           rollback.id)
+    assert await env.run_background() == 0
+    lapsed = await env.get(rollback)
+    assert lapsed.status == "blocked" and lapsed.blocked_reason == "approval_expired"
     machine_action(env, "Succeeded")
     await env.make_verifications_due()
     await env.run_verify()
