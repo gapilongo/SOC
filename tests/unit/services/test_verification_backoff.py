@@ -132,9 +132,9 @@ async def test_jitter_retry_after_and_deadline_clamp() -> None:
     assert clamped.verify_after == near.verify_deadline
 
 
-@pytest.mark.parametrize(("status", "stops"), [("approved", True), ("executing", True), ("succeeded", True),
-                                             ("awaiting_approval", False), ("proposed", False)])
-async def test_a_rollback_under_way_ends_the_verification_quietly(status: str, stops: bool) -> None:
+@pytest.mark.parametrize(("status", "effect"), [("executing", "stops"), ("succeeded", "stops"), ("approved", "waits"),
+                                              ("awaiting_approval", "checks"), ("proposed", "checks")])
+async def test_a_rollback_under_way_ends_or_holds_the_verification_quietly(status: str, effect: str) -> None:
     action = pending()
     responses = Responses(action)
     rollback = make_action("release_host", "ws-1", status=status, rollback_of=action.id, execution_owner="scheduler")
@@ -142,14 +142,32 @@ async def test_a_rollback_under_way_ends_the_verification_quietly(status: str, s
     service = VerificationService(responses, rand=lambda: 0.5)  # type: ignore[arg-type]
     # The verifier would see the release: the isolation machine action was cancelled.
     failing = Verifier(VerificationResult("failed", {"reason": "machine_action_cancelled"}))
+    before = datetime.now(UTC)
     await service.check("tenant-a", action.id, snapshot=Snapshot(failing))  # type: ignore[arg-type]
     write = written(responses)
-    if stops:
+    if effect == "stops":
         assert write.state == "inconclusive"
         assert write.detail == {"reason": "rolled_back", "rollback_id": str(rollback.id)}
         assert responses.outcomes == ["inconclusive (quiet)"]
+    elif effect == "waits":
+        # An approved rollback may still expire or be blocked at its claim: neither checked nor ended, pushed back.
+        assert write.state == "pending" and responses.outcomes == []
+        assert write.detail == {"first_check_s": 10.0, "reason": "rollback_approved", "rollback_id": str(rollback.id)}
+        assert write.verify_after is not None and 9 <= (write.verify_after - before).total_seconds() <= 11
     else:
         assert write.state == "failed" and responses.outcomes == ["failed"]
+
+
+async def test_an_approved_rollback_at_the_deadline_ends_the_verification() -> None:
+    action = pending(verify_deadline=datetime.now(UTC) - timedelta(seconds=1))
+    responses = Responses(action)
+    rollback = make_action("release_host", "ws-1", status="approved", rollback_of=action.id, execution_owner="scheduler")
+    responses.repos.actions.rollback = rollback  # type: ignore[attr-defined]
+    service = VerificationService(responses, rand=lambda: 0.5)  # type: ignore[arg-type]
+    await service.check("tenant-a", action.id, snapshot=Snapshot(None))  # type: ignore[arg-type]
+    write = written(responses)
+    assert write.state == "inconclusive" and write.detail["reason"] == "deadline"
+    assert write.detail["last"] == {"reason": "rollback_approved", "rollback_id": str(rollback.id)}
 
 
 async def test_deadline_passed_is_inconclusive() -> None:

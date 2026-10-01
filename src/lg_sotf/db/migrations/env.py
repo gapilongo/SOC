@@ -14,7 +14,7 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 
-from lg_sotf.db import locks
+from lg_sotf.db.migrate import migration_transaction_setup
 
 config = context.config
 
@@ -22,8 +22,6 @@ if config.config_file_name is not None and config.file_config.has_section("logge
     fileConfig(config.config_file_name)
 
 target_metadata = None
-
-MIGRATION_LOCK_TIMEOUT = "60s"
 
 
 def _database_url() -> str:
@@ -36,10 +34,8 @@ def _database_url() -> str:
 
 
 def _prepare_transaction() -> None:
-    context.execute(f"SET LOCAL lock_timeout = '{MIGRATION_LOCK_TIMEOUT}'")
-    context.execute("SET LOCAL statement_timeout = 0")
-    context.execute("SELECT set_config('app.bypass_rls', 'on', true)")
-    context.execute(f"SELECT pg_advisory_xact_lock({locks.MIGRATIONS}, 0)")
+    for statement in migration_transaction_setup():
+        context.execute(statement)
 
 
 def run_migrations_offline() -> None:

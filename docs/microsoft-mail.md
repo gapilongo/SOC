@@ -285,21 +285,25 @@ Exchange Online from October 2026): everything is Microsoft Graph.
 
 **Connection test.** Tokens never show Exchange RBAC roles, so the test
 reports `Application Mail.ReadWrite` and `Application Mail.Send` as
-`unknown`. The probes are the evidence: `mail.remediate` reads the Inbox
-of `probe_mailbox` (and one message trace row with message trace);
-`mail.notify` reads the SOC mailbox's Sent Items. `Mail.Send` cannot be
-probed without sending mail: check it with `Test-ServicePrincipalAuthorization`.
+`unknown`. The probes only read: `mail.remediate` reads the Inbox of
+`probe_mailbox` (and one message trace row with message trace);
+`mail.notify` reads the SOC mailbox's Sent Items. A read passes with a
+read-only grant (`Mail.Read`, or `Application Mail.Read`), so it does not
+prove the write roles, and `Mail.Send` cannot be probed without sending
+mail: check every role and mailbox with `Test-ServicePrincipalAuthorization`
+(step 5).
 
 With the recommended RBAC-only setup the token also has no `Mail.ReadWrite`
 or `Mail.Send` role. The test therefore lists those token permissions as
-`unknown` (never `missing`) and lets the probes decide: `mailbox access: ok`
-(or `sender mailbox: ok`) shows that the Exchange RBAC grant is in effect
-and the capability is `ok`; without `probe_mailbox` (or `sender_mailbox`)
-it is `unverified`. If the token *does* carry `Mail.ReadWrite` or
-`Mail.Send`, they were consented tenant-wide in Entra: the test shows them
-`granted` with a warning, because such a consent is added on top of the
-Exchange scope and reaches every mailbox. Remove it and keep the RBAC
-assignment. `ExchangeMessageTrace.Read.All` cannot be scoped: with
+`unknown` (never `missing`) and both capabilities as `unverified` (never
+`missing_permission`, and never `ok`), with that guidance:
+`mailbox access: ok` (or `sender mailbox: ok`) shows the mailbox is
+reachable, not that a purge or a reply will be allowed. A probe that gets
+a 403 makes the capability `missing_permission`. If the token *does* carry
+`Mail.ReadWrite` or `Mail.Send`, they were consented tenant-wide in Entra:
+the test shows them `granted` with a warning, because such a consent is
+added on top of the Exchange scope and reaches every mailbox. Remove it and
+keep the RBAC assignment. `ExchangeMessageTrace.Read.All` cannot be scoped: with
 `recipient_source=message_trace` it is required and a missing consent is
 `missing_permission`.
 

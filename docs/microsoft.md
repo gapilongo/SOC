@@ -161,7 +161,7 @@ separate axis that proves it by re-query:
 | `pending` | not decided yet; checked again with backoff |
 | `verified` | a re-read shows the change in effect (for example the account is disabled, the isolation machine action completed) |
 | `failed` | the observed state contradicts the change (the machine action ended `Failed`/`TimeOut`/`Cancelled`, a synced user was re-enabled) |
-| `inconclusive` | the check could not be completed: `deadline`, `permission_denied` (403 on the read), `credentials`, `integration_unavailable`, `no_verifier`; or `rolled_back`: a rollback of the action was approved, so the change is being undone on purpose (audited, no alert or event) |
+| `inconclusive` | the check could not be completed: `deadline`, `permission_denied` (403 on the read), `credentials`, `integration_unavailable`, `no_verifier`; or `rolled_back`: a rollback of the action is executing or succeeded, so the change is being undone on purpose (audited, no alert or event). While the rollback is only approved (it may still expire or be blocked), the verification stays `pending` (`rollback_approved`) and is checked again later |
 | (none) | not applicable: dry runs, webhook and ticketing actions, failed actions |
 
 A synchronous write that an inline re-read disproves is recorded as
@@ -312,10 +312,15 @@ token requests and GET requests only:
 * the read-only probes of every enabled capability.
 
 A capability is `ok` when its probes pass and no required token-visible
-permission is missing, `unverified` when the only evidence is unknown, and
-otherwise `missing_permission`, `not_licensed`, `unsupported_cloud`,
-`error` or `not_enabled`. The report (never a token) is stored with the
-test delivery and audited as `integration.tested`.
+permission is missing, and `unverified` when the only evidence is unknown.
+It is also `unverified`, with guidance, whenever a required mailbox
+permission is not in the token: it can only come from Exchange RBAC for
+Applications, which the test cannot see, and a passing read probe does not
+prove a write role. Check those grants with
+`Test-ServicePrincipalAuthorization` ([mail](microsoft-mail.md)).
+Otherwise the status is `missing_permission`, `not_licensed`,
+`unsupported_cloud`, `error` or `not_enabled`. The report (never a token)
+is stored with the test delivery and audited as `integration.tested`.
 
 ## 10. Troubleshooting
 
