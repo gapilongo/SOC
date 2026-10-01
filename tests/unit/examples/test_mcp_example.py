@@ -9,6 +9,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from lg_sotf import __version__
+
 ROOT = Path(__file__).resolve().parents[3]
 EXAMPLE = ROOT / "examples" / "mcp" / ".mcp.json"
 DOC = ROOT / "docs" / "mcp.md"
@@ -37,7 +39,7 @@ def test_runs_the_pinned_release_image_over_stdio() -> None:
     assert args[:3] == ["run", "-i", "--rm"] and args[-1] == "mcp"
     image = args[-2]
     assert re.fullmatch(r"ghcr\.io/gapilongo/lg-sotf:v\d+\.\d+\.\d+", image), image
-    assert image.endswith(":v1.2.0")
+    assert image.endswith(f":v{__version__}"), "the example pins the image of the current release"
     assert {"--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges"} <= set(args)
 
 
