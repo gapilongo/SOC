@@ -11,6 +11,7 @@ import psycopg
 import pytest
 from alembic import command
 from psycopg.types.json import Jsonb
+from sqlalchemy.exc import IntegrityError
 
 from lg_sotf.db.migrate import (
     alembic_config,
@@ -364,7 +365,27 @@ async def test_0009_scans_response_actions_only_after_its_catalog_change_committ
     assert after.index("UPDATE response_actions") < after.index("VALIDATE CONSTRAINT response_actions_rollback_owner")
     assert len(re.findall(r"CREATE (?:UNIQUE )?INDEX CONCURRENTLY IF NOT EXISTS \w+ ON response_actions", after)) == 5
     down = _render(migrated_database_url, "0009:0008", downgrade=True)
-    assert down.index("DROP INDEX CONCURRENTLY IF EXISTS ux_response_actions_live_rollback") < down.index("DROP COLUMN")
+    assert down.index("ux_response_actions_live_rollback") < down.index("DROP COLUMN")
+
+
+async def test_0009_can_be_run_again_after_its_catalog_change_committed(migrated_database_url: str) -> None:
+    """Idempotent catalog change, a migration lock that outlives its commit, and an all-or-nothing downgrade."""
+    script = _render(migrated_database_url, "0008:0009")
+    locked, _, after = script.partition("COMMIT;")
+    assert "CREATE UNIQUE INDEX IF NOT EXISTS ux_integrations_microsoft" in locked
+    assert locked.count("ADD COLUMN") == locked.count("ADD COLUMN IF NOT EXISTS") == 11
+    added = re.findall(r"ADD CONSTRAINT (response_actions_\w+)", locked)
+    assert len(added) == 11
+    for name in added:
+        dropped = re.search(rf"DROP CONSTRAINT IF EXISTS {name}\b", locked)
+        assert dropped is not None and dropped.start() < locked.index(f"ADD CONSTRAINT {name}\n")
+    assert locked.rstrip().endswith("SELECT pg_advisory_lock(710004, 0);")
+    stamp = after.index("UPDATE alembic_version")
+    assert after.index("SELECT pg_advisory_xact_lock(710004, 0);") < after.index("SELECT pg_advisory_unlock(") < stamp
+    assert after.index("SET LOCAL lock_timeout") < stamp
+    down = _render(migrated_database_url, "0009:0008", downgrade=True)
+    assert down.count("COMMIT;") == 1 and "CONCURRENTLY" not in down
+    assert down.index("SET LOCAL lock_timeout") < down.index("DROP INDEX") < down.index("UPDATE alembic_version")
 
 
 async def test_0009_constraints_and_indexes_are_valid_after_upgrade(migrated_database_url: str) -> None:
@@ -408,3 +429,77 @@ async def test_0009_moves_existing_rollbacks_to_the_scheduler(migrated_database_
             "SELECT id::text, execution_owner FROM response_actions WHERE tenant_id = %s", (tenant,)
         ).fetchall())
     assert owners == {original: "workflow", rollback: "scheduler"}
+
+
+def _columns(url: str) -> set:
+    return {r[0] for r in _query(url, "SELECT column_name FROM information_schema.columns WHERE table_name = 'response_actions'")}
+
+
+def _index_validity(url: str, name: str) -> list:
+    return _query(
+        url,
+        "SELECT i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid "  # noqa: S608
+        f"WHERE c.relname = '{name}'",
+    )
+
+
+NEW_COLUMNS = {"execution_owner", "integration_id", "verification", "verify_attempts"}
+
+
+async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migrated_database_url: str) -> None:
+    """A failure after the catalog change committed leaves 0008 stamped over the new columns; retries must work."""
+    url = migrated_database_url
+    cfg = alembic_config(url)
+    with _owner(url) as conn:
+        conn.execute("DELETE FROM integrations WHERE kind = 'microsoft'")
+        conn.commit()
+    tenant = f"m9-{uuid.uuid4().hex[:8]}"
+    duplicates: list = []
+    try:
+        command.downgrade(cfg, "0008")
+        with _owner(url) as conn:
+            alert = _seed(conn, tenant)
+            original = _action_row(conn, tenant, alert, status="succeeded")
+            duplicates = [
+                _action_row(conn, tenant, alert, action_type="release_host", rollback_of=original, status="succeeded")
+                for _ in range(2)
+            ]
+            conn.commit()
+        # Two live rollbacks of one original: the unique index build fails after the catalog change committed.
+        with pytest.raises(IntegrityError, match="ux_response_actions_live_rollback"):
+            command.upgrade(cfg, "head")
+        assert current_revision(url) == "0008" and NEW_COLUMNS <= _columns(url)
+        assert _index_validity(url, "ux_response_actions_live_rollback") == [(False,)]
+
+        # The way back from the half-applied state: stamp 0009, then downgrade.
+        command.stamp(cfg, "0009")
+        command.downgrade(cfg, "0008")
+        assert current_revision(url) == "0008" and not NEW_COLUMNS & _columns(url)
+        assert _index_validity(url, "ux_response_actions_live_rollback") == []
+
+        # The way forward: fail again, fix the data, re-run.
+        with pytest.raises(IntegrityError, match="ux_response_actions_live_rollback"):
+            command.upgrade(cfg, "head")
+        with _owner(url) as conn:
+            conn.execute("UPDATE response_actions SET status = 'failed' WHERE id = %s", (duplicates[1],))
+            conn.commit()
+        command.upgrade(cfg, "head")
+        assert current_revision(url) == head_revision()
+        await test_0009_constraints_and_indexes_are_valid_after_upgrade(url)
+        with _owner(url) as conn:
+            owners = conn.execute(
+                "SELECT execution_owner, count(*) FROM response_actions WHERE tenant_id = %s GROUP BY 1", (tenant,)
+            ).fetchall()
+        assert sorted(owners) == [("scheduler", 2), ("workflow", 1)]
+
+        command.downgrade(cfg, "0008")
+        assert current_revision(url) == "0008" and not NEW_COLUMNS & _columns(url)
+    finally:
+        if duplicates:
+            with _owner(url) as conn:
+                conn.execute("UPDATE response_actions SET status = 'failed' WHERE id = %s", (duplicates[1],))
+                conn.commit()
+        command.upgrade(cfg, "head")
+    assert current_revision(url) == head_revision()
+    await test_0009_constraints_and_indexes_are_valid_after_upgrade(url)
+    await test_0009_indexes_exist(url)
