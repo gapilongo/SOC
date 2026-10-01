@@ -27,6 +27,7 @@ import type {
   IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
+  MicrosoftCatalogOut,
   MfaConfirmOut,
   MfaEnrollOut,
   MfaStatusOut,
@@ -34,6 +35,8 @@ import type {
   Page,
   PlatformEscalationOut,
   RecoveryCodesOut,
+  ResponseRoutesOut,
+  RollbackOut,
   MonthlyReportOut,
   ProposeSuppressionIn,
   ReprocessOut,
@@ -89,6 +92,7 @@ export interface ActionFilters {
   alert_id?: string;
   /** A single action type (the API accepts one). */
   action_type?: string;
+  verification?: string[];
 }
 
 export interface AuditFilters {
@@ -127,6 +131,11 @@ export const endpoints = {
     api.post<ApprovalOut>(`/actions/${enc(id)}/approve`, { reject_remaining: rejectRemaining }),
   reject: (api: ApiClient, id: string, rejectRemaining: boolean) =>
     api.post<ApprovalOut>(`/actions/${enc(id)}/reject`, { reject_remaining: rejectRemaining }),
+  /** Roll back an executed action: a new action of the inverse type (approved at once when your role allows). */
+  rollbackAction: (api: ApiClient, id: string, reason: string, approve = true) =>
+    api.post<RollbackOut>(`/actions/${enc(id)}/rollback`, { reason, approve }),
+  retryAction: (api: ApiClient, id: string, reason: string) => api.post<ActionOut>(`/actions/${enc(id)}/retry`, { reason }),
+  verifyAction: (api: ApiClient, id: string) => api.post<ActionOut>(`/actions/${enc(id)}/verify`, {}),
 
   sources: (api: ApiClient, signal?: AbortSignal) => api.get<SourceOut[]>('/sources', { signal }),
   createSource: (api: ApiClient, body: SourceCreateIn) => api.post<SourceOut>('/sources', body),
@@ -162,6 +171,7 @@ export const endpoints = {
   tenantSettings: (api: ApiClient, signal?: AbortSignal) => api.get<TenantSettingsOut>('/tenant/settings', { signal }),
   patchTenantSettings: (api: ApiClient, patch: JsonObject) => api.patch<TenantSettingsOut>('/tenant/settings', patch),
   testLlm: (api: ApiClient) => api.post<LlmTestOut>('/tenant/llm/test'),
+  responseRoutes: (api: ApiClient, signal?: AbortSignal) => api.get<ResponseRoutesOut>('/tenant/response/routes', { signal }),
 
   llmUsage: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
     api.get<UsageOut>('/usage/llm', { query: { from, to }, signal }),
@@ -205,6 +215,8 @@ export const endpoints = {
 
 
   integrations: (api: ApiClient, signal?: AbortSignal) => api.get<IntegrationOut[]>('/integrations', { signal }),
+  microsoftCatalog: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<MicrosoftCatalogOut>('/integrations/microsoft/catalog', { signal }),
   createIntegration: (api: ApiClient, body: IntegrationCreateIn) => api.post<IntegrationOut>('/integrations', body),
   updateIntegration: (api: ApiClient, id: string, body: IntegrationUpdateIn) =>
     api.patch<IntegrationOut>(`/integrations/${enc(id)}`, body),

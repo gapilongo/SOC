@@ -1,0 +1,2014 @@
+{
+  "name": "LG-SOTF response actions",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## LG-SOTF response actions\nReceives the signed POST that LG-SOTF sends for each approved action (schema `lg-sotf.response-action.v1`).\n\n1. Store the tenant's webhook secret as the n8n variable `LGSOTF_WEBHOOK_SECRET` (or environment variable, with `N8N_BLOCK_ENV_ACCESS_IN_NODE=false`). Never paste it into a node.\n2. Self-hosted: set `NODE_FUNCTION_ALLOW_BUILTIN=crypto` (on the task runners too).\n3. For each action type you handle: configure the **TODO** node (URL, credential, body), then enable it. Disabled nodes answer `rejected` / `not_implemented`.\n4. Activate the workflow and set the production URL as the tenant's webhook URL in LG-SOTF.\n\nRollbacks arrive as their own action types (`release_host`, `unblock_ip`, ...) with `rollback_of` set to the id of the action to undo.\n\nThe vendor calls in the node notes are examples: verify them against your vendor's API documentation. See docs/soar-playbooks.md.",
+        "height": 420,
+        "width": 520
+      },
+      "id": "lgsotf-readme",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -560
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lg-sotf-response",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "lgsotf-webhook",
+      "name": "LG-SOTF webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// LG-SOTF response action: check the signature, the timestamp and the Idempotency-Key exactly as\n// the LG-SOTF webhook connector signs, then look the action id up in this workflow's static data.\n// Setup (docs/soar-playbooks.md): the Webhook node's \"Raw Body\" option on; self-hosted n8n needs\n// NODE_FUNCTION_ALLOW_BUILTIN=crypto; the secret lives in the n8n variable (or environment\n// variable) LGSOTF_WEBHOOK_SECRET. Never paste the secret into this node.\nconst crypto = require('crypto');\n\nconst SCHEMA = 'lg-sotf.response-action.v1';\nconst EVENT = 'response_action.execute';\nconst TOLERANCE_S = 300;\nconst SIGNATURE_HEADER = 'x-lgsotf-signature';\nconst TIMESTAMP_HEADER = 'x-lgsotf-timestamp';\nconst IDEMPOTENCY_HEADER = 'idempotency-key';\n\nfunction readSecret() {\n  const readers = [() => $vars.LGSOTF_WEBHOOK_SECRET, () => $env.LGSOTF_WEBHOOK_SECRET];\n  for (const read of readers) {\n    try {\n      const value = read();\n      if (typeof value === 'string' && Buffer.byteLength(value, 'utf8') >= 16) return value;\n    } catch (error) {\n      // $vars needs an n8n plan with variables; $env is blocked unless N8N_BLOCK_ENV_ACCESS_IN_NODE=false.\n    }\n  }\n  // Fail closed: the execution errors (visible in n8n) and LG-SOTF records the action as failed.\n  throw new Error('LGSOTF_WEBHOOK_SECRET is not set (n8n variable or environment variable, at least 16 bytes)');\n}\n\nconst answer = (verdict, statusCode, response, extra) => [\n  { json: { verdict, status_code: statusCode, response, ...(extra || {}) } },\n];\n// One answer for every authentication failure: the sender learns nothing about which check failed.\nconst unauthorized = () => answer('reject', 401, { status: 'rejected', error: 'unauthorized' });\n\nconst secret = readSecret();\nconst headers = $input.first().json.headers || {};\nconst timestamp = typeof headers[TIMESTAMP_HEADER] === 'string' ? headers[TIMESTAMP_HEADER] : '';\nconst signature = typeof headers[SIGNATURE_HEADER] === 'string' ? headers[SIGNATURE_HEADER] : '';\nif (!/^[0-9]{1,15}$/.test(timestamp) || !/^v1=[0-9a-f]{64}$/.test(signature)) return unauthorized();\nif (Math.abs(Date.now() / 1000 - Number(timestamp)) > TOLERANCE_S) return unauthorized();\n\nlet raw;\ntry {\n  raw = await helpers.getBinaryDataBuffer(0, 'data');\n} catch (error) {\n  throw new Error('No raw body: turn on the \"Raw Body\" option of the LG-SOTF webhook node');\n}\nconst expected = 'v1=' + crypto.createHmac('sha256', secret).update(timestamp + '.').update(raw).digest('hex');\nif (!crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature))) return unauthorized();\n\nlet payload = null;\ntry {\n  payload = JSON.parse(raw.toString('utf8'));\n} catch (error) {\n  payload = null;\n}\nconst action = payload && typeof payload.action === 'object' && payload.action !== null ? payload.action : {};\nif (typeof action.id !== 'string' || !action.id) {\n  return answer('reject', 400, { status: 'rejected', error: 'malformed_payload' });\n}\n// The Idempotency-Key header is not signed: it must be the signed action id when present.\nif (IDEMPOTENCY_HEADER in headers && headers[IDEMPOTENCY_HEADER] !== action.id) return unauthorized();\n\nconst base = { action_id: action.id.slice(0, 64), action_type: String(action.type || '').slice(0, 64) };\nif (payload.schema !== SCHEMA || payload.event !== EVENT) {\n  return answer('reject', 200, { status: 'rejected', error: 'unsupported_schema', ...base });\n}\n\n// A repeated action id (a retry, or a re-run after an interruption) gets the original answer.\nconst seen = ($getWorkflowStaticData('global').lgsotfActions || {})[action.id];\nif (seen && seen.response) {\n  if (seen.action_type !== action.type || seen.target !== action.target) {\n    return answer('reject', 409, { status: 'rejected', error: 'idempotency_conflict', ...base });\n  }\n  return answer('duplicate', 200, seen.response);\n}\n\nreturn answer('execute', 200, null, {\n  ...base,\n  tenant_id: payload.tenant_id,\n  action,\n  alert: payload.alert || {},\n  // A rollback (release_host, unblock_ip, ...): the id of the action to undo; null otherwise.\n  rollback_of: typeof payload.rollback_of === 'string' && payload.rollback_of ? payload.rollback_of : null,\n});\n"
+      },
+      "id": "lgsotf-verify",
+      "name": "Verify LG-SOTF signature",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "HMAC-SHA256 over '<timestamp>.<raw body>', 5-minute window, Idempotency-Key = action.id, dedup on action.id."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "lgsotf-verdict-execute",
+              "leftValue": "={{ $json.verdict }}",
+              "rightValue": "execute",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "lgsotf-gate",
+      "name": "Authentic and new?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-block_ip",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "block_ip",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "block_ip"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-block_domain",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "block_domain",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "block_domain"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-block_url",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "block_url",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "block_url"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-isolate_host",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "isolate_host",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "isolate_host"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-terminate_process",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "terminate_process",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "terminate_process"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-quarantine_file",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "quarantine_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "quarantine_file"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-disable_user",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "disable_user",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "disable_user"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-reset_password",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "reset_password",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reset_password"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-revoke_sessions",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "revoke_sessions",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "revoke_sessions"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-collect_forensics",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "collect_forensics",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "collect_forensics"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-create_ticket",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "create_ticket",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "create_ticket"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-send_alert",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "send_alert",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "send_alert"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-block_sender",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "block_sender",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "block_sender"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-purge_message",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "purge_message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "purge_message"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-notify_reporter",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "notify_reporter",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "notify_reporter"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-confirm_compromised",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "confirm_compromised",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "confirm_compromised"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-release_host",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "release_host",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "release_host"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-unblock_ip",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "unblock_ip",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unblock_ip"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-unblock_domain",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "unblock_domain",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unblock_domain"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-unblock_url",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "unblock_url",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unblock_url"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-unblock_file",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "unblock_file",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unblock_file"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-unblock_sender",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "unblock_sender",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "unblock_sender"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-enable_user",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "enable_user",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "enable_user"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-restore_message",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "restore_message",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "restore_message"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "lgsotf-route-dismiss_user_risk",
+                    "leftValue": "={{ $json.action_type }}",
+                    "rightValue": "dismiss_user_risk",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "dismiss_user_risk"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unsupported",
+          "ignoreCase": false
+        }
+      },
+      "id": "lgsotf-route",
+      "name": "Route by action type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        720,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/block-ip",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ip: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-block_ip",
+      "name": "TODO block_ip: firewall or EDR indicator",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -1500
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint POST /api/indicators (IpAddress, Block); PAN-OS dynamic address group tag; Cloudflare IP access rule.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/block-domain",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-block_domain",
+      "name": "TODO block_domain: DNS or proxy block list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -1380
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint indicator (DomainName, Block); Cisco Umbrella destination list.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/block-url",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-block_url",
+      "name": "TODO block_url: web proxy block list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -1260
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint indicator (Url, Block); Zscaler ZIA custom URL category, then activate.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/isolate-host",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ host: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-isolate_host",
+      "name": "TODO isolate_host: EDR network isolation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -1140
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Resolve the host to exactly one device first. Defender for Endpoint POST /api/machines/{id}/isolate; CrowdStrike devices-actions contain.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/terminate-process",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ process: $json.action.target, hosts: ($json.action.params.scope || {}).hosts || [], lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-terminate_process",
+      "name": "TODO terminate_process: EDR kill on the scoped hosts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -1020
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Only on params.scope.hosts; empty scope = do nothing. CrowdStrike Real Time Response kill.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/quarantine-file",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ hash: $json.action.target, hosts: ($json.action.params.scope || {}).hosts || [], lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-quarantine_file",
+      "name": "TODO quarantine_file: EDR quarantine by hash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -900
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint POST /api/machines/{id}/StopAndQuarantineFile (SHA-1) per scoped host.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/disable-user",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-disable_user",
+      "name": "TODO disable_user: disable the account in the identity provider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -780
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph PATCH /v1.0/users/{id} {accountEnabled:false}; Okta lifecycle/suspend.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/reset-password",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-reset_password",
+      "name": "TODO reset_password: force a password reset in the identity provider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -660
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Okta lifecycle/expire_password; AD Set-ADUser -ChangePasswordAtLogon via a runner.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/revoke-sessions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-revoke_sessions",
+      "name": "TODO revoke_sessions: revoke sessions in the identity provider",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -540
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph POST /v1.0/users/{id}/revokeSignInSessions; Okta DELETE /api/v1/users/{id}/sessions.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/collect-forensics",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ host: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-collect_forensics",
+      "name": "TODO collect_forensics: EDR evidence collection",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -420
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint POST /api/machines/{id}/collectInvestigationPackage; return the job id.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/create-ticket",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ title: $json.alert.title, severity: $json.alert.severity, alert_id: $json.alert.id, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-create_ticket",
+      "name": "TODO create_ticket: ticketing system",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -300
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Only sent when the tenant has no ticketing integration in LG-SOTF. Jira POST /rest/api/3/issue; ServiceNow POST /api/now/table/incident.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/send-alert",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: 'LG-SOTF: ' + ($json.alert.title || $json.alert.id), lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-send_alert",
+      "name": "TODO send_alert: SOC chat or paging",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -180
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Slack chat.postMessage; PagerDuty Events API v2 /v2/enqueue.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/block-sender",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-block_sender",
+      "name": "TODO block_sender: mail gateway sender block list",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        -60
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft 365: no Graph API; New-TenantAllowBlockListItems -ListType Sender -Block (Exchange Online PowerShell) from a runner.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/purge-message",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ match: $json.action.params.match, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-purge_message",
+      "name": "TODO purge_message: mailbox purge (Message-ID, sender and subject)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        60
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Match Message-ID AND sender AND subject. Microsoft Graph per mailbox: messages?$filter=internetMessageId eq '...' then move or delete.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/notify-reporter",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ to: $json.action.params.reporter, alert_id: $json.alert.id, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-notify_reporter",
+      "name": "TODO notify_reporter: email the reporter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        180
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph POST /v1.0/users/{mailbox}/sendMail from a restricted shared mailbox.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/confirm-compromised",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-confirm_compromised",
+      "name": "TODO confirm_compromised: mark the account compromised in the risk engine",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        300
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph POST /v1.0/identityProtection/riskyUsers/confirmCompromised {userIds:[id]} (Entra ID P2).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/release-host",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ host: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-release_host",
+      "name": "TODO release_host: lift EDR network isolation (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        420
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint POST /api/machines/{id}/unisolate; CrowdStrike devices-actions lift_containment.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/unblock-ip",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ip: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-unblock_ip",
+      "name": "TODO unblock_ip: remove the IP block (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        540
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Delete the rule or indicator created for rollback_of: Defender for Endpoint DELETE /api/indicators/{id}.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/unblock-domain",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ domain: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-unblock_domain",
+      "name": "TODO unblock_domain: remove the DNS or proxy block (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        660
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint DELETE /api/indicators/{id}; Cisco Umbrella destination list remove.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/unblock-url",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-unblock_url",
+      "name": "TODO unblock_url: remove the web proxy block (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        780
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint DELETE /api/indicators/{id}; Zscaler ZIA REMOVE_FROM_LIST, then activate.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/unblock-file",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ hash: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-unblock_file",
+      "name": "TODO unblock_file: remove the hash block (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        900
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Defender for Endpoint DELETE /api/indicators/{id} of the file indicator created for rollback_of.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/unblock-sender",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ sender: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-unblock_sender",
+      "name": "TODO unblock_sender: remove the sender block (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        1020
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft 365: Remove-TenantAllowBlockListItems -ListType Sender (Exchange Online PowerShell) from a runner.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/enable-user",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-enable_user",
+      "name": "TODO enable_user: re-enable the account (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        1140
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph PATCH /v1.0/users/{id} {accountEnabled:true}; Okta lifecycle/unsuspend.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/restore-message",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message_id: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-restore_message",
+      "name": "TODO restore_message: restore the purged messages (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        1260
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Move back exactly the items the purge of rollback_of removed: Microsoft Graph POST /v1.0/users/{id}/messages/{item}/move to the original folder.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://todo.invalid/dismiss-user-risk",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ user: $json.action.target, rollback_of: $json.rollback_of, lgsotf_action_id: $json.action_id }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
+          "timeout": 10000
+        }
+      },
+      "id": "lgsotf-todo-dismiss_user_risk",
+      "name": "TODO dismiss_user_risk: dismiss the account risk (rollback)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1040,
+        1380
+      ],
+      "disabled": true,
+      "onError": "continueRegularOutput",
+      "notes": "Example to verify: Microsoft Graph POST /v1.0/identityProtection/riskyUsers/dismiss {userIds:[id]}.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// No branch of \"Route by action type\" matches (for example an action type added to LG-SOTF after\n// this workflow was imported): answer rejected, so LG-SOTF records the action as failed.\nconst verified = $input.first().json;\nconst response = {\n  status: 'rejected',\n  error: 'unsupported_action_type',\n  action_id: verified.action_id,\n  action_type: verified.action_type,\n};\nreturn [{ json: { status_code: 200, response } }];\n"
+      },
+      "id": "lgsotf-unsupported",
+      "name": "Unsupported action type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        1500
+      ],
+      "notes": "Action types without a branch are answered rejected (never silently succeeded)."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turn the vendor call's outcome into the answer LG-SOTF records on the action ledger, and remember\n// it so a retry of the same action id is answered from static data instead of acting twice.\n// Static data is kept only by production executions of the active workflow (not by test runs).\nconst MAX_AGE_S = 7 * 24 * 3600;\nconst MAX_ENTRIES = 2000;\n\nconst verified = $('Verify LG-SOTF signature').first().json;\nconst result = $input.first().json || {};\nconst base = { action_id: verified.action_id, action_type: verified.action_type };\n\nif (result.verdict === 'execute') {\n  // The placeholder HTTP Request node is still disabled and passed the item through: nothing was done.\n  const response = { status: 'rejected', error: 'not_implemented', message: 'connect and enable the TODO node', ...base };\n  return [{ json: { status_code: 200, response } }];\n}\n\nconst httpStatus = typeof result.statusCode === 'number' ? result.statusCode : null;\nconst ok = !result.error && httpStatus !== null && httpStatus >= 200 && httpStatus < 300;\nconst response = ok\n  ? { status: 'succeeded', ...base, detail: { http_status: httpStatus } }\n  : { status: 'failed', error: 'vendor_call_failed', ...base, detail: { http_status: httpStatus } };\n\nconst store = $getWorkflowStaticData('global');\nconst now = Math.floor(Date.now() / 1000);\nconst kept = Object.entries(store.lgsotfActions || {})\n  .filter(([, entry]) => entry && now - entry.at < MAX_AGE_S)\n  .sort((a, b) => b[1].at - a[1].at)\n  .slice(0, MAX_ENTRIES - 1);\nstore.lgsotfActions = Object.fromEntries([\n  [verified.action.id, { at: now, action_type: verified.action.type, target: verified.action.target, response }],\n  ...kept,\n]);\n\nreturn [{ json: { status_code: 200, response } }];\n"
+      },
+      "id": "lgsotf-result",
+      "name": "Build LG-SOTF result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ],
+      "notes": "2xx from the vendor = succeeded, anything else = failed; remembered for 7 days for deduplication."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json.response) }}",
+        "options": {
+          "responseCode": "={{ $json.status_code }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "lgsotf-respond",
+      "name": "Respond to LG-SOTF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "LG-SOTF webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify LG-SOTF signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify LG-SOTF signature": {
+      "main": [
+        [
+          {
+            "node": "Authentic and new?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authentic and new?": {
+      "main": [
+        [
+          {
+            "node": "Route by action type",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to LG-SOTF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by action type": {
+      "main": [
+        [
+          {
+            "node": "TODO block_ip: firewall or EDR indicator",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO block_domain: DNS or proxy block list",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO block_url: web proxy block list",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO isolate_host: EDR network isolation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO terminate_process: EDR kill on the scoped hosts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO quarantine_file: EDR quarantine by hash",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO disable_user: disable the account in the identity provider",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO reset_password: force a password reset in the identity provider",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO revoke_sessions: revoke sessions in the identity provider",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO collect_forensics: EDR evidence collection",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO create_ticket: ticketing system",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO send_alert: SOC chat or paging",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO block_sender: mail gateway sender block list",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO purge_message: mailbox purge (Message-ID, sender and subject)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO notify_reporter: email the reporter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO confirm_compromised: mark the account compromised in the risk engine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO release_host: lift EDR network isolation (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO unblock_ip: remove the IP block (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO unblock_domain: remove the DNS or proxy block (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO unblock_url: remove the web proxy block (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO unblock_file: remove the hash block (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO unblock_sender: remove the sender block (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO enable_user: re-enable the account (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO restore_message: restore the purged messages (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "TODO dismiss_user_risk: dismiss the account risk (rollback)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported action type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO block_ip: firewall or EDR indicator": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO block_domain: DNS or proxy block list": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO block_url: web proxy block list": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO isolate_host: EDR network isolation": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO terminate_process: EDR kill on the scoped hosts": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO quarantine_file: EDR quarantine by hash": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO disable_user: disable the account in the identity provider": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO reset_password: force a password reset in the identity provider": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO revoke_sessions: revoke sessions in the identity provider": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO collect_forensics: EDR evidence collection": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO create_ticket: ticketing system": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO send_alert: SOC chat or paging": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO block_sender: mail gateway sender block list": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO purge_message: mailbox purge (Message-ID, sender and subject)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO notify_reporter: email the reporter": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO confirm_compromised: mark the account compromised in the risk engine": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO release_host: lift EDR network isolation (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO unblock_ip: remove the IP block (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO unblock_domain: remove the DNS or proxy block (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO unblock_url: remove the web proxy block (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO unblock_file: remove the hash block (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO unblock_sender: remove the sender block (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO enable_user: re-enable the account (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO restore_message: restore the purged messages (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TODO dismiss_user_risk: dismiss the account risk (rollback)": {
+      "main": [
+        [
+          {
+            "node": "Build LG-SOTF result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported action type": {
+      "main": [
+        [
+          {
+            "node": "Respond to LG-SOTF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build LG-SOTF result": {
+      "main": [
+        [
+          {
+            "node": "Respond to LG-SOTF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "tags": []
+}

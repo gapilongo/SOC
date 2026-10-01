@@ -15,6 +15,7 @@ import {
   type IntegrationOut,
   type IntegrationUpdateIn,
   type JsonObject,
+  type MicrosoftTestReport as MicrosoftReport,
 } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { getConfig } from '../config';
@@ -34,6 +35,8 @@ import {
   TextField,
 } from '../components/ui';
 import { formatDateTime, formatRelative, humanize } from '../lib/format';
+import { MicrosoftIntegrationForm, secretField } from './integrations/MicrosoftIntegrationForm';
+import { MicrosoftTestReport } from './integrations/MicrosoftTestReport';
 
 type FieldKind = 'text' | 'number' | 'bool' | 'list' | 'select' | 'pem';
 
@@ -135,6 +138,12 @@ export const KIND_SPECS: Record<IntegrationKind, KindSpec> = {
     ],
     secrets: [{ key: 'password', label: 'Password', required: true }],
   },
+  microsoft: {
+    label: 'Microsoft 365 (direct response)',
+    note: 'Executes approved actions directly in Microsoft 365 mail, Entra ID and Defender for Endpoint (docs/microsoft.md). One per tenant; it receives no events.',
+    config: [],
+    secrets: [],
+  },
 };
 
 const BOOL_DEFAULTS: Record<string, boolean> = { comment_on_decision: true, response_actions: true };
@@ -146,6 +155,7 @@ export const EVENT_LABELS: Record<string, string> = {
   'action.awaiting_approval': 'Action awaiting approval',
   'action.executed': 'Action executed',
   'action.failed': 'Action failed',
+  'action.verification_failed': 'Action not verified',
   'alert.critical_received': 'Critical alert received',
   'integration.test': 'Test message',
 };
@@ -160,7 +170,17 @@ export function isTicketing(kind: IntegrationKind): boolean {
 }
 
 export function eventsFor(kind: IntegrationKind): readonly string[] {
+  if (kind === 'microsoft') return [];
   return isTicketing(kind) ? TICKETING_EVENTS : INTEGRATION_EVENTS;
+}
+
+/** Credential fields an integration still needs (the Microsoft one depends on its credential type). */
+export function missingCredentials(i: IntegrationOut): string[] {
+  if (i.kind === 'microsoft') {
+    const field = secretField(i.config?.credential === 'client_secret' ? 'client_secret' : 'certificate');
+    return i.secrets?.[field] ? [] : [field];
+  }
+  return (KIND_SPECS[i.kind]?.secrets ?? []).filter((f) => f.required && !i.secrets?.[f.key]).map((f) => f.key);
 }
 
 function toText(value: unknown): string {
@@ -220,7 +240,15 @@ export function slackRequestUrl(integration: IntegrationOut): string {
   return `${base}/api/v1/integrations/slack/interactions?${query.toString()}`;
 }
 
-function IntegrationForm({ integration, onClose }: { integration: IntegrationOut | null; onClose: () => void }) {
+function IntegrationForm({
+  integration,
+  onClose,
+  hasMicrosoft = false,
+}: {
+  integration: IntegrationOut | null;
+  onClose: () => void;
+  hasMicrosoft?: boolean;
+}) {
   const api = useApi();
   const client = useQueryClient();
   const toast = useToast();
@@ -284,6 +312,8 @@ function IntegrationForm({ integration, onClose }: { integration: IntegrationOut
 
   const toggleEvent = (event: string, on: boolean) => setEvents(on ? [...events, event] : events.filter((x) => x !== event));
 
+  if (kind === 'microsoft') return <MicrosoftIntegrationForm integration={integration} onClose={onClose} />;
+
   return (
     <Modal
       open
@@ -304,8 +334,9 @@ function IntegrationForm({ integration, onClose }: { integration: IntegrationOut
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectField label="Kind" value={kind} disabled={editing} onChange={(e) => changeKind(e.target.value as IntegrationKind)}>
             {INTEGRATION_KINDS.map((k) => (
-              <option key={k} value={k}>
+              <option key={k} value={k} disabled={k === 'microsoft' && hasMicrosoft}>
                 {KIND_SPECS[k].label}
+                {k === 'microsoft' && hasMicrosoft ? ' (already configured)' : ''}
               </option>
             ))}
           </SelectField>
@@ -516,6 +547,7 @@ export default function IntegrationsPage() {
   const [deleting, setDeleting] = useState<IntegrationOut | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [logFor, setLogFor] = useState<string | null>(null);
+  const [report, setReport] = useState<{ name: string; report: MicrosoftReport } | null>(null);
   const q = useQuery({ queryKey: ['integrations'], queryFn: ({ signal }) => endpoints.integrations(api, signal) });
 
   const del = useMutation({
@@ -533,6 +565,7 @@ export default function IntegrationsPage() {
     setTesting(i.id);
     try {
       const out = await endpoints.testIntegration(api, i.id);
+      if (out.microsoft) setReport({ name: i.name, report: out.microsoft });
       if (out.ok) toast.success(`${i.name}: ${out.detail}.`);
       else toast.error(new Error(`${i.name}: ${out.detail}`));
     } catch (err) {
@@ -549,7 +582,7 @@ export default function IntegrationsPage() {
     <>
       <PageHeader
         title="Integrations"
-        description="Send escalations, approvals and action outcomes to Slack, Teams, email or a signed webhook, and open Jira or ServiceNow tickets for escalations. Notifications carry a summary and a link, never the raw alert."
+        description="Send escalations, approvals and action outcomes to Slack, Teams, email or a signed webhook, open Jira or ServiceNow tickets for escalations, and execute approved actions directly in Microsoft 365. Notifications carry a summary and a link, never the raw alert."
         actions={
           <Button variant="primary" onClick={() => setEditing('new')} icon={<Plus className="h-4 w-4" aria-hidden="true" />}>
             Add integration
@@ -577,7 +610,7 @@ export default function IntegrationsPage() {
             </thead>
             <tbody>
               {q.data.map((i) => {
-                const missing = KIND_SPECS[i.kind]?.secrets.filter((f) => f.required && !i.secrets?.[f.key]) ?? [];
+                const missing = missingCredentials(i);
                 return (
                   <tr key={i.id} className="border-b border-slate-800/70 align-top">
                     <td className="px-3 py-2">
@@ -590,7 +623,7 @@ export default function IntegrationsPage() {
                     </td>
                     <td className="px-3 py-2 capitalize text-slate-200">{i.min_severity}</td>
                     <td className="px-3 py-2">
-                      {missing.length ? <Badge tone="warn">missing {missing.map((f) => f.key).join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
+                      {missing.length ? <Badge tone="warn">missing {missing.join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex justify-end gap-1.5">
@@ -622,7 +655,18 @@ export default function IntegrationsPage() {
         </div>
       )}
       {selected && <DeliveryLog integration={selected} />}
-      {editing !== null && <IntegrationForm integration={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing !== null && (
+        <IntegrationForm
+          integration={editing === 'new' ? null : editing}
+          onClose={() => setEditing(null)}
+          hasMicrosoft={Boolean(q.data?.some((i) => i.kind === 'microsoft'))}
+        />
+      )}
+      {report && (
+        <Modal open onClose={() => setReport(null)} size="xl" title={`Connection test: ${report.name}`}>
+          <MicrosoftTestReport report={report.report} />
+        </Modal>
+      )}
       <ConfirmDialog
         open={deleting !== null}
         title="Delete integration"

@@ -52,8 +52,14 @@ be added)::
         "approved_by": "<user id>|policy:auto",
         "approved_at": "2026-09-29T11:59:00+00:00"
       },
-      "alert": {"id": "<alert id>", "severity": "high", "title": "..."}
+      "alert": {"id": "<alert id>", "severity": "high", "title": "..."},
+      "rollback_of": null                          # or the id of the action this one rolls back
     }
+
+A rollback (``rollback_of`` set) has the inverse type of the original
+action (``unblock_ip`` for ``block_ip``, ``release_host`` for
+``isolate_host``, ...; see ``docs/microsoft.md``) and the same target; the
+receiver should undo what it did for the original action id.
 
 Response
 --------
@@ -223,6 +229,7 @@ def build_payload(action: ResponseAction, *, target_type: Optional[str], sent_at
             "severity": alert_ctx.get("severity"),
             "title": alert_ctx.get("title"),
         },
+        "rollback_of": str(action.rollback_of) if action.rollback_of is not None else None,
     }
 
 

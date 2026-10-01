@@ -9,6 +9,11 @@ and deep model tiers and reports provider, model, latency and a sanitized
 error per tier (:mod:`lg_sotf.services.llm_check`). It is rate limited per
 tenant, metered to the tenant as agent ``llm_test`` and audited.
 
+``GET /tenant/response/routes`` (admin) shows, per action type, which
+connector executes it now and why (:mod:`lg_sotf.services.connectors.routing`),
+and whether dry run is forced; ``response.routes`` overrides the route of an
+action type (``dry_run``, ``webhook``, ``microsoft``, ``ticketing``).
+
 ``PATCH`` is a JSON merge patch over the stored settings: top-level keys
 replace (``null`` removes), and inside ``response`` and ``tools.<provider>``
 keys merge so a patch does not drop stored secrets. Secrets are write-only:
@@ -104,6 +109,7 @@ RESPONSE_KEYS = frozenset(
         "max_actions_per_hour",
         "blast_radius",
         "autonomy",
+        "routes",
     }
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
@@ -418,6 +424,18 @@ async def patch_settings(
             await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
     ctx.tenants.invalidate(tenant_id)
     return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
+
+
+@router.get("/response/routes", summary="Which connector executes each action type, and why")
+async def response_routes(request: Request, principal: Principal = Depends(require(ADMIN))) -> Dict[str, Any]:
+    """``{dry_run_forced, routes: {action_type: {connector, source, capability, live, problem}}}``."""
+    ctx = get_ctx(request)
+    tenant = await ctx.repos.tenants.get(principal.tenant_id)
+    snapshot = await ctx.review.responses.routing(principal.tenant_id, tenant.settings)
+    return {
+        "dry_run_forced": snapshot.dry_run_forced,
+        "routes": {action_type: route.as_dict() for action_type, route in snapshot.routes().items()},
+    }
 
 
 @router.delete(

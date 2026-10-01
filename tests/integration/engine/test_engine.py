@@ -478,6 +478,9 @@ async def test_approvals_committed_while_the_run_executes_are_all_executed(
     second = await decide(engine, repos, alert_id, first.interrupt["escalation_id"], "true_positive", user_id)
     pending = list(second.interrupt["action_ids"])
     assert len(pending) >= 3
+    # The worker's run row (the engine alone keeps none): the run is live, so approvals stay the run's work
+    # (an approval for an ended or missing run goes to the scheduler instead).
+    await repos.runs.upsert_queued(TENANT_A, alert_id)
     review = ReviewService(repos, engine_settings)
     late = [[pending[1]], pending[2:]]
     original = ResponseService.awaiting

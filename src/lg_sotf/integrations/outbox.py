@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.db.repos.integrations import ENQUEUE_SQL, NewOutboxEntry
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
-from lg_sotf.integrations.config import NOTIFY_KINDS, TICKETING_KINDS
+from lg_sotf.integrations.config import MICROSOFT_KIND, NOTIFY_KINDS, TICKETING_KINDS
 from lg_sotf.integrations.events import (
     ALERT_CRITICAL_RECEIVED,
     ESCALATION_CREATED,
@@ -62,10 +62,13 @@ _ALERTS_SQL = """
 
 
 def operation_for(integration: Mapping[str, Any], event_type: str, severity: Optional[str], level: Optional[str]) -> Optional[str]:
-    """What ``integration`` does with the event, or ``None`` (see the module docstring)."""
-    if event_type not in (integration.get("events") or ()):
-        return None
+    """What ``integration`` does with the event, or ``None`` (see the module docstring).
+
+    The ``microsoft`` kind (the direct response connector) receives no events.
+    """
     kind = integration.get("kind")
+    if kind == MICROSOFT_KIND or event_type not in (integration.get("events") or ()):
+        return None
     config = integration.get("config") if isinstance(integration.get("config"), Mapping) else {}
     minimum = str(integration.get("min_severity") or "info")
     if kind in NOTIFY_KINDS:

@@ -230,6 +230,21 @@ a sender of one of the tenant's `internal_domains` is never blocked
 (`internal_sender`: disable or reset the account instead), and protected
 domains and protected users (full addresses) are never blocked.
 
+**Link text is not a link.** `block_url`, `block_domain` and `block_ip`
+target only where the message leads or came from: link targets (`href`,
+form actions, meta refresh, bare URLs in the text), their hosts, the sender,
+Reply-To and Return-Path domains and the relay IP. A URL that is only the
+visible text of a link to somewhere else, as in
+`<a href="http://203.0.113.66/owa/login.php">https://outlook.example.com/verify</a>`
+(or that text repeated in the message's plain-text alternative), is usually
+the legitimate site the sender imitates. It stays in the **Email** panel,
+marked *link text only*, and the deceiving link keeps its
+`email_link_text_mismatch` signal, but it is never an entity, a correlation
+indicator, a lookalike candidate, corroborating evidence or a block target,
+whatever the model recommends. The same URL or domain linked to anywhere in
+the message is a target as usual. Alerts ingested by earlier versions were
+stored without this distinction and keep their entities.
+
 ## Limits
 
 `ingestion.email` in the settings file (all optional):

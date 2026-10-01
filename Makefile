@@ -52,11 +52,16 @@ secrets: ## Print a fresh set of secrets (KEY=value) without writing anything
 	@$(PYTHON) scripts/generate_secrets.py
 
 .PHONY: lint
-lint: ## Ruff and mypy (typed packages)
-	ruff check src tests scripts docker
+lint: ## Ruff and mypy (typed packages and the SOAR examples)
+	ruff check src tests scripts docker examples
 	mypy src/lg_sotf/settings.py src/lg_sotf/llm src/lg_sotf/security src/lg_sotf/observability \
 		src/lg_sotf/core/config src/lg_sotf/db src/lg_sotf/queue src/lg_sotf/runtime \
 		src/lg_sotf/services src/lg_sotf/ingestion
+	mypy examples/soar/receiver examples/soar/n8n/build_workflow.py
+
+.PHONY: security-scan
+security-scan: ## Bandit over the product and the SOAR examples (pip install "bandit[toml]==1.8.6", as CI)
+	bandit -q -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
 
 .PHONY: test
 test: ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)

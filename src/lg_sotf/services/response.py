@@ -69,6 +69,17 @@ Guardrails 0-6 are evaluated again right before execution, so an asset
 protected after approval is still safe. ``settings.response.dry_run`` forces
 the dry-run connector everywhere.
 
+Which connector executes an action is decided per action by
+:mod:`lg_sotf.services.connectors.routing` (kill switches, onboarding
+samples, pinned rows, ``response.routes``, ticketing, Microsoft
+capabilities, the tenant default). The workflow executes the rows it owns
+(``execution_owner='workflow'``); the scheduler
+(:mod:`lg_sotf.services.background`) executes rollbacks
+(:mod:`lg_sotf.services.rollback`), retries, approvals that arrived after
+the alert's run ended, and executions a stateful connector deferred. A
+connector's ``verify`` plan is written with ``succeeded`` and proven later
+by :mod:`lg_sotf.services.verification`.
+
 Execution runs up to :data:`EXECUTION_CONCURRENCY` actions at a time within
 an execution budget of :data:`EXECUTION_BUDGET_FRACTION` of
 ``worker.node_timeout_s``, so the ``execute_actions`` node is never cancelled
@@ -76,8 +87,17 @@ half-way through a connector call. An action still running when the budget
 ends is recorded ``failed`` (``error="deadline"``, outcome unknown: the
 receiver deduplicates a later retry by action id); one the budget leaves no
 time to start is recorded ``failed`` with ``error="execution_budget_exhausted"``
-without being sent. :meth:`ResponseService.fail_orphaned_executing` settles
-actions left ``executing`` by a run that will never finish them.
+without being sent. A stateful (Microsoft) action is never abandoned that
+way: running out of budget mid-call, or too little budget to start with the
+connector's own margins, defers it to the scheduler, which re-runs and
+reconciles it; a database error during the call propagates (the row stays
+``executing`` and is run again). A stateful row that already started is
+never recorded ``dry_run`` or a plain misconfiguration when it is run again:
+while a kill switch is on it is held (``deferred``, ``halted``) until its
+attempts run out, a misconfigured integration fails it retryably, and every
+such failure keeps what its checkpoints show was done (``partial``,
+reversible). :meth:`ResponseService.fail_orphaned_executing` settles actions
+left ``executing`` by a run that will never finish them.
 
 Approval rules: containment on LLM-only evidence is never automatic; an
 analyst's pre-approval covers only low and medium risk; high and critical
@@ -89,14 +109,16 @@ from __future__ import annotations
 import asyncio
 import fnmatch
 import ipaddress
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
+    Callable,
     Dict,
     FrozenSet,
     Iterable,
@@ -127,31 +149,54 @@ from pydantic import (
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
-from lg_sotf.core.phishing import plan_email_entities
+from lg_sotf.core.phishing import email_block_targets, plan_email_entities
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
-from lg_sotf.db.repos.actions import EXECUTED_STATUSES
+from lg_sotf.db.repos._base import UNSET
+from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
-from lg_sotf.integrations.events import ACTION_AWAITING_APPROVAL, ACTION_EXECUTED, ACTION_FAILED
+from lg_sotf.integrations.events import (
+    ACTION_AWAITING_APPROVAL,
+    ACTION_EXECUTED,
+    ACTION_FAILED,
+    ACTION_VERIFICATION_FAILED,
+)
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
+from lg_sotf.security.crypto import SecretBox
+from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.connectors import (
     CONNECTOR_NAMES,
+    ROUTE_NAMES,
+    STATEFUL_CONNECTORS,
     Connector,
     ConnectorRegistry,
     ConnectorResult,
     DryRunConnector,
+    LedgerUnavailable,
     MisconfiguredConnector,
+    VerifyPlan,
     tenant_response_settings,
 )
+from lg_sotf.services.connectors.base import call_deadline
+from lg_sotf.services.connectors.microsoft import (
+    DEADLINE_MARGIN_S,
+    MIN_HANDLER_S,
+    MicrosoftClients,
+    microsoft_connector_for,
+    started,
+    with_progress,
+)
+from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
-    from lg_sotf.db.repos import Repositories, ResponseAction
+    from lg_sotf.db.repos import Integration, Repositories, ResponseAction
 
 __all__ = [
     "ACTION_CATALOG",
     "ACTION_TARGET_KINDS",
+    "ActionRequestError",
     "Connector",
     "ConnectorResult",
     "DryRunConnector",
@@ -166,10 +211,12 @@ __all__ = [
     "ResponsePolicySettings",
     "ResponseService",
     "approval_allowed",
+    "bounded_detail",
     "candidate_targets",
     "check_guardrails",
     "plan_entities",
     "preapproval_allowed",
+    "protected_lookup",
     "resolve_autonomy",
     "validate_response_settings",
     "validate_target",
@@ -194,6 +241,8 @@ ANALYST_PREAPPROVAL_RISKS = ANALYST_APPROVAL_RISKS
 HOURLY_CAP_REASON = "hourly_cap_reached"
 BLAST_RADIUS_REASON = "blast_radius_exceeded"
 POLICY_INVALID_REASON = "response_policy_invalid"
+APPROVAL_EXPIRED_REASON = "approval_expired"
+APPROVAL_SUPERSEDED_REASON = "approval_superseded"
 PROTECTED_INVALID_REASON = "protected_assets_invalid"
 # Per list (hosts, users, domains, cidrs). Larger inventories belong in the SOAR, not in tenant settings.
 MAX_PROTECTED_ENTRIES = 10_000
@@ -204,6 +253,8 @@ MAX_POLICY_PROBLEMS = 5
 # create_ticket runs through the tenant's ticketing integration when one is enabled (lg_sotf.integrations).
 TICKET_ACTION = "create_ticket"
 TICKET_CONNECTOR_NAME = "ticketing"
+MICROSOFT_CONNECTOR_NAME = "microsoft"
+MAX_ROUTES = 64
 # Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
 ACTION_EVENTS: Dict[str, str] = {
     "awaiting_approval": ACTION_AWAITING_APPROVAL,
@@ -215,6 +266,11 @@ ACTION_EVENTS: Dict[str, str] = {
 EXECUTION_CONCURRENCY = 4
 EXECUTION_BUDGET_FRACTION = 0.75
 MIN_EXECUTION_S = 1.0
+# A stateful connector keeps DEADLINE_MARGIN_S for its ledger write and needs MIN_HANDLER_S for the handler;
+# a request may overrun its timeout by 0.5 s. With less budget left, the action is deferred to the scheduler.
+MIN_STATEFUL_EXECUTION_S = DEADLINE_MARGIN_S + MIN_HANDLER_S + 0.5
+# How long a started stateful row waits while a kill switch holds it (each wait counts one attempt).
+HALTED_RETRY_S = 300.0
 # Advisory lock class for the per-tenant hourly cap (next to lg_sotf.db.locks' namespaces).
 ACTION_CAP_LOCK = 710_020
 _CAP_LOCK_SQL = "SELECT pg_advisory_xact_lock($1, hashtext($2))"
@@ -225,15 +281,28 @@ _EXECUTED_COUNTS_SQL = """
       AND executed_at >= COALESCE($2::timestamptz, now() - interval '1 hour')
     GROUP BY action_type
 """
-# Actions left 'executing' whose run will never come back to them.
+# Workflow actions left 'executing' whose run will never come back to them ($3: grace period in seconds,
+# so a call still in flight is left alone).
 _ORPHANED_EXECUTING_SQL = """
-    SELECT a.tenant_id, a.id FROM response_actions a
+    SELECT a.tenant_id, a.id, a.connector FROM response_actions a
     JOIN workflow_runs r ON r.tenant_id = a.tenant_id AND r.alert_id = a.alert_id
-    WHERE a.status = 'executing' AND r.status IN ('dead_lettered', 'completed')
+    WHERE a.status = 'executing' AND a.execution_owner = 'workflow' AND r.status IN ('dead_lettered', 'completed')
       AND ($1::text IS NULL OR a.tenant_id = $1)
+      AND (a.executed_at IS NULL OR a.executed_at < now() - make_interval(secs => $3))
     ORDER BY a.executed_at NULLS FIRST
     LIMIT $2
 """
+ORPHAN_GRACE_S = 60.0
+WORKFLOW_OWNER = "workflow"
+SCHEDULER_OWNER = "scheduler"
+SCHEDULER_ACTOR = "scheduler"
+# Connector results are stored in response_actions.result; larger details keep their essential keys.
+MAX_RESULT_BYTES = 8 * 1024
+MAX_VERIFICATION_DETAIL_BYTES = 12 * 1024
+RESULT_ESSENTIAL_KEYS = (
+    "connector", "capability", "integration_id", "live", "summary", "changed", "already", "error", "http_status",
+    "ms_code", "request_id", "retryable", "hint", "deferred", "rehearsal", "would_execute", "attempts",
+)
 
 
 @dataclass(frozen=True)
@@ -244,29 +313,89 @@ class ActionSpec:
     description: str
     # An entity kind the plan must have for the action to be proposed (its values go into the params).
     requires: Optional[str] = None
+    # The type that undoes this one (a rollback is a new ledger row of that type).
+    inverse: Optional[str] = None
+    # False: never proposed by playbooks or recommendations (only rollbacks create it).
+    plannable: bool = True
+    # Undoes one of our own changes: rollbacks of it skip the non-public-IP, protected-asset and
+    # internal-sender guardrails, so an asset protected after the change can still be released.
+    restorative: bool = False
+    # What a rollback cannot undo, or what stays in effect after the action (shown in the UI).
+    irreversible_note: str = ""
 
 
 ACTION_CATALOG: Dict[str, ActionSpec] = {
-    "block_ip": ActionSpec("ip", "medium", True, "Block an IP address at the perimeter"),
-    "block_domain": ActionSpec("domain", "medium", True, "Block a domain in DNS/proxy"),
-    "block_url": ActionSpec("url", "medium", True, "Block a URL in the web proxy"),
-    "isolate_host": ActionSpec("host", "high", True, "Network-isolate a host through EDR"),
-    "terminate_process": ActionSpec("process", "medium", True, "Terminate a process through EDR"),
-    "quarantine_file": ActionSpec("hash", "low", True, "Quarantine a file by hash through EDR"),
-    "disable_user": ActionSpec("user", "critical", True, "Disable a user account"),
-    "reset_password": ActionSpec("user", "critical", True, "Force a password reset"),
-    "revoke_sessions": ActionSpec("user", "high", True, "Revoke a user's active sessions"),
-    "collect_forensics": ActionSpec("host", "low", False, "Collect forensic evidence from a host"),
+    "block_ip": ActionSpec("ip", "medium", True, "Block an IP address at the perimeter", inverse="unblock_ip"),
+    "block_domain": ActionSpec("domain", "medium", True, "Block a domain in DNS/proxy", inverse="unblock_domain"),
+    "block_url": ActionSpec("url", "medium", True, "Block a URL in the web proxy", inverse="unblock_url"),
+    "isolate_host": ActionSpec("host", "high", True, "Network-isolate a host through EDR", inverse="release_host"),
+    "terminate_process": ActionSpec(
+        "process", "medium", True, "Terminate a process through EDR",
+        irreversible_note="a terminated process is not restarted by a rollback",
+    ),
+    "quarantine_file": ActionSpec(
+        "hash", "low", True, "Quarantine a file by hash through EDR", inverse="unblock_file"
+    ),
+    "disable_user": ActionSpec("user", "critical", True, "Disable a user account", inverse="enable_user"),
+    "reset_password": ActionSpec(
+        "user", "critical", True, "Force a password reset",
+        irreversible_note="the previous password cannot be restored",
+    ),
+    "revoke_sessions": ActionSpec(
+        "user", "high", True, "Revoke a user's active sessions",
+        irreversible_note="existing access tokens stay valid until they expire, about 1 h",
+    ),
+    "collect_forensics": ActionSpec(
+        "host", "low", False, "Collect forensic evidence from a host",
+        irreversible_note="a collected investigation package cannot be un-collected",
+    ),
     "create_ticket": ActionSpec("alert", "low", False, "Open an incident ticket"),
     "send_alert": ActionSpec("alert", "low", False, "Notify the SOC channel"),
-    "block_sender": ActionSpec("email", "medium", True, "Block a sender address in the mail gateway"),
+    "block_sender": ActionSpec(
+        "email", "medium", True, "Block a sender address in the mail gateway", inverse="unblock_sender"
+    ),
     "purge_message": ActionSpec(
-        "message", "high", True, "Remove a message (by Message-ID, sender and subject) from every mailbox"
+        "message", "high", True, "Remove a message (by Message-ID, sender and subject) from every mailbox",
+        inverse="restore_message",
     ),
     "notify_reporter": ActionSpec(
-        "alert", "low", False, "Tell the user who reported the email what was found", requires="reporter"
+        "alert", "low", False, "Tell the user who reported the email what was found", requires="reporter",
+        irreversible_note="a sent notification cannot be recalled",
+    ),
+    "confirm_compromised": ActionSpec(
+        "user", "high", True, "Confirm a user as compromised in Entra ID Protection", inverse="dismiss_user_risk"
+    ),
+    # Inverse types: created only by rollbacks, never planned.
+    "release_host": ActionSpec(
+        "host", "high", False, "Release a host from network isolation", plannable=False, restorative=True
+    ),
+    "unblock_ip": ActionSpec(
+        "ip", "medium", False, "Remove an IP address block", plannable=False, restorative=True
+    ),
+    "unblock_domain": ActionSpec(
+        "domain", "medium", False, "Remove a domain block", plannable=False, restorative=True
+    ),
+    "unblock_url": ActionSpec("url", "medium", False, "Remove a URL block", plannable=False, restorative=True),
+    "unblock_file": ActionSpec(
+        "hash", "medium", False, "Remove a file hash block", plannable=False, restorative=True
+    ),
+    "unblock_sender": ActionSpec(
+        "email", "medium", False, "Remove a sender block", plannable=False, restorative=True
+    ),
+    "enable_user": ActionSpec(
+        "user", "critical", False, "Re-enable a disabled user account", plannable=False, restorative=True
+    ),
+    "restore_message": ActionSpec(
+        "message", "high", False, "Restore a removed message to the mailboxes it was removed from",
+        plannable=False, restorative=True,
+    ),
+    "dismiss_user_risk": ActionSpec(
+        "user", "high", False, "Dismiss a user's risk in Entra ID Protection", plannable=False, restorative=True
     ),
 }
+
+# Forward type of each inverse type (``release_host`` -> ``isolate_host``).
+FORWARD_OF: Dict[str, str] = {spec.inverse: name for name, spec in ACTION_CATALOG.items() if spec.inverse}
 
 ACTION_TARGET_KINDS: Dict[str, FrozenSet[str]] = {name: frozenset({spec.target_kind}) for name, spec in ACTION_CATALOG.items()}
 
@@ -280,6 +409,11 @@ DEFAULT_BLAST_RADIUS: Dict[str, int] = {
     "quarantine_file": 20,
     "purge_message": 10,
     "block_sender": 20,
+    "release_host": 5,
+    "enable_user": 3,
+    "restore_message": 10,
+    "confirm_compromised": 10,
+    "dismiss_user_risk": 5,
 }
 
 GUARDRAIL_REASONS: Dict[str, str] = {
@@ -308,6 +442,11 @@ GUARDRAIL_REASONS: Dict[str, str] = {
     "autonomy_disabled": "the tenant's autonomy policy disables actions of this risk level",
     HOURLY_CAP_REASON: "the tenant's hourly action cap was reached",
     BLAST_RADIUS_REASON: "the hourly limit for this action type (blast radius) was reached",
+    APPROVAL_EXPIRED_REASON: "the approval was not executed within response.approval_ttl_s and expired",
+    APPROVAL_SUPERSEDED_REASON: (
+        "the approval arrived while the alert's workflow run was still active, and the run ended without "
+        "executing it"
+    ),
 }
 
 PLAYBOOKS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
@@ -362,6 +501,7 @@ RECOMMENDATION_PATTERNS: Tuple[Tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bblock\b.*\bsenders?\b", "block_sender"),
         (r"\b(purge|remove|delete|pull)\b.*\b(message|email|e-mail)s?\b", "purge_message"),
         (r"\b(notify|inform|tell)\b.*\breporter\b", "notify_reporter"),
+        (r"\b(confirm|mark)\b.*\bcompromised\b", "confirm_compromised"),
     )
 )
 
@@ -503,6 +643,13 @@ def plan_entities(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
         by_kind.setdefault(indicator.type, []).append(indicator.value)
     # Email alerts: sender and Reply-To addresses, the message and the reporter.
     by_kind.update(plan_email_entities(alert))
+    # Email alerts: a URL, domain or IP is blocked only when the message leads there or came from there,
+    # never one only shown as the text of a link that goes elsewhere (the look the sender borrowed, often
+    # a legitimate site), whatever entity list or model recommendation would bring it in.
+    for kind, allowed in email_block_targets(alert).items():
+        if kind in by_kind:
+            keys = {form for value in allowed for form in target_key(kind, value)}
+            by_kind[kind] = [v for v in by_kind[kind] if keys.intersection(target_key(kind, v))]
     lineage = lineage_only_values(alert.get("raw"))
     if lineage:
         # Parent/grandparent processes and their hashes are the context of the detection, not
@@ -575,6 +722,8 @@ def build_candidates(ctx: PlanContext, alert_id: str) -> Tuple[str, List[Candida
     wanted = list(playbook) + [a for a in actions_from_recommendations(ctx.recommended_actions) if a not in playbook]
     candidates: List[Candidate] = []
     for action_type in wanted:
+        if not ACTION_CATALOG[action_type].plannable:
+            continue
         requires = ACTION_CATALOG[action_type].requires
         if requires and not ctx.entities.get(requires):
             continue
@@ -1075,6 +1224,8 @@ class ResponsePolicySettings(BaseModel):
     max_actions_per_hour: Optional[Annotated[StrictInt, Field(ge=0, le=MAX_TENANT_HOURLY_CAP)]] = None
     blast_radius: Optional[Dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=MAX_BLAST_RADIUS)]]] = None
     autonomy: Optional[AutonomyMap] = None
+    # Per action type, which connector executes it (lg_sotf.services.connectors.routing).
+    routes: Optional[Dict[StrictStr, StrictStr]] = Field(default=None, max_length=MAX_ROUTES)
 
     @field_validator("connector")
     @classmethod
@@ -1113,6 +1264,31 @@ class ResponsePolicySettings(BaseModel):
     def _blast(cls, value: Optional[Dict[str, int]]) -> Optional[Dict[str, int]]:
         _catalog_actions(list(value or {}))
         return value
+
+    @field_validator("routes")
+    @classmethod
+    def _routes(cls, value: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        for action_type, route in (value or {}).items():
+            problem = route_problem(action_type, route)
+            if problem:
+                raise ValueError(problem)
+        return value
+
+
+def route_problem(action_type: str, route: Any) -> Optional[str]:
+    """Why ``response.routes[action_type] = route`` is not allowed, or ``None``."""
+    if action_type not in ACTION_CATALOG:
+        return f"routes: unknown action type {str(action_type)[:64]!r}"
+    if route not in ROUTE_NAMES:
+        return f"routes.{action_type}: must be one of {', '.join(ROUTE_NAMES)}"
+    if route == TICKET_CONNECTOR_NAME and action_type != TICKET_ACTION:
+        return f"routes.{action_type}: ticketing executes create_ticket only"
+    if route == MICROSOFT_CONNECTOR_NAME:
+        from lg_sotf.integrations.microsoft.catalog import executes
+
+        if not executes(action_type):
+            return f"routes.{action_type}: no Microsoft capability executes {action_type}"
+    return None
 
 
 # The response keys the guardrails read; malformed values fail closed when a policy is resolved.
@@ -1273,14 +1449,24 @@ def check_guardrails(
     policy: ResponsePolicy,
     *,
     target_kind: Optional[str] = None,
+    restorative: bool = False,
 ) -> Optional[GuardrailBlock]:
-    """The first guardrail the action fails (module docstring, rules 0-6), or ``None``."""
+    """The first guardrail the action fails (module docstring, rules 0-6), or ``None``.
+
+    ``restorative`` (a rollback that undoes one of our own changes) skips the
+    non-public-IP, protected-asset and internal-sender rules: releasing a host
+    that became protected after it was isolated must stay possible. An
+    inverse type passes the ``allowed_actions`` allowlist when it or its
+    forward type is listed; autonomy is checked against its own risk.
+    """
     spec = ACTION_CATALOG.get(action_type)
     if spec is None:
         return GuardrailBlock("unknown_action", action_type[:64])
     if policy.problems:
         return GuardrailBlock(POLICY_INVALID_REASON, "; ".join(policy.problems)[:300])
-    if policy.allowed_actions is not None and action_type not in policy.allowed_actions:
+    if policy.allowed_actions is not None and not (
+        action_type in policy.allowed_actions or FORWARD_OF.get(action_type) in policy.allowed_actions
+    ):
         return GuardrailBlock("action_not_allowed", action_type)
     kind = target_kind or spec.target_kind
     if kind not in ACTION_TARGET_KINDS[action_type]:
@@ -1294,16 +1480,34 @@ def check_guardrails(
         cls = ip_block_class(ipaddress.ip_address(target.strip("[]")))
         if cls == "unroutable":
             return GuardrailBlock("unroutable_ip", "")
-        if cls == "internal" and not policy.allow_internal_ip_blocks:
+        if cls == "internal" and not policy.allow_internal_ip_blocks and not restorative:
             return GuardrailBlock("non_public_ip", "tenant setting response.allow_internal_ip_blocks is off")
-    category = policy.protected.match(kind, target)
-    if category is not None:
-        return GuardrailBlock("protected_asset", f"matches a protected {category} entry")
-    if kind == "email" and policy.internal_sender(target):
-        return GuardrailBlock("internal_sender", "")
+    if not restorative:
+        category = policy.protected.match(kind, target)
+        if category is not None:
+            return GuardrailBlock("protected_asset", f"matches a protected {category} entry")
+        if kind == "email" and policy.internal_sender(target):
+            return GuardrailBlock("internal_sender", "")
     if policy.autonomy.get(spec.risk) == "disabled":
         return GuardrailBlock("autonomy_disabled", f"{spec.risk} risk")
     return None
+
+
+def protected_lookup(tenant_settings: Mapping[str, Any]) -> Callable[[str, str], Optional[str]]:
+    """The tenant's protected assets as a connector lookup: ``lookup(kind, value)`` -> the category matched.
+
+    A direct connector checks the identity it resolved a target to (an alias
+    or object id resolved to a user) with it, because the guardrails only
+    saw the literal target. A malformed list matches everything (fail closed).
+    """
+    assets = ProtectedAssets.from_tenant_settings(tenant_settings)
+
+    def lookup(kind: str, value: str) -> Optional[str]:
+        if assets.invalid:
+            return PROTECTED_INVALID_REASON
+        return assets.match(kind, value)
+
+    return lookup
 
 
 def approval_allowed(risk: str, role: Optional[str], autonomy: Optional[str] = None) -> bool:
@@ -1330,6 +1534,33 @@ def _is_preapproved(candidate: Candidate, approved: Sequence[str]) -> bool:
 # --------------------------------------------------------------------------- service
 
 
+class ActionRequestError(Exception):
+    """A request on one action cannot be served now (``status`` 409/429; ``code`` and message are safe to return)."""
+
+    def __init__(self, status: int, code: str, message: str, *, reason: Optional[str] = None) -> None:
+        super().__init__(message[:300])
+        self.status = status
+        self.code = code
+        self.reason = reason
+
+
+def bounded_detail(detail: Mapping[str, Any], limit: int = MAX_RESULT_BYTES) -> Dict[str, Any]:
+    """``detail`` as stored in ``response_actions.result``: at most ``limit`` bytes of JSON.
+
+    An oversized detail keeps its essential keys (who, what, error) and
+    records ``truncated: true``.
+    """
+    out = dict(detail)
+    if len(json.dumps(out, default=str)) <= limit:
+        return out
+    kept = {k: out[k] for k in RESULT_ESSENTIAL_KEYS if k in out}
+    kept = {k: (v[:500] if isinstance(v, str) else v) for k, v in kept.items()}
+    kept["truncated"] = True
+    if len(json.dumps(kept, default=str)) > limit:
+        kept = {"error": str(out.get("error") or "")[:100] or None, "truncated": True}
+    return kept
+
+
 class ResponseService:
     def __init__(
         self,
@@ -1340,12 +1571,18 @@ class ResponseService:
         connectors: Optional[Mapping[str, Connector]] = None,
         registry: Optional[ConnectorRegistry] = None,
         ticketing: Any = None,
+        router: Optional[ConnectorRouter] = None,
+        microsoft: Optional[MicrosoftClients] = None,
+        secret_box: Optional[SecretBox] = None,
     ) -> None:
         """``connectors`` override built-in connectors by name (see :class:`ConnectorRegistry`).
 
         ``ticketing`` (a :class:`~lg_sotf.integrations.ticketing.TicketService`)
         executes ``create_ticket`` through the tenant's ticketing integration;
-        built on first use when not given.
+        built on first use when not given. ``microsoft`` holds the process's
+        Microsoft HTTP factory and token cache (built here when not given);
+        ``secret_box`` decrypts integration credentials (from the settings
+        when not given). ``router`` replaces the connector routing (tests).
         """
         self._repos = repos
         self._ticketing = ticketing
@@ -1358,10 +1595,39 @@ class ResponseService:
             target_kinds={name: spec.target_kind for name, spec in ACTION_CATALOG.items()},
         )
         self._execution_budget_s = float(settings.worker.node_timeout_s) * EXECUTION_BUDGET_FRACTION
+        self._microsoft = microsoft
+        self._box = secret_box
+        self._box_loaded = secret_box is not None
+        self._router = router or ConnectorRouter(
+            self._registry, repos, tickets=self._ticket_connector, microsoft=self._microsoft_connector
+        )
 
     @property
     def registry(self) -> ConnectorRegistry:
         return self._registry
+
+    @property
+    def router(self) -> ConnectorRouter:
+        return self._router
+
+    @property
+    def repos(self) -> Repositories:
+        return self._repos
+
+    @property
+    def settings(self) -> Settings:
+        return self._settings
+
+    @property
+    def events(self) -> Optional[EventPublisher]:
+        return self._events
+
+    @property
+    def microsoft(self) -> MicrosoftClients:
+        """The Microsoft HTTP factory and token cache (built on first use)."""
+        if self._microsoft is None:
+            self._microsoft = MicrosoftClients.create(self._settings)
+        return self._microsoft
 
     @property
     def execution_budget_s(self) -> float:
@@ -1372,7 +1638,47 @@ class ResponseService:
         return ResponsePolicy.resolve(tenant_settings, self._settings)
 
     def connector_for(self, tenant_id: str, tenant_settings: Mapping[str, Any]) -> Connector:
+        """The tenant's default connector (routing step 8); per-action routing is :meth:`routing`."""
         return self._registry.for_tenant(tenant_id, tenant_settings)
+
+    async def routing(self, tenant_id: str, tenant_settings: Mapping[str, Any]) -> RoutingSnapshot:
+        """The tenant's routing snapshot (loads its integrations once; database errors propagate)."""
+        return await self._router.snapshot(tenant_id, tenant_settings)
+
+    def secret_box(self) -> Optional[SecretBox]:
+        """The install's secret box, or ``None`` when no encryption keys are configured."""
+        if not self._box_loaded:
+            self._box_loaded = True
+            try:
+                self._box = SecretBox.from_settings(self._settings)
+            except SecurityConfigError:
+                self._box = None
+        return self._box
+
+    def _ticket_connector(self, integration: Integration) -> Connector:
+        from lg_sotf.integrations.ticketing import TicketConnector, TicketService
+
+        if self._ticketing is None:
+            self._ticketing = TicketService(self._repos, self._settings, retries=1)
+        return TicketConnector(self._ticketing, integration)
+
+    async def _microsoft_connector(
+        self, tenant_id: str, integration: Integration, tenant_settings: Mapping[str, Any]
+    ) -> Connector:
+        clients = self.microsoft
+        connector = await microsoft_connector_for(
+            self._repos,
+            self._settings,
+            self.secret_box(),
+            tenant_id,
+            tokens=clients.tokens,
+            http=clients.http,
+            checkpoints=self._repos.actions,
+            integration=integration,
+            protected=protected_lookup(tenant_settings),
+        )
+        assert connector is not None  # an integration was given
+        return connector
 
     async def executed_counts(
         self, tenant_id: str, since: Optional[datetime] = None, *, conn: Any = None
@@ -1558,8 +1864,9 @@ class ResponseService:
         ``rejected_ids`` change; other pending actions stay awaiting approval
         (and the run returns to ``await_approval``) unless
         ``reject_remaining`` is set, which rejects them explicitly. Ids of
-        other alerts and actions no longer pending are ignored. Actions the
-        API already approved or rejected through
+        other alerts and actions no longer pending are ignored, and so are
+        scheduler-owned rows (rollbacks and handed-off actions are not the
+        run's work). Actions the API already approved or rejected through
         :class:`~lg_sotf.services.review.ReviewService` are reported with
         their current status. Returns ``{action_id: status}``.
         """
@@ -1572,7 +1879,7 @@ class ResponseService:
         outcome: Dict[str, str] = {}
         for action in actions:
             action_id = str(action.id)
-            if action.alert_id != alert_id:
+            if action.alert_id != alert_id or action.execution_owner != WORKFLOW_OWNER:
                 continue
             if action.status != "awaiting_approval":
                 outcome[action_id] = action.status
@@ -1607,18 +1914,26 @@ class ResponseService:
         return outcome
 
     async def awaiting(self, tenant_id: str, alert_id: str, action_ids: Sequence[str]) -> List[str]:
-        """Which of ``action_ids`` (this alert's) are still pending work, in ledger order.
+        """Which of ``action_ids`` (this alert's workflow rows) are still pending work, in ledger order.
 
         Pending work is an action awaiting approval or one approved but not
         yet executed: an approval can commit at any moment (the API does not
         wait for the run), so an ``approved`` row is work the run still owes.
+        Scheduler-owned rows are never the run's work.
         """
         if not action_ids:
             return []
         actions = await self._repos.actions.get_many(tenant_id, [UUID(str(i)) for i in action_ids])
-        return [str(a.id) for a in actions if a.alert_id == alert_id and a.status in PENDING_WORK_STATUSES]
+        return [
+            str(a.id)
+            for a in actions
+            if a.alert_id == alert_id and a.status in PENDING_WORK_STATUSES and a.execution_owner == WORKFLOW_OWNER
+        ]
 
     # ------------------------------------------------------------- execution
+
+    async def _is_sample(self, tenant_id: str, alert_id: str) -> bool:
+        return (await self._repos.alerts.get(tenant_id, alert_id)).source_id == SAMPLE_SOURCE_ID
 
     async def execute(
         self,
@@ -1629,13 +1944,19 @@ class ResponseService:
         now: Optional[datetime] = None,
         budget_s: Optional[float] = None,
     ) -> Dict[str, str]:
-        """Run this alert's approved actions. Returns ``{action_id: status}`` for the actions considered.
+        """Run this alert's approved workflow actions. Returns ``{action_id: status}`` for the actions considered.
 
         Guardrails are evaluated again before each claim. Actions left
         ``executing`` by an interrupted earlier attempt are run again with the
         connector recorded on the row: connectors are idempotent per action
         id, and the alert's run lease guarantees no other worker is executing
-        them. Terminal actions are never executed twice.
+        them. Terminal actions are never executed twice. Scheduler-owned
+        rows are skipped (the background executor runs them).
+
+        Each action's connector comes from one routing snapshot
+        (:mod:`lg_sotf.services.connectors.routing`). A stateful connector
+        may answer ``deferred``: the row stays ``executing``, is handed to
+        the scheduler and is reported as ``executing``.
 
         Up to :data:`EXECUTION_CONCURRENCY` actions run at once, and all of
         them within ``budget_s`` (default :attr:`execution_budget_s`): a
@@ -1648,20 +1969,20 @@ class ResponseService:
             return {}
         tenant = await self._repos.tenants.get(tenant_id)
         policy = self.policy(tenant.settings)
-        connector = self.connector_for(tenant_id, tenant.settings)
         actions = await self._repos.actions.get_many(tenant_id, [UUID(str(i)) for i in action_ids])
-        mine = [a for a in actions if a.alert_id == alert_id]
-        tickets = await self._ticket_connector(tenant_id, alert_id, tenant.settings, mine)
+        mine = [a for a in actions if a.alert_id == alert_id and a.execution_owner == WORKFLOW_OWNER]
+        if not mine:
+            return {}
+        snapshot = await self.routing(tenant_id, tenant.settings)
+        sample = await self._is_sample(tenant_id, alert_id) if snapshot.needs_sample_check(mine) else False
         loop = asyncio.get_running_loop()
         ends_at = loop.time() + (self._execution_budget_s if budget_s is None else budget_s)
         slots = asyncio.Semaphore(EXECUTION_CONCURRENCY)
 
         async def run(action: ResponseAction) -> str:
-            chosen = tickets if tickets is not None and action.action_type == TICKET_ACTION else connector
             async with slots:
-                return await self._execute_one(
-                    tenant_id, tenant.settings, action, chosen, policy, now, ends_at, tickets=tickets
-                )
+                connector = snapshot.connector_for(action, sample=sample)
+                return await self._execute_one(tenant_id, action, connector, policy, now, ends_at)
 
         tasks = [asyncio.create_task(run(a)) for a in mine]
         try:
@@ -1677,33 +1998,36 @@ class ResponseService:
     async def _execute_one(
         self,
         tenant_id: str,
-        tenant_settings: Mapping[str, Any],
         action: ResponseAction,
         connector: Connector,
         policy: ResponsePolicy,
         now: Optional[datetime],
         ends_at: float,
-        *,
-        tickets: Optional[Connector] = None,
     ) -> str:
         if action.status == "executing":
             log.warning("response.resuming_interrupted_action", action_type=action.action_type)
             executing: Optional[ResponseAction] = action
-            if action.connector == TICKET_CONNECTOR_NAME:
-                runner = tickets or MisconfiguredConnector(TICKET_CONNECTOR_NAME, "no enabled ticketing integration")
-            elif action.connector:
-                runner = self._registry.named(tenant_id, tenant_settings, action.connector)
-            else:
-                runner = connector
+            held = self._rerun_held(action, connector)
+            if held is not None:
+                return await self._finish(tenant_id, action, connector, held)
         elif action.status == "approved":
             executing = await self._claim(tenant_id, action, connector, policy, now)
-            runner = connector
         else:
             return action.status
         if executing is None:
             return (await self._repos.actions.get(tenant_id, action.id)).status
         remaining = ends_at - asyncio.get_running_loop().time()
-        if remaining < MIN_EXECUTION_S and not isinstance(runner, DryRunConnector):
+        if connector.name in STATEFUL_CONNECTORS and remaining < MIN_STATEFUL_EXECUTION_S:
+            # Not sent: the scheduler runs it with a full deadline (never abandoned half-way).
+            log.warning("response.execution_budget_exhausted", action_type=action.action_type, deferred=True)
+            result = ConnectorResult(
+                "deferred",
+                {"connector": connector.name, "deferred": "execution_budget", "changed": False,
+                 "summary": "not started: too little of this workflow step's budget was left; the scheduler runs it"},
+                retry_after_s=30.0,
+            )
+            return await self._finish(tenant_id, executing, connector, result)
+        if remaining < MIN_EXECUTION_S and not isinstance(connector, DryRunConnector):
             log.warning("response.execution_budget_exhausted", action_type=action.action_type)
             result = ConnectorResult(
                 "failed",
@@ -1712,52 +2036,116 @@ class ResponseService:
                     "note": "not sent: the execution budget of this workflow step ran out before it could start",
                 },
             )
-            return await self._finish(tenant_id, executing, runner, result)
-        return await self._run_connector(tenant_id, executing, runner, timeout_s=max(remaining, MIN_EXECUTION_S))
+            return await self._finish(tenant_id, executing, connector, result)
+        return await self._run_connector(tenant_id, executing, connector, timeout_s=max(remaining, MIN_EXECUTION_S))
 
-    async def _ticket_connector(
-        self, tenant_id: str, alert_id: str, tenant_settings: Mapping[str, Any], actions: Sequence[ResponseAction]
-    ) -> Optional[Connector]:
-        """The tenant's ticketing integration for ``create_ticket`` (live execution only), or ``None``.
+    async def execute_background(self, tenant_id: str, action_id: UUID, *, deadline_s: float) -> str:
+        """Run one scheduler-owned row the background executor claimed (its lease is held).
 
-        Without an enabled ticketing integration, or while dry-run is forced,
-        ``create_ticket`` keeps the tenant's regular connector. For an
-        onboarding sample alert it is a dry run: a sample never opens a real ticket.
+        ``approved`` rows go through :meth:`_claim` (guardrails, restorative
+        exemptions for rollbacks, caps, blast radius); ``executing`` rows are
+        run again with their pinned connector, or failed with
+        ``attempts_exhausted`` after ``response.max_execution_attempts``.
+        Returns the row's status afterwards.
         """
-        if not any(a.action_type == TICKET_ACTION for a in actions) or self._registry.forced_dry_run(tenant_settings):
-            return None
-        from lg_sotf.integrations.ticketing import TicketService, ticket_connector_for
+        action = await self._repos.actions.get(tenant_id, action_id)
+        if action.execution_owner != SCHEDULER_OWNER or action.status not in ("approved", "executing"):
+            return action.status
+        tenant = await self._repos.tenants.get(tenant_id)
+        policy = self.policy(tenant.settings)
+        snapshot = await self.routing(tenant_id, tenant.settings)
+        sample = await self._is_sample(tenant_id, action.alert_id) if snapshot.needs_sample_check([action]) else False
+        connector = snapshot.connector_for(action, sample=sample)
+        limit = int(self._settings.response.max_execution_attempts)
+        if action.status == "approved":
+            executing = await self._claim(tenant_id, action, connector, policy, None)
+            if executing is None:
+                return (await self._repos.actions.get(tenant_id, action.id)).status
+        elif action.attempts >= limit:
+            held = self._rerun_held(action, connector)
+            if held is not None and held.status == "failed":
+                return await self._finish(tenant_id, action, connector, held)  # its integration is unavailable
+            halted = held is not None  # still held by a kill switch
+            result = ConnectorResult(
+                "failed",
+                {
+                    "connector": action.connector,
+                    "error": "halted" if halted else "attempts_exhausted",
+                    "attempts": action.attempts,
+                    "retryable": True,
+                    "summary": f"not run again: {action.attempts} attempts already made"
+                    + (" while dry run was forced" if halted else ""),
+                },
+            )
+            return await self._finish(tenant_id, action, connector, result)
+        else:
+            rerun = await self._repos.actions.count_attempt(tenant_id, action.id)
+            if rerun is None:
+                return (await self._repos.actions.get(tenant_id, action.id)).status
+            executing = rerun
+            held_result = self._rerun_held(executing, connector)
+            if held_result is not None:
+                return await self._finish(tenant_id, executing, connector, held_result)
+        return await self._run_connector(tenant_id, executing, connector, timeout_s=deadline_s)
 
-        if self._ticketing is None:
-            self._ticketing = TicketService(self._repos, self._settings, retries=1)
-        try:
-            if (await self._repos.alerts.get(tenant_id, alert_id)).source_id == SAMPLE_SOURCE_ID:
-                return DryRunConnector()
-            return await ticket_connector_for(self._ticketing, self._repos, tenant_id)
-        except Exception as exc:  # noqa: BLE001 - a broken lookup must not fail the whole execution step
-            log.warning("response.ticketing_lookup_failed", error_type=type(exc).__name__)
+    @staticmethod
+    def _rerun_held(action: ResponseAction, connector: Connector) -> Optional[ConnectorResult]:
+        """What a re-run of a started stateful row gets instead of a dry run or a plain misconfiguration.
+
+        The row's checkpoints show that an earlier attempt got as far as a
+        write, so recording ``dry_run`` ("nothing was executed") would hide
+        it and block its rollback. While a kill switch forces the dry-run
+        connector it is held (``deferred``, ``halted``; each wait counts one
+        attempt, then it fails with ``halted``); a misconfigured integration
+        (disabled or deleted) fails it retryably. ``_finish`` keeps what the
+        checkpoints show was done. ``None``: run it normally.
+        """
+        if action.connector not in STATEFUL_CONNECTORS or not started(action.external_ref):
             return None
+        if isinstance(connector, DryRunConnector):
+            return ConnectorResult(
+                "deferred",
+                {"connector": action.connector, "deferred": "halted", "changed": False, "attempts": action.attempts,
+                 "summary": "held: dry run is forced (a kill switch is on); it runs again when the switch is off"},
+                retry_after_s=HALTED_RETRY_S,
+            )
+        if isinstance(connector, MisconfiguredConnector):
+            return ConnectorResult(
+                "failed",
+                {"connector": action.connector, "error": "connector_misconfigured", "reason": connector.reason,
+                 "retryable": True, "changed": False,
+                 "summary": "not run again: the Microsoft integration this action is pinned to is not available"},
+            )
+        return None
 
     async def fail_orphaned_executing(self, tenant_id: Optional[str] = None, *, limit: int = 100) -> int:
-        """Record ``failed`` for actions left ``executing`` whose run will never finish them.
+        """Settle workflow actions left ``executing`` whose run will never finish them.
 
         An action stays ``executing`` when its worker died mid-call; the run
         normally resumes and re-runs it, but a run that was dead-lettered (or
-        completed on another path) never will. Such actions are failed with
-        ``error="orphaned_execution"``: the external outcome is unknown, and
-        the receiver can be asked by the action id (its idempotency key).
-        ``tenant_id=None`` sweeps every tenant (scheduler; system transaction).
-        Returns how many actions were settled.
+        completed on another path) never will. After a grace period (the
+        execution budget plus 60 s, so a call still in flight is not
+        touched), actions of stateful connectors (Microsoft) are handed to
+        the scheduler, which re-runs and reconciles them; the others are
+        failed with ``error="orphaned_execution"``: the external outcome is
+        unknown, and the receiver can be asked by the action id (its
+        idempotency key). ``tenant_id=None`` sweeps every tenant (scheduler;
+        system transaction). Returns how many actions were settled.
         """
+        grace = self._execution_budget_s + ORPHAN_GRACE_S
         if tenant_id is None:
             async with self._repos.db.system_tx() as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, None, limit))
+                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, None, limit, grace))
         else:
             async with self._repos.db.tenant_tx(tenant_id) as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, tenant_id, limit))
+                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, tenant_id, limit, grace))
         settled = 0
         for row in rows:
-            owner, action_id = str(row["tenant_id"]), row["id"]
+            owner, action_id, connector = str(row["tenant_id"]), row["id"], row["connector"]
+            if connector in STATEFUL_CONNECTORS:
+                handed = await self.hand_off(owner, [action_id], reason="orphaned_execution")
+                settled += len(handed)
+                continue
             try:
                 await self._transition_audited(
                     owner,
@@ -1774,8 +2162,47 @@ class ResponseService:
                 continue
             settled += 1
         if settled:
-            log.warning("response.orphaned_actions_failed", count=settled)
+            log.warning("response.orphaned_actions_settled", count=settled)
         return settled
+
+    async def hand_off(
+        self, tenant_id: str, action_ids: Sequence[UUID], *, reason: str, conn: Any = None
+    ) -> List[UUID]:
+        """Give workflow rows to the scheduler (audited ``response_action.handed_off``); returns the ids handed off."""
+        if conn is None:
+            async with self._repos.db.tenant_tx(tenant_id) as tx:
+                handed = await self.hand_off(tenant_id, action_ids, reason=reason, conn=tx)
+            for action in await self._repos.actions.get_many(tenant_id, handed):
+                await self.publish_action(tenant_id, action)
+            return handed
+        handed = await self._repos.actions.hand_off(tenant_id, action_ids, reason=reason, conn=conn)
+        for action in await self._repos.actions.get_many(tenant_id, handed, conn=conn):
+            await self._audit_only(
+                tenant_id, action, "response_action.handed_off", {"reason": reason}, actor_type="system",
+                actor_id=SCHEDULER_ACTOR, conn=conn,
+            )
+        if handed:
+            log.info("response.handed_off", count=len(handed), reason=reason)
+        return handed
+
+    async def block_approved(
+        self, tenant_id: str, action_id: UUID, code: str, detail: Mapping[str, Any]
+    ) -> Optional[ResponseAction]:
+        """``approved -> blocked`` with a guardrail-style reason (expiry, superseded), audited; ``None`` if it moved on."""
+        try:
+            return await self._transition_audited(
+                tenant_id,
+                action_id,
+                "blocked",
+                details={"reason": code},
+                actor_type="system",
+                actor_id=SCHEDULER_ACTOR,
+                expected_from="approved",
+                blocked_reason=code,
+                result={"guardrail": code, "explanation": GUARDRAIL_REASONS.get(code, code), **dict(detail)},
+            )
+        except (AlreadyInState, InvalidTransition):
+            return None
 
     async def _block_approved(
         self, tenant_id: str, action: ResponseAction, code: str, detail: Mapping[str, Any], conn: Any = None
@@ -1802,12 +2229,18 @@ class ResponseService:
 
         For real connectors the hourly cap, the blast-radius check and the
         claim run in one transaction under a per-tenant advisory lock, so
-        concurrent workers cannot overshoot either limit.
+        concurrent workers cannot overshoot either limit. The claim records
+        the connector, the integration it uses and one more attempt. A
+        rollback of a restorative type is checked with the restorative
+        exemptions (:func:`check_guardrails`).
         """
         blocked: Optional[ResponseAction] = None
         executing: Optional[ResponseAction] = None
+        spec = ACTION_CATALOG.get(action.action_type)
+        restorative = bool(spec is not None and spec.restorative and action.rollback_of is not None)
+        integration_id: Optional[UUID] = getattr(connector, "integration_id", None)
         try:
-            guard = check_guardrails(action.action_type, action.target, policy)
+            guard = check_guardrails(action.action_type, action.target, policy, restorative=restorative)
             if guard is not None or isinstance(connector, DryRunConnector):
                 async with self._repos.db.tenant_tx(tenant_id) as conn:
                     if guard is not None:
@@ -1817,7 +2250,7 @@ class ResponseService:
                     else:
                         executing = await self._repos.actions.transition(
                             tenant_id, action.id, "executing", expected_from="approved", connector=connector.name,
-                            conn=conn,
+                            integration_id=integration_id, bump_attempts=True, conn=conn,
                         )
                     await self._audit_claim(tenant_id, blocked, executing, connector, conn)
             else:
@@ -1825,23 +2258,13 @@ class ResponseService:
                     await conn.execute(_CAP_LOCK_SQL, ACTION_CAP_LOCK, tenant_id)
                     window_start = now - timedelta(hours=1) if now is not None else None
                     used, by_type = await self.executed_counts(tenant_id, window_start, conn=conn)
-                    type_limit = policy.blast_radius.get(action.action_type)
-                    if used >= policy.max_actions_per_hour:
-                        blocked = await self._block_approved(
-                            tenant_id, action, HOURLY_CAP_REASON, {"cap": policy.max_actions_per_hour, "used": used}, conn
-                        )
-                    elif type_limit is not None and by_type.get(action.action_type, 0) >= type_limit:
-                        blocked = await self._block_approved(
-                            tenant_id,
-                            action,
-                            BLAST_RADIUS_REASON,
-                            {"limit": type_limit, "used": by_type.get(action.action_type, 0)},
-                            conn,
-                        )
+                    cap_block = self._cap_block(policy, action.action_type, used, by_type)
+                    if cap_block is not None:
+                        blocked = await self._block_approved(tenant_id, action, cap_block[0], cap_block[1], conn)
                     else:
                         executing = await self._repos.actions.transition(
                             tenant_id, action.id, "executing", expected_from="approved", connector=connector.name,
-                            conn=conn,
+                            integration_id=integration_id, bump_attempts=True, conn=conn,
                         )
                     await self._audit_claim(tenant_id, blocked, executing, connector, conn)
         except (AlreadyInState, InvalidTransition):
@@ -1853,6 +2276,18 @@ class ResponseService:
         assert executing is not None
         await self.publish_action(tenant_id, executing)
         return executing
+
+    @staticmethod
+    def _cap_block(
+        policy: ResponsePolicy, action_type: str, used: int, by_type: Mapping[str, int]
+    ) -> Optional[Tuple[str, Dict[str, Any]]]:
+        """(reason, detail) when the hourly cap or the type's blast radius is reached, else ``None``."""
+        type_limit = policy.blast_radius.get(action_type)
+        if used >= policy.max_actions_per_hour:
+            return HOURLY_CAP_REASON, {"cap": policy.max_actions_per_hour, "used": used}
+        if type_limit is not None and by_type.get(action_type, 0) >= type_limit:
+            return BLAST_RADIUS_REASON, {"limit": type_limit, "used": by_type.get(action_type, 0)}
+        return None
 
     async def _audit_claim(
         self,
@@ -1874,6 +2309,8 @@ class ResponseService:
         self, tenant_id: str, executing: ResponseAction, connector: Connector, *, timeout_s: Optional[float] = None
     ) -> str:
         scope = asyncio.timeout(timeout_s)
+        loop = asyncio.get_running_loop()
+        token = call_deadline.set(loop.time() + timeout_s if timeout_s is not None else None)
         try:
             async with scope:
                 result = await connector.execute(executing)
@@ -1881,6 +2318,16 @@ class ResponseService:
             if not scope.expired():
                 log.warning("response.connector_failed", connector=connector.name, error_type=type(exc).__name__)
                 result = ConnectorResult("failed", {"error": "connector_exception", "error_type": type(exc).__name__})
+            elif connector.name in STATEFUL_CONNECTORS:
+                # A write may be in flight: the scheduler re-runs the action, and the handler reconciles.
+                log.warning("response.connector_deadline", connector=connector.name, action_type=executing.action_type,
+                            deferred=True)
+                result = ConnectorResult(
+                    "deferred",
+                    {"connector": connector.name, "deferred": "deadline", "changed": False,
+                     "summary": "the call ran out of time; the scheduler runs it again and reconciles what was done"},
+                    retry_after_s=30.0,
+                )
             else:
                 log.warning("response.connector_deadline", connector=connector.name, action_type=executing.action_type)
                 result = ConnectorResult(
@@ -1890,23 +2337,222 @@ class ResponseService:
                         "note": "abandoned when the execution budget ran out; the receiver may have acted (same action id)",
                     },
                 )
+        except (AssertionError, LedgerUnavailable):
+            # A ledger error mid-call is not the action's outcome: the row stays executing and is run again.
+            raise
         except Exception as exc:  # noqa: BLE001 - any connector failure is recorded on the ledger as 'failed'
             log.warning("response.connector_failed", connector=connector.name, error_type=type(exc).__name__)
             result = ConnectorResult("failed", {"error": "connector_exception", "error_type": type(exc).__name__})
+        finally:
+            call_deadline.reset(token)
         return await self._finish(tenant_id, executing, connector, result)
+
+    def _verification_write(self, executing: ResponseAction, plan: VerifyPlan) -> VerificationWrite:
+        """The verification written with ``succeeded``: proven, or pending for the plan's window.
+
+        The window starts now, when the change was accepted, not at the
+        row's first claim (``executed_at``): a change made after deferrals
+        (throttling, a long purge) still gets its whole window, capped by
+        ``response.verify_max_s``.
+        """
+        detail = bounded_detail(plan.detail, MAX_VERIFICATION_DETAIL_BYTES)
+        if plan.state == "verified":
+            return VerificationWrite("verified", detail)
+        now = datetime.now(UTC)
+        ceiling = float(self._settings.response.verify_max_s)
+        deadline = now + timedelta(seconds=min(max(plan.max_duration_s, 1.0), ceiling))
+        after = min(now + timedelta(seconds=max(plan.first_check_s, 0.0)), deadline)
+        return VerificationWrite(
+            "pending", {**detail, "first_check_s": float(plan.first_check_s)}, verify_after=after,
+            verify_deadline=deadline,
+        )
 
     async def _finish(
         self, tenant_id: str, executing: ResponseAction, connector: Connector, result: ConnectorResult
     ) -> str:
-        final = await self._transition_audited(
-            tenant_id,
-            executing.id,
-            result.status,
-            details={"connector": connector.name},
-            expected_from="executing",
-            result=result.detail,
-        )
+        """Write the connector's outcome (and verification schedule) with its audit entry; returns the new status.
+
+        ``deferred`` keeps the row ``executing``, hands it to the scheduler
+        and returns ``executing``.
+        """
+        if executing.connector in STATEFUL_CONNECTORS:
+            # A failure the connector did not describe keeps what the row's checkpoints show was done.
+            result = with_progress(executing.action_type, result, executing.external_ref)
+        detail = bounded_detail(result.detail)
+        if result.status == "deferred":
+            return await self._defer(tenant_id, executing, connector, result, detail)
+        status = result.status if result.status in ("succeeded", "failed", "dry_run") else "failed"
+        changes: Dict[str, Any] = {}
+        if result.external_ref is not None:
+            changes["external_ref"] = result.external_ref
+        if status == "succeeded" and result.verify is not None:
+            changes["verification"] = self._verification_write(executing, result.verify)
+        try:
+            async with self._repos.db.tenant_tx(tenant_id) as conn:
+                final = await self._repos.actions.transition(
+                    tenant_id, executing.id, status, expected_from="executing", result=detail, conn=conn, **changes
+                )
+                await self._record_transition(
+                    tenant_id, final, f"response_action.{status}", {"connector": connector.name}, conn=conn
+                )
+                if final.verification == "verified":
+                    await self.record_verification_outcome(tenant_id, final, conn=conn)
+        except (AlreadyInState, InvalidTransition):
+            # Settled elsewhere meanwhile (a lost lease): the ledger keeps the other outcome.
+            log.warning("response.finish_lost", action_type=executing.action_type)
+            return (await self._repos.actions.get(tenant_id, executing.id)).status
+        await self.publish_action(tenant_id, final)
         return final.status
+
+    async def _defer(
+        self,
+        tenant_id: str,
+        executing: ResponseAction,
+        connector: Connector,
+        result: ConnectorResult,
+        detail: Mapping[str, Any],
+    ) -> str:
+        retry_after = float(result.retry_after_s or 30.0)
+        try:
+            async with self._repos.db.tenant_tx(tenant_id) as conn:
+                deferred = await self._repos.actions.defer(
+                    tenant_id,
+                    executing.id,
+                    retry_after_s=retry_after,
+                    detail=detail,
+                    external_ref=result.external_ref if result.external_ref is not None else UNSET,
+                    conn=conn,
+                )
+                await self._audit_only(
+                    tenant_id, deferred, "response_action.deferred",
+                    {"connector": connector.name, "retry_after_s": round(retry_after, 1),
+                     "reason": detail.get("deferred")},
+                    actor_type="system", actor_id=SCHEDULER_ACTOR, conn=conn,
+                )
+        except (AlreadyInState, InvalidTransition):
+            return (await self._repos.actions.get(tenant_id, executing.id)).status
+        log.info("response.deferred", action_type=executing.action_type, retry_after_s=round(retry_after, 1))
+        await self.publish_action(tenant_id, deferred)
+        return deferred.status
+
+    async def record_verification_outcome(
+        self, tenant_id: str, action: ResponseAction, *, conn: Any, notify: bool = True
+    ) -> None:
+        """Audit, timeline entry and (failed or inconclusive) outbox event of a final verification, in ``conn``'s tx.
+
+        ``notify=False`` (an outcome that is not news, e.g. a verification
+        ended by the action's rollback) writes the audit entry only.
+        """
+        state = action.verification
+        detail = dict(action.verification_detail or {})
+        reason = detail.get("reason") if isinstance(detail.get("reason"), str) else None
+        audit_action = {
+            "verified": "response_action.verified",
+            "failed": "response_action.verification_failed",
+            "inconclusive": "response_action.verification_inconclusive",
+        }.get(str(state))
+        if audit_action is None:
+            return
+        await self._audit_only(
+            tenant_id, action, audit_action, {"outcome": state, "detail": detail}, actor_type="system",
+            actor_id=SCHEDULER_ACTOR, conn=conn,
+        )
+        if not notify:
+            return
+        await self._repos.alert_events.append(
+            tenant_id,
+            action.alert_id,
+            "action.verified" if state == "verified" else "action.verification_failed",
+            actor_type="system",
+            actor_id=SCHEDULER_ACTOR,
+            data={"action_id": str(action.id), "action_type": action.action_type, "outcome": state, "reason": reason},
+            conn=conn,
+        )
+        if state in ("failed", "inconclusive"):
+            await enqueue_event(
+                conn,
+                tenant_id,
+                ACTION_VERIFICATION_FAILED,
+                alert_id=action.alert_id,
+                dedupe_key=f"{ACTION_VERIFICATION_FAILED}:{action.id}:{action.verify_attempts}",
+                action=action,
+            )
+
+    # -------------------------------------------------------------- retry
+
+    async def retry(self, tenant_id: str, action_id: UUID, *, user: UUID, role: str, reason: str) -> ResponseAction:
+        """Run a failed Microsoft action again (``failed -> executing``, by the scheduler).
+
+        Allowed when the failure is retryable (``result.retryable``) or
+        ``partial``, the caller's role may approve the action's risk, and no
+        rollback of the action exists (``rollback_exists``: retrying would
+        redo what the rollback undoes, and the rollback could never be
+        repeated for the redone part). The row is locked while this is
+        decided, as a rollback request locks it. Guardrails and caps are
+        checked again under the cap lock; a block raises
+        :class:`ActionRequestError` (409) without touching the row. The retry
+        starts a fresh attempt count and is audited
+        ``response_action.retry_requested``.
+        """
+        action = await self._repos.actions.get(tenant_id, action_id)
+        tenant = await self._repos.tenants.get(tenant_id)
+        policy = self.policy(tenant.settings)
+        self._check_retryable(action)
+        if not approval_allowed(action.risk_level, role, policy.autonomy.get(action.risk_level)):
+            raise ActionRequestError(
+                403, "forbidden", f"role {role!r} may not approve {action.risk_level} risk actions"
+            )
+        spec = ACTION_CATALOG.get(action.action_type)
+        restorative = bool(spec is not None and spec.restorative and action.rollback_of is not None)
+        now = datetime.now(UTC)
+        async with self._repos.db.tenant_tx(tenant_id) as conn:
+            action = await self._repos.actions.lock(tenant_id, action_id, conn=conn)
+            self._check_retryable(action)  # it may have moved on since it was read
+            if await self._repos.actions.live_rollback(tenant_id, action.id, conn=conn) is not None:
+                raise ActionRequestError(
+                    409, "retry_unavailable", "a rollback of this action exists: it cannot be retried",
+                    reason="rollback_exists",
+                )
+            result = action.result or {}
+            await conn.execute(_CAP_LOCK_SQL, ACTION_CAP_LOCK, tenant_id)
+            guard = check_guardrails(action.action_type, action.target, policy, restorative=restorative)
+            if guard is not None:
+                raise ActionRequestError(409, "guardrail_blocked", guard.explanation[:300], reason=guard.code)
+            used, by_type = await self.executed_counts(tenant_id, conn=conn)
+            cap_block = self._cap_block(policy, action.action_type, used, by_type)
+            if cap_block is not None:
+                raise ActionRequestError(
+                    409, "cap_reached", GUARDRAIL_REASONS.get(cap_block[0], cap_block[0]), reason=cap_block[0]
+                )
+            updated = await self._repos.actions.transition(
+                tenant_id,
+                action.id,
+                "executing",
+                expected_from="failed",
+                execution_owner=SCHEDULER_OWNER,
+                lease_until=now,
+                reset_attempts=True,
+                conn=conn,
+            )
+            await self._audit_only(
+                tenant_id, updated, "response_action.retry_requested",
+                {"reason": reason[:500], "role": role, "previous_error": result.get("error")},
+                actor_type="user", actor_id=str(user), conn=conn,
+            )
+        await self.publish_action(tenant_id, updated)
+        return updated
+
+    @staticmethod
+    def _check_retryable(action: ResponseAction) -> None:
+        result = action.result or {}
+        retryable = result.get("retryable") is True or result.get("error") == "partial"
+        if action.status != "failed" or action.connector != MICROSOFT_CONNECTOR_NAME or not retryable:
+            raise ActionRequestError(
+                409, "retry_unavailable", "only failed Microsoft actions whose failure is retryable can be retried",
+                reason="not_retryable",
+            )
+
+    # --------------------------------------------------------------- audit
 
     async def _transition_audited(
         self,
@@ -1938,6 +2584,51 @@ class ResponseService:
             )
         await self.publish_action(tenant_id, updated)
         return updated
+
+    async def _audit_only(
+        self,
+        tenant_id: str,
+        action: ResponseAction,
+        audit_action: str,
+        details: Mapping[str, Any],
+        *,
+        actor_type: str,
+        actor_id: Optional[str],
+        conn: Any,
+    ) -> None:
+        """An audit entry about an action without a status event (hand-offs, deferrals, verification, requests)."""
+        await self._audit.record(
+            tenant_id,
+            audit_action,
+            "response_action",
+            str(action.id),
+            actor_type=actor_type,
+            actor_id=actor_id,
+            details={
+                "alert_id": action.alert_id,
+                "action_type": action.action_type,
+                "risk_level": action.risk_level,
+                "status": action.status,
+                **dict(details),
+            },
+            conn=conn,
+        )
+
+    async def audit_action(
+        self,
+        tenant_id: str,
+        action: ResponseAction,
+        audit_action: str,
+        details: Mapping[str, Any],
+        *,
+        actor_type: str,
+        actor_id: Optional[str],
+        conn: Any,
+    ) -> None:
+        """Audit a request about an action made by another service (rollback, verification), in ``conn``'s tx."""
+        await self._audit_only(
+            tenant_id, action, audit_action, details, actor_type=actor_type, actor_id=actor_id, conn=conn
+        )
 
     async def _record_transition(
         self,

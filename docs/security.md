@@ -245,8 +245,10 @@ close a dangerous alert or trigger containment.
 ## 6. Response guardrails
 
 LG-SOTF proposes containment and, only where a tenant allows it, executes it
-through the tenant's SOAR webhook. It never calls vendor EDR, firewall or
-identity APIs directly.
+through the tenant's SOAR webhook or, for Microsoft 365, Entra ID and
+Defender for Endpoint, directly with the tenant's own app registration
+(fixed Microsoft hosts, write-only credentials, the same guardrails;
+docs/microsoft.md). It calls no other vendor API directly.
 
 * **Autonomy per risk level** (tenant policy, default: `approval` for low,
   medium and high, `disabled` for critical). Containment on model-only

@@ -36,6 +36,7 @@ _FK_RESOURCES = (
     ("_escalation_fk", "escalation"),
     ("_feedback_fk", "feedback"),
     ("_rollback_of_fk", "response action"),
+    ("_integration_fk", "integration"),
     ("_replaced_by_fk", "refresh token"),
     ("_user_fk", "user"),
     ("_assigned_to_fk", "user"),

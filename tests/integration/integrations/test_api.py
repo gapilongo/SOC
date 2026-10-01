@@ -118,7 +118,7 @@ async def test_test_message_is_sent_and_logged(api: ApiHarness) -> None:
     )
     integration_id = created.json()["id"]
     result = await api.client.post(f"/api/v1/integrations/{integration_id}/test", headers=headers)
-    assert result.json() == {"ok": True, "detail": "test message delivered", "http_status": 200}
+    assert result.json() == {"ok": True, "detail": "test message delivered", "http_status": 200, "microsoft": None}
     card = json.loads(receiver.requests[0].content)
     assert card["attachments"][0]["content"]["type"] == "AdaptiveCard"
 

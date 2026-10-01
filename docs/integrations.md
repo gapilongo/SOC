@@ -21,6 +21,7 @@ to the alert in LG-SOTF. The raw alert never leaves the platform.
 | `action.awaiting_approval` | a planned response action needs an approval | `ResponseService` ledger transitions |
 | `action.executed` | an action succeeded, or ran as a dry run (`action.dry_run: true`) | `ResponseService` ledger transitions |
 | `action.failed` | an action failed | `ResponseService` ledger transitions |
+| `action.verification_failed` | a re-check contradicts an executed action or cannot prove it (`action.verification: {outcome, reason}`; docs/microsoft.md) | `VerificationService` |
 | `alert.critical_received` | a critical alert is dispatched to the workers (once per alert) | `dispatch_new_alerts` |
 
 Each integration subscribes to a list of events and a **minimum severity**
@@ -298,6 +299,7 @@ Ticket links appear in the alert drawer and on the escalation cards
 | GET | `/integrations/{id}/deliveries?status=&limit=` (newest first, at most 200) | admin |
 | GET | `/tickets?alert_id=` or `?escalation_id=...` (repeatable, at most 200) | viewer / `read` |
 | POST | `/integrations/slack/interactions?tenant=&integration=` | Slack signing secret |
+| GET | `/integrations/microsoft/catalog` (the `microsoft` kind is the direct response connector: docs/microsoft.md) | admin |
 
 Invalid configuration answers `422 invalid_integration`; a tenant may have at
 most 50 integrations.

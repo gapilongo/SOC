@@ -26,6 +26,15 @@ the settings):
   beyond ``max_attachments`` and text beyond the scan limits are dropped;
   every cap that was reached is listed in ``flags``.
 
+Links. ``urls`` holds the message's link targets (``<a href>``, form
+actions, meta refresh, bare URLs in the text) and, flagged ``display_only``,
+URLs that are only ever *shown*: written as the text of a link that goes
+elsewhere (``<a href="http://203.0.113.66/">https://login.example.com/</a>``),
+or repeated in the text/plain alternative of that HTML. The deceiving link
+carries the ``mismatch`` signal; a display-only URL is the look the sender
+borrowed (often a legitimate site), kept for the analyst but never an
+entity, a phishing signal or a response target.
+
 The document (``schema = "lgsotf.email.v1"``) is what the ingestion service
 redacts, stores as the alert's ``raw`` and hands to the ``email`` normalizer.
 """
@@ -73,6 +82,11 @@ MAX_DISPLAY_NAME_CHARS = 256
 MAX_ADDRESS_CHARS = 320
 MAX_MESSAGE_ID_CHARS = 512
 MAX_WORDING_MATCHES = 8
+# How a URL was seen: a link target (href, form, refresh, a bare URL in HTML text), the text of an HTML
+# link, or a URL in a text/plain body part. See the module docs for when a URL is display-only.
+SEEN_LINK = "link"
+SEEN_LABEL = "label"
+SEEN_PLAIN = "plain"
 # A boundary-looking line count far beyond any real message (part cap x generous factor): refuse before parsing.
 BOUNDARY_LINES_FACTOR = 20
 _WANTED_HEADERS = frozenset(
@@ -174,6 +188,9 @@ class _Scan:
     plain: List[str] = field(default_factory=list)
     html_text: List[str] = field(default_factory=list)
     wording: Dict[str, None] = field(default_factory=dict)
+    # Per recorded URL: (how it was seen, the multipart/alternative it was seen in; 0 = none).
+    sightings: Dict[str, Set[Tuple[str, int]]] = field(default_factory=dict)
+    alternatives: int = 0
 
     def budget(self) -> int:
         return max(0, min(self.limits.max_scan_chars, self.limits.max_total_scan_chars - self.scanned_chars))
@@ -186,7 +203,7 @@ class _Scan:
         self.scanned_chars += len(text)
         return text
 
-    def add_url(self, url: str, *, text: str = "", source: str = "text") -> None:
+    def add_url(self, url: str, *, text: str = "", source: str = "text", seen: str = SEEN_LINK, group: int = 0) -> None:
         url = url.strip()
         parsed = split_url(url)
         if parsed is None or len(url) > MAX_URL_CHARS:
@@ -214,6 +231,18 @@ class _Scan:
         if shown is not None and "mismatch_text_host" not in entry:
             entry["mismatch_text_host"] = shown
         entry["mismatch"] = "mismatch_text_host" in entry
+        self.sightings.setdefault(url, set()).add((seen, group))
+
+    def mark_display_only(self) -> None:
+        """Flag the URLs only ever shown as link text (see the module docs)."""
+        for url, seen in self.sightings.items():
+            kinds = {kind for kind, _ in seen}
+            label_groups = {group for kind, group in seen if kind == SEEN_LABEL}
+            if SEEN_LINK in kinds or not label_groups:
+                continue
+            # A text/plain URL is the same link text only in the plain alternative of that HTML part.
+            if all(group and group in label_groups for kind, group in seen if kind == SEEN_PLAIN):
+                self.urls[url]["display_only"] = True
 
 
 # --------------------------------------------------------------------------- headers
@@ -380,12 +409,13 @@ def _is_attachment(part: Message) -> bool:
     )
 
 
-def _scan_text(scan: _Scan, text: str, *, html: bool, source: str) -> None:
+def _scan_text(scan: _Scan, text: str, *, html: bool, source: str, group: int = 0) -> None:
     text = scan.take(text)
     if not text:
         return
+    limit = scan.limits.max_urls * 4
     if html:
-        result = scan_html(text, max_links=scan.limits.max_urls * 4, max_text_chars=scan.limits.max_scan_chars)
+        result = scan_html(text, max_links=limit, max_text_chars=scan.limits.max_scan_chars)
         if result.links_dropped:
             scan.flags.add("url_cap_reached")
         for link in result.links:
@@ -393,12 +423,17 @@ def _scan_text(scan: _Scan, text: str, *, html: bool, source: str) -> None:
         visible = result.text
         if source == "body":
             scan.html_text.append(visible)
+        for url in urls_in_text(result.bare_text, limit):
+            scan.add_url(url, source=source)
+        # Last, so the URL cap keeps real link targets first.
+        for url in urls_in_text(result.link_text, limit):
+            scan.add_url(url, source=source, seen=SEEN_LABEL, group=group)
     else:
         visible = text
         if source == "body":
             scan.plain.append(text)
-    for url in urls_in_text(visible, scan.limits.max_urls * 4):
-        scan.add_url(url, source=source)
+        for url in urls_in_text(visible, limit):
+            scan.add_url(url, source=source, seen=SEEN_PLAIN, group=group)
     _wording(scan, visible)
 
 
@@ -438,7 +473,7 @@ def _record_attachment(scan: _Scan, part: Message, depth: int) -> None:
         _scan_text(scan, data.decode("utf-8", "replace"), html=True, source="attachment")
 
 
-def _walk(scan: _Scan, part: Message, depth: int, *, top: bool) -> None:
+def _walk(scan: _Scan, part: Message, depth: int, *, top: bool, group: int = 0) -> None:
     if depth > scan.limits.max_depth:
         scan.flags.add("depth_capped")
         return
@@ -451,6 +486,9 @@ def _walk(scan: _Scan, part: Message, depth: int, *, top: bool) -> None:
         _record_attachment(scan, part, depth)
         return
     if part.is_multipart():
+        if ctype == "multipart/alternative":
+            scan.alternatives += 1
+            group = scan.alternatives
         payload = part.get_payload()
         if isinstance(payload, list):
             for sub in payload:
@@ -458,15 +496,15 @@ def _walk(scan: _Scan, part: Message, depth: int, *, top: bool) -> None:
                     scan.flags.add("part_cap_reached")
                     break
                 if isinstance(sub, Message):
-                    _walk(scan, sub, depth + 1, top=False)
+                    _walk(scan, sub, depth + 1, top=False, group=group)
         return
     if _is_attachment(part):
         _record_attachment(scan, part, depth)
         return
     if ctype == "text/plain":
-        _scan_text(scan, _text_of(part), html=False, source="body")
+        _scan_text(scan, _text_of(part), html=False, source="body", group=group)
     elif ctype == "text/html":
-        _scan_text(scan, _text_of(part), html=True, source="body")
+        _scan_text(scan, _text_of(part), html=True, source="body", group=group)
 
 
 # --------------------------------------------------------------------------- report wrapper
@@ -584,6 +622,7 @@ def parse_email(
 
     scan = _Scan(limits=limits, flags=flags)
     _walk(scan, msg, 0, top=True)
+    scan.mark_display_only()
 
     from_list = _addresses("from", _first(headers, "from") or "", 1)
     sender = from_list[0] if from_list else {"address": "", "display_name": ""}

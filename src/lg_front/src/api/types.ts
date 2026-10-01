@@ -30,6 +30,9 @@ export const ACTION_STATUSES = [
   'blocked',
 ] as const;
 export const RISK_LEVELS = ['low', 'medium', 'high', 'critical'] as const;
+/** Proof by re-query that a succeeded action is in effect (docs/microsoft.md "Verification"). */
+export const VERIFICATION_STATES = ['pending', 'verified', 'failed', 'inconclusive'] as const;
+export type VerificationState = (typeof VERIFICATION_STATES)[number];
 export const DECISIONS = ['true_positive', 'false_positive', 'benign_positive', 'needs_more_info'] as const;
 export const SOURCE_TYPES = ['splunk', 'qradar', 'sentinel', 'wazuh', 'crowdstrike', 'guardduty', 'webhook', 'file', 'm365_mailbox', 'imap'] as const;
 export const API_KEY_SCOPES = ['ingest', 'read', 'write'] as const;
@@ -225,6 +228,15 @@ export interface DecisionOut {
   resumes_failed: number;
 }
 
+/** Whether an executed action can be rolled back now (reason code when not). */
+export interface RollbackEligibility {
+  available: boolean;
+  action_type?: string | null;
+  risk?: string | null;
+  until?: string | null;
+  reason?: string | null;
+}
+
 export interface ActionOut {
   id: string;
   tenant_id: string;
@@ -244,6 +256,25 @@ export interface ActionOut {
   rollback_of?: string | null;
   created_at: string;
   updated_at: string;
+  /** workflow: the alert's run executes it; scheduler: the background executor does. */
+  execution_owner?: 'workflow' | 'scheduler';
+  integration_id?: string | null;
+  /** The direct connector's state: ids, per-target steps, reversible, rollback_until. */
+  external_ref?: JsonObject | null;
+  attempts?: number;
+  verification?: VerificationState | null;
+  verification_detail?: JsonObject | null;
+  verify_deadline?: string | null;
+  verified_at?: string | null;
+  rollback?: RollbackEligibility;
+  /** The live rollback of this action, if any. */
+  rolled_back_by?: string | null;
+}
+
+export interface RollbackOut {
+  rollback: ActionOut;
+  original: ActionOut;
+  created: boolean;
 }
 
 export interface ApprovalOut {
@@ -639,7 +670,7 @@ export interface TenantErasedOut {
 
 // ------------------------------------------------------------ integrations
 
-export const INTEGRATION_KINDS = ['slack', 'teams', 'email', 'webhook', 'jira', 'servicenow'] as const;
+export const INTEGRATION_KINDS = ['slack', 'teams', 'email', 'webhook', 'jira', 'servicenow', 'microsoft'] as const;
 export type IntegrationKind = (typeof INTEGRATION_KINDS)[number];
 export const TICKETING_KINDS: readonly IntegrationKind[] = ['jira', 'servicenow'];
 export const INTEGRATION_EVENTS = [
@@ -649,6 +680,7 @@ export const INTEGRATION_EVENTS = [
   'action.awaiting_approval',
   'action.executed',
   'action.failed',
+  'action.verification_failed',
   'alert.critical_received',
 ] as const;
 export const TICKETING_EVENTS = ['escalation.created', 'escalation.decided'] as const;
@@ -692,6 +724,117 @@ export interface IntegrationTestOut {
   ok: boolean;
   detail: string;
   http_status?: number | null;
+  /** The Microsoft connection test report (microsoft integrations only). */
+  microsoft?: MicrosoftTestReport | null;
+}
+
+// ------------------------------------------------------------ Microsoft direct response
+
+export const MICROSOFT_CLOUDS = ['global', 'usgov_gcc_high', 'usgov_dod'] as const;
+export type MicrosoftCloud = (typeof MICROSOFT_CLOUDS)[number];
+
+export interface MicrosoftPermissionOut {
+  api: 'graph' | 'defender';
+  role: string;
+  purpose: string;
+  required: boolean;
+  when: string;
+  directory_role?: string | null;
+  exchange_rbac?: string | null;
+}
+
+export interface MicrosoftActionSupportOut {
+  reversible: boolean;
+  rollback_window_s?: number | null;
+  note: string;
+  inverse?: string | null;
+  risk?: string | null;
+  restorative?: boolean;
+  irreversible_note?: string;
+}
+
+/** One capability of GET /integrations/microsoft/catalog. */
+export interface MicrosoftCapabilityOut {
+  key: string;
+  package: 'mail' | 'entra' | 'defender';
+  api: 'graph' | 'defender';
+  title: string;
+  description: string;
+  actions: Record<string, MicrosoftActionSupportOut>;
+  permissions: MicrosoftPermissionOut[];
+  /** JSON schema of the capability's options (pydantic). */
+  options_schema: JsonObject;
+  options_defaults: JsonObject;
+  clouds: string[];
+  licence: string;
+  live_confirmation: string;
+  excludes: string[];
+}
+
+export interface MicrosoftCatalogOut {
+  capabilities: MicrosoftCapabilityOut[];
+  clouds: Array<{ name: string; login_host: string; graph_host: string; defender_supported: boolean }>;
+  defender_geos: string[];
+}
+
+export interface MicrosoftTokenCheck {
+  status: 'ok' | 'failed' | 'not_needed';
+  error?: string | null;
+  aadsts?: number | null;
+  hint?: string | null;
+  roles?: string[] | null;
+}
+
+export interface MicrosoftPermissionCheck {
+  role: string;
+  api: string;
+  status: 'granted' | 'missing' | 'unknown';
+  via: 'token' | 'probe' | 'exchange_rbac' | 'directory_role';
+  required: boolean;
+  guidance?: string;
+  /** Set when a grant defeats its intended scope (e.g. tenant-wide consent of an Exchange RBAC permission). */
+  warning?: string;
+}
+
+export interface MicrosoftProbeCheck {
+  name: string;
+  status: 'ok' | 'forbidden' | 'not_licensed' | 'not_found' | 'error' | 'skipped';
+  permission?: string | null;
+  detail?: string;
+}
+
+export interface MicrosoftCapabilityCheck {
+  status: 'ok' | 'missing_permission' | 'not_licensed' | 'unsupported_cloud' | 'error' | 'not_enabled' | 'unverified';
+  enabled: boolean;
+  live: boolean;
+  permissions: MicrosoftPermissionCheck[];
+  checks: MicrosoftProbeCheck[];
+  detail?: string;
+}
+
+export interface MicrosoftTestReport {
+  ok: boolean;
+  tokens: Record<string, MicrosoftTokenCheck>;
+  capabilities: Record<string, MicrosoftCapabilityCheck>;
+  certificate?: { thumbprint_sha1: string; thumbprint_sha256: string; not_after: string; days_left: number } | null;
+}
+
+// ------------------------------------------------------------ response routing
+
+export const ROUTE_NAMES = ['dry_run', 'webhook', 'ticketing', 'microsoft'] as const;
+export type RouteName = (typeof ROUTE_NAMES)[number];
+
+export interface RouteOut {
+  connector: string;
+  source: 'kill_switch' | 'tenant_dry_run' | 'sample' | 'pinned' | 'explicit' | 'ticketing' | 'capability' | 'default';
+  capability?: string | null;
+  live?: boolean | null;
+  problem?: string | null;
+}
+
+export interface ResponseRoutesOut {
+  dry_run_forced: boolean;
+  routes: Record<string, RouteOut>;
 }
 
 export interface DeliveryOut {

@@ -88,6 +88,19 @@ class FakeActions:
         return counts
 
 
+class FakeIntegrations:
+    """No integrations unless a test adds some (routing reads them once per execution pass)."""
+
+    def __init__(self) -> None:
+        self.items: List[Any] = []
+
+    async def list(self, tenant_id: str, *, enabled: Optional[bool] = None, kinds: Any = None, **_: Any) -> List[Any]:
+        return [
+            i for i in self.items
+            if (enabled is None or i.enabled == enabled) and (kinds is None or i.kind in kinds)
+        ]
+
+
 @dataclass
 class FakeTenant:
     settings: Dict[str, Any] = field(default_factory=dict)
@@ -157,6 +170,7 @@ class FakeRepos:
     audit: FakeAudit = field(default_factory=FakeAudit)
     escalations: Any = None
     db: FakeDb = field(default_factory=FakeDb)
+    integrations: FakeIntegrations = field(default_factory=FakeIntegrations)
 
     def __post_init__(self) -> None:
         self.db.conn.actions = self.actions

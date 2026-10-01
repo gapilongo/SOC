@@ -241,16 +241,18 @@ def route_after_execute(state: Mapping[str, Any]) -> ExecuteRoute:
 
     A response the policy chose closes when its actions completed: through
     a connector (``succeeded``) or in the dry-run mode the tenant chose
-    (``dry_run``). It escalates when an action failed, or when no action
-    completed at all (everything blocked or rejected): then neither a human
-    nor a connector has handled the threat.
+    (``dry_run``). It escalates when an action failed or is still
+    ``executing`` (a stateful connector deferred it to the scheduler, so the
+    outcome is not known yet), or when no action completed at all
+    (everything blocked or rejected): then neither a human nor a connector
+    has handled the threat.
     """
     if state.get("awaiting_actions"):
         return "await_approval"
     if _analyst_confirmed(state):
         return "close"
     statuses = set((state.get("executed") or {}).values())
-    if "failed" in statuses:
+    if "failed" in statuses or "executing" in statuses:
         return "escalate"
     if statuses & COMPLETED_ACTION_STATUSES:
         return "close"

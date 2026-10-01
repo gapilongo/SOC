@@ -47,7 +47,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Ruff
-        run: ruff check --output-format=github src tests scripts docker
+        run: ruff check --output-format=github src tests scripts docker examples
       - name: Mypy (typed packages)
         run: >-
           mypy
@@ -61,6 +61,9 @@ jobs:
           src/lg_sotf/runtime
           src/lg_sotf/services
           src/lg_sotf/ingestion
+          src/lg_sotf/integrations
+          examples/soar/receiver
+          examples/soar/n8n/build_workflow.py
       - name: Shellcheck
         # Every deploy script (deploy/vm: VMs and the Funnel mode; deploy/pc: the self-hosted PC).
         run: |
@@ -157,7 +160,7 @@ jobs:
           pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements.txt
           pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements-dev.txt
       - name: Bandit (new medium+ findings against the reviewed baseline)
-        run: bandit -r src/lg_sotf -ll -ii -b scripts/ci/bandit-baseline.json
+        run: bandit -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
       - name: Gitleaks (commits in this change)
         env:
           BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}

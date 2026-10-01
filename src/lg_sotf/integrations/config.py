@@ -10,12 +10,21 @@ set).
 URLs are checked for shape and scheme here (``https`` in staging and
 production); every request is checked again, resolved and pinned by the
 destination policy when it is sent (:mod:`lg_sotf.integrations.http`).
+
+The ``microsoft`` kind is the direct response connector
+(:mod:`lg_sotf.integrations.microsoft`): at most one per tenant, no events,
+no URL anywhere in its config (the hosts are fixed per cloud). Its config
+names the cloud, the app registration (directory and client GUIDs), the
+credential type and the public certificate, and enables capabilities one by
+one (``enabled``, then ``live``); the client secret or the certificate's
+private key are its secret.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union
 from uuid import UUID
 
 import httpx
@@ -24,10 +33,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from lg_sotf.integrations.events import EVENT_TYPES, LEVELS, SEVERITIES, TICKETING_EVENTS
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 
-Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow"]
-KINDS: Tuple[str, ...] = ("slack", "teams", "email", "webhook", "jira", "servicenow")
+Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft"]
+KINDS: Tuple[str, ...] = ("slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft")
 NOTIFY_KINDS: Tuple[str, ...] = ("slack", "teams", "email", "webhook")
 TICKETING_KINDS: Tuple[str, ...] = ("jira", "servicenow")
+MICROSOFT_KIND = "microsoft"
+MAX_MICROSOFT_CAPABILITIES = 64
+MIN_RSA_BITS = 2048
 SLACK_WEBHOOK_HOSTS = frozenset({"hooks.slack.com", "hooks.slack-gov.com"})
 MIN_SIGNING_SECRET_BYTES = 16
 MAX_RECIPIENTS = 20
@@ -38,6 +50,8 @@ DEFAULT_RATE_LIMITS: Dict[str, int] = {
     "webhook": 120,
     "jira": 60,
     "servicenow": 60,
+    # Not an outbox channel: the Microsoft connector has its own per-API limits (lg_sotf.integrations.microsoft.http).
+    "microsoft": 60,
 }
 _EMAIL = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 _PROJECT_KEY = re.compile(r"^[A-Z][A-Z0-9_]{0,49}$")
@@ -165,13 +179,40 @@ class ServiceNowConfig(_Ticketing):
     close_code: str = Field(default="Solution provided", max_length=100)
 
 
-CONFIG_MODELS: Dict[str, Type[_Common]] = {
+MicrosoftCloud = Literal["global", "usgov_gcc_high", "usgov_dod"]
+DefenderGeo = Literal["us", "eu", "uk", "au", "swa", "ina", "aea"]
+
+
+class MicrosoftCapabilityConfig(_Model):
+    """One capability of a Microsoft integration: ``enabled`` rehearses, ``enabled`` + ``live`` acts."""
+
+    enabled: bool = False
+    live: bool = False
+    options: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MicrosoftConfig(_Model):
+    """A Microsoft integration (no URL anywhere: hosts are fixed per ``cloud``)."""
+
+    cloud: MicrosoftCloud = "global"
+    directory_tenant_id: str = Field(max_length=36, description="The customer directory's tenant id (GUID).")
+    client_id: str = Field(max_length=36, description="The app registration's application (client) id (GUID).")
+    credential: Literal["certificate", "client_secret"] = "certificate"
+    certificate_pem: Optional[str] = Field(
+        default=None, max_length=20_000, description="The app's public certificate (PEM); not a secret."
+    )
+    defender_geo: Optional[DefenderGeo] = Field(default=None, description="Defender API geo host (global cloud only).")
+    capabilities: Dict[str, MicrosoftCapabilityConfig] = Field(default_factory=dict)
+
+
+CONFIG_MODELS: Dict[str, Type[_Model]] = {
     "slack": SlackConfig,
     "teams": TeamsConfig,
     "email": EmailConfig,
     "webhook": WebhookConfig,
     "jira": JiraConfig,
     "servicenow": ServiceNowConfig,
+    "microsoft": MicrosoftConfig,
 }
 
 
@@ -204,6 +245,13 @@ class ServiceNowSecret(_Model):
     password: Optional[str] = Field(default=None, max_length=1024)
 
 
+class MicrosoftSecret(_Model):
+    client_secret: Optional[str] = Field(default=None, max_length=1024)
+    private_key_pem: Optional[str] = Field(
+        default=None, max_length=20_000, description="Unencrypted PKCS#8 or PKCS#1 RSA private key of the certificate."
+    )
+
+
 SECRET_MODELS: Dict[str, Type[_Model]] = {
     "slack": SlackSecret,
     "teams": TeamsSecret,
@@ -211,7 +259,9 @@ SECRET_MODELS: Dict[str, Type[_Model]] = {
     "webhook": WebhookSecret,
     "jira": JiraSecret,
     "servicenow": ServiceNowSecret,
+    "microsoft": MicrosoftSecret,
 }
+# Microsoft: the required field depends on config.credential (validate_secret checks it).
 REQUIRED_SECRETS: Dict[str, Tuple[str, ...]] = {
     "slack": ("webhook_url",),
     "teams": ("webhook_url",),
@@ -219,16 +269,24 @@ REQUIRED_SECRETS: Dict[str, Tuple[str, ...]] = {
     "webhook": ("signing_secret",),
     "jira": ("api_token",),
     "servicenow": ("password",),
+    "microsoft": (),
 }
+MICROSOFT_SECRET_FIELD: Dict[str, str] = {"certificate": "private_key_pem", "client_secret": "client_secret"}
 
 # Config fields that decide where, or as whom, a separately stored credential is used (the signing secret signs
 # what goes to the webhook URL; the Jira token and ServiceNow password are sent to the instance). Changing one
 # requires the credential again in the same update, so a stored credential never follows a new destination.
 # Slack and Teams webhook URLs are themselves the credential; the Slack bot token only goes to slack.com.
-SECRET_BOUND_CONFIG: Dict[str, Tuple[Tuple[str, ...], str]] = {
+# Microsoft: a new cloud, directory, app, credential type or certificate needs the credential again (the one
+# config.credential names).
+SECRET_BOUND_CONFIG: Dict[str, Tuple[Tuple[str, ...], Union[str, Tuple[str, ...]]]] = {
     "webhook": (("url", "ca_cert_pem"), "signing_secret"),
     "jira": (("base_url", "deployment", "email", "ca_cert_pem"), "api_token"),
     "servicenow": (("instance_url", "username", "ca_cert_pem"), "password"),
+    "microsoft": (
+        ("cloud", "directory_tenant_id", "client_id", "credential", "certificate_pem"),
+        ("client_secret", "private_key_pem"),
+    ),
 }
 
 
@@ -253,6 +311,8 @@ def validate_config(kind: str, config: Mapping[str, Any], *, require_https: bool
         parsed = model.model_validate(dict(config))
     except ValidationError as exc:
         raise IntegrationConfigError("; ".join(_problems(exc, "config"))) from None
+    if isinstance(parsed, MicrosoftConfig):
+        return _microsoft_config(parsed)
     try:
         if isinstance(parsed, WebhookConfig):
             check_http_url(parsed.url, require_https=require_https, what="config.url")
@@ -267,8 +327,15 @@ def validate_config(kind: str, config: Mapping[str, Any], *, require_https: bool
     return parsed.model_dump(exclude_none=True)
 
 
-def validate_secret(kind: str, secret: Mapping[str, Any], *, require_https: bool) -> Dict[str, str]:
-    """Validate a complete secret object for ``kind`` (required fields present, URLs well formed)."""
+def validate_secret(
+    kind: str, secret: Mapping[str, Any], *, require_https: bool, config: Optional[Mapping[str, Any]] = None
+) -> Dict[str, str]:
+    """Validate a complete secret object for ``kind`` (required fields present, URLs well formed).
+
+    ``config`` (the normalised config) is required for ``microsoft``: the
+    credential type decides which secret field is needed, and a private key
+    must match the configured certificate.
+    """
     model = SECRET_MODELS.get(kind)
     if model is None:
         raise IntegrationConfigError(f"unknown integration kind {str(kind)[:32]!r}")
@@ -277,6 +344,8 @@ def validate_secret(kind: str, secret: Mapping[str, Any], *, require_https: bool
     except ValidationError as exc:
         raise IntegrationConfigError("; ".join(_problems(exc, "secret"))) from None
     values: Dict[str, str] = {k: v for k, v in parsed.model_dump().items() if isinstance(v, str) and v}
+    if kind == MICROSOFT_KIND:
+        return _microsoft_secret(values, config)
     missing = [f for f in REQUIRED_SECRETS[kind] if f not in values]
     if missing:
         raise IntegrationConfigError(f"secret.{missing[0]} is required for a {kind} integration")
@@ -294,11 +363,14 @@ def validate_secret(kind: str, secret: Mapping[str, Any], *, require_https: bool
 
 
 def validate_events(kind: str, events: List[str]) -> List[str]:
-    allowed = TICKETING_EVENTS if kind in TICKETING_KINDS else EVENT_TYPES
+    allowed: Tuple[str, ...] = TICKETING_EVENTS if kind in TICKETING_KINDS else EVENT_TYPES
+    if kind == MICROSOFT_KIND:
+        allowed = ()
     unknown = [e for e in events if e not in allowed]
     if unknown:
         raise IntegrationConfigError(
-            f"event {unknown[0][:64]!r} is not available for {kind} integrations (allowed: {', '.join(allowed)})"
+            f"event {unknown[0][:64]!r} is not available for {kind} integrations "
+            f"(allowed: {', '.join(allowed) or 'none'})"
         )
     return list(dict.fromkeys(events))
 
@@ -310,7 +382,13 @@ def check_secret_binding(
     bound = SECRET_BOUND_CONFIG.get(kind)
     if bound is None:
         return
-    fields, secret = bound
+    fields, secrets = bound
+    if isinstance(secrets, tuple):
+        # Several credential fields: the one the (new) config's credential type uses must be supplied.
+        credential = str(config.get("credential") or "certificate")
+        secret = MICROSOFT_SECRET_FIELD.get(credential, secrets[0])
+    else:
+        secret = secrets
     changed = [f for f in fields if current.get(f) != config.get(f)]
     value = secret_patch.get(secret)
     if changed and not (isinstance(value, str) and value.strip()):
@@ -318,6 +396,141 @@ def check_secret_binding(
             f"changing config.{', config.'.join(changed)} requires secret.{secret} in the same request "
             "(a stored credential is never sent to a new destination)"
         )
+
+
+_GUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _load_certificate(pem: str) -> Any:
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    try:
+        certificate = x509.load_pem_x509_certificate(pem.encode("ascii"))
+    except (ValueError, UnicodeEncodeError) as exc:
+        raise IntegrationConfigError("config.certificate_pem is not a PEM X.509 certificate") from exc
+    key = certificate.public_key()
+    if not isinstance(key, rsa.RSAPublicKey) or key.key_size < MIN_RSA_BITS:
+        raise IntegrationConfigError(f"config.certificate_pem must hold an RSA key of at least {MIN_RSA_BITS} bits")
+    return certificate
+
+
+def certificate_details(pem: str) -> Dict[str, Any]:
+    """Thumbprints and expiry of a public certificate: ``{thumbprint_sha1, thumbprint_sha256, not_after, days_left}``.
+
+    The SHA-1 thumbprint is what the Entra portal shows under Certificates & secrets.
+    """
+    import hashlib
+
+    from cryptography.hazmat.primitives import serialization
+
+    certificate = _load_certificate(pem)
+    der = certificate.public_bytes(serialization.Encoding.DER)
+    not_after = certificate.not_valid_after_utc
+    return {
+        "thumbprint_sha1": hashlib.sha1(der, usedforsecurity=False).hexdigest().upper(),
+        "thumbprint_sha256": hashlib.sha256(der).hexdigest().upper(),
+        "not_after": not_after.isoformat(),
+        "days_left": (not_after - datetime.now(UTC)).days,
+    }
+
+
+def _microsoft_config(parsed: MicrosoftConfig) -> Dict[str, Any]:
+    """Cross-field checks of a Microsoft config; returns it normalised (options parsed with their schema)."""
+    from lg_sotf.integrations.microsoft.catalog import capabilities
+
+    problems: List[str] = []
+    for name in ("directory_tenant_id", "client_id"):
+        if not _GUID.match(getattr(parsed, name)):
+            problems.append(f"config.{name} must be a GUID (common, organizations, consumers and domains are refused)")
+    if parsed.defender_geo is not None and parsed.cloud != "global":
+        problems.append("config.defender_geo applies to the global cloud only")
+    if parsed.credential == "certificate":
+        if not parsed.certificate_pem:
+            problems.append("config.certificate_pem is required with credential=certificate")
+        else:
+            try:
+                certificate = _load_certificate(parsed.certificate_pem)
+            except IntegrationConfigError as exc:
+                problems.append(str(exc))
+            else:
+                now = datetime.now(UTC)
+                if certificate.not_valid_after_utc <= now:
+                    problems.append("config.certificate_pem has expired")
+                elif certificate.not_valid_before_utc > now:
+                    problems.append("config.certificate_pem is not valid yet")
+    if len(parsed.capabilities) > MAX_MICROSOFT_CAPABILITIES:
+        problems.append(f"config.capabilities may name at most {MAX_MICROSOFT_CAPABILITIES} capabilities")
+    catalog = capabilities()
+    normalised: Dict[str, Dict[str, Any]] = {}
+    enabled: List[str] = []
+    for key, entry in parsed.capabilities.items():
+        spec = catalog.get(key)
+        if spec is None:
+            problems.append(f"config.capabilities.{key[:64]}: unknown capability")
+            continue
+        if entry.live and not entry.enabled:
+            problems.append(f"config.capabilities.{key}: live requires enabled")
+        try:
+            options = spec.options.model_validate(dict(entry.options))
+        except ValidationError as exc:
+            problems.extend(_problems(exc, f"config.capabilities.{key}.options"))
+            continue
+        if entry.enabled:
+            enabled.append(key)
+            if parsed.cloud not in spec.clouds:
+                problems.append(f"config.capabilities.{key}: not supported in the {parsed.cloud} cloud")
+            problems.extend(f"config.capabilities.{key}.options: {p}"[:300] for p in options.problems(parsed.cloud))
+        normalised[key] = {"enabled": entry.enabled, "live": entry.live, "options": options.model_dump(mode="json")}
+    for key in enabled:
+        for other in enabled:
+            if other != key and (other in catalog[key].excludes or key in catalog[other].excludes) and key < other:
+                problems.append(f"config.capabilities: {key} and {other} cannot be enabled together")
+    if problems:
+        raise IntegrationConfigError("; ".join(problems[:10]))
+    out = parsed.model_dump(exclude_none=True)
+    out["capabilities"] = normalised
+    return out
+
+
+def parse_microsoft_config(config: Mapping[str, Any]) -> MicrosoftConfig:
+    """A stored Microsoft config, validated again (raises :class:`IntegrationConfigError`)."""
+    return MicrosoftConfig.model_validate(validate_config(MICROSOFT_KIND, config, require_https=True))
+
+
+def _microsoft_secret(values: Dict[str, str], config: Optional[Mapping[str, Any]]) -> Dict[str, str]:
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    if config is None:
+        raise IntegrationConfigError("a Microsoft credential is validated against its config")
+    credential = str(config.get("credential") or "certificate")
+    needed = MICROSOFT_SECRET_FIELD.get(credential, "private_key_pem")
+    other = next(f for f in MICROSOFT_SECRET_FIELD.values() if f != needed)
+    if needed not in values:
+        raise IntegrationConfigError(f"secret.{needed} is required with credential={credential}")
+    if other in values:
+        raise IntegrationConfigError(
+            f"secret.{other} is not used with credential={credential}: remove it (set it to null)"
+        )
+    if credential == "certificate":
+        pem = config.get("certificate_pem")
+        try:
+            key = serialization.load_pem_private_key(values[needed].encode("ascii"), password=None)
+        except (ValueError, TypeError, UnicodeEncodeError) as exc:
+            raise IntegrationConfigError(
+                "secret.private_key_pem must be an unencrypted PKCS#8 or PKCS#1 RSA private key (PEM)"
+            ) from exc
+        if not isinstance(key, rsa.RSAPrivateKey) or key.key_size < MIN_RSA_BITS:
+            raise IntegrationConfigError(f"secret.private_key_pem must be an RSA key of at least {MIN_RSA_BITS} bits")
+        if not isinstance(pem, str) or not pem:
+            raise IntegrationConfigError("config.certificate_pem is required with credential=certificate")
+        certificate = _load_certificate(pem)
+        if key.public_key().public_numbers() != certificate.public_key().public_numbers():
+            raise IntegrationConfigError("secret.private_key_pem does not match config.certificate_pem")
+    elif len(values[needed]) < 8:
+        raise IntegrationConfigError("secret.client_secret is too short to be an Entra client secret")
+    return values
 
 
 def merge_secret(current: Mapping[str, str], patch: Mapping[str, Any]) -> Dict[str, Any]:
@@ -366,14 +579,20 @@ __all__ = [
     "IntegrationConfigError",
     "KINDS",
     "LEVELS",
+    "MICROSOFT_KIND",
+    "MicrosoftCapabilityConfig",
+    "MicrosoftConfig",
+    "MicrosoftSecret",
     "NOTIFY_KINDS",
     "SECRET_BOUND_CONFIG",
     "SECRET_MODELS",
     "TICKETING_KINDS",
+    "certificate_details",
     "check_secret_binding",
     "decrypt_secret",
     "encrypt_secret",
     "merge_secret",
+    "parse_microsoft_config",
     "rate_limit_per_minute",
     "secret_context",
     "secret_fields",

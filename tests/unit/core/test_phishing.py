@@ -136,6 +136,50 @@ def test_link_attachment_and_wording_signals() -> None:
     assert result.suspicious_urls == ["http://198.51.100.9/"]
 
 
+DECEIVING_LINK: Dict[str, Any] = {
+    "url": "http://203.0.113.66/owa/login.php", "host": "203.0.113.66", "ip_host": True, "mismatch": True,
+    "mismatch_text_host": "outlook.example.com",
+}
+SHOWN_URL: Dict[str, Any] = {"url": "https://outlook.example.com/verify", "host": "outlook.example.com", "display_only": True}
+# The shown domain embeds a protected brand name: as a link it would be a lookalike.
+OUTLOOK = PhishingProfile.from_settings({"phishing": {"protected_brands": ["Outlook"]}}, {})
+
+
+def test_urls_only_shown_as_link_text_feed_no_signal_and_no_corroboration() -> None:
+    sec = section(urls=[DECEIVING_LINK, SHOWN_URL])
+    result = assess(sec, OUTLOOK)
+    assert result.tp == [p.LINK_TEXT_MISMATCH, p.IP_URL]
+    assert result.lookalikes == [] and result.suspicious_urls == ["http://203.0.113.66/owa/login.php"]
+    targets = p.corroborated_email_targets({"email": sec}, {"phishing": result.digest()})
+    assert ["url", "http://203.0.113.66/owa/login.php"] in targets
+    assert not any("outlook.example.com" in value for _, value in targets)
+    # The same URL as a link of its own is a lookalike, and corroborated.
+    linked = section(urls=[DECEIVING_LINK, {k: v for k, v in SHOWN_URL.items() if k != "display_only"}])
+    assert assess(linked, OUTLOOK).lookalike_hosts == ["outlook.example.com"]
+    # Raw-IP and shortener URLs only shown as text are no link signal either.
+    shown = [
+        {"url": "http://198.51.100.9/", "host": "198.51.100.9", "ip_host": True, "display_only": True},
+        {"url": "https://bit.ly/x", "host": "bit.ly", "shortener": True, "display_only": True},
+    ]
+    assert assess(section(urls=shown), PROFILE).tp == []
+
+
+def test_block_targets_are_where_the_message_leads_or_came_from() -> None:
+    urls = [
+        DECEIVING_LINK,
+        SHOWN_URL,
+        {"url": "https://evil.test/login", "host": "evil.test"},
+        {"url": "https://evil.test/verify", "host": "evil.test", "display_only": True},
+    ]
+    sec = section("it@examp1e.test", reply_to=["pay@collect.test"], return_path="bounce@mailer.test", urls=urls)
+    assert p.email_block_targets({"email": {**sec, "relay_ip": "198.51.100.7"}}) == {
+        "url": ["http://203.0.113.66/owa/login.php", "https://evil.test/login"],
+        "domain": ["examp1e.test", "collect.test", "mailer.test", "evil.test"],
+        "ip": ["198.51.100.7", "203.0.113.66"],
+    }
+    assert p.email_block_targets({"title": "not an email"}) == {}
+
+
 def test_weights_and_evidence_sets() -> None:
     assert p.TRIAGE_WEIGHTS[p.INTERNAL_AUTHENTICATED] < 0
     assert p.CREDENTIAL_WORDING not in p.EVIDENCE_SIGNALS and p.RETURN_PATH_MISMATCH not in p.EVIDENCE_SIGNALS

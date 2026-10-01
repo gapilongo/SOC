@@ -19,6 +19,8 @@ export const GUARDRAIL_REASONS: Record<string, string> = {
   autonomy_disabled: "The tenant's autonomy policy disables actions of this risk level.",
   hourly_cap_reached: "The tenant's hourly action cap was reached.",
   blast_radius_exceeded: 'The hourly limit for this action type (blast radius) was reached.',
+  approval_expired: 'The approval was not executed in time (response.approval_ttl_s) and expired.',
+  approval_superseded: "The approval arrived while the alert's workflow was still running, and it ended without executing it.",
 };
 
 /** Readable text for a stored blocked_reason (a code, or a code followed by detail). */

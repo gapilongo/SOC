@@ -35,6 +35,16 @@ gives that alert its own escalation. ``approved_actions`` entries naming only
 an action type are resolved against the parent alert's targets and stored as
 explicit ``"action_type:target"`` entries, so an approval never reaches a
 target the approver did not see.
+
+Late approvals: an approval that arrives after the alert's run has ended
+(``completed`` or ``dead_lettered``, or no run at all) would never execute,
+because no run is waiting for it. Such actions are handed to the scheduler
+(``execution_owner='scheduler'``) in the approval's transaction, with the
+run row locked ``FOR SHARE`` so a concurrent reprocess cannot start a run
+that would also execute them; no resume message is sent for them.
+Scheduler-owned rows (rollbacks, handed-off actions) are approved and
+rejected the same way, never resume a run and are never rejected by
+``reject_remaining``.
 """
 
 from __future__ import annotations
@@ -76,6 +86,10 @@ MAX_APPROVED_ACTIONS = 50
 MAX_APPROVED_ENTRY_CHARS = 256
 MAX_ACTION_IDS = 100
 _ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
+# Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
+_RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
+ENDED_RUN_STATUSES = frozenset({"completed", "dead_lettered"})
+WORKFLOW_OWNER = "workflow"
 # EscalationsRepo.decide accepts only open/claimed escalations; a late decision on an expired one.
 _DECIDE_EXPIRED_SQL = """
     UPDATE escalations
@@ -169,6 +183,11 @@ class ReviewService:
         self._events = events
         self._audit = AuditLogger(repos)
         self._responses = responses or ResponseService(repos, settings, events)
+
+    @property
+    def responses(self) -> ResponseService:
+        """The response service this review service records transitions with (one per API process)."""
+        return self._responses
 
     # ------------------------------------------------------------ escalations
 
@@ -584,9 +603,11 @@ class ReviewService:
     ) -> List[ResumeRequest]:
         """Approve pending actions (all or none: every action is authorised first).
 
-        Returns one ``approval`` resume message per affected alert. With
-        ``reject_remaining`` the alerts' other pending actions are rejected.
-        Actions already approved are accepted again without change.
+        Returns one ``approval`` resume message per affected alert whose run
+        still owns work. With ``reject_remaining`` the alerts' other pending
+        workflow actions are rejected. Actions already approved are accepted
+        again without change. An approval whose run has ended goes to the
+        scheduler (module docstring, late approvals).
         """
         _require_role(role)
         user_id = _user_uuid(user)
@@ -601,11 +622,15 @@ class ReviewService:
                 reason = "disabled by the tenant's autonomy policy" if check.autonomy == "disabled" else f"above the {role} role's authority"
                 raise ReviewDenied(f"{action.risk_level} risk action {action.action_type!r} cannot be approved: {reason}")
         approved: Dict[str, List[str]] = {}
+        touched: List[str] = []
         changed: List[ResponseAction] = []
+        ended: Dict[str, bool] = {}
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             for check in checks:
                 action = check.action
-                approved.setdefault(action.alert_id, [])
+                if action.alert_id not in touched:
+                    touched.append(action.alert_id)
+                owner = action.execution_owner
                 if action.status == "awaiting_approval":
                     updated = await self._repos.actions.transition(
                         tenant_id, action.id, "approved", expected_from="awaiting_approval",
@@ -615,12 +640,17 @@ class ReviewService:
                         tenant_id, updated, "response_action.approved",
                         {"decided_by": str(user_id), "role": role}, actor_type="user", actor_id=str(user_id), conn=conn,
                     )
+                    if owner == WORKFLOW_OWNER and await self._run_ended(tenant_id, action.alert_id, conn, ended):
+                        if await self._responses.hand_off(tenant_id, [action.id], reason="late_approval", conn=conn):
+                            owner = "scheduler"
+                            updated = await self._repos.actions.get(tenant_id, action.id, conn=conn)
                     changed.append(updated)
-                approved[action.alert_id].append(str(action.id))
+                if owner == WORKFLOW_OWNER:
+                    approved.setdefault(action.alert_id, []).append(str(action.id))
             rejected: Dict[str, List[str]] = {}
             if reject_remaining:
                 named = {str(c.action.id) for c in checks}
-                for alert_id in approved:
+                for alert_id in touched:
                     for other in await self._pending_for_alert(tenant_id, alert_id, conn):
                         if str(other.id) in named:
                             continue
@@ -634,14 +664,22 @@ class ReviewService:
                 alert_id,
                 {
                     "type": "approval",
-                    "approved_action_ids": ids,
+                    "approved_action_ids": approved.get(alert_id, []),
                     "rejected_action_ids": rejected.get(alert_id, []),
                     "decided_by": str(user_id),
                     "reject_remaining": reject_remaining,
                 },
             )
-            for alert_id, ids in approved.items()
+            for alert_id in touched
+            if approved.get(alert_id) or rejected.get(alert_id)
         ]
+
+    async def _run_ended(self, tenant_id: str, alert_id: str, conn: Any, cache: Dict[str, bool]) -> bool:
+        """Whether the alert's run has ended (or never existed); its row is locked ``FOR SHARE`` until commit."""
+        if alert_id not in cache:
+            status = await conn.fetchval(_RUN_FOR_SHARE_SQL, tenant_id, alert_id)
+            cache[alert_id] = status is None or status in ENDED_RUN_STATUSES
+        return cache[alert_id]
 
     async def reject_actions(
         self,
@@ -652,7 +690,7 @@ class ReviewService:
         *,
         reject_remaining: bool = False,
     ) -> List[ResumeRequest]:
-        """Reject pending actions; returns one ``approval`` resume message per affected alert."""
+        """Reject pending actions; returns one ``approval`` resume message per affected alert whose run owns them."""
         _require_role(role)
         user_id = _user_uuid(user)
         checks = await self._load(tenant_id, action_ids)
@@ -660,20 +698,24 @@ class ReviewService:
             if check.action.status not in ("awaiting_approval", "rejected"):
                 raise InvalidTransition("response action", check.action.id, check.action.status, "rejected")
         rejected: Dict[str, List[str]] = {}
+        touched: List[str] = []
         changed: List[ResponseAction] = []
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             for check in checks:
                 action = check.action
+                if action.alert_id not in touched:
+                    touched.append(action.alert_id)
                 if action.status == "awaiting_approval":
                     changed.append(await self._reject(tenant_id, action, user_id, role, "rejected_by_reviewer", conn))
-                rejected.setdefault(action.alert_id, []).append(str(action.id))
+                if action.execution_owner == WORKFLOW_OWNER:
+                    rejected.setdefault(action.alert_id, []).append(str(action.id))
             if reject_remaining:
                 named = {str(c.action.id) for c in checks}
-                for alert_id in list(rejected):
+                for alert_id in touched:
                     for other in await self._pending_for_alert(tenant_id, alert_id, conn):
                         if str(other.id) not in named:
                             changed.append(await self._reject(tenant_id, other, user_id, role, "rejected_with_remaining", conn))
-                            rejected[alert_id].append(str(other.id))
+                            rejected.setdefault(alert_id, []).append(str(other.id))
         for action in changed:
             await self._responses.publish_action(tenant_id, action)
         return [
@@ -682,12 +724,13 @@ class ReviewService:
                 {
                     "type": "approval",
                     "approved_action_ids": [],
-                    "rejected_action_ids": ids,
+                    "rejected_action_ids": rejected[alert_id],
                     "decided_by": str(user_id),
                     "reject_remaining": reject_remaining,
                 },
             )
-            for alert_id, ids in rejected.items()
+            for alert_id in touched
+            if rejected.get(alert_id)
         ]
 
     async def _reject(
@@ -703,10 +746,12 @@ class ReviewService:
         return updated
 
     async def _pending_for_alert(self, tenant_id: str, alert_id: str, conn: Any) -> List[ResponseAction]:
+        """The alert's workflow actions awaiting approval (rollbacks and other scheduler rows are never included)."""
         page = await self._repos.actions.list(
-            tenant_id, status="awaiting_approval", alert_id=alert_id, limit=200, conn=conn
+            tenant_id, status="awaiting_approval", alert_id=alert_id, execution_owner=WORKFLOW_OWNER, limit=200,
+            conn=conn,
         )
-        return list(page.items)
+        return [a for a in page.items if a.execution_owner == WORKFLOW_OWNER]
 
     async def _load(self, tenant_id: str, action_ids: Sequence[Union[UUID, str]]) -> List[_ActionCheck]:
         if not action_ids:

@@ -52,7 +52,13 @@ from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
 
+# What a tenant may choose as its default connector (response.connector).
 CONNECTOR_NAMES = ("dry_run", "webhook")
+# What response.routes may send one action type to (lg_sotf.services.connectors.routing).
+ROUTE_NAMES = ("dry_run", "webhook", "ticketing", "microsoft")
+# Connectors that keep external state per action: an execution interrupted mid-call is handed to the
+# scheduler (re-run and reconciled) instead of being failed as orphaned.
+STATEFUL_CONNECTORS = frozenset({"microsoft"})
 
 
 def tenant_response_settings(tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
@@ -109,6 +115,11 @@ class ConnectorRegistry:
         except SourceConfigError:
             allow_private = False
         self._policy = DestinationPolicy(require_https=settings.is_production, allow_private=allow_private)
+
+    @property
+    def install_dry_run(self) -> bool:
+        """The install-wide kill switch (``settings.response.dry_run``)."""
+        return bool(self._settings.response.dry_run)
 
     def forced_dry_run(self, tenant_settings: Mapping[str, Any]) -> bool:
         if self._settings.response.dry_run:

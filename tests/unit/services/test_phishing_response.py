@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
+from lg_sotf.core.phishing import PhishingProfile, assess, corroborated_email_targets
+from lg_sotf.ingestion.email import parse_email
+from lg_sotf.ingestion.normalizers import get_normalizer
 from lg_sotf.services.response import (
     ACTION_CATALOG,
     DEFAULT_BLAST_RADIUS,
@@ -18,6 +21,8 @@ from lg_sotf.services.response import (
     validate_target,
 )
 from lg_sotf.settings import Settings
+from tests.unit.ingestion._email import build, wrap
+from tests.unit.ingestion._support import ctx as source_ctx
 from tests.unit.services.fakes import FakeRepos, FakeTenants
 
 EMAIL_ALERT: Dict[str, Any] = {
@@ -30,8 +35,15 @@ EMAIL_ALERT: Dict[str, Any] = {
         "from": {"address": "it@examp1e.test", "domain": "examp1e.test"},
         "reply_to": ["pay@collect.test"],
         "reporter": "bob@example.com",
+        "urls": [{"url": "http://198.51.100.9/login", "host": "198.51.100.9", "ip_host": True, "mismatch": True}],
     },
 }
+# A link whose visible text is itself a URL: only the link is where the message leads.
+DECEIVING = "<p>Your mailbox is full.</p><a href='http://203.0.113.66/owa/login.php'>https://outlook.example.com/verify</a>"
+LINK = "http://203.0.113.66/owa/login.php"
+SHOWN = "https://outlook.example.com/verify"
+# What a model reading the message might recommend.
+MODEL_RECOMMENDATIONS = ["Block the domain outlook.example.com", f"Block the URL {SHOWN} in the proxy"]
 
 
 def ctx(**kw: Any) -> PlanContext:
@@ -45,6 +57,17 @@ def ctx(**kw: Any) -> PlanContext:
     }
     base.update(kw)
     return PlanContext(**base)
+
+
+def reported(html: str) -> Dict[str, Any]:
+    """The stored alert of a reported message sent from the attacker's own domain."""
+    doc = parse_email(wrap(build(sender="it@examp1e.test", reply_to="collect@attacker.test", html=html)))
+    return get_normalizer("email").normalize(doc, source_ctx("m365_mailbox")).normalized_document()
+
+
+def blocks(entities: Dict[str, Any], recommendations: Any = tuple(MODEL_RECOMMENDATIONS)) -> set[tuple[str, str]]:
+    _, cands = build_candidates(ctx(entities=entities, recommended_actions=list(recommendations)), "a1")
+    return {(c.action_type, c.target) for c in cands if c.action_type in ("block_url", "block_domain", "block_ip")}
 
 
 def test_catalogue_entries() -> None:
@@ -137,3 +160,58 @@ async def test_auto_autonomy_contains_only_corroborated_email_targets(make_setti
     assert rows[("block_sender", "pay@collect.test")].status == "approved"
     spoofed = rows[("block_sender", "it@examp1e.test")]
     assert spoofed.status == "awaiting_approval" and spoofed.params["approval_reason"] == "target_not_corroborated"
+
+
+def test_link_text_is_never_a_block_target_whatever_the_model_recommends() -> None:
+    entities = plan_entities(reported(DECEIVING))
+    assert entities["url"] == [LINK] and entities["domain"] == ["examp1e.test", "attacker.test"]
+    assert blocks(entities, [*MODEL_RECOMMENDATIONS, "Block the IP address"]) == {
+        ("block_url", LINK),
+        ("block_domain", "examp1e.test"),
+        ("block_domain", "attacker.test"),
+        ("block_ip", "203.0.113.66"),
+    }
+
+
+def test_a_domain_both_shown_and_linked_to_is_still_blocked() -> None:
+    targets = blocks(plan_entities(reported("<a href='https://evil.test/login'>https://evil.test/verify</a>")))
+    assert ("block_url", "https://evil.test/login") in targets and ("block_domain", "evil.test") in targets
+    assert ("block_url", "https://evil.test/verify") not in targets
+    # A URL shown as text and also linked to elsewhere in the message is a link like any other.
+    targets = blocks(plan_entities(reported(DECEIVING + f"<a href='{SHOWN}'>the real page</a>")))
+    assert ("block_url", SHOWN) in targets and ("block_domain", "outlook.example.com") in targets
+
+
+def test_email_block_targets_must_be_backed_by_what_the_message_links_to() -> None:
+    alert = reported(DECEIVING)
+    # An entity list that names the shown URL, its domain or an unrelated address anyway.
+    alert["entities"] = {
+        **alert["entities"],
+        "urls": [LINK, SHOWN, "https://unrelated.test/"],
+        "domains": ["examp1e.test", "outlook.example.com", "Attacker.Test.", "unrelated.test"],
+        "ips": ["203.0.113.66", "198.51.100.200"],
+    }
+    entities = plan_entities(alert)
+    assert entities["url"] == [LINK]
+    assert entities["domain"] == ["examp1e.test", "Attacker.Test."]
+    assert entities["ip"] == ["203.0.113.66"]
+    # Other alerts keep every entity.
+    other = plan_entities({"entities": {"urls": [SHOWN], "domains": ["outlook.example.com"]}})
+    assert other["url"] == [SHOWN] and other["domain"] == ["outlook.example.com"]
+
+
+async def test_a_shown_brand_domain_is_never_corroborated_nor_contained(make_settings: Callable[..., Settings]) -> None:
+    alert = reported(DECEIVING)
+    # The shown domain embeds this brand's name: as a link, it would be a corroborated lookalike.
+    profile = PhishingProfile.from_settings({"phishing": {"protected_brands": ["Outlook"]}}, {})
+    triage = {"phishing": assess(alert["email"], profile).digest()}
+    corroborated = frozenset((k, v) for k, v in corroborated_email_targets(alert, triage))
+    repos = FakeRepos(tenants=FakeTenants({"autonomy": {"low": "auto", "medium": "auto", "high": "auto"}}))
+    service = ResponseService(repos, make_settings(), None)  # type: ignore[arg-type]
+    await service.plan("t1", "a1", ctx(
+        entities=plan_entities(alert), evidence="rules", corroborated_targets=corroborated,
+        recommended_actions=MODEL_RECOMMENDATIONS,
+    ))
+    rows = {(r.action_type, r.target): r for r in repos.actions.rows.values()}
+    assert not any("outlook.example.com" in target for _, target in rows)
+    assert rows[("block_url", LINK)].status == "approved"

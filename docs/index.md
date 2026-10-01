@@ -16,8 +16,10 @@
 | [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |
 | [MCP server](mcp.md) | Analysts | Using LG-SOTF from Claude Desktop, Claude Code or another MCP client |
 | [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
+| [SOAR playbooks](soar-playbooks.md) | Tenant admins, SOAR engineers | Running approved actions in your own SOAR: the signed webhook contract, idempotency, the reference receiver, the n8n workflow, Tines, Shuffle and Tracecat recipes, example vendor calls per action type |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
 | [Phishing triage](phishing.md) | Tenant admins, integrators | User-reported email: M365 and IMAP reporting mailboxes, the push API, phishing signals, response actions |
+| [Microsoft direct response](microsoft.md) | Tenant admins, security reviewers | Executing approved actions in Microsoft 365, Entra ID and Defender for Endpoint; routing, rehearsal, verification, rollback, background execution |
 
 Repository files: [README](../README.md), [CHANGELOG](../CHANGELOG.md),
 [SECURITY](../SECURITY.md) (vulnerability reporting),

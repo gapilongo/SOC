@@ -35,6 +35,13 @@ Which Authentication-Results header is trusted: the first one whose
 ``authserv-id`` is in the tenant's ``phishing.trusted_authserv_ids`` when that
 list is set (recommended: headers below it can be forged by the sender),
 otherwise the topmost header.
+
+Links are the URLs the message leads to. A URL only shown as the text of a
+link that goes elsewhere (``display_only`` in the section, see
+:mod:`lg_sotf.ingestion.email.parser`) is not one: the deceiving link it
+belongs to carries ``email_link_text_mismatch``, and the shown URL is often
+the legitimate site the sender imitates. It never feeds a link or lookalike
+signal, corroboration or a response target.
 """
 
 from __future__ import annotations
@@ -379,11 +386,16 @@ class PhishingAssessment:
         return out
 
 
+def links(section: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+    """The section's URLs the message leads to (without the display-only ones, see the module docs)."""
+    return [u for u in (_mapping(x) for x in _list(section.get("urls"))) if not u.get("display_only")]
+
+
 def _candidate_hosts(section: Mapping[str, Any]) -> List[str]:
     sender = _mapping(section.get("from"))
     hosts = [sender.get("domain"), *(_domain_of(a) for a in _list(section.get("reply_to")))]
     hosts.append(_domain_of(section.get("return_path")))
-    hosts.extend(_mapping(u).get("host") for u in _list(section.get("urls")))
+    hosts.extend(u.get("host") for u in links(section))
     return list(dict.fromkeys(h for h in hosts if isinstance(h, str) and h))[:MAX_CANDIDATE_HOSTS]
 
 
@@ -432,7 +444,7 @@ def assess(section: Mapping[str, Any], profile: PhishingProfile) -> PhishingAsse
         if result.lookalikes:
             tp.append(LOOKALIKE_DOMAIN)
 
-    urls = [_mapping(u) for u in _list(section.get("urls"))]
+    urls = links(section)
     if any(u.get("mismatch") for u in urls):
         tp.append(LINK_TEXT_MISMATCH)
     if any(u.get("shortener") for u in urls):
@@ -519,6 +531,34 @@ def plan_email_entities(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
     if isinstance(reporter, str) and reporter:
         out["reporter"] = [reporter]
     return out
+
+
+def email_block_targets(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
+    """The ``url``, ``domain`` and ``ip`` values a block may target in an email alert (empty for other alerts).
+
+    Where the message leads (its links and their hosts) and where it came
+    from (the sender, Reply-To and Return-Path domains, the relay), nothing
+    else: a display-only URL or its domain is never one, whatever a model
+    recommends or an entity list holds.
+    """
+    section = _mapping(alert.get("email"))
+    if not section:
+        return {}
+    sender = _mapping(section.get("from"))
+    urls: List[Any] = []
+    domains: List[Any] = [sender.get("domain"), _domain_of(sender.get("address"))]
+    domains += [_domain_of(a) for a in [*_list(section.get("reply_to")), section.get("return_path")]]
+    ips: List[Any] = [section.get("relay_ip")]
+    for link in links(section):
+        urls.append(link.get("url"))
+        if link.get("ip_host"):
+            ips.append(link.get("host"))
+        else:
+            domains.append(link.get("host"))
+    return {
+        kind: list(dict.fromkeys(v for v in values if isinstance(v, str) and v))
+        for kind, values in (("url", urls), ("domain", domains), ("ip", ips))
+    }
 
 
 def message_context(alert: Mapping[str, Any]) -> Dict[str, str]:

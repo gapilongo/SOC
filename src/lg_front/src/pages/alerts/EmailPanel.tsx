@@ -15,7 +15,19 @@ export interface EmailSection {
   auth?: JsonObject[];
   relay_ip?: string | null;
   relay_host?: string | null;
-  urls?: Array<{ url?: string; display?: string; host?: string; mismatch?: boolean; mismatch_text_host?: string; ip_host?: boolean; shortener?: boolean; punycode?: boolean; source?: string }>;
+  urls?: Array<{
+    url?: string;
+    display?: string;
+    host?: string;
+    mismatch?: boolean;
+    mismatch_text_host?: string;
+    ip_host?: boolean;
+    shortener?: boolean;
+    punycode?: boolean;
+    source?: string;
+    /** Only shown as the text of a link that goes elsewhere: never an indicator or a block target. */
+    display_only?: boolean;
+  }>;
   url_count?: number;
   attachments?: Array<{ filename?: string; declared_type?: string; sniffed_type?: string; size?: number; sha256?: string; risks?: string[] }>;
   attachment_count?: number;
@@ -156,6 +168,11 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
                 {u.shortener && <Badge tone="warn">shortener</Badge>}
                 {u.punycode && <Badge tone="warn">punycode</Badge>}
                 {u.source && u.source !== 'body' && <Badge>{u.source.replace(/_/g, ' ')}</Badge>}
+                {u.display_only && (
+                  <Badge title="Shown as the text of a link that goes elsewhere: not where the message leads, never blocked">
+                    link text only
+                  </Badge>
+                )}
               </li>
             ))}
           </ul>

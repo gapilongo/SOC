@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
 
 from langgraph.types import interrupt
 
@@ -186,7 +186,8 @@ class WorkflowNodes:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
             by = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
-        flags = alert.get("flags") if isinstance(alert.get("flags"), list) else []
+        raw_flags = alert.get("flags")
+        flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
         # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
         # attacker-shaped text: it never inherits a cached verdict.
         if state["severity"] != "critical" and "llm_normalized" not in flags:
@@ -472,7 +473,8 @@ class WorkflowNodes:
 
         A decision changes only the actions it names unless it sets
         ``reject_remaining``; actions still awaiting approval afterwards send
-        the run back to ``await_approval`` with a fresh interrupt.
+        the run back to ``await_approval`` with a fresh interrupt. Every
+        execution pass of one node run shares one execution budget.
 
         Approvals commit through the API whenever the analyst clicks, also
         while this node runs, and their resume messages cannot reach a run
@@ -502,12 +504,19 @@ class WorkflowNodes:
                 [*(plan.get("auto") or []), *(plan.get("awaiting") or []), *(plan.get("done") or []), *awaiting]
             )
         )
-        results = await self.deps.responses.execute(tenant_id, alert_id, candidates)
+        # One execution budget for the whole node run, however many passes it takes: each pass gets what is left.
+        loop = asyncio.get_running_loop()
+        ends_at = loop.time() + self.deps.responses.execution_budget_s
+
+        def remaining() -> float:
+            return max(0.0, ends_at - loop.time())
+
+        results = await self.deps.responses.execute(tenant_id, alert_id, candidates, budget_s=remaining())
         still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, candidates)
         for _ in range(len(candidates) + 1):
             if not still_waiting:
                 break
-            again = await self.deps.responses.execute(tenant_id, alert_id, still_waiting)
+            again = await self.deps.responses.execute(tenant_id, alert_id, still_waiting, budget_s=remaining())
             results.update(again)
             if all(status == "awaiting_approval" for status in again.values()):
                 still_waiting = [i for i in still_waiting if again.get(i) == "awaiting_approval"]

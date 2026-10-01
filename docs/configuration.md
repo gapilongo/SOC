@@ -300,6 +300,17 @@ Response automation defaults and the install-wide SOAR webhook.
 | `response.webhook_url` | `LG_SOTF_RESPONSE__WEBHOOK_URL` | string (optional) | unset | Install-wide SOAR webhook (HMAC-signed POST) used by tenants that choose the `webhook` connector without their own URL. |
 | `response.webhook_secret` | `LG_SOTF_RESPONSE__WEBHOOK_SECRET` | secret (optional) | unset | HMAC secret of the install-wide webhook. |
 | `response.webhook_timeout_s` | `LG_SOTF_RESPONSE__WEBHOOK_TIMEOUT_S` | number | `15.0` | Timeout of one webhook call. |
+| `response.verify_interval_s` | `LG_SOTF_RESPONSE__VERIFY_INTERVAL_S` | number | `15.0` | How often the scheduler runs due verification checks of executed actions (docs/microsoft.md). |
+| `response.verify_check_timeout_s` | `LG_SOTF_RESPONSE__VERIFY_CHECK_TIMEOUT_S` | number | `30.0` | Time one verification check may take. |
+| `response.verify_concurrency` | `LG_SOTF_RESPONSE__VERIFY_CONCURRENCY` | integer | `4` | Verification checks run at the same time. |
+| `response.verify_max_s` | `LG_SOTF_RESPONSE__VERIFY_MAX_S` | number | `345600.0` | The longest a verification may stay pending before it is inconclusive (4 days). |
+| `response.background_interval_s` | `LG_SOTF_RESPONSE__BACKGROUND_INTERVAL_S` | number | `5.0` | How often the scheduler executes rollbacks, retries, late approvals and deferred actions. |
+| `response.background_deadline_s` | `LG_SOTF_RESPONSE__BACKGROUND_DEADLINE_S` | number | `120.0` | Deadline of one background connector call. |
+| `response.background_concurrency` | `LG_SOTF_RESPONSE__BACKGROUND_CONCURRENCY` | integer | `4` | Background connector calls run at the same time (at most two per tenant). |
+| `response.approval_ttl_s` | `LG_SOTF_RESPONSE__APPROVAL_TTL_S` | number | `86400.0` | An approval the scheduler has not executed within this time is blocked (`approval_expired`). |
+| `response.max_execution_attempts` | `LG_SOTF_RESPONSE__MAX_EXECUTION_ATTEMPTS` | integer | `5` | Execution attempts of one action (deferrals included) before it fails with `attempts_exhausted`. |
+| `response.microsoft_timeout_s` | `LG_SOTF_RESPONSE__MICROSOFT_TIMEOUT_S` | number | `15.0` | Timeout of one attempt of a Microsoft Graph or Defender request. |
+| `response.microsoft_retries` | `LG_SOTF_RESPONSE__MICROSOFT_RETRIES` | integer | `3` | Retries of one Microsoft request (429 and 503 always; network errors, 502 and 504 when idempotent). |
 
 ### `mcp`
 

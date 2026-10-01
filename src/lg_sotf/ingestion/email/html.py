@@ -8,7 +8,10 @@ CSS applies. What is collected:
   http-equiv="refresh">`` targets; relative URLs are resolved only against
   an absolute ``<base href>``;
 * visible text (outside ``<script>``, ``<style>``, ``<head>`` and
-  ``<template>``), for the body excerpt and wording checks.
+  ``<template>``), for the body excerpt and wording checks, also split into
+  the text inside links (``<a href>``: what a link shows, never where it
+  goes) and the text outside them, so a URL written as the text of a link to
+  somewhere else is never taken for a link of its own.
 
 Input is capped by the caller; output is capped here (links, link text and
 text characters), so hostile markup cannot grow memory without bound.
@@ -44,11 +47,15 @@ class _LinkParser(HTMLParser):
         self.max_text_chars = max_text_chars
         self.links: List[HtmlLink] = []
         self.text_parts: List[str] = []
+        self.link_text_parts: List[str] = []
+        self.bare_text_parts: List[str] = []
         self.text_chars = 0
         self.links_dropped = 0
         self._base: Optional[str] = None
         self._hidden_depth = 0
         self._anchor: Optional[Tuple[str, List[str]]] = None
+        # Inside an <a> element with an href (whatever it points to, resolvable or not).
+        self._in_link = False
 
     # -- helpers ---------------------------------------------------------------
 
@@ -77,7 +84,16 @@ class _LinkParser(HTMLParser):
             return
         chunk = data[:room]
         self.text_parts.append(chunk)
+        (self.link_text_parts if self._in_link else self.bare_text_parts).append(chunk)
         self.text_chars += len(chunk)
+
+    def _link_boundary(self, in_link: bool) -> None:
+        # Text on either side of a link boundary never joins into one URL in the split streams
+        # (one separator at most, so a flood of empty links adds nothing).
+        for parts in (self.link_text_parts, self.bare_text_parts):
+            if parts and parts[-1] != " ":
+                parts.append(" ")
+        self._in_link = in_link
 
     # -- HTMLParser hooks ------------------------------------------------------
 
@@ -90,6 +106,9 @@ class _LinkParser(HTMLParser):
             if split_url(href) is not None:
                 self._base = href
         elif tag in ("a", "area"):
+            if tag == "a":
+                # A new <a> ends the previous one, as in browsers (anchors never nest).
+                self._link_boundary(any(k.lower() == "href" for k, _ in attrs))
             url = self._resolve(values.get("href"))
             if tag == "area":
                 self._add(url, values.get("alt", ""), "a")
@@ -115,6 +134,7 @@ class _LinkParser(HTMLParser):
             self._hidden_depth = max(0, self._hidden_depth - 1)
         elif tag == "a":
             self._close_anchor()
+            self._link_boundary(False)
 
     def handle_data(self, data: str) -> None:
         if self._hidden_depth:
@@ -141,6 +161,13 @@ class HtmlScan:
     links: List[HtmlLink]
     text: str
     links_dropped: int
+    # ``text`` split in two: inside links (what they show) and outside them.
+    link_text: str = ""
+    bare_text: str = ""
+
+
+def _joined(parts: List[str]) -> str:
+    return _SPACE_RE.sub(" ", "".join(parts)).strip()
 
 
 def scan_html(markup: str, *, max_links: int, max_text_chars: int) -> HtmlScan:
@@ -150,5 +177,10 @@ def scan_html(markup: str, *, max_links: int, max_text_chars: int) -> HtmlScan:
     with contextlib.suppress(Exception):
         parser.feed(markup)
     parser.finish()
-    text = _SPACE_RE.sub(" ", "".join(parser.text_parts)).strip()
-    return HtmlScan(parser.links, text, parser.links_dropped)
+    return HtmlScan(
+        parser.links,
+        _joined(parser.text_parts),
+        parser.links_dropped,
+        link_text=_joined(parser.link_text_parts),
+        bare_text=_joined(parser.bare_text_parts),
+    )

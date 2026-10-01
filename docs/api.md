@@ -172,6 +172,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/escalations/{id}/claim`, `/escalations/{id}/decision` | analyst (user account) |
 | GET | `/actions`, `/actions/{id}` | viewer / `read` |
 | POST | `/actions/{id}/approve`, `/actions/{id}/reject` | analyst (low/medium), admin (high/critical) |
+| POST | `/actions/{id}/rollback` `{reason, approve?}` (201; 409 `rollback_unavailable` with `details[0].reason`), `/actions/{id}/retry` `{reason}` (failed Microsoft actions without a rollback; 409 `retry_unavailable`/`guardrail_blocked`/`cap_reached`), `/actions/{id}/verify` (409 not applicable, 429 within 5 minutes); docs/microsoft.md | analyst (user account); retry: the role that may approve the action's risk |
 | GET, POST | `/sources`; GET, PATCH, DELETE `/sources/{id}`; POST `/sources/{id}/test` | admin |
 | GET | `/suppressions`, `/suppressions/{id}` | viewer / `read` |
 | POST | `/suppressions` | analyst / `write` |
@@ -184,6 +185,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | POST | `/tenant/llm/test` (probe the fast and deep model tiers; 6 per tenant per minute; audited) | admin |
+| GET | `/tenant/response/routes` (`{dry_run_forced, routes: {action_type: {connector, source, capability, live, problem}}}`) | admin |
 | GET | `/dashboard/summary` | viewer / `read` |
 | GET | `/usage/llm` | admin |
 | GET | `/reports/value`, `/reports/accuracy`, `/reports/detections`, `/reports/monthly` (docs/reporting.md) | viewer / `read` |
@@ -193,6 +195,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
 | GET | `/platform/tenants/{id}/erasure`; POST `/platform/tenants/{id}/export`; DELETE `/platform/tenants/{id}` | platform admin |
 | GET, POST | `/integrations`; GET, PATCH, DELETE `/integrations/{id}`; POST `/integrations/{id}/test`; GET `/integrations/{id}/deliveries` | admin |
+| GET | `/integrations/microsoft/catalog` (Microsoft capabilities, clouds and Defender regions; docs/microsoft.md) | admin |
 | GET | `/tickets?alert_id=` or `?escalation_id=` (linked Jira/ServiceNow tickets) | viewer / `read` |
 | POST | `/integrations/slack/interactions?tenant=&integration=` (Slack Interactivity; Slack signing secret, no bearer token) | Slack signature |
 | WS | `/ws?token=<access token>` | viewer |
@@ -247,6 +250,12 @@ while its run is active).
   action only; the alert's other pending actions stay pending unless the
   body sets `{"reject_remaining": true}`. The approver's role comes from the
   principal, never from the request.
+* `GET /actions` also filters on `verification` (`pending`, `verified`,
+  `failed`, `inconclusive`). Every action carries `execution_owner`,
+  `integration_id`, `external_ref`, `attempts`, `verification` (with
+  `verification_detail`, `verify_deadline`, `verified_at`), `rollback`
+  (eligibility: `available`, `action_type`, `risk`, `until`, `reason`) and
+  `rolled_back_by`; see docs/microsoft.md.
 * A response the policy chose on its own (no analyst `true_positive`
   decision) closes the alert only when an action really `succeeded` through
   a connector. When every approved action ran as `dry_run` (the default),
