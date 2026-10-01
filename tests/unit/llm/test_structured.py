@@ -437,3 +437,100 @@ async def test_tally_counts_transport_errors_and_budget_rejections(make_settings
                                  tenant_id="t1", budget_limit=1)
     assert tally.by_agent["triage"].errors == 1 and tally.by_agent["triage"].calls == 1
     assert tally.by_agent["triage"].budget_exceeded == 1
+
+
+class _StatusError(Exception):
+    """A provider error carrying an HTTP status, like google-genai's ServerError (``code``)."""
+
+    def __init__(self, code: int) -> None:
+        super().__init__(f"{code} provider error")
+        self.code = code
+
+
+class FlakyStub(StubModel):
+    """Fails with ``error`` for the first ``failures`` calls, then returns ``result``."""
+
+    failures: int = 0
+
+    def with_structured_output(self, schema: Any, *, include_raw: bool = False, **kwargs: Any) -> Runnable:  # type: ignore[override]
+        async def run(_: Any) -> Dict[str, Any]:
+            self.calls += 1
+            if self.calls <= self.failures and self.error is not None:
+                raise self.error
+            return self.result
+
+        return RunnableLambda(lambda _: None, afunc=run)
+
+
+@pytest.fixture
+def no_sleep(monkeypatch: pytest.MonkeyPatch) -> List[float]:
+    waits: List[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        waits.append(seconds)
+
+    monkeypatch.setattr("lg_sotf.llm.structured.asyncio.sleep", fake_sleep)
+    return waits
+
+
+def _ok_result() -> Dict[str, Any]:
+    return {"raw": _raw("{}"), "parsed": Verdict(disposition="malicious", confidence=90, reasoning="r"), "parsing_error": None}
+
+
+async def test_transient_provider_error_is_retried_within_the_call(
+    make_settings: Callable[..., Settings], no_sleep: List[float]
+) -> None:
+    s = make_settings()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=2)
+    verdict = await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s)
+    assert verdict.disposition == "malicious"
+    assert stub.calls == 3 and len(no_sleep) == 2 and no_sleep[0] < no_sleep[1]
+    row = _rows()["analysis"]
+    assert row["errors"] == 2  # each failed call is still metered
+
+
+async def test_transient_errors_give_up_after_the_retries(
+    make_settings: Callable[..., Settings], no_sleep: List[float]
+) -> None:
+    s = make_settings()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(429), failures=10)
+    with pytest.raises(_StatusError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", settings=s)
+    assert stub.calls == 3 and len(no_sleep) == 2
+
+
+async def test_permanent_provider_error_is_not_retried(
+    make_settings: Callable[..., Settings], no_sleep: List[float]
+) -> None:
+    s = make_settings()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(400), failures=10)
+    with pytest.raises(_StatusError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", settings=s)
+    assert stub.calls == 1 and no_sleep == []
+
+
+async def test_timeouts_are_left_to_the_node_policy(make_settings: Callable[..., Settings], no_sleep: List[float]) -> None:
+    s = make_settings()
+    stub = FlakyStub(result=_ok_result(), error=TimeoutError("upstream timeout"), failures=10)
+    with pytest.raises(TimeoutError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", settings=s)
+    assert stub.calls == 1 and no_sleep == []
+
+
+async def test_a_wrapped_gemini_503_is_retried(make_settings: Callable[..., Settings], no_sleep: List[float]) -> None:
+    """langchain-google-genai raises its own error ``from`` google-genai's ServerError(code=503)."""
+    s = make_settings()
+
+    class WrappedError(Exception):
+        pass
+
+    try:
+        try:
+            raise _StatusError(503)
+        except _StatusError as inner:
+            raise WrappedError("Error calling model (UNAVAILABLE)") from inner
+    except WrappedError as wrapped:
+        error = wrapped
+    stub = FlakyStub(result=_ok_result(), error=error, failures=1)
+    verdict = await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", settings=s)
+    assert verdict.disposition == "malicious" and stub.calls == 2 and len(no_sleep) == 1
