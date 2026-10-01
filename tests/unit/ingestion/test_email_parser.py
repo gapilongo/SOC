@@ -163,6 +163,89 @@ def test_html_link_text_that_names_another_domain_is_a_mismatch() -> None:
     assert by_url["https://refresh.attacker.test/"]["source"] == "body_meta"
     assert not any("script.attacker.test" in u for u in by_url) and not any(u.startswith("javascript") for u in by_url)
     assert by_url["https://collect.attacker.test/login"]["display"] == "hxxps://collect[.]attacker[.]test/login"
+    assert by_url["https://login.example.com"]["display_only"] is True
+    assert not any(u.get("display_only") for url, u in by_url.items() if url != "https://login.example.com")
+
+
+# A link whose visible text is itself a URL (earlier versions made that text a block_url and block_domain target).
+DECEIVING = "<p>Your mailbox is full.</p><a href='http://203.0.113.66/owa/login.php'>https://outlook.example.com/verify</a>"
+SHOWN = "https://outlook.example.com/verify"
+
+
+def urls_of(msg: EmailMessage, **kwargs: Any) -> Dict[str, Dict[str, Any]]:
+    return {u["url"]: u for u in parse(msg.as_bytes(), **kwargs)["urls"]}
+
+
+def test_a_url_shown_as_link_text_is_display_only_and_the_link_keeps_its_mismatch() -> None:
+    doc = parse(build(html=DECEIVING).as_bytes())
+    by_url = {u["url"]: u for u in doc["urls"]}
+    link = by_url["http://203.0.113.66/owa/login.php"]
+    assert link["mismatch"] is True and link["mismatch_text_host"] == "outlook.example.com" and link["ip_host"] is True
+    assert link["text"] == SHOWN and "display_only" not in link
+    shown = by_url[SHOWN]
+    assert shown["display_only"] is True and shown["mismatch"] is False and "text" not in shown
+    assert shown["host"] == "outlook.example.com" and shown["display"] == "hxxps://outlook[.]example[.]com/verify"
+    assert doc["url_count"] == 2
+    # The recipient still sees the text: the excerpt and the wording checks read it.
+    assert SHOWN in doc["body"]["excerpt"] and doc["credential_wording"] == ["mailbox_quota"]
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        DECEIVING + f"<a href='{SHOWN}'>the real page</a>",
+        DECEIVING + f"<p>Or open {SHOWN} yourself.</p>",
+        DECEIVING + f"<form action='{SHOWN}'></form>",
+        f"<a href='{SHOWN}'>{SHOWN}</a>",
+    ],
+    ids=["also_an_href", "also_bare_text", "also_a_form_target", "shows_its_own_target"],
+)
+def test_a_url_that_is_also_a_link_is_never_display_only(html: str) -> None:
+    assert "display_only" not in urls_of(build(html=html))[SHOWN]
+
+
+def test_a_plain_text_alternative_repeating_the_link_text_is_display_only_too() -> None:
+    # Senders generate the text/plain alternative from the HTML, so the shown URL is repeated there.
+    alternative = build(text=f"Your mailbox is full: {SHOWN}", html=DECEIVING)
+    assert urls_of(alternative)[SHOWN]["display_only"] is True
+    # Body parts that are not alternatives of each other are each read: the plain URL is a link.
+    mixed = build(text="unused")
+    mixed.make_mixed()
+    mixed.set_payload([])
+    for subtype, body in (("plain", f"Open {SHOWN}"), ("html", DECEIVING)):
+        part = EmailMessage()
+        part.set_content(body, subtype=subtype)
+        mixed.attach(part)
+    assert "display_only" not in urls_of(mixed)[SHOWN]
+    # So is a plain URL that only an attached HTML page shows as link text.
+    attached = build(text=f"Open {SHOWN}", attachments=[("page.htm", "text", "html", DECEIVING.encode())])
+    assert "display_only" not in urls_of(attached)[SHOWN]
+
+
+def test_link_text_of_an_attached_page_is_display_only() -> None:
+    by_url = urls_of(build(attachments=[("page.htm", "text", "html", DECEIVING.encode())]))
+    assert by_url[SHOWN]["display_only"] is True and by_url[SHOWN]["source"] == "attachment"
+    assert by_url["http://203.0.113.66/owa/login.php"]["mismatch"] is True
+
+
+def test_link_text_never_joins_neighbouring_text_and_named_anchors_are_not_links() -> None:
+    html = (
+        "<a href='https://a.attacker.test/1'>https://outlook.example.com/</a>"
+        "<a href='https://a.attacker.test/2'>verify</a>"
+        "<a href='javascript:void(0)'>https://portal.example.org/</a>"
+        "<a name='top'>https://docs.partner.test/guide</a>"
+    )
+    by_url = urls_of(build(html=html))
+    assert by_url["https://outlook.example.com/"]["display_only"] is True
+    assert by_url["https://portal.example.org/"]["display_only"] is True
+    assert "https://outlook.example.com/verify" not in by_url
+    assert "display_only" not in by_url["https://docs.partner.test/guide"]
+
+
+def test_the_url_cap_keeps_link_targets_before_link_text() -> None:
+    doc = parse(build(html=DECEIVING).as_bytes(), limits=EmailLimits(max_urls=1))
+    assert [u["url"] for u in doc["urls"]] == ["http://203.0.113.66/owa/login.php"]
+    assert doc["url_count"] == 2 and "url_cap_reached" in doc["flags"]
 
 
 def test_relative_links_resolve_only_against_an_absolute_base() -> None:

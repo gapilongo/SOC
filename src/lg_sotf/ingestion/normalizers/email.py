@@ -15,7 +15,9 @@ description carry sender-controlled text, so the alert is flagged
 Entities: sender, Reply-To and Return-Path addresses (``emails``) and their
 domains, URLs (suspicious ones first) with their hosts, the relay IP,
 attachment SHA-256 hashes, and the reporter (``users``). Recipients are kept
-in the email section, not as entities.
+in the email section, not as entities, and so are the URLs only shown as the
+text of another link (``display_only``, listed last): they are not where the
+message leads, so they are never indicators or response targets.
 
 Severity comes from facts that need no tenant context: ``high`` for a risky
 attachment, or a failed DMARC check together with a deceptive or raw-IP
@@ -81,9 +83,14 @@ def _suspicious_url(url: Mapping[str, Any]) -> bool:
 
 
 def ordered_urls(doc: Mapping[str, Any]) -> List[Mapping[str, Any]]:
-    """URLs with the suspicious ones (deceptive text, raw IP, shortener, punycode) first."""
+    """URLs with the suspicious ones (deceptive text, raw IP, shortener, punycode) first, display-only ones last."""
     urls = [_mapping(u) for u in _list(doc.get("urls")) if isinstance(u, Mapping) and _str(u.get("url"), 2_048)]
-    return sorted(urls, key=lambda u: 0 if _suspicious_url(u) else 1)
+    return sorted(urls, key=lambda u: 2 if u.get("display_only") else 0 if _suspicious_url(u) else 1)
+
+
+def link_urls(doc: Mapping[str, Any]) -> List[Mapping[str, Any]]:
+    """:func:`ordered_urls` without the display-only ones: what the message really links to."""
+    return [u for u in ordered_urls(doc) if not u.get("display_only")]
 
 
 def _reply_to_elsewhere(doc: Mapping[str, Any]) -> bool:
@@ -102,7 +109,7 @@ def email_severity(doc: Mapping[str, Any]) -> Severity:
     if doc.get("parse_error"):
         return "medium"
     auth = topmost_auth(doc)
-    urls = [_mapping(u) for u in _list(doc.get("urls"))]
+    urls = link_urls(doc)
     deceptive_link = any(u.get("mismatch") or u.get("ip_host") for u in urls)
     risky_attachment = any(_list(_mapping(a).get("risks")) for a in _list(doc.get("attachments")))
     dmarc_failed = auth.get("dmarc") == "fail"
@@ -149,7 +156,10 @@ def email_section(doc: Mapping[str, Any]) -> Dict[str, Any]:
         "urls": [
             {
                 k: u[k]
-                for k in ("url", "display", "host", "source", "mismatch", "mismatch_text_host", "ip_host", "shortener", "punycode")
+                for k in (
+                    "url", "display", "host", "source", "mismatch", "mismatch_text_host", "ip_host", "shortener",
+                    "punycode", "display_only",
+                )
                 if k in u
             }
             for u in ordered_urls(doc)[:MAX_SECTION_URLS]
@@ -233,7 +243,7 @@ class EmailNormalizer:
             [sender.get("domain")]
             + [a.rsplit("@", 1)[1] for a in [*section["reply_to"], section.get("return_path") or ""] if "@" in a]
         )
-        b.entities.add_url([u["url"] for u in ordered_urls(event)[:MAX_ENTITY_URLS]])
+        b.entities.add_url([u["url"] for u in link_urls(event)[:MAX_ENTITY_URLS]])
         b.entities.add_ip(section.get("relay_ip"))
         b.entities.add_hash([a.get("sha256") for a in _list(event.get("attachments")) if isinstance(a, Mapping)])
         b.entities.add_user(section.get("reporter"))
@@ -263,6 +273,7 @@ __all__ = [
     "email_error_event",
     "email_section",
     "email_severity",
+    "link_urls",
     "ordered_urls",
     "topmost_auth",
 ]

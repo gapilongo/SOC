@@ -5,11 +5,18 @@ Decisions and approvals commit first; the resume messages the service
 returns are enqueued afterwards (one per waiting alert). A resume that
 cannot be enqueued is reported in the response (``resumes_failed``) and
 logged; the decision itself stands.
+
+Every action carries its rollback eligibility (``rollback``) and its live
+rollback (``rolled_back_by``). ``POST /actions/{id}/rollback`` requests a
+rollback (:mod:`lg_sotf.services.rollback`), ``POST /actions/{id}/retry``
+runs a failed Microsoft action again, and ``POST /actions/{id}/verify``
+re-checks a finished verification (:mod:`lg_sotf.services.verification`).
 """
 
 from __future__ import annotations
 
-from typing import List, Literal, Optional, Sequence, Tuple
+from datetime import UTC, datetime
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -27,10 +34,19 @@ from lg_sotf.api.schemas import (
     DecisionOut,
     EscalationOut,
     PageOut,
+    RetryIn,
+    RollbackEligibilityOut,
+    RollbackIn,
+    RollbackOut,
+    VerifyIn,
 )
 from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.repos import ResponseAction
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import ResumeRequest
+from lg_sotf.services.rollback import RollbackService
+from lg_sotf.services.verification import VerificationService
 
 log = get_logger(__name__)
 
@@ -43,7 +59,41 @@ ActionStatus = Literal[
     "proposed", "awaiting_approval", "approved", "rejected", "executing", "succeeded", "failed", "dry_run", "blocked"
 ]
 Risk = Literal["low", "medium", "high", "critical"]
+Verification = Literal["pending", "verified", "failed", "inconclusive"]
 MAX_LIMIT = 200
+
+
+def _rollbacks(ctx: ApiContext) -> RollbackService:
+    return RollbackService(ctx.review.responses)
+
+
+def action_out(
+    rollbacks: RollbackService, action: ResponseAction, live: Optional[ResponseAction], *, now: datetime
+) -> ActionOut:
+    """An action with its rollback eligibility and live rollback."""
+    eligibility = rollbacks.eligibility(action, live, now=now)
+    return ActionOut.model_validate(action).model_copy(
+        update={
+            "rollback": RollbackEligibilityOut(**eligibility.as_dict()),
+            "rolled_back_by": live.id if live is not None else None,
+        }
+    )
+
+
+async def actions_out(ctx: ApiContext, tenant_id: str, actions: Sequence[ResponseAction]) -> List[ActionOut]:
+    """Many actions with their rollback state (live rollbacks read in one query)."""
+    live: Dict[UUID, ResponseAction] = await ctx.repos.actions.live_rollbacks(tenant_id, [a.id for a in actions])
+    rollbacks = _rollbacks(ctx)
+    now = datetime.now(UTC)
+    return [action_out(rollbacks, a, live.get(a.id), now=now) for a in actions]
+
+
+async def one_action_out(ctx: ApiContext, tenant_id: str, action: ResponseAction) -> ActionOut:
+    return (await actions_out(ctx, tenant_id, [action]))[0]
+
+
+def action_error(exc: ActionRequestError) -> ApiError:
+    return ApiError(exc.status, exc.code, str(exc), details=[{"reason": exc.reason}] if exc.reason else None)
 
 
 async def enqueue_resumes(ctx: ApiContext, tenant_id: str, requests: Sequence[ResumeRequest]) -> Tuple[int, int]:
@@ -170,25 +220,30 @@ async def list_actions(
     risk_level: Optional[List[Risk]] = Query(default=None),
     alert_id: Optional[str] = Query(default=None, max_length=256),
     action_type: Optional[str] = Query(default=None, max_length=64),
+    verification: Optional[List[Verification]] = Query(default=None),
     cursor: Optional[str] = Query(default=None, max_length=512),
     limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[ActionOut]:
-    page = await get_ctx(request).repos.actions.list(
+    ctx = get_ctx(request)
+    page = await ctx.repos.actions.list(
         principal.tenant_id,
         status=status,
         risk_level=risk_level,
         alert_id=alert_id,
         action_type=action_type,
+        verification=verification,
         limit=limit,
         cursor=cursor,
     )
-    return PageOut[ActionOut](items=[ActionOut.model_validate(a) for a in page.items], next_cursor=page.next_cursor)
+    items = await actions_out(ctx, principal.tenant_id, page.items)
+    return PageOut[ActionOut](items=items, next_cursor=page.next_cursor)
 
 
 @actions.get("/{action_id}", response_model=ActionOut, summary="Response action detail")
 async def get_action(action_id: UUID, request: Request, principal: Principal = Depends(require(VIEWER))) -> ActionOut:
-    return ActionOut.model_validate(await get_ctx(request).repos.actions.get(principal.tenant_id, action_id))
+    ctx = get_ctx(request)
+    return await one_action_out(ctx, principal.tenant_id, await ctx.repos.actions.get(principal.tenant_id, action_id))
 
 
 async def _review_action(
@@ -203,7 +258,7 @@ async def _review_action(
     ok, failed = await enqueue_resumes(ctx, principal.tenant_id, requests)
     action = await ctx.repos.actions.get(principal.tenant_id, action_id)
     return ApprovalOut(
-        action=ActionOut.model_validate(action),
+        action=await one_action_out(ctx, principal.tenant_id, action),
         resumed_alert_ids=[r.alert_id for r in requests],
         resumes_enqueued=ok,
         resumes_failed=failed,
@@ -228,3 +283,71 @@ async def reject(
     principal: Principal = Depends(require(REVIEWER)),
 ) -> ApprovalOut:
     return await _review_action(request, principal, action_id, body or ApprovalIn(), approve=False)
+
+
+@actions.post(
+    "/{action_id}/rollback",
+    status_code=201,
+    response_model=RollbackOut,
+    summary="Roll back an executed action (a new action of the inverse type)",
+)
+async def rollback(
+    action_id: UUID, body: RollbackIn, request: Request, principal: Principal = Depends(require(REVIEWER))
+) -> RollbackOut:
+    """Proposes the inverse action; approved at once when ``approve`` and your role may approve its risk.
+
+    An existing live rollback is returned with ``created: false``. 409
+    ``rollback_unavailable`` (``details[0].reason``) when the action cannot be
+    rolled back.
+    """
+    ctx = get_ctx(request)
+    assert principal.user_id is not None and principal.role is not None
+    try:
+        rolled, original, created = await _rollbacks(ctx).request(
+            principal.tenant_id, action_id, user=principal.user_id, role=principal.role, reason=body.reason,
+            approve=body.approve,
+        )
+    except ActionRequestError as exc:
+        raise action_error(exc) from None
+    rolled_out, original_out = await actions_out(ctx, principal.tenant_id, [rolled, original])
+    return RollbackOut(rollback=rolled_out, original=original_out, created=created)
+
+
+@actions.post("/{action_id}/retry", response_model=ActionOut, summary="Run a failed Microsoft action again")
+async def retry(
+    action_id: UUID, body: RetryIn, request: Request, principal: Principal = Depends(require(REVIEWER))
+) -> ActionOut:
+    """Allowed for a retryable (or partial) failure of a Microsoft action whose risk your role may approve.
+
+    Guardrails and caps are checked again: 409 ``guardrail_blocked`` or
+    ``cap_reached`` leave the action unchanged; 409 ``retry_unavailable``
+    when it is not retryable. The scheduler executes it.
+    """
+    ctx = get_ctx(request)
+    assert principal.user_id is not None and principal.role is not None
+    try:
+        updated = await ctx.review.responses.retry(
+            principal.tenant_id, action_id, user=principal.user_id, role=principal.role, reason=body.reason
+        )
+    except ActionRequestError as exc:
+        raise action_error(exc) from None
+    return await one_action_out(ctx, principal.tenant_id, updated)
+
+
+@actions.post("/{action_id}/verify", response_model=ActionOut, summary="Verify an executed Microsoft action again")
+async def verify(
+    action_id: UUID,
+    request: Request,
+    body: Optional[VerifyIn] = None,
+    principal: Principal = Depends(require(REVIEWER)),
+) -> ActionOut:
+    """Re-opens a finished verification for an hour of checks. 409 when not applicable; 429 within 5 minutes."""
+    ctx = get_ctx(request)
+    assert principal.user_id is not None
+    try:
+        updated = await VerificationService(ctx.review.responses).recheck(
+            principal.tenant_id, action_id, user=principal.user_id
+        )
+    except ActionRequestError as exc:
+        raise action_error(exc) from None
+    return await one_action_out(ctx, principal.tenant_id, updated)

@@ -10,7 +10,8 @@ A pack bundles, for one alert of one tenant:
 * enrichment observations, indicator sightings and correlation;
 * escalations (who claimed and decided, when), analyst feedback and the
   response-action ledger (requested by, approved by, executed, blocked
-  reason);
+  reason, who executed it and in how many attempts, whether the change was
+  verified by re-query, and the rollback lineage);
 * a *human oversight* view: which steps were automated, which were decided
   or approved by a person, and where a person overrode the automation;
 * the related audit-log entries with their hash-chain values, each entry's
@@ -185,9 +186,10 @@ def _escalation_view(e: Escalation) -> Dict[str, Any]:
     }
 
 
-def _action_view(a: ResponseAction) -> Dict[str, Any]:
+def _action_view(a: ResponseAction, rolled_back_by: Optional[Any] = None) -> Dict[str, Any]:
     result, _ = redact(a.result) if a.result is not None else (None, 0)
     params, _ = redact(a.params)
+    verification_detail, _ = redact(a.verification_detail) if a.verification_detail is not None else (None, 0)
     return {
         "id": a.id,
         "action_type": a.action_type,
@@ -200,12 +202,27 @@ def _action_view(a: ResponseAction) -> Dict[str, Any]:
         "approved_at": a.approved_at,
         "executed_at": a.executed_at,
         "connector": a.connector,
+        "execution_owner": a.execution_owner,
+        "attempts": a.attempts,
         "params": params,
         "result": result,
+        "verification": a.verification,
+        "verified_at": a.verified_at,
+        "verification_detail": verification_detail,
         "rollback_of": a.rollback_of,
+        "rolled_back_by": rolled_back_by,
         "created_at": a.created_at,
         "updated_at": a.updated_at,
     }
+
+
+def _rollback_links(actions: Sequence[ResponseAction]) -> Dict[Any, Any]:
+    """Original action id -> the most recent rollback row of it among ``actions``."""
+    links: Dict[Any, Any] = {}
+    for a in sorted(actions, key=lambda x: (x.created_at, str(x.id))):
+        if a.rollback_of is not None:
+            links[a.rollback_of] = a.id
+    return links
 
 
 def _feedback_view(f: Feedback) -> Dict[str, Any]:
@@ -230,10 +247,36 @@ def human_oversight(
     escalations: Sequence[Escalation],
     actions: Sequence[ResponseAction],
     feedback: Sequence[Feedback],
+    audit: Sequence[Mapping[str, Any]] = (),
 ) -> Dict[str, Any]:
-    """Which steps ran automatically, which a person decided or approved, and where a person overrode the automation."""
+    """Which steps ran automatically, which a person decided or approved, and where a person overrode the automation.
+
+    Rollback requests and retries (from the ``audit`` entries of the
+    actions) are human steps; a rollback also counts as an override of the
+    action it undoes.
+    """
     steps: List[Dict[str, Any]] = []
     overrides: List[Dict[str, Any]] = []
+    by_id = {str(a.id): a for a in actions}
+    for entry in audit:
+        action = by_id.get(str(entry.get("resource_id")))
+        if entry.get("resource_type") != "response_action" or action is None:
+            continue
+        details = entry.get("details") if isinstance(entry.get("details"), Mapping) else {}
+        if entry.get("action") == "response_action.rollback_requested":
+            steps.append(
+                {"at": entry.get("ts"), "step": f"rollback_requested:{action.action_type}", "mode": "human",
+                 "actor": entry.get("actor_id"), "detail": (details or {}).get("reason")}
+            )
+            overrides.append(
+                {"at": entry.get("ts"), "kind": "action_rolled_back", "actor": entry.get("actor_id"),
+                 "detail": f"rollback of {action.action_type} on {action.target} requested"}
+            )
+        elif entry.get("action") == "response_action.retry_requested":
+            steps.append(
+                {"at": entry.get("ts"), "step": f"retry_requested:{action.action_type}", "mode": "human",
+                 "actor": entry.get("actor_id"), "detail": (details or {}).get("reason")}
+            )
     for e in events:
         if e.event_type == "node.completed" and e.node in AUTOMATED_NODES:
             steps.append({"at": e.ts, "step": e.node, "mode": "automated", "actor": e.actor_id, "detail": None})
@@ -344,6 +387,7 @@ async def build_evidence_pack(
     chain_since = audit[0]["ts"] if audit else None
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
     summary = _obj(alert.summary)
+    rollbacks = _rollback_links(actions)
     raw_redacted, raw_redactions = redact(alert.raw)
     analysis = _obj(summary.get("analysis"))
     pack: Dict[str, Any] = {
@@ -399,8 +443,8 @@ async def build_evidence_pack(
         },
         "escalations": [_escalation_view(e) for e in escalations],
         "feedback": [_feedback_view(f) for f in feedback],
-        "actions": [_action_view(a) for a in actions],
-        "human_oversight": human_oversight(summary, events, escalations, actions, feedback),
+        "actions": [_action_view(a, rollbacks.get(a.id)) for a in actions],
+        "human_oversight": human_oversight(summary, events, escalations, actions, feedback, audit),
         "audit": {
             "entries": audit,
             "chain_verification": {
@@ -556,7 +600,8 @@ def render_evidence_html(pack: Mapping[str, Any]) -> str:
             h.table(
                 [("action_type", "Action"), ("target", "Target"), ("risk_level", "Risk"), ("status", "Status"),
                  ("requested_by", "Requested by"), ("approved_by", "Approved by"), ("approved_at", "Approved"),
-                 ("executed_at", "Executed"), ("connector", "Connector"), ("blocked_reason", "Blocked reason")],
+                 ("executed_at", "Executed"), ("connector", "Connector"), ("verification", "Verification"),
+                 ("verified_at", "Verified"), ("rollback_of", "Rolls back"), ("blocked_reason", "Blocked reason")],
                 pack.get("actions") or [],
             ),
         )

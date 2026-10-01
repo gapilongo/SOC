@@ -12,8 +12,11 @@ const SECTION: EmailSection = {
   recipient_count: 1,
   auth: [{ authserv_id: 'mx.example.com', spf: 'fail', dkim: 'pass', dmarc: 'fail' }],
   relay_ip: '203.0.113.7',
-  urls: [{ url: 'http://198.51.100.9/login', display: 'hxxp://198[.]51[.]100[.]9/login', mismatch: true, mismatch_text_host: 'login.example.com', ip_host: true }],
-  url_count: 1,
+  urls: [
+    { url: 'http://198.51.100.9/login', display: 'hxxp://198[.]51[.]100[.]9/login', mismatch: true, mismatch_text_host: 'login.example.com', ip_host: true },
+    { url: 'https://login.example.com', display: 'hxxps://login[.]example[.]com', mismatch: false, display_only: true },
+  ],
+  url_count: 2,
   attachments: [{ filename: 'page.htm', sniffed_type: 'html', declared_type: 'text/html', size: 2048, sha256: 'a'.repeat(64), risks: ['html'] }],
   attachment_count: 1,
   reporter: 'bob@example.com',
@@ -32,6 +35,9 @@ describe('EmailPanel', () => {
     expect(screen.getByText('hxxp://198[.]51[.]100[.]9/login')).toBeTruthy();
     expect(screen.getByText('text shows login.example.com')).toBeTruthy();
     expect(screen.getByText('raw IP')).toBeTruthy();
+    // The URL the deceiving link shows is listed, flagged as link text only.
+    expect(screen.getByText('hxxps://login[.]example[.]com')).toBeTruthy();
+    expect(screen.getAllByText('link text only')).toHaveLength(1);
     expect(screen.getByText(`SHA-256 ${'a'.repeat(64)}`)).toBeTruthy();
     expect(screen.getByText('bob@example.com')).toBeTruthy();
     expect(screen.getByText(/Lookalike domain: examp1e.test/)).toBeTruthy();

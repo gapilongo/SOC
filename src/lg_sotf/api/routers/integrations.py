@@ -11,6 +11,16 @@ Every change and every test is written to the audit log.
 ``POST /integrations/slack/interactions`` is the Request URL of a Slack
 app's Interactivity: it is authenticated by the app's signing secret, not
 by a bearer token (see :mod:`lg_sotf.integrations.slack`).
+
+The ``microsoft`` kind is the direct response connector
+(``docs/microsoft.md``): at most one per tenant (409 ``integration_exists``),
+no events, its capabilities described by ``GET
+/integrations/microsoft/catalog``. Its audit entries record which
+capabilities were enabled or disabled, went live or stopped being live,
+their options and whether the credential was rotated (never the
+credential). ``POST /integrations/{id}/test`` runs the Microsoft connection
+test (token requests and GETs only) and returns its report as
+``microsoft``.
 """
 
 from __future__ import annotations
@@ -33,12 +43,14 @@ from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry, User
-from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.db.repos.integrations import IntegrationExists, NewOutboxEntry
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.integrations.channels import send_notification
 from lg_sotf.integrations.config import (
+    MICROSOFT_KIND,
     NOTIFY_KINDS,
     IntegrationConfigError,
+    certificate_details,
     check_secret_binding,
     decrypt_secret,
     encrypt_secret,
@@ -50,6 +62,7 @@ from lg_sotf.integrations.config import (
 )
 from lg_sotf.integrations.events import (
     ACTION_AWAITING_APPROVAL,
+    ACTION_VERIFICATION_FAILED,
     ESCALATION_CREATED,
     ESCALATION_DECIDED,
     ESCALATION_SLA_BREACHED,
@@ -58,6 +71,8 @@ from lg_sotf.integrations.events import (
     ui_base_url,
 )
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp, tls_verify
+from lg_sotf.integrations.microsoft.catalog import catalog_out
+from lg_sotf.integrations.microsoft.connection_test import MicrosoftTestReport
 from lg_sotf.integrations.slack import (
     MAX_BODY_BYTES,
     REPLAY_TTL_S,
@@ -71,6 +86,8 @@ from lg_sotf.integrations.slack import (
 )
 from lg_sotf.integrations.ticketing import ticket_client
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services.connectors.base import ConnectorConfigError
+from lg_sotf.services.connectors.microsoft import MicrosoftClients, build_microsoft_connector
 from lg_sotf.services.review import REVIEWER_ROLES, ReviewDenied
 
 log = get_logger(__name__)
@@ -78,14 +95,15 @@ log = get_logger(__name__)
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 tickets = APIRouter(prefix="/tickets", tags=["integrations"])
 
-Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow"]
+Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft"]
 Severity = Literal["info", "low", "medium", "high", "critical"]
 OutboxStatus = Literal["pending", "sent", "failed", "dead"]
 MAX_CONFIG_KEYS = 30
 MAX_INTEGRATIONS_PER_TENANT = 50
 DEFAULT_EVENTS: Dict[str, List[str]] = {
-    "notify": [ESCALATION_CREATED, ESCALATION_SLA_BREACHED, ACTION_AWAITING_APPROVAL],
+    "notify": [ESCALATION_CREATED, ESCALATION_SLA_BREACHED, ACTION_AWAITING_APPROVAL, ACTION_VERIFICATION_FAILED],
     "ticketing": [ESCALATION_CREATED, ESCALATION_DECIDED],
+    "microsoft": [],
 }
 
 
@@ -134,6 +152,7 @@ class IntegrationTestOut(BaseModel):
     ok: bool
     detail: str
     http_status: Optional[int] = None
+    microsoft: Optional[MicrosoftTestReport] = None
 
 
 class DeliveryOut(BaseModel):
@@ -190,6 +209,20 @@ def _secrets_state(ctx: ApiContext, integration: Integration) -> Dict[str, bool]
     return {f: bool(values.get(f)) for f in fields}
 
 
+def _config_out(integration: Integration) -> Dict[str, Any]:
+    config = dict(integration.config)
+    pem = config.get("certificate_pem")
+    if integration.kind == MICROSOFT_KIND and isinstance(pem, str) and pem:
+        try:
+            details = certificate_details(pem)
+        except IntegrationConfigError:
+            details = None
+        config["certificate"] = (
+            {k: details[k] for k in ("thumbprint_sha1", "thumbprint_sha256", "not_after")} if details else None
+        )
+    return config
+
+
 def integration_out(ctx: ApiContext, integration: Integration) -> IntegrationOut:
     return IntegrationOut(
         id=integration.id,
@@ -199,7 +232,7 @@ def integration_out(ctx: ApiContext, integration: Integration) -> IntegrationOut
         enabled=integration.enabled,
         events=list(integration.events),
         min_severity=integration.min_severity,
-        config=dict(integration.config),
+        config=_config_out(integration),
         secrets=_secrets_state(ctx, integration),
         created_at=integration.created_at,
         updated_at=integration.updated_at,
@@ -220,6 +253,8 @@ def _check_config(ctx: ApiContext, kind: str, config: Dict[str, Any]) -> Dict[st
 
 def _events(kind: str, events: Optional[List[str]]) -> List[str]:
     if events is None:
+        if kind == MICROSOFT_KIND:
+            return []
         return list(DEFAULT_EVENTS["notify" if kind in NOTIFY_KINDS else "ticketing"])
     try:
         return validate_events(kind, events)
@@ -227,9 +262,16 @@ def _events(kind: str, events: Optional[List[str]]) -> List[str]:
         raise _invalid(exc) from None
 
 
-def _encrypt(ctx: ApiContext, kind: str, tenant_id: str, integration_id: UUID, values: Dict[str, Any]) -> Optional[str]:
+def _encrypt(
+    ctx: ApiContext,
+    kind: str,
+    tenant_id: str,
+    integration_id: UUID,
+    values: Dict[str, Any],
+    config: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
     try:
-        checked = validate_secret(kind, values, require_https=_require_https(ctx))
+        checked = validate_secret(kind, values, require_https=_require_https(ctx), config=config)
     except IntegrationConfigError as exc:
         raise _invalid(exc) from None
     if not checked:
@@ -251,6 +293,41 @@ async def _audit(
         actor_id=principal.actor_id,
         details=details,
     )
+
+
+def _capability_flags(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    caps = config.get("capabilities") if isinstance(config.get("capabilities"), dict) else {}
+    return {str(k): v for k, v in (caps or {}).items() if isinstance(v, dict)}
+
+
+def microsoft_audit(
+    before: Dict[str, Any], after: Dict[str, Any], *, credential_rotated: bool
+) -> Dict[str, Any]:
+    """What a Microsoft integration change did to its capabilities (never its credential)."""
+    old, new = _capability_flags(before), _capability_flags(after)
+
+    def keys(caps: Dict[str, Dict[str, Any]], flag: str) -> set[str]:
+        return {k for k, v in caps.items() if v.get("enabled") is True and (flag == "enabled" or v.get("live") is True)}
+
+    options = {
+        k: v.get("options") for k, v in new.items() if v.get("options") != (old.get(k) or {}).get("options")
+    }
+    return {
+        "capabilities_enabled": sorted(keys(new, "enabled") - keys(old, "enabled")),
+        "capabilities_disabled": sorted(keys(old, "enabled") - keys(new, "enabled")),
+        "live_enabled": sorted(keys(new, "live") - keys(old, "live")),
+        "live_disabled": sorted(keys(old, "live") - keys(new, "live")),
+        "credential_rotated": credential_rotated,
+        "options": options,
+        "cloud": after.get("cloud"),
+        "credential": after.get("credential"),
+    }
+
+
+def _microsoft_clients(request: Request) -> MicrosoftClients:
+    """Test hook: ``app.state.microsoft_clients`` replaces the process's Microsoft HTTP factory and token cache."""
+    injected = getattr(request.app.state, "microsoft_clients", None)
+    return injected if injected is not None else get_ctx(request).review.responses.microsoft
 
 
 def _http(request: Request) -> IntegrationHttp:
@@ -390,6 +467,12 @@ async def slack_interactions(
     return Response(status_code=200)
 
 
+@router.get("/microsoft/catalog", summary="Microsoft direct-response capabilities, clouds and Defender geos")
+async def microsoft_catalog(principal: Principal = Depends(require(ADMIN))) -> Dict[str, Any]:
+    """Every capability the Microsoft integration can enable: actions, permissions, options schema, clouds."""
+    return catalog_out()
+
+
 @router.get("/{integration_id}", response_model=IntegrationOut, summary="Integration detail")
 async def get_integration(
     integration_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))
@@ -404,28 +487,36 @@ async def create_integration(
 ) -> IntegrationOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
-    if len(await ctx.repos.integrations.list(tenant_id)) >= MAX_INTEGRATIONS_PER_TENANT:
+    existing = await ctx.repos.integrations.list(tenant_id)
+    if len(existing) >= MAX_INTEGRATIONS_PER_TENANT:
         raise ApiError(409, "conflict", f"a tenant may have at most {MAX_INTEGRATIONS_PER_TENANT} integrations")
+    if body.kind == MICROSOFT_KIND and any(i.kind == MICROSOFT_KIND for i in existing):
+        raise ApiError(409, "integration_exists", "this tenant already has a Microsoft integration")
     config = _check_config(ctx, body.kind, body.config)
     events = _events(body.kind, body.events)
     integration_id = uuid.uuid4()
-    ciphertext = _encrypt(ctx, body.kind, tenant_id, integration_id, merge_secret({}, body.secret or {}))
-    integration = await ctx.repos.integrations.create(
-        tenant_id,
-        body.kind,
-        body.name,
-        integration_id=integration_id,
-        config=config,
-        secret_ciphertext=ciphertext,
-        events=events,
-        min_severity=body.min_severity,
-        enabled=body.enabled,
-        created_by=principal.local_user_id,
-    )
-    await _audit(
-        ctx, principal, "integration.created", integration.id,
-        {"kind": integration.kind, "name": integration.name, "events": events, "has_secret": ciphertext is not None},
-    )
+    ciphertext = _encrypt(ctx, body.kind, tenant_id, integration_id, merge_secret({}, body.secret or {}), config)
+    try:
+        integration = await ctx.repos.integrations.create(
+            tenant_id,
+            body.kind,
+            body.name,
+            integration_id=integration_id,
+            config=config,
+            secret_ciphertext=ciphertext,
+            events=events,
+            min_severity=body.min_severity,
+            enabled=body.enabled,
+            created_by=principal.local_user_id,
+        )
+    except IntegrationExists as exc:
+        raise ApiError(409, "integration_exists", str(exc)) from None
+    details: Dict[str, Any] = {
+        "kind": integration.kind, "name": integration.name, "events": events, "has_secret": ciphertext is not None,
+    }
+    if integration.kind == MICROSOFT_KIND:
+        details.update(microsoft_audit({}, config, credential_rotated=ciphertext is not None))
+    await _audit(ctx, principal, "integration.created", integration.id, details)
     return integration_out(ctx, integration)
 
 
@@ -450,6 +541,7 @@ async def update_integration(
     if "events" in fields:
         changes["events"] = _events(current.kind, body.events)
     changed_secrets: List[str] = []
+    new_config: Dict[str, Any] = changes.get("config", dict(current.config))
     if "secret" in fields:
         patch = body.secret or {}
         unknown = [k for k in patch if k not in secret_fields(current.kind)]
@@ -460,14 +552,16 @@ async def update_integration(
         except IntegrationConfigError:
             existing = {}
         changes["secret_ciphertext"] = _encrypt(
-            ctx, current.kind, tenant_id, integration_id, merge_secret(existing, patch)
+            ctx, current.kind, tenant_id, integration_id, merge_secret(existing, patch), new_config
         )
         changed_secrets = sorted(patch)
     integration = await ctx.repos.integrations.update(tenant_id, integration_id, **changes)
-    await _audit(
-        ctx, principal, "integration.updated", integration_id,
-        {"fields": sorted(f for f in fields if f != "secret"), "secret_fields": changed_secrets},
-    )
+    details: Dict[str, Any] = {"fields": sorted(f for f in fields if f != "secret"), "secret_fields": changed_secrets}
+    if current.kind == MICROSOFT_KIND:
+        details.update(
+            microsoft_audit(dict(current.config), new_config, credential_rotated=bool(changed_secrets))
+        )
+    await _audit(ctx, principal, "integration.updated", integration_id, details)
     return integration_out(ctx, integration)
 
 
@@ -479,7 +573,10 @@ async def delete_integration(
     current = await ctx.repos.integrations.get(principal.tenant_id, integration_id)
     if not await ctx.repos.integrations.delete(principal.tenant_id, integration_id):
         raise NotFound("integration", integration_id)
-    await _audit(ctx, principal, "integration.deleted", integration_id, {"kind": current.kind, "name": current.name})
+    details: Dict[str, Any] = {"kind": current.kind, "name": current.name}
+    if current.kind == MICROSOFT_KIND:
+        details.update(microsoft_audit(dict(current.config), {}, credential_rotated=False))
+    await _audit(ctx, principal, "integration.deleted", integration_id, details)
     return Response(status_code=204)
 
 
@@ -491,6 +588,8 @@ async def test_integration(
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
     integration = await ctx.repos.integrations.get(tenant_id, integration_id)
+    if integration.kind == MICROSOFT_KIND:
+        return await _test_microsoft(request, ctx, principal, integration)
     payload = make_test_event(tenant_id, integration.name)
     http = _http(request)
     ok, detail, status, result = False, "", None, {}
@@ -535,6 +634,54 @@ async def test_integration(
     )
     await _audit(ctx, principal, "integration.tested", integration_id, {"ok": ok, "http_status": status})
     return IntegrationTestOut(ok=ok, detail=detail[:500], http_status=status)
+
+
+async def _test_microsoft(
+    request: Request, ctx: ApiContext, principal: Principal, integration: Integration
+) -> IntegrationTestOut:
+    """The Microsoft connection test: token requests and GETs only; the report is stored and audited."""
+    tenant_id = principal.tenant_id
+    clients = _microsoft_clients(request)
+    report: Optional[MicrosoftTestReport] = None
+    try:
+        connector = build_microsoft_connector(
+            ctx.repos, ctx.settings, ctx.secret_box, integration, tokens=clients.tokens, http=clients.http,
+            checkpoints=ctx.repos.actions,
+        )
+        report = await connector.probe_all()
+        ok = report.ok
+        enabled = [k for k, c in report.capabilities.items() if c.enabled]
+        detail = (
+            "credentials accepted; " + (f"{len(enabled)} enabled capabilities checked" if enabled else "no capability enabled")
+            if ok else "the connection test found problems (see the report)"
+        )
+    except ConnectorConfigError as exc:
+        ok, detail = False, str(exc)
+    event_id = uuid.uuid4()
+    result: Dict[str, Any] = report.model_dump(mode="json") if report is not None else {}
+    await ctx.repos.integrations.record_test(
+        tenant_id,
+        NewOutboxEntry(
+            integration_id=integration.id,
+            event_id=event_id,
+            event_type=TEST_EVENT,
+            operation="test",
+            dedupe_key=f"{TEST_EVENT}:{event_id}",
+            payload={"event": TEST_EVENT, "kind": MICROSOFT_KIND},
+        ),
+        ok=ok,
+        error=None if ok else detail,
+        result=result,
+    )
+    await _audit(
+        ctx, principal, "integration.tested", integration.id,
+        {
+            "ok": ok,
+            "tokens": {api: t.status for api, t in report.tokens.items()} if report is not None else {},
+            "capabilities": {k: c.status for k, c in report.capabilities.items() if c.enabled} if report else {},
+        },
+    )
+    return IntegrationTestOut(ok=ok, detail=detail[:500], microsoft=report)
 
 
 def delivery_out(entry: OutboxEntry) -> DeliveryOut:

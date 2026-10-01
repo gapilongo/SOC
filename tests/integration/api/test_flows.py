@@ -212,6 +212,8 @@ async def test_viewer_cannot_decide_and_claim_by_other_analyst_is_refused(api: A
 
 
 async def _pending_action(api: ApiHarness, alert_id: str, action_type: str, target: str, risk: str):
+    # The alert's run is live: an approval for an ended (or missing) run goes to the scheduler, not the run.
+    await api.repos.runs.upsert_queued(TENANT_A, alert_id)
     action, _ = await api.repos.actions.propose(
         TENANT_A, alert_id, action_type, target, risk, status="awaiting_approval"
     )

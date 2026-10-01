@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Any, Callable, Dict, Tuple
 from uuid import UUID, uuid4
 
@@ -169,6 +170,8 @@ TARGETS = {
 
 
 async def pending_actions(repos: Repositories, settings: Settings, alert_id: str, risks: Dict[str, str]) -> Dict[str, str]:
+    # The alert's run is still live (an approval for an ended run goes to the scheduler instead).
+    await repos.runs.upsert_queued(TENANT_A, alert_id)
     ids = {}
     for action_type, risk in risks.items():
         action, _ = await repos.actions.propose(
@@ -334,7 +337,10 @@ async def test_orphaned_executing_actions_are_failed(repos: Repositories, make_s
     for alert_id in (dead, alive):
         await repos.runs.upsert_queued(TENANT_A, alert_id)
         action, _ = await repos.actions.propose(TENANT_A, alert_id, "block_ip", "185.220.101.44", "medium", status="approved")
-        stuck[alert_id] = await repos.actions.transition(TENANT_A, action.id, "executing", connector="webhook")
+        # Started before the grace period (the execution budget plus a minute), so no call can still be running.
+        stuck[alert_id] = await repos.actions.transition(
+            TENANT_A, action.id, "executing", connector="webhook", now=datetime.now(UTC) - timedelta(minutes=10)
+        )
     await repos.runs.dead_letter(TENANT_A, dead, "poison")
 
     assert await responses.fail_orphaned_executing(TENANT_A) == 1

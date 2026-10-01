@@ -286,6 +286,16 @@ class DecisionOut(BaseModel):
 # ---------------------------------------------------------------- actions
 
 
+class RollbackEligibilityOut(BaseModel):
+    """Whether the action can be rolled back now, with the inverse type and its risk; ``reason`` when not."""
+
+    available: bool = False
+    action_type: Optional[str] = None
+    risk: Optional[str] = None
+    until: Optional[datetime] = None
+    reason: Optional[str] = None
+
+
 class ActionOut(Out):
     id: UUID
     tenant_id: str
@@ -305,10 +315,41 @@ class ActionOut(Out):
     rollback_of: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
+    execution_owner: str = "workflow"
+    integration_id: Optional[UUID] = None
+    external_ref: Optional[Dict[str, Any]] = None
+    attempts: int = 0
+    verification: Optional[Literal["pending", "verified", "failed", "inconclusive"]] = None
+    verification_detail: Optional[Dict[str, Any]] = None
+    verify_deadline: Optional[datetime] = None
+    verified_at: Optional[datetime] = None
+    rollback: RollbackEligibilityOut = Field(default_factory=RollbackEligibilityOut)
+    rolled_back_by: Optional[UUID] = Field(default=None, description="The live rollback of this action, if any.")
 
 
 class ApprovalIn(In):
     reject_remaining: bool = False
+
+
+class RollbackIn(In):
+    reason: str = Field(min_length=1, max_length=500)
+    approve: bool = Field(
+        default=True, description="Approve the rollback yourself when your role may approve its risk."
+    )
+
+
+class RollbackOut(BaseModel):
+    rollback: ActionOut
+    original: ActionOut
+    created: bool
+
+
+class RetryIn(In):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class VerifyIn(In):
+    pass
 
 
 class ApprovalOut(BaseModel):

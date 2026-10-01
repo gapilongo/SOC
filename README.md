@@ -73,6 +73,18 @@ flowchart LR
     G --> C
 ```
 
+## What's new in 1.1
+
+* **Actions that really happen, and are proven**: approved actions run
+  directly in Microsoft 365 (purge and restore phishing emails, notify the
+  reporter), Entra ID (disable, revoke sessions, reset password, confirm
+  compromised) and Defender for Endpoint (isolate, block IP/domain/URL/file,
+  collect forensics). Each action is re-checked against Microsoft, can be
+  rolled back under the same approvals, and is routed per action type, so the
+  rest can still go to your SOAR ([docs](docs/microsoft.md)).
+* **SOAR templates**: a reference receiver and an n8n workflow for the
+  signed webhook ([docs](docs/soar-playbooks.md)).
+
 ## What's new in 1.0
 
 * **Phishing triage**: user-reported emails from a Microsoft 365 reporting
@@ -156,7 +168,8 @@ flowchart LR
 * Per-tenant autonomy per risk level, protected assets, allowed actions,
   hourly caps and blast-radius limits, re-checked right before execution.
 * Dry-run by default; HMAC-signed webhooks to your SOAR for real execution.
-  LG-SOTF never calls vendor EDR, firewall or identity APIs directly.
+  Direct Microsoft 365, Entra ID and Defender for Endpoint execution with
+  verification and rollback; other vendors through your SOAR.
 
 **Platform**
 * Multi-tenant: PostgreSQL row-level security with a separate non-owner
@@ -185,8 +198,8 @@ flowchart LR
 
 ### Not in this release
 
-No direct vendor EDR/firewall/IdP response integrations (containment goes
-through your SOAR; tickets and notifications are native), no native SAML
+No direct response integrations beyond Microsoft (other vendors go through
+your SOAR; tickets and notifications are native), no native SAML
 (use an OIDC broker such as Keycloak or Entra ID), no WebAuthn/passkeys, no
 billing or self-service sign-up, no model fine-tuning or automatic threshold
 learning, and no published accuracy figures on real customer data: the

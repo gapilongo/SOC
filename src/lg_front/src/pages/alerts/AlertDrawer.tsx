@@ -4,10 +4,12 @@ import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
-import type { AlertDetailOut, AlertEventOut, JsonObject } from '../../api/types';
+import type { ActionOut, AlertDetailOut, AlertEventOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
-import { DispositionBadge, SeverityBadge, StatusBadge } from '../../components/Badge';
+import { ActionControls, ActionDetails } from '../../components/actions/ActionDetails';
+import { VerificationBadge } from '../../components/actions/VerificationBadge';
+import { DispositionBadge, RiskBadge, SeverityBadge, StatusBadge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../components/Dialog';
 import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../components/Toast';
@@ -236,6 +238,52 @@ function NoteForm({ alertId }: { alertId: string }) {
   );
 }
 
+/** The alert's response actions with their outcome, verification and rollback controls. */
+export function ResponseActions({ alertId }: { alertId: string }) {
+  const api = useApi();
+  const [open, setOpen] = useState<string | null>(null);
+  const q = useQuery({
+    queryKey: ['actions', { alert_id: alertId }],
+    queryFn: ({ signal }) => endpoints.actions(api, { alert_id: alertId }, undefined, signal),
+  });
+  if (q.isPending) return <LoadingState label="Loading response actions" />;
+  if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
+  const items: ActionOut[] = Array.isArray(q.data?.items) ? q.data.items : [];
+  if (items.length === 0) return <p className="text-sm text-slate-400">No response action was planned for this alert.</p>;
+  return (
+    <ul className="space-y-2">
+      {items.map((a) => (
+        <li key={a.id} className="rounded-md border border-slate-800 p-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium text-slate-100">{humanize(a.action_type)}</span>
+            <code className="break-all text-xs text-slate-300">{a.target}</code>
+            <RiskBadge value={a.risk_level} />
+            <StatusBadge value={a.status} />
+            <VerificationBadge value={a.verification} detail={a.verification_detail} />
+            <Button
+              size="sm"
+              variant="ghost"
+              aria-expanded={open === a.id}
+              onClick={() => setOpen(open === a.id ? null : a.id)}
+              aria-label={`${open === a.id ? 'Hide' : 'Show'} details of ${humanize(a.action_type)} on ${a.target}`}
+            >
+              {open === a.id ? 'Hide' : 'Details'}
+            </Button>
+            <div className="ml-auto">
+              <ActionControls action={a} />
+            </div>
+          </div>
+          {open === a.id && (
+            <div className="mt-2">
+              <ActionDetails action={a} onSelectAction={(id) => setOpen(id)} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Tickets({ alertId }: { alertId: string }) {
   const api = useApi();
   const q = useQuery({
@@ -303,6 +351,9 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
             {[...list(mitre.tactics), ...list(mitre.techniques)].join(', ')}
           </p>
         )}
+      </Section>
+      <Section title="Response actions">
+        <ResponseActions alertId={alert.id} />
       </Section>
       <Section title="Tickets">
         <Tickets alertId={alert.id} />

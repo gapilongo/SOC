@@ -4,6 +4,68 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-01
+
+Approved response actions now run directly in the customer's Microsoft
+environment, and LG-SOTF proves they happened.
+
+### Added
+
+- **Microsoft direct response** (`docs/microsoft.md`): a `microsoft`
+  integration per tenant (its own app registration, client secret or
+  certificate, write-only and encrypted; global, US Government, GCC High,
+  DoD and China clouds with fixed Microsoft hosts, never a tenant-supplied
+  URL). A connection test reports token, permissions and readiness per
+  capability, including Exchange RBAC for Applications setups.
+- **Per-action routing**: each action type goes to the Microsoft connector,
+  the SOAR webhook, ticketing or dry run (`GET /tenant/response/routes`); the
+  dry-run kill switches always win, and a tenant dry run makes Microsoft
+  rehearse an action without changing anything.
+- **Microsoft 365 mail** (`docs/microsoft-mail.md`): `purge_message` finds the
+  reported message by Internet Message-ID in each recipient mailbox (from the
+  alert or message trace) and removes it; `restore_message` rolls it back;
+  `notify_reporter` sends a fixed update from the SOC mailbox.
+  `block_sender` stays on the SOAR webhook (no Microsoft API exists).
+- **Entra ID** (`docs/microsoft-entra.md`): `disable_user` (rollback
+  `enable_user`), `revoke_sessions`, `reset_password` (random, never stored,
+  change forced at next sign-in) and `confirm_compromised` (rollback
+  `dismiss_user_risk`). A guard refuses privileged targets and protected
+  assets, including aliases and object ids.
+- **Defender for Endpoint** (`docs/microsoft-defender.md`): `isolate_host`
+  (rollback release), IP/domain/URL and file indicators with expiry (rollback
+  deletes only LG-SOTF's indicators), stop-and-quarantine, and investigation
+  package collection.
+- **Verification**: executed actions are re-checked against Microsoft until
+  proven or failed (`action.verification_failed` event, a badge in the UI,
+  `POST /actions/{id}/verify`).
+- **Rollback and retry**: `POST /actions/{id}/rollback` records an inverse
+  action under the same approvals; `POST /actions/{id}/retry` resumes failed
+  or partial Microsoft actions. Approvals that arrive after the alert's
+  workflow ended run in a background job; approvals older than
+  `response.approval_ttl_s` expire.
+- **SOAR templates** (`docs/soar-playbooks.md`): a dependency-free reference
+  receiver (`examples/soar/receiver`) and an importable n8n workflow, plus
+  recipes for Tines, Shuffle and Tracecat.
+
+### Fixed
+
+- Phishing: a link's visible text is no longer a block target. Only real link
+  targets, the sender infrastructure and reply-to domains can be blocked.
+
+### Upgrade notes for 1.1
+
+- Migration `0009` adds ledger columns for routing, verification and rollback
+  and builds its indexes concurrently. Its downgrade is refused while a
+  Microsoft integration exists.
+- Stranded approvals from 1.0 older than `response.approval_ttl_s` are
+  blocked as `approval_expired` instead of executed.
+- Nothing runs against Microsoft until a tenant adds a Microsoft integration,
+  enables capabilities and turns dry run off. Live behaviour was tested
+  against faithful API fakes, not a real tenant: validate in a lab tenant
+  first (see the open items in `docs/microsoft.md`).
+- CI now lints, type-checks and scans `examples/` and type-checks
+  `src/lg_sotf/integrations`.
+
 ## [1.0.0] - 2026-09-30
 
 The first commercial release: the multi-tenant platform rebuild (tracked as

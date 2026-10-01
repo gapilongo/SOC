@@ -19,7 +19,8 @@ Payload (keys are stable; new keys may be added)::
                 "category", "source_id", "entities": {"hosts": [...], "ips": [...], ...}},
       "escalation": {"id", "level", "priority", "status", "reason", "decision", "sla_deadline",
                      "from_level", "attached_alerts"} | null,
-      "action": {"id", "type", "target", "risk_level", "status", "approval_reason", "error"} | null,
+      "action": {"id", "type", "target", "risk_level", "status", "approval_reason", "error", "dry_run",
+                 "rollback_of", "verification": {"outcome", "reason"} | null} | null,
       "links": {"alert": "https://soc.example.com/alerts?alert=<id>"}   # added at delivery
     }
 """
@@ -41,6 +42,8 @@ ESCALATION_DECIDED = "escalation.decided"
 ACTION_AWAITING_APPROVAL = "action.awaiting_approval"
 ACTION_EXECUTED = "action.executed"
 ACTION_FAILED = "action.failed"
+# A succeeded action whose re-query contradicted the change, or could not prove it (outcome failed/inconclusive).
+ACTION_VERIFICATION_FAILED = "action.verification_failed"
 ALERT_CRITICAL_RECEIVED = "alert.critical_received"
 TEST_EVENT = "integration.test"
 
@@ -51,6 +54,7 @@ EVENT_TYPES: Tuple[str, ...] = (
     ACTION_AWAITING_APPROVAL,
     ACTION_EXECUTED,
     ACTION_FAILED,
+    ACTION_VERIFICATION_FAILED,
     ALERT_CRITICAL_RECEIVED,
 )
 # What a ticketing integration does with its events: open a ticket, sync the analyst's decision to it.
@@ -62,6 +66,7 @@ EVENT_LABELS: Dict[str, str] = {
     ACTION_AWAITING_APPROVAL: "Action awaiting approval",
     ACTION_EXECUTED: "Action executed",
     ACTION_FAILED: "Action failed",
+    ACTION_VERIFICATION_FAILED: "Action not verified",
     ALERT_CRITICAL_RECEIVED: "Critical alert received",
     TEST_EVENT: "Test message",
 }
@@ -165,9 +170,17 @@ def escalation_summary(esc: Any, **extra: Any) -> Dict[str, Any]:
 
 
 def action_summary(action: Any, **extra: Any) -> Dict[str, Any]:
-    """Summary of a :class:`~lg_sotf.db.repos.ResponseAction`: never its params or connector result."""
+    """Summary of a :class:`~lg_sotf.db.repos.ResponseAction`: never its params, connector result or external state.
+
+    ``verification`` is ``{"outcome", "reason"}`` once the action has a
+    verification state (``reason`` a short code, e.g. ``deadline``).
+    """
     params = action.params if isinstance(getattr(action, "params", None), Mapping) else {}
     result = action.result if isinstance(getattr(action, "result", None), Mapping) else {}
+    outcome = getattr(action, "verification", None)
+    detail = getattr(action, "verification_detail", None)
+    reason = detail.get("reason") if isinstance(detail, Mapping) else None
+    rollback_of = getattr(action, "rollback_of", None)
     out: Dict[str, Any] = {
         "id": str(action.id),
         "type": action.action_type,
@@ -177,6 +190,12 @@ def action_summary(action: Any, **extra: Any) -> Dict[str, Any]:
         "approval_reason": params.get("approval_reason") if isinstance(params.get("approval_reason"), str) else None,
         "error": clean_text(result.get("error"), 100) if action.status == "failed" else None,
         "dry_run": action.status == "dry_run",
+        "rollback_of": str(rollback_of) if rollback_of is not None else None,
+        "verification": (
+            {"outcome": str(outcome), "reason": clean_text(reason, 100) if isinstance(reason, str) else None}
+            if isinstance(outcome, str)
+            else None
+        ),
     }
     out.update({k: v for k, v in extra.items() if v is not None})
     return out

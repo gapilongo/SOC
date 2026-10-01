@@ -34,7 +34,7 @@ from lg_sotf.db.repos._base import (
     truncate,
 )
 
-INTEGRATION_KINDS = ("slack", "teams", "email", "webhook", "jira", "servicenow")
+INTEGRATION_KINDS = ("slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft")
 TICKETING_KINDS = ("jira", "servicenow")
 OUTBOX_STATUSES = ("pending", "sent", "failed", "dead")
 OUTBOX_OPERATIONS = ("notify", "ticket_create", "ticket_update", "test")
@@ -52,6 +52,13 @@ ENQUEUE_SQL = """
     )
     ON CONFLICT (tenant_id, integration_id, dedupe_key) DO NOTHING
 """
+
+
+MICROSOFT_UNIQUE_INDEX = "ux_integrations_microsoft"
+
+
+class IntegrationExists(Conflict):
+    """The tenant already has the one integration of this kind it may have (``microsoft``)."""
 
 
 class Integration(Record):
@@ -166,6 +173,8 @@ class IntegrationsRepo(Repository):
                     created_by,
                 )
             except asyncpg.UniqueViolationError as exc:
+                if getattr(exc, "constraint_name", None) == MICROSOFT_UNIQUE_INDEX:
+                    raise IntegrationExists("this tenant already has a Microsoft integration") from exc
                 raise Conflict("this tenant already has an integration with this name") from exc
         return Integration.model_validate(dict(row))
 

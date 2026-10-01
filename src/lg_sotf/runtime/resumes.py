@@ -13,7 +13,9 @@ message:
 * a run ``waiting_approval`` whose alert has actions ``approved`` (they run on
   the next pass of ``execute_actions``) or none ``awaiting_approval`` any more
   gets an empty ``approval`` payload, which lets the run execute what is
-  approved and wait again for the rest.
+  approved and wait again for the rest. Only the run's own (workflow-owned)
+  actions count: rollbacks and actions handed to the scheduler never keep a
+  run waiting or resume it.
 
 The scheduler's ``orphaned_runs`` job calls :func:`recover_lost_resumes` for
 runs that have waited like that longer than a threshold, and ``lg-sotf
@@ -58,10 +60,11 @@ WHERE r.updated_at < now() - make_interval(secs => $1)
     OR (r.status = 'waiting_approval' AND (
         EXISTS (SELECT 1 FROM response_actions a
                 WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id AND a.status = 'approved'
+                  AND a.execution_owner = 'workflow'
                   AND COALESCE(a.approved_at, a.updated_at) < now() - make_interval(secs => $1))
         OR NOT EXISTS (SELECT 1 FROM response_actions a
                        WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id
-                         AND a.status = 'awaiting_approval')
+                         AND a.status = 'awaiting_approval' AND a.execution_owner = 'workflow')
     ))
   )
 ORDER BY r.updated_at
@@ -140,7 +143,7 @@ async def _approval_payload(repos: Repositories, tenant_id: str, alert_id: str) 
                    count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
                    (array_agg(approved_by ORDER BY approved_at DESC NULLS LAST)
                         FILTER (WHERE approved_by IS NOT NULL))[1] AS approver
-            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2
+            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2 AND execution_owner = 'workflow'
             """,
             tenant_id,
             alert_id,

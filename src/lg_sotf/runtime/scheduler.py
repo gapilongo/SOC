@@ -11,6 +11,9 @@ Jobs (each in its own task, never overlapping with itself):
 * ``notifications``  deliver the integrations outbox (Slack, Teams, email, webhooks, tickets)
 * ``ticket_sync``    poll linked open tickets for external resolution
 * ``outbox_purge``   delete old sent/dead outbox rows
+* ``response_background`` execute scheduler-owned response actions: rollbacks, retries, late approvals,
+  deferred and handed-off executions; expire old approvals (:mod:`lg_sotf.services.background`)
+* ``verify_actions`` re-query executed actions to verify them (:mod:`lg_sotf.services.verification`)
 
 The scheduler connects as the schema owner because the sweeps span tenants
 (``system_tx``) and maintenance runs DDL. On a graceful stop running jobs get
@@ -54,8 +57,10 @@ from lg_sotf.runtime.orphans import (
 from lg_sotf.runtime.resumes import recover_lost_resumes
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.runtime.worker import EventPublisherLike, sanitize_error
+from lg_sotf.services.background import BackgroundExecutor
 from lg_sotf.services.dispatch import DispatchableAlert, dispatch_new_alerts
 from lg_sotf.services.response import ResponseService
+from lg_sotf.services.verification import VerificationService
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -126,6 +131,7 @@ class Scheduler:
         max_concurrent_polls: int = 8,
         stop_grace_s: float = DEFAULT_STOP_GRACE_S,
         delivery: Optional[OutboxDelivery] = None,
+        responses: Optional[ResponseService] = None,
     ) -> None:
         if max_concurrent_polls < 1:
             raise ValueError("max_concurrent_polls must be >= 1")
@@ -148,7 +154,11 @@ class Scheduler:
         self._loop_tick = time.monotonic()
         self._running = False
         self._delivery = delivery
+        self._responses = responses
+        self._background: Optional[BackgroundExecutor] = None
+        self._verification: Optional[VerificationService] = None
         cfg = settings.scheduler
+        response = settings.response
         self.jobs: Dict[str, _Job] = {
             job.name: job
             for job in (
@@ -162,6 +172,9 @@ class Scheduler:
                 _Job("sla", cfg.sla_sweep_interval_s, self.sweep_sla),
                 _Job("maintenance", cfg.maintenance_interval_s, self.run_maintenance),
                 _Job("metrics", METRICS_INTERVAL_S, self.export_metrics),
+                # Not gated by integrations.enabled: rollbacks, late approvals and verification need them.
+                _Job("response_background", response.background_interval_s, self.run_response_background),
+                _Job("verify_actions", response.verify_interval_s, self.verify_actions),
             )
         }
         if settings.integrations.enabled:
@@ -369,10 +382,16 @@ class Scheduler:
             if len(sweep.requeued) + len(sweep.dead_lettered) < SWEEP_BATCH:
                 return
 
+    def responses(self) -> ResponseService:
+        """The scheduler's response service (one per process: it holds the Microsoft token cache)."""
+        if self._responses is None:
+            self._responses = ResponseService(self._repos, self._settings, self._events)
+        return self._responses
+
     async def _settle_orphaned_actions(self) -> None:
         # Actions left 'executing' by a dead-lettered run would otherwise stay there forever.
         try:
-            settled = await ResponseService(self._repos, self._settings, self._events).fail_orphaned_executing()
+            settled = await self.responses().fail_orphaned_executing()
         except Exception as exc:  # noqa: BLE001 - retried on the next sweep
             log.warning("scheduler.orphaned_actions_failed", error=type(exc).__name__)
             return
@@ -589,6 +608,24 @@ class Scheduler:
         purged = await self.delivery().purge()
         if purged:
             log.info("scheduler.outbox_purged", deleted=purged)
+
+    # -- response actions -------------------------------------------------------
+
+    async def run_response_background(self) -> None:
+        """Execute due scheduler-owned actions (see :mod:`lg_sotf.services.background`)."""
+        if self._background is None:
+            self._background = BackgroundExecutor(self.responses())
+        ran = await self._background.run_once()
+        if ran:
+            log.info("scheduler.response_background", actions=ran)
+
+    async def verify_actions(self) -> None:
+        """Run due verification checks (see :mod:`lg_sotf.services.verification`)."""
+        if self._verification is None:
+            self._verification = VerificationService(self.responses())
+        checked = await self._verification.run_due()
+        if checked:
+            log.info("scheduler.actions_verified", checked=checked)
 
     # -- metrics ---------------------------------------------------------------
 

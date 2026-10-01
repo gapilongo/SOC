@@ -134,7 +134,12 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ),
     ExportTable("escalations.jsonl", "escalations", "*", _ID_TEXT),
     ExportTable("feedback.jsonl", "analyst_feedback", "*", _ID_TEXT),
-    ExportTable("actions.jsonl", "response_actions", "*", _ID_UUID, _redact_fields("params", "result")),
+    # Every ledger column; the connector's state and verification detail hold ids and observed state (no secrets)
+    # and are redacted like the result.
+    ExportTable(
+        "actions.jsonl", "response_actions", "*", _ID_UUID,
+        _redact_fields("params", "result", "external_ref", "verification_detail"),
+    ),
     ExportTable("suppressions.jsonl", "suppression_rules", "*", _ID_TEXT),
     ExportTable(
         "integrations.jsonl",

@@ -139,7 +139,8 @@ run. With the default dry-run mode they are recorded as `dry_run` and nothing
 is sent; with the webhook connector the tenant's SOAR receives a signed
 request and the result is stored on the action. An action that a guardrail
 blocks (`blocked`, with a reason such as `protected_asset` or
-`non_public_ip`) can never be approved.
+`non_public_ip`) can never be approved. Executed actions can be verified by
+re-query, retried and rolled back (docs/microsoft.md).
 
 ### 5. Reduce noise with suppression rules
 
@@ -232,7 +233,8 @@ secrets replaced by `*_configured` flags):
   hosts in `params.scope.hosts` of the signed webhook body.
 * `response`: `connector` (`dry_run` or `webhook`), `webhook_url` and
   `webhook_secret` (your SOAR: Tracecat, Shuffle, Tines, n8n or any HTTPS
-  receiver that verifies the HMAC signature), `dry_run`, `allowed_actions`,
+  receiver that verifies the HMAC signature; templates and recipes in
+  [soar-playbooks.md](soar-playbooks.md)), `dry_run`, `allowed_actions`,
   `allow_internal_ip_blocks`, `max_actions_per_hour`, `blast_radius` (per
   action type per hour).
 * `review`: SLA minutes per level, level thresholds, minimum level per

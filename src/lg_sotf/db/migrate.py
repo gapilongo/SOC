@@ -25,6 +25,7 @@ from alembic.script import ScriptDirectory
 from psycopg import sql
 from sqlalchemy import create_engine, pool, text
 
+from lg_sotf.db import locks
 from lg_sotf.db.partitions import drop_expired_partitions, ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_query_params
@@ -33,6 +34,7 @@ from lg_sotf.settings import get_settings
 __all__ = [
     "ERASURE_FUNCTIONS",
     "MIGRATIONS_DIR",
+    "MIGRATION_LOCK_TIMEOUT",
     "PLATFORM_FUNCTIONS",
     "PROVISIONING_FUNCTIONS",
     "RUNTIME_TABLE_PRIVILEGES",
@@ -44,6 +46,7 @@ __all__ = [
     "grant_runtime_privileges",
     "head_revision",
     "libpq_url",
+    "migration_transaction_setup",
     "runtime_grant_statements",
     "schema_is_current",
     "setup_checkpointer",
@@ -102,6 +105,21 @@ ERASURE_FUNCTIONS: Tuple[str, ...] = ("lgsotf_erase_tenant_batch(text, integer)"
 log = structlog.get_logger(__name__)
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+MIGRATION_LOCK_TIMEOUT = "60s"
+
+
+def migration_transaction_setup() -> Tuple[str, ...]:
+    """The statements that open every migration transaction (env.py).
+
+    A revision whose autocommit block committed that transaction runs them
+    again in the one alembic opens afterwards (0009).
+    """
+    return (
+        f"SET LOCAL lock_timeout = '{MIGRATION_LOCK_TIMEOUT}'",
+        "SET LOCAL statement_timeout = 0",
+        "SELECT set_config('app.bypass_rls', 'on', true)",
+        f"SELECT pg_advisory_xact_lock({locks.MIGRATIONS}, 0)",
+    )
 
 
 def _ssl_params() -> dict[str, Optional[str]]:

@@ -403,7 +403,8 @@ test('response approval: role gating, the admin approves, the alert closes as ma
         expect(n).toBeGreaterThan(0);
         for (let i = 0; i < n; i += 1) {
           const row = rows.nth(i);
-          const risk = ((await row.getByRole('cell').nth(3).textContent()) ?? '').trim().toLowerCase();
+          // Found by content, not position: the table's columns change between releases.
+          const risk = ((await row.getByRole('cell').filter({ hasText: /^(low|medium|high|critical) risk$/i }).first().textContent()) ?? '').trim().toLowerCase();
           await expect(row.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
           if (risk.includes('high') || risk.includes('critical')) {
             await expect(row.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);

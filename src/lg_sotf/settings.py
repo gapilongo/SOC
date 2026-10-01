@@ -305,6 +305,23 @@ class ResponseSettings(BaseModel):
     webhook_url: Optional[str] = None
     webhook_secret: Optional[SecretStr] = None
     webhook_timeout_s: float = 15.0
+    # Verification of executed actions (lg_sotf.services.verification): job interval, time per check,
+    # checks at once, and the longest any verification may stay pending (4 days).
+    verify_interval_s: float = Field(default=15.0, ge=1.0, le=3_600.0)
+    verify_check_timeout_s: float = Field(default=30.0, ge=1.0, le=300.0)
+    verify_concurrency: int = Field(default=4, ge=1, le=64)
+    verify_max_s: float = Field(default=345_600.0, ge=60.0, le=2_592_000.0)
+    # Background execution (rollbacks, retries, late approvals, deferred and handed-off actions).
+    background_interval_s: float = Field(default=5.0, ge=1.0, le=3_600.0)
+    background_deadline_s: float = Field(default=120.0, ge=10.0, le=900.0)
+    background_concurrency: int = Field(default=4, ge=1, le=64)
+    # An approval the scheduler has not executed within this time is blocked (approval_expired).
+    approval_ttl_s: float = Field(default=86_400.0, ge=60.0, le=2_592_000.0)
+    # Execution attempts of one action before it fails with attempts_exhausted.
+    max_execution_attempts: int = Field(default=5, ge=1, le=50)
+    # Microsoft Graph and Defender requests: timeout per attempt and retries per request.
+    microsoft_timeout_s: float = Field(default=15.0, ge=1.0, le=120.0)
+    microsoft_retries: int = Field(default=3, ge=0, le=10)
 
 
 class MCPSettings(BaseModel):

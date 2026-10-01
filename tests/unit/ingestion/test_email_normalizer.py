@@ -64,6 +64,35 @@ def test_severity_follows_tenant_independent_facts() -> None:
     assert normalize(parse_email(risky.as_bytes())).severity == "high"
 
 
+def test_a_url_shown_as_link_text_stays_in_the_section_but_is_never_an_entity() -> None:
+    html = "<a href='http://203.0.113.66/owa/login.php'>https://outlook.example.com/verify</a>"
+    alert = normalize(parse_email(wrap(build(sender="it@examp1e.test", reply_to="collect@attacker.test", html=html))))
+    assert alert.entities.urls == ["http://203.0.113.66/owa/login.php"]
+    assert alert.entities.domains == ["examp1e.test", "attacker.test"] and alert.entities.ips == ["203.0.113.66"]
+    urls = (alert.email or {})["urls"]
+    assert [u["url"] for u in urls] == ["http://203.0.113.66/owa/login.php", "https://outlook.example.com/verify"]
+    assert urls[0]["mismatch"] is True and urls[0]["mismatch_text_host"] == "outlook.example.com"
+    assert urls[1]["display_only"] is True and urls[1]["host"] == "outlook.example.com"
+    # Display-only URLs are listed after every link, whatever their own flags.
+    shown_first = "<a href='https://news.partner.test/a'>http://198.51.100.9/</a> <a href='https://news.partner.test/b'>b</a>"
+    section = normalize(parse_email(build(html=shown_first).as_bytes())).email or {}
+    assert [u.get("display_only", False) for u in section["urls"]] == [False, False, True]
+
+
+def test_a_domain_both_shown_and_linked_to_is_an_entity_through_the_link() -> None:
+    html = "<a href='https://evil.test/login'>https://evil.test/verify</a>"
+    alert = normalize(parse_email(build(html=html).as_bytes()))
+    assert alert.entities.urls == ["https://evil.test/login"] and "evil.test" in alert.entities.domains
+
+
+def test_display_only_urls_raise_no_severity() -> None:
+    # Link text showing a raw IP (never a mismatch: IP text is not compared) would read as a raw-IP link.
+    shown_ip = build(ar=[auth("partner.test")], html="<a href='https://partner.test/news'>http://198.51.100.9/x</a>")
+    assert normalize(parse_email(shown_ip.as_bytes())).severity == "low"
+    linked_ip = build(ar=[auth("partner.test")], html="<a href='http://198.51.100.9/x'>news</a>")
+    assert normalize(parse_email(linked_ip.as_bytes())).severity == "medium"
+
+
 def test_non_email_alerts_have_no_email_section() -> None:
     canonical = get_normalizer("canonical").normalize(
         {"title": "t", "severity": "low", "email": {"from": {"address": "forged@example.com"}}}, ctx("webhook")
