@@ -157,7 +157,7 @@ def mail_test_connector(fake: Any, **remediate: Any) -> Any:
     })
 
 
-async def test_connection_test_passes_the_recommended_exchange_rbac_only_setup() -> None:
+async def test_connection_test_passes_the_recommended_exchange_rbac_only_setup_as_unverified() -> None:
     # Mail.ReadWrite and Mail.Send granted only through Exchange RBAC for Applications: not in the token.
     fake, exchange = mail_world()
     exchange.mailbox(ALICE)
@@ -165,7 +165,8 @@ async def test_connection_test_passes_the_recommended_exchange_rbac_only_setup()
     fake.grant("graph", ["User.Read.All", "ExchangeMessageTrace.Read.All"])
     report = await mail_test_connector(fake).connector.probe_all()
     remediate = report.capabilities["mail.remediate"]
-    assert remediate.status == "ok" and [c.status for c in remediate.checks] == ["ok", "ok"]
+    # The probes read; they cannot prove the write roles, so the capabilities are unverified, never missing.
+    assert remediate.status == "unverified" and [c.status for c in remediate.checks] == ["ok", "ok"]
     permissions = {(p.role, p.via): p.status for p in remediate.permissions}
     assert permissions == {
         ("Mail.ReadWrite", "token"): "unknown",
@@ -176,9 +177,28 @@ async def test_connection_test_passes_the_recommended_exchange_rbac_only_setup()
     notify = report.capabilities["mail.notify"]
     assert [(c.name, c.status) for c in notify.checks] == [("sender mailbox", "ok"), ("send mail", "skipped")]
     assert {(p.role, p.via): p.status for p in notify.permissions}[("Mail.Send", "token")] == "unknown"
-    assert notify.status == "ok" and report.ok
+    assert notify.status == "unverified" and report.ok
+    for check in (remediate, notify):
+        assert "Test-ServicePrincipalAuthorization" in check.detail
+        assert all("Test-ServicePrincipalAuthorization" in p.guidance for p in check.permissions
+                   if p.via == "token" and p.status == "unknown")
     assert all(not p.warning for c in report.capabilities.values() for p in c.permissions)
     assert fake.writes() == [] and {r.method for r in fake.api_requests()} == {"GET"}
+
+
+async def test_a_tenant_wide_read_grant_does_not_make_mail_capabilities_ok() -> None:
+    # Mail.Read consented tenant-wide and no write role anywhere: the Inbox and Sent Items reads pass, while
+    # every purge and every reply would get a 403.
+    fake, exchange = mail_world()
+    exchange.mailbox(ALICE)
+    exchange.mailbox(SOC)
+    fake.grant("graph", ["Mail.Read", "User.Read.All"])
+    report = await mail_test_connector(fake, recipient_source="alert").connector.probe_all()
+    for key in ("mail.remediate", "mail.notify"):
+        check = report.capabilities[key]
+        assert "ok" in {c.status for c in check.checks}
+        assert check.status == "unverified", key
+        assert "Test-ServicePrincipalAuthorization" in check.detail
 
 
 async def test_connection_test_warns_about_tenant_wide_mail_consent() -> None:
@@ -207,7 +227,7 @@ async def test_message_trace_permission_is_required_once_message_trace_is_select
     alert_only = await mail_test_connector(fake, recipient_source="alert").connector.probe_all()
     trace = next(p for p in alert_only.capabilities["mail.remediate"].permissions
                  if p.role == "ExchangeMessageTrace.Read.All")
-    assert trace.required is False and alert_only.capabilities["mail.remediate"].status == "ok"
+    assert trace.required is False and alert_only.capabilities["mail.remediate"].status == "unverified"
 
 
 async def test_a_mailbox_403_hints_at_exchange_rbac_not_tenant_wide_consent() -> None:

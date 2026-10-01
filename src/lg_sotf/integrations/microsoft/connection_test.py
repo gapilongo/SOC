@@ -12,19 +12,24 @@ What it does:
    always ``unknown`` with guidance. An application permission the
    capability may get through Exchange RBAC for Applications
    (``Permission.exchange_rbac``) is ``unknown``, not ``missing``, when the
-   token lacks it: the least-privilege setup grants it only there, and the
-   probes decide. When the token *does* carry it, the grant is tenant-wide
-   Entra consent, which overrides the Exchange scope: it is reported
-   ``granted`` with a ``warning`` and is not counted as evidence.
-   A conditional permission (``when``) is required exactly when its
-   condition holds for the capability's options.
+   token lacks it: the least-privilege setup grants it only there. Nothing
+   the test can do proves that grant (a GET probe passes on a read-only
+   grant while every write gets a 403), so the capability stays
+   ``unverified``, with guidance to check the scope with
+   ``Test-ServicePrincipalAuthorization``. When the token *does* carry it,
+   the grant is tenant-wide Entra consent, which overrides the Exchange
+   scope: it is reported ``granted`` with a ``warning`` and is not counted
+   as evidence. A conditional permission (``when``) is required exactly
+   when its condition holds for the capability's options.
 3. Runs the ``probe()`` GETs of every *enabled* capability through a
    read-only client (a write is refused before it is sent).
 
 Capability status: ``ok`` when its probes pass and no required,
-token-visible permission is missing; ``unverified`` when the only evidence
-is ``unknown`` (or a tenant-wide grant that carries a warning); otherwise ``missing_permission``, ``not_licensed``,
-``unsupported_cloud``, ``error`` or ``not_enabled``.
+token-visible permission is missing; ``unverified`` when a required
+Exchange RBAC permission is not in the token, or when the only evidence is
+``unknown`` (or a tenant-wide grant that carries a warning); otherwise
+``missing_permission``, ``not_licensed``, ``unsupported_cloud``, ``error``
+or ``not_enabled``.
 
 The report holds no token, secret or Microsoft free text; it is stored with
 the test delivery and audited as ``integration.tested``.
@@ -64,7 +69,13 @@ EXCHANGE_RBAC_GUIDANCE = (
 )
 RBAC_ONLY_GUIDANCE = (
     "not in the token, as expected when it is granted only through Exchange RBAC for Applications "
-    "(the recommended setup); the probes show whether the scoped grant works"
+    "(the recommended setup); neither the token nor a read-only probe shows that grant: check it with "
+    "Test-ServicePrincipalAuthorization -Identity <app> -Resource <mailbox>"
+)
+RBAC_UNVERIFIED_DETAIL = (
+    "a required mailbox permission is granted, if at all, through Exchange RBAC for Applications, which this "
+    "test cannot see (a passing read probe does not prove a write role): check each role and mailbox with "
+    "Test-ServicePrincipalAuthorization -Identity <app> -Resource <mailbox>"
 )
 TENANT_WIDE_WARNING = (
     "granted tenant-wide by Entra admin consent: this overrides the Exchange RBAC for Applications scope and "
@@ -195,6 +206,14 @@ def _probe_failure(exc: BaseException) -> ProbeCheck:
     return ProbeCheck("probe", "error", detail=f"probe failed ({type(exc).__name__})")
 
 
+def _rbac_unproven(spec: CapabilitySpec, permissions: Sequence[PermissionCheck]) -> bool:
+    """Whether a required permission meant for Exchange RBAC for Applications is not in the token."""
+    scoped = {(p.api, p.role) for p in spec.permissions if p.exchange_rbac}
+    return any(
+        p.required and p.via == "token" and p.status == "unknown" and (p.api, p.role) in scoped for p in permissions
+    )
+
+
 def _status(
     spec: CapabilitySpec, permissions: Sequence[PermissionCheck], checks: Sequence[ProbeCheck], token: TokenCheck
 ) -> CapabilityStatus:
@@ -210,6 +229,10 @@ def _status(
         return "not_licensed"
     if statuses & {"error", "not_found"}:
         return "error"
+    # The probes are GETs: they pass on a read-only grant, so they never prove an Exchange RBAC role the token
+    # does not show (a send or a purge would still get a 403).
+    if _rbac_unproven(spec, permissions):
+        return "unverified"
     # Passing probes or granted token roles are evidence; unknown entries alone are not, and neither is a
     # tenant-wide grant of a permission meant to be scoped by Exchange RBAC (it carries a warning).
     evidence = "ok" in statuses or any(
@@ -282,7 +305,11 @@ async def run_connection_test(
                 log.warning("microsoft.probe_failed", capability=spec.key, error_type=type(exc).__name__)
                 checks = [_probe_failure(exc)]
         status = _status(spec, permissions, checks, api_token)
-        detail = f"{spec.api} token: {api_token.error}" if api_token.status == "failed" else ""
+        detail = ""
+        if api_token.status == "failed":
+            detail = f"{spec.api} token: {api_token.error}"
+        elif status == "unverified" and _rbac_unproven(spec, permissions):
+            detail = RBAC_UNVERIFIED_DETAIL
         results[spec.key] = CapabilityCheck(status=status, enabled=True, live=live, permissions=permissions,
                                             checks=checks, detail=detail)
     certificate: Optional[CertificateInfo] = None

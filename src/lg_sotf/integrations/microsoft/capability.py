@@ -147,7 +147,9 @@ class Permission:
     hold, ``exchange_rbac`` an Exchange RBAC for Applications role: neither
     shows in tokens, so the connection test reports them as ``unknown``
     (and ``role`` itself as ``unknown`` when the token lacks it: with
-    ``exchange_rbac`` it is meant to be granted there, not by consent).
+    ``exchange_rbac`` it is meant to be granted there, not by consent; the
+    capability is then ``unverified``, since its read-only probes cannot
+    prove that grant).
     """
 
     api: Api
