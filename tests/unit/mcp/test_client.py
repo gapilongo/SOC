@@ -50,6 +50,31 @@ def test_key_is_required_and_not_in_repr() -> None:
     assert key not in repr(client)
 
 
+# The key may come from LG_SOTF_MCP__API_KEY or from the file LG_SOTF_MCP__API_KEY_FILE names: the client's
+# messages name both, never only the variable a key-file user never set.
+BOTH_SOURCES = "the API key (LG_SOTF_MCP__API_KEY or LG_SOTF_MCP__API_KEY_FILE)"
+
+
+@pytest.mark.parametrize("bad", ["\ufeff", "\u200b", "\x00", "\u00e9"], ids=["bom", "zero-width", "nul", "non-ascii"])
+def test_a_key_with_invalid_characters_is_refused_naming_both_sources(bad: str) -> None:
+    key = fake_key()
+    with pytest.raises(ApiConfigError) as caught:
+        LgSotfApiClient("https://soc.example.com", bad + key)
+    assert str(caught.value) == f"{BOTH_SOURCES} contains invalid characters"
+    with pytest.raises(ApiConfigError, match=r"is not set") as missing:
+        LgSotfApiClient("https://soc.example.com", "")
+    assert BOTH_SOURCES in str(missing.value)
+
+
+@pytest.mark.parametrize("status", [401, 403])
+async def test_an_auth_failure_names_both_key_sources(status: int) -> None:
+    stub = StubApi()
+    stub.json("GET /api/v1/alerts", {"error": {"code": "unauthorized", "message": "bad key"}}, status=status)
+    with pytest.raises(ApiCallError) as caught:
+        await make_client(stub).get("/api/v1/alerts")
+    assert f"Check that {BOTH_SOURCES} is valid and has the scope this tool needs." in str(caught.value)
+
+
 async def test_get_retries_on_503_then_succeeds() -> None:
     stub = StubApi()
     answers: List[httpx.Response] = [

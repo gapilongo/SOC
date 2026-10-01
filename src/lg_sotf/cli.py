@@ -477,10 +477,12 @@ def mcp() -> None:
     """Run the Model Context Protocol server over stdio.
 
     A thin client of the LG-SOTF REST API: set LG_SOTF_MCP__API_URL (the API's
-    base URL; https, or http for localhost) and LG_SOTF_MCP__API_KEY (an API
-    key with the 'read' scope, plus 'write' for add_note) in the environment
-    of the MCP client's server entry. The key is never accepted as an argument.
-    Logs go to stderr; stdout carries protocol messages only. See docs/mcp.md.
+    base URL; https, or http for localhost) and either LG_SOTF_MCP__API_KEY_FILE
+    (a file only its owner can read or write) or LG_SOTF_MCP__API_KEY
+    in the environment of the MCP client's server entry. The key needs the
+    'read' scope, plus 'write' for add_note or 'ingest' for test alerts. It is
+    never accepted as an argument. Logs go to stderr; stdout carries protocol
+    messages only. See docs/mcp.md.
     """
     from lg_sotf.mcp.command import mcp_command
 

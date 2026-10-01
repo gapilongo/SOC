@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "lg-sotf": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges",
+        "--user", "${LG_SOTF_MCP_UID:-1000}",
+        "-e", "LG_SOTF_MCP__API_URL=${LG_SOTF_MCP_URL}",
+        "-e", "LG_SOTF_MCP__API_KEY_FILE=/run/secrets/lg-sotf.key",
+        "-v", "${LG_SOTF_MCP_KEY_PATH}:/run/secrets/lg-sotf.key:ro",
+        "ghcr.io/gapilongo/lg-sotf:v1.2.0", "mcp"
+      ]
+    }
+  }
+}

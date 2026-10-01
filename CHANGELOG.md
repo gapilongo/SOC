@@ -4,6 +4,46 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-01
+
+MCP for testers and analysts: Phases 0 and 0.5 of the approved MCP
+architecture (`docs/design/mcp-architecture.md`). Security first: MCP reads,
+does safe writes and proposes; it never approves, rejects, rolls back or
+retries actions, decides escalations, or changes settings, sources,
+integrations, users, keys or MFA.
+
+### Added
+
+- Seven new `lg-sotf mcp` tools: `whoami`, `get_verdict`, `list_actions`,
+  `get_action`, `ingest_test_alerts`, `wait_for_verdict` and `get_test_run`.
+  From Claude Code, a tester on a dry-run dev or UAT install can send up to 25
+  canonical test alerts with expected labels, wait for triage, read verdicts,
+  routes, reasoning and proposed actions, and score the run (accuracy, route
+  and escalation accuracy, mismatches, contamination). Analysts gain read
+  access to verdicts and the response-action ledger.
+- `LG_SOTF_MCP__API_KEY_FILE`: the key is read from an owner-only file and
+  never sits in the launching shell.
+- `examples/mcp/.mcp.json`: a committable Claude Code entry (docker, image
+  `v1.2.0`, key file mounted read-only, no URL or credential).
+- `docs/mcp.md`: the tester workflow, the QA-tenant runbook and the security
+  model; `docs/design/mcp-architecture.md`: the full design and its phases.
+- Web app: "Connect an AI client" help on the API keys card.
+
+### Changed
+
+- Every MCP tool result strips invisible, bidi and control characters, and
+  escapes `>` as well as `<` inside the untrusted-data block.
+- `add_note` is annotated as destructive, so clients ask before calling it.
+- One malformed message no longer ends the stdio session; a long
+  `wait_for_verdict` no longer blocks other requests and stops when cancelled.
+
+### Upgrade notes for 1.2
+
+- Test alerts sent through MCP are triaged like real ones in this release.
+  Use them only on an install with `response.dry_run=true` (the default) and
+  in QA tenants without integrations, as the runbook in `docs/mcp.md` says.
+  Server-side rehearsal routing for MCP-ingested alerts comes in Phase 1a.
+
 ## [1.1.0] - 2026-10-01
 
 Approved response actions now run directly in the customer's Microsoft

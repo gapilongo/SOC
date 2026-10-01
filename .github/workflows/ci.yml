@@ -62,6 +62,7 @@ jobs:
           src/lg_sotf/services
           src/lg_sotf/ingestion
           src/lg_sotf/integrations
+          src/lg_sotf/mcp
           examples/soar/receiver
           examples/soar/n8n/build_workflow.py
       - name: Shellcheck

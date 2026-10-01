@@ -6,6 +6,7 @@ import { endpoints } from '../api/endpoints';
 import { API_KEY_SCOPES, type ApiKeyCreatedOut, type ApiKeyOut, type ApiKeyScope, type Role, type UserOut, type UserUpdateIn } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
+import { AiClientHelp } from '../components/AiClientHelp';
 import { Badge } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../components/Dialog';
 import { useToast } from '../components/Toast';
@@ -377,6 +378,7 @@ export default function UsersPage() {
             </>
           }
         >
+          <AiClientHelp />
           {keys.isPending && <LoadingState label="Loading API keys" />}
           {keys.isError && <ErrorMessage error={keys.error} onRetry={() => void keys.refetch()} />}
           {keys.data && keys.data.length === 0 && <EmptyState title="No API keys" />}
