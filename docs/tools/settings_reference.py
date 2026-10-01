@@ -288,7 +288,8 @@ DESCRIPTIONS: Dict[str, str] = {
     "ingestion.allow_private_destinations": "Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source.",
     # mcp (lg-sotf mcp)
     "mcp.api_url": "Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only.",
-    "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes). Environment only, never a command-line argument.",
+    "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes; `ingest` and `read` for test alerts). Environment only, never a command-line argument.",
+    "mcp.api_key_file": "File holding the API key instead of `mcp.api_key` (setting both is refused), so no credential sits in the launching shell's environment. Refused when its group or other users can read or write it (`chmod 600`).",
     "mcp.timeout_s": "Timeout of one API request.",
     "mcp.max_retries": "Retries of a read request on 429/502/503/504 or a connection error (writes are never retried).",
     "mcp.max_response_bytes": "Largest API response the MCP server reads.",

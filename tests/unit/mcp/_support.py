@@ -53,8 +53,27 @@ def make_client(stub: StubApi, *, url: str = API_URL, key: Optional[str] = None,
     return LgSotfApiClient(url, key or fake_key(), transport=stub.transport(), sleep=no_sleep, **kwargs)
 
 
-def make_server(stub: StubApi, *, max_output_chars: int = 60_000, **kwargs: Any) -> McpServer:
-    return McpServer(make_client(stub, **kwargs), max_output_chars=max_output_chars)
+def make_server(
+    stub: StubApi, *, max_output_chars: int = 60_000, clock: Optional[FakeClock] = None, **kwargs: Any
+) -> McpServer:
+    if clock is None:
+        return McpServer(make_client(stub, **kwargs), max_output_chars=max_output_chars, sleep=no_sleep)
+    return McpServer(make_client(stub, **kwargs), max_output_chars=max_output_chars, sleep=clock.sleep, clock=clock)
+
+
+class FakeClock:
+    """A monotonic clock that only moves when the code under test sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 1_000.0
+        self.sleeps: List[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
 
 
 def request(method: str, params: Optional[Dict[str, Any]] = None, request_id: Any = 1) -> Dict[str, Any]:
@@ -79,3 +98,17 @@ def payload(result: Dict[str, Any]) -> Any:
     start = text.index("<untrusted_alert_data>\n") + len("<untrusted_alert_data>\n")
     end = text.index("\n</untrusted_alert_data>")
     return json.loads(text[start:end])
+
+
+async def call(server: McpServer, name: str, arguments: Dict[str, Any], request_id: Any = 1) -> Dict[str, Any]:
+    """``tools/call`` on an initialized server; returns the JSON-RPC response."""
+    response = await server.handle(request("tools/call", {"name": name, "arguments": arguments}, request_id))
+    assert response is not None
+    return response
+
+
+def result_text(response: Dict[str, Any]) -> str:
+    assert "result" in response, response
+    content = response["result"]["content"]
+    assert len(content) == 1 and content[0]["type"] == "text"
+    return str(content[0]["text"])

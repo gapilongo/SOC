@@ -73,6 +73,13 @@ flowchart LR
     G --> C
 ```
 
+## What's new in 1.2
+
+* **MCP for testers and analysts**: from Claude Code, send test alerts, wait
+  for triage, read verdicts, reasoning and proposed actions, and score a run;
+  decisions stay in the web app or Slack ([docs](docs/mcp.md),
+  [design](docs/design/mcp-architecture.md)).
+
 ## What's new in 1.1
 
 * **Actions that really happen, and are proven**: approved actions run

@@ -44,6 +44,8 @@ RETRY_STATUSES = frozenset({429, 502, 503, 504})
 MAX_RETRY_AFTER_S = 10.0
 BACKOFF_BASE_S = 0.5
 MAX_ERROR_MESSAGE_CHARS = 300
+API_KEY_SOURCES = "the API key (LG_SOTF_MCP__API_KEY or LG_SOTF_MCP__API_KEY_FILE)"
+"""How messages name the key: it comes from the variable or from the file the other variable names."""
 
 QueryValue = Union[str, int, float, bool, Sequence[str], None]
 Sleep = Callable[[float], Awaitable[None]]
@@ -118,7 +120,7 @@ def _error_from(response_status: int, body: bytes) -> ApiCallError:
     if request_id:
         message = f"{message} [request id {request_id}]"
     if response_status in (401, 403):
-        message += ". Check that LG_SOTF_MCP__API_KEY is valid and has the scope this tool needs."
+        message += f". Check that {API_KEY_SOURCES} is valid and has the scope this tool needs."
     return ApiCallError(message, status=response_status, code=code)
 
 
@@ -137,9 +139,9 @@ class LgSotfApiClient:
         sleep: Sleep = asyncio.sleep,
     ) -> None:
         if not api_key or not api_key.strip():
-            raise ApiConfigError("LG_SOTF_MCP__API_KEY is not set")
-        if any(c.isspace() or not c.isprintable() for c in api_key.strip()):
-            raise ApiConfigError("LG_SOTF_MCP__API_KEY contains invalid characters")
+            raise ApiConfigError(f"{API_KEY_SOURCES} is not set")
+        if not all(c.isascii() and c.isprintable() and not c.isspace() for c in api_key.strip()):
+            raise ApiConfigError(f"{API_KEY_SOURCES} contains invalid characters")
         self._base = validate_api_url(api_url)
         self._key = api_key.strip()
         self._max_retries = max(0, max_retries)

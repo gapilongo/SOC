@@ -327,12 +327,15 @@ class ResponseSettings(BaseModel):
 class MCPSettings(BaseModel):
     """``lg-sotf mcp``: the LG-SOTF API the MCP server calls on the analyst's behalf.
 
-    Set the key with ``LG_SOTF_MCP__API_KEY`` (never a command-line argument): an
-    API key with the ``read`` scope, plus ``write`` for ``add_note``.
+    Set the key with ``LG_SOTF_MCP__API_KEY`` or, so no credential sits in the
+    launching shell's environment, ``LG_SOTF_MCP__API_KEY_FILE`` (a file only its
+    owner can read or write); never a command-line argument. An API key with the
+    ``read`` scope, plus ``write`` for ``add_note`` or ``ingest`` for test alerts.
     """
 
     api_url: str = "http://127.0.0.1:8000"
     api_key: Optional[SecretStr] = None
+    api_key_file: Optional[str] = None
     timeout_s: float = Field(default=30.0, gt=0, le=300)
     max_retries: int = Field(default=2, ge=0, le=5)
     max_response_bytes: int = Field(default=4_194_304, ge=1_024)

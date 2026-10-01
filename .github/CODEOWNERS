@@ -1,0 +1,18 @@
+# Paths whose changes need a review by the repository's security owner.
+# Effective only with "Require review from Code Owners" enabled in the
+# branch protection of main. The last matching line wins, so keep these
+# rules at the end if broader rules are ever added above them.
+
+# A committed MCP server entry decides which program runs with a tester's
+# API key and where the key is sent (design threat #5): the entries, the
+# test that pins them and the page that tells testers to copy them.
+*.mcp.json                                  @gapilongo
+/examples/mcp/                              @gapilongo
+/tests/unit/examples/test_mcp_example.py    @gapilongo
+/docs/mcp.md                                @gapilongo
+
+# The MCP server holds the key and decides what reaches the model.
+/src/lg_sotf/mcp/                           @gapilongo
+
+# This file.
+/.github/CODEOWNERS                         @gapilongo

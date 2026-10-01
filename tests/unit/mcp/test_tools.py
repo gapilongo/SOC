@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 import httpx
 
+from lg_sotf.compliance.canonical import seal, verify
+from lg_sotf.mcp.shaping import INVISIBLE_RE, SELECTOR_RUN_RE
 from lg_sotf.mcp.tools import CLOSE_TAG, OPEN_TAG, UNTRUSTED_HEADER, wrap_untrusted
 from tests.unit.mcp._support import StubApi, fake_key, initialized, make_server, payload, request
 
@@ -100,6 +102,27 @@ async def test_evidence_pack_keeps_integrity_first_when_truncated() -> None:
     body = text.split(OPEN_TAG + "\n", 1)[1]
     assert body.startswith('{"integrity":{"bundle_sha256":"' + "ab" * 32)
     assert stub.requests[0].url.params["format"] == "json"
+
+
+async def test_evidence_pack_still_matches_its_digest_and_signature() -> None:
+    """Hidden characters in a sealed pack are shown as escapes, never deleted: the copy still verifies."""
+    signing_key = bytes(range(32))
+    hidden = "Pay\u00adment\u200b due\u200d\r\nPlease pay\r\n\x7f\u202e\U000e0041\U000e0042\ufe0f\ufe0f\u2764\ufe0f"
+    pack = seal({"alert": {"id": "a-1", "title": hidden, "raw": {"body\u200b": hidden}}, "timeline": [hidden]},
+                signing_key)
+    stub = StubApi()
+    stub.json("GET /api/v1/alerts/a-1/evidence", pack)
+
+    result = await _call(stub, "get_evidence_pack", {"alert_id": "a-1"})
+
+    text = result["content"][0]["text"]
+    assert INVISIBLE_RE.search(text) is None and SELECTOR_RUN_RE.search(text) is None
+    for escape in ("\\u00ad", "\\u200b", "\\u200d", "\\r\\n", "\\u007f", "\\u202e", "\\udb40\\udc41",
+                   "\\ufe0f\\ufe0f"):
+        assert escape in text, escape
+    copy = payload(result)
+    assert copy == pack and next(iter(copy)) == "integrity"
+    assert verify(copy, signing_key).as_dict() == {"digest_ok": True, "signature": "valid", "signed_ok": True}
 
 
 async def test_api_errors_are_tool_errors_without_the_key() -> None:
