@@ -17,18 +17,17 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import Any, Dict, Mapping, Optional, Union
 from urllib.parse import urlsplit
 
 import httpx
 
+from lg_sotf.ingestion.sources.http import parse_retry_after
+
 USER_AGENT = "lg-sotf-enrichment/1"
 DEFAULT_TIMEOUT_S = 10.0
 DEFAULT_CONNECT_TIMEOUT_S = 5.0
 DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-MAX_RETRY_AFTER_S = 3_600.0
 DEFAULT_RETRY_AFTER_S = 60.0
 
 
@@ -41,23 +40,6 @@ class HttpResponse:
     status: int
     body: Optional[Any]
     retry_after_s: Optional[float]
-
-
-def parse_retry_after(value: Optional[str], *, now: Optional[datetime] = None) -> Optional[float]:
-    """Seconds to wait from a ``Retry-After`` header (delta seconds or HTTP date), capped."""
-    if not value:
-        return None
-    text = value.strip()
-    if text.isdigit():
-        return min(float(text), MAX_RETRY_AFTER_S)
-    try:
-        when = parsedate_to_datetime(text)
-    except (TypeError, ValueError, IndexError):
-        return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    delta = (when - (now or datetime.now(UTC))).total_seconds()
-    return min(max(delta, 0.0), MAX_RETRY_AFTER_S)
 
 
 def validate_base_url(url: str, *, production: bool) -> str:

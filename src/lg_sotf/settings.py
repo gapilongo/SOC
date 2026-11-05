@@ -430,9 +430,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _fallbacks(self) -> Settings:
-        if "LG_SOTF_DATABASE__URL" not in os.environ and os.environ.get("DATABASE_URL"):
+        # DATABASE_URL / REDIS_URL rank lowest: they apply only when no other source (init
+        # kwargs, LG_SOTF_* env, .env, YAML) set the URL, so they never override explicit config.
+        if "url" not in self.database.model_fields_set and os.environ.get("DATABASE_URL"):
             self.database.url = SecretStr(os.environ["DATABASE_URL"])
-        if "LG_SOTF_REDIS__URL" not in os.environ and os.environ.get("REDIS_URL"):
+        if "url" not in self.redis.model_fields_set and os.environ.get("REDIS_URL"):
             self.redis.url = SecretStr(os.environ["REDIS_URL"])
         if self.llm.api_key is None:
             env_key = {

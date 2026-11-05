@@ -110,11 +110,6 @@ export function getConfig(): RuntimeConfig {
   return cached;
 }
 
-/** Test hook. */
-export function setConfigForTests(config: RuntimeConfig | null): void {
-  cached = config;
-}
-
 export const API_PREFIX = '/api/v1';
 
 export function apiRoot(config: RuntimeConfig = getConfig()): string {

@@ -579,10 +579,3 @@ class TicketConnector:
         return ConnectorResult(
             "succeeded", {**base, "ticket": ticket.external_key, "url": ticket.external_url, "created": created}
         )
-
-
-async def ticket_connector_for(service: TicketService, repos: Repositories, tenant_id: str) -> Optional[TicketConnector]:
-    """The first enabled ticketing integration of the tenant as a connector, or ``None``."""
-    found = await repos.integrations.list(tenant_id, enabled=True, kinds=("jira", "servicenow"))
-    usable = [i for i in found if i.config.get("response_actions", True)]
-    return TicketConnector(service, usable[0]) if usable else None

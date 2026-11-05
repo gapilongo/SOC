@@ -240,6 +240,10 @@ def test_parse_retry_after() -> None:
     assert parse_retry_after("Tue, 05 Mar 2024 10:00:30 GMT", now=now) == 30.0
     assert parse_retry_after("soon") is None
     assert parse_retry_after(None) is None
+    # Non-finite and absurd hints never reach a sleep or a retry schedule.
+    assert parse_retry_after("inf") is None and parse_retry_after("nan") is None and parse_retry_after("-inf") is None
+    assert parse_retry_after("1e12") == 3_600.0 and parse_retry_after("2.5") == 2.5
+    assert parse_retry_after("90", cap=10.0) == 10.0
 
 
 def _self_signed_pem() -> str:

@@ -157,7 +157,21 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
         "llm_usage_daily.jsonl", "llm_usage_daily", "*", (("day", "date"), ("model", "text"), ("agent", "text"))
     ),
     ExportTable("audit_log.jsonl", "audit_log", "*", _ID_BIGINT),
+    # Indicator values as displayed (IPs, emails, user and host names) seen on each alert: personal data.
+    ExportTable(
+        "indicator_sightings.jsonl",
+        "indicator_sightings",
+        "*",
+        (("alert_id", "text"), ("indicator_type", "text"), ("value_hash", "text")),
+    ),
 )
+
+# Tenant-scoped tables deliberately left out of the export, with the reason the manifest gives.
+NOT_EXPORTED: Dict[str, str] = {
+    "user_mfa": "password hashes, API key hashes, MFA and other authentication secrets",
+    "refresh_tokens": "password hashes, API key hashes, MFA and other authentication secrets",
+    "workflow_runs": "workflow run bookkeeping (status, attempts, lease) and LangGraph checkpoints",
+}
 
 
 class _Sink:
@@ -268,7 +282,8 @@ async def export_tenant_zip(
             "excluded": [
                 "password hashes, API key hashes, MFA and other authentication secrets",
                 "encrypted source and integration credentials and tenant secrets (shown as has_secret / *_configured)",
-                "LangGraph checkpoints (internal workflow state), queue entries and caches",
+                "workflow run bookkeeping (status, attempts, lease) and LangGraph checkpoints",
+                "queue entries and caches",
             ],
         }
         archive.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
@@ -440,6 +455,7 @@ async def erase_tenant(
 
 __all__ = [
     "EXPORT_TABLES",
+    "NOT_EXPORTED",
     "ErasureRefused",
     "ErasureReport",
     "erase_tenant",

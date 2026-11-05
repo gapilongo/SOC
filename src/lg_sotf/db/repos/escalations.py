@@ -145,11 +145,17 @@ class EscalationsRepo(Repository):
         level: Union[str, Sequence[str], None] = None,
         assigned_to: Optional[UUID] = None,
         alert_id: Optional[str] = None,
+        include_attached: bool = False,
         limit: int = 50,
         cursor: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> Page[Escalation]:
-        """Newest first, keyset-paginated over (created_at, id)."""
+        """Newest first, keyset-paginated over (created_at, id).
+
+        ``alert_id`` matches the escalation's primary alert; with
+        ``include_attached`` it also matches escalations the alert was attached
+        to (``related_alert_ids``), whose decision resolved it too.
+        """
         check_limit(limit)
         params = Params(tenant_id)
         where = ["tenant_id = $1"]
@@ -162,7 +168,8 @@ class EscalationsRepo(Repository):
         if assigned_to is not None:
             where.append(f"assigned_to = {params.add(assigned_to)}")
         if alert_id is not None:
-            where.append(f"alert_id = {params.add(alert_id)}")
+            ref = params.add(alert_id)
+            where.append(f"(alert_id = {ref} OR {ref} = ANY(related_alert_ids))" if include_attached else f"alert_id = {ref}")
         if cursor:
             ts, key = decode_cursor_text(cursor)
             where.append(f"(created_at, id) < ({params.add(ts)}, {params.add(key)})")

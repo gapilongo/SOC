@@ -39,11 +39,9 @@ export const API_KEY_SCOPES = ['ingest', 'read', 'write'] as const;
 export const AUTONOMY_MODES = ['auto', 'approval', 'disabled'] as const;
 
 export type Severity = (typeof SEVERITIES)[number];
-export type RiskLevel = (typeof RISK_LEVELS)[number];
 export type Decision = (typeof DECISIONS)[number];
 export type SourceType = (typeof SOURCE_TYPES)[number];
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
-export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
 
 export type JsonObject = Record<string, unknown>;
 
@@ -589,14 +587,6 @@ export interface UsageReportOut {
   totals: Record<string, number | string>;
 }
 
-export const ONBOARDING_STEPS = [
-  'source_connected',
-  'notifications_configured',
-  'teammate_invited',
-  'autonomy_reviewed',
-  'first_alert_triaged',
-] as const;
-
 export interface OnboardingStepOut {
   id: string;
   done: boolean;
@@ -731,7 +721,6 @@ export interface IntegrationTestOut {
 // ------------------------------------------------------------ Microsoft direct response
 
 export const MICROSOFT_CLOUDS = ['global', 'usgov_gcc_high', 'usgov_dod'] as const;
-export type MicrosoftCloud = (typeof MICROSOFT_CLOUDS)[number];
 
 export interface MicrosoftPermissionOut {
   api: 'graph' | 'defender';
@@ -822,7 +811,6 @@ export interface MicrosoftTestReport {
 // ------------------------------------------------------------ response routing
 
 export const ROUTE_NAMES = ['dry_run', 'webhook', 'ticketing', 'microsoft'] as const;
-export type RouteName = (typeof ROUTE_NAMES)[number];
 
 export interface RouteOut {
   connector: string;

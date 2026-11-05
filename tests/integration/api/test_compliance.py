@@ -13,7 +13,7 @@ from uuid import uuid4
 import pytest
 
 from lg_sotf.compliance.canonical import canonical_bytes, seal, sha256_hex, signing_key, verify
-from lg_sotf.compliance.tenant_data import export_tenant_zip
+from lg_sotf.compliance.tenant_data import EXPORT_TABLES, NOT_EXPORTED, export_tenant_zip
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import User
 from lg_sotf.db.repos.integrations import NewOutboxEntry
@@ -21,6 +21,7 @@ from lg_sotf.integrations.events import TEST_EVENT
 from lg_sotf.queue.streams import QueueStreams, encode_work
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
+from tests.integration.services._support import sight
 
 pytestmark = pytest.mark.integration
 
@@ -379,6 +380,8 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     await _seed_integration_data(api, TENANT_B, case["alert_id"], markers)
     await make_alert(api.repos, TENANT_A, title="tenant-a-only-alert")
 
+    await sight(api.repos, TENANT_B, case["alert_id"], [("ip", "198.51.100.23"), ("user", "j.doe")])
+
     response = await api.client.post(f"/api/v1/platform/tenants/{TENANT_B}/export", headers=api.auth(platform))
 
     assert response.status_code == 200, response.text
@@ -389,7 +392,7 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
                 "alert_events.jsonl", "escalations.jsonl", "feedback.jsonl", "actions.jsonl", "suppressions.jsonl",
                 "integrations.jsonl", "notification_outbox.jsonl", "external_tickets.jsonl", "usage_daily.jsonl",
                 "llm_usage_daily.jsonl",
-                "audit_log.jsonl"}
+                "audit_log.jsonl", "indicator_sightings.jsonl"}
     assert set(files) == expected
     blob = b"".join(files.values())
     for name, value in markers.items():
@@ -415,6 +418,9 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     assert counts["alerts.jsonl"] == 1 and counts["alert_events.jsonl"] == 4 and counts["actions.jsonl"] == 3
     assert counts["escalations.jsonl"] == 1 and counts["feedback.jsonl"] == 1
     assert counts["notification_outbox.jsonl"] == 1 and counts["external_tickets.jsonl"] == 1
+    sightings = [json.loads(line) for line in files["indicator_sightings.jsonl"].splitlines()]
+    assert {(r["indicator_type"], r["value_display"]) for r in sightings} >= {("ip", "198.51.100.23"), ("user", "j.doe")}
+    assert "workflow run bookkeeping (status, attempts, lease) and LangGraph checkpoints" in manifest["excluded"]
     [usage] = [json.loads(line) for line in files["usage_daily.jsonl"].splitlines()]
     assert usage["alerts_ingested"] == 3
     for entry in manifest["files"]:
@@ -426,6 +432,20 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     assert [e.action for e in (await api.repos.audit.list(TENANT_B, action="tenant.data_exported")).items]
     home = (await api.repos.audit.list(TENANT_A, action="platform.tenant_exported")).items
     assert [(e.resource_id, e.actor_id) for e in home] == [(TENANT_B, str(platform.id))]
+
+
+async def test_every_tenant_table_is_exported_or_deliberately_excluded(api: ApiHarness) -> None:
+    # A new tenant-scoped table must be added to EXPORT_TABLES or NOT_EXPORTED (GDPR Art. 15/20).
+    async with api.ctx.db.system_tx() as conn:
+        rows = await conn.fetch(
+            "SELECT DISTINCT c.table_name FROM information_schema.columns c "
+            "JOIN pg_class t ON t.relname = c.table_name AND NOT t.relispartition "
+            "WHERE c.table_schema = 'public' AND c.column_name = 'tenant_id'"
+        )
+    tenant_tables = {r["table_name"] for r in rows}
+    covered = {t.table for t in EXPORT_TABLES} | set(NOT_EXPORTED)
+    assert tenant_tables - covered == set()
+    assert covered - tenant_tables == set()
 
 
 async def test_export_streams_in_bounded_batches(api: ApiHarness) -> None:

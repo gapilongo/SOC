@@ -302,3 +302,30 @@ async def test_indicator_lookups_run_outside_the_grouping_lock(
     child = await escalate(svc, TENANT_A, second)
     assert child.attached and child.id == parent.id
     assert held and held == [0] * len(held)
+
+
+async def test_compliance_records_of_an_attached_alert_include_the_deciding_escalation(
+    repos: Repositories, make_settings: Callable[..., Settings]
+) -> None:
+    from lg_sotf.compliance.evidence import build_evidence_pack
+    from lg_sotf.compliance.nis2 import load_case
+
+    svc = service(repos, make_settings)
+    first = await add_alert(repos, TENANT_A, fingerprint="fp-ev-1")
+    second = await add_alert(repos, TENANT_A, fingerprint="fp-ev-2")
+    await sight(repos, TENANT_A, first, [("ip", "185.220.101.45")])
+    await sight(repos, TENANT_A, second, [("ip", "185.220.101.45")])
+    parent = await escalate(svc, TENANT_A, first)
+    child = await escalate(svc, TENANT_A, second)
+    assert child.attached and child.id == parent.id
+
+    # The repository only widens the match when asked.
+    assert (await repos.escalations.list(TENANT_A, alert_id=second)).items == []
+    attached = await repos.escalations.list(TENANT_A, alert_id=second, include_attached=True)
+    assert [e.id for e in attached.items] == [parent.id]
+
+    pack = await build_evidence_pack(repos, make_settings(), TENANT_A, second, generated_by={"type": "test"})
+    assert [e["id"] for e in pack["escalations"]] == [parent.id]
+    assert second in pack["correlation"]["escalation_related_alert_ids"]
+    case = await load_case(repos, TENANT_A, second)
+    assert [e.id for e in case.escalations] == [parent.id]

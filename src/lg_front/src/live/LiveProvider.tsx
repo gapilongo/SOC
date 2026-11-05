@@ -1,5 +1,5 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import type { LiveEvent } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
@@ -9,10 +9,9 @@ import { LiveSocket, type LiveStatus } from './socket';
 
 interface LiveContextValue {
   status: LiveStatus;
-  lastEventAt: number | null;
 }
 
-const LiveContext = createContext<LiveContextValue>({ status: 'idle', lastEventAt: null });
+const LiveContext = createContext<LiveContextValue>({ status: 'idle' });
 
 /** Query key prefixes each event type makes stale. */
 export function keysForEvent(type: LiveEvent['type']): string[] {
@@ -63,8 +62,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const store = useAuthStore();
   const client = useQueryClient();
   const [status, setStatus] = useState<LiveStatus>('idle');
-  const [lastEventAt, setLastEventAt] = useState<number | null>(null);
-  const invalidator = useRef<ReturnType<typeof createInvalidator> | null>(null);
 
   useEffect(() => {
     // The socket is tenant-scoped by the token; a platform admin acting on
@@ -74,16 +71,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       return;
     }
     const inv = createInvalidator(client);
-    invalidator.current = inv;
     const socket = new LiveSocket({
       url: wsEndpoint(),
       getToken: store.getToken,
       refreshToken: store.refresh,
       onStatus: setStatus,
-      onEvent: (event) => {
-        setLastEventAt(Date.now());
-        inv.add(keysForEvent(event.type));
-      },
+      onEvent: (event) => inv.add(keysForEvent(event.type)),
       onResync: () => {
         // Events may have been missed while disconnected: re-read everything visible.
         void invalidateBounded(client);
@@ -96,11 +89,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('online', onOnline);
       socket.stop();
       inv.cancel();
-      invalidator.current = null;
     };
   }, [authStatus, actingTenant, client, store]);
 
-  return <LiveContext.Provider value={{ status, lastEventAt }}>{children}</LiveContext.Provider>;
+  // Stable while the status holds, so consumers do not re-render per event.
+  const value = useMemo(() => ({ status }), [status]);
+  return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }
 
 export function useLive(): LiveContextValue {

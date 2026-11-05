@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from typing import Iterable, Iterator, List, Optional, Tuple
+from typing import Iterator, Optional, Tuple
 from urllib.parse import urlsplit
 
 __all__ = [
     "MAX_URL_CHARS",
     "SHORTENERS",
     "ascii_host",
-    "dedup",
     "defang",
     "ip_host",
     "is_punycode",
@@ -193,6 +192,3 @@ def defang(url: str) -> str:
     end = min((i for i in (rest.find(c) for c in "/?#") if i >= 0), default=len(rest))
     return f"{scheme}{sep}{rest[:end].replace('.', '[.]')}{rest[end:]}"
 
-
-def dedup(values: Iterable[str]) -> List[str]:
-    return list(dict.fromkeys(v for v in values if v))

@@ -5,10 +5,6 @@ class LG_SOTFError(Exception):
     """Base exception for LG-SOTF."""
 
 
-class ConfigError(LG_SOTFError):
-    """Configuration-related errors."""
-
-
 class WorkflowError(LG_SOTFError):
     """Workflow execution errors."""
 
@@ -34,33 +30,9 @@ class NodeTimeout(NodeError):
         self.timeout_s = timeout_s
 
 
-class RoutingError(LG_SOTFError):
-    """Edge routing errors."""
-
-
 class AgentError(LG_SOTFError):
     """Agent execution errors."""
 
 
-class ToolError(LG_SOTFError):
-    """Tool execution errors."""
-
-
 class StorageError(LG_SOTFError):
     """Storage-related errors."""
-
-
-class AuthenticationError(LG_SOTFError):
-    """Authentication errors."""
-
-
-class AuthorizationError(LG_SOTFError):
-    """Authorization errors."""
-
-
-class ValidationError(LG_SOTFError):
-    """Validation errors."""
-
-
-class RateLimitError(LG_SOTFError):
-    """Rate limiting errors."""

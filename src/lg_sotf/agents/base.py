@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, O
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
 
-from lg_sotf.core.exceptions import AgentError
 from lg_sotf.llm import (
     USE_DEFAULT,
     BudgetLimit,
@@ -104,8 +103,8 @@ class LLMResult(Generic[T]):
 class BaseAgent:
     """Common configuration access for agents.
 
-    ``config`` is the agent's section of ``settings.agents``. Legacy agents
-    pass a plain dict; new agents pass ``settings`` and a ``name``.
+    ``config`` is the agent's section of ``settings.agents`` unless given
+    explicitly (tests pass a plain dict).
     ``model_factory`` replaces :func:`~lg_sotf.llm.get_chat_model` (tests,
     evaluation harness).
     """
@@ -136,12 +135,6 @@ class BaseAgent:
     async def cleanup(self) -> None:
         return None
 
-    async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError(f"{type(self).__name__} does not implement execute()")
-
-    async def health_check(self) -> bool:
-        return self.initialized
-
     def get_config(self, key: str, default: Any = None) -> Any:
         node: Any = self.config
         for part in key.split("."):
@@ -150,18 +143,6 @@ class BaseAgent:
             else:
                 return default
         return node
-
-    def get_required_config_keys(self) -> List[str]:
-        return []
-
-    def validate_config(self) -> bool:
-        missing = [k for k in self.get_required_config_keys() if k not in self.config]
-        if missing:
-            raise AgentError(f"agent {self.name} is missing configuration keys: {', '.join(missing)}")
-        return True
-
-    def get_metrics(self) -> Dict[str, Any]:
-        return {"name": self.name, "initialized": self.initialized, "config_keys": sorted(self.config)}
 
     def skip_llm(self, reason: str, note: Optional[str] = None) -> LLMResult[Any]:
         """An LLM call deliberately not made (counted in ``lgsotf_llm_skipped_total``)."""

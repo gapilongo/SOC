@@ -55,7 +55,6 @@ jobs:
           src/lg_sotf/llm
           src/lg_sotf/security
           src/lg_sotf/observability
-          src/lg_sotf/core/config
           src/lg_sotf/db
           src/lg_sotf/queue
           src/lg_sotf/runtime

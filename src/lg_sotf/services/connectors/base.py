@@ -38,7 +38,6 @@ if TYPE_CHECKING:
 
 ConnectorStatus = Literal["succeeded", "failed", "dry_run", "deferred"]
 VerificationState = Literal["pending", "verified", "failed", "inconclusive"]
-FINAL_VERIFICATION_STATES = ("verified", "failed", "inconclusive")
 
 # The deadline (event loop clock) of the connector call in progress; None outside one.
 call_deadline: ContextVar[Optional[float]] = ContextVar("lg_sotf_connector_call_deadline", default=None)

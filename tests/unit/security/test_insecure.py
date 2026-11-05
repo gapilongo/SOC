@@ -9,8 +9,6 @@ import pytest
 import yaml
 from cryptography.fernet import Fernet
 
-from lg_sotf.core.config.manager import ConfigManager
-from lg_sotf.core.exceptions import ConfigError
 from lg_sotf.security.insecure import (
     KNOWN_INSECURE_SECRETS,
     assert_no_insecure_secrets,
@@ -106,8 +104,8 @@ def test_development_yaml_in_production_is_refused() -> None:
     with pytest.raises(RuntimeError) as exc:
         assert_no_insecure_secrets(s)
     assert "auth.jwt_secret" in str(exc.value)
-    with pytest.raises(ConfigError) as cexc:
-        ConfigManager(settings=s).validate()
+    with pytest.raises(RuntimeError) as cexc:
+        s.assert_safe()
     assert "published development/test placeholder" in str(cexc.value)
 
 
@@ -134,4 +132,4 @@ def test_development_is_not_blocked() -> None:
     s = Settings(_env_file=None, config_file=str(CONFIG_DIR / "development.yaml"))
     assert insecure_secret_problems(s)
     assert_no_insecure_secrets(s)
-    assert ConfigManager(settings=s).validate() is True
+    s.assert_safe()
