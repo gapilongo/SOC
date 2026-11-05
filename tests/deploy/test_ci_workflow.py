@@ -212,3 +212,11 @@ def test_a_fast_job_runs_the_unit_and_deploy_tiers_without_services() -> None:
 def test_every_test_has_a_timeout() -> None:
     pytest_cfg = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
     assert pytest_cfg["timeout"] == 120 and pytest_cfg["timeout_method"] == "signal"
+
+
+def test_coverage_floors_are_enforced_in_ci() -> None:
+    runs = " ".join(s.get("run", "") for s in workflow()["jobs"]["test"]["steps"])
+    assert re.search(r"--cov-fail-under=\d+", runs)
+    assert "python scripts/ci/coverage_floors.py coverage.json" in runs
+    omit = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["coverage"]["run"]["omit"]
+    assert "*/lg_sotf/db/migrations/*" in omit

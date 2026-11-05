@@ -138,12 +138,17 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest
+        # --cov-fail-under: the total floor (one point below the 2026-11-05 baseline of 92.1%); raise it, never lower it.
         run: >-
           pytest
           --cov=lg_sotf --cov-branch
           --cov-report=term-missing:skip-covered
           --cov-report=xml:coverage.xml
+          --cov-report=json:coverage.json
+          --cov-fail-under=91
           --junitxml=junit.xml
+      - name: Coverage floors per package (runtime, security, api/auth)
+        run: python scripts/ci/coverage_floors.py coverage.json
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -151,6 +156,7 @@ jobs:
           name: test-reports
           path: |
             coverage.xml
+            coverage.json
             junit.xml
           retention-days: 14
 
