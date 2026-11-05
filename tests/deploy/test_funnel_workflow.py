@@ -24,7 +24,6 @@ from tests.deploy._support import REPO_ROOT
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 DEPLOY = WORKFLOWS / "deploy.yml"
 CI = WORKFLOWS / "ci.yml"
-TS_ACTION = "tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd"
 FAKE_AUTHKEY = "-".join(["tskey", "auth", "kFAKE" + "x" * 11, "y" * 32])
 
 
@@ -60,9 +59,10 @@ def test_tailnet_step_is_pinned_conditional_and_precedes_ssh() -> None:
     steps: List[Dict[str, Any]] = job()["steps"]
     names = [s.get("name", "") for s in steps]
     ts = next(s for s in steps if s.get("uses", "").startswith("tailscale/github-action@"))
-    assert ts["uses"] == TS_ACTION
-    line = next(text for text in DEPLOY.read_text().splitlines() if TS_ACTION in text)
-    assert line.rstrip().endswith("# v4.2.0")
+    # Pinned to a full commit SHA with its release tag in a comment (Dependabot may move both).
+    assert re.fullmatch(r"tailscale/github-action@[0-9a-f]{40}", ts["uses"])
+    line = next(text for text in DEPLOY.read_text().splitlines() if ts["uses"] in text)
+    assert re.search(r"# v\d+\.\d+\.\d+\s*$", line)
     assert ts["if"] == "env.DEPLOY_VIA_TAILSCALE == 'true'"
     assert ts["with"] == {
         "oauth-client-id": "${{ secrets.TS_OAUTH_CLIENT_ID }}",
