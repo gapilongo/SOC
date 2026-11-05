@@ -9,19 +9,34 @@
 # type-checks all of them.
 -r requirements.txt
 ast-serialize==0.11.2
+cfgv==3.5.0
 coverage==7.16.2
+distlib==0.4.4
 fakeredis==2.38.0
+filelock==4.2.9
+grimp==3.17
+identify==2.6.20
+import-linter==2.15
 iniconfig==2.3.0
 librt==0.15.0
-mypy-extensions==1.1.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
 mypy==2.3.1
+mypy-extensions==1.1.0
+nodeenv==1.12.0
 pathspec==1.1.1
+platformdirs==4.14.5
 pluggy==1.6.0
+pre-commit==4.7.0
 pygments==2.21.0
+pytest==9.1.1
 pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 pytest-mock==3.16.0
-pytest==9.1.1
+pytest-timeout==2.4.0
+python-discovery==1.9.4
+rich==15.0.0
 ruff==0.16.9
 sortedcontainers==2.4.0
 types-pyyaml==6.0.12.20260906
+virtualenv==21.15.5

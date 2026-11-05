@@ -17,7 +17,7 @@ from lg_sotf.eval.runner import EvalRunner, EvalSetupError, run_evaluation
 from lg_sotf.settings import Settings
 from tests.integration.eval.conftest import EVAL_TENANT
 
-pytestmark = pytest.mark.integration
+pytestmark = [pytest.mark.integration, pytest.mark.timeout(300)]
 
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eval"
 DATASET = FIXTURES / "synthetic_v1.jsonl"

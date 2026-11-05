@@ -15,6 +15,7 @@
 | [Onboarding](onboarding.md) | Tenant admins | Getting-started checklist, sample alerts, per-tenant retention |
 | [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |
 | [MCP server](mcp.md) | Analysts, testers, operators | Using LG-SOTF from Claude Code, Claude Desktop or another MCP client; the tester workflow on a dry-run install; the QA-tenant runbook |
+| [Architecture decisions](adr/README.md) | Engineers | The ADR log: layering and dependency rule (ADR-0001) and the decisions that follow |
 | [MCP architecture](design/mcp-architecture.md) | Engineers, security reviewers | The approved MCP design (remote endpoint, OAuth, QA runs, outbound MCP); only Phases 0 and 0.5 are implemented |
 | [Refactor roadmap](design/refactor-roadmap.md) | Engineers | Target layered architecture, CI guardrails and the ordered, PR-sized refactor plan; mark steps done as they merge |
 | [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |

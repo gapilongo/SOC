@@ -1,0 +1,43 @@
+# Raw SQL (.execute/.fetch/.fetchrow/.fetchval/.executemany with a str, f-string or *_SQL argument) outside db/.
+# Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
+# Delete lines as the code is fixed; never add one. See test_data_access.py.
+
+compliance/evidence.py::_audit_entries
+compliance/tenant_data.py::count_audit_entries
+compliance/tenant_data.py::erase_tenant
+compliance/tenant_data.py::erase_tenant_rows
+compliance/tenant_data.py::erasure_blockers
+core/checkpointer.py::TenantScopedPostgresSaver._cursor
+core/checkpointer.py::TenantScopedPostgresSaver.aprune_thread
+eval/runner.py::check_services
+integrations/outbox.py::_alerts
+integrations/outbox.py::_insert
+integrations/outbox.py::_matching
+integrations/ticketing.py::TicketService.alert_event
+onboarding/service.py::_notifications_configured
+onboarding/service.py::_notifications_configured
+onboarding/service.py::onboarding_status
+runtime/leader.py::LeaderLease._still_holds
+runtime/leader.py::LeaderLease._try_acquire
+runtime/leader.py::LeaderLease.release
+runtime/orphans.py::claim_orphaned_runs
+runtime/orphans.py::find_stranded_new_alerts
+runtime/resumes.py::_approval_payload
+runtime/resumes.py::_decision_payload
+runtime/resumes.py::find_stranded_waiting_runs
+runtime/resumes.py::recover_lost_resumes
+services/escalation.py::EscalationService._find_parent
+services/escalation.py::EscalationService.open_detached
+services/escalation.py::EscalationService.open_detached
+services/escalation.py::EscalationService.open_or_attach
+services/escalation.py::EscalationService.open_or_attach
+services/escalation.py::EscalationService.open_or_attach
+services/response.py::ResponseService._claim
+services/response.py::ResponseService.executed_counts._fetch
+services/response.py::ResponseService.fail_orphaned_executing
+services/response.py::ResponseService.fail_orphaned_executing
+services/response.py::ResponseService.retry
+services/review.py::ReviewService._decide_expired
+services/review.py::ReviewService._decide_expired
+services/review.py::ReviewService._own_review
+services/review.py::ReviewService._run_ended

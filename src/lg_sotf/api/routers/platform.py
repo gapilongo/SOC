@@ -505,7 +505,7 @@ def usage_csv(rows: List[TenantUsageOut]) -> str:
 async def usage_report(
     request: Request,
     month: Optional[str] = Query(default=None, description="YYYY-MM (UTC); default: the current month"),
-    format: Literal["json", "csv"] = Query(default="json"),
+    format: Literal["json", "csv"] = Query(default="json"),  # noqa: A002 - the public query parameter name
     principal: Principal = Depends(require(PLATFORM_ADMIN)),
 ) -> Any:
     ctx = get_ctx(request)

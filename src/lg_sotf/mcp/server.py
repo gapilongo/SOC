@@ -90,7 +90,7 @@ def _cancelled_id(message: Any) -> Optional[RequestId]:
     return request_id if valid_id(request_id) else None
 
 
-async def serve(server: McpServer, reader: Reader, write: Writer) -> None:
+async def serve(server: McpServer, reader: Reader, write: Writer) -> None:  # noqa: C901
     """Read messages until EOF, dispatch them and write the responses."""
     lock = asyncio.Lock()
     slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)

@@ -3,6 +3,16 @@
 # branch protection of main. The last matching line wins, so keep these
 # rules at the end if broader rules are ever added above them.
 
+# Guards and supply chain: editing one of these can silently switch off a check
+# (bandit and gitleaks baselines, ratchet allowlists, pinned dependencies, CI).
+/.github/workflows/                         @gapilongo
+/scripts/ci/                                @gapilongo
+/requirements.txt                           @gapilongo
+/requirements-dev.txt                       @gapilongo
+/pyproject.toml                             @gapilongo
+/tests/unit/architecture/                   @gapilongo
+/src/lg_front/eslint.config.js              @gapilongo
+
 # A committed MCP server entry decides which program runs with a tester's
 # API key and where the key is sent (design threat #5): the entries, the
 # test that pins them and the page that tells testers to copy them.

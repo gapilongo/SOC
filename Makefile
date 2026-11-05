@@ -52,12 +52,23 @@ secrets: ## Print a fresh set of secrets (KEY=value) without writing anything
 	@$(PYTHON) scripts/generate_secrets.py
 
 .PHONY: lint
-lint: ## Ruff and mypy (typed packages and the SOAR examples)
+lint: ## Ruff over the product, tests, scripts and examples
 	ruff check src tests scripts docker examples
-	mypy src/lg_sotf/settings.py src/lg_sotf/llm src/lg_sotf/security src/lg_sotf/observability \
-		src/lg_sotf/db src/lg_sotf/queue src/lg_sotf/runtime \
-		src/lg_sotf/services src/lg_sotf/ingestion src/lg_sotf/integrations src/lg_sotf/mcp
-	mypy examples/soar/receiver examples/soar/n8n/build_workflow.py
+
+.PHONY: typecheck
+typecheck: ## Mypy over every file listed in pyproject.toml [tool.mypy] files
+	mypy
+
+.PHONY: import-lint
+import-lint: ## Layer and package dependency contracts (pyproject.toml [tool.importlinter])
+	lint-imports
+
+.PHONY: test-fast
+test-fast: ## Unit and deploy tests only (no PostgreSQL or Redis needed)
+	$(PYTHON) -m pytest tests/unit tests/deploy
+
+.PHONY: check
+check: lint typecheck import-lint test-fast ## Everything CI's lint and fast jobs run
 
 .PHONY: security-scan
 security-scan: ## Bandit over the product and the SOAR examples (pip install "bandit[toml]==1.8.6", as CI)

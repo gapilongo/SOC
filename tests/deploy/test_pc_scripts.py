@@ -94,7 +94,7 @@ def test_nothing_is_piped_into_a_shell(path: Path) -> None:
 
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck is not installed")
 def test_shell_scripts_pass_shellcheck() -> None:
-    proc = run(["shellcheck", "-x", *map(str, SHELL_SCRIPTS)])  # noqa: S607
+    proc = run(["shellcheck", "-x", *map(str, SHELL_SCRIPTS)])
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 

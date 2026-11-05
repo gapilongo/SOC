@@ -357,7 +357,7 @@ def _classify(
         )
 
 
-async def ainvoke_structured(
+async def ainvoke_structured(  # noqa: C901
     model: BaseChatModel,
     schema: Type[T],
     messages: Sequence[BaseMessage],
@@ -428,7 +428,7 @@ async def ainvoke_structured(
                     async with llm_slot(tier, s):
                         result = await invoke(attempt_messages)
                     break
-                except Exception as exc:  # noqa: BLE001 - classified below; cancellation is not an Exception
+                except Exception as exc:
                     if delay_s is None or not _fails_fast_and_transient(exc):
                         raise
                     recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)

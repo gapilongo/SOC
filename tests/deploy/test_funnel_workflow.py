@@ -24,7 +24,6 @@ from tests.deploy._support import REPO_ROOT
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 DEPLOY = WORKFLOWS / "deploy.yml"
 CI = WORKFLOWS / "ci.yml"
-TS_ACTION = "tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd"
 FAKE_AUTHKEY = "-".join(["tskey", "auth", "kFAKE" + "x" * 11, "y" * 32])
 
 
@@ -40,7 +39,7 @@ def step(name: str) -> Dict[str, Any]:
 def run_step(script: str, env: Dict[str, str], tmp_path: Path, extra_path: str = "") -> subprocess.CompletedProcess[str]:
     path = tmp_path / "step.sh"
     path.write_text(script)
-    return subprocess.run(  # noqa: S603 - fixed argv
+    return subprocess.run(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(path)],  # noqa: S607 - GitHub's bash invocation
         capture_output=True, text=True, timeout=30,
         env={"PATH": f"{extra_path}{os.environ.get('PATH', '')}", "HOME": str(tmp_path), **env},
@@ -60,9 +59,10 @@ def test_tailnet_step_is_pinned_conditional_and_precedes_ssh() -> None:
     steps: List[Dict[str, Any]] = job()["steps"]
     names = [s.get("name", "") for s in steps]
     ts = next(s for s in steps if s.get("uses", "").startswith("tailscale/github-action@"))
-    assert ts["uses"] == TS_ACTION
-    line = next(text for text in DEPLOY.read_text().splitlines() if TS_ACTION in text)
-    assert line.rstrip().endswith("# v4.2.0")
+    # Pinned to a full commit SHA with its release tag in a comment (Dependabot may move both).
+    assert re.fullmatch(r"tailscale/github-action@[0-9a-f]{40}", ts["uses"])
+    line = next(text for text in DEPLOY.read_text().splitlines() if ts["uses"] in text)
+    assert re.search(r"# v\d+\.\d+\.\d+\s*$", line)
     assert ts["if"] == "env.DEPLOY_VIA_TAILSCALE == 'true'"
     assert ts["with"] == {
         "oauth-client-id": "${{ secrets.TS_OAUTH_CLIENT_ID }}",
@@ -283,7 +283,7 @@ def test_ci_validates_both_ingress_overlays() -> None:
 def test_ci_compose_validation_step_passes(tmp_path: Path) -> None:
     ci = yaml.safe_load(CI.read_text())
     check = next(s for j in ci["jobs"].values() for s in j.get("steps", []) if s.get("name") == "Validate compose files")
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         ["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", check["run"]],  # noqa: S607
         capture_output=True, text=True, timeout=120, cwd=REPO_ROOT,
         env={"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path), **check["env"]},
@@ -297,7 +297,7 @@ def test_ci_compose_validation_step_passes(tmp_path: Path) -> None:
 def test_every_deploy_script_passes_shellcheck() -> None:
     scripts = sorted([*(REPO_ROOT / "deploy" / "vm").glob("*.sh"), *(REPO_ROOT / "deploy" / "pc").glob("*.sh")])
     assert scripts
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         ["shellcheck", *map(str, scripts)],  # noqa: S607
         capture_output=True, text=True, timeout=120,
     )

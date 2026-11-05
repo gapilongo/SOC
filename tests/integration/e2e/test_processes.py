@@ -47,7 +47,7 @@ from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
 from tests.integration.e2e.conftest import eventually
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(300)]
 
 CANARY = f"canary-{uuid4().hex}"
 WEBHOOK_SECRET = f"whsec-{uuid4().hex}"
@@ -120,7 +120,7 @@ class Soar:
         soar = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_POST(self) -> None:  # noqa: N802 - http.server API
+            def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 headers = httpx.Headers(list(self.headers.items()))
                 action_id = verify_request(WEBHOOK_SECRET.encode(), headers, body)
@@ -157,7 +157,7 @@ class Role:
 
     def __init__(self, exe: str, args: Sequence[str], env: Dict[str, str], log_path: Path) -> None:
         self.log_path = log_path
-        self._log = open(log_path, "wb")  # noqa: SIM115 - closed in stop()
+        self._log = open(log_path, "wb")
         self.proc = subprocess.Popen([exe, *args], stdout=self._log, stderr=subprocess.STDOUT, env=env, cwd=log_path.parent)
 
     def running(self) -> bool:

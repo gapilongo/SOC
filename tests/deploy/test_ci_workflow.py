@@ -149,7 +149,7 @@ def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> Non
     """WSC-2: a new fake fixture must not turn the CI secret scan red unnoticed."""
     import subprocess
 
-    listed = subprocess.run(  # noqa: S603 - fixed argv
+    listed = subprocess.run(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
         cwd=REPO_ROOT, capture_output=True, check=True,
     ).stdout.decode().split("\0")
@@ -172,19 +172,51 @@ def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> Non
     assert leaks == [], "allowlist the fake value in scripts/ci/gitleaks.toml or assemble it at run time"
 
 
-def _mypy_targets(text: str) -> List[str]:
-    """Package paths given to the first ``mypy`` call in a shell snippet (line continuations joined)."""
-    joined = text.replace("\\\n", " ")
-    match = re.search(r"^\s*mypy\s+((?:src/lg_sotf\S*\s*)+)", joined, re.MULTILINE)
-    assert match, "no mypy src/lg_sotf call found"
-    return sorted(match.group(1).split())
 
-
-def test_make_lint_type_checks_the_same_packages_as_ci() -> None:
-    # CONTRIBUTING.md promises `make lint` runs the typed packages CI checks.
+def test_ci_and_make_type_check_the_same_files() -> None:
+    # One list: pyproject.toml [tool.mypy] files; CI and `make typecheck` run bare `mypy`.
     makefile = (REPO_ROOT / "Makefile").read_text()
-    lint = makefile.split("\nlint:", 1)[1].split("\n.PHONY", 1)[0]
+    assert re.search(r"^typecheck:.*\n\tmypy\n", makefile, re.MULTILINE)
     ci = CI.read_text()
-    ci_block = ci[ci.index("\n          mypy\n") :].split("\n      - ", 1)[0].replace("\n          mypy\n", "\nmypy ", 1)
-    ci_targets = sorted(t for t in ci_block.split() if t.startswith("src/lg_sotf"))
-    assert ci_targets and _mypy_targets(lint) == ci_targets
+    assert re.search(r"^        run: mypy$", ci, re.MULTILINE)
+    assert not re.search(r"^\s+mypy\s+src/", ci + makefile, re.MULTILINE), "pass no paths to mypy; edit [tool.mypy] files"
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["mypy"]
+    assert "src/lg_sotf" in config["files"]
+
+
+def test_pre_commit_ruff_matches_the_pinned_ruff() -> None:
+    pinned = re.search(r"^ruff==(\S+)$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
+    hooks = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
+    [ruff] = [r for r in hooks["repos"] if r["repo"].endswith("/ruff-pre-commit")]
+    assert pinned and ruff["rev"] == f"v{pinned.group(1)}"
+
+
+def test_ci_enforces_the_import_contracts() -> None:
+    # docs/adr/0001-layering.md: the dependency rule is checked on every push, and `make check` runs it too.
+    assert re.search(r"^        run: lint-imports$", CI.read_text(), re.MULTILINE)
+    assert re.search(r"^check:.*\bimport-lint\b", (REPO_ROOT / "Makefile").read_text(), re.MULTILINE)
+    contracts = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["importlinter"]["contracts"]
+    assert {c["id"] for c in contracts} >= {"layers", "api-no-workflow", "mcp-thin-client", "infra-drivers"}
+
+
+def test_a_fast_job_runs_the_unit_and_deploy_tiers_without_services() -> None:
+    jobs = workflow()["jobs"]
+    fast = jobs["fast"]
+    assert "services" not in fast and not any(k.startswith("LG_SOTF_TEST_") for k in (fast.get("env") or {}))
+    runs = [s.get("run", "") for s in fast["steps"]]
+    assert "pytest tests/unit tests/deploy" in runs
+    # The service-backed job still runs the whole suite, so coverage stays complete.
+    assert any(r.startswith("pytest") and "tests/" not in r for r in (s.get("run", "") for s in jobs["test"]["steps"]))
+
+
+def test_every_test_has_a_timeout() -> None:
+    pytest_cfg = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
+    assert pytest_cfg["timeout"] == 120 and pytest_cfg["timeout_method"] == "signal"
+
+
+def test_coverage_floors_are_enforced_in_ci() -> None:
+    runs = " ".join(s.get("run", "") for s in workflow()["jobs"]["test"]["steps"])
+    assert re.search(r"--cov-fail-under=\d+", runs)
+    assert "python scripts/ci/coverage_floors.py coverage.json" in runs
+    omit = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["coverage"]["run"]["omit"]
+    assert "*/lg_sotf/db/migrations/*" in omit

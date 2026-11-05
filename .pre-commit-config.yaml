@@ -1,3 +1,6 @@
+# Local hooks mirror CI: `pre-commit install` once, then commits run ruff (same
+# pinned version as requirements-dev.txt) and the generic file checks; pushes run
+# the type check. bandit and the full test suite stay in CI and `make check`.
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.4.0
@@ -11,38 +14,17 @@ repos:
       - id: debug-statements
       - id: mixed-line-ending
 
-  - repo: https://github.com/psf/black
-    rev: 23.7.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.9
     hooks:
-      - id: black
-        language_version: python3.10
+      - id: ruff
+        args: [--force-exclude]
 
-  - repo: https://github.com/pycqa/isort
-    rev: 5.12.0
+  - repo: local
     hooks:
-      - id: isort
-        args: ["--profile", "black"]
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 6.0.0
-    hooks:
-      - id: flake8
-        additional_dependencies: [
-          flake8-docstrings,
-          flake8-bugbear,
-          flake8-comprehensions,
-        ]
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.5.1
-    hooks:
-      - id: mypy
-        additional_dependencies: [types-requests, types-redis]
-        args: [--ignore-missing-imports]
-
-  - repo: https://github.com/pycqa/bandit
-    rev: 1.7.4
-    hooks:
-      - id: bandit
-        args: ["-c", "pyproject.toml"]
-        additional_dependencies: ["bandit[toml]"]
+      - id: typecheck
+        name: mypy (make typecheck)
+        entry: make typecheck
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

@@ -48,28 +48,41 @@ jobs:
           pip install --no-deps -e .
       - name: Ruff
         run: ruff check --output-format=github src tests scripts docker examples
-      - name: Mypy (typed packages)
-        run: >-
-          mypy
-          src/lg_sotf/settings.py
-          src/lg_sotf/llm
-          src/lg_sotf/security
-          src/lg_sotf/observability
-          src/lg_sotf/db
-          src/lg_sotf/queue
-          src/lg_sotf/runtime
-          src/lg_sotf/services
-          src/lg_sotf/ingestion
-          src/lg_sotf/integrations
-          src/lg_sotf/mcp
-          examples/soar/receiver
-          examples/soar/n8n/build_workflow.py
+      - name: Mypy (every file in pyproject.toml [tool.mypy] files)
+        run: mypy
+      - name: Import contracts (pyproject.toml [tool.importlinter], docs/adr/0001-layering.md)
+        run: lint-imports
       - name: Shellcheck
         # Every deploy script (deploy/vm: VMs and the Funnel mode; deploy/pc: the self-hosted PC).
         run: |
           shopt -s nullglob
           shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh \
             src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
+
+  fast:
+    name: Unit and deploy tests (no services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No LG_SOTF_TEST_* variables: proves the unit and deploy tiers need no PostgreSQL or Redis,
+    # and gives feedback in about two minutes.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -e .
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Pytest (unit and deploy)
+        run: pytest tests/unit tests/deploy
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
@@ -125,12 +138,17 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest
+        # --cov-fail-under: the total floor (one point below the 2026-11-05 baseline of 92.1%); raise it, never lower it.
         run: >-
           pytest
           --cov=lg_sotf --cov-branch
           --cov-report=term-missing:skip-covered
           --cov-report=xml:coverage.xml
+          --cov-report=json:coverage.json
+          --cov-fail-under=91
           --junitxml=junit.xml
+      - name: Coverage floors per package (runtime, security, api/auth)
+        run: python scripts/ci/coverage_floors.py coverage.json
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -138,6 +156,7 @@ jobs:
           name: test-reports
           path: |
             coverage.xml
+            coverage.json
             junit.xml
           retention-days: 14
 

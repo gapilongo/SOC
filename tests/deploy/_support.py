@@ -28,7 +28,7 @@ requires_helm = pytest.mark.skipif(helm_binary() is None, reason="helm is not in
 def run_helm_template(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     helm = helm_binary()
     assert helm is not None
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell
+    return subprocess.run(
         [helm, "template", "t", str(CHART_DIR), *args],
         capture_output=True,
         text=True,

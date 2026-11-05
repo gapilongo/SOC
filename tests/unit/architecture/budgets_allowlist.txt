@@ -1,0 +1,43 @@
+# Size budget allowlist: today's offenders pinned at their exact line counts.
+# Format: path<TAB>lines (module, budget 800) or path::qualname<TAB>lines (function, budget 80).
+# Paths are relative to src/lg_sotf. Only lower numbers or delete lines; never raise or add.
+
+# Modules
+mcp/tester.py	969
+services/reporting.py	852
+services/response.py	2707
+
+# Functions
+agents/analysis/base.py::AnalysisAgent._run	136
+agents/correlation/base.py::CorrelationAgent._run	88
+api/app.py::create_app	104
+api/routers/compliance.py::incident_report	81
+api/routers/integrations.py::slack_interactions	97
+api/routers/platform.py::create_tenant	90
+compliance/evidence.py::build_evidence_pack	101
+compliance/evidence.py::human_oversight	121
+compliance/evidence.py::render_evidence_html	193
+db/repos/actions.py::ActionsRepo.transition	94
+db/repos/runs.py::RunsRepo.start	83
+db/retention.py::purge_expired	149
+eval/command.py::execute	104
+eval/command.py::execute_history	98
+eval/history.py::run_history_backtest	85
+eval/report.py::render_markdown	111
+eval/runner.py::run_evaluation	119
+ingestion/email/parser.py::parse_email	93
+ingestion/service.py::IngestionService._ingest	114
+ingestion/service.py::IngestionService.poll_source	82
+integrations/microsoft/connection_test.py::run_connection_test	84
+integrations/microsoft/http.py::MicrosoftApi._send	118
+llm/client.py::_build_model	82
+llm/structured.py::ainvoke_structured	143
+mcp/server.py::serve	98
+mcp/tester.py::_get_test_run	82
+mcp/tester.py::_ingest_test_alerts	94
+services/escalation.py::EscalationService.open_detached	99
+services/escalation.py::EscalationService.open_or_attach	125
+services/response.py::ResponseService.plan	103
+services/review.py::ReviewService.approve_actions	81
+services/review.py::ReviewService.decide	164
+services/rollback.py::RollbackService.request	122

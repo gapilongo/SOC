@@ -226,7 +226,7 @@ def test_k8s_output_feeds_values_through_stdin_not_argv(tmp_path: Path) -> None:
     fake.write_text(f'#!/bin/sh\nprintf "ARGV %s\\n" "$*" >> {log}\ncat >> {log}\n')
     fake.chmod(0o755)
     text = gen.render_k8s(gen.generate(), "lg-sotf", environ=K8S_ENV, admin_email="admin@example.com")
-    subprocess.run(  # noqa: S603 - fixed argv
+    subprocess.run(
         ["/bin/sh"], input=text, text=True, check=True, timeout=30,
         env={"PATH": f"{bindir}:/usr/bin:/bin"},
     )
@@ -258,11 +258,13 @@ def test_only_useful_scripts_remain() -> None:
         "airgap/bundle.sh",
         "airgap/load.sh",
         "ci/bandit-baseline.json",
+        "ci/coverage_floors.py",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
         "demo/alerts.json",
         "demo/seed_demo.py",
         "e2e_ui_stack.sh",
+        "export_openapi.py",
         "generate_secrets.py",
         "load_test.py",
         "quickstart.sh",

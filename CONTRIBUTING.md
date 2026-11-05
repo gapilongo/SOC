@@ -16,8 +16,9 @@ application.
 git clone https://github.com/gapilongo/SOC.git && cd SOC
 python3.11 -m venv .venv && . .venv/bin/activate
 make dev          # pinned dependencies from requirements-dev.txt, editable install
-make lint         # ruff and mypy (the typed packages CI checks)
-make test         # unit tests; integration tests skip without the variables below
+pre-commit install --hook-type pre-commit --hook-type pre-push
+make check        # what CI's lint and fast jobs run: ruff, mypy, import contracts, unit + deploy tests
+make test         # the whole suite; integration tests skip without the variables below
 
 # Integration tests: dedicated databases whose names contain "test" (they are reset)
 export LG_SOTF_TEST_DATABASE_URL=postgresql://soc:<password>@127.0.0.1:5432/soc_test
@@ -59,8 +60,12 @@ its README.
 ## Style
 
 * Ruff (`make lint`) with the rules in `pyproject.toml`, line length 120.
-* Type hints everywhere; new packages should pass `mypy
-  --disallow-untyped-defs`.
+* Type hints everywhere. `make typecheck` runs mypy over every file listed in
+  `pyproject.toml` (`[tool.mypy] files`); new packages should also pass
+  `--disallow-untyped-defs` (add them to the strict override list).
+* The architecture is enforced: see `docs/design/refactor-roadmap.md` for the
+  layer rules, size budgets and data-access ratchets, and `docs/adr/` for the
+  decisions behind them.
 * Structured logging through `lg_sotf.observability.logging.get_logger` with
   event names (`component.event`) and keyword fields; never log secrets or
   raw alert bodies at INFO.

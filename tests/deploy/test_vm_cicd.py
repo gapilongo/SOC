@@ -275,7 +275,7 @@ def test_deploy_script_keeps_secrets_private_and_rolls_back() -> None:
 
 def test_deploy_script_rejects_bad_arguments_before_touching_anything(tmp_path: Path) -> None:
     def run(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(  # noqa: S603 - fixed argv
+        return subprocess.run(
             ["bash", str(VM / "deploy.sh"), "--root", str(tmp_path / "root"), *args],  # noqa: S607
             capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL,
         )
@@ -323,7 +323,7 @@ def test_backup_script_verifies_dumps_and_applies_retention() -> None:
 
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck is not installed")
 def test_scripts_pass_shellcheck() -> None:
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         ["shellcheck", "-x", *map(str, SCRIPTS)],  # noqa: S607
         capture_output=True, text=True, timeout=120,
     )
