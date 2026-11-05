@@ -53,7 +53,7 @@ def _excluded(a: CapabilitySpec, b: CapabilitySpec) -> bool:
     return b.key in a.excludes or a.key in b.excludes
 
 
-def check_invariants(specs: Sequence[CapabilitySpec]) -> Dict[str, CapabilitySpec]:
+def check_invariants(specs: Sequence[CapabilitySpec]) -> Dict[str, CapabilitySpec]:  # noqa: C901
     """The specs by key; raises :class:`CatalogError` listing every broken invariant."""
     from lg_sotf.services.response import ACTION_CATALOG
 
