@@ -1,0 +1,6 @@
+# Advisory-lock class numbers declared outside db/locks.py (path::CONSTANT or path::qualname for inline numbers).
+# Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
+# Delete lines as the code is fixed; never add one. See test_data_access.py.
+
+services/escalation.py::ESCALATION_GROUP_LOCK
+services/response.py::ACTION_CAP_LOCK
