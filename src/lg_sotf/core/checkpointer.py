@@ -46,7 +46,7 @@ class TenantScopedPostgresSaver(AsyncPostgresSaver):
     """``AsyncPostgresSaver`` whose every statement runs with ``app.tenant_id`` set."""
 
     @asynccontextmanager
-    async def _cursor(self, *, pipeline: bool = False) -> AsyncIterator[Any]:  # type: ignore[override]
+    async def _cursor(self, *, pipeline: bool = False) -> AsyncIterator[Any]:
         async with super()._cursor(pipeline=pipeline) as cur:
             await cur.execute("SELECT set_config('app.tenant_id', %s, false)", (_TENANT.get(),))
             yield cur
@@ -82,11 +82,11 @@ class TenantScopedPostgresSaver(AsyncPostgresSaver):
     async def aget_delta_channel_history(self, config: RunnableConfig, *args: Any, **kwargs: Any) -> Any:
         token = _TENANT.set(_tenant_of_config(config))
         try:
-            return await super().aget_delta_channel_history(config, *args, **kwargs)  # type: ignore[misc]
+            return await super().aget_delta_channel_history(config, *args, **kwargs)  # type: ignore[call-arg]
         finally:
             _TENANT.reset(token)
 
-    async def alist(self, config: Optional[RunnableConfig], *args: Any, **kwargs: Any) -> AsyncIterator[Any]:  # type: ignore[override]
+    async def alist(self, config: Optional[RunnableConfig], *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
         tenant = _tenant_of_config(config)
         iterator = super().alist(config, *args, **kwargs)
         while True:
