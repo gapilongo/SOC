@@ -75,6 +75,43 @@ describe('keyset pagination', () => {
     expect(result.current.outdated).toBe(false);
   });
 
+  it('keeps a page being loaded when a live invalidation arrives meanwhile', async () => {
+    let releasePage2: () => void = () => {};
+    const fetchPage = vi.fn(async (cursor: string | undefined): Promise<Page<{ id: number }>> => {
+      if (!cursor) return { items: [{ id: 1 }], next_cursor: 'cur-2' };
+      await new Promise<void>((resolve) => {
+        releasePage2 = resolve;
+      });
+      return { items: [{ id: 2 }], next_cursor: null };
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result } = renderHook(() => useKeysetList({ queryKey: ['alerts', {}], fetchPage, itemKey: (r) => r.id }), { wrapper });
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+
+    // "Load more" is in flight when the (single-page) list is invalidated.
+    let loading: Promise<unknown> = Promise.resolve();
+    act(() => {
+      loading = result.current.fetchNextPage();
+    });
+    await waitFor(() => expect(result.current.isFetchingNextPage).toBe(true));
+    let invalidated: Promise<void> = Promise.resolve();
+    act(() => {
+      invalidated = invalidateBounded(client, ['alerts']);
+    });
+    await act(async () => {
+      releasePage2();
+      await loading;
+      await invalidated;
+    });
+
+    // The next page was not cancelled and replaced by a refetch of page one.
+    await waitFor(() => expect(result.current.items.map((r) => r.id)).toEqual([1, 2]));
+    expect(fetchPage.mock.calls.map((c) => c[0])).toEqual([undefined, 'cur-2']);
+    // The invalidation is not lost: the (now deep) list is marked outdated.
+    await waitFor(() => expect(result.current.outdated).toBe(true));
+  });
+
   it('refetches a single-page list on invalidation with one request', async () => {
     const fetchPage = vi.fn(async (): Promise<Page<{ id: number }>> => ({ items: [{ id: 1 }], next_cursor: null }));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
