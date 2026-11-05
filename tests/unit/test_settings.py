@@ -117,6 +117,34 @@ def test_standard_variable_fallbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Settings(_env_file=None).database.url.get_secret_value() == "postgresql://explicit@db/x"
 
 
+def test_standard_variables_never_override_explicit_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # DATABASE_URL / REDIS_URL are the lowest-precedence source (module docstring, configuration.md).
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fallback@db/x")
+    monkeypatch.setenv("REDIS_URL", "redis://fallback:6379/0")
+    for name in ("LG_SOTF_DATABASE__URL", "LG_SOTF_REDIS__URL", "LG_SOTF_CONFIG_FILE"):
+        monkeypatch.delenv(name, raising=False)
+
+    kwargs = Settings(_env_file=None, database={"url": "postgresql://kwarg@db/x"}, redis={"url": "redis://kwarg:6379/0"})
+    assert kwargs.database.url.get_secret_value() == "postgresql://kwarg@db/x"
+    assert kwargs.redis.url.get_secret_value() == "redis://kwarg:6379/0"
+
+    yaml_file = tmp_path / "c.yaml"
+    yaml_file.write_text("database:\n  url: postgresql://yaml@db/x\nredis:\n  url: redis://yaml:6379/0\n")
+    from_yaml = Settings(_env_file=None, config_file=str(yaml_file))
+    assert from_yaml.database.url.get_secret_value() == "postgresql://yaml@db/x"
+    assert from_yaml.redis.url.get_secret_value() == "redis://yaml:6379/0"
+
+    dotenv = tmp_path / ".env"
+    dotenv.write_text("LG_SOTF_DATABASE__URL=postgresql://dotenv@db/x\n")
+    assert Settings(_env_file=str(dotenv)).database.url.get_secret_value() == "postgresql://dotenv@db/x"
+
+    # A section that sets other keys but not the URL still takes the fallback.
+    other = Settings(_env_file=None, database={"pool_max": 7})
+    assert other.database.url.get_secret_value() == "postgresql://fallback@db/x" and other.database.pool_max == 7
+
+
 def test_provider_specific_key_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-openai")

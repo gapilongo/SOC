@@ -76,7 +76,9 @@ async def _escalations(
     found: List[Escalation] = []
     cursor: Optional[str] = None
     while len(found) < MAX_ESCALATIONS:
-        page = await repos.escalations.list(tenant_id, alert_id=alert_id, limit=PAGE_SIZE, cursor=cursor, conn=conn)
+        page = await repos.escalations.list(
+            tenant_id, alert_id=alert_id, include_attached=True, limit=PAGE_SIZE, cursor=cursor, conn=conn
+        )
         found.extend(page.items)
         cursor = page.next_cursor
         if cursor is None:

@@ -123,7 +123,9 @@ async def load_case(repos: Repositories, tenant_id: str, alert_id: str) -> CaseD
     """Read the alert, its escalations, actions and indicator sightings (``NotFound`` for an unknown alert)."""
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
         alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
-        escalations = await repos.escalations.list(tenant_id, alert_id=alert_id, limit=MAX_CASE_ESCALATIONS, conn=conn)
+        escalations = await repos.escalations.list(
+            tenant_id, alert_id=alert_id, include_attached=True, limit=MAX_CASE_ESCALATIONS, conn=conn
+        )
         actions = await repos.actions.list(tenant_id, alert_id=alert_id, limit=MAX_CASE_ACTIONS, conn=conn)
         sightings = await repos.indicators.sightings_for_alert(tenant_id, alert_id, conn=conn)
     displays = [f"{s.indicator_type}: {s.value_display}" for s in sightings if s.value_display][:MAX_IOCS]

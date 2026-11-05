@@ -170,3 +170,21 @@ def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> Non
                 if not any(rx.search(secret) for rx in allow):
                     leaks.append(f"{name}: {secret[:12]}...")
     assert leaks == [], "allowlist the fake value in scripts/ci/gitleaks.toml or assemble it at run time"
+
+
+def _mypy_targets(text: str) -> List[str]:
+    """Package paths given to the first ``mypy`` call in a shell snippet (line continuations joined)."""
+    joined = text.replace("\\\n", " ")
+    match = re.search(r"^\s*mypy\s+((?:src/lg_sotf\S*\s*)+)", joined, re.MULTILINE)
+    assert match, "no mypy src/lg_sotf call found"
+    return sorted(match.group(1).split())
+
+
+def test_make_lint_type_checks_the_same_packages_as_ci() -> None:
+    # CONTRIBUTING.md promises `make lint` runs the typed packages CI checks.
+    makefile = (REPO_ROOT / "Makefile").read_text()
+    lint = makefile.split("\nlint:", 1)[1].split("\n.PHONY", 1)[0]
+    ci = CI.read_text()
+    ci_block = ci[ci.index("\n          mypy\n") :].split("\n      - ", 1)[0].replace("\n          mypy\n", "\nmypy ", 1)
+    ci_targets = sorted(t for t in ci_block.split() if t.startswith("src/lg_sotf"))
+    assert ci_targets and _mypy_targets(lint) == ci_targets

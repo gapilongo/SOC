@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Evidence packs and NIS2 incident drafts for an alert that was attached to
+  another alert's escalation now include that escalation, its decision and
+  its audit entries. Before, they matched only escalations whose primary
+  alert was the one exported, so the pack for an attached alert omitted the
+  decision that closed it.
+- The GDPR tenant export now includes `indicator_sightings.jsonl`: the
+  indicator values seen on each alert as displayed (IP addresses, email
+  addresses, user and host names). The manifest's `excluded` list now names
+  workflow run bookkeeping as well, and a test fails when a new
+  tenant-scoped table is neither exported nor listed as excluded.
+- `DATABASE_URL` and `REDIS_URL` are now true fallbacks. Before, an exported
+  `DATABASE_URL` or `REDIS_URL` overrode the URL from init arguments, the
+  YAML config file and `.env`, contrary to the documented precedence.
+
+### Changed
+
+- `make lint` type-checks the same packages as CI (adds `integrations` and
+  `mcp`); a test keeps the two lists in step.
+
 ## [1.2.2] - 2026-11-05
 
 ### Fixed

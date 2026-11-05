@@ -185,8 +185,17 @@ The archive holds JSON Lines files, one object per row: `users.jsonl`,
 `api_keys.jsonl`, `sources.jsonl`, `alerts.jsonl`, `alert_events.jsonl`,
 `escalations.jsonl`, `feedback.jsonl`, `actions.jsonl`, `suppressions.jsonl`,
 `integrations.jsonl`, `notification_outbox.jsonl` (delivery summaries),
-`external_tickets.jsonl`, `usage_daily.jsonl`, `llm_usage_daily.jsonl` and `audit_log.jsonl`, plus `tenant.json` (name, status, settings) and
-`manifest.json` (row count and SHA-256 of every file, who exported and when).
+`external_tickets.jsonl`, `usage_daily.jsonl`, `llm_usage_daily.jsonl`,
+`audit_log.jsonl` and `indicator_sightings.jsonl` (the indicator values seen on
+each alert, as displayed: IP addresses, email addresses, user and host names),
+plus `tenant.json` (name, status, settings) and `manifest.json` (row count and
+SHA-256 of every file, who exported and when, and what is excluded).
+
+Not exported, and named in the manifest's `excluded` list: authentication
+secrets (`user_mfa`, `refresh_tokens`), workflow run bookkeeping
+(`workflow_runs`) and LangGraph checkpoints, queue entries and caches. A test
+fails when a new tenant-scoped table is neither exported nor listed as
+excluded.
 
 Secrets are never exported:
 
