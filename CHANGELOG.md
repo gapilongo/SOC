@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
+  DeepSeek's V4 thinking models, now work with the `openai` provider: set
+  `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
+  `LLM_STRUCTURED_OUTPUT`). Replies are parsed as JSON with one repair attempt
+  and metered under the provider's own model name. OpenAI itself, with no
+  `llm.base_url`, keeps tool calling.
+
 ### Fixed
 
 - Web UI: the Actions page now explains the `internal_sender`,

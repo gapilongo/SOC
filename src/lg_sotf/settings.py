@@ -140,8 +140,8 @@ class LLMSettings(BaseModel):
     base_url: Optional[str] = None
     # How self-hosted providers return structured output: json_schema (response_format with the
     # schema, constrained decoding where the server supports it), json_mode (response_format
-    # json_object) or function_calling. "auto" = json_schema. Cloud providers always use their
-    # native method.
+    # json_object) or function_calling. "auto" = json_schema. Cloud providers use their native
+    # method, except openai with llm.base_url and a value other than "auto".
     structured_output: StructuredOutput = "auto"
     fast: FastTierSettings = Field(default_factory=FastTierSettings)
     deep: DeepTierSettings = Field(default_factory=DeepTierSettings)

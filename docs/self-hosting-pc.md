@@ -453,7 +453,12 @@ at once). The free tier allows only a few requests per minute, hence the low
 concurrency; alerts wait in the queue instead of failing. **Google may use
 free-tier prompts to train its models: send only synthetic alerts to it**, never
 real customer data. `LLM_BASE_URL` (an `https://` URL) points the `openai`
-provider at any OpenAI-compatible endpoint. To go back to the fake model, set
+provider at any OpenAI-compatible endpoint. For DeepSeek, set `LLM_PROVIDER`
+`openai`, `LLM_BASE_URL` `https://api.deepseek.com`, `LLM_STRUCTURED_OUTPUT`
+`json_mode` (its thinking models refuse a forced tool call), the models
+(for example `deepseek-v4-flash` and `deepseek-v4-pro`) and the secret
+`OPENAI_API_KEY`. DeepSeek is hosted in China: send it synthetic alerts only,
+not customer data, unless your data-transfer assessment allows it. To go back to the fake model, set
 `LLM_PROVIDER` to `fake` and delete the key with
 `gh secret delete GOOGLE_API_KEY --env dev`.
 

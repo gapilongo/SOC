@@ -19,7 +19,10 @@ appended to the trusted system prompt, and the reply is parsed here (a
 unparseable or invalid reply gets exactly one repair attempt: a user turn
 naming the failed field locations and error types (never values) that quotes
 the previous reply as untrusted data. Truncated output and refusals are not
-retried, and both attempts are metered.
+retried, and both attempts are metered. The ``openai`` provider takes the
+same path when ``llm.base_url`` and ``llm.structured_output`` are set (an OpenAI-compatible
+cloud API that refuses tool calling, such as DeepSeek's thinking models);
+it is still metered under its own model name.
 """
 
 from __future__ import annotations
@@ -357,6 +360,21 @@ def _classify(
         )
 
 
+def _invocation(
+    model: BaseChatModel, schema: Type[BaseModel], messages: Sequence[BaseMessage]
+) -> Tuple[Callable[[List[BaseMessage]], Awaitable[Any]], List[BaseMessage], int]:
+    """The call, its first messages and the attempt limit for ``model``'s structured-output method.
+
+    JSON text whenever the factory chose a JSON method (self-hosted providers, or ``openai``
+    with ``llm.base_url`` and ``llm.structured_output``), with one repair attempt; Anthropic's
+    native ``json_schema`` is not text.
+    """
+    method = structured_method(model)
+    if method in JSON_TEXT_METHODS and model_structured_method(model) is not None:
+        return _json_text_invoker(model, schema, method), with_schema_instructions(messages, schema), 2
+    return model.with_structured_output(schema, method=method, include_raw=True).ainvoke, list(messages), 1
+
+
 async def ainvoke_structured(  # noqa: C901
     model: BaseChatModel,
     schema: Type[T],
@@ -402,16 +420,7 @@ async def ainvoke_structured(  # noqa: C901
             log.warning("llm.budget_exceeded")
             raise
 
-    method = structured_method(model)
-    invoke: Callable[[List[BaseMessage]], Awaitable[Any]]
-    if self_hosted and method in JSON_TEXT_METHODS:
-        invoke = _json_text_invoker(model, schema, method)
-        attempt_messages = with_schema_instructions(messages, schema)
-        max_attempts = 2
-    else:
-        invoke = model.with_structured_output(schema, method=method, include_raw=True).ainvoke
-        attempt_messages = list(messages)
-        max_attempts = 1
+    invoke, attempt_messages, max_attempts = _invocation(model, schema, messages)
 
     async def settle(tokens: int) -> None:
         if reservation is not None and budget is not None:

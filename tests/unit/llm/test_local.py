@@ -130,6 +130,41 @@ def test_cloud_providers_keep_their_native_method(make_settings: Callable[..., S
     assert usage_model_id(model) == "gpt-4.1"
 
 
+def test_openai_compatible_cloud_api_can_choose_json_mode(make_settings: Callable[..., Settings]) -> None:
+    """DeepSeek's thinking models reject a forced tool_choice: openai + base_url + json_mode answers in JSON."""
+    s = make_settings(
+        llm={
+            "provider": "openai",
+            "api_key": "k",
+            "base_url": "https://api.deepseek.com",
+            "structured_output": "json_mode",
+            "deep": {"model": "deepseek-v4-pro"},
+        }
+    )
+    model = get_chat_model("deep", s)
+    assert provider_of(model) == "openai" and structured_method(model) == "json_mode"
+    # A cloud API is metered (and priced) under its own name, never as a free local model.
+    assert usage_model_id(model) == "deepseek-v4-pro"
+    auto = get_chat_model("deep", make_settings(llm={**s.llm.model_dump(), "api_key": "k", "structured_output": "auto"}))
+    assert structured_method(auto) == "function_calling"
+
+
+async def test_cloud_json_mode_uses_the_json_text_path_at_cloud_metering(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings()
+    model = TextModel(
+        replies=[json.dumps(GOOD)],
+        model_name="deepseek-v4-pro",
+        metadata={PROVIDER_KEY: "openai", STRUCTURED_KEY: "json_mode"},
+    )
+    verdict = await ainvoke_structured(model, Verdict, _msgs(s), agent="triage", tier="deep", tenant_id="t1", settings=s)
+    assert verdict == Verdict(**GOOD)
+    (request,) = model.requests
+    assert request["response_format"] == {"type": "json_object"} and "tools" not in request
+    assert "JSON Schema" in str(request["messages"][0].content)
+    rows = _rows()
+    assert "deepseek-v4-pro" in rows and "local/deepseek-v4-pro" not in rows
+
+
 def test_self_hosted_providers_need_no_api_key_in_production(make_settings: Callable[..., Settings]) -> None:
     ollama = make_settings(environment="production", llm={"provider": "ollama"})
     assert not any("api_key" in p for p in ollama.production_problems())
