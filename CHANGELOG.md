@@ -43,6 +43,13 @@ All notable changes to this project are documented here. The format follows
   sets a key in `agents`, `routing`, `tools` or `ingestion` that nothing
   reads.
 
+### Security
+
+- Pinned dependencies updated for published advisories: aiohttp 3.14.4,
+  certifi 2026.10.18, langgraph-checkpoint-postgres 3.1.3 (with
+  langgraph-checkpoint 4.3.0), langgraph-sdk 0.4.6, OpenTelemetry
+  1.45.1 / 0.66b1 and pyasn1 0.6.5.
+
 ## [1.2.1] - 2026-10-01
 
 ### Fixed
