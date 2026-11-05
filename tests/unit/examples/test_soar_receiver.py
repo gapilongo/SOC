@@ -12,6 +12,7 @@ import json
 import socket
 import sys
 import threading
+import tomllib
 import urllib.error
 import urllib.request
 import uuid
@@ -590,6 +591,9 @@ def test_the_examples_are_linted_type_checked_and_scanned() -> None:
 
     ruff = next(line for line in recipe("lint") if line.startswith("ruff check"))
     assert "examples" in ruff.split()
-    assert "mypy examples/soar/receiver examples/soar/n8n/build_workflow.py" in recipe("lint")
+    # `make typecheck` runs bare mypy over [tool.mypy] files, which must include the examples.
+    assert recipe("typecheck") == ["mypy"]
+    files = tomllib.loads((Path(__file__).resolve().parents[3] / "pyproject.toml").read_text())["tool"]["mypy"]["files"]
+    assert {"examples/soar/receiver", "examples/soar/n8n/build_workflow.py"} <= set(files)
     bandit = next(line for line in recipe("security-scan") if line.startswith("bandit"))
     assert "examples" in bandit.split() and "src/lg_sotf" in bandit.split()
