@@ -153,9 +153,9 @@ Legend:
 
 ---
 
-### Phase 0 — Guardrails (no runtime change)
+### Phase 0 — Guardrails (no runtime change) (done in #82)
 
-#### G1 · One toolchain configuration
+#### G1 · One toolchain configuration (done in #82)
 - **Why:** `.pre-commit-config.yaml` (last changed in "sprint0") runs black at 88 columns, isort, flake8-docstrings, mypy 1.5.1 and bandit. CI and the Makefile run ruff 0.16.9 at 120 columns and mypy 2.3.1. The mypy path list is copied by hand in `ci.yml:51-66` and `Makefile:55-59`. About 21k lines are never type-checked directly: `api`, `core`, `eval`, `agents`, `compliance`, `tools` and `cli.py`.
 - **Change:**
   - `.pre-commit-config.yaml`: keep the generic `pre-commit-hooks` and add `astral-sh/ruff-pre-commit` pinned to ruff 0.16.9. Remove black, isort, flake8, mirrors-mypy and bandit (bandit stays in `make security-scan` and the CI security job). Run `make typecheck` as a pre-push hook.
@@ -168,7 +168,7 @@ Legend:
 - **Verify:** paste the mypy before and after file counts into the PR (227 files, then 283). No runtime code changes.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### G2 · import-linter baseline contracts
+#### G2 · import-linter baseline contracts (done in #82)
 - **Why:** `docs/architecture.md` states no dependency direction. Four package cycles exist: agents↔core, core↔db, core↔services and integrations↔services. 62 import lines break the intended layering, and nothing stops a 63rd.
 - **Change:**
   - Add `import-linter` to the `[dev]` extra in `pyproject.toml`. Regenerate `requirements-dev.txt` with the pip-compile command in its header; never edit the `.txt` by hand. This also pins grimp.
@@ -191,7 +191,7 @@ Legend:
 - **Verify:** all contracts are KEPT on `681eafd`. The PR description shows that a deliberately added `integrations -> services` import fails.
 - **Risk / Effort / Deps:** low · S · G1.
 
-#### G3 · ADR log and ADR-0001 (layering)
+#### G3 · ADR log and ADR-0001 (layering) (done in #82)
 - **Why:** decisions live only in prose or outside the repo. `docs/adr/` does not exist.
 - **Change:**
   - Add `docs/adr/README.md` (index), `template.md` (MADR) and `0000-record-architecture-decisions.md`.
@@ -211,7 +211,7 @@ Legend:
 - **Verify:** `lint-imports` is green.
 - **Risk / Effort / Deps:** low · S · G2.
 
-#### G4 · Ruff rule ratchet
+#### G4 · Ruff rule ratchet (done in #82)
 - **Why:** the source has 65 `# noqa: BLE001` and 4 `# noqa: A002` for rules that are not enabled. Without RUF100, none of the 103 noqa comments is checked. The CONTRIBUTING rule "configuration only in settings.py" is not enforced.
 - **Change:**
   - **PR 1:** enable `RUF100`, `BLE` and `A` together. Apply `ruff check --fix --select RUF100` (138 unused noqa). Annotate the 3 BLE sites in house style without changing the handlers: `eval/history.py:327`, `eval/runner.py:162` and `:177`.
@@ -223,7 +223,7 @@ Legend:
 - **Verify:** no handler logic changes. Ruff is green.
 - **Risk / Effort / Deps:** low · S · G1.
 
-#### G5 · Architecture test suite
+#### G5 · Architecture test suite (done in #82)
 - **Why:** reviewers need objective thresholds. Import-linter cannot see SQL, transaction ownership, module size or runtime import cost.
 - **Change:** add `tests/unit/architecture/` with:
   - `test_budgets.py`: the size budget described in section 3.
@@ -232,7 +232,7 @@ Legend:
 - **Verify:** green on HEAD. The tests run in the unit job.
 - **Risk / Effort / Deps:** low · S · G1.
 
-#### G6 · Characterization goldens: error mapping and OpenAPI
+#### G6 · Characterization goldens: error mapping and OpenAPI (done in #82)
 - **Why:** Phases 1, 2 and 6 move exception classes and touch routers. API status codes and the published contract must not change by accident.
 - **Change:**
   - `tests/unit/api/test_error_mapping.py`: for every class handled in `api/errors.py install_error_handlers`, plus every `Exception` subclass defined in `lg_sotf`, resolve the handler through the MRO as Starlette does. Snapshot class → `(status, code)` to `error_mapping.golden.json`.
@@ -241,7 +241,7 @@ Legend:
 - **Verify:** test-only change.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### G7 · Frontend contract test and guardrail text fix
+#### G7 · Frontend contract test and guardrail text fix (done in #82)
 - **Why:** `lib/guardrails.ts` is missing `invalid_email`, `invalid_message` and `internal_sender` (`services/response.py:431-433`, emitted at `:1490`), plus the reviewer codes `rejected_by_reviewer` and `rejected_with_remaining` (`response.py:1890-1892`). Analysts see raw codes.
 - **Change:**
   - Add `tests/deploy/test_frontend_contracts.py`. It imports `GUARDRAIL_REASONS`, `get_args(api.schemas.SourceType)`, `integrations.config.KINDS` and `TICKETING_KINDS`, and regex-parses the TS keys and arrays. It compares keys, not wording.
@@ -250,7 +250,7 @@ Legend:
 - **Behaviour change:** UI text only. CHANGELOG entry.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### G8 · Catalog-derived RLS test
+#### G8 · Catalog-derived RLS test (done in #82)
 - **Why:** `test_migrations.py:31-51` checks a hand-written table list, and `test_rls.py:21-39` already leaves out `user_mfa` and `usage_daily`. A new tenant table that nobody adds to the list is never checked for FORCE RLS.
 - **Change:**
   - Discover tenant tables with the query from `tests/integration/api/test_compliance.py:441-443`: tables with a `tenant_id` column, excluding partitions. Assert `relrowsecurity`, `relforcerowsecurity` and a `tenant_isolation` policy for each, plus `tenants`.
@@ -259,7 +259,7 @@ Legend:
 - **Verify:** the integration job passes.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### G9 · CI test hygiene
+#### G9 · CI test hygiene (done in #82)
 - **Why:** a hung async test burns the 30-minute job. One job runs everything, although the unit tier is hermetic and takes 54 s. `tests/deploy/test_funnel_workflow.py:27,63` pins an exact tailscale action SHA, which broke Dependabot run 40450658932.
 - **Change:**
   - Split CI into a fast job (`pytest tests/unit tests/deploy` with no `LG_SOTF_TEST_*` env, which proves the tier is hermetic) and an integration job. Pin the split in `tests/deploy/test_ci_workflow.py`.
@@ -267,9 +267,10 @@ Legend:
   - Warnings: set `filterwarnings = ["error", ...]` for the unit tier after fixing the 3 known `ResourceWarning`s. For integration, start with `error::RuntimeWarning` and `error::pytest.PytestUnraisableExceptionWarning`.
   - Replace the exact-SHA assertion with "pinned to a 40-hex SHA with a `# vX.Y.Z` comment" (already enforced generically at `test_ci_workflow.py:28`).
 - **Verify:** both jobs are green with the same total case count.
+- **Left over:** #82 turns only `RuntimeWarning` into an error. `ResourceWarning` and `PytestUnraisableExceptionWarning` stay warnings until 5 tests stop leaking sockets; tracing those leaks moves to Phase 8.
 - **Risk / Effort / Deps:** low · S · G1.
 
-#### G10 · Coverage floors and runtime characterization tests
+#### G10 · Coverage floors and runtime characterization tests (done in #82)
 - **Why:** `coverage.xml` is produced but never read. `runtime` is the least covered package (82.0% line, 72.0% branch) and `shutdown.py` is at 50.8%. These code paths are untested: `cancel_and_wait`, `GracefulShutdown`, `wait_or_stop`, and the deep-backlog branch at `scheduler.py:461-465`. `db/migrations` shows 0%, which skews the totals.
 - **Change:**
   - Add `tests/unit/runtime/test_shutdown.py`:
@@ -284,7 +285,7 @@ Legend:
   - Add `scripts/ci/coverage_floors.py` for `runtime`, `security` and `api/auth`, with 1.0 point of slack and raise-only floors.
 - **Risk / Effort / Deps:** low · M · G9.
 
-#### G11 · CODEOWNERS on ratchets and supply chain
+#### G11 · CODEOWNERS on ratchets and supply chain (done in #82)
 - **Why:** editing `scripts/ci/bandit-baseline.json`, `gitleaks.toml` or a ratchet allowlist silently disables a guard.
 - **Change:** add owners for `.github/workflows/`, `scripts/ci/`, `requirements*.txt`, `pyproject.toml`, `tests/unit/architecture/` and `src/lg_front/eslint.config.js`, placed above the MCP rules. First confirm branch protection and how PRs from the sole owner get merged.
 - **Risk / Effort / Deps:** low · S · none.
