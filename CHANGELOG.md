@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Web UI: the Actions page now explains the `internal_sender`,
+  `invalid_email`, `invalid_message`, `rejected_by_reviewer` and
+  `rejected_with_remaining` block reasons instead of showing the raw codes.
+  A test now fails when the backend adds a guardrail reason that the web app
+  cannot describe, or when the web app's source-type, integration-kind or
+  ticketing-kind lists drift from the backend.
+
 ## [1.2.3] - 2026-11-05
 
 ### Fixed
