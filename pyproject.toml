@@ -109,6 +109,12 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+# A hung async test fails after 2 minutes instead of burning the CI job (the process-level e2e and
+# eval suites mark themselves timeout(300)).
+timeout = 120
+timeout_method = "signal"
+# A coroutine that was never awaited is a bug, not noise. ResourceWarning is next (roadmap G9).
+filterwarnings = ["error::RuntimeWarning"]
 markers = [
     "integration: needs real PostgreSQL/Redis (LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL); skipped when unset",
     "slow: long-running tests (deselect with -m 'not slow')",

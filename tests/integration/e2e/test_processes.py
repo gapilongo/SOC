@@ -47,7 +47,7 @@ from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
 from tests.integration.e2e.conftest import eventually
 
-pytestmark = [pytest.mark.integration, pytest.mark.slow]
+pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(300)]
 
 CANARY = f"canary-{uuid4().hex}"
 WEBHOOK_SECRET = f"whsec-{uuid4().hex}"

@@ -197,3 +197,18 @@ def test_ci_enforces_the_import_contracts() -> None:
     assert re.search(r"^check:.*\bimport-lint\b", (REPO_ROOT / "Makefile").read_text(), re.MULTILINE)
     contracts = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["importlinter"]["contracts"]
     assert {c["id"] for c in contracts} >= {"layers", "api-no-workflow", "mcp-thin-client", "infra-drivers"}
+
+
+def test_a_fast_job_runs_the_unit_and_deploy_tiers_without_services() -> None:
+    jobs = workflow()["jobs"]
+    fast = jobs["fast"]
+    assert "services" not in fast and not any(k.startswith("LG_SOTF_TEST_") for k in (fast.get("env") or {}))
+    runs = [s.get("run", "") for s in fast["steps"]]
+    assert "pytest tests/unit tests/deploy" in runs
+    # The service-backed job still runs the whole suite, so coverage stays complete.
+    assert any(r.startswith("pytest") and "tests/" not in r for r in (s.get("run", "") for s in jobs["test"]["steps"]))
+
+
+def test_every_test_has_a_timeout() -> None:
+    pytest_cfg = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["pytest"]["ini_options"]
+    assert pytest_cfg["timeout"] == 120 and pytest_cfg["timeout_method"] == "signal"

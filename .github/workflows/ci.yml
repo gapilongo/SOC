@@ -59,6 +59,31 @@ jobs:
           shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh \
             src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
 
+  fast:
+    name: Unit and deploy tests (no services)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # No LG_SOTF_TEST_* variables: proves the unit and deploy tiers need no PostgreSQL or Redis,
+    # and gives feedback in about two minutes.
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -e .
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Pytest (unit and deploy)
+        run: pytest tests/unit tests/deploy
+
   test:
     name: Tests (PostgreSQL 16, Redis 7)
     runs-on: ubuntu-latest
