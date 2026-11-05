@@ -105,11 +105,13 @@ MIN_EDIT_LABEL = 5
 _EMAIL_IN_TEXT = re.compile(r"[A-Za-z0-9._%+-]{1,64}@([A-Za-z0-9-]{1,63}(?:\.[A-Za-z0-9-]{1,63})+)")
 _TOKEN_SPLIT = re.compile(r"[^a-z0-9]+")
 # Latin look-alikes from Cyrillic and Greek, plus digits and letter pairs read as letters.
+# ``str.translate`` makes one pass, so every member of a confusable class must map to the same
+# target: ASCII ``i`` folds to ``l``, so the Unicode i-lookalikes must fold to ``l`` too.
 _CONFUSABLES = str.maketrans(
     {
-        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "i", "ј": "j", "ԁ": "d",
+        "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "у": "y", "х": "x", "і": "l", "ј": "j", "ԁ": "d",
         "ɡ": "g", "ո": "n", "ѕ": "s", "ԛ": "q", "ԝ": "w", "һ": "h", "ӏ": "l", "ʏ": "y", "ο": "o", "α": "a",
-        "ν": "v", "ρ": "p", "τ": "t", "ι": "i", "κ": "k", "ε": "e", "υ": "u", "χ": "x", "ɑ": "a", "ı": "i",
+        "ν": "v", "ρ": "p", "τ": "t", "ι": "l", "κ": "k", "ε": "e", "υ": "u", "χ": "x", "ɑ": "a", "ı": "l",
         "0": "o", "1": "l", "i": "l", "3": "e", "5": "s", "7": "t", "8": "b",
     }
 )

@@ -71,35 +71,20 @@ response:
   webhook_secret: ${RESPONSE_WEBHOOK_SECRET}
 
 agents:
-  ingestion:
-    batch_size: 100
-    polling_interval: 60
-    max_concurrent_alerts: 20
-    enable_deduplication: true
   triage:
-    confidence_threshold: 75
-    enable_ml_scoring: false
     enable_llm_scoring: true
     llm_weight: 0.4
   correlation:
     correlation_window_minutes: 60
     enable_llm_correlation: true
     llm_weight: 0.3
-    enable_threat_intel: true
-    enable_siem_queries: true
-    enable_burst_detection: true
   analysis:
     max_iterations: 5
-    enable_tool_orchestration: true
     enable_llm_reasoning: true
-    tool_timeout: 30
-  human_loop:
-    escalation_threshold: 50
-    max_escalation_level: 3
-    response_timeout_hours: 8
-  response:
-    enabled: true
-    dry_run_mode: true
+  # human_loop takes the install defaults of the tenant review policy (sla_minutes,
+  # level_thresholds, min_level, grouping, suggest_suppressions); see
+  # lg_sotf.services.escalation. Response actions are governed by the top-level
+  # ``response`` section (response.dry_run), not by an agents.response block.
 
 routing:
   max_alert_age_hours: 72
@@ -111,17 +96,12 @@ routing:
   response_threshold: 80
 
 tools:
-  execution_timeout: 30
-  caching_enabled: true
-  cache_ttl: 600
-  max_retries: 3
-  backoff_factor: 2
   # Read by EnrichmentService as tools.<provider>. Provide the key from a secret store as
   # LG_SOTF_TOOLS__VIRUSTOTAL__API_KEY (never in a ConfigMap or this file).
   virustotal:
     api_key: ${VIRUSTOTAL_API_KEY}
-    timeout: 15
-    rate_limit: 4
+    timeout_s: 15
+    requests_per_minute: 4
 
 ingestion:
-  llm_normalization: false
+  llm_fallback: false

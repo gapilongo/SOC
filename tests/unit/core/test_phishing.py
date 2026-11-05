@@ -117,6 +117,20 @@ def test_lookalike_domains(host: str, technique: str) -> None:
     assert result.tp == [p.LOOKALIKE_DOMAIN] and technique in result.lookalikes[0]
 
 
+@pytest.mark.parametrize("letter", ["і", "ι", "ı", "1", "l"])
+def test_unicode_i_lookalikes_fold_like_ascii_i(letter: str) -> None:
+    # One translate pass: an i-lookalike must land where ASCII "i" lands, or the brand never matches.
+    assert p.fold(f"m{letter}crosoft") == p.fold("microsoft")
+
+
+@pytest.mark.parametrize("letter", ["і", "ι"])
+def test_unicode_i_lookalike_domain_is_flagged(letter: str) -> None:
+    profile = PhishingProfile.from_settings({"phishing": {"protected_brands": ["linkedin.test"]}}, {})
+    host = f"l{letter}nked{letter}n.test".encode("idna").decode("ascii")
+    result = assess(section(urls=[{"url": f"https://{host}/", "host": host}]), profile)
+    assert result.tp == [p.LOOKALIKE_DOMAIN] and "look-alike" in result.lookalikes[0]
+
+
 @pytest.mark.parametrize("host", ["example.com", "intranet.example.com", "examplebank.test", "partner.test", "sample.test"])
 def test_legitimate_domains_are_not_lookalikes(host: str) -> None:
     assert assess(section(urls=[{"url": f"https://{host}/", "host": host}]), PROFILE).lookalikes == []

@@ -4,6 +4,45 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Lookalike-domain detection now catches brand domains spelled with a
+  Cyrillic `і`, Greek `ι` or dotless `ı` in place of `i` (for example
+  `mіcrosoft`). The comparison folded those letters to `i` but folded ASCII
+  `i` to `l`, so the two spellings never matched.
+- `lg-sotf dlq requeue` now really starts a dead letter with
+  a fresh delivery count. The copy kept the exhausted `retries` counter, so
+  a requeued resume could be dead-lettered again on its first failure.
+- Jira and ServiceNow ticket creation and comments are no longer resent
+  after a read timeout or a 5xx answer, which could open a duplicate
+  ticket or post a comment twice. They are still retried when the request
+  never reached the server (connection refused or timed out, HTTP 429);
+  otherwise the error goes to the caller, whose retry looks for the ticket
+  first.
+- Alerts normalized by the LLM fallback now carry the `secrets_redacted`
+  flag when redaction replaced values in them.
+- Splunk sources reject an invalid `max_event_lag_s` or `search_timeout_s`
+  (null, text, negative, NaN, infinite or out of range) with a field-named
+  config error. Before, null failed with an HTTP 500 and NaN made the job
+  wait loop poll forever. Values must now be numbers: 0 to 30 days for the
+  lag, 1 to 3600 seconds for the search timeout.
+
+### Changed
+
+- The reference configs (`configs/*.yaml`) carry only keys the code reads.
+  Keys under `tools.virustotal` were misnamed and ignored: they are now
+  `timeout_s` and `requests_per_minute`. In `development.yaml` VirusTotal
+  sat under `tools.intel` and its key was never used. `ingestion.
+  llm_normalization` is now the real switch, `ingestion.llm_fallback`.
+  Obsolete blocks that looked like controls but did nothing are removed:
+  `agents.response` (`dry_run_mode`, `auto_approve_*`; the real switch is
+  `response.dry_run`), `agents.ingestion`, `agents.human_loop`, and the
+  `tools` retry and cache keys. A new test fails when a reference config
+  sets a key in `agents`, `routing`, `tools` or `ingestion` that nothing
+  reads.
+
 ## [1.2.1] - 2026-10-01
 
 ### Fixed

@@ -94,54 +94,23 @@ response:
   webhook_secret: ${RESPONSE_WEBHOOK_SECRET}
 
 agents:
-  ingestion:
-    batch_size: 100
-    polling_interval: 60
-    max_concurrent_alerts: 50
-    enable_deduplication: true
-    deduplication_window_hours: 24
-    rate_limit_enabled: true
-    max_alerts_per_minute: 5000
-    max_alerts_per_source_minute: 1000
   triage:
-    confidence_threshold: 80
-    enable_ml_scoring: false
     enable_llm_scoring: true
     llm_weight: 0.4
   correlation:
     correlation_window_minutes: 60
-    similarity_threshold: 0.7
+    burst_window_minutes: 15
+    burst_threshold: 5
     max_correlations: 10
     enable_llm_correlation: true
     llm_weight: 0.3
-    enable_threat_intel: true
-    enable_siem_queries: true
-    enable_burst_detection: true
-    burst_threshold_per_minute: 5
   analysis:
     max_iterations: 5
-    min_confidence_threshold: 60
-    max_confidence_threshold: 90
-    enable_tool_orchestration: true
     enable_llm_reasoning: true
-    parallel_tool_execution: true
-    max_parallel_tools: 3
-    tool_timeout: 30
-    enable_fallback_analysis: true
-  human_loop:
-    escalation_threshold: 60
-    max_escalation_level: 3
-    response_timeout_hours: 8
-    auto_escalate_enabled: true
-    sla_check_interval: 300
-  response:
-    enabled: true
-    dry_run_mode: true
-    auto_approve_low_risk: false
-    auto_approve_medium_risk: false
-    auto_approve_high_risk: false
-    max_parallel_actions: 3
-    action_timeout: 60
+  # human_loop takes the install defaults of the tenant review policy (sla_minutes,
+  # level_thresholds, min_level, grouping, suggest_suppressions); see
+  # lg_sotf.services.escalation. Response actions are governed by the top-level
+  # ``response`` section (response.dry_run), not by an agents.response block.
 
 routing:
   max_alert_age_hours: 72
@@ -153,17 +122,12 @@ routing:
   response_threshold: 80
 
 tools:
-  execution_timeout: 30
-  caching_enabled: true
-  cache_ttl: 1800
-  max_retries: 3
-  backoff_factor: 2
   # Read by EnrichmentService as tools.<provider>. Provide the key from a secret store as
   # LG_SOTF_TOOLS__VIRUSTOTAL__API_KEY (never in a ConfigMap or this file).
   virustotal:
     api_key: ${VIRUSTOTAL_API_KEY}
-    timeout: 15
-    rate_limit: 4
+    timeout_s: 15
+    requests_per_minute: 4
 
 ingestion:
-  llm_normalization: false
+  llm_fallback: false

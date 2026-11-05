@@ -230,3 +230,26 @@ async def test_decision_sync_sees_a_create_that_finishes_concurrently(settings: 
         result = {"deferred": True}
     assert result != {"skipped": "no_ticket"}, calls
     assert result.get("deferred") or commented
+
+
+async def _no_sleep(_: float) -> None:
+    return None
+
+
+@pytest.mark.parametrize("system", ["jira", "servicenow"])
+async def test_ticket_create_is_not_resent_after_a_502(settings: Settings, system: str) -> None:
+    # A 502 after the POST leaves it unknown whether the ticket exists; a resend could open a second one.
+    calls: List[httpx.Request] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        return httpx.Response(502)
+
+    http = IntegrationHttp(settings, transport=httpx.MockTransport(answer), resolver=public_resolver, sleep=_no_sleep)
+    if system == "jira":
+        client: Any = JiraClient(http, JIRA, {"api_token": fake_secret("jira")}, retries=2)
+    else:
+        client = ServiceNowClient(http, SNOW, {"password": fake_secret("snow")}, retries=2)
+    with pytest.raises(DeliveryError) as err:
+        await client.create(draft_from_event(event(), "https://soc.example.com", "lgsotf-abc"))
+    assert err.value.retryable and [r.method for r in calls] == ["POST"]

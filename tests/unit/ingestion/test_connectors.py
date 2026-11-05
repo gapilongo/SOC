@@ -201,6 +201,14 @@ def test_splunk_requires_credentials(settings: Settings) -> None:
         build(settings, "splunk", SPLUNK, {}, lambda r: httpx.Response(200))
 
 
+@pytest.mark.parametrize("key", ["max_event_lag_s", "search_timeout_s"])
+@pytest.mark.parametrize("value", [None, "300", True, -1, float("nan"), float("inf"), 1e12])
+def test_splunk_rejects_bad_numeric_config(settings: Settings, key: str, value: Any) -> None:
+    # A null crashed with TypeError (HTTP 500); NaN made the job wait poll forever.
+    with pytest.raises(SourceConfigError, match=key):
+        build(settings, "splunk", {**SPLUNK, key: value}, SPLUNK_CREDS, lambda r: httpx.Response(200))
+
+
 # -- sentinel --------------------------------------------------------------------
 
 
