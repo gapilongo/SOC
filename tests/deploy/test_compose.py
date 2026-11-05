@@ -181,7 +181,7 @@ def compose_config(*files: str, env: Dict[str, str], env_file: Optional[Path] = 
         argv += ["-f", f]
     if env_file is not None:
         argv += ["--env-file", str(env_file)]
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         [*argv, "config", "--format", "json"],
         capture_output=True,
         text=True,
@@ -208,7 +208,7 @@ def test_compose_config_resolves_with_defaults() -> None:
 @requires_compose
 def test_prod_override_requires_secrets() -> None:
     argv = ["docker", "compose", "-f", str(COMPOSE), "-f", str(PROD), "config", "-q"]
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         argv, capture_output=True, text=True, env={"PATH": os.environ.get("PATH", "")}, timeout=60
     )
     if "is not a docker command" in proc.stderr:

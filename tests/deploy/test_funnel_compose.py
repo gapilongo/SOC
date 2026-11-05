@@ -183,7 +183,7 @@ def test_healthcheck_detects_a_namespace_with_only_loopback(tmp_path: Any) -> No
     for content, healthy in ((header + lo + eth0, True), (header + lo, False)):
         dev = tmp_path / "dev"
         dev.write_text(content)
-        proc = subprocess.run(  # noqa: S603 - fixed argv
+        proc = subprocess.run(
             ["sh", "-c", probe.replace("/proc/net/dev", str(dev))],  # noqa: S607
             capture_output=True, text=True, timeout=10,
         )
@@ -260,7 +260,7 @@ def test_funnel_overlay_refuses_to_resolve_without_its_settings(missing: str) ->
     argv = ["docker", "compose"]
     for f in (*BASE_FILES, str(FUNNEL)):
         argv += ["-f", f]
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         [*argv, "config", "-q"],
         capture_output=True, text=True, timeout=60,
         env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "/tmp"), **env},

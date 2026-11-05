@@ -159,7 +159,7 @@ class EvalRunner:
             result.status = "error"
             result.error = f"run timed out after {self.run_timeout_s:.0f} s"
             await self._usage_after_error(result)
-        except Exception as exc:  # one failing item must not stop the evaluation
+        except Exception as exc:  # noqa: BLE001 - one failing item must not stop the evaluation
             result.latency_s = time.perf_counter() - started
             result.status = "error"
             result.error = f"{type(exc).__name__}: {str(exc)[:200]}"[:MAX_ERROR_CHARS]
@@ -174,7 +174,7 @@ class EvalRunner:
         try:
             alert = await self.repos.alerts.get(self.tenant_id, result.alert_id)
             _apply_usage(result, alert.summary or {})
-        except Exception as exc:  # the item already failed; usage is informational
+        except Exception as exc:  # noqa: BLE001 - the item already failed; usage is informational
             log.warning("eval.usage_unavailable", item_id=result.item_id, error_type=type(exc).__name__)
 
     async def _collect(self, result: ItemResult, run: RunOutcome) -> None:

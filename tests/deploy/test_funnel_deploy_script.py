@@ -119,7 +119,7 @@ class Harness:
         argv = ["bash", str(DEPLOY_SH), "--env", "dev", "--root", str(self.root), *args]
         if values is not None:
             argv.append("--secrets-stdin")
-        return subprocess.run(  # noqa: S603 - fixed argv
+        return subprocess.run(
             argv, input=stdin, capture_output=True, text=True, timeout=120,
             env={
                 "PATH": f"{self.bin}:{os.environ.get('PATH', '')}",
@@ -560,7 +560,7 @@ def test_backup_uses_the_recorded_overlays(tmp_path: Path) -> None:
     h = Harness(tmp_path)
     recorded(h, "funnel")
     (h.root / "env" / "dev" / ".env").write_text("")
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         ["bash", str(REPO_ROOT / "deploy" / "vm" / "backup.sh"), "--root", str(h.root), "--env", "dev"],  # noqa: S607
         capture_output=True, text=True, timeout=60,
         env={"PATH": f"{h.bin}:{os.environ.get('PATH', '')}", "HOME": str(tmp_path), "STUB_DIR": str(h.stub)},

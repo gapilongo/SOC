@@ -324,7 +324,7 @@ class HistoryReplayer:
             classify(result, replay)
         except TimeoutError:
             result.error = f"replay timed out after {self.run_timeout_s:.0f} s"
-        except Exception as exc:  # one failing alert must not stop the backtest
+        except Exception as exc:  # noqa: BLE001 - one failing alert must not stop the backtest
             result.status = "error"
             result.error = f"{type(exc).__name__}: {str(exc)[:200]}"[:MAX_ERROR_CHARS]
             log.warning("backtest.item_failed", alert_id=alert.id, error_type=type(exc).__name__)

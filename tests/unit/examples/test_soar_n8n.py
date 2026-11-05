@@ -242,7 +242,7 @@ def run_code(
         "now_ms": now * 1000,
         "nodes": nodes or {},
     }
-    done = subprocess.run(  # noqa: S603 - fixed argv
+    done = subprocess.run(
         [NODE, str(harness)], input=json.dumps(context), capture_output=True, text=True, timeout=30, check=True
     )
     return json.loads(done.stdout)

@@ -145,7 +145,7 @@ def test_scripts_are_strict_and_executable(path: Path) -> None:
 
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck is not installed")
 def test_scripts_pass_shellcheck() -> None:
-    proc = subprocess.run(  # noqa: S603 - fixed argv
+    proc = subprocess.run(
         ["shellcheck", "-x", *map(str, SHELL_SCRIPTS)], capture_output=True, text=True, timeout=120  # noqa: S607
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -177,7 +177,7 @@ def stub_docker(tmp_path: Path) -> Iterator[Tuple[Dict[str, str], Path]]:
 
 
 def run_script(path: Path, *args: str, env: Dict[str, str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(  # noqa: S603 - fixed argv
+    return subprocess.run(
         [str(path), *args], capture_output=True, text=True, env=env, timeout=120, cwd=REPO_ROOT
     )
 
@@ -217,7 +217,7 @@ def test_bundle_saves_images_and_writes_a_manifest(stub_docker: Tuple[Dict[str, 
         digest = hashlib.sha256((out / name).read_bytes()).hexdigest()
         assert f"{digest}  {name}" in (out / "SHA256SUMS").read_text()
     assert manifest_sum == hashlib.sha256((out / "SHA256SUMS").read_bytes()).hexdigest()
-    members = subprocess.run(  # noqa: S603
+    members = subprocess.run(
         ["tar", "-tzf", str(out / "deploy.tar.gz")], capture_output=True, text=True, check=True  # noqa: S607
     ).stdout.split()
     for needed in ("docker/docker-compose.ollama.yml", "scripts/airgap/load.sh", "docs/air-gapped.md", "configs/production.yaml"):
@@ -420,7 +420,7 @@ class _FakeApi(BaseHTTPRequestHandler):
     def _body(self) -> Any:
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"null")
 
-    def do_GET(self) -> None:  # noqa: N802
+    def do_GET(self) -> None:
         s = self.state
         if self.path == "/readyz":
             self._send(200, {"status": "ok"})
@@ -436,7 +436,7 @@ class _FakeApi(BaseHTTPRequestHandler):
         else:
             self._send(404, {})
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         s = self.state
         body = self._body()
         if self.path == "/api/v1/auth/login":

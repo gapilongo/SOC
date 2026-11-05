@@ -58,7 +58,7 @@ class SourcesRepo(Repository):
     async def create(
         self,
         tenant_id: str,
-        type: str,
+        type: str,  # noqa: A002 - the sources.type column
         name: str,
         *,
         source_id: Optional[str] = None,
@@ -104,7 +104,7 @@ class SourcesRepo(Repository):
         tenant_id: str,
         *,
         enabled: Optional[bool] = None,
-        type: Optional[str] = None,
+        type: Optional[str] = None,  # noqa: A002 - the sources.type column
         conn: Optional[Connection] = None,
     ) -> List[Source]:
         if type is not None:

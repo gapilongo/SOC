@@ -395,7 +395,7 @@ class Stack:
         self, name: str, argv: List[str], extra_env: Optional[Dict[str, str]] = None, metrics_url: Optional[str] = None
     ) -> Proc:
         path = self.workdir / f"{name}.log"
-        fh = open(path, "wb")  # noqa: SIM115 - closed with the process
+        fh = open(path, "wb")
         env = dict(self.env, **(extra_env or {}))
         popen = subprocess.Popen(  # noqa: S603 - our own CLI, fixed arguments
             self.lg_sotf() + argv,

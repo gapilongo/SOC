@@ -94,7 +94,7 @@ async def test_only_one_scheduler_leads_and_failover_on_connection_loss(
         }
         assert all(job.runs == 0 for job in second.jobs.values())
 
-        leader_conn = first._lease._conn  # noqa: SLF001 - simulate the leader's session dying
+        leader_conn = first._lease._conn
         assert leader_conn is not None
         pid = leader_conn.get_server_pid()
         async with repos.db.connection() as conn:
@@ -108,8 +108,8 @@ async def test_only_one_scheduler_leads_and_failover_on_connection_loss(
         await second.wait_for_jobs()
         assert second.jobs["sla"].runs == 1
     finally:
-        await first._lease.release()  # noqa: SLF001
-        await second._lease.release()  # noqa: SLF001
+        await first._lease.release()
+        await second._lease.release()
 
 
 async def test_run_loop_stops_and_releases_leadership(
@@ -468,7 +468,7 @@ async def test_leader_session_uses_lease_scaled_keepalives(runtime_settings: Cal
     lease = LeaderLease.from_settings(s)
     try:
         assert await lease.refresh()
-        conn = lease._conn  # noqa: SLF001 - inspect the leader session itself
+        conn = lease._conn
         assert conn is not None
         values = {
             name: await conn.fetchval(f"SHOW {name}")
