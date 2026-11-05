@@ -302,3 +302,37 @@ ignore_imports = [
     "lg_sotf.compliance.tenant_data -> asyncpg",
     "lg_sotf.onboarding.service -> asyncpg",
 ]
+
+[[tool.importlinter.contracts]]
+id = "routers-independent"
+name = "API routers do not import each other (shared code lives in api/deps.py or api/common.py)"
+type = "independence"
+modules = [
+    "lg_sotf.api.routers.alerts",
+    "lg_sotf.api.routers.audit",
+    "lg_sotf.api.routers.auth",
+    "lg_sotf.api.routers.compliance",
+    "lg_sotf.api.routers.dashboard",
+    "lg_sotf.api.routers.health",
+    "lg_sotf.api.routers.identity",
+    "lg_sotf.api.routers.ingest",
+    "lg_sotf.api.routers.integrations",
+    "lg_sotf.api.routers.mfa",
+    "lg_sotf.api.routers.onboarding",
+    "lg_sotf.api.routers.platform",
+    "lg_sotf.api.routers.reports",
+    "lg_sotf.api.routers.review",
+    "lg_sotf.api.routers.sources",
+    "lg_sotf.api.routers.suppressions",
+    "lg_sotf.api.routers.tenant",
+    "lg_sotf.api.routers.ws",
+]
+ignore_imports = [
+    # S9 thin routers: move each shared helper to api/common.py
+    "lg_sotf.api.routers.audit -> lg_sotf.api.routers.alerts",
+    "lg_sotf.api.routers.integrations -> lg_sotf.api.routers.review",
+    "lg_sotf.api.routers.mfa -> lg_sotf.api.routers.auth",
+    "lg_sotf.api.routers.platform -> lg_sotf.api.routers.identity",
+    "lg_sotf.api.routers.reports -> lg_sotf.api.routers.suppressions",
+    "lg_sotf.api.routers.suppressions -> lg_sotf.api.routers.alerts",
+]
