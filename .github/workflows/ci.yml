@@ -48,22 +48,8 @@ jobs:
           pip install --no-deps -e .
       - name: Ruff
         run: ruff check --output-format=github src tests scripts docker examples
-      - name: Mypy (typed packages)
-        run: >-
-          mypy
-          src/lg_sotf/settings.py
-          src/lg_sotf/llm
-          src/lg_sotf/security
-          src/lg_sotf/observability
-          src/lg_sotf/db
-          src/lg_sotf/queue
-          src/lg_sotf/runtime
-          src/lg_sotf/services
-          src/lg_sotf/ingestion
-          src/lg_sotf/integrations
-          src/lg_sotf/mcp
-          examples/soar/receiver
-          examples/soar/n8n/build_workflow.py
+      - name: Mypy (every file in pyproject.toml [tool.mypy] files)
+        run: mypy
       - name: Shellcheck
         # Every deploy script (deploy/vm: VMs and the Funnel mode; deploy/pc: the self-hosted PC).
         run: |

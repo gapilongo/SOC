@@ -143,6 +143,8 @@ known-first-party = ["lg_sotf"]
 
 [tool.mypy]
 python_version = "3.11"
+# Bare `mypy` (make typecheck, CI) checks every product file and the SOAR examples.
+files = ["src/lg_sotf", "examples/soar/receiver", "examples/soar/n8n/build_workflow.py"]
 plugins = ["pydantic.mypy"]
 warn_unused_configs = true
 warn_redundant_casts = true

@@ -172,19 +172,20 @@ def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> Non
     assert leaks == [], "allowlist the fake value in scripts/ci/gitleaks.toml or assemble it at run time"
 
 
-def _mypy_targets(text: str) -> List[str]:
-    """Package paths given to the first ``mypy`` call in a shell snippet (line continuations joined)."""
-    joined = text.replace("\\\n", " ")
-    match = re.search(r"^\s*mypy\s+((?:src/lg_sotf\S*\s*)+)", joined, re.MULTILINE)
-    assert match, "no mypy src/lg_sotf call found"
-    return sorted(match.group(1).split())
 
-
-def test_make_lint_type_checks_the_same_packages_as_ci() -> None:
-    # CONTRIBUTING.md promises `make lint` runs the typed packages CI checks.
+def test_ci_and_make_type_check_the_same_files() -> None:
+    # One list: pyproject.toml [tool.mypy] files; CI and `make typecheck` run bare `mypy`.
     makefile = (REPO_ROOT / "Makefile").read_text()
-    lint = makefile.split("\nlint:", 1)[1].split("\n.PHONY", 1)[0]
+    assert re.search(r"^typecheck:.*\n\tmypy\n", makefile, re.MULTILINE)
     ci = CI.read_text()
-    ci_block = ci[ci.index("\n          mypy\n") :].split("\n      - ", 1)[0].replace("\n          mypy\n", "\nmypy ", 1)
-    ci_targets = sorted(t for t in ci_block.split() if t.startswith("src/lg_sotf"))
-    assert ci_targets and _mypy_targets(lint) == ci_targets
+    assert re.search(r"^        run: mypy$", ci, re.MULTILINE)
+    assert not re.search(r"^\s+mypy\s+src/", ci + makefile, re.MULTILINE), "pass no paths to mypy; edit [tool.mypy] files"
+    config = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["mypy"]
+    assert "src/lg_sotf" in config["files"]
+
+
+def test_pre_commit_ruff_matches_the_pinned_ruff() -> None:
+    pinned = re.search(r"^ruff==(\S+)$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
+    hooks = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
+    [ruff] = [r for r in hooks["repos"] if r["repo"].endswith("/ruff-pre-commit")]
+    assert pinned and ruff["rev"] == f"v{pinned.group(1)}"
