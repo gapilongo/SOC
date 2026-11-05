@@ -50,6 +50,8 @@ jobs:
         run: ruff check --output-format=github src tests scripts docker examples
       - name: Mypy (every file in pyproject.toml [tool.mypy] files)
         run: mypy
+      - name: Import contracts (pyproject.toml [tool.importlinter], docs/adr/0001-layering.md)
+        run: lint-imports
       - name: Shellcheck
         # Every deploy script (deploy/vm: VMs and the Funnel mode; deploy/pc: the self-hosted PC).
         run: |

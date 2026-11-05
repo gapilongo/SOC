@@ -189,3 +189,11 @@ def test_pre_commit_ruff_matches_the_pinned_ruff() -> None:
     hooks = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
     [ruff] = [r for r in hooks["repos"] if r["repo"].endswith("/ruff-pre-commit")]
     assert pinned and ruff["rev"] == f"v{pinned.group(1)}"
+
+
+def test_ci_enforces_the_import_contracts() -> None:
+    # docs/adr/0001-layering.md: the dependency rule is checked on every push, and `make check` runs it too.
+    assert re.search(r"^        run: lint-imports$", CI.read_text(), re.MULTILINE)
+    assert re.search(r"^check:.*\bimport-lint\b", (REPO_ROOT / "Makefile").read_text(), re.MULTILINE)
+    contracts = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["importlinter"]["contracts"]
+    assert {c["id"] for c in contracts} >= {"layers", "api-no-workflow", "mcp-thin-client", "infra-drivers"}

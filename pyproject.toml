@@ -71,6 +71,9 @@ dev = [
     "mypy>=1.11",
     "ruff>=0.6",
     "types-PyYAML",
+    "import-linter>=2.15",
+    "pre-commit>=4.0",
+    "pytest-timeout>=2.3",
 ]
 
 [project.urls]
@@ -164,3 +167,138 @@ module = [
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
+
+# Architecture contracts (docs/design/refactor-roadmap.md section 1.1, docs/adr/0001-layering.md).
+# `make import-lint` / CI. ignore_imports pins today's exceptions as exact pairs; each roadmap
+# step deletes the lines it makes unnecessary, and an ignore that no longer matches fails.
+[tool.importlinter]
+root_package = "lg_sotf"
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+id = "layers"
+name = "Layers: imports point down only"
+type = "layers"
+containers = ["lg_sotf"]
+layers = [
+    "__main__",
+    "cli",
+    "api | mcp | eval",
+    "runtime",
+    "core",
+    "services | compliance | onboarding | agents | ingestion",
+    "integrations | tools | llm | queue",
+    "audit",
+    "db",
+    "(domain)",
+    "models",
+    "(net)",
+    "(errors) : observability : security : settings",
+]
+ignore_imports = [
+    # C1 urls, phishing and routing to lg_sotf.domain
+    "lg_sotf.agents.analysis.base -> lg_sotf.core.phishing",
+    "lg_sotf.agents.analysis.base -> lg_sotf.core.routing",
+    "lg_sotf.agents.correlation.base -> lg_sotf.core.phishing",
+    "lg_sotf.agents.correlation.base -> lg_sotf.core.routing",
+    "lg_sotf.agents.triage.base -> lg_sotf.core.phishing",
+    "lg_sotf.agents.triage.base -> lg_sotf.core.routing",
+    "lg_sotf.services.escalation -> lg_sotf.core.routing",
+    "lg_sotf.services.reporting -> lg_sotf.core.routing",
+    "lg_sotf.services.response -> lg_sotf.core.phishing",
+    "lg_sotf.services.review -> lg_sotf.core.routing",
+    # C2 suppression and events to domain
+    "lg_sotf.integrations.delivery -> lg_sotf.core.events",
+    "lg_sotf.services.dispatch -> lg_sotf.core.events",
+    "lg_sotf.services.escalation -> lg_sotf.core.events",
+    "lg_sotf.services.response -> lg_sotf.core.events",
+    "lg_sotf.services.review -> lg_sotf.core.events",
+    "lg_sotf.services.review -> lg_sotf.core.suppression",
+    # C3 indicators to domain
+    "lg_sotf.services.response -> lg_sotf.agents.correlation.indicators",
+    # C4 checkpointer to db
+    "lg_sotf.db.migrate -> lg_sotf.core.checkpointer",
+    # C5 connector port to domain/connectors.py
+    "lg_sotf.integrations.channels -> lg_sotf.services.connectors.webhook",
+    "lg_sotf.integrations.microsoft.capability -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender._common -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender.forensics -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender.indicators -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender.isolation -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender.machine_actions -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.defender.stop_quarantine -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.entra.account -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.entra.password -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.entra.risk -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.entra.sessions -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.entra.users -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.mail.mailboxes -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.mail.notify -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.microsoft.mail.remediate -> lg_sotf.services.connectors.base",
+    "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
+    # C6 action catalog to domain/actions.py
+    "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
+    # F1 kernel error module
+    "lg_sotf.agents.correlation.base -> lg_sotf.core.exceptions",
+    "lg_sotf.db.errors -> lg_sotf.core.exceptions",
+    # F3 extract lg_sotf.net (egress, TLS, Retry-After)
+    "lg_sotf.integrations.http -> lg_sotf.ingestion.errors",
+    "lg_sotf.integrations.http -> lg_sotf.ingestion.options",
+    "lg_sotf.integrations.http -> lg_sotf.ingestion.sources.http",
+    "lg_sotf.integrations.http -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.integrations.microsoft.auth -> lg_sotf.ingestion.errors",
+    "lg_sotf.integrations.microsoft.auth -> lg_sotf.ingestion.sources.http",
+    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.errors",
+    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.sources.http",
+    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.llm.endpoint -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.services.connectors.microsoft -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.errors",
+    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.options",
+    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.sources.http",
+    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.errors",
+    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.sources.http",
+    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.sources.netpolicy",
+    "lg_sotf.tools.enrichment.http -> lg_sotf.ingestion.sources.http",
+    # F7 one owner-DSN helper / D2 atomic provisioning
+    "lg_sotf.compliance.ops -> lg_sotf.runtime.ops",
+    # ADR-0001 accepted: lazy import inside Settings.production_problems
+    "lg_sotf.settings -> lg_sotf.llm.endpoint",
+]
+
+[[tool.importlinter.contracts]]
+id = "api-no-workflow"
+name = "The API never runs a workflow"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["lg_sotf.api"]
+forbidden_modules = ["lg_sotf.core.workflow", "lg_sotf.core.nodes", "lg_sotf.core.graph", "lg_sotf.agents", "langgraph"]
+
+[[tool.importlinter.contracts]]
+id = "mcp-thin-client"
+name = "MCP is a thin REST client of the API"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["lg_sotf.mcp"]
+forbidden_modules = [
+    "lg_sotf.db", "lg_sotf.queue", "lg_sotf.services", "lg_sotf.core", "lg_sotf.agents", "lg_sotf.llm",
+    "lg_sotf.integrations", "lg_sotf.api", "asyncpg", "redis",
+]
+
+[[tool.importlinter.contracts]]
+id = "infra-drivers"
+name = "Only db, core and runtime use database and workflow drivers"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+    "lg_sotf.services", "lg_sotf.compliance", "lg_sotf.onboarding", "lg_sotf.agents", "lg_sotf.ingestion",
+    "lg_sotf.integrations", "lg_sotf.tools", "lg_sotf.llm", "lg_sotf.queue", "lg_sotf.audit", "lg_sotf.models",
+]
+forbidden_modules = ["asyncpg", "psycopg", "psycopg_pool", "langgraph"]
+ignore_imports = [
+    # F9 typed DB connection (driver types stay behind lg_sotf.db)
+    "lg_sotf.compliance.tenant_data -> asyncpg",
+    "lg_sotf.onboarding.service -> asyncpg",
+]
