@@ -1,4 +1,7 @@
-/** Descriptions of guardrail block codes (lg_sotf.services.response GUARDRAIL_REASONS). */
+/**
+ * Descriptions of blocked_reason codes: the guardrail codes (lg_sotf.services.response GUARDRAIL_REASONS)
+ * plus the reviewer rejection codes. tests/deploy/test_frontend_contracts.py checks the keys.
+ */
 export const GUARDRAIL_REASONS: Record<string, string> = {
   unknown_action: 'The action type is not in the action catalog.',
   action_not_allowed: "The tenant's allowed actions list does not include this action type.",
@@ -11,6 +14,9 @@ export const GUARDRAIL_REASONS: Record<string, string> = {
   invalid_host: 'The target is not a valid host name.',
   invalid_user: 'The target is not a valid user name.',
   invalid_process: 'The target is not a valid process name.',
+  invalid_email: 'The target is not an email address.',
+  invalid_message: 'The target is not an Internet Message-ID.',
+  internal_sender: "Senders from the tenant's own domains are never blocked; disable or reset the account instead.",
   unroutable_ip: 'Loopback, link-local, multicast, unspecified and reserved addresses are never blocked.',
   non_public_ip: 'Private addresses are blocked only when the tenant allows internal IP blocks.',
   protected_asset: "The target is on the tenant's protected assets list.",
@@ -21,6 +27,8 @@ export const GUARDRAIL_REASONS: Record<string, string> = {
   blast_radius_exceeded: 'The hourly limit for this action type (blast radius) was reached.',
   approval_expired: 'The approval was not executed in time (response.approval_ttl_s) and expired.',
   approval_superseded: "The approval arrived while the alert's workflow was still running, and it ended without executing it.",
+  rejected_by_reviewer: 'A reviewer rejected this action.',
+  rejected_with_remaining: "A reviewer decided on other actions of this alert and rejected the remaining pending ones, including this one.",
 };
 
 /** Readable text for a stored blocked_reason (a code, or a code followed by detail). */
