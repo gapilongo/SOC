@@ -226,7 +226,7 @@ def test_k8s_output_feeds_values_through_stdin_not_argv(tmp_path: Path) -> None:
     fake.write_text(f'#!/bin/sh\nprintf "ARGV %s\\n" "$*" >> {log}\ncat >> {log}\n')
     fake.chmod(0o755)
     text = gen.render_k8s(gen.generate(), "lg-sotf", environ=K8S_ENV, admin_email="admin@example.com")
-    subprocess.run(  # noqa: S603 - fixed argv
+    subprocess.run(
         ["/bin/sh"], input=text, text=True, check=True, timeout=30,
         env={"PATH": f"{bindir}:/usr/bin:/bin"},
     )

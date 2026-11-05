@@ -548,7 +548,7 @@ def _parse_bytes(data: bytes, limits: EmailLimits) -> EmailMessage:
         msg = BytesParser(policy=_POLICY).parsebytes(data)
     except RecursionError as exc:
         raise EmailParseError("message nesting is too deep") from exc
-    except Exception as exc:  # noqa: BLE001 - the stdlib parser is lenient; anything it raises is a malformed message
+    except Exception as exc:
         raise EmailParseError(f"message could not be parsed ({type(exc).__name__})") from exc
     if not isinstance(msg, EmailMessage):
         raise EmailParseError("message could not be parsed")

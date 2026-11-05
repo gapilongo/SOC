@@ -149,7 +149,7 @@ def test_tree_has_no_secret_shaped_value_outside_the_gitleaks_allowlist() -> Non
     """WSC-2: a new fake fixture must not turn the CI secret scan red unnoticed."""
     import subprocess
 
-    listed = subprocess.run(  # noqa: S603 - fixed argv
+    listed = subprocess.run(
         ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],  # noqa: S607
         cwd=REPO_ROOT, capture_output=True, check=True,
     ).stdout.decode().split("\0")

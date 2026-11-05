@@ -47,7 +47,7 @@ def _run_entrypoint(tmp_path: Path, env: Dict[str, str]) -> subprocess.Completed
     }
     sh = shutil.which("sh")
     assert sh is not None
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell string
+    return subprocess.run(
         [sh, str(ENTRYPOINT), "true"], env=full, capture_output=True, text=True, timeout=30, check=False
     )
 
@@ -165,7 +165,7 @@ def _render_notes(tmp_path: Path, *args: str) -> str:
     (chart / "templates" / "notes-render.yaml").write_text('notes: {{ include "test.notes" . | toJson }}\n')
     helm = helm_binary()
     assert helm is not None
-    out = subprocess.run(  # noqa: S603 - fixed argv
+    out = subprocess.run(
         [helm, "template", "t", str(chart), "--show-only", "templates/notes-render.yaml", *args],
         capture_output=True,
         text=True,

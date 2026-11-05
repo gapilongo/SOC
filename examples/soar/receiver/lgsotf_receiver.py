@@ -573,7 +573,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             # In this thread and under the socket timeout, not in the accept loop.
             self.connection.do_handshake()
 
-    def do_POST(self) -> None:  # noqa: N802 - http.server naming
+    def do_POST(self) -> None:
         if urlsplit(self.path).path != self.server.path:
             self._send(Reply(404, {"status": "rejected", "error": "not_found"}))
             return
@@ -593,7 +593,7 @@ class _RequestHandler(BaseHTTPRequestHandler):
             return
         self._send(self.server.receiver.handle(self.headers.items(), body))
 
-    def do_GET(self) -> None:  # noqa: N802 - http.server naming
+    def do_GET(self) -> None:
         if urlsplit(self.path).path == "/healthz":
             self._send(Reply(200, {"status": "ok"}))
         else:

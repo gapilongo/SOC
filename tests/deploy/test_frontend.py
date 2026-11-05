@@ -156,7 +156,7 @@ def _run_entrypoint(tmp_path: Path, env: Dict[str, str]) -> subprocess.Completed
     }
     sh = shutil.which("sh")
     assert sh is not None
-    return subprocess.run(  # noqa: S603 - fixed argv, no shell string
+    return subprocess.run(
         [sh, str(ENTRYPOINT), "true"], env=full, capture_output=True, text=True, timeout=30, check=False
     )
 

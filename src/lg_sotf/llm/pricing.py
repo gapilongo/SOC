@@ -30,7 +30,7 @@ class ModelPrice:
     cache_read: Decimal
 
     @classmethod
-    def of(cls, input: str, output: str, cache_write: str, cache_read: str) -> ModelPrice:
+    def of(cls, input: str, output: str, cache_write: str, cache_read: str) -> ModelPrice:  # noqa: A002 - mirrors the price table
         return cls(Decimal(input), Decimal(output), Decimal(cache_write), Decimal(cache_read))
 
     @classmethod

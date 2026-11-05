@@ -486,7 +486,7 @@ def mcp() -> None:
     """
     from lg_sotf.mcp.command import mcp_command
 
-    assert mcp_command.callback is not None  # noqa: S101 - defined by @click.command
+    assert mcp_command.callback is not None
     mcp_command.callback()
 
 

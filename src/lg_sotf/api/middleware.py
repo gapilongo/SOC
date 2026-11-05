@@ -116,7 +116,7 @@ class RequestContextMiddleware:
         with bound_context(request_id=rid):
             try:
                 await self.app(scope, receive, send_wrapper)
-            except Exception as exc:  # noqa: BLE001 - last resort: log with stack, answer with a bare envelope
+            except Exception as exc:
                 log.error("api.unhandled_error", error_type=type(exc).__name__, exc_info=exc)
                 if scope["type"] == "http" and not status_holder["started"]:
                     await send_error(send_wrapper, 500, "internal_error", "internal server error")

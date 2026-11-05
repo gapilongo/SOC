@@ -60,7 +60,7 @@ def test_api_port_falls_back_to_settings_env(monkeypatch: pytest.MonkeyPatch) ->
 class _Handler(BaseHTTPRequestHandler):
     status = 200
 
-    def do_GET(self) -> None:  # noqa: N802 - http.server API
+    def do_GET(self) -> None:
         self.send_response(self.server.status)  # type: ignore[attr-defined]
         self.end_headers()
         self.wfile.write(b"{}")
