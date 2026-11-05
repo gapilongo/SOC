@@ -20,6 +20,7 @@ pytestmark = pytest.mark.asyncio
 
 TENANT_TABLES = (
     "users",
+    "user_mfa",
     "refresh_tokens",
     "api_keys",
     "sources",
@@ -32,6 +33,7 @@ TENANT_TABLES = (
     "suppression_rules",
     "indicator_sightings",
     "llm_usage_daily",
+    "usage_daily",
     "audit_log",
     "integrations",
     "notification_outbox",
@@ -47,6 +49,7 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
     """One row in every tenant-owned table for ``tenant_id``; returns the alert id."""
     now = datetime.now(UTC)
     user = await repos.users.create(tenant_id, f"analyst@{tenant_id}.test", "analyst", password_hash="x")
+    await repos.user_mfa.set_pending(tenant_id, user.id, f"ciphertext-{tenant_id}")
     await repos.refresh_tokens.create(tenant_id, user.id, _sha(f"rt-{tenant_id}"), now + timedelta(days=1))
     await repos.api_keys.create(tenant_id, "ingest", "lgk_abcd", _sha(f"key-{tenant_id}"), ["ingest"])
     await repos.sources.create(tenant_id, "splunk", "Splunk")
@@ -70,6 +73,7 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
             )
         ]
     )
+    await repos.usage.add_ingested(tenant_id, 1)
     await repos.audit.append(tenant_id, "user", str(user.id), "alert.viewed", "alert", alert_id)
     integration = await repos.integrations.create(tenant_id, "email", "Mail", config={"recipients": ["a@b.co"]})
     await repos.integrations.enqueue(
