@@ -22,10 +22,39 @@ All notable changes to this project are documented here. The format follows
   `DATABASE_URL` or `REDIS_URL` overrode the URL from init arguments, the
   YAML config file and `.env`, contrary to the documented precedence.
 
+- Web UI: **Load more** on a list no longer loses the page it is loading
+  when a live update arrives at the same time. The live refresh cancelled the
+  in-flight request and refetched only the pages already shown; it now waits
+  for the page to arrive. This was also the cause of an intermittent e2e
+  failure.
+- A `Retry-After` header of `inf`, `nan` or a very large number no longer
+  reaches retry sleeps or schedules: non-finite values are ignored and every
+  hint is capped at one hour. Enrichment now uses the same parser as the
+  other HTTP clients (it also accepts fractional seconds).
+
 ### Changed
 
 - `make lint` type-checks the same packages as CI (adds `integrations` and
   `mcp`); a test keeps the two lists in step.
+- API-key authentication uses the shared `verify_api_key` helper instead of
+  an inline comparison (same constant-time check).
+- `docs/architecture.md` package layout, connector list and tracing note
+  match the code; `docs/operations.md` no longer says traces are exported
+  (the exporter is configured, but no spans are created yet).
+
+### Removed
+
+- Dead code with no production callers: the `ConfigManager` facade
+  (`lg_sotf.core.config`) and `lg_sotf.utils.llm`, the unused tool
+  orchestrator layer (`lg_sotf.tools.base`, `cache`, `orchestrator`), the
+  legacy `AgentRegistry` and unused `BaseAgent` methods, seven unused
+  exception classes, the duplicate `lg_sotf.main` entry module (use
+  `lg-sotf` or `python -m lg_sotf`), and small unused helpers.
+- The unused `aiohttp` and `aiofiles` runtime dependencies (and aiohttp's
+  dependency stack) from the package and the container image.
+- 22 empty legacy test files and packages and unreferenced alert fixtures.
+- Web UI: unused exports and live-event state that re-rendered consumers on
+  every event.
 
 ## [1.2.2] - 2026-11-05
 

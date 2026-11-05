@@ -30,28 +30,43 @@ Postgres except in-flight queue entries, which are re-derivable from
 
 ```
 src/lg_sotf/
-  settings.py            Typed settings (the only place config is read from env/YAML)
-  cli.py                 `lg-sotf api|worker|scheduler|migrate|eval|create-admin|create-tenant`
-  core/config/manager.py ConfigManager facade over Settings (legacy .get("a.b") API for agents)
-  db/                    asyncpg pool, tenancy (RLS) helpers, repositories
-    migrations/          Alembic environment + versions
-    repos/               One module per aggregate (alerts, runs, escalations, ...)
-  queue/                 Redis Streams producer/consumer, DLQ, event bus
-  runtime/               worker.py, scheduler.py, leader.py, shutdown helpers
-  core/graph.py          WorkflowState, graph construction, routing policy
-  core/workflow.py       WorkflowEngine (compile with checkpointer, run, resume)
-  agents/                triage, correlation, analysis, human_loop, response, ingestion
-  llm/                   model factory, prompt builder, structured output, usage metering, fake model
-  models/                Pydantic domain models (canonical alert, verdicts, actions)
-  api/                   FastAPI app, auth, routers, middleware, websocket
-  observability/         logging, Prometheus metrics, tracing
-  security/              crypto (Fernet secrets), hashing, redaction
-  eval/                  evaluation harness
+  settings.py        Typed settings (the only place config is read from env/YAML)
+  cli.py             lg-sotf api|worker|scheduler|migrate, create-admin|create-tenant|reset-mfa,
+                     dlq list|requeue, eval, tenant-export|tenant-erase, evidence-verify, mcp, version
+  api/               FastAPI app, auth (JWT, refresh, TOTP MFA, OIDC, API keys), routers, middleware, WebSocket
+  runtime/           worker, leader-elected scheduler, health server, orphan and resume sweeps, shutdown
+  queue/             Redis Streams producer/consumer, dead-letter queue, tenant event bus
+  db/                asyncpg pool, tenancy (RLS), locks, partitions, retention
+    migrations/      Alembic environment + versions
+    repos/           One module per aggregate (alerts, runs, escalations, actions, ...)
+  core/              WorkflowState and graph (graph.py), routing policy, nodes, WorkflowEngine
+                     (workflow.py), Postgres checkpointer, retry policy, phishing signals, suppression
+  agents/            triage, correlation and analysis agents; AgentSet (registry.py)
+  llm/               model factory, endpoints, prompt builder, structured output, budget, usage, fake model
+  tools/enrichment/  VirusTotal, AbuseIPDB and history providers, credential resolution, cache
+  ingestion/         normalizers, pull sources (Splunk, QRadar, Sentinel, Wazuh, CrowdStrike, IMAP, M365),
+                     email parsing, fingerprints, LLM fallback; also the shared egress policy and HTTP
+                     helpers (sources/netpolicy.py, sources/http.py) other packages import
+  services/          escalation and review, response planning/guardrails/execution (response.py),
+                     connectors (dry run, webhook, Microsoft, ticketing) and routing, verification,
+                     rollback, reporting, tenancy, background executor
+  integrations/      notifications (Slack, Teams, email, signed webhooks), ticketing (Jira, ServiceNow),
+                     outbox delivery, Microsoft Graph/Defender/Entra clients (microsoft/)
+  compliance/        evidence packs, NIS2 drafts, tenant export and erasure, canonical signing
+  mcp/               stdio MCP server and tools for testers and analysts (docs/mcp.md)
+  eval/              evaluation harness, history backtest, regression gate
+  onboarding/        getting-started checklist and sample alerts
+  models/            Pydantic domain models (canonical alert, verdicts, actions)
+  audit/             AuditLogger (hash-chained audit_log entries)
+  observability/     structured logging, Prometheus metrics, tracing setup
+  security/          SecretBox (Fernet), hashing, redaction, placeholder-secret checks, TOTP, QR
 ```
 
 Removed: `Backup/`, `test.html`, `app_initializer.py` (replaced by
 `runtime/`), `storage/postgres.py` DDL at startup (replaced by migrations),
-empty placeholder modules, per-process in-memory queues and dedup.
+the `ConfigManager` facade and `utils/llm.py` shim (agents read `Settings`
+through `BaseAgent.get_config`), the unused tool orchestrator, empty
+placeholder modules, per-process in-memory queues and dedup.
 
 ## 3. Configuration
 
@@ -66,9 +81,10 @@ Every process calls `settings.assert_safe()` at startup; in `staging` and
 `production` it refuses to start with missing secrets, a fake LLM, wildcard
 CORS, insecure cookies, or the development database password.
 
-No module reads `os.environ` or YAML directly except `settings.py`. Legacy
-agent code keeps using `ConfigManager.get("agents.triage.x")`, which reads from
-`Settings`.
+No module reads `os.environ` or YAML directly except `settings.py`. Agents
+read their section of `settings.agents` through `BaseAgent.get_config`.
+`DATABASE_URL` and `REDIS_URL` apply only when nothing else (init arguments,
+`LG_SOTF_*` variables, `.env`, YAML) sets the URL.
 
 ## 4. Tenancy
 
@@ -343,9 +359,12 @@ For each proposed action: resolve risk level → tenant autonomy policy
 never private/loopback/own ranges for IP blocks unless allowed, target
 syntax validation, per-tenant hourly cap) → ledger row with idempotency key.
 Connectors: `dry_run` (default; records what would happen), `webhook`
-(HMAC-signed POST to the tenant's SOAR, e.g. Tracecat/Shuffle/Tines). Global
-`response.dry_run=true` forces dry-run everywhere. Every transition is written
-to `audit_log`.
+(HMAC-signed POST to the tenant's SOAR, e.g. Tracecat/Shuffle/Tines),
+`microsoft` (direct Microsoft 365 mail, Entra ID and Defender for Endpoint
+actions with verification and rollback; docs/microsoft.md) and ticketing
+(Jira/ServiceNow `create_ticket`). `services/connectors/routing.py` picks the
+connector per action. Global `response.dry_run=true` forces dry-run
+everywhere. Every transition is written to `audit_log`.
 
 ## 12. Ingestion
 
@@ -378,7 +397,9 @@ to `audit_log`.
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`.
-* Tracing: OpenTelemetry, OTLP exporter when `observability.otlp_endpoint` set.
+* Tracing: an OpenTelemetry tracer provider with an OTLP exporter is set up when
+  `observability.otlp_endpoint` is set, but no code creates spans yet and no
+  library instrumentation is installed, so nothing is exported today.
 
 ## 14. Testing conventions
 

@@ -269,8 +269,9 @@ compromise, and expect reduced correlation for that window.
 ## 9. Observability
 
 Logs are JSON on stderr with `request_id`, `tenant_id`, `alert_id`,
-`thread_id`, `node` context. Traces go to `observability.otlp_endpoint`
-(OTLP/HTTP) when set. Metrics are Prometheus: API `/metrics` (bearer
+`thread_id`, `node` context. Setting `observability.otlp_endpoint` configures
+an OTLP/HTTP trace exporter, but the code does not create spans yet, so no
+traces are exported. Metrics are Prometheus: API `/metrics` (bearer
 `api.metrics_token`), worker and scheduler `:9100/metrics`
 (`serviceMonitor.enabled=true` wires all three).
 

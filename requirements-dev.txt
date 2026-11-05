@@ -24,5 +24,4 @@ pytest-mock==3.16.0
 pytest==9.1.1
 ruff==0.16.9
 sortedcontainers==2.4.0
-types-aiofiles==25.1.0.20260518
 types-pyyaml==6.0.12.20260906

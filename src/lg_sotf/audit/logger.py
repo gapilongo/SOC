@@ -65,13 +65,3 @@ class AuditLogger:
             persisted=entry is not None,
         )
         return entry
-
-    def log_security_event(self, event_type: str, severity: str, description: str, **fields: Any) -> None:
-        safe, _ = redact(fields)
-        _log.warning("security_event", event_type=event_type, severity=severity, description=description, **safe)
-
-    def log_application_start(self, config_path: Optional[str] = None, version: Optional[str] = None) -> None:
-        _log.info("application_started", config_path=config_path, version=version)
-
-    def log_application_shutdown(self) -> None:
-        _log.info("application_shutdown")

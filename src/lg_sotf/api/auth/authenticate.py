@@ -25,7 +25,6 @@ request is written to that tenant's audit log.
 
 from __future__ import annotations
 
-import hmac
 from datetime import UTC, datetime
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
@@ -46,7 +45,7 @@ from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger
-from lg_sotf.security.hashing import InvalidApiKey, hash_api_key, looks_like_api_key, parse_api_key, sha256_hex
+from lg_sotf.security.hashing import InvalidApiKey, looks_like_api_key, parse_api_key, sha256_hex, verify_api_key
 from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
 from lg_sotf.settings import AuthSettings
 
@@ -391,7 +390,7 @@ async def _api_key_principal(ctx: ApiContext, presented: str) -> Principal:
         raise unauthorized("invalid API key") from exc
     key = await ctx.repos.api_keys.get_by_id_all_tenants(parsed.key_id)
     stored = key.key_hash if key is not None else _DUMMY_KEY_HASH
-    matches = hmac.compare_digest(hash_api_key(presented), stored)
+    matches = verify_api_key(presented, stored)
     if key is None or not matches or key.is_revoked:
         raise unauthorized("invalid API key")
     try:

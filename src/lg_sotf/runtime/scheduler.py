@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
@@ -103,12 +103,6 @@ class _Job:
     task: Optional[asyncio.Task[None]] = None
     runs: int = 0
     failures: int = 0
-
-
-@dataclass
-class _Undispatched:
-    tenant_id: str
-    alerts: List[Tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

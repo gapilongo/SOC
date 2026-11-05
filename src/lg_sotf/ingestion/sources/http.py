@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import math
 import random
 import ssl
 import time
@@ -82,7 +83,18 @@ def build_verify(config: Mapping[str, Any], *, production: bool) -> Verify:
         raise SourceConfigError("invalid CA certificate") from exc
 
 
-def parse_retry_after(value: Optional[str], *, now: Optional[datetime] = None) -> Optional[float]:
+# Upper bound for any Retry-After hint: a server cannot park a caller (or a scheduled retry) for longer.
+MAX_RETRY_AFTER_S = 3_600.0
+
+
+def parse_retry_after(
+    value: Optional[str], *, now: Optional[datetime] = None, cap: float = MAX_RETRY_AFTER_S
+) -> Optional[float]:
+    """Seconds to wait from a ``Retry-After`` header (delta seconds or HTTP date), in ``[0, cap]``.
+
+    ``None`` for a missing or unreadable value, including ``nan`` and
+    ``inf``: those would otherwise reach sleeps and retry schedules.
+    """
     if value is None:
         return None
     text = value.strip()
@@ -98,7 +110,9 @@ def parse_retry_after(value: Optional[str], *, now: Optional[datetime] = None) -
         if when.tzinfo is None:
             when = when.replace(tzinfo=UTC)
         seconds = (when - (now or datetime.now(UTC))).total_seconds()
-    return max(0.0, seconds) if seconds == seconds else None
+    if not math.isfinite(seconds):
+        return None
+    return min(max(0.0, seconds), cap)
 
 
 @dataclass(frozen=True)

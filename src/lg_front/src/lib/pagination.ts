@@ -63,12 +63,15 @@ function isFetchingMore(q: Query): boolean {
 }
 
 function invalidateOne(client: QueryClient, q: Query): Promise<void> {
-  if (isFetchingMore(q)) {
+  const pending = isFetchingMore(q) ? q.promise : undefined;
+  if (pending) {
     // Refetching now would cancel the page being loaded (React Query cancels
     // a running fetch by default) and refetch only the pages already held:
     // the "Load more" would be silently lost. Let it land, then invalidate.
+    // (Without a pending promise there is nothing to wait for: invalidate now
+    // rather than re-check in a loop.)
     const settle = () => invalidateOne(client, q);
-    return (q.promise ?? Promise.resolve()).then(settle, settle);
+    return pending.then(settle, settle);
   }
   const deep = pagesLoaded(q.state.data) > 1;
   return client.invalidateQueries({ queryKey: q.queryKey, exact: true, refetchType: deep ? 'none' : 'active' });

@@ -76,15 +76,6 @@ TRANSIENT_KINDS = frozenset({"throttled", "server", "network", "deadline"})
 MAX_DETAIL_BYTES = 12 * 1024
 
 
-class _Transient(Exception):
-    """The check could not run now (retry with backoff)."""
-
-    def __init__(self, reason: str, retry_after_s: Optional[float] = None) -> None:
-        super().__init__(reason)
-        self.reason = reason
-        self.retry_after_s = retry_after_s
-
-
 def classify_error(exc: BaseException) -> Tuple[str, Dict[str, Any]]:
     """``("transient", detail)`` or ``("inconclusive", detail)`` for an exception raised by a verifier."""
     if isinstance(exc, MicrosoftAuthError):

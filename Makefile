@@ -55,7 +55,7 @@ secrets: ## Print a fresh set of secrets (KEY=value) without writing anything
 lint: ## Ruff and mypy (typed packages and the SOAR examples)
 	ruff check src tests scripts docker examples
 	mypy src/lg_sotf/settings.py src/lg_sotf/llm src/lg_sotf/security src/lg_sotf/observability \
-		src/lg_sotf/core/config src/lg_sotf/db src/lg_sotf/queue src/lg_sotf/runtime \
+		src/lg_sotf/db src/lg_sotf/queue src/lg_sotf/runtime \
 		src/lg_sotf/services src/lg_sotf/ingestion src/lg_sotf/integrations src/lg_sotf/mcp
 	mypy examples/soar/receiver examples/soar/n8n/build_workflow.py
 
