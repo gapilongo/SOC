@@ -166,7 +166,7 @@ def resolve_window(start: Optional[date], end: Optional[date], *, today: Optiona
 def month_window(month: str) -> ReportWindow:
     """``YYYY-MM`` to the window of that calendar month."""
     try:
-        first = datetime.strptime(month, "%Y-%m").date()
+        first = datetime.strptime(month, "%Y-%m").date()  # noqa: DTZ007 - only the date part is kept
     except ValueError as exc:
         raise ReportWindowError("month must be YYYY-MM") from exc
     if first.year < 2000:

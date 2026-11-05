@@ -135,11 +135,23 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "BLE", "A", "RUF100"]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "BLE", "A", "RUF100", "TID251", "T20", "DTZ"]
 ignore = ["E501", "UP006", "UP007", "UP035", "UP045", "S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S108", "S311", "S603", "UP042"]
+"tests/**" = ["S105", "S106", "S108", "S311", "S603", "UP042", "TID251", "T20", "DTZ"]
+"scripts/**" = ["TID251", "T20", "DTZ"]
+"docker/**" = ["TID251", "T20", "DTZ"]
+"examples/**" = ["TID251", "T20", "DTZ"]
+# The only reader of the environment (ADR-0013, CONTRIBUTING); CLIs print by design.
+"src/lg_sotf/settings.py" = ["TID251"]
+"src/lg_sotf/cli.py" = ["T20"]
+"src/lg_sotf/eval/command.py" = ["T20"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"os.environ".msg = "read configuration through lg_sotf.settings"
+"os.getenv".msg = "read configuration through lg_sotf.settings"
+"os.putenv".msg = "read configuration through lg_sotf.settings"
 
 [tool.ruff.lint.isort]
 known-first-party = ["lg_sotf"]
