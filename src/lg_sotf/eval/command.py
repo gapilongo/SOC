@@ -183,7 +183,7 @@ def _write_outputs(report: Dict[str, Any], gate_dict: Optional[Dict[str, Any]], 
         ) from exc
 
 
-def execute(
+def execute(  # noqa: C901
     settings: Settings,
     options: EvalOptions,
     echo: Callable[[str], None] = print,

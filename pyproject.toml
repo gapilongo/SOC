@@ -135,7 +135,7 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "BLE", "A", "RUF100", "TID251", "T20", "DTZ"]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "BLE", "A", "RUF100", "TID251", "T20", "DTZ", "C90"]
 ignore = ["E501", "UP006", "UP007", "UP035", "UP045", "S101"]
 
 [tool.ruff.lint.per-file-ignores]
@@ -152,6 +152,10 @@ ignore = ["E501", "UP006", "UP007", "UP035", "UP045", "S101"]
 "os.environ".msg = "read configuration through lg_sotf.settings"
 "os.getenv".msg = "read configuration through lg_sotf.settings"
 "os.putenv".msg = "read configuration through lg_sotf.settings"
+
+# Ratchet: today's offenders carry a per-function noqa (RUF100 fails a stale one); the target is 15.
+[tool.ruff.lint.mccabe]
+max-complexity = 20
 
 [tool.ruff.lint.isort]
 known-first-party = ["lg_sotf"]

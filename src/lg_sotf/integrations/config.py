@@ -435,7 +435,7 @@ def certificate_details(pem: str) -> Dict[str, Any]:
     }
 
 
-def _microsoft_config(parsed: MicrosoftConfig) -> Dict[str, Any]:
+def _microsoft_config(parsed: MicrosoftConfig) -> Dict[str, Any]:  # noqa: C901
     """Cross-field checks of a Microsoft config; returns it normalised (options parsed with their schema)."""
     from lg_sotf.integrations.microsoft.catalog import capabilities
 

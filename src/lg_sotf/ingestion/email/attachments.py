@@ -93,7 +93,7 @@ def clean_filename(value: Optional[str]) -> Tuple[str, bool]:
     return "".join(out).strip()[:MAX_FILENAME_CHARS], deceptive
 
 
-def sniff(data: bytes) -> str:
+def sniff(data: bytes) -> str:  # noqa: C901
     """A content type label from magic bytes (``pdf``, ``zip``, ``ole``, ``pe``, ``html``...), else ``unknown``."""
     head = data[:4_096]
     if head.startswith(b"%PDF"):

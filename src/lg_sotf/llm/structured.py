@@ -357,7 +357,7 @@ def _classify(
         )
 
 
-async def ainvoke_structured(
+async def ainvoke_structured(  # noqa: C901
     model: BaseChatModel,
     schema: Type[T],
     messages: Sequence[BaseMessage],
