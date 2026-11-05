@@ -124,6 +124,9 @@ markers = [
 [tool.coverage.run]
 source = ["lg_sotf"]
 branch = true
+# Alembic runs the migrations in a subprocess coverage does not see; tests/integration/db/test_migrations.py
+# exercises every revision (upgrade, downgrade, re-upgrade).
+omit = ["*/lg_sotf/db/migrations/*"]
 
 [tool.coverage.report]
 skip_empty = true

@@ -258,6 +258,7 @@ def test_only_useful_scripts_remain() -> None:
         "airgap/bundle.sh",
         "airgap/load.sh",
         "ci/bandit-baseline.json",
+        "ci/coverage_floors.py",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
         "demo/alerts.json",
