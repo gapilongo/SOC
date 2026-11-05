@@ -28,39 +28,30 @@ Postgres except in-flight queue entries, which are re-derivable from
 
 ## 2. Package layout
 
-```
-src/lg_sotf/
-  settings.py        Typed settings (the only place config is read from env/YAML)
-  cli.py             lg-sotf api|worker|scheduler|migrate, create-admin|create-tenant|reset-mfa,
-                     dlq list|requeue, eval, tenant-export|tenant-erase, evidence-verify, mcp, version
-  api/               FastAPI app, auth (JWT, refresh, TOTP MFA, OIDC, API keys), routers, middleware, WebSocket
-  runtime/           worker, leader-elected scheduler, health server, orphan and resume sweeps, shutdown
-  queue/             Redis Streams producer/consumer, dead-letter queue, tenant event bus
-  db/                asyncpg pool, tenancy (RLS), locks, partitions, retention
-    migrations/      Alembic environment + versions
-    repos/           One module per aggregate (alerts, runs, escalations, actions, ...)
-  core/              WorkflowState and graph (graph.py), routing policy, nodes, WorkflowEngine
-                     (workflow.py), Postgres checkpointer, retry policy, phishing signals, suppression
-  agents/            triage, correlation and analysis agents; AgentSet (registry.py)
-  llm/               model factory, endpoints, prompt builder, structured output, budget, usage, fake model
-  tools/enrichment/  VirusTotal, AbuseIPDB and history providers, credential resolution, cache
-  ingestion/         normalizers, pull sources (Splunk, QRadar, Sentinel, Wazuh, CrowdStrike, IMAP, M365),
-                     email parsing, fingerprints, LLM fallback; also the shared egress policy and HTTP
-                     helpers (sources/netpolicy.py, sources/http.py) other packages import
-  services/          escalation and review, response planning/guardrails/execution (response.py),
-                     connectors (dry run, webhook, Microsoft, ticketing) and routing, verification,
-                     rollback, reporting, tenancy, background executor
-  integrations/      notifications (Slack, Teams, email, signed webhooks), ticketing (Jira, ServiceNow),
-                     outbox delivery, Microsoft Graph/Defender/Entra clients (microsoft/)
-  compliance/        evidence packs, NIS2 drafts, tenant export and erasure, canonical signing
-  mcp/               stdio MCP server and tools for testers and analysts (docs/mcp.md)
-  eval/              evaluation harness, history backtest, regression gate
-  onboarding/        getting-started checklist and sample alerts
-  models/            Pydantic domain models (canonical alert, verdicts, actions)
-  audit/             AuditLogger (hash-chained audit_log entries)
-  observability/     structured logging, Prometheus metrics, tracing setup
-  security/          SecretBox (Fernet), hashing, redaction, placeholder-secret checks, TOTP, QR
-```
+Packages belong to layers and imports point down only
+([ADR-0001](adr/0001-layering.md); enforced by import-linter, `make
+import-lint`). What each package owns is in the
+[refactor roadmap](design/refactor-roadmap.md), section 1.2.
+
+| Layer (top to bottom) | Packages (`src/lg_sotf/`) | Owns |
+|---|---|---|
+| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, tenant-export, tenant-erase, evidence-verify, mcp, version |
+| Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
+| Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
+| Workflow engine | `core` | graph, nodes, `WorkflowEngine`, checkpointer, retry policy |
+| Application | `services` \| `compliance` \| `onboarding` \| `agents` \| `ingestion` | escalation, review, response, reporting; evidence, NIS2, export; onboarding; triage, correlation and analysis agents; sources and normalizers |
+| Adapters | `integrations` \| `tools` \| `llm` \| `queue` | notifications, ticketing, Microsoft clients; enrichment; model clients; Redis Streams |
+| Audit | `audit` | `AuditLogger`, the only writer of `audit_log` |
+| Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), migrations, locks |
+| Domain (no I/O) | `domain` (roadmap Phase 2) | routing, phishing and suppression policy; connector ports; action catalog |
+| Value types | `models` | canonical alert and domain vocabulary |
+| Network kernel | `net` (roadmap F3) | egress policy, TLS, Retry-After and backoff |
+| Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction; typed settings |
+
+Some modules still sit in the wrong layer (for example the shared network
+helpers in `ingestion/sources/`, policy modules in `core`); `pyproject.toml`
+lists each such import as an exact exception tied to the roadmap step that
+moves it.
 
 Removed: `Backup/`, `test.html`, `app_initializer.py` (replaced by
 `runtime/`), `storage/postgres.py` DDL at startup (replaced by migrations),
