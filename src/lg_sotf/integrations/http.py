@@ -37,6 +37,8 @@ DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024
 MAX_ERROR_BODY_CHARS = 300
 MAX_RETRY_AFTER_S = 3_600.0
 RETRYABLE_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
+# Failures before the request reached the server: safe to retry even for a non-idempotent write.
+_NOT_SENT = (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)
 
 SleepFn = Callable[[float], Awaitable[None]]
 
@@ -160,11 +162,18 @@ class IntegrationHttp:
         verify: Verify = True,
         retries: int = 0,
         expect_ok: bool = True,
+        idempotent: bool = True,
     ) -> HttpResult:
         """One request, with up to ``retries`` retries of transient failures (backoff with jitter).
 
         With ``expect_ok`` a non-2xx answer raises :class:`DeliveryError`
         (retryable for 408/425/429/5xx, with ``Retry-After`` when given).
+
+        A write that must not happen twice (creating a ticket, posting a
+        comment) passes ``idempotent=False``: it is then retried here only
+        when the server cannot have acted on it (no connection was made, or
+        429). After a read timeout or a 5xx the write may have happened, so the
+        error is raised for the caller, which can look before it writes again.
         """
         self.check_url(url)
         attempt = 0
@@ -178,14 +187,14 @@ class IntegrationHttp:
                 except _TooLarge:
                     raise DeliveryError("response too large", retryable=False, code="response_too_large") from None
                 except (httpx.TransportError, TimeoutError) as exc:
-                    if attempt < retries:
+                    if attempt < retries and (idempotent or isinstance(exc, _NOT_SENT)):
                         await self._sleep(self._backoff(attempt))
                         attempt += 1
                         continue
                     raise DeliveryError(
                         f"network error ({type(exc).__name__})", retryable=True, code="network_error"
                     ) from exc
-                if result.status in RETRYABLE_STATUSES and attempt < retries:
+                if result.status in RETRYABLE_STATUSES and attempt < retries and (idempotent or result.status == 429):
                     hint = parse_retry_after(result.headers.get("Retry-After"))
                     if hint is None or hint <= 15.0:
                         await self._sleep(hint if hint is not None else self._backoff(attempt))

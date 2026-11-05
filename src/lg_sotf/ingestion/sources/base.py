@@ -133,6 +133,13 @@ class PullConnector(abc.ABC):
             raise SourceConfigError(f"{self.source_type} source requires config.{key}")
         return value.strip()
 
+    def config_seconds(self, key: str, default: float, low: float, high: float) -> float:
+        """A number of seconds from config, in ``[low, high]``; anything else (null, text, NaN) is a config error."""
+        value = self.config.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+            raise SourceConfigError(f"{self.source_type} config.{key} must be a number of seconds between {low:g} and {high:g}")
+        return float(value)
+
     def credential(self, key: str) -> str:
         value = self._credentials.get(key)
         if not isinstance(value, str) or not value:

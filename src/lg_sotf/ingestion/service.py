@@ -170,8 +170,9 @@ class _Prepared:
 class _Outcome:
     prepared: Optional[_Prepared] = None
     reason: Optional[str] = None
-    # Redacted event waiting for the LLM fallback.
+    # Redacted event waiting for the LLM fallback, and how many values redaction replaced in it.
     pending_llm: Optional[Dict[str, Any]] = None
+    redactions: int = 0
 
 
 @dataclass
@@ -568,7 +569,7 @@ class IngestionService:
             alert = normalizer.normalize(redacted, ctx)
         except UnrecognizedEvent as exc:
             if self._options.llm_fallback:
-                return _Outcome(pending_llm=redacted)
+                return _Outcome(pending_llm=redacted, redactions=redactions)
             return _Outcome(reason=str(exc))
         except NormalizationError as exc:
             return _Outcome(reason=str(exc))
@@ -604,12 +605,13 @@ class IngestionService:
         redacted: Dict[str, Any],
         ctx: NormalizeContext,
         budget_limit: BudgetLimit = USE_DEFAULT,
+        redactions: int = 0,
     ) -> _Outcome:
         try:
             alert = await llm_normalize(
                 redacted, ctx, settings=self._settings, tenant_id=tenant_id, budget=self._budget, budget_limit=budget_limit
             )
-            prepared = self._finish(index, alert, redacted, 0)
+            prepared = self._finish(index, alert, redacted, redactions)
         except asyncio.CancelledError:
             raise
         except LLMBudgetExceeded:
@@ -636,7 +638,7 @@ class IngestionService:
         return limit if isinstance(limit, int) and not isinstance(limit, bool) else USE_DEFAULT
 
     async def _llm_phase(
-        self, tenant_id: str, pending: List[Tuple[int, Dict[str, Any]]], ctx: NormalizeContext
+        self, tenant_id: str, pending: List[Tuple[int, Dict[str, Any], int]], ctx: NormalizeContext
     ) -> Dict[int, _Outcome]:
         """LLM normalization for one call: bounded concurrency and a total time limit."""
         results: Dict[int, _Outcome] = {}
@@ -645,19 +647,19 @@ class IngestionService:
         slots = asyncio.Semaphore(self._options.llm_fallback_concurrency)
         budget_limit = await self._tenant_budget_limit(tenant_id)
 
-        async def one(index: int, redacted: Dict[str, Any]) -> None:
+        async def one(index: int, redacted: Dict[str, Any], redactions: int) -> None:
             async with slots:
-                results[index] = await self._llm_prepare(tenant_id, index, redacted, ctx, budget_limit)
+                results[index] = await self._llm_prepare(tenant_id, index, redacted, ctx, budget_limit, redactions)
 
         try:
             async with asyncio.timeout(self._options.llm_fallback_timeout_s):
                 async with asyncio.TaskGroup() as group:
-                    for index, redacted in pending:
-                        group.create_task(one(index, redacted))
+                    for index, redacted, redactions in pending:
+                        group.create_task(one(index, redacted, redactions))
         except TimeoutError:
-            unfinished = sum(1 for index, _ in pending if index not in results)
+            unfinished = sum(1 for index, *_ in pending if index not in results)
             log.warning("ingestion.llm_fallback_timeout", tenant_id=tenant_id, unfinished=unfinished)
-        for index, _ in pending:
+        for index, *_ in pending:
             if index not in results:
                 record_llm_normalization("timeout")
                 results[index] = _Outcome(reason="unrecognized event format (LLM normalization timed out)")
@@ -685,7 +687,7 @@ class IngestionService:
         )
         prepared: List[_Prepared] = []
         reasons: Dict[int, str] = {}
-        pending: List[Tuple[int, Dict[str, Any]]] = []
+        pending: List[Tuple[int, Dict[str, Any], int]] = []
         outcomes: List[Tuple[int, _Outcome]] = []
         for index, event in enumerate(events):
             outcome = await self._prepare_event(index, event, ctx, normalizer)
@@ -694,7 +696,7 @@ class IngestionService:
                 if len(pending) >= self._options.llm_fallback_max_per_call:
                     outcome = _Outcome(reason="unrecognized event format (LLM fallback limit reached for this batch)")
                 else:
-                    pending.append((index, waiting))
+                    pending.append((index, waiting, outcome.redactions))
                     continue
             outcomes.append((index, outcome))
         outcomes.extend((await self._llm_phase(tenant_id, pending, ctx)).items())

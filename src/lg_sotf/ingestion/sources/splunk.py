@@ -41,8 +41,8 @@ class SplunkConnector(PullConnector):
         if not search.startswith(("search ", "|")):
             search = f"search {search}"
         self._search = search
-        self._max_lag_s = float(self.config.get("max_event_lag_s", 86_400))
-        self._search_timeout_s = float(self.config.get("search_timeout_s", 300))
+        self._max_lag_s = self.config_seconds("max_event_lag_s", 86_400, 0, 30 * 86_400)
+        self._search_timeout_s = self.config_seconds("search_timeout_s", 300, 1, 3_600)
         if self.has_credential("token"):
             auth: Any = HeaderAuth({"Authorization": f"Bearer {self.credential('token')}"})
         else:

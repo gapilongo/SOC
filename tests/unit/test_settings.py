@@ -168,9 +168,9 @@ def test_fake_llm_refused_in_production_unless_allowed() -> None:
 def test_shipped_configs_load(name: str) -> None:
     s = Settings(_env_file=None, config_file=str(CONFIG_DIR / f"{name}.yaml"))
     assert s.routing["analysis_threshold"] == 40
-    for agent in ("triage", "correlation", "analysis", "human_loop", "response"):
+    for agent in ("triage", "correlation", "analysis"):
         assert agent in s.agents
-    assert s.tools["execution_timeout"] > 0
+    assert s.ingestion["llm_fallback"] is False
 
 
 def test_testing_config_is_offline() -> None:

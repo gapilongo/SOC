@@ -239,3 +239,34 @@ async def test_bounded_retries_for_synchronous_calls(settings: Settings) -> None
         await IntegrationHttp(settings, transport=Recorder(httpx.Response(503)).transport, resolver=public_resolver,
                               sleep=_no_sleep).request("GET", "https://jira.example.com/rest", retries=1)
     assert err.value.retryable and err.value.status == 503
+
+
+def _guarded(settings: Settings, recorder: Recorder) -> IntegrationHttp:
+    return IntegrationHttp(settings, transport=recorder.transport, resolver=public_resolver, sleep=_no_sleep)
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.Response(502), httpx.Response(504), httpx.ReadTimeout("slow"), httpx.RemoteProtocolError("dropped")],
+    ids=["502", "504", "read-timeout", "dropped"],
+)
+async def test_non_idempotent_write_is_not_resent_after_an_ambiguous_failure(settings: Settings, failure: Any) -> None:
+    # The server may have created the ticket: a blind resend would open a second one.
+    recorder = Recorder(failure, httpx.Response(201, json={"key": "SOC-1"}))
+    with pytest.raises(DeliveryError) as err:
+        await _guarded(settings, recorder).request(
+            "POST", "https://jira.example.com/rest/api/3/issue", json_body={}, retries=2, idempotent=False
+        )
+    assert len(recorder.requests) == 1 and err.value.retryable
+
+
+@pytest.mark.parametrize(
+    "failure", [httpx.Response(429), httpx.ConnectError("refused"), httpx.ConnectTimeout("no route")],
+    ids=["429", "connect-error", "connect-timeout"],
+)
+async def test_non_idempotent_write_is_retried_when_it_never_reached_the_server(settings: Settings, failure: Any) -> None:
+    recorder = Recorder(failure, httpx.Response(201, json={"key": "SOC-1"}))
+    result = await _guarded(settings, recorder).request(
+        "POST", "https://jira.example.com/rest/api/3/issue", json_body={}, retries=2, idempotent=False
+    )
+    assert result.status == 201 and len(recorder.requests) == 2

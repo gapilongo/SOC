@@ -226,14 +226,17 @@ class JiraClient:
         priority = (self._config.get("priority_map") or {}).get(draft.severity)
         if priority:
             fields["priority"] = {"name": priority}
-        data = _json(await self._call("POST", "/issue", json_body={"fields": fields}))
+        data = _json(await self._call("POST", "/issue", json_body={"fields": fields}, idempotent=False))
         key = str(data.get("key") or "")
         if not key:
             raise DeliveryError("Jira did not return an issue key", retryable=True, code="bad_response")
         return TicketRef(key=key, id=str(data.get("id") or key), url=self.url(key))
 
     async def comment(self, ticket: ExternalTicket, text: str) -> None:
-        await self._call("POST", f"/issue/{quote(ticket.external_key, safe='')}/comment", json_body={"body": self._doc([text])})
+        await self._call(
+            "POST", f"/issue/{quote(ticket.external_key, safe='')}/comment", json_body={"body": self._doc([text])},
+            idempotent=False,
+        )
 
     async def resolve(self, ticket: ExternalTicket, text: str) -> Optional[str]:
         wanted = str(self._config.get("resolve_transition") or "").strip()
@@ -343,7 +346,9 @@ class ServiceNowClient:
             if self._config.get(key):
                 body[key] = self._config[key]
         data = _json(
-            await self._call("POST", self._table, params={"sysparm_fields": "sys_id,number,state"}, json_body=body)
+            await self._call(
+                "POST", self._table, params={"sysparm_fields": "sys_id,number,state"}, json_body=body, idempotent=False
+            )
         )
         row = data.get("result")
         if not isinstance(row, Mapping):
@@ -354,7 +359,10 @@ class ServiceNowClient:
         return f"{self._table}/{quote(ticket.external_id or '', safe='')}"
 
     async def comment(self, ticket: ExternalTicket, text: str) -> None:
-        await self._call("PATCH", self._record(ticket), json_body={self._config.get("comment_field", "work_notes"): text})
+        await self._call(
+            "PATCH", self._record(ticket), json_body={self._config.get("comment_field", "work_notes"): text},
+            idempotent=False,  # work notes append: a resend adds the note twice
+        )
 
     async def resolve(self, ticket: ExternalTicket, text: str) -> Optional[str]:
         if not self._config.get("resolve_on_decision"):

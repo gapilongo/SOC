@@ -137,6 +137,22 @@ async def test_dead_letter_moves_entry_with_reason(redis_client: Any, queue_sett
     assert back.stream == queue.streams.normal
 
 
+async def test_requeued_dead_letter_starts_with_no_retries(redis_client: Any, queue_settings: Build) -> None:
+    s = queue_settings()
+    queue, consumer = await _setup(redis_client, s)
+    await queue.enqueue_resume("tenant-a", "a1", {"type": "approval"})
+    (msg,) = await consumer.read(1)
+    await consumer.requeue(msg, count_attempt=True)  # a worker retry carries its attempts forward
+    (retried,) = await consumer.read(1)
+    assert retried.attempts == 2
+    await consumer.dead_letter(retried, "exhausted")
+
+    dlq = DeadLetterQueue(redis_client, s)
+    await dlq.requeue((await dlq.list())[0])
+    (back,) = await consumer.read(1)
+    assert back.attempts == 1
+
+
 async def test_malformed_entry_goes_to_dlq_and_is_not_returned(redis_client: Any, queue_settings: Build) -> None:
     s = queue_settings()
     queue, consumer = await _setup(redis_client, s)

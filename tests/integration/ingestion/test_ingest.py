@@ -235,6 +235,17 @@ async def test_llm_fallback_normalizes_unknown_events(
             assert value.lower() in haystack
 
 
+async def test_llm_normalized_events_keep_the_redaction_flag(
+    repos: Repositories, service_factory: Callable[..., IngestionService]
+) -> None:
+    unknown = {"evt": "odd product", "host": "kiosk-9", "password": "correct-horse-battery-staple"}
+    result = await service_factory(llm_fallback=True).ingest(TENANT_A, "api", [unknown])
+    assert len(result.inserted) == 1, result.rejected
+    stored = await repos.alerts.get(TENANT_A, result.inserted[0].alert_id)
+    assert "correct-horse-battery-staple" not in json.dumps([stored.raw, stored.normalized])
+    assert {"llm_normalized", "secrets_redacted"} <= set(stored.normalized["flags"])
+
+
 @pytest.mark.parametrize(
     "bad",
     [

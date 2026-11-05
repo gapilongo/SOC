@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from redis.asyncio import Redis
 
-from lg_sotf.queue.streams import WORK_FIELDS, QueueStreams, decode_fields
+from lg_sotf.queue.streams import FIELD_RETRIES, WORK_FIELDS, QueueStreams, decode_fields
 from lg_sotf.settings import Settings, get_settings
 
 
@@ -67,7 +67,9 @@ class DeadLetterQueue:
 
     async def requeue(self, letter: DeadLetter) -> str:
         """Move a dead letter back to its work stream with a fresh delivery count; returns the new entry id."""
-        fields = {k: v for k, v in letter.fields.items() if k in WORK_FIELDS}
+        # ``retries`` is left behind: kept, ``Message.attempts`` would start at the exhausted count
+        # and the first failed delivery would dead-letter the entry again.
+        fields = {k: v for k, v in letter.fields.items() if k in WORK_FIELDS and k != FIELD_RETRIES}
         missing = [k for k in ("tenant_id", "alert_id", "kind") if not fields.get(k)]
         if missing:
             raise ValueError(f"dead letter {letter.entry_id} cannot be requeued: missing {', '.join(missing)}")

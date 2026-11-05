@@ -39,9 +39,9 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_dotted_get_over_free_form_sections() -> None:
     cm = ConfigManager(DEV_CONFIG)
     assert cm.get("routing.analysis_threshold") == 40
-    assert cm.get("agents.triage.confidence_threshold") == 70
-    assert cm.get("agents.ingestion.sources.file.enabled") is True
-    assert cm.get("tools.execution_timeout") == 30
+    assert cm.get("agents.triage.llm_weight") == 0.4
+    assert cm.get("agents.correlation.burst_threshold") == 5
+    assert cm.get("tools.virustotal.timeout_s") == 10
     assert cm.get("llm.fast.model") == "claude-haiku-4-5"
     assert cm.get("worker.concurrency") == 4
 
@@ -64,9 +64,9 @@ def test_empty_key_rejected() -> None:
 def test_returned_containers_are_copies() -> None:
     cm = ConfigManager(DEV_CONFIG)
     triage = cm.get_agent_config("triage")
-    triage["confidence_threshold"] = 1
+    triage["llm_weight"] = 1
     triage.setdefault("injected", True)
-    assert cm.get("agents.triage.confidence_threshold") == 70
+    assert cm.get("agents.triage.llm_weight") == 0.4
     assert "injected" not in cm.get_agent_config("triage")
 
 
@@ -74,9 +74,9 @@ def test_agent_and_tool_config() -> None:
     cm = ConfigManager(DEV_CONFIG)
     assert cm.get_agent_config("analysis")["max_iterations"] == 5
     assert cm.get_agent_config("nope") == {}
-    assert cm.get_tool_config("intel")["virustotal"]["timeout"] == 10
-    assert cm.get_tool_config("intel.virustotal")["rate_limit"] == 4
-    assert cm.get_tool_config("execution_timeout") == {}
+    assert cm.get_tool_config("virustotal")["timeout_s"] == 10
+    assert cm.get_tool_config("virustotal")["requests_per_minute"] == 4
+    assert cm.get_tool_config("virustotal.timeout_s") == {}
 
 
 def test_typed_section_getters() -> None:
