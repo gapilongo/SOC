@@ -25,30 +25,17 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.partitions import add_months, month_start, partition_name
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import to_libpq_url
+from tests.integration.db.test_rls import TENANT_TABLES
 
 pytestmark = pytest.mark.asyncio
 
-TENANT_OWNED = (
-    "users",
-    "user_mfa",
-    "refresh_tokens",
-    "api_keys",
-    "sources",
-    "alerts",
-    "alert_events",
-    "workflow_runs",
-    "escalations",
-    "analyst_feedback",
-    "response_actions",
-    "suppression_rules",
-    "indicator_sightings",
-    "llm_usage_daily",
-    "usage_daily",
-    "audit_log",
-    "integrations",
-    "notification_outbox",
-    "external_tickets",
-)
+# Tenant-owned tables are discovered from the catalog, so a new table is checked without editing a list.
+TENANT_TABLES_SQL = """
+SELECT DISTINCT c.relname FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'tenant_id' AND NOT a.attisdropped
+WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition
+"""
 
 
 def _query(url: str, sql: str) -> list:
@@ -80,24 +67,44 @@ async def test_upgrade_downgrade_upgrade_round_trip(migrated_database_url: str) 
         assert conn.execute("SELECT id, status FROM tenants").fetchall() == [("default", "active")]
 
 
-async def test_every_tenant_table_has_forced_rls_and_policy(migrated_database_url: str) -> None:
+def _rls_flags(url: str) -> dict:
     rows = _query(
-        migrated_database_url,
+        url,
         """
         SELECT c.relname, c.relrowsecurity, c.relforcerowsecurity,
-               EXISTS (SELECT 1 FROM pg_policies p WHERE p.tablename = c.relname AND p.policyname = 'tenant_isolation')
+               EXISTS (SELECT 1 FROM pg_policies p
+                       WHERE p.schemaname = 'public' AND p.tablename = c.relname
+                         AND p.policyname = 'tenant_isolation')
         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
         WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
           AND c.relname <> 'alembic_version' AND c.relname NOT LIKE 'checkpoint%'
         """,
     )
-    by_name = {r[0]: r[1:] for r in rows}
-    for table in (*TENANT_OWNED, "tenants"):
-        assert by_name[table] == (True, True, True), table
+    return {r[0]: r[1:] for r in rows}
+
+
+def _tenant_tables(url: str) -> set:
+    return {r[0] for r in _query(url, TENANT_TABLES_SQL)}
+
+
+async def test_every_tenant_table_has_forced_rls_and_policy(migrated_database_url: str) -> None:
+    by_name = _rls_flags(migrated_database_url)
+    discovered = _tenant_tables(migrated_database_url)
+    assert {"users", "alerts", "audit_log"} <= discovered
+    missing = {t: by_name.get(t) for t in (*sorted(discovered), "tenants") if by_name.get(t) != (True, True, True)}
+    assert missing == {}, "(relrowsecurity, relforcerowsecurity, tenant_isolation policy) must all be true"
     partitions = [name for name in by_name if "_p2" in name or name.endswith("_default")]
     assert partitions
     for name in partitions:
         assert by_name[name] == (True, True, True), name
+
+
+async def test_rls_isolation_tests_cover_every_tenant_table(migrated_database_url: str) -> None:
+    """``test_rls.TENANT_TABLES`` drives the isolation tests; it must name every tenant table, no more."""
+    discovered = _tenant_tables(migrated_database_url)
+    assert len(TENANT_TABLES) == len(set(TENANT_TABLES))
+    assert discovered - set(TENANT_TABLES) == set(), "add the table to test_rls.TENANT_TABLES and seed_everything"
+    assert set(TENANT_TABLES) - discovered == set()
 
 
 async def test_initial_partitions_cover_current_and_next_two_months(migrated_database_url: str) -> None:
