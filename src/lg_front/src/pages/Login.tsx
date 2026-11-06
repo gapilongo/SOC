@@ -6,6 +6,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../api/client';
 import type { MfaEnrollOut } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
+import { forgetCachedData } from '../auth/cacheBinding';
 import { beginLogin, safeReturnTo } from '../auth/oidc';
 import type { EnrollmentResult, MfaChallenge } from '../auth/store';
 import { CodeField, EnrollmentDetails, RecoveryCodes } from '../components/Mfa';
@@ -275,7 +276,7 @@ export default function LoginPage() {
 
   const enter = () => {
     // Nothing cached for a previous session may render for this one.
-    queryClient.clear();
+    forgetCachedData(queryClient, true);
     setChallenge(null);
     navigate(from, { replace: true });
   };

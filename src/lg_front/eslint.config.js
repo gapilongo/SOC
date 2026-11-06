@@ -5,6 +5,17 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+// Syntax bans, grouped so a file-level exemption can drop one group and keep the others
+// (ESLint replaces the whole `no-restricted-syntax` list per file).
+const CACHE_CLEAR = [
+  {
+    selector:
+      "CallExpression[callee.property.name='clear'][callee.object.name=/^(client|queryClient|qc)$/], CallExpression[callee.property.name='clear'][callee.object.callee.name='useQueryClient'], CallExpression[callee.property.name='clear'][callee.object.callee.property.name=/^get(Query|Mutation)Cache$/]",
+    message:
+      'Do not clear the React Query cache directly: a mounted observer keeps rendering removed data. Use forgetCachedData from auth/cacheBinding.ts.',
+  },
+];
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
   {
@@ -35,6 +46,14 @@ export default tseslint.config(
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR],
+    },
+  },
+  {
+    // The one owner of session cache clearing.
+    files: ['src/auth/cacheBinding.ts'],
+    rules: {
+      'no-restricted-syntax': 'off',
     },
   },
   {
@@ -43,6 +62,8 @@ export default tseslint.config(
       // Tests assert that nothing is written to browser storage.
       'no-restricted-globals': 'off',
       'no-restricted-properties': 'off',
+      // Tests build and tear down their own query clients.
+      'no-restricted-syntax': 'off',
     },
   },
   {

@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -61,6 +61,30 @@ describe('OIDC callback', () => {
     expect(order).toEqual(['redeem ?code=code-1&state=state-1 (address bar: clean)']);
     expect(window.location.search).toBe('');
     expect(s.auth.getState().status).toBe('authenticated');
+  });
+
+  it('drops data cached for a previous session before entering the app', async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    completeLogin.mockImplementationOnce(async () => {
+      await gate;
+      return { token: 'sso-token', expiresIn: 300, refreshToken: null, returnTo: '/alerts' };
+    });
+    window.history.replaceState(null, '', '/auth/callback?code=code-3&state=state-3');
+    const { client } = renderWithSession(
+      <Routes>
+        <Route path="/auth/callback" element={<OidcCallbackPage />} />
+        <Route path="/alerts" element={<p>alerts page</p>} />
+      </Routes>,
+      session(),
+      { route: '/auth/callback' },
+    );
+    client.setQueryData(['alerts', {}], 'rows of the previous user');
+    client.setQueryData(['dashboard', 24], 'figures of the previous user');
+
+    await act(async () => release());
+    expect(await screen.findByText('alerts page')).toBeInTheDocument();
+    expect(client.getQueryCache().getAll()).toEqual([]);
   });
 
   it('shows the failure and a way back to sign-in', async () => {
