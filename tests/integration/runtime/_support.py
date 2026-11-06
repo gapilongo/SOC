@@ -128,3 +128,15 @@ async def stream_empty(redis_client: Any, settings: Settings) -> bool:
     q = WorkQueue(redis_client, settings).streams
     return await redis_client.xlen(q.high) + await redis_client.xlen(q.normal) == 0
 
+
+class ManualClock:
+    """A clock that moves only when told to; inject it as a worker's or scheduler's ``clock``/``wall_clock``."""
+
+    def __init__(self, now: float = 1_000_000.0) -> None:
+        self.now = now
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds

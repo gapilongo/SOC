@@ -11,10 +11,12 @@ from lg_sotf.observability.metrics import RUNS
 from lg_sotf.queue.consumer import CONSUMER_GROUP
 from lg_sotf.queue.dlq import DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
+from lg_sotf.runtime.worker import TENANT_ACTIVITY_WINDOW_S
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
 from tests.integration.runtime._support import (
     FakeEngine,
+    ManualClock,
     Outcome,
     RecordingEvents,
     dispatch_alert,
@@ -452,13 +454,52 @@ async def test_saturated_worker_stays_live(
 async def test_liveness_fails_when_the_event_loop_is_blocked(
     repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
 ) -> None:
+    """Liveness is read on the worker's clock; while the loop is blocked nothing ticks it."""
     s = runtime_settings()
-    worker = make_worker(s, repos.db, redis_client, FakeEngine(returns("completed")), stall_limit_s=0.3)
+    clock = ManualClock()
+    worker = make_worker(s, repos.db, redis_client, FakeEngine(returns("completed")), stall_limit_s=0.3, clock=clock)
     async with running(worker):
-        await asyncio.sleep(0.2)
+        await eventually(lambda: _consuming(worker))
+        clock.advance(0.29)
         assert worker.is_alive()
-        time.sleep(0.5)  # noqa: ASYNC251 - deliberately blocks the loop, as a stuck synchronous call would
+        # No await from here on: the loop cannot run, exactly as behind a stuck synchronous call.
+        clock.advance(0.02)
         assert not worker.is_alive()
+
+
+async def _consuming(worker: Any) -> bool:
+    return bool(worker._running)
+
+
+async def test_per_tenant_cap_lapses_once_other_tenants_go_quiet(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    """PERF-1: the noisy-neighbour cap applies only while another tenant was seen in the activity window."""
+    s = runtime_settings(worker={"concurrency": 4, "per_tenant_concurrency": 1})
+    clock = ManualClock()
+    release = asyncio.Event()
+
+    async def behaviour(kind: str, tenant: str, alert: str, payload: Optional[dict]) -> Outcome:
+        if tenant == TENANT_A:
+            await release.wait()
+        return Outcome("completed")
+
+    engine = FakeEngine(behaviour)
+    worker = make_worker(s, repos.db, redis_client, engine, clock=clock)
+    async with running(worker):
+        b_id = await dispatch_alert(repos, s, redis_client, TENANT_B)
+        await eventually(lambda: _status_is(repos, b_id, "completed", TENANT_B))
+        clock.advance(TENANT_ACTIVITY_WINDOW_S)
+        ids = [await dispatch_alert(repos, s, redis_client, TENANT_A) for _ in range(4)]
+        await eventually(lambda: _active(engine, TENANT_A, 4))  # with the cap in force this stays at 1
+        release.set()
+        for alert_id in ids:
+            await eventually(lambda alert_id=alert_id: _status_is(repos, alert_id, "completed"))
+    assert worker.stats.deferred == 0
+
+
+async def _active(engine: FakeEngine, tenant_id: str, count: int) -> bool:
+    return engine.active.get(tenant_id, 0) == count
 
 
 async def test_drain_timeout_is_honoured_when_saturated(

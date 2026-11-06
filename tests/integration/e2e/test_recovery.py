@@ -29,8 +29,13 @@ pytestmark = pytest.mark.integration
 
 
 class _SlowSecondPage(ScriptedConnector):
+    def __init__(self, *args: Any, second_page_requested: asyncio.Event, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.second_page_requested = second_page_requested
+
     async def pages(self, cursor: Optional[Mapping[str, Any]]) -> AsyncGenerator:
         yield self.scripted[0]
+        self.second_page_requested.set()  # the first page is stored; the next request hangs
         await asyncio.sleep(3600)  # the next page's request is in flight when the pod stops
         yield self.scripted[1]
 
@@ -63,9 +68,15 @@ async def test_cancelled_poll_strands_no_alert(
         scheduler={"tick_s": 0.05},
     )
     await repos.sources.create(TENANT_A, "splunk", "splunk src", source_id="splunk-1")
+    second_page_requested = asyncio.Event()
 
     def factory(source: Any, credentials: Any) -> ScriptedConnector:
-        return _SlowSecondPage(source, [page(0, 2, watermark_min=1), page(2, 2, watermark_min=2)], settings=settings)
+        return _SlowSecondPage(
+            source,
+            [page(0, 2, watermark_min=1), page(2, 2, watermark_min=2)],
+            settings=settings,
+            second_page_requested=second_page_requested,
+        )
 
     queue = WorkQueue(redis_client, settings)
     scheduler = Scheduler(
@@ -79,7 +90,7 @@ async def test_cancelled_poll_strands_no_alert(
         stop_grace_s=0.3,
     )
     task = asyncio.create_task(scheduler.run())
-    await asyncio.sleep(1.0)
+    await asyncio.wait_for(second_page_requested.wait(), 20)
     scheduler.request_stop()  # SIGTERM during a rolling upgrade: the poll outlives the grace period
     await task
     async with db.system_tx() as conn:

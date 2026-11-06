@@ -20,7 +20,7 @@ from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.services.dispatch import dispatch_new_alerts
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.runtime._support import RecordingEvents, eventually
+from tests.integration.runtime._support import ManualClock, RecordingEvents, eventually
 
 
 @dataclass(frozen=True)
@@ -406,19 +406,19 @@ async def test_deep_backlog_sweep_claims_failed_runs_only(
     repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     s = runtime_settings(worker={"visibility_timeout_s": 10, "max_deliveries": 2})
-    sched = _scheduler(s, repos.db, redis_client)
+    entry_ms = 1_790_000_000_000
+    sched = _scheduler(s, repos.db, redis_client, wall_clock=ManualClock(entry_ms / 1000 + 3600))
     calls = _spy_on_orphan_claims(monkeypatch)
     recorder = _RecordingLog()
     monkeypatch.setattr(scheduler_module, "log", recorder)
-    hour_ago_ms = int((datetime.now(UTC) - timedelta(hours=1)).timestamp() * 1000)
-    await _queued_orphan_with_undelivered_entry(repos, redis_client, s, f"{hour_ago_ms}-0")
+    await _queued_orphan_with_undelivered_entry(repos, redis_client, s, f"{entry_ms}-0")
 
     assert await sched.recover_orphaned_runs() == 0
 
     assert calls and all(c["queued_older_than_s"] is None for c in calls)
     assert calls[0]["failed_older_than_s"] == orphan_thresholds(s)[1]
     [(level, _event, fields)] = [r for r in recorder.records if r[1] == "scheduler.orphan_queued_skipped"]
-    assert level == "warning" and fields["backlog_s"] >= 3600 - 60
+    assert level == "warning" and fields["backlog_s"] == 3600.0
 
 
 async def test_fresh_backlog_sweep_still_claims_queued_runs(
@@ -438,6 +438,36 @@ async def test_fresh_backlog_sweep_still_claims_queued_runs(
     assert "scheduler.orphan_queued_skipped" not in recorder.events()
     entries = [e[1][b"alert_id"].decode() for e in await redis_client.xrange(WorkQueue(redis_client, s).streams.normal)]
     assert entries == [alert_id, alert_id]
+
+
+async def test_jobs_start_again_only_once_their_interval_has_passed(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    s = runtime_settings(scheduler={"sla_sweep_interval_s": 60.0, "maintenance_interval_s": 3600.0})
+    clock = ManualClock()
+    sched = _scheduler(s, repos.db, redis_client, clock=clock)
+    started: List[str] = []
+    for job in sched.jobs.values():
+
+        async def record(name: str = job.name) -> None:
+            started.append(name)
+
+        job.fn = record
+    try:
+        await sched.tick()
+        await sched.wait_for_jobs()
+        assert sorted(started) == sorted(sched.jobs)
+        started.clear()
+        await sched.tick()
+        await sched.wait_for_jobs()
+        assert started == []
+        clock.advance(60.0)
+        await sched.tick()
+        await sched.wait_for_jobs()
+        assert "sla" in started and "maintenance" not in started
+        assert set(started) == {name for name, job in sched.jobs.items() if job.interval_s <= 60.0}
+    finally:
+        await sched._lease.release()
 
 
 async def test_graceful_stop_lets_running_jobs_finish(
