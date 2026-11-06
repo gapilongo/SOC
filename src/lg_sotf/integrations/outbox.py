@@ -33,7 +33,7 @@ import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.db import Connection
-from lg_sotf.db.repos.integrations import ENQUEUE_SQL, NewOutboxEntry
+from lg_sotf.db.repos.outbox import ENQUEUE_SQL, NewOutboxEntry
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import MICROSOFT_KIND, NOTIFY_KINDS, TICKETING_KINDS
 from lg_sotf.integrations.events import (

@@ -43,7 +43,8 @@ from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry, User
-from lg_sotf.db.repos.integrations import IntegrationExists, NewOutboxEntry
+from lg_sotf.db.repos.integrations import IntegrationExists
+from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.integrations.channels import send_notification
@@ -709,7 +710,7 @@ async def list_deliveries(
 ) -> List[DeliveryOut]:
     ctx = get_ctx(request)
     await ctx.repos.integrations.get(principal.tenant_id, integration_id)
-    entries = await ctx.repos.integrations.deliveries(principal.tenant_id, integration_id, status=status, limit=limit)
+    entries = await ctx.repos.outbox.deliveries(principal.tenant_id, integration_id, status=status, limit=limit)
     return [delivery_out(e) for e in entries]
 
 
@@ -727,7 +728,7 @@ async def list_tickets(
     if alert_id is None and not escalation_id:
         raise ApiError(400, "invalid_request", "pass alert_id or escalation_id")
     ctx = get_ctx(request)
-    found = await ctx.repos.integrations.tickets(
+    found = await ctx.repos.tickets.list(
         principal.tenant_id, alert_id=alert_id, escalation_ids=escalation_id or None
     )
     return [ticket_out(t) for t in found]

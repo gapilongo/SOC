@@ -166,7 +166,7 @@ async def test_tickets_are_listed_for_viewers_of_the_tenant(api: ApiHarness, mak
     integration_id = created.json()["id"]
     alert_id = await add_alert(api.repos, TENANT_A)
     esc, _ = await api.repos.escalations.create_or_attach(TENANT_A, alert_id, reason="r")
-    await api.repos.integrations.add_ticket(
+    await api.repos.tickets.add(
         TENANT_A, integration_id, system="servicenow", alert_id=alert_id, escalation_id=esc.id,
         external_key="INC0010003", external_id="s1", external_url="https://acme.service-now.com/nav_to.do?uri=x",
     )

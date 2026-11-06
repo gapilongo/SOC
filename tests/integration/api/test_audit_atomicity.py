@@ -239,7 +239,7 @@ async def test_integration_changes_roll_back_without_their_audit_entry(
     )
     failing_audit.add("integration.tested")
     assert (await api.client.post(f"{API}/integrations/{integration_id}/test", headers=headers)).status_code == 500
-    assert await api.repos.integrations.deliveries(TENANT_A, integration_id) == []
+    assert await api.repos.outbox.deliveries(TENANT_A, integration_id) == []
 
     failing_audit.add("integration.deleted")
     assert (await api.client.delete(f"{API}/integrations/{integration_id}", headers=headers)).status_code == 500
