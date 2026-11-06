@@ -99,7 +99,7 @@ function CostChart({ days }: { days: DayTotal[] }) {
           );
         })}
       </svg>
-      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-slate-300" aria-live="polite">
+      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-secondary" aria-live="polite">
         {active ? `${active.day}: ${formatUsd(active.cost)}, ${formatInt(active.calls)} calls, ${formatInt(active.tokens)} tokens` : 'Hover a bar for the day total. The table below lists every row.'}
       </figcaption>
     </figure>
@@ -157,9 +157,9 @@ export default function UsagePage() {
               ['Input tokens', formatInt(q.data.total_input_tokens)],
               ['Output tokens', formatInt(q.data.total_output_tokens)],
             ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-                <div className="text-xs uppercase tracking-wide text-slate-400">{label}</div>
-                <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{value}</div>
+              <div key={label} className="rounded-card border border-subtle bg-raised p-4">
+                <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums text-fg">{value}</div>
               </div>
             ))}
           </div>
@@ -171,7 +171,7 @@ export default function UsagePage() {
               <div className="max-h-[28rem] overflow-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
                   <caption className="sr-only">LLM usage rows</caption>
-                  <thead className="sticky top-0 bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+                  <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
                     <tr>
                       <th scope="col" className="py-2 pr-3">Day</th>
                       <th scope="col" className="py-2 pr-3">Model</th>
@@ -184,10 +184,10 @@ export default function UsagePage() {
                   </thead>
                   <tbody>
                     {q.data.days.map((r) => (
-                      <tr key={`${r.day}-${r.model}-${r.agent}`} className="border-t border-slate-800 tabular-nums">
-                        <td className="py-1.5 pr-3 text-slate-200">{r.day}</td>
-                        <td className="py-1.5 pr-3 text-slate-200">{r.model}</td>
-                        <td className="py-1.5 pr-3 text-slate-300">{r.agent}</td>
+                      <tr key={`${r.day}-${r.model}-${r.agent}`} className="border-t border-subtle tabular-nums">
+                        <td className="py-1.5 pr-3 text-body">{r.day}</td>
+                        <td className="py-1.5 pr-3 text-body">{r.model}</td>
+                        <td className="py-1.5 pr-3 text-secondary">{r.agent}</td>
                         <td className="py-1.5 pr-3 text-right">{formatInt(r.calls)}</td>
                         <td className="py-1.5 pr-3 text-right">
                           {formatInt(r.input_tokens)} / {formatInt(r.output_tokens)}

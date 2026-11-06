@@ -20,13 +20,13 @@ function Permission({ check }: { check: MicrosoftPermissionCheck }) {
   return (
     <li className="flex flex-wrap items-center gap-1.5 text-xs" title={check.guidance || undefined}>
       <Badge tone={check.warning ? 'warn' : (PERMISSION_TONE[check.status] ?? 'neutral')}>{check.status}</Badge>
-      <code className="text-slate-200">{check.role}</code>
-      <span className="text-slate-400">
+      <code className="text-body">{check.role}</code>
+      <span className="text-muted">
         {check.api}
         {via}
         {!check.required ? ', not required with these options' : ''}
       </span>
-      {check.warning && <span className="basis-full text-amber-200">{check.warning}</span>}
+      {check.warning && <span className="basis-full text-warn-fg">{check.warning}</span>}
     </li>
   );
 }
@@ -40,14 +40,14 @@ function consentMissing(report: Report): boolean {
 
 function CapabilityRow({ name, check }: { name: string; check: MicrosoftCapabilityCheck }) {
   return (
-    <tr className="border-b border-slate-800/70 align-top">
-      <th scope="row" className="px-3 py-2 text-left font-medium text-slate-100">
+    <tr className="border-b border-subtle align-top">
+      <th scope="row" className="px-3 py-2 text-left font-medium text-fg">
         {name}
-        <div className="text-xs font-normal text-slate-400">{check.enabled ? (check.live ? 'enabled, live' : 'enabled, rehearsal') : 'not enabled'}</div>
+        <div className="text-xs font-normal text-muted">{check.enabled ? (check.live ? 'enabled, live' : 'enabled, rehearsal') : 'not enabled'}</div>
       </th>
       <td className="px-3 py-2">
         <Badge tone={CAPABILITY_TONE[check.status] ?? 'neutral'}>{humanize(check.status)}</Badge>
-        {check.detail && <p className="mt-1 text-xs text-slate-400">{check.detail}</p>}
+        {check.detail && <p className="mt-1 text-xs text-muted">{check.detail}</p>}
       </td>
       <td className="px-3 py-2">
         <ul className="space-y-1">
@@ -56,7 +56,7 @@ function CapabilityRow({ name, check }: { name: string; check: MicrosoftCapabili
           ))}
         </ul>
       </td>
-      <td className="px-3 py-2 text-xs text-slate-300">
+      <td className="px-3 py-2 text-xs text-secondary">
         {check.checks.length === 0
           ? '-'
           : check.checks.map((c, i) => (
@@ -78,22 +78,22 @@ export function MicrosoftTestReport({ report }: { report: Report }) {
     <div className="space-y-4 text-sm">
       <p>
         <Badge tone={report.ok ? 'good' : 'critical'}>{report.ok ? 'ok' : 'problems found'}</Badge>{' '}
-        <span className="text-slate-300">Only sign-in requests and read-only calls were made.</span>
+        <span className="text-secondary">Only sign-in requests and read-only calls were made.</span>
       </p>
       <section aria-label="Tokens">
-        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Tokens</h4>
+        <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Tokens</h4>
         <ul className="space-y-2">
           {Object.entries(report.tokens ?? {}).map(([api, token]) => (
-            <li key={api} className="rounded-md border border-slate-800 p-2">
+            <li key={api} className="rounded-control border border-subtle p-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-slate-100">{API_LABELS[api] ?? api}</span>
+                <span className="font-medium text-fg">{API_LABELS[api] ?? api}</span>
                 <Badge tone={TOKEN_TONE[token.status] ?? 'neutral'}>{humanize(token.status)}</Badge>
-                {token.error && <span className="text-red-200">{humanize(token.error)}</span>}
-                {token.aadsts ? <span className="text-xs text-slate-400">AADSTS{token.aadsts}</span> : null}
+                {token.error && <span className="text-danger-fg">{humanize(token.error)}</span>}
+                {token.aadsts ? <span className="text-xs text-muted">AADSTS{token.aadsts}</span> : null}
               </div>
-              {token.hint && <p className="mt-1 text-xs text-amber-200">{token.hint}</p>}
+              {token.hint && <p className="mt-1 text-xs text-warn-fg">{token.hint}</p>}
               {token.roles && (
-                <p className="mt-1 text-xs text-slate-400">
+                <p className="mt-1 text-xs text-muted">
                   Roles in the token: {token.roles.length ? token.roles.join(', ') : noRoles}
                 </p>
               )}
@@ -102,7 +102,7 @@ export function MicrosoftTestReport({ report }: { report: Report }) {
         </ul>
       </section>
       {report.certificate && (
-        <p className="text-xs text-slate-300">
+        <p className="text-xs text-secondary">
           Certificate {report.certificate.thumbprint_sha1} expires {formatDateTime(report.certificate.not_after)} (
           {report.certificate.days_left} days).
         </p>
@@ -111,7 +111,7 @@ export function MicrosoftTestReport({ report }: { report: Report }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <caption className="sr-only">Capabilities and permissions</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2">Capability</th>
                 <th scope="col" className="px-3 py-2">Status</th>
@@ -127,7 +127,7 @@ export function MicrosoftTestReport({ report }: { report: Report }) {
           </table>
         </div>
       ) : (
-        <p className="text-slate-400">No capability is installed yet.</p>
+        <p className="text-muted">No capability is installed yet.</p>
       )}
     </div>
   );

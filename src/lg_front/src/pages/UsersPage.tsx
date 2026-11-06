@@ -132,7 +132,7 @@ function KeyCreated({ created, onClose }: { created: ApiKeyCreatedOut; onClose: 
       }
     >
       <div className="space-y-3">
-        <label htmlFor="new-api-key" className="block text-xs font-medium text-slate-300">
+        <label htmlFor="new-api-key" className="block text-xs font-medium text-secondary">
           API key
         </label>
         <div className="flex gap-2">
@@ -141,13 +141,13 @@ function KeyCreated({ created, onClose }: { created: ApiKeyCreatedOut; onClose: 
             readOnly
             value={created.key}
             onFocus={(e) => e.currentTarget.select()}
-            className="min-w-0 flex-1 rounded-md border border-slate-600 bg-slate-950 px-3 py-2 font-mono text-xs text-slate-100"
+            className="min-w-0 flex-1 rounded-control border border-control bg-canvas px-3 py-2 font-mono text-xs text-fg"
           />
           <Button onClick={() => void copy()} icon={<Copy className="h-4 w-4" aria-hidden="true" />} data-autofocus>
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
-        <p className="text-sm text-slate-300">Scopes: {created.scopes.join(', ')}</p>
+        <p className="text-sm text-secondary">Scopes: {created.scopes.join(', ')}</p>
       </div>
     </Modal>
   );
@@ -193,7 +193,7 @@ function KeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (k:
         {error !== null && <ErrorMessage error={error} compact />}
         <TextField label="Name" required maxLength={200} value={name} onChange={(e) => setName(e.target.value)} hint="Where the key is used, e.g. the SIEM forwarder." />
         <fieldset>
-          <legend className="mb-2 text-sm font-medium text-slate-200">Scopes</legend>
+          <legend className="mb-2 text-sm font-medium text-body">Scopes</legend>
           <div className="space-y-2">
             {API_KEY_SCOPES.map((s) => (
               <Checkbox
@@ -287,7 +287,7 @@ export default function UsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <caption className="sr-only">Users</caption>
-                <thead className="text-xs uppercase tracking-wide text-slate-400">
+                <thead className="text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th scope="col" className="py-2 pr-3">Email</th>
                     <th scope="col" className="py-2 pr-3">Role</th>
@@ -299,10 +299,10 @@ export default function UsersPage() {
                 </thead>
                 <tbody>
                   {users.data.map((u) => (
-                    <tr key={u.id} className="border-t border-slate-800">
-                      <td className="py-2 pr-3 text-slate-100">
+                    <tr key={u.id} className="border-t border-subtle">
+                      <td className="py-2 pr-3 text-fg">
                         {u.email}
-                        {principal?.userId === u.id && <span className="ml-2 text-xs text-slate-400">(you)</span>}
+                        {principal?.userId === u.id && <span className="ml-2 text-xs text-muted">(you)</span>}
                       </td>
                       <td className="py-2 pr-3">
                         <Badge tone={u.role === 'admin' ? 'warn' : 'neutral'}>{u.role}</Badge>
@@ -329,7 +329,7 @@ export default function UsersPage() {
                           <Badge>off</Badge>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-slate-300" title={formatDateTime(u.last_login_at)}>
+                      <td className="py-2 pr-3 text-secondary" title={formatDateTime(u.last_login_at)}>
                         {u.last_login_at ? formatRelative(u.last_login_at) : 'never'}
                       </td>
                       <td className="py-2">
@@ -351,7 +351,7 @@ export default function UsersPage() {
                           )}
                           <Button
                             size="sm"
-                            variant="danger"
+                            variant="destructive"
                             disabled={principal?.userId === u.id}
                             onClick={() => setDeleting(u)}
                             aria-label={`Delete ${u.email}`}
@@ -388,7 +388,7 @@ export default function UsersPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <caption className="sr-only">API keys</caption>
-                <thead className="text-xs uppercase tracking-wide text-slate-400">
+                <thead className="text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th scope="col" className="py-2 pr-3">Name</th>
                     <th scope="col" className="py-2 pr-3">Prefix</th>
@@ -400,9 +400,9 @@ export default function UsersPage() {
                 </thead>
                 <tbody>
                   {keys.data.map((k) => (
-                    <tr key={k.id} className="border-t border-slate-800">
-                      <td className="py-2 pr-3 text-slate-100">
-                        <KeyRound className="mr-1.5 inline h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+                    <tr key={k.id} className="border-t border-subtle">
+                      <td className="py-2 pr-3 text-fg">
+                        <KeyRound className="mr-1.5 inline h-3.5 w-3.5 text-muted" aria-hidden="true" />
                         {k.name}
                         {k.revoked_at && (
                           <span className="ml-2">
@@ -410,13 +410,13 @@ export default function UsersPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-3 font-mono text-xs text-slate-300">{k.prefix}</td>
-                      <td className="py-2 pr-3 text-slate-200">{k.scopes.join(', ')}</td>
-                      <td className="py-2 pr-3 text-slate-300">{k.last_used_at ? formatRelative(k.last_used_at) : 'never'}</td>
-                      <td className="py-2 pr-3 text-slate-300">{formatDateTime(k.created_at)}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-secondary">{k.prefix}</td>
+                      <td className="py-2 pr-3 text-body">{k.scopes.join(', ')}</td>
+                      <td className="py-2 pr-3 text-secondary">{k.last_used_at ? formatRelative(k.last_used_at) : 'never'}</td>
+                      <td className="py-2 pr-3 text-secondary">{formatDateTime(k.created_at)}</td>
                       <td className="py-2 text-right">
                         {!k.revoked_at && (
-                          <Button size="sm" variant="danger" onClick={() => setRevoking(k)} aria-label={`Revoke ${k.name}`}>
+                          <Button size="sm" variant="destructive" onClick={() => setRevoking(k)} aria-label={`Revoke ${k.name}`}>
                             Revoke
                           </Button>
                         )}

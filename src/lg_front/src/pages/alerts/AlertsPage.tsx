@@ -32,16 +32,16 @@ export function filtersFromParams(params: URLSearchParams): AlertFilters {
 
 const COLUMNS: Column<AlertOut>[] = [
   { key: 'severity', header: 'Severity', width: '6.5rem', render: (a) => <SeverityBadge value={a.severity} /> },
-  { key: 'title', header: 'Title', width: 'minmax(16rem, 4fr)', render: (a) => <span title={a.title} className="text-slate-100">{a.title}</span> },
+  { key: 'title', header: 'Title', width: 'minmax(16rem, 4fr)', render: (a) => <span title={a.title} className="text-fg">{a.title}</span> },
   { key: 'status', header: 'Status', width: '9.5rem', render: (a) => <StatusBadge value={a.status} /> },
   { key: 'disposition', header: 'Disposition', width: '7.5rem', render: (a) => <DispositionBadge value={a.disposition} /> },
-  { key: 'score', header: 'Threat', width: '4.5rem', className: 'tabular-nums text-slate-200', render: (a) => a.threat_score ?? '-' },
-  { key: 'source', header: 'Source', width: 'minmax(7rem, 1fr)', className: 'text-slate-300', render: (a) => a.source_id },
+  { key: 'score', header: 'Threat', width: '4.5rem', className: 'tabular-nums text-body', render: (a) => a.threat_score ?? '-' },
+  { key: 'source', header: 'Source', width: 'minmax(7rem, 1fr)', className: 'text-secondary', render: (a) => a.source_id },
   {
     key: 'ingested',
     header: 'Ingested',
     width: '9rem',
-    className: 'text-slate-300',
+    className: 'text-secondary',
     render: (a) => (
       <time dateTime={a.ingested_at} title={formatDateTime(a.ingested_at)}>
         {formatRelative(a.ingested_at)}
@@ -141,7 +141,7 @@ export default function AlertsPage() {
           </Button>
         }
       />
-      <section aria-label="Filters" className="mb-4 space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section aria-label="Filters" className="mb-4 space-y-3 rounded-card border border-subtle bg-raised p-4">
         <form onSubmit={submitSearch} className="grid gap-3 md:grid-cols-[2fr_1fr_1fr_1fr_auto]">
           <TextField
             label="Title contains"

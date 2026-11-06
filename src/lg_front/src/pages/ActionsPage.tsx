@@ -77,22 +77,22 @@ function ApprovalDialog({ pending, onClose }: { pending: Pending; onClose: () =>
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant={verb === 'approve' ? 'primary' : 'danger'} onClick={submit} busy={busy}>
+          <Button variant={verb === 'approve' ? 'primary' : 'destructive'} onClick={submit} busy={busy}>
             {verb === 'approve' ? 'Approve action' : 'Reject action'}
           </Button>
         </>
       }
     >
-      <div className="space-y-3 text-sm text-slate-200">
+      <div className="space-y-3 text-sm text-body">
         <p>
-          <span className="text-slate-400">Target: </span>
+          <span className="text-muted">Target: </span>
           <code className="break-all">{action.target}</code>
         </p>
         <p className="flex items-center gap-2">
           <RiskBadge value={action.risk_level} /> for alert {shortId(action.alert_id)}
         </p>
         {verb === 'approve' && (
-          <p className="text-slate-300">
+          <p className="text-secondary">
             Approving this action only; the alert's other pending actions stay pending unless you reject them below.
           </p>
         )}
@@ -154,7 +154,7 @@ export default function ActionsPage() {
           </Button>
         }
       />
-      <section aria-label="Filters" className="mb-4 flex flex-wrap gap-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section aria-label="Filters" className="mb-4 flex flex-wrap gap-6 rounded-card border border-subtle bg-raised p-4">
         <ToggleGroup label="Status" options={ACTION_STATUSES} value={status} onChange={(v) => setMulti('status', v)} />
         <ToggleGroup label="Risk" options={RISK_LEVELS} value={risk} onChange={(v) => setMulti('risk_level', v)} />
         <ToggleGroup label="Verification" options={VERIFICATION_STATES} value={verification} onChange={(v) => setMulti('verification', v)} />
@@ -164,10 +164,10 @@ export default function ActionsPage() {
       {list.isError && <ErrorMessage error={list.error} onRetry={() => void list.refetch()} />}
       {list.isSuccess && list.items.length === 0 && <EmptyState title="No actions match these filters" />}
       {list.items.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900">
+        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[1100px] text-left text-sm">
             <caption className="sr-only">Response actions</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="w-8 px-2 py-2">
                   <span className="sr-only">Details</span>
@@ -194,34 +194,34 @@ export default function ActionsPage() {
                 const open = expanded === a.id;
                 return (
                   <Fragment key={a.id}>
-                  <tr className="border-b border-slate-800/70 align-top">
+                  <tr className="border-b border-subtle align-top">
                     <td className="px-2 py-2">
                       <Button
                         size="sm"
-                        variant="ghost"
+                        variant="quiet"
                         aria-expanded={open}
                         aria-label={`${open ? 'Hide' : 'Show'} details of ${humanize(a.action_type)} on ${a.target}`}
                         onClick={() => setExpanded(open ? null : a.id)}
                         icon={open ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
                       />
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-slate-300">{formatDateTime(a.created_at)}</td>
-                    <td className="px-3 py-2 text-slate-100">{humanize(a.action_type)}</td>
-                    <td className="max-w-[16rem] break-all px-3 py-2 font-mono text-xs text-slate-200">{a.target}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDateTime(a.created_at)}</td>
+                    <td className="px-3 py-2 text-fg">{humanize(a.action_type)}</td>
+                    <td className="max-w-[16rem] break-all px-3 py-2 font-mono text-xs text-body">{a.target}</td>
                     <td className="px-3 py-2">
                       <RiskBadge value={a.risk_level} />
                     </td>
                     <td className="px-3 py-2">
                       <StatusBadge value={a.status} />
-                      {a.rollback_of && <p className="mt-1 text-xs text-slate-400">rollback of {shortId(a.rollback_of)}</p>}
+                      {a.rollback_of && <p className="mt-1 text-xs text-muted">rollback of {shortId(a.rollback_of)}</p>}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-300">{a.executed_at ? formatDateTime(a.executed_at) : '-'}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-secondary">{a.executed_at ? formatDateTime(a.executed_at) : '-'}</td>
                     <td className="px-3 py-2">
                       <VerificationBadge value={a.verification} detail={a.verification_detail} />
                     </td>
-                    <td className="max-w-[18rem] px-3 py-2 text-xs text-slate-300">
+                    <td className="max-w-[18rem] px-3 py-2 text-xs text-secondary">
                       {a.blocked_reason && (
-                        <p className="text-orange-200">
+                        <p className="text-danger-fg">
                           Blocked: {describeBlockedReason(a.blocked_reason)}
                         </p>
                       )}
@@ -230,7 +230,7 @@ export default function ActionsPage() {
                       {a.status === 'dry_run' && <p>Recorded only (dry run); nothing was executed.</p>}
                     </td>
                     <td className="px-3 py-2">
-                      <Button size="sm" variant="ghost" onClick={() => setAlertId(a.alert_id)} aria-label={`Open alert ${a.alert_id}`}>
+                      <Button size="sm" variant="quiet" onClick={() => setAlertId(a.alert_id)} aria-label={`Open alert ${a.alert_id}`}>
                         {shortId(a.alert_id)}
                       </Button>
                     </td>
@@ -245,15 +245,15 @@ export default function ActionsPage() {
                                 </Button>
                               )}
                               {rejectable && (
-                                <Button size="sm" variant="danger" onClick={() => setPending({ action: a, verb: 'reject' })} icon={<X className="h-3.5 w-3.5" aria-hidden="true" />}>
+                                <Button size="sm" variant="destructive" onClick={() => setPending({ action: a, verb: 'reject' })} icon={<X className="h-3.5 w-3.5" aria-hidden="true" />}>
                                   Reject
                                 </Button>
                               )}
                             </div>
-                            {!allowed && why && <span className="text-xs text-slate-400">{why}</span>}
+                            {!allowed && why && <span className="text-xs text-muted">{why}</span>}
                           </div>
                         ) : (
-                          <span className="text-xs text-slate-400">{why ?? 'Not permitted'}</span>
+                          <span className="text-xs text-muted">{why ?? 'Not permitted'}</span>
                         )
                       ) : (
                         <ActionControls action={a} />
@@ -261,7 +261,7 @@ export default function ActionsPage() {
                     </td>
                   </tr>
                   {open && (
-                    <tr className="border-b border-slate-800/70 bg-slate-950/40">
+                    <tr className="border-b border-subtle bg-canvas/40">
                       <td colSpan={11} className="px-6 py-3">
                         <ActionDetails action={a} />
                       </td>

@@ -54,12 +54,12 @@ const CSV: CsvColumn<EscalationOut>[] = [
 ];
 
 function SlaCountdown({ e, now }: { e: EscalationOut; now: number }) {
-  if (e.status === 'decided' || e.status === 'cancelled') return <span className="text-slate-400">closed</span>;
+  if (e.status === 'decided' || e.status === 'cancelled') return <span className="text-muted">closed</span>;
   const c = formatCountdown(e.sla_deadline, now);
   const soon = c.seconds !== null && c.seconds >= 0 && c.seconds < 15 * 60;
   return (
     <span
-      className={cx('inline-flex items-center gap-1 tabular-nums', c.overdue ? 'text-red-300' : soon ? 'text-amber-300' : 'text-slate-200')}
+      className={cx('inline-flex items-center gap-1 tabular-nums', c.overdue ? 'text-danger-fg' : soon ? 'text-warn-fg' : 'text-body')}
       title={e.sla_deadline ? `SLA deadline ${formatDateTime(e.sla_deadline)}` : undefined}
     >
       <Clock className="h-3.5 w-3.5" aria-hidden="true" />
@@ -108,52 +108,52 @@ function EscalationCard({
   };
 
   return (
-    <li className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+    <li className="rounded-card border border-subtle bg-raised p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="mb-1 flex flex-wrap items-center gap-1.5">
             <Badge tone={e.level === 'L3' ? 'critical' : e.level === 'L2' ? 'bad' : 'warn'}>{e.level}</Badge>
             <StatusBadge value={e.status} />
             {typeof s.severity === 'string' && <SeverityBadge value={s.severity} />}
-            <span className="text-xs text-slate-400">priority {e.priority}</span>
+            <span className="text-xs text-muted">priority {e.priority}</span>
           </div>
-          <h2 className="break-words text-sm font-semibold text-white">{String(s.title ?? 'Untitled alert')}</h2>
-          <p className="mt-0.5 text-sm text-slate-300">{e.reason}</p>
+          <h2 className="break-words text-sm font-semibold text-fg">{String(s.title ?? 'Untitled alert')}</h2>
+          <p className="mt-0.5 text-sm text-secondary">{e.reason}</p>
         </div>
         <div className="text-right text-sm">
           <SlaCountdown e={e} now={now} />
-          <div className="mt-1 text-xs text-slate-400">
+          <div className="mt-1 text-xs text-muted">
             {e.assigned_to ? (mine ? 'Assigned to you' : `Assigned to ${shortId(e.assigned_to)}`) : 'Unassigned'}
           </div>
         </div>
       </div>
       {(typeof s.conclusion === 'string' && s.conclusion) || s.verdict ? (
-        <div className="mt-3 rounded-md bg-slate-950 p-3 text-sm text-slate-200">
-          {s.verdict ? <span className="mr-2 text-slate-400">Automated verdict: {String(s.verdict)}.</span> : null}
+        <div className="mt-3 rounded-control bg-canvas p-3 text-sm text-body">
+          {s.verdict ? <span className="mr-2 text-muted">Automated verdict: {String(s.verdict)}.</span> : null}
           {typeof s.conclusion === 'string' ? s.conclusion : null}
-          {s.simulated_evidence ? <p className="mt-1 text-amber-200">Some evidence was simulated; verify before acting.</p> : null}
+          {s.simulated_evidence ? <p className="mt-1 text-warn-fg">Some evidence was simulated; verify before acting.</p> : null}
         </div>
       ) : null}
-      {recommended.length > 0 && <p className="mt-2 text-xs text-slate-300">Recommended: {recommended.join(', ')}</p>}
+      {recommended.length > 0 && <p className="mt-2 text-xs text-secondary">Recommended: {recommended.join(', ')}</p>}
       {e.decision && (
-        <p className="mt-2 text-sm text-slate-200">
+        <p className="mt-2 text-sm text-body">
           Decision: <strong>{e.decision.replace(/_/g, ' ')}</strong>
           {e.decided_at ? ` on ${formatDateTime(e.decided_at)}` : ''}
           {e.decision_notes ? `: ${e.decision_notes}` : ''}
         </p>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={() => onOpenAlert(e.alert_id)}>
+        <Button size="sm" variant="quiet" onClick={() => onOpenAlert(e.alert_id)}>
           View alert {shortId(e.alert_id)}
         </Button>
         <TicketLinks tickets={tickets} />
         {related.length > 0 && (
-          <details className="text-xs text-slate-300">
-            <summary className="cursor-pointer rounded px-2 py-1 hover:bg-slate-800">{related.length} related alert(s)</summary>
+          <details className="text-xs text-secondary">
+            <summary className="cursor-pointer rounded px-2 py-1 hover:bg-raised-2">{related.length} related alert(s)</summary>
             <ul className="mt-1 flex flex-wrap gap-1">
               {related.map((id) => (
                 <li key={id}>
-                  <Button size="sm" variant="ghost" onClick={() => onOpenAlert(id)}>
+                  <Button size="sm" variant="quiet" onClick={() => onOpenAlert(id)}>
                     {shortId(id)}
                   </Button>
                 </li>
@@ -181,7 +181,7 @@ function EscalationCard({
           )}
         </div>
       </div>
-      {active && blocked && <p className="mt-2 text-xs text-slate-400">{blocked}</p>}
+      {active && blocked && <p className="mt-2 text-xs text-muted">{blocked}</p>}
     </li>
   );
 }
@@ -246,7 +246,7 @@ export default function EscalationsPage() {
           </Button>
         }
       />
-      <section aria-label="Filters" className="mb-4 flex flex-wrap gap-6 rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <section aria-label="Filters" className="mb-4 flex flex-wrap gap-6 rounded-card border border-subtle bg-raised p-4">
         <ToggleGroup label="Status" options={ESCALATION_STATUSES} value={status} onChange={(v) => setMulti('status', v)} />
         <ToggleGroup label="Level" options={ESCALATION_LEVELS} value={level} onChange={(v) => setMulti('level', v)} format={(v) => v} />
       </section>

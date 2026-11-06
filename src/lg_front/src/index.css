@@ -4,14 +4,38 @@
 
 @layer base {
   html {
-    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
   }
   body {
-    @apply bg-slate-950 text-slate-100;
+    @apply bg-canvas font-sans text-sm text-fg antialiased;
+    line-height: 1.45;
   }
+  /* Focus: a 2 px ring in the focus colour with a 2 px offset, everywhere. */
   :focus-visible {
-    outline-color: theme('colors.sky.400');
+    outline: 2px solid rgb(var(--c-focus));
+    outline-offset: 2px;
   }
+  ::placeholder {
+    color: rgb(var(--c-muted));
+    opacity: 1;
+  }
+  kbd {
+    @apply rounded border border-strong px-1 font-mono text-2xs text-body;
+  }
+}
+
+@layer components {
+  /* Eyebrow: 11 / 600 caps section label. */
+  .eyebrow {
+    @apply text-2xs font-semibold uppercase tracking-[0.06em] text-eyebrow;
+  }
+}
+
+/* Table row density: compact by default; "Comfortable" adds room (src/theme/density.tsx). */
+:root[data-density='comfortable'] tbody td,
+:root[data-density='comfortable'] tbody th {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
