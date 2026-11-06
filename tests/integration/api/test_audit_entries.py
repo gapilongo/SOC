@@ -91,3 +91,24 @@ async def test_alert_reprocess_of_an_active_run_is_refused_and_changes_nothing(a
     assert (await api.repos.alerts.get(TENANT_A, alert_id)).status == "processing"
     assert (await api.repos.runs.get(TENANT_A, alert_id)).status == "running"
     assert "alert.reprocess_requested" not in await _actions(api)
+
+
+# -------------------------------------------------------------------------- compliance
+
+
+async def test_incident_report_draft_entry(api: ApiHarness) -> None:
+    analyst = await api.user(TENANT_A, "analyst")
+    alert_id = await make_alert(api.repos, TENANT_A)
+    response = await api.client.post(
+        f"{API}/alerts/{alert_id}/incident-report",
+        json={"stage": "early_warning", "include_ai_narrative": False},
+        headers=api.auth(analyst),
+    )
+    assert response.status_code == 201, response.text
+    event_id = response.json()["event_id"]
+    [draft] = [e for e in (await api.repos.alert_events.list_for_alert(TENANT_A, alert_id)).items if e.id == event_id]
+    assert (draft.event_type, draft.actor_type, draft.actor_id) == ("incident_report_draft", "user", str(analyst.id))
+    assert draft.data["author"] == analyst.email and draft.data["ai_narrative"] is None
+    sha = draft.data["draft_sha256"]
+    details = {"stage": "early_warning", "event_id": event_id, "draft_sha256": sha, "ai_narrative": False}
+    assert await _only(api, "alert.incident_report_drafted") == ("alert", alert_id, "user", str(analyst.id), details)

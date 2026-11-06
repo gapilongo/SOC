@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import re
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Literal, Optional
@@ -31,7 +29,7 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import In
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.compliance import nis2
 from lg_sotf.compliance.evidence import build_evidence_pack, render_evidence_html
 from lg_sotf.compliance.tenant_data import (
@@ -54,7 +52,6 @@ log = get_logger(__name__)
 alerts = APIRouter(prefix="/alerts", tags=["compliance"])
 platform = APIRouter(prefix="/platform", tags=["platform"])
 
-MAX_EVENT_VALUE_CHARS = 4_000
 _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -174,12 +171,6 @@ async def _flush_llm_usage(ctx: Any) -> None:
         log.warning("api.llm_usage_flush_failed", error_type=type(exc).__name__)
 
 
-def _clip(value: Optional[str]) -> Optional[str]:
-    if value is None or len(value) <= MAX_EVENT_VALUE_CHARS:
-        return value
-    return value[:MAX_EVENT_VALUE_CHARS]
-
-
 @alerts.post(
     "/{alert_id}/incident-report",
     status_code=201,
@@ -208,45 +199,18 @@ async def incident_report(
         narrative, narrative_error = result.narrative, result.error
         await _flush_llm_usage(ctx)
     generated_at = datetime.now(UTC)
-    draft = {"stage": body.stage, "fields": fields, "ai_narrative": narrative}
-    draft_sha256 = hashlib.sha256(
-        json.dumps(draft, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        event = await ctx.repos.alert_events.append(
-            tenant_id,
-            alert_id,
-            "incident_report_draft",
-            actor_type="user" if principal.is_user else "system",
-            actor_id=principal.actor_id,
-            data={
-                "stage": body.stage,
-                "framework": "NIS2 Art. 23",
-                "status": "draft_not_submitted",
-                "author": principal.email or principal.actor_id,
-                "draft_sha256": draft_sha256,
-                "fields": [
-                    {"key": f["key"], "source": f["source"], "value": _clip(f["value"])} for f in fields
-                ],
-                "ai_narrative": {**narrative, "text": _clip(narrative["text"])} if narrative else None,
-            },
-            conn=conn,
-        )
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "alert.incident_report_drafted",
-            "alert",
-            alert_id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={
-                "stage": body.stage,
-                "event_id": event.id,
-                "draft_sha256": draft_sha256,
-                "ai_narrative": narrative is not None,
-            },
-            conn=conn,
-        )
+    event = await nis2.record_draft(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        tenant_id,
+        principal.actor,
+        alert_id,
+        stage=body.stage,
+        fields=fields,
+        narrative=narrative,
+        author=principal.email or principal.actor_id,
+        timeline_actor=Actor("user" if principal.is_user else "system", principal.actor_id),
+    )
     await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"incident_report_draft": body.stage})
     html = nis2.render_draft_html(
         alert_id=alert_id,
