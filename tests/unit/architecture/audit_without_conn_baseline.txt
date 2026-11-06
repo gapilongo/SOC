@@ -2,7 +2,4 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-api/routers/platform.py::create_tenant
-api/routers/platform.py::create_tenant
-api/routers/platform.py::create_tenant
 runtime/ops.py::create_tenant

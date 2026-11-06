@@ -37,6 +37,13 @@ All notable changes to this project are documented here. The format follows
   and `dlq requeue`.
 - The scheduler's SLA escalation and expiry entries are now redacted and
   logged like every other audit entry.
+- Provisioning a tenant (`POST /platform/tenants`) no longer leaves a
+  half-created tenant behind. Before, if creating the first admin or an
+  audit entry failed, the tenant already existed without its admin, and
+  retrying answered 409 "already exists". Now the tenant, its settings, its
+  first admin and its audit entries are saved together, so a failure leaves
+  nothing behind and a retry succeeds. Changing a tenant's name, status or
+  quotas is also saved together with the platform admin's audit entry.
 
 ## [1.2.3] - 2026-11-05
 

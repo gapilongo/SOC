@@ -8,7 +8,10 @@
   :mod:`lg_sotf.services.tenancy`). The runtime database role cannot insert
   tenants itself; the row is created through the ``lgsotf_create_tenant``
   SECURITY DEFINER function (migration 0002). The creation is audited in the
-  new tenant and in the platform admin's home tenant.
+  new tenant and in the platform admin's home tenant; the tenant, its
+  settings, its admin and those entries commit in one transaction
+  (:func:`lg_sotf.services.tenancy.provision_tenant`), so a failure leaves
+  nothing behind and the request can be retried.
 * ``GET /platform/tenants``: every tenant with its status, quotas and
   activity figures (``lgsotf_platform_tenant_stats``, migration 0004).
 * ``PATCH /platform/tenants/{id}``: name, status (``active``/``suspended``)
@@ -53,11 +56,18 @@ from lg_sotf.db.repos import Tenant, TenantStats
 from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.repos.users import normalize_email
-from lg_sotf.db.tenancy import TENANT_ID_PATTERN
+from lg_sotf.db.tenancy import TENANT_ID_PATTERN, switch_tenant
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.hashing import ahash_password
 from lg_sotf.services.escalation import resolve_review_policy
-from lg_sotf.services.tenancy import Profile, copyable_settings, profile_settings, quotas_of
+from lg_sotf.services.tenancy import (
+    Profile,
+    TenantRequest,
+    copyable_settings,
+    profile_settings,
+    provision_tenant,
+    quotas_of,
+)
 
 log = get_logger(__name__)
 
@@ -249,62 +259,31 @@ async def create_tenant(
             raise ApiError(422, "validation_error", "copy_settings_from names no existing tenant") from exc
         seed = copyable_settings(source.settings)
         template = {"copied_from": source.id}
+    provisioning = TenantRequest(
+        tenant_id=body.id,
+        name=name,
+        actor=principal.actor,
+        settings=seed,
+        template=template,
+        copied_from=body.copy_settings_from,
+        home_tenant_id=principal.home_tenant_id,
+        admin_email=email,
+        admin_password_hash=password_hash,
+        audit_details={"home_tenant_id": principal.home_tenant_id},
+    )
     try:
-        tenant = await ctx.repos.tenants.provision(body.id, name)
+        created = await provision_tenant(ctx.repos, AuditLogger(ctx.repos), provisioning)
     except Conflict as exc:
         raise ApiError(409, "conflict", f"tenant {body.id!r} already exists") from exc
-    if seed:
-        tenant = await ctx.repos.tenants.update_settings(tenant.id, seed)
+    tenant = created.tenant
     ctx.tenants.invalidate(tenant.id)
-    audit = AuditLogger(ctx.repos)
-    details = {
-        "name": tenant.name,
-        "home_tenant_id": principal.home_tenant_id,
-        "with_admin": email is not None,
-        **template,
-        "settings_keys": sorted(seed),
-    }
-    for tenant_id, action in ((tenant.id, "tenant.created"), (principal.home_tenant_id, "platform.tenant_created")):
-        await audit.record(
-            tenant_id,
-            action,
-            "tenant",
-            tenant.id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details=details,
-        )
-    if body.copy_settings_from is not None:
-        # Reading another tenant's configuration is cross-tenant access: that tenant's log shows it.
-        await audit.record(
-            body.copy_settings_from,
-            "platform.settings_copied",
-            "tenant",
-            tenant.id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"home_tenant_id": principal.home_tenant_id, "to_tenant": tenant.id, "keys": sorted(seed)},
-        )
-    admin: Optional[UserOut] = None
-    if email is not None:
-        user = await ctx.repos.users.create(tenant.id, email, "admin", password_hash=password_hash)
-        await audit.record(
-            tenant.id,
-            "user.created",
-            "user",
-            str(user.id),
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"role": user.role, "sso_only": password_hash is None, "home_tenant_id": principal.home_tenant_id},
-        )
-        admin = UserOut.model_validate(user)
     return TenantCreatedOut(
         id=tenant.id,
         name=tenant.name,
         status=tenant.status,
         created_at=tenant.created_at,
-        admin=admin,
-        settings_keys=sorted(seed),
+        admin=UserOut.model_validate(created.admin) if created.admin is not None else None,
+        settings_keys=created.settings_keys,
     )
 
 
@@ -413,18 +392,21 @@ async def update_tenant(
         extra: Dict[str, Any] = {}
         if status_changed and updated.is_active:
             extra["sla_deadlines_reset"] = await _reset_sla_deadlines(ctx, updated, conn)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            action,
+        audit = AuditLogger(ctx.repos)
+        actor = {"actor_type": principal.actor_type, "actor_id": principal.actor_id}
+        details = {"home_tenant_id": principal.home_tenant_id, "changes": diff}
+        await audit.record(tenant_id, action, "tenant", tenant_id, **actor, details={**details, **extra}, conn=conn)
+        await switch_tenant(conn, principal.home_tenant_id)
+        await audit.record(
+            principal.home_tenant_id,
+            "platform.tenant_updated",
             "tenant",
             tenant_id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"home_tenant_id": principal.home_tenant_id, "changes": diff, **extra},
+            **actor,
+            details={**details, "tenant_action": action},
             conn=conn,
         )
     ctx.tenants.invalidate(tenant_id)
-    await _audit_home(ctx, principal, "platform.tenant_updated", tenant_id, tenant_action=action, changes=diff)
     if status_changed and updated.is_active:
         requeued = await _requeue_queued_runs(ctx, tenant_id)
         log.info("platform.tenant_reactivated", tenant_id=tenant_id, requeued=requeued)
