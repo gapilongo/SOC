@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import List
@@ -253,3 +253,51 @@ def test_merge_usage_summary_records_provider_and_model_per_agent() -> None:
     stored = {"by_agent": {"triage": {"calls": 1, "model": 7, "provider": "x" * 100}}}
     again = merge_usage_summary(stored, UsageTally())["by_agent"]["triage"]
     assert "model" not in again and len(again["provider"]) == 32
+
+
+# --- DeepSeek: official prices (api-docs.deepseek.com/quick_start/pricing, 2026-11-06) ---------
+# Off-peak USD per 1M tokens: flash 0.003 cache hit / 0.15 miss / 0.60 output;
+# v4-pro 0.022 / 0.66 / 1.98. Peak (01-04 and 06-10 UTC, Monday to Friday) is twice that.
+OFF_PEAK = datetime(2026, 11, 4, 12, 0, tzinfo=UTC)  # Wednesday 12:00 UTC
+PEAK = datetime(2026, 11, 4, 2, 30, tzinfo=UTC)  # Wednesday 02:30 UTC
+WEEKEND_PEAK_HOUR = datetime(2026, 11, 7, 2, 30, tzinfo=UTC)  # Saturday 02:30 UTC
+
+
+@pytest.mark.parametrize(
+    ("model", "hit", "miss", "out"),
+    [
+        ("deepseek-flash", "0.003", "0.15", "0.60"),
+        ("deepseek-v4-flash", "0.003", "0.15", "0.60"),
+        ("deepseek-v4-pro", "0.022", "0.66", "1.98"),
+    ],
+)
+def test_deepseek_off_peak_prices_match_the_published_table(model: str, hit: str, miss: str, out: str) -> None:
+    price = DEFAULT_PRICES[model]
+    m = 1_000_000
+    assert compute_cost(price, input_tokens=m, output_tokens=0, at=OFF_PEAK) == Decimal(miss)
+    assert compute_cost(price, input_tokens=0, output_tokens=0, cache_read_tokens=m, at=OFF_PEAK) == Decimal(hit)
+    assert compute_cost(price, input_tokens=0, output_tokens=m, at=OFF_PEAK) == Decimal(out)
+
+
+def test_deepseek_peak_hours_double_every_rate_on_weekdays_only() -> None:
+    pro = DEFAULT_PRICES["deepseek-v4-pro"]
+    calls = {"input_tokens": 1_000_000, "output_tokens": 1_000_000, "cache_read_tokens": 1_000_000}
+    off = compute_cost(pro, **calls, at=OFF_PEAK)
+    assert off == Decimal("0.66") + Decimal("1.98") + Decimal("0.022")
+    assert compute_cost(pro, **calls, at=PEAK) == off * 2
+    assert compute_cost(pro, **calls, at=WEEKEND_PEAK_HOUR) == off
+    # Window edges: 01:00 and 06:00 are peak, 04:00 and 10:00 are not.
+    for hour, mult in ((0, 1), (1, 2), (3, 2), (4, 1), (5, 1), (6, 2), (9, 2), (10, 1)):
+        at = datetime(2026, 11, 4, hour, 0, tzinfo=UTC)
+        assert pro.multiplier_at(at) == mult, hour
+    # Without a time the base (off-peak) rate applies; prices with no windows never change.
+    assert compute_cost(pro, **calls) == off
+    assert DEFAULT_PRICES["claude-haiku-4-5"].multiplier_at(PEAK) == 1
+
+
+def test_recorder_prices_deepseek_at_the_time_of_the_call() -> None:
+    recorder = UsageRecorder()
+    sample = UsageSample(model="deepseek-flash", input_tokens=1_000_000, cache_read_tokens=1_000_000)
+    assert recorder.cost_of(sample, at=OFF_PEAK) == Decimal("0.153")
+    assert recorder.cost_of(sample, at=PEAK) == Decimal("0.306")
+    assert recorder.cost_of(sample) in (Decimal("0.153"), Decimal("0.306"))

@@ -166,7 +166,8 @@ class UsageRecorder:
             self._prices = price_table(settings)
             self._unpriced.clear()
 
-    def cost_of(self, sample: UsageSample) -> Decimal:
+    def cost_of(self, sample: UsageSample, *, at: Optional[datetime] = None) -> Decimal:
+        """Cost of one attempt; ``at`` (default: now, UTC) picks a provider's peak-hour rate."""
         price = lookup_price(sample.model, self._prices)
         if price is None:
             if sample.model not in self._unpriced:
@@ -180,6 +181,7 @@ class UsageRecorder:
             cache_read_tokens=sample.cache_read_tokens,
             cache_write_tokens=sample.cache_write_tokens,
             cache_write_1h_tokens=sample.cache_write_1h_tokens,
+            at=at or datetime.now(UTC),
         )
 
     def record(
