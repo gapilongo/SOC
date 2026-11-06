@@ -21,6 +21,8 @@ export function createAuthTransport(api: ApiClient): AuthTransport {
       await api.post<void>('/auth/logout', undefined, {
         anonymous: true,
         credentials: 'include',
+        // A navigation right after sign-out must not abort the revocation.
+        keepalive: true,
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     },

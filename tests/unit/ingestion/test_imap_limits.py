@@ -41,13 +41,14 @@ class _Server:
 
     def _run(self) -> None:
         conn = self._server
-        reader = conn.makefile("rb")
         try:
-            conn.sendall(b"* OK IMAP4rev1 ready\r\n")
-            tag = reader.readline().split(b" ", 1)[0]
-            conn.sendall(b"* CAPABILITY IMAP4rev1\r\n" + tag + b" OK done\r\n")
-            tag = reader.readline().split(b" ", 1)[0]
-            self._script(conn, tag, lambda: self._done.wait(10))
+            # A socket's descriptor stays open while a makefile() reader of it does, even after close().
+            with conn.makefile("rb") as reader:
+                conn.sendall(b"* OK IMAP4rev1 ready\r\n")
+                tag = reader.readline().split(b" ", 1)[0]
+                conn.sendall(b"* CAPABILITY IMAP4rev1\r\n" + tag + b" OK done\r\n")
+                tag = reader.readline().split(b" ", 1)[0]
+                self._script(conn, tag, lambda: self._done.wait(10))
         except OSError:
             pass  # the client gave up and closed its end
         except BaseException as exc:  # noqa: BLE001 - surfaced by the test
@@ -73,6 +74,7 @@ def _run(
     """Connect and send NOOP; asserts it failed with ImapLimitExceeded and returns (seconds taken, message)."""
     server = _Server(script)
     start = time.monotonic()
+    client: Optional[_Client] = None
     try:
         with pytest.raises(ImapLimitExceeded) as caught:
             client = _Client(server.client, max_literal=max_literal, lifetime_s=lifetime_s, timeout=timeout)
@@ -80,7 +82,18 @@ def _run(
         assert not server.errors
         return time.monotonic() - start, str(caught.value)
     finally:
+        _shutdown(client)
         server.close()
+
+
+def _shutdown(client: Optional[_Client]) -> None:
+    """Close the client's reader and socket, as the connector's logout fallback does."""
+    if client is None:
+        return
+    try:
+        client.shutdown()
+    except OSError:
+        pass  # the scripted server already closed its end
 
 
 def test_a_literal_within_the_limit_is_read() -> None:
@@ -88,12 +101,14 @@ def test_a_literal_within_the_limit_is_read() -> None:
         conn.sendall(b"* 1 FETCH (BODY[] {5}\r\nhello)\r\n" + tag + b" OK done\r\n")
 
     server = _Server(script)
+    client: Optional[_Client] = None
     try:
         client = _Client(server.client, max_literal=1_000, lifetime_s=30.0)
         typ, _ = client.noop()
         assert typ == "OK"
         assert client.untagged_responses["FETCH"][0] == (b"1 (BODY[] {5}", b"hello")
     finally:
+        _shutdown(client)
         server.close()
 
 

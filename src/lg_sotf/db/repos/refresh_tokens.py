@@ -165,6 +165,53 @@ class RefreshTokensRepo(Repository):
             )
         return status.endswith(" 1")
 
+    async def revoke_lineage(
+        self,
+        tenant_id: str,
+        token_hash: str,
+        *,
+        now: Optional[datetime] = None,
+    ) -> int:
+        """Revoke a token and every token it was rotated into (logout).
+
+        A refresh that rotates the presented token while the logout runs
+        would otherwise leave its replacement valid: ``revoke`` skips a token
+        that is already revoked, and the browser now holds the replacement.
+        Each link is locked before it is read, so a rotation in progress
+        commits first and its replacement is seen and revoked; a rotation
+        that starts later finds its token revoked. Returns the number of
+        tokens revoked here.
+        """
+        require_aware(now, "now")
+        check_sha256_hex(token_hash, "token_hash")
+        at = now or utcnow()
+        revoked = 0
+        seen: set[UUID] = set()
+        async with self._tenant(tenant_id) as c:
+            row = await c.fetchrow(
+                "SELECT id, revoked_at, replaced_by FROM refresh_tokens WHERE tenant_id = $1 AND token_hash = $2 FOR UPDATE",
+                tenant_id,
+                token_hash,
+            )
+            while row is not None and row["id"] not in seen:
+                seen.add(row["id"])
+                if row["revoked_at"] is None:
+                    await c.execute(
+                        "UPDATE refresh_tokens SET revoked_at = $3 WHERE tenant_id = $1 AND id = $2",
+                        tenant_id,
+                        row["id"],
+                        at,
+                    )
+                    revoked += 1
+                if row["replaced_by"] is None:
+                    break
+                row = await c.fetchrow(
+                    "SELECT id, revoked_at, replaced_by FROM refresh_tokens WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+                    tenant_id,
+                    row["replaced_by"],
+                )
+        return revoked
+
     async def revoke_all_for_user(
         self,
         tenant_id: str,

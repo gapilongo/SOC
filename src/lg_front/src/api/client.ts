@@ -37,6 +37,8 @@ export interface RequestOptions {
   homeTenant?: boolean;
   /** How to read a successful body: parsed JSON (default), text, or a Blob (downloads). */
   responseType?: 'json' | 'text' | 'blob';
+  /** Let the request outlive the page (sign-out followed at once by a navigation). */
+  keepalive?: boolean;
 }
 
 export class ApiError extends Error {
@@ -194,6 +196,7 @@ export function createApiClient(opts: {
         credentials: options.credentials ?? 'same-origin',
         cache: 'no-store',
         redirect: 'error',
+        ...(options.keepalive ? { keepalive: true } : {}),
       });
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') throw err;

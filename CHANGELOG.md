@@ -29,6 +29,15 @@ All notable changes to this project are documented here. The format follows
   API and the workers while it did. One context per process is now reused for
   default verification, and one per distinct `ca_cert_pem` (up to 256), so an
   integration with its own CA still trusts only that CA.
+- Sign-out could leave the session alive. The web app showed the sign-in
+  page before `POST /auth/logout` had finished; reloading at that moment
+  aborted the logout request, and the reload's `POST /auth/refresh` rotated
+  the refresh cookie before the logout revoked it. The API revoked only the
+  token presented at logout, so the rotated cookie stayed valid and the
+  reload signed the user back in. Now the web app reports signed out only
+  after the API answers (at most 5 seconds), starts no refresh meanwhile, and
+  sends the logout with `keepalive` so a navigation cannot abort it. Logout
+  also revokes every token the presented one was rotated into.
 
 ## [1.2.3] - 2026-11-05
 

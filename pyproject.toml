@@ -113,8 +113,14 @@ addopts = ["-ra", "--strict-markers", "--strict-config"]
 # eval suites mark themselves timeout(300)).
 timeout = 120
 timeout_method = "signal"
-# A coroutine that was never awaited is a bug, not noise. ResourceWarning is next (roadmap G9).
-filterwarnings = ["error::RuntimeWarning"]
+# A coroutine that was never awaited, an unclosed socket, file or event loop, and an exception
+# swallowed by a finalizer are bugs, not noise. The unit tier turns every warning into an error
+# (tests/unit/conftest.py).
+filterwarnings = [
+    "error::RuntimeWarning",
+    "error::ResourceWarning",
+    "error::pytest.PytestUnraisableExceptionWarning",
+]
 markers = [
     "integration: needs real PostgreSQL/Redis (LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL); skipped when unset",
     "slow: long-running tests (deselect with -m 'not slow')",
