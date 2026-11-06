@@ -25,14 +25,14 @@ const WINDOWS = [
 function Stat({ label, value, hint, to }: { label: string; value: string; hint?: string; to?: string }) {
   const body = (
     <>
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-slate-400">{hint}</div>}
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-fg">{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
     </>
   );
-  const cls = 'block rounded-lg border border-slate-800 bg-slate-900 p-4';
+  const cls = 'block rounded-card border border-subtle bg-raised p-4';
   return to ? (
-    <Link to={to} className={`${cls} hover:border-slate-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400`}>
+    <Link to={to} className={`${cls} hover:border-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus`}>
       {body}
     </Link>
   ) : (
@@ -60,9 +60,9 @@ function Breakdown({ title, counts, order, linkFor }: { title: string; counts: R
             const label = k.replace(/_/g, ' ');
             return (
               <tr key={k}>
-                <th scope="row" className="w-40 py-1 pr-3 text-left font-normal capitalize text-slate-300">
+                <th scope="row" className="w-40 py-1 pr-3 text-left font-normal capitalize text-secondary">
                   {linkFor ? (
-                    <Link to={linkFor(k)} className="hover:text-white hover:underline">
+                    <Link to={linkFor(k)} className="hover:text-fg hover:underline">
                       {label}
                     </Link>
                   ) : (
@@ -71,10 +71,10 @@ function Breakdown({ title, counts, order, linkFor }: { title: string; counts: R
                 </th>
                 <td className="py-1">
                   <div className="flex items-center gap-2">
-                    <div className="h-2.5 flex-1 rounded-sm bg-slate-800" aria-hidden="true">
-                      <div className="bar-fill h-2.5 rounded-sm bg-sky-500" style={{ width: `${(n / max) * 100}%` }} />
+                    <div className="h-2.5 flex-1 rounded-sm bg-raised-2" aria-hidden="true">
+                      <div className="bar-fill h-2.5 rounded-sm bg-accent-hover" style={{ width: `${(n / max) * 100}%` }} />
                     </div>
-                    <span className="w-14 text-right tabular-nums text-slate-100">{formatInt(n)}</span>
+                    <span className="w-14 text-right tabular-nums text-fg">{formatInt(n)}</span>
                   </div>
                 </td>
               </tr>
@@ -152,7 +152,7 @@ export default function DashboardPage() {
             <Stat label="LLM cost" value={formatUsd(d.llm_cost_usd)} hint={`${formatInt(d.llm_tokens)} tokens`} />
           </div>
           {d.alerts_total === 0 && (
-            <p className="rounded-md border border-slate-800 bg-slate-900 px-4 py-3 text-sm text-slate-300">
+            <p className="rounded-control border border-subtle bg-raised px-4 py-3 text-sm text-secondary">
               No alerts were ingested in this window. Connect a source under Sources or send alerts to the ingest API.
             </p>
           )}

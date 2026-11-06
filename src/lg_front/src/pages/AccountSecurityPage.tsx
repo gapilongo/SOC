@@ -167,7 +167,7 @@ function DisableDialog({ status, onClose }: { status: MfaStatusOut; onClose: () 
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" form="disable-form" variant="danger" busy={m.isPending}>
+          <Button type="submit" form="disable-form" variant="destructive" busy={m.isPending}>
             Turn off
           </Button>
         </>
@@ -206,7 +206,7 @@ export default function AccountSecurityPage() {
       <div className="max-w-3xl space-y-6">
         {sso && (
           <Card title="Two-step verification">
-            <p className="text-sm text-slate-300">
+            <p className="text-sm text-secondary">
               You signed in through single sign-on. Two-step verification for this sign-in is managed by your identity provider.
             </p>
           </Card>
@@ -215,7 +215,7 @@ export default function AccountSecurityPage() {
         {!sso && status.isError && <ErrorMessage error={status.error} onRetry={() => void status.refetch()} />}
         {s && !s.available && (
           <Card title="Two-step verification">
-            <p className="text-sm text-slate-300">This account has no local password; it signs in through single sign-on.</p>
+            <p className="text-sm text-secondary">This account has no local password; it signs in through single sign-on.</p>
           </Card>
         )}
         {s && s.available && (
@@ -225,7 +225,7 @@ export default function AccountSecurityPage() {
           >
             <div className="space-y-4">
               {s.required && !s.enabled && (
-                <p className="rounded-md border border-amber-700 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+                <p className="rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
                   Your organisation requires two-step verification. Set it up now; otherwise you will be asked to at your next sign-in.
                 </p>
               )}
@@ -239,23 +239,23 @@ export default function AccountSecurityPage() {
                     ]}
                   />
                   {(s.recovery_codes_remaining ?? 0) <= 2 && (
-                    <p className="text-sm text-amber-200">You are running out of recovery codes. Generate new ones.</p>
+                    <p className="text-sm text-warn-fg">You are running out of recovery codes. Generate new ones.</p>
                   )}
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={() => setRegenerating(true)} icon={<KeyRound className="h-4 w-4" aria-hidden="true" />}>
                       New recovery codes
                     </Button>
-                    <Button variant="danger" onClick={() => setDisabling(true)} icon={<ShieldOff className="h-4 w-4" aria-hidden="true" />}>
+                    <Button variant="destructive" onClick={() => setDisabling(true)} icon={<ShieldOff className="h-4 w-4" aria-hidden="true" />}>
                       Turn off
                     </Button>
                   </div>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-muted">
                     New phone? Turn two-step verification off with a current or recovery code, then set it up again. Lost every factor? Ask an administrator to reset it.
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-slate-300">
+                  <p className="text-sm text-secondary">
                     Protect your account with a 6-digit code from an authenticator app in addition to your password.
                   </p>
                   <EnrollCard onEnrolled={setCodes} />

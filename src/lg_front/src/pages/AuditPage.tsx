@@ -79,12 +79,12 @@ export default function AuditPage() {
       <div aria-live="polite">
         {verify.result &&
           (verify.result.ok ? (
-            <p className="mb-4 flex items-center gap-2 rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">
+            <p className="mb-4 flex items-center gap-2 rounded-control border border-state-ok/60 bg-tint-ok px-3 py-2 text-sm text-ok-fg">
               <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
               The audit chain is intact{verify.result.since ? ` since ${formatDateTime(verify.result.since)}` : ''}.
             </p>
           ) : (
-            <p className="mb-4 flex items-center gap-2 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">
+            <p className="mb-4 flex items-center gap-2 rounded-control border border-danger bg-tint-danger px-3 py-2 text-sm text-danger-fg">
               <XCircle className="h-4 w-4" aria-hidden="true" />
               Verification failed: entry {verify.result.first_bad_id ?? 'unknown'} does not match the chain. Treat the log after it as untrusted and investigate.
             </p>
@@ -95,7 +95,7 @@ export default function AuditPage() {
           </div>
         )}
       </div>
-      <form onSubmit={apply} aria-label="Filters" className="mb-4 grid gap-3 rounded-lg border border-slate-800 bg-slate-900 p-4 sm:grid-cols-3 xl:grid-cols-7">
+      <form onSubmit={apply} aria-label="Filters" className="mb-4 grid gap-3 rounded-card border border-subtle bg-raised p-4 sm:grid-cols-3 xl:grid-cols-7">
         {field('action', 'Action')}
         {field('resource_type', 'Resource type')}
         {field('resource_id', 'Resource id')}
@@ -112,10 +112,10 @@ export default function AuditPage() {
       {list.isError && <ErrorMessage error={list.error} onRetry={() => void list.refetch()} />}
       {list.isSuccess && list.items.length === 0 && <EmptyState title="No audit entries match" />}
       {list.items.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900">
+        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Audit entries</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2">Time</th>
                 <th scope="col" className="px-3 py-2">Actor</th>
@@ -141,7 +141,7 @@ export default function AuditPage() {
         </div>
       )}
       {list.capped && (
-        <p role="status" className="mt-4 text-center text-sm text-slate-300">
+        <p role="status" className="mt-4 text-center text-sm text-secondary">
           Showing the newest {list.items.length} entries. Narrow the time range or filters to read older ones.
         </p>
       )}
@@ -152,28 +152,28 @@ export default function AuditPage() {
 function FragmentRow({ e, open, onToggle }: { e: AuditEntryOut; open: boolean; onToggle: () => void }) {
   return (
     <>
-      <tr className="border-b border-slate-800/70 align-top">
-        <td className="whitespace-nowrap px-3 py-2 text-slate-300">{formatDateTime(e.ts)}</td>
-        <td className="px-3 py-2 text-slate-200">
+      <tr className="border-b border-subtle align-top">
+        <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDateTime(e.ts)}</td>
+        <td className="px-3 py-2 text-body">
           {e.actor_type}
-          {e.actor_id && <div className="font-mono text-xs text-slate-400">{e.actor_id}</div>}
+          {e.actor_id && <div className="font-mono text-xs text-muted">{e.actor_id}</div>}
         </td>
-        <td className="px-3 py-2 font-mono text-xs text-slate-100">{e.action}</td>
-        <td className="px-3 py-2 text-slate-200">
+        <td className="px-3 py-2 font-mono text-xs text-fg">{e.action}</td>
+        <td className="px-3 py-2 text-body">
           {e.resource_type}
-          {e.resource_id && <div className="break-all font-mono text-xs text-slate-400">{e.resource_id}</div>}
+          {e.resource_id && <div className="break-all font-mono text-xs text-muted">{e.resource_id}</div>}
         </td>
-        <td className="px-3 py-2 font-mono text-xs text-slate-400" title={e.hash}>
+        <td className="px-3 py-2 font-mono text-xs text-muted" title={e.hash}>
           {e.hash.slice(0, 12)}
         </td>
         <td className="px-3 py-2 text-right">
-          <Button size="sm" variant="ghost" aria-expanded={open} onClick={onToggle}>
+          <Button size="sm" variant="quiet" aria-expanded={open} onClick={onToggle}>
             {open ? 'Hide' : 'Show'}
           </Button>
         </td>
       </tr>
       {open && (
-        <tr className="border-b border-slate-800/70">
+        <tr className="border-b border-subtle">
           <td colSpan={6} className="px-3 py-2">
             <JsonBlock value={{ id: e.id, details: e.details, prev_hash: e.prev_hash, hash: e.hash }} label={`Audit entry ${e.id} details`} />
           </td>

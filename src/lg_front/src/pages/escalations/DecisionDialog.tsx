@@ -146,19 +146,19 @@ export function DecisionDialog({
     >
       <form id="decision-form" onSubmit={submit} className="space-y-4">
         {conflict && (
-          <p role="alert" className="rounded-md border border-amber-600 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+          <p role="alert" className="rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
             {conflict}
           </p>
         )}
         {error !== null && <ErrorMessage error={error} compact />}
         {current.status === 'expired' && (
-          <p className="text-sm text-amber-200">The SLA for this escalation has expired. The decision is still accepted and audited as late.</p>
+          <p className="text-sm text-warn-fg">The SLA for this escalation has expired. The decision is still accepted and audited as late.</p>
         )}
         <fieldset>
-          <legend className="mb-2 text-sm font-medium text-slate-200">Decision</legend>
+          <legend className="mb-2 text-sm font-medium text-body">Decision</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {DECISIONS.map((d) => (
-              <label key={d} className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-700 px-3 py-2 text-sm text-slate-200 has-[:checked]:border-sky-400 has-[:checked]:bg-sky-950">
+              <label key={d} className="flex cursor-pointer items-center gap-2 rounded-control border border-strong px-3 py-2 text-sm text-body has-[:checked]:border-link has-[:checked]:bg-tint-info">
                 <input type="radio" name="decision" value={d} checked={decision === d} onChange={() => setDecision(d)} data-autofocus={decision === d || undefined} />
                 {DECISION_LABELS[d]}
               </label>
@@ -183,8 +183,8 @@ export function DecisionDialog({
             onChange={(e) => setSuggestSuppression(e.target.checked)}
           />
         )}
-        <fieldset className="rounded-md border border-slate-800 p-3">
-          <legend className="px-1 text-sm font-medium text-slate-200">Feedback on the automated triage (optional)</legend>
+        <fieldset className="rounded-control border border-subtle p-3">
+          <legend className="px-1 text-sm font-medium text-body">Feedback on the automated triage (optional)</legend>
           <div className="grid gap-3 sm:grid-cols-4">
             <TextField label="Your confidence (0-100)" type="number" min={0} max={100} value={confidence} onChange={(e) => setConfidence(e.target.value)} />
             <SelectField label="Triage correct" value={triageCorrect} onChange={(e) => setTriageCorrect(e.target.value as Tri)}>

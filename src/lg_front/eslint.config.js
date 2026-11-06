@@ -32,6 +32,17 @@ const INVALIDATE = [
   },
 ];
 
+// The palette is the design tokens (src/theme/tokens.css, tailwind.config.js): Tailwind's default
+// greys and hues are not generated, so a class such as `bg-slate-900` would silently do nothing.
+const PALETTE_RE =
+  '/(^|[\\s:])(bg|text|border|divide|outline|ring|ring-offset|from|via|to|fill|stroke|accent|caret|decoration|shadow|placeholder)-(slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-[0-9]/';
+const PALETTE = [
+  {
+    selector: `Literal[value=${PALETTE_RE}], TemplateElement[value.raw=${PALETTE_RE}]`,
+    message: 'Use the design-token colours (bg-raised, text-muted, border-control, sev-*, state-*), not Tailwind palette classes.',
+  },
+];
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
   {
@@ -62,21 +73,28 @@ export default tseslint.config(
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
     },
   },
   {
     // The one owner of session cache clearing.
     files: ['src/auth/cacheBinding.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...QUERY_KEY_LITERAL],
+      'no-restricted-syntax': ['error', ...QUERY_KEY_LITERAL, ...PALETTE],
     },
   },
   {
     // The owners of invalidation: named policies, and bounded refetch for paged lists and live events.
     files: ['src/api/invalidate.ts', 'src/lib/pagination.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...PALETTE],
+    },
+  },
+  {
+    // The one owner of browser storage: display preferences only (theme, row density), never credentials.
+    files: ['src/lib/prefs.ts'],
+    rules: {
+      'no-restricted-properties': 'off',
     },
   },
   {

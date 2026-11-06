@@ -54,7 +54,7 @@ function Steps({ steps }: { steps: JsonObject[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs">
         <caption className="sr-only">Steps</caption>
-        <thead className="text-slate-400">
+        <thead className="text-muted">
           <tr>
             {columns.map((c) => (
               <th key={c} scope="col" className="px-2 py-1 font-medium">
@@ -65,9 +65,9 @@ function Steps({ steps }: { steps: JsonObject[] }) {
         </thead>
         <tbody>
           {steps.slice(0, 200).map((step, i) => (
-            <tr key={i} className="border-t border-slate-800">
+            <tr key={i} className="border-t border-subtle">
               {columns.map((c) => (
-                <td key={c} className="break-all px-2 py-1 text-slate-200">
+                <td key={c} className="break-all px-2 py-1 text-body">
                   {typeof step[c] === 'object' ? JSON.stringify(step[c]) : String(step[c] ?? '')}
                 </td>
               ))}
@@ -89,7 +89,7 @@ export function ActionDetails({ action, onSelectAction }: { action: ActionOut; o
   const link = (id: string | null | undefined, label: string) =>
     id ? (
       onSelectAction ? (
-        <Button size="sm" variant="ghost" onClick={() => onSelectAction(id)} aria-label={`${label} ${id}`}>
+        <Button size="sm" variant="quiet" onClick={() => onSelectAction(id)} aria-label={`${label} ${id}`}>
           {shortId(id)}
         </Button>
       ) : (
@@ -100,8 +100,8 @@ export function ActionDetails({ action, onSelectAction }: { action: ActionOut; o
     );
   return (
     <div className="space-y-3 text-sm">
-      {summary && <p className="text-slate-100">{summary}</p>}
-      {hint && <p className="text-amber-200">{hint}</p>}
+      {summary && <p className="text-fg">{summary}</p>}
+      {hint && <p className="text-warn-fg">{hint}</p>}
       <DefinitionList
         items={[
           ['Connector', action.connector ?? '-'],
@@ -123,7 +123,7 @@ export function ActionDetails({ action, onSelectAction }: { action: ActionOut; o
       />
       {steps.length > 0 && (
         <div>
-          <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Steps</h4>
+          <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Steps</h4>
           <Steps steps={steps} />
         </div>
       )}
@@ -163,7 +163,7 @@ export function ActionControls({ action }: { action: ActionOut }) {
   return (
     <div className="flex flex-wrap justify-end gap-1.5">
       {rollback && (
-        <Button size="sm" variant="danger" onClick={() => setDialog('rollback')} icon={<Undo2 className="h-3.5 w-3.5" aria-hidden="true" />}>
+        <Button size="sm" variant="destructive" onClick={() => setDialog('rollback')} icon={<Undo2 className="h-3.5 w-3.5" aria-hidden="true" />}>
           Roll back
         </Button>
       )}

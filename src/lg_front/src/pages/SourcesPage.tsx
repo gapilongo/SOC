@@ -270,10 +270,10 @@ function SourceForm({ source, onClose }: { source: SourceOut | null; onClose: ()
           )}
         </div>
         <Checkbox label="Enabled" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
-        {spec.note && <p className="text-sm text-slate-300">{spec.note}</p>}
+        {spec.note && <p className="text-sm text-secondary">{spec.note}</p>}
         {spec.config.length > 0 && (
           <fieldset className="grid gap-3 sm:grid-cols-2">
-            <legend className="mb-2 text-sm font-medium text-slate-200">Configuration</legend>
+            <legend className="mb-2 text-sm font-medium text-body">Configuration</legend>
             {spec.config.map((f) => (
               <TextField
                 key={f.key}
@@ -293,9 +293,9 @@ function SourceForm({ source, onClose }: { source: SourceOut | null; onClose: ()
           value={extra}
           onChange={(e) => setExtra(e.target.value)}
         />
-        <fieldset className="space-y-3 rounded-md border border-slate-800 p-3">
-          <legend className="px-1 text-sm font-medium text-slate-200">Credentials (write-only)</legend>
-          <p className="text-xs text-slate-400">
+        <fieldset className="space-y-3 rounded-control border border-subtle p-3">
+          <legend className="px-1 text-sm font-medium text-body">Credentials (write-only)</legend>
+          <p className="text-xs text-muted">
             {editing && source.has_secret
               ? 'Credentials are stored encrypted and are never shown. Leave these fields empty to keep them; entering any value replaces all stored credentials.'
               : 'Stored encrypted and never shown again.'}
@@ -383,10 +383,10 @@ export default function SourcesPage() {
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {q.data && q.data.length === 0 && <EmptyState title="No sources yet">Add a SIEM or EDR connection, or a webhook for push delivery.</EmptyState>}
       {q.data && q.data.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900">
+        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Sources</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2">Name</th>
                 <th scope="col" className="px-3 py-2">Type</th>
@@ -398,21 +398,21 @@ export default function SourcesPage() {
             </thead>
             <tbody>
               {q.data.map((s) => (
-                <tr key={s.id} className="border-b border-slate-800/70 align-top">
+                <tr key={s.id} className="border-b border-subtle align-top">
                   <td className="px-3 py-2">
-                    <div className="font-medium text-slate-100">{s.name}</div>
-                    <div className="font-mono text-xs text-slate-400">{s.id}</div>
+                    <div className="font-medium text-fg">{s.name}</div>
+                    <div className="font-mono text-xs text-muted">{s.id}</div>
                     {!s.enabled && <Badge>disabled</Badge>}
                   </td>
-                  <td className="px-3 py-2 text-slate-200">{SOURCE_SPECS[s.type as SourceType]?.label ?? s.type}</td>
+                  <td className="px-3 py-2 text-body">{SOURCE_SPECS[s.type as SourceType]?.label ?? s.type}</td>
                   <td className="px-3 py-2">
                     <StatusBadge value={healthTone(s)} />
-                    {s.consecutive_failures ? <div className="mt-1 text-xs text-orange-200">{s.consecutive_failures} consecutive failures</div> : null}
-                    {s.last_error && <div className="mt-1 max-w-xs break-words text-xs text-orange-200">{s.last_error}</div>}
+                    {s.consecutive_failures ? <div className="mt-1 text-xs text-danger-fg">{s.consecutive_failures} consecutive failures</div> : null}
+                    {s.last_error && <div className="mt-1 max-w-xs break-words text-xs text-danger-fg">{s.last_error}</div>}
                   </td>
-                  <td className="px-3 py-2 text-slate-300">
+                  <td className="px-3 py-2 text-secondary">
                     <span title={formatDateTime(s.last_polled_at)}>{s.last_polled_at ? formatRelative(s.last_polled_at) : 'never'}</span>
-                    {s.next_poll_at && <div className="text-xs text-slate-400">next {formatRelative(s.next_poll_at)}</div>}
+                    {s.next_poll_at && <div className="text-xs text-muted">next {formatRelative(s.next_poll_at)}</div>}
                   </td>
                   <td className="px-3 py-2">{s.has_secret ? <Badge tone="good">configured</Badge> : <Badge>none</Badge>}</td>
                   <td className="px-3 py-2">
@@ -423,7 +423,7 @@ export default function SourcesPage() {
                       <Button size="sm" onClick={() => setEditing(s)} icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Edit ${s.name}`}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="danger" onClick={() => setDeleting(s)} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Delete ${s.name}`}>
+                      <Button size="sm" variant="destructive" onClick={() => setDeleting(s)} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Delete ${s.name}`}>
                         Delete
                       </Button>
                     </div>

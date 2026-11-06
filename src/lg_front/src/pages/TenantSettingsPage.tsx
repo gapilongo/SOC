@@ -65,7 +65,7 @@ function Section({ title, description, children, onSubmit, busy, error, saveLabe
   return (
     <Card title={title}>
       <form onSubmit={submit} className="space-y-4">
-        <p className="text-sm text-slate-300">{description}</p>
+        <p className="text-sm text-secondary">{description}</p>
         {error ? <ErrorMessage error={error} compact /> : null}
         {children}
         <div className="flex justify-end">
@@ -520,7 +520,7 @@ function RoutingSection({ data }: { data: TenantSettingsOut }) {
       error={save.error}
     >
       {q.data?.dry_run_forced && (
-        <p role="status" className="rounded-md border border-amber-600 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+        <p role="status" className="rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
           Dry run is on: nothing executes. Actions are recorded as dry runs until the install and tenant dry run switches are off.
         </p>
       )}
@@ -530,7 +530,7 @@ function RoutingSection({ data }: { data: TenantSettingsOut }) {
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Response routes</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-2 py-1">Action</th>
                 <th scope="col" className="px-2 py-1">Executes through</th>
@@ -539,13 +539,13 @@ function RoutingSection({ data }: { data: TenantSettingsOut }) {
             </thead>
             <tbody>
               {routes.map(([type, route]) => (
-                <tr key={type} className="border-b border-slate-800/70 align-top">
-                  <th scope="row" className="px-2 py-1 text-left font-normal text-slate-100">
+                <tr key={type} className="border-b border-subtle align-top">
+                  <th scope="row" className="px-2 py-1 text-left font-normal text-fg">
                     {humanize(type)}
                   </th>
-                  <td className="px-2 py-1 text-xs text-slate-300">
+                  <td className="px-2 py-1 text-xs text-secondary">
                     {describeRoute(route)}
-                    {route.problem && <span className="block text-orange-200">{route.problem}</span>}
+                    {route.problem && <span className="block text-danger-fg">{route.problem}</span>}
                   </td>
                   <td className="px-2 py-1">
                     <SelectField

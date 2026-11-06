@@ -104,7 +104,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
           <TextField label="Expires (optional)" type="datetime-local" value={expires} onChange={(e) => setExpires(e.target.value)} />
         </div>
         <fieldset className="space-y-2">
-          <legend className="mb-1 text-sm font-medium text-slate-200">Conditions (all must match)</legend>
+          <legend className="mb-1 text-sm font-medium text-body">Conditions (all must match)</legend>
           <datalist id="rule-paths">
             {PATHS.map((p) => (
               <option key={p} value={p} />
@@ -120,7 +120,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
                 <option value="cidr">in network (CIDR, comma separated)</option>
               </SelectField>
               <TextField label="Value" value={r.value} onChange={(e) => setRow(i, { value: e.target.value })} />
-              <Button variant="ghost" aria-label={`Remove condition ${i + 1}`} disabled={rows.length === 1} onClick={() => setRows(rows.filter((_, j) => j !== i))} icon={<Trash2 className="h-4 w-4" aria-hidden="true" />} />
+              <Button variant="quiet" aria-label={`Remove condition ${i + 1}`} disabled={rows.length === 1} onClick={() => setRows(rows.filter((_, j) => j !== i))} icon={<Trash2 className="h-4 w-4" aria-hidden="true" />} />
             </div>
           ))}
           <Button size="sm" onClick={() => setRows([...rows, { path: '', op: 'eq', value: '' }])} icon={<Plus className="h-3.5 w-3.5" aria-hidden="true" />}>
@@ -130,7 +130,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
         {admin ? (
           <Checkbox label="Enable immediately" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
         ) : (
-          <p className="text-sm text-slate-300">Rules created by analysts start disabled until an admin enables them.</p>
+          <p className="text-sm text-secondary">Rules created by analysts start disabled until an admin enables them.</p>
         )}
       </form>
     </Modal>
@@ -190,7 +190,7 @@ export default function SuppressionsPage() {
           )
         }
       />
-      <div role="group" aria-label="Rule views" className="mb-4 flex gap-1 border-b border-slate-800">
+      <div role="group" aria-label="Rule views" className="mb-4 flex gap-1 border-b border-subtle">
         {tabs.map(([key, label]) => (
           <button
             key={key}
@@ -198,8 +198,8 @@ export default function SuppressionsPage() {
             aria-pressed={tab === key}
             onClick={() => setTab(key)}
             className={cx(
-              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400',
-              tab === key ? 'border-sky-400 text-white' : 'border-transparent text-slate-300 hover:text-white',
+              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === key ? 'border-link text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {label}
@@ -216,16 +216,16 @@ export default function SuppressionsPage() {
       {visible.length > 0 && (
         <ul className="space-y-2" aria-label="Suppression rules">
           {visible.map((r) => (
-            <li key={r.id} className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+            <li key={r.id} className="rounded-card border border-subtle bg-raised p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-semibold text-white">{r.name}</h2>
+                    <h2 className="text-sm font-semibold text-fg">{r.name}</h2>
                     <Badge tone={r.enabled ? 'good' : 'neutral'}>{r.enabled ? 'enabled' : 'disabled'}</Badge>
                     {r.source_feedback_id && <Badge tone="info">suggested</Badge>}
                   </div>
-                  <p className="mt-1 break-words font-mono text-xs text-slate-300">{describeMatch(r.match)}</p>
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 break-words font-mono text-xs text-secondary">{describeMatch(r.match)}</p>
+                  <p className="mt-1 text-xs text-muted">
                     {formatInt(r.hit_count)} hits{r.last_hit_at ? `, last ${formatDateTime(r.last_hit_at)}` : ''}
                     {r.expires_at ? `; expires ${formatDateTime(r.expires_at)}` : ''}; created {formatDateTime(r.created_at)}
                   </p>
@@ -235,7 +235,7 @@ export default function SuppressionsPage() {
                     <Button size="sm" variant={r.enabled ? 'secondary' : 'primary'} onClick={() => toggle.mutate(r)} busy={toggle.isPending && toggle.variables?.id === r.id}>
                       {r.enabled ? 'Disable' : 'Enable'}
                     </Button>
-                    <Button size="sm" variant="danger" onClick={() => setDeleting(r)} aria-label={`Delete rule ${r.name}`} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}>
+                    <Button size="sm" variant="destructive" onClick={() => setDeleting(r)} aria-label={`Delete rule ${r.name}`} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}>
                       Delete
                     </Button>
                   </div>

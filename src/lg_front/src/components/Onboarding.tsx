@@ -119,9 +119,9 @@ export function visibleSteps(status: OnboardingStatusOut): OnboardingStepOut[] {
 
 function StepIcon({ done }: { done: boolean }) {
   return done ? (
-    <CheckCircle2 className="h-5 w-5 flex-none text-emerald-400" aria-hidden="true" />
+    <CheckCircle2 className="h-5 w-5 flex-none text-ok-fg" aria-hidden="true" />
   ) : (
-    <Circle className="h-5 w-5 flex-none text-slate-500" aria-hidden="true" />
+    <Circle className="h-5 w-5 flex-none text-muted" aria-hidden="true" />
   );
 }
 
@@ -132,24 +132,24 @@ export function OnboardingChecklist({ status }: { status: OnboardingStatusOut })
       {visibleSteps(status).map((step) => {
         const text = STEP_TEXT[step.id];
         return (
-          <li key={step.id} className="flex items-start gap-3 rounded-md border border-slate-800 bg-slate-950/50 p-3">
+          <li key={step.id} className="flex items-start gap-3 rounded-control border border-subtle bg-canvas/50 p-3">
             <StepIcon done={step.done} />
             <div className="min-w-0 flex-1">
-              <p className={cx('text-sm font-medium', step.done ? 'text-slate-300' : 'text-white')}>
+              <p className={cx('text-sm font-medium', step.done ? 'text-secondary' : 'text-fg')}>
                 {text.title}
                 <span className="sr-only">{step.done ? ' (done)' : ' (to do)'}</span>
               </p>
-              <p className="mt-0.5 text-sm text-slate-400">{text.description}</p>
+              <p className="mt-0.5 text-sm text-muted">{text.description}</p>
             </div>
             <div className="flex flex-none flex-wrap items-center gap-2">
               {step.id === 'autonomy_reviewed' && !step.done && (
-                <Button size="sm" variant="ghost" busy={reviewed.isPending} onClick={() => reviewed.mutate()}>
+                <Button size="sm" variant="quiet" busy={reviewed.isPending} onClick={() => reviewed.mutate()}>
                   Mark reviewed
                 </Button>
               )}
               <Link
                 to={text.to}
-                className="rounded-md border border-slate-600 px-2.5 py-1 text-xs text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+                className="rounded-control border border-control px-2.5 py-1 text-xs text-fg hover:bg-raised-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
               >
                 {text.action}
               </Link>
@@ -186,13 +186,13 @@ export function OnboardingBanner() {
   const steps = visibleSteps(s);
   const next = steps.filter((step) => !step.done).slice(0, 3);
   return (
-    <section aria-label="Getting started" className="mb-5 rounded-lg border border-sky-800 bg-sky-950/60 p-4">
+    <section aria-label="Getting started" className="mb-5 rounded-card border border-link/50 bg-tint-info p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-white">
+          <h2 className="text-sm font-semibold text-fg">
             Getting started: {s.completed} of {s.total} done
           </h2>
-          <ul className="mt-2 space-y-1 text-sm text-sky-100">
+          <ul className="mt-2 space-y-1 text-sm text-link">
             {next.map((step) => (
               <li key={step.id} className="flex items-center gap-2">
                 <StepIcon done={false} />
@@ -205,12 +205,12 @@ export function OnboardingBanner() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <SampleAlertsButton sent={s.samples_sent} />
-          <Link to="/getting-started" className="text-sm text-sky-200 hover:underline">
+          <Link to="/getting-started" className="text-sm text-link hover:underline">
             All steps
           </Link>
           <Button
             size="sm"
-            variant="ghost"
+            variant="quiet"
             aria-label="Dismiss the getting started banner"
             busy={dismiss.isPending}
             onClick={() => dismiss.mutate()}

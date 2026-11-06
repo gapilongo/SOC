@@ -66,7 +66,7 @@ export function replyToMismatch(section: EmailSection): string[] {
 const VERDICT_TONE: Record<string, Tone> = { pass: 'good', fail: 'bad', softfail: 'warn', hardfail: 'bad', none: 'neutral', neutral: 'neutral' };
 
 function AuthBadges({ result }: { result: JsonObject | undefined }) {
-  if (!result) return <span className="text-slate-400">No Authentication-Results header</span>;
+  if (!result) return <span className="text-muted">No Authentication-Results header</span>;
   return (
     <span className="flex flex-wrap items-center gap-1.5">
       {(['spf', 'dkim', 'dmarc'] as const).map((method) => {
@@ -77,7 +77,7 @@ function AuthBadges({ result }: { result: JsonObject | undefined }) {
           </Badge>
         );
       })}
-      {typeof result.authserv_id === 'string' && <span className="text-xs text-slate-400">by {result.authserv_id}</span>}
+      {typeof result.authserv_id === 'string' && <span className="text-xs text-muted">by {result.authserv_id}</span>}
     </span>
   );
 }
@@ -99,7 +99,7 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
   return (
     <div className="space-y-4 text-sm">
       {section.parse_error && (
-        <p className="rounded border border-amber-700 bg-amber-950 px-3 py-2 text-amber-100">
+        <p className="rounded border border-warn/60 bg-tint-warn px-3 py-2 text-warn-fg">
           The reported message could not be analysed: {section.parse_error}
         </p>
       )}
@@ -137,7 +137,7 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
         ]}
       />
       {(lookalikes.length > 0 || impersonation) && (
-        <ul className="list-disc space-y-1 pl-5 text-orange-200">
+        <ul className="list-disc space-y-1 pl-5 text-danger-fg">
           {impersonation && <li>Impersonation: {impersonation}</li>}
           {lookalikes.map((l) => (
             <li key={l}>Lookalike domain: {l}</li>
@@ -145,22 +145,22 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
         </ul>
       )}
       {section.credential_wording && section.credential_wording.length > 0 && (
-        <p className="text-slate-300">
-          <span className="text-slate-400">Credential-harvest wording: </span>
+        <p className="text-secondary">
+          <span className="text-muted">Credential-harvest wording: </span>
           {section.credential_wording.map((w) => w.replace(/_/g, ' ')).join(', ')}
         </p>
       )}
       <section>
-        <h4 className="mb-1 font-medium text-slate-100">
+        <h4 className="mb-1 font-medium text-fg">
           Links ({typeof section.url_count === 'number' ? section.url_count : urls.length})
         </h4>
         {urls.length === 0 ? (
-          <p className="text-slate-400">No links.</p>
+          <p className="text-muted">No links.</p>
         ) : (
           <ul className="space-y-1.5">
             {urls.map((u, i) => (
               <li key={`${u.url ?? ''}-${i}`} className="flex flex-wrap items-center gap-1.5">
-                <code className="max-w-full break-all rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100" title="Defanged: not clickable">
+                <code className="max-w-full break-all rounded bg-raised-2 px-1.5 py-0.5 text-xs text-fg" title="Defanged: not clickable">
                   {u.display ?? u.url}
                 </code>
                 {u.mismatch && <Badge tone="bad">text shows {u.mismatch_text_host ?? 'another domain'}</Badge>}
@@ -179,18 +179,18 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
         )}
       </section>
       <section>
-        <h4 className="mb-1 font-medium text-slate-100">
+        <h4 className="mb-1 font-medium text-fg">
           Attachments ({typeof section.attachment_count === 'number' ? section.attachment_count : attachments.length})
         </h4>
         {attachments.length === 0 ? (
-          <p className="text-slate-400">No attachments.</p>
+          <p className="text-muted">No attachments.</p>
         ) : (
           <ul className="space-y-2">
             {attachments.map((a, i) => (
               <li key={`${a.sha256 ?? ''}-${i}`}>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="break-all font-medium text-slate-100">{a.filename || '(unnamed)'}</span>
-                  <span className="text-xs text-slate-400">
+                  <span className="break-all font-medium text-fg">{a.filename || '(unnamed)'}</span>
+                  <span className="text-xs text-muted">
                     {a.sniffed_type ?? 'unknown'} content, declared {a.declared_type ?? '-'}, {formatBytes(a.size)}
                   </span>
                   {(a.risks ?? []).map((r) => (
@@ -199,12 +199,12 @@ export function EmailPanel({ section, phishing }: { section: EmailSection; phish
                     </Badge>
                   ))}
                 </div>
-                {a.sha256 && <code className="block break-all text-xs text-slate-300">SHA-256 {a.sha256}</code>}
+                {a.sha256 && <code className="block break-all text-xs text-secondary">SHA-256 {a.sha256}</code>}
               </li>
             ))}
           </ul>
         )}
-        <p className="mt-1 text-xs text-slate-400">Attachments are hashed and inspected, never stored.</p>
+        <p className="mt-1 text-xs text-muted">Attachments are hashed and inspected, never stored.</p>
       </section>
     </div>
   );

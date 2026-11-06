@@ -11,7 +11,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const location = useLocation();
   if (status === 'initializing') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-canvas">
         <LoadingState label="Restoring your session" />
       </div>
     );
@@ -29,8 +29,8 @@ export function RequireRole({ allowed, children }: { allowed: (p: Principal | nu
   if (!allowed(principal)) {
     return (
       <div className="py-16 text-center">
-        <h1 className="text-lg font-semibold text-white">You do not have access to this page</h1>
-        <p className="mt-2 text-sm text-slate-300">Your role ({principal?.role ?? 'none'}) does not include it. Ask a tenant admin if you need access.</p>
+        <h1 className="text-lg font-semibold text-fg">You do not have access to this page</h1>
+        <p className="mt-2 text-sm text-secondary">Your role ({principal?.role ?? 'none'}) does not include it. Ask a tenant admin if you need access.</p>
       </div>
     );
   }

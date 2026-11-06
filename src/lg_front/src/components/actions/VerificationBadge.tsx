@@ -19,7 +19,7 @@ function reasonOf(detail: JsonObject | null | undefined): string | null {
 
 /** The verification state of an executed action ("-" when the action has none). */
 export function VerificationBadge({ value, detail }: { value: VerificationState | null | undefined; detail?: JsonObject | null }) {
-  if (!value) return <span className="text-slate-400">-</span>;
+  if (!value) return <span className="text-muted">-</span>;
   const reason = reasonOf(detail);
   const title = reason ? `${VERIFICATION_HELP[value]} Reason: ${reason}.` : VERIFICATION_HELP[value];
   return (

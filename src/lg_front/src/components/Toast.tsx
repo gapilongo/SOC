@@ -73,10 +73,10 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   return (
     <div
       className={cx(
-        'pointer-events-auto flex items-start gap-2 rounded-md border px-3 py-2 text-sm shadow-lg',
-        toast.tone === 'error' && 'border-red-700 bg-red-950 text-red-50',
-        toast.tone === 'success' && 'border-emerald-700 bg-emerald-950 text-emerald-50',
-        toast.tone === 'info' && 'border-slate-600 bg-slate-800 text-slate-50',
+        'pointer-events-auto flex items-start gap-2 rounded-control border px-3 py-2 text-sm shadow-lg',
+        toast.tone === 'error' && 'border-danger bg-tint-danger text-danger-fg',
+        toast.tone === 'success' && 'border-state-ok/60 bg-tint-ok text-ok-fg',
+        toast.tone === 'info' && 'border-control bg-raised-2 text-fg',
       )}
     >
       <div className="min-w-0 flex-1">
@@ -87,7 +87,7 @@ function ToastView({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
         type="button"
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss notification"
-        className="rounded p-0.5 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+        className="rounded p-0.5 hover:bg-fg/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
       >
         <X className="h-4 w-4" aria-hidden="true" />
       </button>

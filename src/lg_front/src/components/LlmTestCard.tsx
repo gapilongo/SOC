@@ -13,16 +13,16 @@ export function formatLatency(ms: number): string {
 
 function TierRow({ t }: { t: LlmTierCheckOut }) {
   return (
-    <tr className="border-t border-slate-800 align-top">
-      <th scope="row" className="px-3 py-2 font-medium capitalize text-slate-200">
+    <tr className="border-t border-subtle align-top">
+      <th scope="row" className="px-3 py-2 font-medium capitalize text-body">
         {t.tier}
       </th>
-      <td className="px-3 py-2 font-mono text-xs text-slate-300 break-all">{t.model}</td>
+      <td className="px-3 py-2 font-mono text-xs text-secondary break-all">{t.model}</td>
       <td className="px-3 py-2">
         <Badge tone={t.ok ? 'good' : 'bad'}>{t.ok ? 'ok' : (t.error_code ?? 'failed').replace(/_/g, ' ')}</Badge>
       </td>
-      <td className="px-3 py-2 text-slate-300">{t.ok || t.latency_ms > 0 ? formatLatency(t.latency_ms) : '-'}</td>
-      <td className="px-3 py-2 text-slate-300">{t.ok ? (t.structured_output ?? '') : t.error}</td>
+      <td className="px-3 py-2 text-secondary">{t.ok || t.latency_ms > 0 ? formatLatency(t.latency_ms) : '-'}</td>
+      <td className="px-3 py-2 text-secondary">{t.ok ? (t.structured_output ?? '') : t.error}</td>
     </tr>
   );
 }
@@ -42,20 +42,20 @@ export function LlmTestCard() {
       }
     >
       <div className="space-y-3 text-sm">
-        <p className="text-slate-300">
+        <p className="text-secondary">
           Sends a tiny request (no alert data) to the fast and deep tiers of the configured model and checks that each answers in the format triage needs. It counts toward this tenant's LLM usage.
         </p>
         {test.error ? <ErrorMessage error={test.error} compact /> : null}
         {out && (
           <div aria-live="polite" className="space-y-2">
-            <p className="flex flex-wrap items-center gap-2 text-slate-200">
+            <p className="flex flex-wrap items-center gap-2 text-body">
               Provider <span className="font-mono text-xs">{out.provider}</span>
               <Badge tone={out.ok ? 'good' : 'bad'}>{out.ok ? 'both tiers answered' : 'check failed'}</Badge>
             </p>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-sm">
                 <caption className="sr-only">Model test results</caption>
-                <thead className="text-xs uppercase tracking-wide text-slate-400">
+                <thead className="text-xs uppercase tracking-wide text-muted">
                   <tr>
                     <th scope="col" className="px-3 py-2">Tier</th>
                     <th scope="col" className="px-3 py-2">Model</th>

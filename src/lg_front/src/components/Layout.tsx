@@ -30,7 +30,7 @@ import { getConfig } from '../config';
 import type { Principal } from '../auth/store';
 import { useLive } from '../live/LiveProvider';
 import { ActingTenantBanner, TenantSwitcher } from './TenantSwitcher';
-import { Button, LoadingState, cx } from './ui';
+import { Button, DensityToggle, LoadingState, ThemeSwitch, cx } from './ui';
 
 export interface NavItem {
   to: string;
@@ -68,9 +68,9 @@ function LiveIndicator() {
     status === 'unavailable' ? 'Live updates unavailable' :
     status === 'connecting' ? 'Connecting' : 'Offline';
   const color =
-    status === 'open' && !actingTenant ? 'bg-emerald-400' :
-    status === 'reconnecting' || status === 'connecting' ? 'bg-amber-400' :
-    status === 'unavailable' && !actingTenant ? 'bg-red-400' : 'bg-slate-500';
+    status === 'open' && !actingTenant ? 'bg-state-ok' :
+    status === 'reconnecting' || status === 'connecting' ? 'bg-state-waiting' :
+    status === 'unavailable' && !actingTenant ? 'bg-state-bad' : 'bg-muted';
   const hint =
     status === 'unavailable' && !actingTenant
       ? 'The live event stream could not be opened after several attempts; pages still refresh periodically. ' +
@@ -78,7 +78,7 @@ function LiveIndicator() {
         'and that the proxy in front of the API allows WebSocket upgrades on /api/v1/ws.'
       : undefined;
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-slate-300" role="status" aria-live="polite" title={hint}>
+    <span className="inline-flex items-center gap-1.5 text-xs text-secondary" role="status" aria-live="polite" title={hint}>
       <span className={cx('h-2 w-2 rounded-full', color)} aria-hidden="true" />
       {label}
       {hint && <span className="sr-only">. {hint}</span>}
@@ -144,8 +144,8 @@ export function Layout() {
               end={to === '/'}
               className={({ isActive }) =>
                 cx(
-                  'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400',
-                  isActive ? 'bg-slate-800 font-medium text-white' : 'text-slate-300 hover:bg-slate-800/60 hover:text-white',
+                  'flex items-center gap-2.5 rounded-control px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+                  isActive ? 'bg-selected font-semibold text-fg' : 'text-body hover:bg-raised-2 hover:text-fg',
                 )
               }
             >
@@ -159,17 +159,17 @@ export function Layout() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950">
+    <div className="min-h-screen bg-canvas">
       <a
         href="#main"
-        className="sr-only z-50 rounded bg-sky-600 px-3 py-2 text-white focus:not-sr-only focus:fixed focus:left-2 focus:top-2"
+        className="sr-only z-50 rounded bg-accent px-3 py-2 font-semibold text-on-accent focus:not-sr-only focus:fixed focus:left-2 focus:top-2"
       >
         Skip to main content
       </a>
-      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-slate-800 bg-slate-900 lg:flex">
+      <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-subtle bg-sidebar lg:flex">
         <div className="flex items-center gap-2 px-4 py-4">
-          <Activity className="h-5 w-5 text-sky-400" aria-hidden="true" />
-          <span className="font-semibold text-white">LG-SOTF</span>
+          <Activity className="h-5 w-5 text-link" aria-hidden="true" />
+          <span className="font-semibold text-fg">LG-SOTF</span>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">{nav}</div>
       </aside>
@@ -178,15 +178,15 @@ export function Layout() {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={() => setMenuOpen(false)} />
           <div
-            className="absolute inset-y-0 left-0 w-64 overflow-y-auto border-r border-slate-800 bg-slate-900 p-2"
+            className="absolute inset-y-0 left-0 w-64 overflow-y-auto border-r border-subtle bg-sidebar p-2"
             id="mobile-nav"
             role="dialog"
             aria-modal="true"
             aria-label="Main menu"
           >
             <div className="flex items-center justify-between px-2 py-2">
-              <span className="font-semibold text-white">LG-SOTF</span>
-              <Button ref={menuCloseRef} variant="ghost" size="sm" aria-label="Close menu" onClick={() => setMenuOpen(false)} icon={<X className="h-4 w-4" aria-hidden="true" />} />
+              <span className="font-semibold text-fg">LG-SOTF</span>
+              <Button ref={menuCloseRef} variant="quiet" size="sm" aria-label="Close menu" onClick={() => setMenuOpen(false)} icon={<X className="h-4 w-4" aria-hidden="true" />} />
             </div>
             {nav}
           </div>
@@ -194,10 +194,10 @@ export function Layout() {
       )}
 
       <div className="lg:pl-60">
-        <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-900/95 px-4 py-2.5 backdrop-blur">
+        <header className="sticky top-0 z-30 flex flex-wrap items-center gap-3 border-b border-subtle bg-canvas/95 px-4 py-2.5 backdrop-blur">
           <Button
             ref={menuButtonRef}
-            variant="ghost"
+            variant="quiet"
             size="sm"
             className="lg:hidden"
             aria-label="Open menu"
@@ -207,24 +207,26 @@ export function Layout() {
             icon={<Menu className="h-5 w-5" aria-hidden="true" />}
           />
           <div className="flex min-w-0 items-center gap-2 text-sm">
-            <span className="text-slate-400">Tenant</span>
-            <span className={cx('truncate font-medium', override ? 'text-amber-300' : 'text-white')} data-testid="tenant-name">
+            <span className="text-muted">Tenant</span>
+            <span className={cx('truncate font-medium', override ? 'text-warn-fg' : 'text-fg')} data-testid="tenant-name">
               {principal?.tenantId ?? '-'}
             </span>
-            {override && <span className="rounded bg-amber-900 px-1.5 py-0.5 text-xs text-amber-100">platform admin override</span>}
+            {override && <span className="rounded bg-tint-warn px-1.5 py-0.5 text-xs text-warn-fg">platform admin override</span>}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             <TenantSwitcher />
             <LiveIndicator />
+            <DensityToggle className="hidden md:inline-flex" />
+            <ThemeSwitch />
             <div className="hidden text-right text-xs sm:block">
-              <div className="text-slate-100">{principal?.email ?? 'Signed in'}</div>
-              <div className="text-slate-400">
+              <div className="text-fg">{principal?.email ?? 'Signed in'}</div>
+              <div className="text-muted">
                 {principal?.role ?? 'no role'}
                 {principal?.isPlatformAdmin ? ', platform admin' : ''}
                 {principal?.method === 'oidc' ? ' (SSO)' : ''}
               </div>
             </div>
-            <Button size="sm" variant="ghost" onClick={signOut} icon={<LogOut className="h-4 w-4" aria-hidden="true" />}>
+            <Button size="sm" variant="quiet" onClick={signOut} icon={<LogOut className="h-4 w-4" aria-hidden="true" />}>
               Sign out
             </Button>
           </div>

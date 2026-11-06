@@ -1,6 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 
+import { ROW_HEIGHT, useDensity } from '../theme/density';
 import { Button, cx } from './ui';
 
 export interface Column<T> {
@@ -30,7 +31,7 @@ export function VirtualTable<T>({
   loadingMore = false,
   onLoadMore,
   autoLoad = true,
-  rowHeight = 44,
+  rowHeight: rowHeightProp,
   maxHeight = 'calc(100vh - 20rem)',
 }: {
   label: string;
@@ -45,9 +46,12 @@ export function VirtualTable<T>({
   onLoadMore?: () => void;
   /** Load the next page automatically near the end (off after a failed page load). */
   autoLoad?: boolean;
+  /** Fixed row height (px); by default it follows the table density preference. */
   rowHeight?: number;
   maxHeight?: string;
 }) {
+  const { density } = useDensity();
+  const rowHeight = rowHeightProp ?? ROW_HEIGHT[density];
   const scrollRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const template = columns.map((c) => c.width).join(' ');
@@ -59,6 +63,8 @@ export function VirtualTable<T>({
     overscan: 10,
     initialRect: { width: 1024, height: 600 },
   });
+  // A density change resizes every row.
+  useEffect(() => virtualizer.measure(), [virtualizer, rowHeight]);
   const items = virtualizer.getVirtualItems();
   const lastIndex = items.length ? items[items.length - 1].index : -1;
 
@@ -121,14 +127,14 @@ export function VirtualTable<T>({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-slate-800 bg-slate-900">
+    <div className="overflow-hidden rounded-card border border-subtle bg-raised">
       <div className="overflow-x-auto">
         <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} className="min-w-[900px]">
           <div role="rowgroup">
             <div
               role="row"
               aria-rowindex={1}
-              className="table-grid grid border-b border-slate-800 bg-slate-900 text-xs font-semibold uppercase tracking-wide text-slate-400"
+              className="table-grid grid border-b border-subtle bg-raised text-xs font-semibold uppercase tracking-wide text-muted"
               style={{ gridTemplateColumns: template }}
             >
               {columns.map((c) => (
@@ -156,9 +162,9 @@ export function VirtualTable<T>({
                     onClick={() => onOpen?.(row)}
                     onKeyDown={(e) => onKeyDown(e, vi.index, row)}
                     className={cx(
-                      'table-grid absolute left-0 top-0 grid w-full cursor-pointer items-center border-b border-slate-800/70 text-sm',
-                      'hover:bg-slate-800/60 focus:bg-slate-800 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-sky-400',
-                      selectedKey === key && 'bg-slate-800',
+                      'table-grid absolute left-0 top-0 grid w-full cursor-pointer items-center border-b border-subtle text-sm',
+                      'hover:bg-raised-2 focus:bg-raised-2 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-focus',
+                      selectedKey === key && 'bg-raised-2',
                     )}
                     style={{ gridTemplateColumns: template, height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
@@ -174,7 +180,7 @@ export function VirtualTable<T>({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-slate-800 px-3 py-2 text-xs text-slate-400">
+      <div className="flex items-center justify-between border-t border-subtle px-3 py-2 text-xs text-muted">
         <span aria-live="polite">
           {rows.length} {rows.length === 1 ? 'row' : 'rows'} loaded{hasMore ? ', more available' : ''}
         </span>
