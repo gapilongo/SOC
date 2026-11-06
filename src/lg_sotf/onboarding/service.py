@@ -22,9 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-import asyncpg
-
 from lg_sotf.db import Connection
+from lg_sotf.db.errors import STATEMENT_ERRORS
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Tenant
 from lg_sotf.db.repos._base import fetch_one
@@ -104,7 +103,7 @@ async def _notifications_configured(conn: Connection, tenant_id: str) -> Optiona
                     list(NOTIFY_KINDS),
                 )
             )
-    except asyncpg.PostgresError as exc:
+    except STATEMENT_ERRORS as exc:
         log.info("onboarding.integrations_unreadable", error_type=type(exc).__name__)
         return None
 

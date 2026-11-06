@@ -444,6 +444,24 @@ class EscalationsRepo(Repository):
             )
         raise InvalidTransition("escalation", escalation_id, esc.status, target)
 
+    # -- resume recovery (runtime/resumes.py) ---------------------------------------------------
+
+    async def latest_id_for_alert(
+        self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None
+    ) -> Optional[str]:
+        """The newest escalation that has ``alert_id`` as its alert or a related one, whatever its status."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                """
+            SELECT id FROM escalations
+            WHERE tenant_id = $1 AND (alert_id = $2 OR $2 = ANY(related_alert_ids))
+            ORDER BY created_at DESC LIMIT 1
+            """,
+                tenant_id,
+                alert_id,
+            )
+        return None if row is None else str(row["id"])
+
     async def find_sla_breached_all_tenants(
         self, *, now: Optional[datetime] = None, limit: int = 100
     ) -> List[Escalation]:

@@ -165,16 +165,14 @@ async def ensure_capacity(repos: Repositories, tenant_id: str, quota: str, *, co
     """
     tenant = await repos.tenants.get(tenant_id, for_update=True, conn=conn)
     if quota == "max_sources":
-        limit = tenant.max_sources
-        sql = "SELECT count(*) FROM sources WHERE tenant_id = $1"
+        limit, count = tenant.max_sources, repos.sources.count
     elif quota == "max_users":
-        limit = tenant.max_users
-        sql = "SELECT count(*) FROM users WHERE tenant_id = $1 AND is_active"
+        limit, count = tenant.max_users, repos.users.count_active
     else:
         raise ValueError(f"unknown quota: {quota!r}")
     if limit is None:
         return
-    used = int(await conn.fetchval(sql, tenant_id))
+    used = await count(tenant_id, conn=conn)
     if used >= limit:
         raise QuotaExceeded(quota, limit, used)
 

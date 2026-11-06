@@ -49,7 +49,8 @@ from uuid import UUID
 from prometheus_client import Counter
 
 from lg_sotf.db.errors import NotFound
-from lg_sotf.db.repos.integrations import Integration, OutboxEntry
+from lg_sotf.db.repos.integrations import Integration
+from lg_sotf.db.repos.outbox import OutboxEntry
 from lg_sotf.domain.events import make_event
 from lg_sotf.integrations.channels import SmtpFactory, send_notification
 from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret, rate_limit_per_minute
@@ -163,7 +164,7 @@ class OutboxDelivery:
 
     async def run_once(self) -> int:
         """Claim and deliver one batch; returns how many rows were claimed."""
-        entries = await self._repos.integrations.claim_due_all_tenants(limit=self._cfg.batch_size, lease_s=CLAIM_LEASE_S)
+        entries = await self._repos.outbox.claim_due_all_tenants(limit=self._cfg.batch_size, lease_s=CLAIM_LEASE_S)
         if not entries:
             return 0
         integrations, suspended = await self._integrations(entries)
@@ -211,7 +212,7 @@ class OutboxDelivery:
                 log.warning("integrations.delivery_crashed", kind=kind, error_type=type(exc).__name__)
                 outcome = self._failure(entry, safe_error(exc), retryable=True)
             try:
-                recorded = await self._repos.integrations.record_outcome(
+                recorded = await self._repos.outbox.record_outcome(
                     entry.tenant_id,
                     entry.id,
                     claimed_attempts=entry.attempts,
@@ -300,7 +301,7 @@ class OutboxDelivery:
     async def purge(self) -> int:
         """Delete sent/dead rows older than ``integrations.outbox_retention_days`` (bounded batch)."""
         cutoff = datetime.now(UTC) - timedelta(days=self._cfg.outbox_retention_days)
-        return await self._repos.integrations.purge_finished_all_tenants(older_than=cutoff)
+        return await self._repos.outbox.purge_finished_all_tenants(older_than=cutoff)
 
 
 async def sync_tickets(
@@ -313,7 +314,7 @@ async def sync_tickets(
     decided from the ticket's state. Returns how many tickets were polled.
     """
     cfg = settings.integrations
-    due = await repos.integrations.tickets_due_for_sync_all_tenants(
+    due = await repos.tickets.due_for_sync_all_tenants(
         min_age_s=cfg.ticket_sync_interval_s / 2, per_tenant=cfg.ticket_sync_batch_per_tenant, limit=MAX_SYNC_TOTAL
     )
     cache: Dict[Tuple[str, UUID], Optional[Integration]] = {}
@@ -332,7 +333,7 @@ async def sync_tickets(
                 state = await tickets.client(integration).state(ticket)
             except (DeliveryError, IntegrationConfigError) as exc:
                 TICKET_SYNCS.labels(system=ticket.system, outcome="error").inc()
-                await repos.integrations.record_sync(ticket.tenant_id, ticket.id, sync_error=safe_error(exc))
+                await repos.tickets.record_sync(ticket.tenant_id, ticket.id, sync_error=safe_error(exc))
                 continue
             except Exception as exc:  # noqa: BLE001 - one ticket must not stop the pass
                 TICKET_SYNCS.labels(system=ticket.system, outcome="error").inc()
@@ -340,7 +341,7 @@ async def sync_tickets(
                 continue
             newly_resolved = state.resolved and not ticket.resolved
             async with repos.db.tenant_tx(ticket.tenant_id) as conn:
-                await repos.integrations.record_sync(
+                await repos.tickets.record_sync(
                     ticket.tenant_id,
                     ticket.id,
                     external_status=state.status,

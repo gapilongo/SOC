@@ -8,7 +8,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import httpx
 
-from lg_sotf.db.repos.integrations import Integration, OutboxEntry
+from lg_sotf.db.repos.integrations import Integration
+from lg_sotf.db.repos.outbox import OutboxEntry
 from lg_sotf.integrations.events import action_summary, alert_summary, build_event, escalation_summary
 
 PUBLIC_IP = "93.184.216.34"

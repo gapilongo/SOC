@@ -14,7 +14,7 @@ from uuid import UUID
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.repos import Integration, Repositories
-from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.db.repos.outbox import NewOutboxEntry
 
 RESOURCE = "integration"
 
@@ -112,7 +112,7 @@ async def record_test(
 ) -> None:
     """Store a finished connection test in the delivery log; audited ``integration.tested``."""
     async with repos.db.tenant_tx(tenant_id) as conn:
-        await repos.integrations.record_test(tenant_id, entry, ok=ok, error=error, result=result, conn=conn)
+        await repos.outbox.record_test(tenant_id, entry, ok=ok, error=error, result=result, conn=conn)
         await audit.record(
             tenant_id,
             "integration.tested",

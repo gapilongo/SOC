@@ -29,6 +29,7 @@ from uuid import UUID
 
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition, NotFound
 from lg_sotf.db.pagination import Page, Params, check_limit, decode_cursor_uuid, paginate
+from lg_sotf.db.repos import _actions_sql as _sql
 from lg_sotf.db.repos._base import (
     UNSET,
     Connection,
@@ -68,24 +69,6 @@ ACTION_TRANSITIONS: Dict[str, FrozenSet[str]] = {
 EXECUTED_STATUSES = ("executing", "succeeded", "failed")
 # A rollback row in one of these statuses is "live": at most one per original (unique index).
 LIVE_ROLLBACK_STATUSES = ("proposed", "awaiting_approval", "approved", "executing", "succeeded")
-_EXECUTED_COUNTS_SQL = """
-    SELECT action_type, count(*)::int AS n FROM response_actions
-    WHERE tenant_id = $1 AND status = ANY($3::text[])
-      -- The window is measured on the database clock that stamps executed_at, unless given.
-      AND executed_at >= COALESCE($2::timestamptz, now() - interval '1 hour')
-    GROUP BY action_type
-"""
-# Workflow actions left 'executing' whose run will never come back to them ($3: grace period in seconds,
-# so a call still in flight is left alone).
-_ORPHANED_EXECUTING_SQL = """
-    SELECT a.tenant_id, a.id, a.connector FROM response_actions a
-    JOIN workflow_runs r ON r.tenant_id = a.tenant_id AND r.alert_id = a.alert_id
-    WHERE a.status = 'executing' AND a.execution_owner = 'workflow' AND r.status IN ('dead_lettered', 'completed')
-      AND ($1::text IS NULL OR a.tenant_id = $1)
-      AND (a.executed_at IS NULL OR a.executed_at < now() - make_interval(secs => $3))
-    ORDER BY a.executed_at NULLS FIRST
-    LIMIT $2
-"""
 
 
 def action_idempotency_key(
@@ -155,6 +138,15 @@ class ResponseAction(Record):
     verify_deadline: Optional[datetime] = None
     verified_at: Optional[datetime] = None
     verify_attempts: int = 0
+
+
+class WorkflowApprovals(Record):
+    """The approval state of an alert's workflow-owned actions (:meth:`ActionsRepo.workflow_approvals`)."""
+
+    approved: int
+    awaiting: int
+    approver: Optional[str]
+    """Who approved most recently, if anyone."""
 
 
 class ActionsRepo(Repository):
@@ -588,6 +580,27 @@ class ActionsRepo(Repository):
             )
         return [(str(r["tenant_id"]), r["id"], bool(r["late"]), bool(r["expired"])) for r in rows]
 
+    # -- resume recovery (runtime/resumes.py) ---------------------------------------------------
+
+    async def workflow_approvals(
+        self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None
+    ) -> WorkflowApprovals:
+        """Approved and awaiting counts of the alert's workflow-owned actions, and the latest approver."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await fetch_one(
+                c,
+                """
+            SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
+                   count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
+                   (array_agg(approved_by ORDER BY approved_at DESC NULLS LAST)
+                        FILTER (WHERE approved_by IS NOT NULL))[1] AS approver
+            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2 AND execution_owner = 'workflow'
+            """,
+                tenant_id,
+                alert_id,
+            )
+        return WorkflowApprovals.model_validate(dict(row))
+
     async def claim_due_verifications(
         self, *, limit: int, lease_s: float, conn: Optional[Connection] = None
     ) -> List[Tuple[str, UUID]]:
@@ -736,7 +749,7 @@ class ActionsRepo(Repository):
             async with self.db.tenant_tx(tenant_id, readonly=True) as scoped:
                 return await self.executed_counts(tenant_id, since, conn=scoped)
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES))
+            rows = await c.fetch(_sql.EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES))
         by_type = {str(r["action_type"]): int(r["n"]) for r in rows}
         return sum(by_type.values()), by_type
 
@@ -748,7 +761,7 @@ class ActionsRepo(Repository):
         Rows that started executing less than ``grace_s`` seconds ago are left alone.
         """
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_ORPHANED_EXECUTING_SQL, tenant_id, limit, grace_s)
+            rows = await c.fetch(_sql.ORPHANED_EXECUTING_SQL, tenant_id, limit, grace_s)
         return [(str(r["tenant_id"]), r["id"], r["connector"]) for r in rows]
 
     async def find_orphaned_executing_all_tenants(
@@ -756,7 +769,7 @@ class ActionsRepo(Repository):
     ) -> List[Tuple[str, UUID, Optional[str]]]:
         """:meth:`find_orphaned_executing` over every tenant (scheduler; system transaction)."""
         async with self._system(conn) as c:
-            rows = await c.fetch(_ORPHANED_EXECUTING_SQL, None, limit, grace_s)
+            rows = await c.fetch(_sql.ORPHANED_EXECUTING_SQL, None, limit, grace_s)
         return [(str(r["tenant_id"]), r["id"], r["connector"]) for r in rows]
 
 

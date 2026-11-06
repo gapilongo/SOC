@@ -13,7 +13,7 @@ import pytest
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
-from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.db.repos.outbox import NewOutboxEntry
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
 
 pytestmark = pytest.mark.asyncio
@@ -76,12 +76,12 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
     await repos.usage.add_ingested(tenant_id, 1)
     await repos.audit.append(tenant_id, "user", str(user.id), "alert.viewed", "alert", alert_id)
     integration = await repos.integrations.create(tenant_id, "email", "Mail", config={"recipients": ["a@b.co"]})
-    await repos.integrations.enqueue(
+    await repos.outbox.enqueue(
         tenant_id,
         [NewOutboxEntry(integration_id=integration.id, event_id=uuid4(), event_type="escalation.created",
                         operation="notify", dedupe_key=f"seed:{esc.id}", alert_id=alert_id, payload={"k": 1})],
     )
-    await repos.integrations.add_ticket(
+    await repos.tickets.add(
         tenant_id, integration.id, system="jira", alert_id=alert_id, escalation_id=esc.id, external_key="SOC-1"
     )
     return alert_id

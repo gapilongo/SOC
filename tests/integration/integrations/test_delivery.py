@@ -110,15 +110,15 @@ async def test_claims_skip_locked_rows_and_leases_them(
     await escalate(repos, settings)
     await escalate(repos, settings, TENANT_B)
     first, second = await asyncio.gather(
-        repos.integrations.claim_due_all_tenants(limit=2, lease_s=60),
-        repos.integrations.claim_due_all_tenants(limit=2, lease_s=60),
+        repos.outbox.claim_due_all_tenants(limit=2, lease_s=60),
+        repos.outbox.claim_due_all_tenants(limit=2, lease_s=60),
     )
     claimed = [e.id for e in first + second]
     assert len(claimed) == 4 and len(set(claimed)) == 4
-    assert await repos.integrations.claim_due_all_tenants(limit=10, lease_s=60) == []  # leased
+    assert await repos.outbox.claim_due_all_tenants(limit=10, lease_s=60) == []  # leased
     stale = first[0]
-    assert await repos.integrations.record_outcome(stale.tenant_id, stale.id, claimed_attempts=stale.attempts, status="sent")
-    assert not await repos.integrations.record_outcome(stale.tenant_id, stale.id, claimed_attempts=stale.attempts,
+    assert await repos.outbox.record_outcome(stale.tenant_id, stale.id, claimed_attempts=stale.attempts, status="sent")
+    assert not await repos.outbox.record_outcome(stale.tenant_id, stale.id, claimed_attempts=stale.attempts,
                                                        status="failed")  # finished rows are not rewritten
 
 
@@ -147,7 +147,7 @@ async def test_jira_ticket_lifecycle(
     alert_id, esc_id = await escalate(repos, settings)
 
     await sched.deliver_notifications()
-    tickets = await repos.integrations.tickets(TENANT_A, alert_id=alert_id)
+    tickets = await repos.tickets.list(TENANT_A, alert_id=alert_id)
     assert [(t.external_key, t.escalation_id, t.system) for t in tickets] == [("SOC-7", esc_id, "jira")]
     assert tickets[0].external_url == "https://acme.atlassian.net/browse/SOC-7"
     created = json.loads(next(r for r in receiver.requests if r.url.path == "/rest/api/3/issue").content)
@@ -165,7 +165,7 @@ async def test_jira_ticket_lifecycle(
     notes = [e for e in (await repos.alert_events.list_for_alert(TENANT_A, alert_id)).items
              if e.event_type == "ticket.resolved_externally"]
     assert len(notes) == 1 and notes[0].data["note"].startswith("Ticket SOC-7 done by Jo Analyst")
-    synced = (await repos.integrations.tickets(TENANT_A, alert_id=alert_id))[0]
+    synced = (await repos.tickets.list(TENANT_A, alert_id=alert_id))[0]
     assert synced.resolved and synced.external_status == "Done" and synced.resolved_by == "Jo Analyst"
     await age_tickets(repos)
     assert await sync_tickets(repos, settings, delivery.tickets) == 0  # resolved tickets are not polled again
@@ -216,7 +216,7 @@ async def test_ticket_create_is_idempotent_and_updates_wait_for_it(
     patches = [json.loads(r.content) for r in receiver.requests if r.method == "PATCH"]
     assert patches[0] == {"work_notes": patches[0]["work_notes"]} and "benign positive" in patches[0]["work_notes"]
     assert patches[1]["state"] == "6" and patches[1]["close_code"] == "Solution provided"
-    tickets = await repos.integrations.tickets(TENANT_A, escalation_ids=[esc_id])
+    tickets = await repos.tickets.list(TENANT_A, escalation_ids=[esc_id])
     assert [t.external_key for t in tickets] == ["INC0010001"] and tickets[0].external_status == "Resolved"
 
 
@@ -244,7 +244,7 @@ async def test_create_ticket_action_uses_the_ticketing_integration(
     assert statuses[str(ticket_action.id)] == "succeeded" and ticket_action.connector == "ticketing"
     assert ticket_action.result["ticket"] == "INC0010002" and ticket_action.result["created"] is True
     assert ledger["send_alert"].connector != "ticketing"  # other actions keep the tenant's connector
-    linked = await repos.integrations.tickets(TENANT_A, alert_id=alert_id)
+    linked = await repos.tickets.list(TENANT_A, alert_id=alert_id)
     assert [(t.external_key, t.escalation_id, t.action_id) for t in linked] == [("INC0010002", None, ticket_action.id)]
 
     # The alert escalates later: its escalation reuses the ticket instead of opening a second one.
@@ -256,7 +256,7 @@ async def test_create_ticket_action_uses_the_ticketing_integration(
     )
     delivery = receiver.delivery(repos, settings, box)
     assert await delivery.run_once() == 1
-    linked = await repos.integrations.tickets(TENANT_A, alert_id=alert_id)
+    linked = await repos.tickets.list(TENANT_A, alert_id=alert_id)
     assert [(t.external_key, t.escalation_id) for t in linked] == [("INC0010002", esc.id)]
     assert receiver.paths().count("POST /api/now/table/incident") == 1
 
@@ -374,5 +374,5 @@ async def test_onboarding_sample_alerts_never_reach_integrations(
     ledger = {a.action_type: a for a in (await repos.actions.list(TENANT_A, alert_id=sample_id)).items}
     ticket_action = ledger["create_ticket"]
     assert statuses[str(ticket_action.id)] == "dry_run" and ticket_action.connector == "dry_run"
-    assert receiver.requests == [] and await repos.integrations.tickets(TENANT_A, alert_id=sample_id) == []
+    assert receiver.requests == [] and await repos.tickets.list(TENANT_A, alert_id=sample_id) == []
     assert [r["alert_id"] for r in await rows(repos)] == [real_id]

@@ -16,7 +16,7 @@ from lg_sotf.compliance.canonical import canonical_bytes, seal, sha256_hex, sign
 from lg_sotf.compliance.tenant_data import EXPORT_TABLES, NOT_EXPORTED, export_tenant_zip
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import User
-from lg_sotf.db.repos.integrations import NewOutboxEntry
+from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.integrations.events import TEST_EVENT
 from lg_sotf.queue.streams import QueueStreams, encode_work
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
@@ -349,7 +349,7 @@ async def _seed_integration_data(api: ApiHarness, tenant_id: str, alert_id: str,
         secret_ciphertext=markers["integration"],
     )
     await repos.users.create(tenant_id, f"sso@{tenant_id}.example.com", "analyst", oidc_subject="idp-subject-1")
-    await repos.integrations.enqueue(
+    await repos.outbox.enqueue(
         tenant_id,
         [
             NewOutboxEntry(
@@ -363,7 +363,7 @@ async def _seed_integration_data(api: ApiHarness, tenant_id: str, alert_id: str,
             )
         ],
     )
-    await repos.integrations.add_ticket(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
+    await repos.tickets.add(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
     await repos.usage.add_ingested(tenant_id, 3)
 
 
@@ -630,8 +630,8 @@ async def _seed_integration(api: ApiHarness, tenant_id: str, alert_id: str, *, d
             integration_id=integration.id, event_id=event_id, event_type=TEST_EVENT, operation="test",
             dedupe_key=f"{TEST_EVENT}:{event_id}", payload={},
         )
-        await repos.integrations.record_test(tenant_id, entry, ok=True, error=None, result=None)
-    await repos.integrations.add_ticket(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
+        await repos.outbox.record_test(tenant_id, entry, ok=True, error=None, result=None)
+    await repos.tickets.add(tenant_id, integration.id, system="jira", alert_id=alert_id, external_key="SOC-1")
 
 
 async def test_erasure_batches_visit_children_first_and_never_cascade(
