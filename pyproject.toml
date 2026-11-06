@@ -184,6 +184,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "lg_sotf.errors",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
     "lg_sotf.security.*",
@@ -264,9 +265,6 @@ ignore_imports = [
     "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
     # C6 action catalog to domain/actions.py
     "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
-    # F1 kernel error module
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.exceptions",
-    "lg_sotf.db.errors -> lg_sotf.core.exceptions",
     # F3 extract lg_sotf.net (egress, TLS, Retry-After)
     "lg_sotf.integrations.http -> lg_sotf.ingestion.errors",
     "lg_sotf.integrations.http -> lg_sotf.ingestion.options",
@@ -300,6 +298,14 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["lg_sotf.api"]
 forbidden_modules = ["lg_sotf.core.workflow", "lg_sotf.core.nodes", "lg_sotf.core.graph", "lg_sotf.agents", "langgraph"]
+
+[[tool.importlinter.contracts]]
+id = "errors-is-leaf"
+name = "The kernel error module imports no lg_sotf module"
+type = "forbidden"
+source_modules = ["lg_sotf.errors"]
+# The layers contract already keeps errors off every higher layer; this closes the kernel siblings.
+forbidden_modules = ["lg_sotf.observability", "lg_sotf.security", "lg_sotf.settings"]
 
 [[tool.importlinter.contracts]]
 id = "mcp-thin-client"

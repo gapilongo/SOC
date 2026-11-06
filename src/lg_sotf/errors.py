@@ -1,4 +1,10 @@
-"""Exception hierarchy shared across LG-SOTF."""
+"""Root exception classes shared across LG-SOTF (kernel layer).
+
+This module imports nothing from ``lg_sotf`` (an import-linter contract
+enforces it), so every layer can raise and catch these without importing the
+package that uses them most. Class names are part of the record:
+``type(exc).__name__`` is written to logs and ``sources.last_error``.
+"""
 
 
 class LG_SOTFError(Exception):
@@ -36,3 +42,15 @@ class AgentError(LG_SOTFError):
 
 class StorageError(LG_SOTFError):
     """Storage-related errors."""
+
+
+class IngestionError(Exception):
+    """Base class for ingestion failures."""
+
+
+class SourceConfigError(IngestionError):
+    """A source's configuration or credentials are missing or invalid."""
+
+
+class OperationError(Exception):
+    """A user-facing failure of an operations command (bad input or state)."""

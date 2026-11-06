@@ -8,9 +8,26 @@ from __future__ import annotations
 
 from typing import Optional
 
+# The two roots live in the kernel so lower layers can raise them; ingestion re-exports them.
+from lg_sotf.errors import IngestionError, SourceConfigError
 
-class IngestionError(Exception):
-    """Base class for ingestion failures."""
+__all__ = [
+    "DecryptedSecretError",
+    "IngestionError",
+    "NormalizationError",
+    "SourceAuthError",
+    "SourceConfigError",
+    "SourceDisabled",
+    "SourceError",
+    "SourceNotPullable",
+    "SourceNotPushable",
+    "SourceProtocolError",
+    "SourceRateLimited",
+    "SourceRequestError",
+    "SourceResponseTooLarge",
+    "SourceUnavailable",
+    "UnrecognizedEvent",
+]
 
 
 class NormalizationError(IngestionError):
@@ -19,10 +36,6 @@ class NormalizationError(IngestionError):
 
 class UnrecognizedEvent(NormalizationError):
     """The event does not look like this source's format (the LLM fallback may try it)."""
-
-
-class SourceConfigError(IngestionError):
-    """A source's configuration or credentials are missing or invalid."""
 
 
 class DecryptedSecretError(SourceConfigError):
