@@ -1,5 +1,5 @@
 /** Shared helpers for the end-to-end suite (see playwright.config.ts). */
-import { expect, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -128,6 +128,54 @@ export async function statValue(page: Page, label: string): Promise<number> {
   const n = Number(text.replace(/[^0-9]/g, ''));
   if (!Number.isFinite(n) || text.trim() === '') throw new Error(`stat ${label} has no number: ${JSON.stringify(text)}`);
   return n;
+}
+
+// ----------------------------------------------------------------------------- escalations
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** The escalation queue's table region (pages/escalations/QueueTable.tsx). */
+export function escalationQueue(page: Page): Locator {
+  return page.getByRole('region', { name: 'Escalation queue' });
+}
+
+/** The queue row whose title link is exactly `title`. */
+export function escalationRow(page: Page, title: string): Locator {
+  return escalationQueue(page).getByRole('row').filter({ has: page.getByRole('link', { name: title, exact: true }) });
+}
+
+/**
+ * Open the escalation queue (waiting escalations, SLA order) and return the
+ * row of `title`, loading further pages of the queue as needed.
+ */
+export async function findEscalation(page: Page, title: string): Promise<Locator> {
+  await page.goto('/escalations');
+  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+  const row = escalationRow(page, title);
+  const rows = escalationQueue(page).getByRole('row');
+  // The header row plus at least one escalation.
+  await expect.poll(() => rows.count()).toBeGreaterThan(1);
+  for (let i = 0; i < 20 && (await row.count()) === 0; i += 1) {
+    const more = page.getByRole('button', { name: 'Load more', exact: true });
+    if ((await more.count()) === 0) break;
+    const before = await rows.count();
+    await more.click();
+    await expect.poll(() => rows.count()).toBeGreaterThan(before);
+  }
+  await expect(row).toHaveCount(1);
+  return row;
+}
+
+/** The decision form of an escalation's decision page (/escalations/:id). */
+export function decisionForm(page: Page): Locator {
+  return page.getByRole('form', { name: 'Your decision' });
+}
+
+/** A verdict radio of the decision form; its accessible name starts with the verdict, then its hint. */
+export function verdictRadio(page: Page, label: 'True positive' | 'False positive' | 'Benign positive'): Locator {
+  return decisionForm(page).getByRole('radio', { name: new RegExp(`^${escapeRegExp(label)}`) });
 }
 
 export async function screenshot(page: Page, name: string): Promise<void> {

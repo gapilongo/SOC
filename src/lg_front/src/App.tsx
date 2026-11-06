@@ -23,6 +23,7 @@ const OidcCallbackPage = lazy(() => import('./pages/OidcCallback'));
 const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
 const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
 const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
+const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
 const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
@@ -77,6 +78,7 @@ export function AppRoutes() {
           <Route index element={<OverviewPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="escalations" element={<EscalationsPage />} />
+          <Route path="escalations/:id" element={<DecisionPage />} />
           <Route path="approvals" element={<ApprovalsPage />} />
           <Route path="actions" element={<LegacyActionsRedirect />} />
           <Route path="suppressions" element={<SuppressionsPage />} />
