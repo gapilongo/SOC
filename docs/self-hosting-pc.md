@@ -456,8 +456,11 @@ real customer data. `LLM_BASE_URL` (an `https://` URL) points the `openai`
 provider at any OpenAI-compatible endpoint. For DeepSeek, set `LLM_PROVIDER`
 `openai`, `LLM_BASE_URL` `https://api.deepseek.com`, `LLM_STRUCTURED_OUTPUT`
 `json_mode` (its thinking models refuse a forced tool call), the models
-(for example `deepseek-v4-flash` and `deepseek-v4-pro`) and the secret
-`OPENAI_API_KEY`. DeepSeek is hosted in China: send it synthetic alerts only,
+(for example `deepseek-flash` and `deepseek-v4-pro`; `deepseek-v4-flash` is the
+retired name, still accepted and billed as Flash) and the secret
+`OPENAI_API_KEY`. Both models are in the built-in price table, including
+DeepSeek's peak hours (01:00-04:00 and 06:00-10:00 UTC on weekdays, at twice the
+off-peak rate), so the dashboard and LLM usage show their cost. DeepSeek is hosted in China: send it synthetic alerts only,
 not customer data, unless your data-transfer assessment allows it. To go back to the fake model, set
 `LLM_PROVIDER` to `fake` and delete the key with
 `gh secret delete GOOGLE_API_KEY --env dev`.

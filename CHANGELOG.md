@@ -14,6 +14,12 @@ All notable changes to this project are documented here. The format follows
   `LLM_STRUCTURED_OUTPUT`). Replies are parsed as JSON with one repair attempt
   and metered under the provider's own model name. OpenAI itself, with no
   `llm.base_url`, keeps tool calling.
+- DeepSeek prices in the built-in price table: `deepseek-flash` (and its
+  retired name `deepseek-v4-flash`) and `deepseek-v4-pro`, at DeepSeek's
+  published rates, including the cache-hit price. Prices can now have peak
+  windows: a DeepSeek call between 01:00-04:00 or 06:00-10:00 UTC on a weekday
+  costs twice the off-peak rate. Before this, DeepSeek usage showed as $0 and
+  logged `llm.price_unknown`.
 
 ### Changed
 
