@@ -76,7 +76,7 @@ export async function signIn(page: Page, who: Credentials): Promise<void> {
   await page.getByLabel('Email').fill(who.email);
   await page.getByLabel('Password').fill(who.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await expect(page.getByTestId('tenant-name')).not.toHaveText('-');
 }
 

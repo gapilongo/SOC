@@ -19,7 +19,7 @@ import { ThemeProvider } from './theme/theme';
 // One chunk per route.
 const LoginPage = lazy(() => import('./pages/Login'));
 const OidcCallbackPage = lazy(() => import('./pages/OidcCallback'));
-const DashboardPage = lazy(() => import('./pages/Dashboard'));
+const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
 const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
 const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
 const ActionsPage = lazy(() => import('./pages/ActionsPage'));
@@ -73,7 +73,7 @@ export function AppRoutes() {
             </RequireAuth>
           }
         >
-          <Route index element={<DashboardPage />} />
+          <Route index element={<OverviewPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="escalations" element={<EscalationsPage />} />
           <Route path="actions" element={<ActionsPage />} />

@@ -145,7 +145,7 @@ test('security headers on every document, and the admin signs in under the CSP',
   expect(refresh?.sameSite).toBe('Strict');
   // A reload restores the session from the HttpOnly refresh cookie, not from storage.
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await assertNoTokenInStorage(page);
   await watch.assertClean();
   await context.close();
@@ -472,7 +472,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     ['/usage', 'LLM usage', '12-usage'],
     ['/audit', 'Audit log', '13-audit'],
     // Last: the summary is cached for 15 seconds, so it now reflects the decisions above.
-    ['/', 'Dashboard', '02-dashboard'],
+    ['/', 'Overview', '02-dashboard'],
   ];
   for (const [path, heading, shot] of pages) {
     await page.goto(path);
