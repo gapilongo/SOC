@@ -219,9 +219,10 @@ dashboard, sending sample alerts, an alert with its verdict and workflow
 timeline, escalations, response actions, integrations, tenant settings, the
 audit log and LLM usage.
 
-[![Product tour: LG-SOTF from sign-in to audit log](docs/media/tour.gif)](docs/media/tour.mp4)
+![Product tour: LG-SOTF from sign-in to audit log](docs/media/tour.gif)
 
-[Full-quality video (MP4)](docs/media/tour.mp4). The tour runs against the
+[Download the full-quality video (MP4, 1.9 MB)](docs/media/tour.mp4?raw=true). GitHub
+plays the GIF above inline but only offers the MP4 as a download. The tour runs against the
 same demo stack as the screenshots below: synthetic alerts and the offline
 stand-in model. To record it again after a UI change, run
 `scripts/record_tour.mjs`, then `scripts/make_tour_media.sh`. Both scripts
