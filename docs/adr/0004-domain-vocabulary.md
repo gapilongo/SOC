@@ -58,12 +58,14 @@ differed between copies: `users.ROLES` and the CLI listed
   redeclaration and re-export with the vocabulary, as sets (`ROLE_RANK` and
   `SEVERITY_RANK` as orders). A new copy belongs in that list, or better is
   an import.
-* `tests/integration/db/test_vocabulary_constraints.py` reads the live
-  `CHECK` constraints (`pg_get_constraintdef`) on `alerts`,
-  `response_actions`, `escalations`, `analyst_feedback`, `sources`, `users`,
-  `api_keys`, `integrations` and `notification_outbox` and compares their
-  value lists with the vocabulary: adding a value without a migration fails
-  CI.
+* `tests/integration/db/test_vocabulary_constraints.py` reads every
+  value-list `CHECK` of the migrated schema (`pg_get_constraintdef`; among
+  them `alerts`, `response_actions`, `escalations`, `workflow_runs`,
+  `sources`, `users`, `api_keys`, `integrations` and `notification_outbox`)
+  and compares it with the vocabulary, or with the repository constant for
+  a table-local set such as the outbox status: adding a value without a
+  migration fails CI, and so does a new value-list `CHECK` the test does not
+  map.
 * `users.ROLES` and the `lg-sotf create-admin --role` choices now list roles
   in the canonical order, which changes the wording of the "role must be one
   of" error and of the CLI help (CHANGELOG).
