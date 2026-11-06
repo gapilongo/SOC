@@ -116,11 +116,11 @@ async def test_concurrent_logins_cannot_exceed_the_lockout_budget(api: ApiHarnes
 
 async def test_correct_password_in_flight_does_not_clear_a_fresh_lock(api: ApiHarness) -> None:
     user = await api.user(TENANT_A, "analyst", email="inflight@a.example.com")
-    reserved = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3)
+    reserved = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15)
     assert reserved is not None
     for _ in range(2):
-        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is not None
-    assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is None
+        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15) is not None
+    assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15) is None
     locked = await api.repos.users.record_login_failure(
         TENANT_A, user.id, max_attempts=3, lockout_minutes=15, counted=True
     )
@@ -136,11 +136,11 @@ async def test_unsettled_reservations_become_a_lock_that_expires(api: ApiHarness
 
     user = await api.user(TENANT_A, "analyst", email="crashed@a.example.com")
     for _ in range(3):
-        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3) is not None
+        assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15) is not None
     assert await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15) is None
     assert (await api.repos.users.get(TENANT_A, user.id)).is_locked()
     later = datetime.now(UTC) + timedelta(minutes=16)
-    again = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, now=later)
+    again = await api.repos.users.reserve_login_attempt(TENANT_A, user.id, max_attempts=3, lockout_minutes=15, now=later)
     assert again is not None and again.failed_logins == 1 and again.locked_until is None
 
 

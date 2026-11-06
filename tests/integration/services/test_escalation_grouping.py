@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List
 
 import pytest
 
+from lg_sotf.db import locks
 from lg_sotf.db.repos import Repositories
 from lg_sotf.services.escalation import EscalationService, EscalationTicket
 from lg_sotf.settings import Settings
@@ -277,8 +278,6 @@ async def test_indicator_lookups_run_outside_the_grouping_lock(
     repos: Repositories, make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PERF-9: the per-tenant grouping lock is held only for the parent lookup and attach/create."""
-    from lg_sotf.services.escalation import ESCALATION_GROUP_LOCK
-
     svc = service(repos, make_settings)
     first = await add_alert(repos, TENANT_A, fingerprint="fp-l1")
     second = await add_alert(repos, TENANT_A, fingerprint="fp-l2")
@@ -292,7 +291,7 @@ async def test_indicator_lookups_run_outside_the_grouping_lock(
             held.append(
                 await conn.fetchval(
                     "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND classid = $1 AND granted",
-                    ESCALATION_GROUP_LOCK,
+                    locks.ESCALATION_GROUP,
                 )
             )
         return await real(*args, **kwargs)

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic.fields import FieldInfo
 from pydantic_settings import (
     BaseSettings,
@@ -367,6 +367,45 @@ class IntegrationsSettings(BaseModel):
     smtp_password: Optional[SecretStr] = None
     smtp_from: Optional[str] = None
     smtp_timeout_s: float = Field(default=15.0, gt=0, le=120)
+
+
+class IngestionSection(BaseModel):
+    """The fields of the free-form ``settings.ingestion`` section (field-only; not part of ``Settings`` validation).
+
+    ``Settings.ingestion`` stays a plain mapping, so an invalid key there never
+    stops the API or the scheduler from starting. Two readers validate it:
+
+    * :class:`lg_sotf.ingestion.options.IngestionOptions` (a subclass) reads
+      it strictly: ingestion and pull sources refuse to run on an invalid
+      section (:class:`~lg_sotf.errors.SourceConfigError`).
+    * :func:`lg_sotf.net.egress.egress_policy` reads only
+      ``allow_private_destinations``, leniently: an invalid section means
+      ``False`` (private destinations refused), so integrations and webhooks
+      fail closed instead of failing to build (ADR-0007).
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    llm_fallback: bool = False
+    llm_fallback_max_per_call: int = Field(default=20, ge=0, le=1_000)
+    llm_fallback_concurrency: int = Field(default=4, ge=1, le=64)
+    llm_fallback_timeout_s: float = Field(default=60.0, gt=0, le=3_600)
+    batch_size: int = Field(default=500, ge=1, le=5_000)
+    max_event_bytes: int = Field(default=1_048_576, ge=1_024)
+    max_raw_bytes: int = Field(default=262_144, ge=1_024)
+    redact_in_thread_bytes: int = Field(default=65_536, ge=0)
+    max_future_skew_s: float = Field(default=900.0, ge=0)
+    page_size: int = Field(default=200, ge=1, le=10_000)
+    max_pages_per_poll: int = Field(default=20, ge=1, le=10_000)
+    overlap_s: float = Field(default=300.0, ge=0, le=86_400)
+    http_timeout_s: float = Field(default=30.0, gt=0, le=600)
+    http_connect_timeout_s: float = Field(default=10.0, gt=0, le=120)
+    http_max_retries: int = Field(default=4, ge=0, le=10)
+    http_backoff_base_s: float = Field(default=0.5, ge=0)
+    http_backoff_max_s: float = Field(default=30.0, ge=0)
+    http_max_retry_after_s: float = Field(default=120.0, ge=0)
+    # Install-level: let sources, integrations and webhooks reach RFC 1918 / ULA addresses.
+    allow_private_destinations: bool = False
 
 
 class Settings(BaseSettings):

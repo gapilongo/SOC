@@ -5,11 +5,6 @@
 agents/base.py::BaseAgent.__init__
 db/migrate.py::_ssl_params
 db/migrate.py::libpq_url
-db/pool.py::Database.__init__
-db/repos/runs.py::RunsRepo.requeue_stale_all_tenants
-db/repos/users.py::UsersRepo.record_login_failure
-db/repos/users.py::UsersRepo.reserve_login_attempt
-db/retention.py::purge_expired
 ingestion/service.py::IngestionService.__init__
 llm/budget.py::TokenBudget.__init__
 llm/client.py::get_chat_model

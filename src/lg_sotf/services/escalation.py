@@ -62,6 +62,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.db import locks
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
@@ -108,9 +109,6 @@ _DETACHED_SQL = """
     WHERE tenant_id = $1 AND alert_id = $2 AND summary->>'detached_from' = $3
     ORDER BY created_at DESC LIMIT 1
 """
-# Advisory lock class serialising escalation grouping per tenant (next to lg_sotf.db.locks' namespaces).
-ESCALATION_GROUP_LOCK = 710_021
-_GROUP_LOCK_SQL = "SELECT pg_advisory_xact_lock($1, hashtext($2))"
 _ATTACHED_TO_SQL = """
     SELECT * FROM escalations
     WHERE tenant_id = $1 AND status IN ('open', 'claimed') AND $2 = ANY(related_alert_ids)
@@ -385,7 +383,7 @@ class EscalationService:
         # the lock is held for the parent lookup and the attach/create step only.
         related = await self._related_candidates(tenant_id, alert_id, policy, now)
         async with self._repos.db.tenant_tx(tenant_id) as conn:
-            await conn.execute(_GROUP_LOCK_SQL, ESCALATION_GROUP_LOCK, tenant_id)
+            await locks.tenant_xact_lock(conn, locks.ESCALATION_GROUP, tenant_id)
             own = await self._repos.escalations.get_active_for_alert(tenant_id, alert_id, conn=conn)
             if own is not None:
                 return _ticket(own, created=False)
@@ -594,7 +592,7 @@ class EscalationService:
             "correlated_alert_ids": [parent.alert_id],
         }
         async with self._repos.db.tenant_tx(tenant_id) as conn:
-            await conn.execute(_GROUP_LOCK_SQL, ESCALATION_GROUP_LOCK, tenant_id)
+            await locks.tenant_xact_lock(conn, locks.ESCALATION_GROUP, tenant_id)
             row = await conn.fetchrow(_DETACHED_SQL, tenant_id, alert_id, parent.id)
             if row is not None:
                 return _ticket(Escalation.model_validate(dict(row)), created=False)

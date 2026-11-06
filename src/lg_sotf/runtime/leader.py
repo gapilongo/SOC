@@ -20,8 +20,7 @@ from typing import Any, Awaitable, Callable, Dict, Optional, Protocol
 import asyncpg
 
 from lg_sotf.db import locks
-from lg_sotf.db.pool import build_ssl_arg
-from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.db.pool import build_ssl_arg, owner_dsn
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -46,13 +45,6 @@ ConnectFn = Callable[[], Awaitable[LeaderConnection]]
 class LeaderState(enum.Enum):
     FOLLOWER = "follower"
     LEADER = "leader"
-
-
-def owner_dsn(settings: Settings) -> str:
-    """Schema-owner URL (``database.migration_url``, falling back to ``database.url``)."""
-    db = settings.database
-    url = db.migration_url or db.url
-    return to_libpq_url(url.get_secret_value())
 
 
 def keepalive_settings(lease_s: float) -> Dict[str, str]:

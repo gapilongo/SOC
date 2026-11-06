@@ -356,7 +356,7 @@ async def run_evaluation(
 
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.db.pool import Database
-    from lg_sotf.runtime.ops import OperationError
+    from lg_sotf.errors import OperationError
     from lg_sotf.runtime.ops import create_tenant as ops_create_tenant
 
     if settings.environment == "production":

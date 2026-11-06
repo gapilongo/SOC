@@ -40,8 +40,7 @@ import httpx
 
 from lg_sotf.domain.connectors import Connector, ConnectorConfigError, MisconfiguredConnector
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.net.egress import DestinationPolicy, Resolver
+from lg_sotf.net.egress import Resolver, egress_policy
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, build_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import DecryptionError, SecretBox
@@ -112,11 +111,7 @@ class ConnectorRegistry:
         self._webhook_options = dict(webhook_options or {})
         self._tls = tls
         self.dry_run = DryRunConnector()
-        try:
-            allow_private = IngestionOptions.from_settings(settings).allow_private_destinations
-        except SourceConfigError:
-            allow_private = False
-        self._policy = DestinationPolicy(require_https=settings.is_production, allow_private=allow_private)
+        self._policy = egress_policy(settings)
 
     @property
     def install_dry_run(self) -> bool:

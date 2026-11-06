@@ -32,7 +32,7 @@ from lg_sotf.db.partitions import (
     expired_partitions,
 )
 from lg_sotf.db.pool import Database
-from lg_sotf.settings import RetentionSettings, get_settings
+from lg_sotf.settings import RetentionSettings
 
 log = structlog.get_logger(__name__)
 
@@ -104,7 +104,7 @@ async def _batched(
 
 async def purge_expired(
     db: Database,
-    retention: Optional[RetentionSettings] = None,
+    retention: RetentionSettings,
     *,
     now: Optional[datetime] = None,
     batch_size: int = 5_000,
@@ -118,7 +118,6 @@ async def purge_expired(
     """
     if batch_size < 1 or max_batches < 1:
         raise ValueError("batch_size and max_batches must be >= 1")
-    retention = retention or get_settings().retention
     now = now or datetime.now(UTC)
     if now.tzinfo is None:
         raise ValueError("now must be timezone-aware")

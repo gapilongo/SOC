@@ -23,7 +23,6 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
-from lg_sotf.settings import get_settings
 
 ROLES = ("admin", "analyst", "viewer")
 
@@ -207,8 +206,8 @@ class UsersRepo(Repository):
         tenant_id: str,
         user_id: UUID,
         *,
-        max_attempts: Optional[int] = None,
-        lockout_minutes: Optional[int] = None,
+        max_attempts: int,
+        lockout_minutes: int,
         now: Optional[datetime] = None,
         conn: Optional[Connection] = None,
     ) -> Optional[User]:
@@ -230,9 +229,6 @@ class UsersRepo(Repository):
         always ends when that lock expires.
         """
         require_aware(now, "now")
-        auth = get_settings().auth
-        max_attempts = auth.max_login_attempts if max_attempts is None else max_attempts
-        lockout_minutes = auth.lockout_minutes if lockout_minutes is None else lockout_minutes
         if max_attempts < 1 or lockout_minutes < 1:
             raise ValueError("max_attempts and lockout_minutes must be >= 1")
         async with self._tenant(tenant_id, conn) as c:
@@ -335,8 +331,8 @@ class UsersRepo(Repository):
         tenant_id: str,
         user_id: UUID,
         *,
-        max_attempts: Optional[int] = None,
-        lockout_minutes: Optional[int] = None,
+        max_attempts: int,
+        lockout_minutes: int,
         now: Optional[datetime] = None,
         counted: bool = False,
         conn: Optional[Connection] = None,
@@ -349,9 +345,6 @@ class UsersRepo(Repository):
         :meth:`reserve_login_attempt` and only the lock decision is made.
         """
         require_aware(now, "now")
-        auth = get_settings().auth
-        max_attempts = auth.max_login_attempts if max_attempts is None else max_attempts
-        lockout_minutes = auth.lockout_minutes if lockout_minutes is None else lockout_minutes
         if max_attempts < 1 or lockout_minutes < 1:
             raise ValueError("max_attempts and lockout_minutes must be >= 1")
         async with self._tenant(tenant_id, conn) as c:

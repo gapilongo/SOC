@@ -17,7 +17,6 @@ from lg_sotf.db.repos._base import (
     truncate,
 )
 from lg_sotf.db.tenancy import thread_id_for
-from lg_sotf.settings import get_settings
 
 RUN_STATUSES = (
     "queued",
@@ -438,13 +437,13 @@ class RunsRepo(Repository):
     async def requeue_stale_all_tenants(
         self,
         *,
-        max_attempts: Optional[int] = None,
+        max_attempts: int,
         now: Optional[datetime] = None,
         limit: int = 100,
     ) -> StaleRunSweep:
         """Atomically recover runs whose lease expired (the worker died or stalled).
 
-        A run already claimed ``max_attempts`` times (default
+        A run already claimed ``max_attempts`` times (the scheduler passes
         ``worker.max_deliveries``) is dead-lettered instead of requeued, so an
         alert that kills its worker cannot loop forever through fresh queue
         messages. A run whose alert is still ``waiting_human``/``waiting_approval``
@@ -455,8 +454,6 @@ class RunsRepo(Repository):
         heartbeat returns False.
         """
         require_aware(now, "now")
-        if max_attempts is None:
-            max_attempts = get_settings().worker.max_deliveries
         if max_attempts < 1:
             raise ValueError("max_attempts must be >= 1")
         async with self._system() as c:

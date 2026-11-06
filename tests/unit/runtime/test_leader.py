@@ -4,7 +4,7 @@ from typing import Any, List, Optional
 
 import asyncpg
 
-from lg_sotf.runtime.leader import LeaderLease, LeaderState, keepalive_settings, owner_dsn
+from lg_sotf.runtime.leader import LeaderLease, LeaderState, keepalive_settings
 
 
 class FakeConn:
@@ -102,12 +102,6 @@ async def test_release_unlocks_and_closes() -> None:
     assert not lease.is_leader
     assert conn.closed
     assert any("pg_advisory_unlock" in q for q in conn.queries)
-
-
-def test_owner_dsn_prefers_migration_url(make_settings: Any) -> None:
-    s = make_settings(database={"url": "postgresql://rt:x@h/db", "migration_url": "postgresql+psycopg://own:y@h/db"})
-    assert owner_dsn(s) == "postgresql://own:y@h/db"
-    assert owner_dsn(make_settings(database={"url": "postgres://rt:x@h/db"})) == "postgresql://rt:x@h/db"
 
 
 def test_keepalive_settings_detect_a_dead_leader_within_about_the_lease() -> None:
