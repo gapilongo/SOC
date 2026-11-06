@@ -331,7 +331,6 @@ forbidden_modules = ["asyncpg", "psycopg", "psycopg_pool", "langgraph"]
 ignore_imports = [
     # D4 SQL into repositories: driver exception classes (F9 typed the connections; lg_sotf.db.Connection)
     "lg_sotf.compliance.tenant_data -> asyncpg",
-    "lg_sotf.onboarding.service -> asyncpg",
 ]
 
 [[tool.importlinter.contracts]]

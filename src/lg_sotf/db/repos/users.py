@@ -17,6 +17,7 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_int,
     fetch_one,
     require_aware,
     set_clauses,
@@ -194,6 +195,11 @@ class UsersRepo(Repository):
         async with self._tenant(tenant_id, conn) as c:
             status = await c.execute("DELETE FROM users WHERE tenant_id = $1 AND id = $2", tenant_id, user_id)
         return status.endswith(" 1")
+
+    async def count_active(self, tenant_id: str, *, conn: Optional[Connection] = None) -> int:
+        """The tenant's active users (the ``max_users`` quota)."""
+        async with self._tenant(tenant_id, conn) as c:
+            return await fetch_int(c, "SELECT count(*) FROM users WHERE tenant_id = $1 AND is_active", tenant_id)
 
     async def count_active_admins(self, tenant_id: str, *, conn: Optional[Connection] = None) -> int:
         async with self._tenant(tenant_id, conn) as c:

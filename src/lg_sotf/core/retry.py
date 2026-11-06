@@ -16,13 +16,12 @@ from __future__ import annotations
 import asyncio
 from typing import Optional, Tuple, Type
 
-import asyncpg
 import httpx
 import psycopg
 from langgraph.types import RetryPolicy
 from redis import exceptions as redis_exceptions
 
-from lg_sotf.db.errors import DatabaseUnavailable
+from lg_sotf.db.errors import TRANSIENT_DB_ERRORS
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm.errors import LLMError
 
@@ -30,13 +29,7 @@ _TRANSIENT_TYPES: Tuple[Type[BaseException], ...] = (
     TimeoutError,
     asyncio.TimeoutError,
     ConnectionError,
-    DatabaseUnavailable,
-    asyncpg.PostgresConnectionError,
-    asyncpg.ConnectionDoesNotExistError,
-    asyncpg.TooManyConnectionsError,
-    asyncpg.CannotConnectNowError,
-    asyncpg.SerializationError,
-    asyncpg.DeadlockDetectedError,
+    *TRANSIENT_DB_ERRORS,
     psycopg.OperationalError,
     redis_exceptions.ConnectionError,
     redis_exceptions.TimeoutError,
