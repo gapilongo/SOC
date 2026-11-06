@@ -37,7 +37,7 @@ import pytest
 
 from lg_sotf.db.repos import Repositories
 from lg_sotf.ingestion.service import IngestionService
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy
+from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.connectors import encrypt_webhook_secret, verify_request

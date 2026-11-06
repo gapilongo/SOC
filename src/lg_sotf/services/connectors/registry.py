@@ -38,10 +38,10 @@ from typing import Any, Dict, Mapping, Optional
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
+from lg_sotf.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.ingestion.sources.http import build_verify
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, Resolver
+from lg_sotf.net.egress import DestinationPolicy, Resolver
+from lg_sotf.net.tls import build_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.security.hashing import SecurityConfigError

@@ -61,7 +61,6 @@ from uuid import UUID
 import httpx
 
 from lg_sotf.db.errors import NotFound
-from lg_sotf.ingestion.sources.netpolicy import Resolver
 from lg_sotf.integrations.config import IntegrationConfigError, MicrosoftConfig, decrypt_secret, parse_microsoft_config
 from lg_sotf.integrations.microsoft.alert_view import AlertView, load_alert_view
 from lg_sotf.integrations.microsoft.auth import AppCredentials, MicrosoftAuthError, TokenProvider, fingerprint_of
@@ -77,6 +76,7 @@ from lg_sotf.integrations.microsoft.clouds import Api, cloud_profile
 from lg_sotf.integrations.microsoft.connection_test import MicrosoftTestReport, ProbeTarget, run_connection_test
 from lg_sotf.integrations.microsoft.http import MicrosoftApi, MicrosoftApiError, MicrosoftHttpFactory, ReadOnlyViolation
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
+from lg_sotf.net.egress import Resolver
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.connectors.base import (
     Connector,

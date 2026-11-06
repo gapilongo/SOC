@@ -2,7 +2,7 @@
 
 Integration URLs (webhook receivers, Jira and ServiceNow instances) are
 tenant-controlled, so every request goes through
-:class:`~lg_sotf.ingestion.sources.netpolicy.GuardedTransport`: ``https``
+:class:`~lg_sotf.net.egress.GuardedTransport`: ``https``
 only in staging and production, loopback / link-local / metadata addresses
 always refused, private ranges only when the install sets
 ``ingestion.allow_private_destinations``, and the connection pinned to the
@@ -25,10 +25,11 @@ from typing import Any, Awaitable, Callable, Mapping, Optional
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
+from lg_sotf.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.ingestion.sources.http import Verify, build_verify, parse_retry_after
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.tls import Verify, build_verify
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.settings import Settings
 

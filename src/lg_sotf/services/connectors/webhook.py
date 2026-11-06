@@ -82,7 +82,7 @@ request timeout is also cut to the time left.
 
 Transport security: TLS certificates are always verified (a tenant may add a
 private CA with ``ca_cert_pem``); the destination is checked and pinned by the
-ingestion :class:`~lg_sotf.ingestion.sources.netpolicy.DestinationPolicy`
+ingestion :class:`~lg_sotf.net.egress.DestinationPolicy`
 (https only in staging/production; loopback, link-local and metadata
 addresses always refused; private ranges only when the install allows them);
 the response body is capped.
@@ -103,9 +103,10 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Mapping, Optio
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
-from lg_sotf.ingestion.sources.http import Verify, parse_retry_after
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.errors import SourceConfigError
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.tls import Verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact
 from lg_sotf.services.connectors.base import ConnectorConfigError, ConnectorResult

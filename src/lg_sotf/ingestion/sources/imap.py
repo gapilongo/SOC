@@ -64,8 +64,8 @@ from lg_sotf.ingestion.errors import (
     SourceUnavailable,
 )
 from lg_sotf.ingestion.sources.base import CURSOR_VERSION, FetchedPage, PullConnector, SourceHealth
-from lg_sotf.ingestion.sources.http import build_verify
-from lg_sotf.ingestion.sources.netpolicy import system_resolve
+from lg_sotf.net.egress import system_resolve
+from lg_sotf.net.tls import build_verify
 
 DEFAULT_PORT = 993
 DEFAULT_POLL_TIMEOUT_S = 900.0
