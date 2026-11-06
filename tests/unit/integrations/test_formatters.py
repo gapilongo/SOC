@@ -26,7 +26,7 @@ from lg_sotf.integrations.events import (
     severity_at_least,
     with_links,
 )
-from lg_sotf.services.connectors.webhook import (
+from lg_sotf.security.signing import (
     EVENT_HEADER,
     IDEMPOTENCY_HEADER,
     SIGNATURE_HEADER,

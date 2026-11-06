@@ -16,9 +16,9 @@ The repository ships ready-made starting points under `examples/soar/`:
 | `examples/soar/n8n/lg-sotf-response.json` | Importable n8n workflow: webhook, signature check, one branch per action type with a placeholder HTTP Request node, response |
 | `examples/soar/n8n/build_workflow.py`, `examples/soar/n8n/code/` | The workflow's generator and the source of its Code nodes, for maintainers: edit them and regenerate the JSON |
 
-The wire format is defined in `lg_sotf.services.connectors.webhook`; the
-tests in `tests/unit/examples/` sign requests with that module's own code, so
-the templates cannot silently drift from it.
+The wire format is defined in `lg_sotf.services.connectors.webhook` and its
+signature in `lg_sotf.security.signing`; the tests in `tests/unit/examples/`
+sign requests with that code, so the templates cannot silently drift from it.
 
 ## Go live in an afternoon
 

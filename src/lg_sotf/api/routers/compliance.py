@@ -42,10 +42,10 @@ from lg_sotf.compliance.tenant_data import (
     export_filename,
     export_tenant_zip,
 )
-from lg_sotf.core.events import publish_event
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
+from lg_sotf.domain.events import publish_event
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, LLMUsageRow, TokenBudget, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 

@@ -6,8 +6,8 @@ from typing import Any, Dict
 
 import pytest
 
-from lg_sotf.core import routing
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain import routing
+from lg_sotf.domain.routing import RoutingThresholds
 
 T = RoutingThresholds()
 

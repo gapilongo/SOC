@@ -15,7 +15,6 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
-from lg_sotf.core.suppression import InvalidRule
 from lg_sotf.db.errors import (
     AlreadyInState,
     Conflict,
@@ -26,6 +25,7 @@ from lg_sotf.db.errors import (
     InvalidValue,
     NotFound,
 )
+from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.ingestion.errors import SourceConfigError, SourceDisabled, SourceNotPushable
 from lg_sotf.observability.logging import current_context, get_logger
 from lg_sotf.services.response import ResponsePolicyError

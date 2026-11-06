@@ -69,7 +69,7 @@ async def build_context(settings: Settings, *, http_transport: Optional[httpx.As
     from lg_sotf.queue.events import EventBus
     from lg_sotf.queue.producer import WorkQueue
     from lg_sotf.queue.redis import create_redis
-    from lg_sotf.security.crypto import SecretBox
+    from lg_sotf.security.crypto import load_secret_box
     from lg_sotf.services.review import ReviewService
 
     db = Database(settings.database, application_name="lg-sotf-api")
@@ -78,7 +78,7 @@ async def build_context(settings: Settings, *, http_transport: Optional[httpx.As
     try:
         repos = Repositories.create(db)
         events = EventBus(redis, settings)
-        box = SecretBox.from_settings(settings) if settings.security.encryption_keys else None
+        box = load_secret_box(settings)
         oidc = OIDCVerifier(settings.auth, transport=http_transport) if settings.auth.oidc_issuer else None
         return ApiContext(
             settings=settings,
@@ -94,7 +94,7 @@ async def build_context(settings: Settings, *, http_transport: Optional[httpx.As
                 repos=repos,
                 budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
             ),
-            review=ReviewService(repos, settings, events),
+            review=ReviewService(repos, settings, events, secret_box=box),
             tokens=TokenService(settings),
             limiter=RateLimiter(redis, settings.redis.key_prefix),
             tenants=TenantCache(repos),

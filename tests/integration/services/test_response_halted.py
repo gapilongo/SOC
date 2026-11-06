@@ -16,8 +16,8 @@ from typing import Any, Dict, Iterator
 import pytest
 
 from lg_sotf.db.repos import ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult, LedgerUnavailable
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
-from lg_sotf.services.connectors.base import ConnectorResult, LedgerUnavailable
 from lg_sotf.services.rollback import RollbackService
 from tests.integration.db._support import TENANT_A
 from tests.integration.integrations.microsoft.conftest import MicrosoftEnv, MicrosoftEnvFactory

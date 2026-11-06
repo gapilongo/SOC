@@ -31,11 +31,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
+from lg_sotf.domain.connectors import VerificationResult
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.capability import HandlerContext
 from lg_sotf.integrations.microsoft.defender._common import Defer, ms_id, parse_time, text, values
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import VerificationResult
 
 ACTIONS_PATH = "/api/machineactions"
 LIST_TOP = "50"

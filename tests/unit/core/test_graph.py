@@ -18,7 +18,7 @@ from lg_sotf.core.graph import (
     cap_alert,
     capped_notes,
 )
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 
 
 def test_importing_core_has_no_side_effects() -> None:

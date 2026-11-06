@@ -28,10 +28,11 @@ from lg_sotf.compliance.tenant_data import (
     export_tenant_zip,
 )
 from lg_sotf.db.errors import NotFound
+from lg_sotf.db.pool import owner_database
 from lg_sotf.db.repos import Repositories, Tenant
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.errors import OperationError
 from lg_sotf.queue.redis import create_redis
-from lg_sotf.runtime.ops import OperationError, owner_database
 from lg_sotf.settings import Settings
 
 CLI_ACTOR = "cli"

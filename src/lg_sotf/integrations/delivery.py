@@ -50,6 +50,7 @@ from prometheus_client import Counter
 
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos.integrations import Integration, OutboxEntry
+from lg_sotf.domain.events import make_event
 from lg_sotf.integrations.channels import SmtpFactory, send_notification
 from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret, rate_limit_per_minute
 from lg_sotf.integrations.events import ui_base_url
@@ -370,8 +371,6 @@ async def sync_tickets(
             TICKET_SYNCS.labels(system=ticket.system, outcome="resolved" if newly_resolved else "ok").inc()
             if newly_resolved and events is not None:
                 try:
-                    from lg_sotf.core.events import make_event
-
                     await events.publish(
                         ticket.tenant_id,
                         make_event("alert.updated", ticket.tenant_id, ticket.alert_id,

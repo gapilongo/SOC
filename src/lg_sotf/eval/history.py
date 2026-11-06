@@ -47,15 +47,15 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, 
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core import routing
 from lg_sotf.core.graph import cap_alert
-from lg_sotf.core.routing import RoutingThresholds, refused_by
 from lg_sotf.db import Connection
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories
 from lg_sotf.db.repos.alerts import AlertsRepo
 from lg_sotf.db.repos.indicators import IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.reports import DecidedAlert
+from lg_sotf.domain import routing
+from lg_sotf.domain.routing import RoutingThresholds, refused_by
 from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary

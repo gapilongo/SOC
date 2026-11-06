@@ -30,6 +30,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.retention import purge_expired
 from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.settings import RetentionSettings
 from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert
 from tests.integration.db.test_rls import TENANT_TABLES, seed_everything
 
@@ -134,9 +135,9 @@ async def test_system_scope_is_refused_for_the_runtime_role(app_db: Database, ap
         async with app_db.system_tx():
             pass
     with pytest.raises(SystemScopeDenied):
-        await app.runs.requeue_stale_all_tenants()
+        await app.runs.requeue_stale_all_tenants(max_attempts=5)
     with pytest.raises(SystemScopeDenied):
-        await purge_expired(app_db)
+        await purge_expired(app_db, RetentionSettings())
 
 
 async def test_credential_lookups_restore_the_bypass_setting(app_db: Database, app: Repositories) -> None:

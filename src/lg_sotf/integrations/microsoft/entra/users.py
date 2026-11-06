@@ -36,11 +36,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Mapping, Optional, TypeVar
 
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.capability import HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import ConnectorResult
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

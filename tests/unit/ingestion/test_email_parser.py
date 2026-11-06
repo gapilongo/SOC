@@ -9,10 +9,10 @@ from typing import Any, Dict
 
 import pytest
 
+from lg_sotf.domain.urls import defang, ip_host, link_mismatch, site
 from lg_sotf.ingestion.email import EmailLimits, EmailParseError, EmailTooLarge, parse_email, unparsed_email
 from lg_sotf.ingestion.email.attachments import classify, sniff
 from lg_sotf.ingestion.email.auth import parse_authentication_results, parse_received, relay_hop
-from lg_sotf.ingestion.email.urls import defang, ip_host, link_mismatch, site
 from tests.unit.ingestion._email import HARVEST, LNK, PDF, PE, auth, build, wrap, zip_bytes
 
 

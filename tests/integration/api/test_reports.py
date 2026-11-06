@@ -13,9 +13,9 @@ from typing import Any, Dict, Optional
 
 import pytest
 
-from lg_sotf.core.suppression import alert_match_view, first_matching_rule
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
 from lg_sotf.services.report_render import REPORT_CSS
 from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert

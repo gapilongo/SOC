@@ -11,9 +11,9 @@ from typing import Any, Dict, List
 import asyncpg
 import pytest
 
-from lg_sotf.agents.correlation.indicators import extract_indicators
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.indicators import extract_indicators
 from lg_sotf.eval.command import EXIT_OK, EvalOptions, execute
 from lg_sotf.eval.dataset import load_dataset
 from lg_sotf.eval.history import (

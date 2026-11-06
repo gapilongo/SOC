@@ -26,7 +26,7 @@ from html.parser import HTMLParser
 from typing import Dict, List, Optional, Sequence, Tuple
 from urllib.parse import urljoin
 
-from lg_sotf.ingestion.email.urls import MAX_LINK_TEXT_CHARS, split_url
+from lg_sotf.domain.urls import MAX_LINK_TEXT_CHARS, split_url
 
 _HIDDEN_TAGS = frozenset({"script", "style", "head", "template", "noscript", "title"})
 _REFRESH_URL_RE = re.compile(r"(?i)url\s*=\s*['\"]?([^'\"\s>]+)")

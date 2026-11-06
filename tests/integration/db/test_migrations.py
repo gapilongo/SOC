@@ -25,6 +25,7 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.partitions import add_months, month_start, partition_name
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import to_libpq_url
+from tests.integration.db._support import db_settings
 from tests.integration.db.test_rls import TENANT_TABLES
 
 pytestmark = pytest.mark.asyncio
@@ -163,7 +164,7 @@ async def test_schema_hardening_invariants(migrated_database_url: str) -> None:
 
 
 async def test_schema_is_current(migrated_database_url: str) -> None:
-    db = Database(dsn=migrated_database_url, min_size=0, max_size=1)
+    db = Database(db_settings(migrated_database_url), min_size=0, max_size=1)
     await db.open()
     try:
         assert await schema_is_current(db) is True

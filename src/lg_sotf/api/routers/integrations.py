@@ -45,6 +45,7 @@ from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry, User
 from lg_sotf.db.repos.integrations import IntegrationExists, NewOutboxEntry
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.integrations.channels import send_notification
 from lg_sotf.integrations.config import (
     MICROSOFT_KIND,
@@ -88,7 +89,6 @@ from lg_sotf.integrations.ticketing import ticket_client
 from lg_sotf.models.vocabulary import REVIEWER_ROLES, Severity
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services import integrations as integration_changes
-from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.microsoft import MicrosoftClients, build_microsoft_connector
 from lg_sotf.services.review import ReviewDenied
 

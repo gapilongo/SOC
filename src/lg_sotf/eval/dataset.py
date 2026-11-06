@@ -35,7 +35,7 @@ from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequ
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
-from lg_sotf.core.phishing import PhishingSettings
+from lg_sotf.domain.phishing import PhishingSettings
 from lg_sotf.models.vocabulary import DISPOSITIONS as DISPOSITIONS
 from lg_sotf.models.vocabulary import Disposition
 

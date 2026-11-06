@@ -34,36 +34,21 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from lg_sotf.ingestion.errors import SourceConfigError
-from lg_sotf.settings import Settings
+from lg_sotf.settings import IngestionSection, Settings
 
 SOURCE_OVERRIDABLE = ("page_size", "max_pages_per_poll", "overlap_s", "http_timeout_s", "http_max_retries")
 
 
-class IngestionOptions(BaseModel):
-    model_config = ConfigDict(extra="ignore", frozen=True)
+class IngestionOptions(IngestionSection):
+    """The strict reader of ``settings.ingestion``: an invalid section raises :class:`SourceConfigError`.
 
-    llm_fallback: bool = False
-    llm_fallback_max_per_call: int = Field(default=20, ge=0, le=1_000)
-    llm_fallback_concurrency: int = Field(default=4, ge=1, le=64)
-    llm_fallback_timeout_s: float = Field(default=60.0, gt=0, le=3_600)
-    batch_size: int = Field(default=500, ge=1, le=5_000)
-    max_event_bytes: int = Field(default=1_048_576, ge=1_024)
-    max_raw_bytes: int = Field(default=262_144, ge=1_024)
-    redact_in_thread_bytes: int = Field(default=65_536, ge=0)
-    max_future_skew_s: float = Field(default=900.0, ge=0)
-    page_size: int = Field(default=200, ge=1, le=10_000)
-    max_pages_per_poll: int = Field(default=20, ge=1, le=10_000)
-    overlap_s: float = Field(default=300.0, ge=0, le=86_400)
-    http_timeout_s: float = Field(default=30.0, gt=0, le=600)
-    http_connect_timeout_s: float = Field(default=10.0, gt=0, le=120)
-    http_max_retries: int = Field(default=4, ge=0, le=10)
-    http_backoff_base_s: float = Field(default=0.5, ge=0)
-    http_backoff_max_s: float = Field(default=30.0, ge=0)
-    http_max_retry_after_s: float = Field(default=120.0, ge=0)
-    allow_private_destinations: bool = False
+    The fields live on :class:`~lg_sotf.settings.IngestionSection`;
+    :func:`lg_sotf.net.egress.egress_policy` is the lenient reader of
+    ``allow_private_destinations`` for integrations and webhooks (ADR-0007).
+    """
 
     @classmethod
     def from_settings(cls, settings: Settings) -> IngestionOptions:

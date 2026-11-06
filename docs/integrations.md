@@ -226,7 +226,7 @@ the response webhook connector:
 | `X-LGSOTF-Delivery` | the outbox row id |
 
 Verify with a constant-time comparison and reject timestamps older than five
-minutes (`lg_sotf.services.connectors.webhook.verify_signature` is a
+minutes (`lg_sotf.security.signing.verify_signature` is a
 reference implementation), then deduplicate on the signed body's `id`.
 Answer with a 2xx; 429 and 5xx are retried.
 

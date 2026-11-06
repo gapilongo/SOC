@@ -246,7 +246,7 @@ def execute(  # noqa: C901
     from redis.exceptions import RedisError
 
     from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
-    from lg_sotf.runtime.ops import OperationError
+    from lg_sotf.errors import OperationError
     from lg_sotf.security.hashing import SecurityConfigError
 
     try:

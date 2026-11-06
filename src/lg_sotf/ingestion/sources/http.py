@@ -45,7 +45,7 @@ from lg_sotf.ingestion.errors import (
 )
 from lg_sotf.ingestion.metrics import record_http_retry
 from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
-from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import Verify
 
 SleepFn = Callable[[float], Awaitable[None]]
@@ -223,8 +223,7 @@ class SourceHttpClient:
         await self._client.aclose()
 
     def _backoff(self, attempt: int) -> float:
-        delay = min(self._backoff_max_s, self._backoff_base_s * (2**attempt))
-        return delay * (0.5 + self._rand() / 2)
+        return exp_backoff(attempt, self._backoff_base_s, self._backoff_max_s, self._rand)
 
     async def request(
         self,

@@ -55,16 +55,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, 
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from lg_sotf.ingestion.email.attachments import classify, clean_filename, extension
-from lg_sotf.ingestion.email.auth import (
-    IPNetwork,
-    parse_authentication_results,
-    parse_received,
-    parse_received_spf,
-    relay_hop,
-)
-from lg_sotf.ingestion.email.html import scan_html
-from lg_sotf.ingestion.email.urls import (
+from lg_sotf.domain.urls import (
     MAX_URL_CHARS,
     ascii_host,
     defang,
@@ -75,6 +66,15 @@ from lg_sotf.ingestion.email.urls import (
     split_url,
     urls_in_text,
 )
+from lg_sotf.ingestion.email.attachments import classify, clean_filename, extension
+from lg_sotf.ingestion.email.auth import (
+    IPNetwork,
+    parse_authentication_results,
+    parse_received,
+    parse_received_spf,
+    relay_hop,
+)
+from lg_sotf.ingestion.email.html import scan_html
 
 SCHEMA = "lgsotf.email.v1"
 MAX_SUBJECT_CHARS = 512

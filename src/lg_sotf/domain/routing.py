@@ -24,7 +24,7 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Literal, Mapping, Optional, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -204,7 +204,7 @@ def route_after_decide(state: Mapping[str, Any]) -> DecideRoute:
     route = decision.get("route")
     if route not in ROUTES:
         raise ValueError(f"decide produced no valid route: {route!r}")
-    return route
+    return cast(DecideRoute, route)
 
 
 def route_after_analyst(state: Mapping[str, Any], t: RoutingThresholds) -> AnalystRoute:

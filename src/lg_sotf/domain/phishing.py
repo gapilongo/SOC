@@ -53,7 +53,7 @@ from typing import Annotated, Any, Dict, FrozenSet, List, Mapping, Optional, Seq
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
-from lg_sotf.ingestion.email.urls import ascii_host, site, site_label, unicode_host
+from lg_sotf.domain.urls import ascii_host, site, site_label, unicode_host
 
 DMARC_FAIL = "email_dmarc_fail"
 SPF_FAIL = "email_spf_fail"

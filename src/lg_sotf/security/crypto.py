@@ -105,3 +105,14 @@ class SecretBox:
         except (InvalidToken, UnicodeEncodeError):
             return False
         return True
+
+
+def load_secret_box(settings: Settings) -> Optional[SecretBox]:
+    """The install's :class:`SecretBox`, built once by a process role and injected.
+
+    ``None`` if and only if ``security.encryption_keys`` is unset (or empty).
+    Keys that are set but invalid raise :class:`SecurityConfigError`.
+    """
+    if not settings.security.encryption_keys:
+        return None
+    return SecretBox.from_settings(settings)

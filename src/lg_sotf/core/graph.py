@@ -28,8 +28,8 @@ from typing import Annotated, Any, Awaitable, Callable, Dict, List, Mapping, Opt
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
-from lg_sotf.core import routing
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain import routing
+from lg_sotf.domain.routing import RoutingThresholds
 
 MAX_NOTES = 50
 MAX_NOTE_CHARS = 300

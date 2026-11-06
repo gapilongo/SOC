@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Tuple
 
 from pydantic import Field
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.alert_view import AlertView
 from lg_sotf.integrations.microsoft.capability import CapabilityOptions, HandlerContext, ProbeCheck
@@ -50,7 +51,6 @@ from lg_sotf.integrations.microsoft.mail.mailboxes import (
     mailbox_address,
     probe_get,
 )
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

@@ -8,7 +8,7 @@ from typing import Callable
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.correlation.base import MAX_DIGESTS, CorrelationAgent, frequency_level
-from lg_sotf.agents.correlation.indicators import extract_indicators, is_public_ip
+from lg_sotf.domain.indicators import extract_indicators, is_public_ip
 from lg_sotf.llm.fake import Refuse
 from lg_sotf.settings import Settings
 from tests.unit.agents._support import NOW, Related, StoredAlert, factory, fake_repos, scripted, texts
@@ -127,8 +127,8 @@ async def test_refusal_keeps_the_rule_score_and_marks_the_digest(make_settings: 
 
 async def test_refusal_holds_a_low_confidence_in_the_grey_zone(make_settings: Callable[..., Settings]) -> None:
     """A refused alert must reach analysis and an analyst, not the low-confidence shortcut to an automatic close."""
-    from lg_sotf.core import routing
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain import routing
+    from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
     t = RoutingThresholds()

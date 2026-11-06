@@ -84,10 +84,9 @@ from urllib.parse import quote, urlencode
 import httpx
 
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.integrations.http import destination_policy
 from lg_sotf.integrations.microsoft.clouds import Api
-from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
-from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.egress import GuardedTransport, Resolver, egress_policy, system_resolve
+from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.observability.logging import get_logger
 
 if TYPE_CHECKING:
@@ -281,9 +280,8 @@ class MicrosoftHttpFactory:
         rand: Callable[[], float] = random.random,
     ) -> None:
         self._settings = settings
-        base = destination_policy(settings)
         # Microsoft endpoints are https, whatever the environment.
-        self._policy = DestinationPolicy(require_https=True, allow_private=base.allow_private)
+        self._policy = egress_policy(settings, require_https=True)
         self._transport = transport
         self._resolver = resolver or system_resolve
         self._sleep = sleep
@@ -314,7 +312,7 @@ class MicrosoftHttpFactory:
     # -- plumbing shared with the token provider --------------------------------
 
     def backoff(self, attempt: int) -> float:
-        return min(BACKOFF_MAX_S, BACKOFF_BASE_S * (2**attempt)) * (0.5 + self._rand() / 2)
+        return exp_backoff(attempt, BACKOFF_BASE_S, BACKOFF_MAX_S, self._rand)
 
     async def sleep(self, seconds: float) -> None:
         await self._sleep(max(0.0, seconds))
