@@ -31,6 +31,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A worker could hang on graceful shutdown until it was killed. It
+  cancelled its liveness and usage-flush loops only once, and a cancel can
+  be swallowed inside a Redis command on Python 3.11, leaving those loops
+  running forever. Shutdown now cancels them repeatedly until they stop,
+  like the worker's other background tasks. This was the cause of the
+  occasionally flaky `test_worker_restart_mid_processing_loses_no_alert`.
+
 - `GET /users` now lists every account of the tenant. Before, it stopped
   at the first 1,000 accounts by email and left the rest out without
   saying so. The response format and order (by email) are unchanged.
