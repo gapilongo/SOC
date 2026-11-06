@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import { ALERT_STATUSES, DISPOSITIONS, SEVERITIES } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
@@ -92,7 +93,7 @@ export default function DashboardPage() {
   // Poll as a fallback to the live stream; paused while the tab is hidden.
   const interval = usePollInterval(live === 'open' ? 60_000 : 20_000);
   const q = useQuery({
-    queryKey: ['dashboard', windowHours],
+    queryKey: qk.dashboard.summary(windowHours),
     queryFn: ({ signal }) => endpoints.dashboard(api, windowHours, signal),
     refetchInterval: interval,
     refetchIntervalInBackground: false,

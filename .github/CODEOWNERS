@@ -12,6 +12,8 @@
 /pyproject.toml                             @gapilongo
 /tests/unit/architecture/                   @gapilongo
 /src/lg_front/eslint.config.js              @gapilongo
+/src/lg_front/coverage-floors.json          @gapilongo
+/src/lg_front/scripts/coverage-floors.mjs   @gapilongo
 
 # A committed MCP server entry decides which program runs with a tester's
 # API key and where the key is sent (design threat #5): the entries, the

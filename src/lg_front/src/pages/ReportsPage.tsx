@@ -4,6 +4,7 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { AccuracyBlock, AccuracyReportOut, DetectionOut, FeedbackRate, ValueDay, ValueReportOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
@@ -146,7 +147,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
 function ValueTab({ from, to }: { from: string; to: string }) {
   const api = useApi();
   const q = useQuery({
-    queryKey: ['report-value', from, to],
+    queryKey: qk.reportValue.range(from, to),
     queryFn: ({ signal }) => endpoints.valueReport(api, from, to, signal),
   });
   if (q.isPending) return <LoadingState label="Loading value report" />;
@@ -263,7 +264,7 @@ function feedbackRow(label: string, r: FeedbackRate) {
 function AccuracyTab({ from, to }: { from: string; to: string }) {
   const api = useApi();
   const q = useQuery({
-    queryKey: ['report-accuracy', from, to],
+    queryKey: qk.reportAccuracy.range(from, to),
     queryFn: ({ signal }) => endpoints.accuracyReport(api, from, to, signal),
   });
   if (q.isPending) return <LoadingState label="Loading accuracy report" />;
@@ -358,7 +359,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
   const toast = useToast();
   const [proposed, setProposed] = useState<Record<string, string>>({});
   const q = useQuery({
-    queryKey: ['report-detections', from, to],
+    queryKey: qk.reportDetections.range(from, to),
     queryFn: ({ signal }) => endpoints.detectionsReport(api, from, to, signal),
   });
   const propose = useMutation({

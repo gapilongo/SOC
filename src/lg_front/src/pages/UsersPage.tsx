@@ -3,6 +3,8 @@ import { Copy, KeyRound, Pencil, Plus, ShieldOff, Trash2, UserPlus } from 'lucid
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { afterApiKeyChange, afterUserChange } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
 import { API_KEY_SCOPES, type ApiKeyCreatedOut, type ApiKeyOut, type ApiKeyScope, type Role, type UserOut, type UserUpdateIn } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
@@ -49,7 +51,7 @@ function UserDialog({ user, onClose }: { user: UserOut | null; onClose: () => vo
     onSuccess: (u) => {
       setPassword('');
       toast.success(editing ? `User ${u.email} updated.` : `User ${u.email} created.`);
-      void client.invalidateQueries({ queryKey: ['users'] });
+      void afterUserChange(client);
       onClose();
     },
     onError: (err) => setError(err),
@@ -160,7 +162,7 @@ function KeyDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (k:
   const m = useMutation({
     mutationFn: () => endpoints.createApiKey(api, name.trim(), scopes),
     onSuccess: (k) => {
-      void client.invalidateQueries({ queryKey: ['api-keys'] });
+      void afterApiKeyChange(client);
       onCreated(k);
     },
     onError: (err) => setError(err),
@@ -223,15 +225,15 @@ export default function UsersPage() {
   const [created, setCreated] = useState<ApiKeyCreatedOut | null>(null);
   const [revoking, setRevoking] = useState<ApiKeyOut | null>(null);
 
-  const users = useQuery({ queryKey: ['users', showInactive], queryFn: ({ signal }) => endpoints.users(api, showInactive, signal) });
-  const keys = useQuery({ queryKey: ['api-keys', showRevoked], queryFn: ({ signal }) => endpoints.apiKeys(api, showRevoked, signal) });
+  const users = useQuery({ queryKey: qk.users.list(showInactive), queryFn: ({ signal }) => endpoints.users(api, showInactive, signal) });
+  const keys = useQuery({ queryKey: qk.apiKeys.list(showRevoked), queryFn: ({ signal }) => endpoints.apiKeys(api, showRevoked, signal) });
 
   const delUser = useMutation({
     mutationFn: (u: UserOut) => endpoints.deleteUser(api, u.id),
     onSuccess: () => {
       setDeleting(null);
       toast.success('User deleted.');
-      void client.invalidateQueries({ queryKey: ['users'] });
+      void afterUserChange(client);
     },
     onError: (err) => {
       setDeleting(null);
@@ -243,7 +245,7 @@ export default function UsersPage() {
     onSuccess: (_, u) => {
       setResetting(null);
       toast.success(`MFA reset for ${u.email}. They set it up again at their next sign-in if required.`);
-      void client.invalidateQueries({ queryKey: ['users'] });
+      void afterUserChange(client);
     },
     onError: (err) => {
       setResetting(null);
@@ -255,7 +257,7 @@ export default function UsersPage() {
     onSuccess: () => {
       setRevoking(null);
       toast.success('API key revoked.');
-      void client.invalidateQueries({ queryKey: ['api-keys'] });
+      void afterApiKeyChange(client);
     },
     onError: (err) => {
       setRevoking(null);

@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { endpoints, type AlertFilters } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import { ALERT_STATUSES, DISPOSITIONS, SEVERITIES, type AlertOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { DispositionBadge, SeverityBadge, StatusBadge } from '../../components/Badge';
@@ -101,7 +102,7 @@ export default function AlertsPage() {
     });
 
   const list = useKeysetList({
-    queryKey: ['alerts', filters],
+    queryKey: qk.alerts.list(filters),
     fetchPage: (cursor, signal) => endpoints.alerts(api, filters, cursor, signal),
     itemKey: (a: AlertOut) => a.id,
   });

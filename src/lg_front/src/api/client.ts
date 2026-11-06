@@ -160,6 +160,33 @@ async function parseError(response: Response, requestId: string): Promise<ApiErr
   });
 }
 
+/** `application/json`, or any `+json` media type, with or without parameters. */
+function isJsonMediaType(contentType: string | null): boolean {
+  const type = (contentType ?? '').split(';', 1)[0].trim().toLowerCase();
+  return type === 'application/json' || /^application\/[\w.-]+\+json$/.test(type);
+}
+
+/**
+ * Parse a successful JSON body. Anything else (an HTML page from a misrouted
+ * proxy or the SPA fallback, a truncated body) becomes an `invalid_response`
+ * {@link ApiError}, so pages show an error card rather than a SyntaxError.
+ */
+function parseJsonBody<T>(response: Response, text: string, requestId: string): T {
+  const invalid = () =>
+    new ApiError({
+      status: response.status,
+      code: 'invalid_response',
+      message: 'The API response could not be read. Reload the page; if this persists, the API may be misrouted.',
+      requestId: response.headers.get('x-request-id') ?? requestId,
+    });
+  if (!isJsonMediaType(response.headers.get('content-type'))) throw invalid();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw invalid();
+  }
+}
+
 export interface ApiClient {
   request<T>(method: string, path: string, options?: RequestOptions): Promise<T>;
   get<T>(path: string, options?: RequestOptions): Promise<T>;
@@ -224,7 +251,8 @@ export function createApiClient(opts: {
     if (options.responseType === 'blob') return (await response.blob()) as T;
     const text = await response.text();
     if (options.responseType === 'text') return text as T;
-    return (text ? JSON.parse(text) : undefined) as T;
+    if (!text) return undefined as T;
+    return parseJsonBody<T>(response, text, requestId);
   }
 
   return {

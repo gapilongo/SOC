@@ -3,6 +3,7 @@ import { Download } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { UsageDayOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField } from '../components/ui';
@@ -125,7 +126,7 @@ export default function UsagePage() {
   const [from, setFrom] = useState(isoDay(new Date(today.getTime() - 29 * 86_400_000)));
   const [to, setTo] = useState(isoDay(today));
   const q = useQuery({
-    queryKey: ['usage', from, to],
+    queryKey: qk.usage.range(from, to),
     queryFn: ({ signal }) => endpoints.llmUsage(api, from, to, signal),
     enabled: Boolean(from && to && from <= to),
   });
