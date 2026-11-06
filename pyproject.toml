@@ -190,7 +190,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
-    "lg_sotf.db.types",
+    "lg_sotf.db.*",
     "lg_sotf.errors",
     "lg_sotf.domain.*",
     "lg_sotf.models.vocabulary",
