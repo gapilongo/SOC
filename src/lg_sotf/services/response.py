@@ -150,7 +150,7 @@ from pydantic import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db import AlreadyInState, Connection, InvalidTransition, locks
 from lg_sotf.db.repos._base import UNSET
-from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
+from lg_sotf.db.repos.actions import VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.domain.actions import (
     ACTION_CATALOG,
@@ -287,24 +287,6 @@ MIN_EXECUTION_S = 1.0
 MIN_STATEFUL_EXECUTION_S = DEADLINE_MARGIN_S + MIN_HANDLER_S + 0.5
 # How long a started stateful row waits while a kill switch holds it (each wait counts one attempt).
 HALTED_RETRY_S = 300.0
-_EXECUTED_COUNTS_SQL = """
-    SELECT action_type, count(*)::int AS n FROM response_actions
-    WHERE tenant_id = $1 AND status = ANY($3::text[])
-      -- The window is measured on the database clock that stamps executed_at, unless given.
-      AND executed_at >= COALESCE($2::timestamptz, now() - interval '1 hour')
-    GROUP BY action_type
-"""
-# Workflow actions left 'executing' whose run will never come back to them ($3: grace period in seconds,
-# so a call still in flight is left alone).
-_ORPHANED_EXECUTING_SQL = """
-    SELECT a.tenant_id, a.id, a.connector FROM response_actions a
-    JOIN workflow_runs r ON r.tenant_id = a.tenant_id AND r.alert_id = a.alert_id
-    WHERE a.status = 'executing' AND a.execution_owner = 'workflow' AND r.status IN ('dead_lettered', 'completed')
-      AND ($1::text IS NULL OR a.tenant_id = $1)
-      AND (a.executed_at IS NULL OR a.executed_at < now() - make_interval(secs => $3))
-    ORDER BY a.executed_at NULLS FIRST
-    LIMIT $2
-"""
 ORPHAN_GRACE_S = 60.0
 SCHEDULER_ACTOR = "scheduler"
 # Connector results are stored in response_actions.result; larger details keep their essential keys.
@@ -1544,27 +1526,6 @@ class ResponseService:
         assert connector is not None  # an integration was given
         return connector
 
-    async def executed_counts(
-        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Optional[Connection] = None
-    ) -> Tuple[int, Dict[str, int]]:
-        """(total, per action type) of actions that started real execution since ``since``.
-
-        ``since=None`` (what the guardrails use) means the last hour on the
-        database clock, the clock that stamps ``executed_at``: a worker whose
-        clock runs fast cannot shrink the window and exceed the caps.
-        """
-
-        async def _fetch(c: Any) -> List[Any]:
-            return list(await c.fetch(_EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES)))
-
-        if conn is not None:
-            rows = await _fetch(conn)
-        else:
-            async with self._repos.db.tenant_tx(tenant_id, readonly=True) as c:
-                rows = await _fetch(c)
-        by_type = {str(r["action_type"]): int(r["n"]) for r in rows}
-        return sum(by_type.values()), by_type
-
     # ------------------------------------------------------------------ plan
 
     async def plan(
@@ -1575,7 +1536,7 @@ class ResponseService:
         policy = self.policy(tenant.settings)
         threat_type, candidates = build_candidates(ctx, alert_id)
         result = PlanResult(threat_type=threat_type)
-        used_total, used_by_type = await self.executed_counts(tenant_id, window_start)
+        used_total, used_by_type = await self._repos.actions.executed_counts(tenant_id, window_start)
         auto_budget = max(0, policy.max_actions_per_hour - used_total)
         type_budget = {t: max(0, limit - used_by_type.get(t, 0)) for t, limit in policy.blast_radius.items()}
 
@@ -1998,14 +1959,11 @@ class ResponseService:
         """
         grace = self._execution_budget_s + ORPHAN_GRACE_S
         if tenant_id is None:
-            async with self._repos.db.system_tx() as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, None, limit, grace))
+            rows = await self._repos.actions.find_orphaned_executing_all_tenants(limit=limit, grace_s=grace)
         else:
-            async with self._repos.db.tenant_tx(tenant_id) as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, tenant_id, limit, grace))
+            rows = await self._repos.actions.find_orphaned_executing(tenant_id, limit=limit, grace_s=grace)
         settled = 0
-        for row in rows:
-            owner, action_id, connector = str(row["tenant_id"]), row["id"], row["connector"]
+        for owner, action_id, connector in rows:
             if connector in STATEFUL_CONNECTORS:
                 handed = await self.hand_off(owner, [action_id], reason="orphaned_execution")
                 settled += len(handed)
@@ -2121,7 +2079,7 @@ class ResponseService:
                 async with self._repos.db.tenant_tx(tenant_id) as conn:
                     await locks.tenant_xact_lock(conn, locks.ACTION_CAP, tenant_id)
                     window_start = now - timedelta(hours=1) if now is not None else None
-                    used, by_type = await self.executed_counts(tenant_id, window_start, conn=conn)
+                    used, by_type = await self._repos.actions.executed_counts(tenant_id, window_start, conn=conn)
                     cap_block = self._cap_block(policy, action.action_type, used, by_type)
                     if cap_block is not None:
                         blocked = await self._block_approved(tenant_id, action, cap_block[0], cap_block[1], conn)
@@ -2382,7 +2340,7 @@ class ResponseService:
             guard = check_guardrails(action.action_type, action.target, policy, restorative=restorative)
             if guard is not None:
                 raise ActionRequestError(409, "guardrail_blocked", guard.explanation[:300], reason=guard.code)
-            used, by_type = await self.executed_counts(tenant_id, conn=conn)
+            used, by_type = await self._repos.actions.executed_counts(tenant_id, conn=conn)
             cap_block = self._cap_block(policy, action.action_type, used, by_type)
             if cap_block is not None:
                 raise ActionRequestError(
