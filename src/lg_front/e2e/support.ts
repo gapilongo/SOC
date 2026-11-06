@@ -119,8 +119,12 @@ export async function assertNoTokenInStorage(page: Page): Promise<void> {
 
 /** The number shown on a dashboard stat tile (e.g. "Alerts"). */
 export async function statValue(page: Page, label: string): Promise<number> {
-  const tile = page.locator('main').getByRole('link').filter({ has: page.getByText(label, { exact: true }) });
-  const text = (await tile.locator('div').nth(1).textContent()) ?? '';
+  // An Overview KPI: <div><dt>label</dt><dd>value</dd><dd>sub</dd></div> inside a <dl>.
+  const tile = page
+    .locator('main dl > div')
+    .filter({ has: page.locator('dt').getByText(label, { exact: true }) })
+    .first();
+  const text = (await tile.locator('dd').first().textContent()) ?? '';
   const n = Number(text.replace(/[^0-9]/g, ''));
   if (!Number.isFinite(n) || text.trim() === '') throw new Error(`stat ${label} has no number: ${JSON.stringify(text)}`);
   return n;

@@ -194,7 +194,7 @@ test('the dashboard updates live when alerts arrive through the ingest API', asy
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
-  const before = await statValue(page, 'Alerts');
+  const before = await statValue(page, 'Alerts ingested');
 
   const items = await ingest(request, apiKey, [beacon(), ...Array.from({ length: BURST }, (_, n) => burst(n))]);
   expect(items.filter((i) => i.status === 'inserted')).toHaveLength(BURST + 1);
@@ -202,7 +202,7 @@ test('the dashboard updates live when alerts arrive through the ingest API', asy
   escalatedId = items[1].alert_id as string;
 
   // No navigation, no Refresh click: the WebSocket events refresh the page.
-  await expect.poll(() => statValue(page, 'Alerts'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
+  await expect.poll(() => statValue(page, 'Alerts ingested'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
   await screenshot(page, '02-dashboard');
   await watch.assertClean();
   await context.close();
