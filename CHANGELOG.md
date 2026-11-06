@@ -45,6 +45,12 @@ All notable changes to this project are documented here. The format follows
   error card ("The API response could not be read") with the request id.
   Before, the page showed a raw `SyntaxError`. Empty answers and downloads
   are read as before.
+- Web UI: Jira and ServiceNow ticket links now show on the Escalations page
+  when more than one page of escalations is loaded. Before, the page asked
+  for the tickets of up to 200 escalations in one request whose address was
+  about 10 KB long. The proxy refuses addresses over 8 KB, so the links
+  silently disappeared. The page now asks in batches of 50, still for the
+  first 200 escalations.
 - A change is no longer left in place when its audit log entry cannot be
   written. Before, the change was saved first and the entry written
   afterwards, so a failed write answered 500 but the change stayed, with no
