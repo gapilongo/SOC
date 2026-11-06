@@ -63,8 +63,8 @@ Accepted exceptions that stay:
   the LLM endpoint policy, and splitting that check into a second module would
   create two half-gates.
 * `TYPE_CHECKING`-only imports (for example the `ResponseAction` type
-  reference) are excluded from analysis (`exclude_type_checking_imports`):
-  they have no runtime effect.
+  reference in `domain/connectors.py`) are excluded from analysis
+  (`exclude_type_checking_imports`): they have no runtime effect.
 
 ## Alternatives considered
 

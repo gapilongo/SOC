@@ -103,13 +103,13 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Mapping, Optio
 
 import httpx
 
+from lg_sotf.domain.connectors import ConnectorConfigError, ConnectorResult
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
 from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact
-from lg_sotf.services.connectors.base import ConnectorConfigError, ConnectorResult
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

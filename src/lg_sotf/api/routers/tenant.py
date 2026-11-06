@@ -65,11 +65,11 @@ from lg_sotf.api.schemas import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
+from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
 from lg_sotf.services.llm_check import check_llm

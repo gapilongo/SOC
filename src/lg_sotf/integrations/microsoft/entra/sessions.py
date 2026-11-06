@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.capability import HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.entra.guard import rehearsal, screen, unresolved
@@ -48,7 +49,6 @@ from lg_sotf.integrations.microsoft.entra.users import (
     write_failure,
 )
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

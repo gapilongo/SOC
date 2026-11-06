@@ -11,8 +11,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from lg_sotf.db.repos import Repositories, ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
-from lg_sotf.services.connectors.base import ConnectorResult
 from lg_sotf.services.connectors.webhook import build_payload
 from lg_sotf.services.response import ActionRequestError, ResponseService
 from lg_sotf.services.review import ReviewService

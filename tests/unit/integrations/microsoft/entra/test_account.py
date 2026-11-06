@@ -10,9 +10,9 @@ import httpx
 import pytest
 
 from lg_sotf.db.repos.actions import ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.entra.capabilities import ENTRA_ACCOUNT
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import ConnectorResult
 from tests.fixtures.microsoft import FakeMicrosoft, graph_error, make_action, make_context
 from tests.unit.integrations.microsoft.entra._support import Directory, FakeUser, guard_paths
 

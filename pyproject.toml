@@ -240,24 +240,8 @@ layers = [
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C5 connector port to domain/connectors.py
+    # C7 webhook signing to security/signing.py
     "lg_sotf.integrations.channels -> lg_sotf.services.connectors.webhook",
-    "lg_sotf.integrations.microsoft.capability -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender._common -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.forensics -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.indicators -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.isolation -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.machine_actions -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.stop_quarantine -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.account -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.password -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.risk -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.sessions -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.users -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.mailboxes -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.notify -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.remediate -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
     # C6 action catalog to domain/actions.py
     "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
     # F4 one reader of allow_private_destinations (net.egress.egress_policy replaces IngestionOptions here)

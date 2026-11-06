@@ -12,8 +12,8 @@ import pytest
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.errors import InvalidResumePayload
-from lg_sotf.services.connectors.base import ConnectorResult
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService

@@ -89,11 +89,11 @@ from typing import (
     Tuple,
 )
 
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.capability import HandlerContext, ProbeCheck, ProbeStatus
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MsResponse
-from lg_sotf.services.connectors.base import ConnectorResult
 
 if TYPE_CHECKING:
     from lg_sotf.integrations.microsoft.http import Method

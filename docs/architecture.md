@@ -43,13 +43,13 @@ import-lint`). What each package owns is in the
 | Adapters | `integrations` \| `tools` \| `llm` \| `queue` | notifications, ticketing, Microsoft clients; enrichment; model clients; Redis Streams |
 | Audit | `audit` | `AuditLogger`, the only writer of `audit_log` |
 | Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), the tenant-scoped LangGraph checkpointer, migrations, locks |
-| Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher port |
+| Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher and connector ports |
 | Value types | `models` | canonical alert and domain vocabulary |
 | Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
 | Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction; typed settings |
 
-Some modules still sit in the wrong layer (for example the connector port
-in `services/connectors`); `pyproject.toml` lists each such import as an
+Some modules still sit in the wrong layer (for example the action catalog
+in `services/response.py`); `pyproject.toml` lists each such import as an
 exact exception tied to the roadmap step that moves it.
 
 Removed: `Backup/`, `test.html`, `app_initializer.py` (replaced by

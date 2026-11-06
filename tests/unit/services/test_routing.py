@@ -9,9 +9,9 @@ from typing import Any, Callable, Dict, Iterator, List, Optional
 import pytest
 
 from lg_sotf.db.repos.integrations import Integration
+from lg_sotf.domain.connectors import VerificationResult
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
 from lg_sotf.services.connectors import ConnectorRegistry, ConnectorResult, DryRunConnector, MisconfiguredConnector
-from lg_sotf.services.connectors.base import VerificationResult
 from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
 from lg_sotf.services.response import ACTION_CATALOG, ResponsePolicyError, validate_response_settings
 from lg_sotf.settings import Settings

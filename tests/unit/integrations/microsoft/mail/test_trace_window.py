@@ -10,10 +10,10 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.alert_view import build_alert_view
 from lg_sotf.integrations.microsoft.mail import mailboxes
 from lg_sotf.integrations.microsoft.mail.capabilities import MAIL_REMEDIATE
-from lg_sotf.services.connectors.base import ConnectorResult
 from tests.fixtures.microsoft import FakeMicrosoft
 from tests.unit.integrations.microsoft.mail._exchange import FakeExchange
 from tests.unit.integrations.microsoft.mail._scenario import (

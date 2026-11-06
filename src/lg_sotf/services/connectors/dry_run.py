@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from lg_sotf.services.connectors.base import ConnectorResult
+from lg_sotf.domain.connectors import ConnectorResult
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

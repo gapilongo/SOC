@@ -12,7 +12,7 @@
   Microsoft 365, Entra ID and Defender for Endpoint (import it explicitly).
 """
 
-from lg_sotf.services.connectors.base import (
+from lg_sotf.domain.connectors import (
     Connector,
     ConnectorConfigError,
     ConnectorResult,

@@ -152,6 +152,7 @@ from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.domain.connectors import call_deadline
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.indicators import extract_indicators
 from lg_sotf.domain.phishing import email_block_targets, plan_email_entities
@@ -179,7 +180,6 @@ from lg_sotf.services.connectors import (
     VerifyPlan,
     tenant_response_settings,
 )
-from lg_sotf.services.connectors.base import call_deadline
 from lg_sotf.services.connectors.microsoft import (
     DEADLINE_MARGIN_S,
     MIN_HANDLER_S,

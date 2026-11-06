@@ -5,7 +5,7 @@ Handlers raise :class:`Refused` for an outcome that ends the action as
 ``conflicting_indicator``, ``rollback_not_needed`` ...) and :class:`Defer`
 when the call cannot finish now; :func:`settle` turns both, and the
 Defender API errors that need a capability-specific hint, into a
-:class:`~lg_sotf.services.connectors.base.ConnectorResult`. Every other
+:class:`~lg_sotf.domain.connectors.ConnectorResult`. Every other
 error (throttling, ambiguous writes, server and network errors, token
 failures, :class:`~lg_sotf.integrations.microsoft.capability.CheckpointLost`)
 propagates to the connector, which maps it for all capabilities alike.
@@ -32,10 +32,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Dict, List, Mapping, Optional
 
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.capability import MARKER_PREFIX, HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MsResponse, ledger_error
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.services.connectors.base import ConnectorResult
 
 log = get_logger(__name__)
 
