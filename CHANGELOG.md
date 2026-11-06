@@ -23,6 +23,13 @@ All notable changes to this project are documented here. The format follows
   A test now fails when the backend adds a guardrail reason that the web app
   cannot describe, or when the web app's source-type, integration-kind or
   ticketing-kind lists drift from the backend.
+- A change is no longer left in place when its audit log entry cannot be
+  written. Before, the change was saved first and the entry written
+  afterwards, so a failed write answered 500 but the change stayed, with no
+  trace in the audit log. Now the change and its entry are saved together:
+  either both are there or neither is, and the request can simply be
+  retried. This covers MFA enrollment, disabling MFA, new recovery codes,
+  using a recovery code, and the role update of a single sign-on account.
 
 ## [1.2.3] - 2026-11-05
 

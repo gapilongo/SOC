@@ -2,11 +2,6 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-api/auth/authenticate.py::_provisioned_user
-api/auth/mfa.py::MfaService.check_code
-api/auth/mfa.py::MfaService.confirm_enrollment
-api/auth/mfa.py::MfaService.disable
-api/auth/mfa.py::MfaService.regenerate_recovery_codes
 api/routers/identity.py::_audit
 api/routers/integrations.py::_audit
 api/routers/onboarding.py::_audit

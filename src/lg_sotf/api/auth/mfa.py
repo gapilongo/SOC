@@ -36,6 +36,7 @@ from lg_sotf.observability.logging import get_logger
 from lg_sotf.security import qr, totp
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.security.hashing import SecurityConfigError, indicator_hmac_key
+from lg_sotf.services import accounts
 
 log = get_logger(__name__)
 
@@ -163,24 +164,18 @@ class MfaService:
             await self._audit_failure(user, "enrollment_bad_code", actor_type=actor_type, actor_id=actor_id)
             raise invalid_code(failure_status)
         codes = totp.generate_recovery_codes()
-        activated = await self._ctx.repos.user_mfa.activate(
-            user.tenant_id,
-            user.id,
+        activated = await accounts.activate_mfa(
+            self._ctx.repos,
+            self._audit,
+            user,
             pending_ciphertext=current.pending_secret_ciphertext,
             step=step,
             recovery_code_hashes=self._hash_codes(user, codes),
+            actor_type=actor_type,
+            actor_id=actor_id,
         )
         if activated is None:
             raise ApiError(409, "mfa_not_enrolling", "the enrollment changed meanwhile; start again")
-        await self._audit.record(
-            user.tenant_id,
-            "auth.mfa_enrolled",
-            "user",
-            str(user.id),
-            actor_type=actor_type,
-            actor_id=actor_id,
-            details={"method": "totp", "recovery_codes": len(codes)},
-        )
         return codes
 
     # ------------------------------------------------------------ verification
@@ -194,18 +189,9 @@ class MfaService:
             return None
         if allow_recovery and totp.looks_like_recovery_code(code):
             code_hash = self._hash_codes(user, [code])[0]
-            remaining = await self._ctx.repos.user_mfa.consume_recovery_code(user.tenant_id, user.id, code_hash)
+            remaining = await accounts.consume_recovery_code(self._ctx.repos, self._audit, user, code_hash)
             if remaining is None:
                 return None
-            await self._audit.record(
-                user.tenant_id,
-                "auth.mfa_recovery_code_used",
-                "user",
-                str(user.id),
-                actor_type="user",
-                actor_id=str(user.id),
-                details={"recovery_codes_remaining": remaining},
-            )
             return CodeCheck(method="recovery_code", recovery_codes_remaining=remaining)
         secret = self._decrypt(user, current.secret_ciphertext)
         step = totp.verify_totp(secret, code, at=clock(), after_step=current.last_used_step)
@@ -249,30 +235,13 @@ class MfaService:
 
     async def regenerate_recovery_codes(self, user: User) -> List[str]:
         codes = totp.generate_recovery_codes()
-        updated = await self._ctx.repos.user_mfa.replace_recovery_codes(
-            user.tenant_id, user.id, self._hash_codes(user, codes)
+        updated = await accounts.replace_recovery_codes(
+            self._ctx.repos, self._audit, user, self._hash_codes(user, codes)
         )
         if updated is None:
             raise ApiError(409, "mfa_not_enabled", "MFA is not enabled")
-        await self._audit.record(
-            user.tenant_id,
-            "auth.mfa_recovery_codes_regenerated",
-            "user",
-            str(user.id),
-            actor_type="user",
-            actor_id=str(user.id),
-            details={"recovery_codes": len(codes)},
-        )
         return codes
 
     async def disable(self, user: User) -> None:
-        await self._ctx.repos.user_mfa.delete(user.tenant_id, user.id)
-        await self._audit.record(
-            user.tenant_id,
-            "auth.mfa_disabled",
-            "user",
-            str(user.id),
-            actor_type="user",
-            actor_id=str(user.id),
-            details={"required_by_policy": await self.required_for(user)},
-        )
+        required = await self.required_for(user)
+        await accounts.disable_mfa(self._ctx.repos, self._audit, user, required_by_policy=required)
