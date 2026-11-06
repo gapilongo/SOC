@@ -7,8 +7,6 @@ compliance/tenant_data.py::count_audit_entries
 compliance/tenant_data.py::erase_tenant
 compliance/tenant_data.py::erase_tenant_rows
 compliance/tenant_data.py::erasure_blockers
-core/checkpointer.py::TenantScopedPostgresSaver._cursor
-core/checkpointer.py::TenantScopedPostgresSaver.aprune_thread
 eval/runner.py::check_services
 integrations/outbox.py::_alerts
 integrations/outbox.py::_insert

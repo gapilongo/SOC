@@ -28,11 +28,11 @@ from pydantic import ValidationError as PydanticValidationError
 from redis.asyncio import Redis
 
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.checkpointer import TenantScopedPostgresSaver
 from lg_sotf.core.graph import build_graph, cap_alert
 from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy
 from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.checkpointer import TenantScopedPostgresSaver
 from lg_sotf.db.errors import DatabaseError, InvalidTransition
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories

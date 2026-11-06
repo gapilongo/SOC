@@ -240,8 +240,6 @@ layers = [
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C4 checkpointer to db
-    "lg_sotf.db.migrate -> lg_sotf.core.checkpointer",
     # C5 connector port to domain/connectors.py
     "lg_sotf.integrations.channels -> lg_sotf.services.connectors.webhook",
     "lg_sotf.integrations.microsoft.capability -> lg_sotf.services.connectors.base",

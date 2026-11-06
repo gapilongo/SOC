@@ -38,11 +38,11 @@ import-lint`). What each package owns is in the
 | Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, tenant-export, tenant-erase, evidence-verify, mcp, version |
 | Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
 | Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
-| Workflow engine | `core` | graph, nodes, `WorkflowEngine`, checkpointer, retry policy |
+| Workflow engine | `core` | graph, nodes, `WorkflowEngine`, retry policy |
 | Application | `services` \| `compliance` \| `onboarding` \| `agents` \| `ingestion` | escalation, review, response, reporting; evidence, NIS2, export; onboarding; triage, correlation and analysis agents; sources and normalizers |
 | Adapters | `integrations` \| `tools` \| `llm` \| `queue` | notifications, ticketing, Microsoft clients; enrichment; model clients; Redis Streams |
 | Audit | `audit` | `AuditLogger`, the only writer of `audit_log` |
-| Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), migrations, locks |
+| Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), the tenant-scoped LangGraph checkpointer, migrations, locks |
 | Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher port |
 | Value types | `models` | canonical alert and domain vocabulary |
 | Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
@@ -149,7 +149,7 @@ next two partitions ahead and drops expired ones.
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
 `lg-sotf migrate`, which then puts them under the tenant RLS policy (keyed on
 `split_part(thread_id, ':', 1)`); the worker's checkpointer
-(`core/checkpointer.py`) sets `app.tenant_id` from the thread id before each
+(`db/checkpointer.py`) sets `app.tenant_id` from the thread id before each
 statement. The retention job removes them for threads whose run is
 completed and older than `retention.checkpoints_days`, and with their alert
 when the alert itself expires.

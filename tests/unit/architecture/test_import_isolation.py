@@ -43,6 +43,10 @@ BUDGETS: list[tuple[str, str]] = [
     ("lg_sotf.domain.phishing", "langchain_core"),
     # C3: response planning extracts indicators from domain, not from the agents (and their LLM stack).
     ("lg_sotf.services.response", "lg_sotf.agents"),
+    # C4: the checkpointer lives in db but stays out of db/__init__ and migrate's import time, so API
+    # processes and Alembic runs (revision 0009 imports migrate) do not load langgraph.
+    ("lg_sotf.db", "langgraph"),
+    ("lg_sotf.db.migrate", "langgraph"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded
