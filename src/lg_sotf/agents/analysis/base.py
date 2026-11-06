@@ -28,7 +28,7 @@ response on such an alert always waits for a human. The model's own verdict
 never becomes a rule indicator.
 
 Email alerts. The strong phishing signals triage found
-(:data:`lg_sotf.core.phishing.EVIDENCE_SIGNALS`: a DMARC failure, display-name
+(:data:`lg_sotf.domain.phishing.EVIDENCE_SIGNALS`: a DMARC failure, display-name
 impersonation, a lookalike domain, deceptive or raw-IP links, a risky
 attachment) are behavioural observations of the message and count as
 evidence (weight 1 each, so two corroborate). What they corroborate is the
@@ -64,14 +64,14 @@ from lg_sotf.agents.analysis.react import (
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
-from lg_sotf.core.phishing import (
+from lg_sotf.domain.phishing import (
     ANALYSIS_BENIGN_ADJUSTMENT,
     EVIDENCE_SIGNALS,
     benign_from_triage,
     corroborated_email_targets,
     evidence_from_triage,
 )
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
@@ -275,7 +275,7 @@ def corroborated_targets(
     executable (its base name and the event's primary file hash) and the
     alert's hosts; a C2-port connection corroborates the destination address
     and the hosts; strong phishing signals corroborate the email targets of
-    :func:`lg_sotf.core.phishing.corroborated_email_targets`. Nothing here
+    :func:`lg_sotf.domain.phishing.corroborated_email_targets`. Nothing here
     corroborates parent processes, other processes or other addresses
     mentioned in the same alert.
     """

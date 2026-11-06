@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterator, List, Tuple, Type
 
 from pydantic import BaseModel, SecretStr
 
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.settings import Settings
 
@@ -56,7 +56,7 @@ SECTION_INTRO: Dict[str, str] = {
         "SMTP is configured per install, recipients per integration."
     ),
     "routing": (
-        "Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys "
+        "Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-form section: unknown keys "
         "are ignored, values are validated when a worker starts."
     ),
     "ingestion": (

@@ -256,8 +256,8 @@ async def test_keywords_in_a_command_line_consult_the_model_and_stay_below_the_c
     make_settings: Callable[..., Settings], answer: Any
 ) -> None:
     """Keywords an attacker writes can raise the score, but never skip the model or reach response_combo_confidence."""
-    from lg_sotf.core import routing
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain import routing
+    from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
     model = scripted(TriageAssessment=[answer])
@@ -290,7 +290,7 @@ async def test_trusted_decisive_rules_skip_the_model_but_never_reach_the_combo_l
 
 def test_confidence_bounds() -> None:
     from lg_sotf.agents.triage.base import confidence_bounds
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain.routing import RoutingThresholds
 
     t = RoutingThresholds()
     assert confidence_bounds(t, model_consulted=True, trusted=60, rules_close=False, refused=False) == (21, 79)
@@ -305,8 +305,8 @@ def test_confidence_bounds() -> None:
 async def test_a_persuaded_model_cannot_pull_an_alert_into_the_triage_close_region(
     make_settings: Callable[..., Settings],
 ) -> None:
-    from lg_sotf.core import routing
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain import routing
+    from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
     alert = {"title": "Scheduled task created", "severity": "low", "source_id": "sysmon", "occurred_at": "2026-09-01T10:00:00Z"}
@@ -322,8 +322,8 @@ async def test_a_persuaded_model_cannot_pull_an_alert_into_the_triage_close_regi
 
 async def test_refused_ambiguous_alert_is_never_closed_automatically(make_settings: Callable[..., Settings]) -> None:
     """Routing sees a grey-zone confidence and a refusal marker: triage, correlation and decide all keep it open."""
-    from lg_sotf.core import routing
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain import routing
+    from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
     alert = {"title": "Maintenance window login", "severity": "low", "source_id": "splunk-prod",

@@ -149,11 +149,11 @@ from pydantic import (
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
-from lg_sotf.core.phishing import email_block_targets, plan_email_entities
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.domain.phishing import email_block_targets, plan_email_entities
 from lg_sotf.integrations.events import (
     ACTION_AWAITING_APPROVAL,
     ACTION_EXECUTED,

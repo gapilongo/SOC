@@ -127,8 +127,8 @@ async def test_refusal_keeps_the_rule_score_and_marks_the_digest(make_settings: 
 
 async def test_refusal_holds_a_low_confidence_in_the_grey_zone(make_settings: Callable[..., Settings]) -> None:
     """A refused alert must reach analysis and an analyst, not the low-confidence shortcut to an automatic close."""
-    from lg_sotf.core import routing
-    from lg_sotf.core.routing import RoutingThresholds
+    from lg_sotf.domain import routing
+    from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
     t = RoutingThresholds()

@@ -64,10 +64,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional, S
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from redis.exceptions import RedisError
 
-from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.repos.alerts import SEVERITIES
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.pricing import LOCAL_PREFIX
 from lg_sotf.observability.logging import get_logger
 

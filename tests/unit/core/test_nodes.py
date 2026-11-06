@@ -10,7 +10,7 @@ import pytest
 
 from lg_sotf.core.nodes import WorkflowNodes
 from lg_sotf.core.retry import is_transient
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import NodeTimeout
 
 

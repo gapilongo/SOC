@@ -191,6 +191,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "lg_sotf.errors",
+    "lg_sotf.domain.*",
     "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
@@ -200,6 +201,14 @@ module = [
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
+
+# Ratchet: modules moved into the strict domain package verbatim (roadmap Phase 2) keep their one
+# known strict finding until a behaviour-free follow-up fixes it; delete each line with its fix.
+[[tool.mypy.overrides]]
+module = [
+    "lg_sotf.domain.routing",  # route_after_decide returns a dict value (no-any-return)
+]
+warn_return_any = false
 
 # Architecture contracts (docs/design/refactor-roadmap.md section 1.1, docs/adr/0001-layering.md).
 # `make import-lint` / CI. ignore_imports pins today's exceptions as exact pairs; each roadmap
@@ -224,23 +233,12 @@ layers = [
     "integrations | tools | llm | queue",
     "audit",
     "db",
-    "(domain)",
+    "domain",
     "models",
     "(net)",
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C1 urls, phishing and routing to lg_sotf.domain
-    "lg_sotf.agents.analysis.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.analysis.base -> lg_sotf.core.routing",
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.routing",
-    "lg_sotf.agents.triage.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.triage.base -> lg_sotf.core.routing",
-    "lg_sotf.services.escalation -> lg_sotf.core.routing",
-    "lg_sotf.services.reporting -> lg_sotf.core.routing",
-    "lg_sotf.services.response -> lg_sotf.core.phishing",
-    "lg_sotf.services.review -> lg_sotf.core.routing",
     # C2 suppression and events to domain
     "lg_sotf.integrations.delivery -> lg_sotf.core.events",
     "lg_sotf.services.dispatch -> lg_sotf.core.events",
@@ -307,6 +305,22 @@ source_modules = ["lg_sotf.net"]
 forbidden_modules = [
     "asyncpg", "psycopg", "psycopg_pool", "redis", "langgraph", "langchain_core", "fastapi", "starlette",
     "pydantic",
+]
+
+[[tool.importlinter.contracts]]
+id = "domain-pure"
+name = "Domain policy and value types do no I/O and import no higher layer"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["lg_sotf.domain", "lg_sotf.models"]
+# The layers contract says the same about lg_sotf packages; listing them here keeps this rule even if
+# a layers ignore is ever added. models -> domain is a layers rule (domain sits above models).
+forbidden_modules = [
+    "asyncpg", "psycopg", "psycopg_pool", "redis", "httpx", "langgraph", "langchain_core", "fastapi", "starlette",
+    "lg_sotf.db", "lg_sotf.audit", "lg_sotf.integrations", "lg_sotf.tools", "lg_sotf.llm", "lg_sotf.queue",
+    "lg_sotf.services", "lg_sotf.compliance", "lg_sotf.onboarding", "lg_sotf.agents", "lg_sotf.ingestion",
+    "lg_sotf.core", "lg_sotf.runtime", "lg_sotf.api", "lg_sotf.mcp", "lg_sotf.eval", "lg_sotf.cli",
+    "lg_sotf.__main__",
 ]
 
 [[tool.importlinter.contracts]]

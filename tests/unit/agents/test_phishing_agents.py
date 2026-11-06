@@ -14,8 +14,8 @@ from lg_sotf.agents.analysis.base import (
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.correlation.indicators import extract_indicators
 from lg_sotf.agents.triage.base import TriageAgent, rule_confidence, rule_indicators, trusted_rule_confidence
-from lg_sotf.core import phishing as p
-from lg_sotf.core.phishing import PhishingProfile, assess
+from lg_sotf.domain import phishing as p
+from lg_sotf.domain.phishing import PhishingProfile, assess
 from lg_sotf.ingestion.email import parse_email
 from lg_sotf.ingestion.normalizers import get_normalizer
 from lg_sotf.ingestion.normalizers.base import NormalizeContext
