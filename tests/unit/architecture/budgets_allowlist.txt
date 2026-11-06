@@ -3,7 +3,7 @@
 # Paths are relative to src/lg_sotf. Only lower numbers or delete lines; never raise or add.
 
 # Modules
-mcp/tester.py	969
+mcp/tester.py	965
 services/reporting.py	852
 services/response.py	2707
 

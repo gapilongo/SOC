@@ -27,7 +27,7 @@ exactly what the API returned: an evidence pack still matches its
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from pydantic import Field, ValidationError
 
@@ -61,18 +61,16 @@ from lg_sotf.mcp.shaping import (
     wrap_untrusted,
 )
 from lg_sotf.mcp.tester import TESTER_TOOLS
+from lg_sotf.models import vocabulary
+from lg_sotf.models.vocabulary import AlertStatus, Disposition, EscalationStatus, Severity
+from lg_sotf.models.vocabulary import EscalationLevel as Level
 
-AlertStatus = Literal["new", "queued", "processing", "waiting_human", "waiting_approval", "closed", "failed"]
-Severity = Literal["info", "low", "medium", "high", "critical"]
-Disposition = Literal["malicious", "benign", "inconclusive"]
-EscalationStatus = Literal["open", "claimed", "decided", "expired", "cancelled"]
-Level = Literal["L1", "L2", "L3"]
-
-ALERT_STATUSES = ["new", "queued", "processing", "waiting_human", "waiting_approval", "closed", "failed"]
-SEVERITIES = ["info", "low", "medium", "high", "critical"]
-DISPOSITIONS = ["malicious", "benign", "inconclusive"]
-ESCALATION_STATUSES = ["open", "claimed", "decided", "expired", "cancelled"]
-LEVELS = ["L1", "L2", "L3"]
+# JSON-schema enums of the tools' arguments (lists, as JSON arrays are).
+ALERT_STATUSES: List[str] = list(vocabulary.ALERT_STATUSES)
+SEVERITIES: List[str] = list(vocabulary.SEVERITIES)
+DISPOSITIONS: List[str] = list(vocabulary.DISPOSITIONS)
+ESCALATION_STATUSES: List[str] = list(vocabulary.ESCALATION_STATUSES)
+LEVELS: List[str] = list(vocabulary.ESCALATION_LEVELS)
 
 
 class SearchAlertsArgs(_Args):

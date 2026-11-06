@@ -8,10 +8,9 @@ from typing import FrozenSet, Literal, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor
-
-ROLES = ("viewer", "analyst", "admin")
-ROLE_RANK = {role: rank for rank, role in enumerate(ROLES)}
-SCOPES = ("ingest", "read", "write")
+from lg_sotf.models.vocabulary import ROLE_RANK
+from lg_sotf.models.vocabulary import ROLES as ROLES
+from lg_sotf.models.vocabulary import SCOPES as SCOPES
 
 PrincipalKind = Literal["user", "api_key"]
 AuthMethod = Literal["password", "oidc", "api_key"]

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import List, Literal, Optional
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 
@@ -17,15 +17,13 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import publish_event
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
+from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-AlertStatus = Literal["new", "queued", "processing", "waiting_human", "waiting_approval", "closed", "failed"]
-Severity = Literal["info", "low", "medium", "high", "critical"]
-Disposition = Literal["malicious", "benign", "inconclusive"]
 MAX_LIMIT = 200
 
 

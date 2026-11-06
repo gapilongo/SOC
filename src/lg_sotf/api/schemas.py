@@ -9,14 +9,10 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from lg_sotf.models.vocabulary import Decision, Role, Scope, SourceType, VerificationState
+
 T = TypeVar("T")
 
-Role = Literal["viewer", "analyst", "admin"]
-Scope = Literal["ingest", "read", "write"]
-Decision = Literal["true_positive", "false_positive", "benign_positive", "needs_more_info"]
-SourceType = Literal[
-    "splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file", "m365_mailbox", "imap"
-]
 
 
 class Out(BaseModel):
@@ -319,7 +315,7 @@ class ActionOut(Out):
     integration_id: Optional[UUID] = None
     external_ref: Optional[Dict[str, Any]] = None
     attempts: int = 0
-    verification: Optional[Literal["pending", "verified", "failed", "inconclusive"]] = None
+    verification: Optional[VerificationState] = None
     verification_detail: Optional[Dict[str, Any]] = None
     verify_deadline: Optional[datetime] = None
     verified_at: Optional[datetime] = None

@@ -85,11 +85,12 @@ from lg_sotf.integrations.slack import (
     verify_slack_request,
 )
 from lg_sotf.integrations.ticketing import ticket_client
+from lg_sotf.models.vocabulary import REVIEWER_ROLES, Severity
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services import integrations as integration_changes
 from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.microsoft import MicrosoftClients, build_microsoft_connector
-from lg_sotf.services.review import REVIEWER_ROLES, ReviewDenied
+from lg_sotf.services.review import ReviewDenied
 
 log = get_logger(__name__)
 
@@ -97,7 +98,6 @@ router = APIRouter(prefix="/integrations", tags=["integrations"])
 tickets = APIRouter(prefix="/tickets", tags=["integrations"])
 
 Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft"]
-Severity = Literal["info", "low", "medium", "high", "critical"]
 OutboxStatus = Literal["pending", "sent", "failed", "dead"]
 MAX_CONFIG_KEYS = 30
 MAX_INTEGRATIONS_PER_TENANT = 50
