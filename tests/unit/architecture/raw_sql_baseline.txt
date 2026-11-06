@@ -24,14 +24,5 @@ runtime/resumes.py::_approval_payload
 runtime/resumes.py::_decision_payload
 runtime/resumes.py::find_stranded_waiting_runs
 runtime/resumes.py::recover_lost_resumes
-services/escalation.py::EscalationService._find_parent
-services/escalation.py::EscalationService.open_detached
-services/escalation.py::EscalationService.open_or_attach
-services/escalation.py::EscalationService.open_or_attach
-services/response.py::ResponseService.executed_counts._fetch
-services/response.py::ResponseService.fail_orphaned_executing
-services/response.py::ResponseService.fail_orphaned_executing
-services/review.py::ReviewService._decide_expired
-services/review.py::ReviewService._decide_expired
 services/review.py::ReviewService._own_review
 services/review.py::ReviewService._run_ended

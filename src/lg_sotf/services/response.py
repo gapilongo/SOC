@@ -150,8 +150,23 @@ from pydantic import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db import AlreadyInState, Connection, InvalidTransition, locks
 from lg_sotf.db.repos._base import UNSET
-from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
+from lg_sotf.db.repos.actions import VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.domain.actions import (
+    ACTION_CATALOG,
+    ACTION_TARGET_KINDS,
+    APPROVAL_EXPIRED_REASON,
+    APPROVAL_SUPERSEDED_REASON,
+    BLAST_RADIUS_REASON,
+    DEFAULT_BLAST_RADIUS,
+    FORWARD_OF,
+    GUARDRAIL_REASONS,
+    HOURLY_CAP_REASON,
+    POLICY_INVALID_REASON,
+    PROTECTED_INVALID_REASON,
+    ActionSpec,
+    TargetKind,
+)
 from lg_sotf.domain.connectors import call_deadline
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.indicators import extract_indicators
@@ -199,12 +214,21 @@ if TYPE_CHECKING:
 __all__ = [
     "ACTION_CATALOG",
     "ACTION_TARGET_KINDS",
+    "APPROVAL_EXPIRED_REASON",
+    "APPROVAL_SUPERSEDED_REASON",
     "ActionRequestError",
+    "ActionSpec",
+    "BLAST_RADIUS_REASON",
     "Connector",
     "ConnectorResult",
+    "DEFAULT_BLAST_RADIUS",
     "DryRunConnector",
+    "FORWARD_OF",
     "GUARDRAIL_REASONS",
     "GuardrailBlock",
+    "HOURLY_CAP_REASON",
+    "POLICY_INVALID_REASON",
+    "PROTECTED_INVALID_REASON",
     "PlanContext",
     "PlanResult",
     "ProtectedAssets",
@@ -213,6 +237,7 @@ __all__ = [
     "ResponsePolicyError",
     "ResponsePolicySettings",
     "ResponseService",
+    "TargetKind",
     "approval_allowed",
     "bounded_detail",
     "candidate_targets",
@@ -228,7 +253,6 @@ __all__ = [
 log = get_logger(__name__)
 
 Evidence = Literal["rules", "llm_only", "analyst"]
-TargetKind = Literal["ip", "domain", "url", "hash", "user", "host", "process", "alert", "email", "message"]
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 IPNetwork = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
 MAX_TARGETS_PER_TYPE = 3
@@ -236,12 +260,6 @@ MAX_ACTIONS = 15
 PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
 ANALYST_APPROVAL_RISKS = frozenset({"low", "medium"})
 ANALYST_PREAPPROVAL_RISKS = ANALYST_APPROVAL_RISKS
-HOURLY_CAP_REASON = "hourly_cap_reached"
-BLAST_RADIUS_REASON = "blast_radius_exceeded"
-POLICY_INVALID_REASON = "response_policy_invalid"
-APPROVAL_EXPIRED_REASON = "approval_expired"
-APPROVAL_SUPERSEDED_REASON = "approval_superseded"
-PROTECTED_INVALID_REASON = "protected_assets_invalid"
 # Per list (hosts, users, domains, cidrs). Larger inventories belong in the SOAR, not in tenant settings.
 MAX_PROTECTED_ENTRIES = 10_000
 MAX_PROTECTED_ENTRY_CHARS = 256
@@ -269,24 +287,6 @@ MIN_EXECUTION_S = 1.0
 MIN_STATEFUL_EXECUTION_S = DEADLINE_MARGIN_S + MIN_HANDLER_S + 0.5
 # How long a started stateful row waits while a kill switch holds it (each wait counts one attempt).
 HALTED_RETRY_S = 300.0
-_EXECUTED_COUNTS_SQL = """
-    SELECT action_type, count(*)::int AS n FROM response_actions
-    WHERE tenant_id = $1 AND status = ANY($3::text[])
-      -- The window is measured on the database clock that stamps executed_at, unless given.
-      AND executed_at >= COALESCE($2::timestamptz, now() - interval '1 hour')
-    GROUP BY action_type
-"""
-# Workflow actions left 'executing' whose run will never come back to them ($3: grace period in seconds,
-# so a call still in flight is left alone).
-_ORPHANED_EXECUTING_SQL = """
-    SELECT a.tenant_id, a.id, a.connector FROM response_actions a
-    JOIN workflow_runs r ON r.tenant_id = a.tenant_id AND r.alert_id = a.alert_id
-    WHERE a.status = 'executing' AND a.execution_owner = 'workflow' AND r.status IN ('dead_lettered', 'completed')
-      AND ($1::text IS NULL OR a.tenant_id = $1)
-      AND (a.executed_at IS NULL OR a.executed_at < now() - make_interval(secs => $3))
-    ORDER BY a.executed_at NULLS FIRST
-    LIMIT $2
-"""
 ORPHAN_GRACE_S = 60.0
 SCHEDULER_ACTOR = "scheduler"
 # Connector results are stored in response_actions.result; larger details keep their essential keys.
@@ -297,150 +297,6 @@ RESULT_ESSENTIAL_KEYS = (
     "ms_code", "request_id", "retryable", "hint", "deferred", "rehearsal", "would_execute", "attempts",
 )
 
-
-@dataclass(frozen=True)
-class ActionSpec:
-    target_kind: TargetKind
-    risk: str
-    containment: bool
-    description: str
-    # An entity kind the plan must have for the action to be proposed (its values go into the params).
-    requires: Optional[str] = None
-    # The type that undoes this one (a rollback is a new ledger row of that type).
-    inverse: Optional[str] = None
-    # False: never proposed by playbooks or recommendations (only rollbacks create it).
-    plannable: bool = True
-    # Undoes one of our own changes: rollbacks of it skip the non-public-IP, protected-asset and
-    # internal-sender guardrails, so an asset protected after the change can still be released.
-    restorative: bool = False
-    # What a rollback cannot undo, or what stays in effect after the action (shown in the UI).
-    irreversible_note: str = ""
-
-
-ACTION_CATALOG: Dict[str, ActionSpec] = {
-    "block_ip": ActionSpec("ip", "medium", True, "Block an IP address at the perimeter", inverse="unblock_ip"),
-    "block_domain": ActionSpec("domain", "medium", True, "Block a domain in DNS/proxy", inverse="unblock_domain"),
-    "block_url": ActionSpec("url", "medium", True, "Block a URL in the web proxy", inverse="unblock_url"),
-    "isolate_host": ActionSpec("host", "high", True, "Network-isolate a host through EDR", inverse="release_host"),
-    "terminate_process": ActionSpec(
-        "process", "medium", True, "Terminate a process through EDR",
-        irreversible_note="a terminated process is not restarted by a rollback",
-    ),
-    "quarantine_file": ActionSpec(
-        "hash", "low", True, "Quarantine a file by hash through EDR", inverse="unblock_file"
-    ),
-    "disable_user": ActionSpec("user", "critical", True, "Disable a user account", inverse="enable_user"),
-    "reset_password": ActionSpec(
-        "user", "critical", True, "Force a password reset",
-        irreversible_note="the previous password cannot be restored",
-    ),
-    "revoke_sessions": ActionSpec(
-        "user", "high", True, "Revoke a user's active sessions",
-        irreversible_note="existing access tokens stay valid until they expire, about 1 h",
-    ),
-    "collect_forensics": ActionSpec(
-        "host", "low", False, "Collect forensic evidence from a host",
-        irreversible_note="a collected investigation package cannot be un-collected",
-    ),
-    "create_ticket": ActionSpec("alert", "low", False, "Open an incident ticket"),
-    "send_alert": ActionSpec("alert", "low", False, "Notify the SOC channel"),
-    "block_sender": ActionSpec(
-        "email", "medium", True, "Block a sender address in the mail gateway", inverse="unblock_sender"
-    ),
-    "purge_message": ActionSpec(
-        "message", "high", True, "Remove a message (by Message-ID, sender and subject) from every mailbox",
-        inverse="restore_message",
-    ),
-    "notify_reporter": ActionSpec(
-        "alert", "low", False, "Tell the user who reported the email what was found", requires="reporter",
-        irreversible_note="a sent notification cannot be recalled",
-    ),
-    "confirm_compromised": ActionSpec(
-        "user", "high", True, "Confirm a user as compromised in Entra ID Protection", inverse="dismiss_user_risk"
-    ),
-    # Inverse types: created only by rollbacks, never planned.
-    "release_host": ActionSpec(
-        "host", "high", False, "Release a host from network isolation", plannable=False, restorative=True
-    ),
-    "unblock_ip": ActionSpec(
-        "ip", "medium", False, "Remove an IP address block", plannable=False, restorative=True
-    ),
-    "unblock_domain": ActionSpec(
-        "domain", "medium", False, "Remove a domain block", plannable=False, restorative=True
-    ),
-    "unblock_url": ActionSpec("url", "medium", False, "Remove a URL block", plannable=False, restorative=True),
-    "unblock_file": ActionSpec(
-        "hash", "medium", False, "Remove a file hash block", plannable=False, restorative=True
-    ),
-    "unblock_sender": ActionSpec(
-        "email", "medium", False, "Remove a sender block", plannable=False, restorative=True
-    ),
-    "enable_user": ActionSpec(
-        "user", "critical", False, "Re-enable a disabled user account", plannable=False, restorative=True
-    ),
-    "restore_message": ActionSpec(
-        "message", "high", False, "Restore a removed message to the mailboxes it was removed from",
-        plannable=False, restorative=True,
-    ),
-    "dismiss_user_risk": ActionSpec(
-        "user", "high", False, "Dismiss a user's risk in Entra ID Protection", plannable=False, restorative=True
-    ),
-}
-
-# Forward type of each inverse type (``release_host`` -> ``isolate_host``).
-FORWARD_OF: Dict[str, str] = {spec.inverse: name for name, spec in ACTION_CATALOG.items() if spec.inverse}
-
-ACTION_TARGET_KINDS: Dict[str, FrozenSet[str]] = {name: frozenset({spec.target_kind}) for name, spec in ACTION_CATALOG.items()}
-
-# Per action type, how many may start executing per tenant per hour (tenants may override).
-DEFAULT_BLAST_RADIUS: Dict[str, int] = {
-    "isolate_host": 5,
-    "disable_user": 3,
-    "reset_password": 5,
-    "revoke_sessions": 10,
-    "terminate_process": 20,
-    "quarantine_file": 20,
-    "purge_message": 10,
-    "block_sender": 20,
-    "release_host": 5,
-    "enable_user": 3,
-    "restore_message": 10,
-    "confirm_compromised": 10,
-    "dismiss_user_risk": 5,
-}
-
-GUARDRAIL_REASONS: Dict[str, str] = {
-    "unknown_action": "the action type is not in the action catalog",
-    "action_not_allowed": "the tenant's allowed_actions list does not include this action type",
-    "target_type_not_allowed": "the action does not accept this kind of target",
-    "invalid_target": "the target is empty, too long or malformed",
-    "invalid_ip": "the target is not an IP address",
-    "invalid_domain": "the target is not a valid domain name",
-    "invalid_url": "the target is not an http(s) URL with a host",
-    "invalid_hash": "the target is not an MD5/SHA-1/SHA-256/SHA-512 hex digest",
-    "invalid_host": "the target is not a valid host name",
-    "invalid_user": "the target is not a valid user name",
-    "invalid_process": "the target is not a valid process name",
-    "invalid_email": "the target is not an email address",
-    "invalid_message": "the target is not an Internet Message-ID",
-    "internal_sender": "senders of the tenant's own domains are never blocked (disable or reset the account instead)",
-    "unroutable_ip": "loopback, link-local, multicast, unspecified and reserved addresses are never blocked",
-    "non_public_ip": "private/internal addresses are blocked only when the tenant allows internal IP blocks",
-    "protected_asset": "the target is on the tenant's protected assets list",
-    PROTECTED_INVALID_REASON: (
-        "the tenant's protected assets setting is malformed or too large, so no action on hosts, users, "
-        "addresses, domains, URLs, files or processes is allowed until it is fixed"
-    ),
-    POLICY_INVALID_REASON: "the tenant's response policy is malformed, so no action is allowed until it is fixed",
-    "autonomy_disabled": "the tenant's autonomy policy disables actions of this risk level",
-    HOURLY_CAP_REASON: "the tenant's hourly action cap was reached",
-    BLAST_RADIUS_REASON: "the hourly limit for this action type (blast radius) was reached",
-    APPROVAL_EXPIRED_REASON: "the approval was not executed within response.approval_ttl_s and expired",
-    APPROVAL_SUPERSEDED_REASON: (
-        "the approval arrived while the alert's workflow run was still active, and the run ended without "
-        "executing it"
-    ),
-}
 
 PLAYBOOKS: Tuple[Tuple[str, Tuple[str, ...], Tuple[str, ...]], ...] = (
     # First: an email alert's category is "phishing", whatever its attachment or link is about.
@@ -1670,27 +1526,6 @@ class ResponseService:
         assert connector is not None  # an integration was given
         return connector
 
-    async def executed_counts(
-        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Optional[Connection] = None
-    ) -> Tuple[int, Dict[str, int]]:
-        """(total, per action type) of actions that started real execution since ``since``.
-
-        ``since=None`` (what the guardrails use) means the last hour on the
-        database clock, the clock that stamps ``executed_at``: a worker whose
-        clock runs fast cannot shrink the window and exceed the caps.
-        """
-
-        async def _fetch(c: Any) -> List[Any]:
-            return list(await c.fetch(_EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES)))
-
-        if conn is not None:
-            rows = await _fetch(conn)
-        else:
-            async with self._repos.db.tenant_tx(tenant_id, readonly=True) as c:
-                rows = await _fetch(c)
-        by_type = {str(r["action_type"]): int(r["n"]) for r in rows}
-        return sum(by_type.values()), by_type
-
     # ------------------------------------------------------------------ plan
 
     async def plan(
@@ -1701,7 +1536,7 @@ class ResponseService:
         policy = self.policy(tenant.settings)
         threat_type, candidates = build_candidates(ctx, alert_id)
         result = PlanResult(threat_type=threat_type)
-        used_total, used_by_type = await self.executed_counts(tenant_id, window_start)
+        used_total, used_by_type = await self._repos.actions.executed_counts(tenant_id, window_start)
         auto_budget = max(0, policy.max_actions_per_hour - used_total)
         type_budget = {t: max(0, limit - used_by_type.get(t, 0)) for t, limit in policy.blast_radius.items()}
 
@@ -2124,14 +1959,11 @@ class ResponseService:
         """
         grace = self._execution_budget_s + ORPHAN_GRACE_S
         if tenant_id is None:
-            async with self._repos.db.system_tx() as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, None, limit, grace))
+            rows = await self._repos.actions.find_orphaned_executing_all_tenants(limit=limit, grace_s=grace)
         else:
-            async with self._repos.db.tenant_tx(tenant_id) as conn:
-                rows = list(await conn.fetch(_ORPHANED_EXECUTING_SQL, tenant_id, limit, grace))
+            rows = await self._repos.actions.find_orphaned_executing(tenant_id, limit=limit, grace_s=grace)
         settled = 0
-        for row in rows:
-            owner, action_id, connector = str(row["tenant_id"]), row["id"], row["connector"]
+        for owner, action_id, connector in rows:
             if connector in STATEFUL_CONNECTORS:
                 handed = await self.hand_off(owner, [action_id], reason="orphaned_execution")
                 settled += len(handed)
@@ -2247,7 +2079,7 @@ class ResponseService:
                 async with self._repos.db.tenant_tx(tenant_id) as conn:
                     await locks.tenant_xact_lock(conn, locks.ACTION_CAP, tenant_id)
                     window_start = now - timedelta(hours=1) if now is not None else None
-                    used, by_type = await self.executed_counts(tenant_id, window_start, conn=conn)
+                    used, by_type = await self._repos.actions.executed_counts(tenant_id, window_start, conn=conn)
                     cap_block = self._cap_block(policy, action.action_type, used, by_type)
                     if cap_block is not None:
                         blocked = await self._block_approved(tenant_id, action, cap_block[0], cap_block[1], conn)
@@ -2508,7 +2340,7 @@ class ResponseService:
             guard = check_guardrails(action.action_type, action.target, policy, restorative=restorative)
             if guard is not None:
                 raise ActionRequestError(409, "guardrail_blocked", guard.explanation[:300], reason=guard.code)
-            used, by_type = await self.executed_counts(tenant_id, conn=conn)
+            used, by_type = await self._repos.actions.executed_counts(tenant_id, conn=conn)
             cap_block = self._cap_block(policy, action.action_type, used, by_type)
             if cap_block is not None:
                 raise ActionRequestError(

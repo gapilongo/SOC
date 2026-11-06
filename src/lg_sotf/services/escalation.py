@@ -105,44 +105,6 @@ OWN_REVIEW_REASONS: Dict[str, str] = {
     "different_fingerprint": "is a different detection than the alert that was reviewed",
     "higher_severity": "is more severe than the alert that was reviewed",
 }
-_DETACHED_SQL = """
-    SELECT * FROM escalations
-    WHERE tenant_id = $1 AND alert_id = $2 AND summary->>'detached_from' = $3
-    ORDER BY created_at DESC LIMIT 1
-"""
-_ATTACHED_TO_SQL = """
-    SELECT * FROM escalations
-    WHERE tenant_id = $1 AND status IN ('open', 'claimed') AND $2 = ANY(related_alert_ids)
-    ORDER BY created_at LIMIT 1
-"""
-_FIND_PARENT_SQL = """
-    SELECT e.* FROM escalations e
-    WHERE e.tenant_id = $1 AND e.status IN ('open', 'claimed') AND e.alert_id <> $2
-      AND e.created_at >= $3
-      AND cardinality(e.related_alert_ids) < $6
-      AND (
-            e.alert_id = ANY($4::text[])
-         OR e.related_alert_ids && $4::text[]
-         OR ($5::text IS NOT NULL AND EXISTS (
-                SELECT 1 FROM alerts a
-                WHERE a.tenant_id = e.tenant_id AND a.id = e.alert_id AND a.fingerprint = $5))
-      )
-    ORDER BY e.created_at, e.id
-    LIMIT 1
-    FOR UPDATE OF e
-"""
-_ATTACH_SQL = """
-    UPDATE escalations
-    SET related_alert_ids = array_append(related_alert_ids, $3),
-        priority = GREATEST(priority, $4),
-        level = $5,
-        sla_deadline = CASE WHEN sla_deadline IS NULL THEN $6 ELSE LEAST(sla_deadline, $6) END,
-        summary = summary || jsonb_build_object('attached_count', cardinality(related_alert_ids) + 1),
-        version = version + 1
-    WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(related_alert_ids))
-    RETURNING *
-"""
-
 
 
 def compute_priority(
@@ -387,18 +349,18 @@ class EscalationService:
             own = await self._repos.escalations.get_active_for_alert(tenant_id, alert_id, conn=conn)
             if own is not None:
                 return _ticket(own, created=False)
-            row = await conn.fetchrow(_ATTACHED_TO_SQL, tenant_id, alert_id)
-            if row is not None:
-                return _ticket(Escalation.model_validate(dict(row)), created=False, attached=True)
+            attached_to = await self._repos.escalations.find_attached_to(tenant_id, alert_id, conn=conn)
+            if attached_to is not None:
+                return _ticket(attached_to, created=False, attached=True)
             parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now, related)
             if parent is not None:
                 new_level = max_level(parent.level, level)
-                row = await conn.fetchrow(
-                    _ATTACH_SQL, tenant_id, parent.id, alert_id, priority, new_level, deadline
+                attached = await self._repos.escalations.attach(
+                    tenant_id, parent.id, alert_id, priority=priority, level=new_level, sla_deadline=deadline, conn=conn
                 )
-                if row is not None:
+                if attached is not None:
                     attached_from = parent
-                    escalation = Escalation.model_validate(dict(row))
+                    escalation = attached
                     await self._audit.record(
                         tenant_id,
                         "escalation.alert_attached",
@@ -487,10 +449,10 @@ class EscalationService:
         fp = fingerprint if grouping.by_fingerprint and fingerprint else None
         if not related and fp is None:
             return None
-        row = await conn.fetchrow(
-            _FIND_PARENT_SQL, tenant_id, alert_id, since, list(related), fp, grouping.max_attached
+        return await self._repos.escalations.find_group_parent(
+            tenant_id, alert_id, since=since, related=related, fingerprint=fp, max_attached=grouping.max_attached,
+            conn=conn,
         )
-        return Escalation.model_validate(dict(row)) if row is not None else None
 
     async def _related_candidates(
         self, tenant_id: str, alert_id: str, policy: ReviewPolicy, now: datetime
@@ -593,9 +555,9 @@ class EscalationService:
         }
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             await locks.tenant_xact_lock(conn, locks.ESCALATION_GROUP, tenant_id)
-            row = await conn.fetchrow(_DETACHED_SQL, tenant_id, alert_id, parent.id)
-            if row is not None:
-                return _ticket(Escalation.model_validate(dict(row)), created=False)
+            detached = await self._repos.escalations.find_detached(tenant_id, alert_id, parent.id, conn=conn)
+            if detached is not None:
+                return _ticket(detached, created=False)
             escalation, created = await self._repos.escalations.create_or_attach(
                 tenant_id,
                 alert_id,
