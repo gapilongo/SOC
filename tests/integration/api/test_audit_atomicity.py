@@ -149,3 +149,61 @@ async def test_an_sso_role_is_not_synced_without_its_audit_entry(
     promoted = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
     assert promoted.json()["role"] == "admin"
     assert await _count(api, "user.role_synced") == 1
+
+
+# ----------------------------------------------------------------------- sources
+
+WEBHOOK = {"type": "webhook", "name": "hook", "config": {"format": "generic", "field_map": {"title": "t"}}}
+
+
+async def test_source_changes_roll_back_without_their_audit_entry(api: ApiHarness, failing_audit: Set[str]) -> None:
+    headers = await api.login_headers(TENANT_A, "admin")
+    failing_audit.add("source.created")
+    created = await api.client.post(f"{API}/sources", json={**WEBHOOK, "id": "hook-1"}, headers=headers)
+    assert created.status_code == 500
+    assert await api.repos.sources.list(TENANT_A) == []
+    failing_audit.clear()
+    created = await api.client.post(f"{API}/sources", json={**WEBHOOK, "id": "hook-1"}, headers=headers)
+    assert created.status_code == 201, created.text
+
+    failing_audit.add("source.updated")
+    renamed = await api.client.patch(f"{API}/sources/hook-1", json={"name": "renamed"}, headers=headers)
+    assert renamed.status_code == 500
+    assert (await api.repos.sources.get(TENANT_A, "hook-1")).name == "hook"
+
+    failing_audit.add("source.deleted")
+    assert (await api.client.delete(f"{API}/sources/hook-1", headers=headers)).status_code == 500
+    assert (await api.repos.sources.get(TENANT_A, "hook-1")).name == "hook"
+    failing_audit.clear()
+    assert (await api.client.delete(f"{API}/sources/hook-1", headers=headers)).status_code == 204
+    assert [await _count(api, a) for a in ("source.created", "source.updated", "source.deleted")] == [1, 0, 1]
+
+
+# ------------------------------------------------------------------ suppressions
+
+RULE = {"name": "noisy scanner", "match": {"fingerprint": "abc"}, "enabled": True}
+
+
+async def test_suppression_changes_roll_back_without_their_audit_entry(
+    api: ApiHarness, failing_audit: Set[str]
+) -> None:
+    headers = await api.login_headers(TENANT_A, "admin")
+    failing_audit.add("suppression.created")
+    assert (await api.client.post(f"{API}/suppressions", json=RULE, headers=headers)).status_code == 500
+    assert await api.repos.suppressions.list(TENANT_A) == []
+    failing_audit.clear()
+    created = await api.client.post(f"{API}/suppressions", json=RULE, headers=headers)
+    assert created.status_code == 201, created.text
+    rule_id = created.json()["id"]
+
+    failing_audit.add("suppression.updated")
+    disabled = await api.client.patch(f"{API}/suppressions/{rule_id}", json={"enabled": False}, headers=headers)
+    assert disabled.status_code == 500
+    assert (await api.repos.suppressions.get(TENANT_A, rule_id)).enabled is True
+
+    failing_audit.add("suppression.deleted")
+    assert (await api.client.delete(f"{API}/suppressions/{rule_id}", headers=headers)).status_code == 500
+    assert (await api.repos.suppressions.get(TENANT_A, rule_id)).enabled is True
+    failing_audit.clear()
+    assert (await api.client.delete(f"{API}/suppressions/{rule_id}", headers=headers)).status_code == 204
+    assert await api.repos.suppressions.list(TENANT_A) == []

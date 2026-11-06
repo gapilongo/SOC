@@ -1,5 +1,5 @@
 """Audit trail helpers."""
 
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger
 
-__all__ = ["AuditLogger"]
+__all__ = ["Actor", "AuditLogger"]

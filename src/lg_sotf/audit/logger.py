@@ -7,6 +7,7 @@ or raw alert bodies; they are redacted before logging as defence in depth.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
 from lg_sotf.observability.logging import get_logger
@@ -17,6 +18,14 @@ if TYPE_CHECKING:
     from lg_sotf.db.repos._base import Connection
 
 _log = get_logger("lg_sotf.audit")
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Who made a change, as ``audit_log`` records it (``actor_type``, ``actor_id``)."""
+
+    type: str
+    id: Optional[str]
 
 
 class AuditLogger:

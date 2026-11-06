@@ -13,5 +13,4 @@ api/routers/identity.py::delete_user
 api/routers/identity.py::reset_user_mfa
 api/routers/identity.py::update_user
 api/routers/platform.py::update_tenant
-api/routers/sources.py::create_source
 api/routers/tenant.py::patch_settings

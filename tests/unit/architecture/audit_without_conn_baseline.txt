@@ -8,8 +8,6 @@ api/routers/onboarding.py::_audit
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
-api/routers/sources.py::_audit
-api/routers/suppressions.py::_audit
 runtime/ops.py::audit_reprocess
 runtime/ops.py::audit_user_created
 runtime/ops.py::audit_user_created

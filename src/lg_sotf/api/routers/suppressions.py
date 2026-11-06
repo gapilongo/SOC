@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal, role_at_least
-from lg_sotf.api.context import ApiContext, get_ctx
+from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.alerts import aware
 from lg_sotf.api.schemas import SuppressionCreateIn, SuppressionOut, SuppressionUpdateIn
@@ -30,6 +30,7 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.suppression import InvalidRule, validate_rule_match
 from lg_sotf.db.errors import NotFound
 from lg_sotf.queue.streams import SEVERITIES
+from lg_sotf.services import suppressions as rule_changes
 
 router = APIRouter(prefix="/suppressions", tags=["suppressions"])
 
@@ -85,18 +86,6 @@ def _may_enable(principal: Principal) -> bool:
     return principal.is_user and role_at_least(principal.role, "admin")
 
 
-async def _audit(ctx: ApiContext, principal: Principal, action: str, rule_id: str, details: Dict[str, Any]) -> None:
-    await AuditLogger(ctx.repos).record(
-        principal.tenant_id,
-        action,
-        "suppression_rule",
-        rule_id,
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details=details,
-    )
-
-
 def _future(value: datetime) -> datetime:
     value = aware(value)  # type: ignore[assignment]
     if value <= datetime.now(UTC):
@@ -128,20 +117,17 @@ async def create_rule(
     reject_catch_all(body.match)
     # Only admins create active rules; anything else waits for an admin to enable it.
     enabled = body.enabled and _may_enable(principal)
-    rule = await ctx.repos.suppressions.create(
+    rule = await rule_changes.create_rule(
+        ctx.repos,
+        AuditLogger(ctx.repos),
         principal.tenant_id,
-        body.name,
-        body.match,
+        principal.actor,
+        name=body.name,
+        match=body.match,
         created_by=principal.local_user_id,
         expires_at=_future(body.expires_at) if body.expires_at else None,
         enabled=enabled,
-    )
-    await _audit(
-        ctx,
-        principal,
-        "suppression.created",
-        rule.id,
-        {"enabled": rule.enabled, "requested_enabled": body.enabled, "fields": sorted(body.match)[:20]},
+        requested_enabled=body.enabled,
     )
     return SuppressionOut.model_validate(rule)
 
@@ -161,15 +147,17 @@ async def update_rule(
     changes: Dict[str, Any] = {name: getattr(body, name) for name in ("name", "match", "enabled") if name in fields}
     if "expires_at" in fields:
         changes["expires_at"] = _future(body.expires_at) if body.expires_at else None
-    rule = await ctx.repos.suppressions.update(principal.tenant_id, rule_id, **changes)
-    await _audit(ctx, principal, "suppression.updated", rule_id, {"fields": sorted(fields), "enabled": rule.enabled})
+    rule = await rule_changes.update_rule(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, rule_id, changes, fields=fields
+    )
     return SuppressionOut.model_validate(rule)
 
 
 @router.delete("/{rule_id}", status_code=204, summary="Delete a rule")
 async def delete_rule(rule_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
     ctx = get_ctx(request)
-    if not await ctx.repos.suppressions.delete(principal.tenant_id, rule_id):
+    if not await rule_changes.delete_rule(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, rule_id
+    ):
         raise NotFound("suppression rule", rule_id)
-    await _audit(ctx, principal, "suppression.deleted", rule_id, {})
     return Response(status_code=204)

@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import FrozenSet, Literal, Optional
 from uuid import UUID
 
+from lg_sotf.audit.logger import Actor
+
 ROLES = ("viewer", "analyst", "admin")
 ROLE_RANK = {role: rank for rank, role in enumerate(ROLES)}
 SCOPES = ("ingest", "read", "write")
@@ -86,6 +88,11 @@ class Principal:
         if self.user_id is not None:
             return str(self.user_id)
         return f"oidc:{self.subject}"
+
+    @property
+    def actor(self) -> Actor:
+        """This principal as the actor of an audited change."""
+        return Actor(self.actor_type, self.actor_id)
 
     def acting_on(self, tenant_id: str) -> Principal:
         return replace(self, tenant_id=tenant_id)
