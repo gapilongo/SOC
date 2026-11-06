@@ -428,7 +428,7 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
     tenant = await ctx.tenants.get(requested)
     if tenant is None:
         raise ApiError(404, "not_found", "tenant not found")
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         requested,
         "platform_admin.tenant_access",
         "tenant",

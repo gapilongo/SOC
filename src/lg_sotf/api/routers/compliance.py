@@ -88,7 +88,7 @@ async def evidence_pack(
     pack = await build_evidence_pack(ctx.repos, ctx.settings, tenant_id, alert_id, generated_by=_actor(principal))
     digest = pack["integrity"]["bundle_sha256"]
     signature = pack["integrity"]["signature"]
-    entry = await AuditLogger(ctx.repos).record(
+    entry = await AuditLogger(ctx.repos).record_event(
         tenant_id,
         "alert.evidence_exported",
         "alert",
@@ -338,7 +338,7 @@ async def export_tenant(
     audit = AuditLogger(ctx.repos)
     details = {"home_tenant_id": principal.home_tenant_id, "filename": filename, "tenant_status": tenant.status}
     for target, action in ((tenant.id, "tenant.data_exported"), (principal.home_tenant_id, "platform.tenant_exported")):
-        await audit.record(
+        await audit.record_event(
             target,
             action,
             "tenant",
@@ -375,7 +375,9 @@ async def erase(
         code = "tenant_not_suspended" if tenant.status != "suspended" else "erasure_blocked"
         raise ApiError(409, code, "; ".join(blockers))
     audit = AuditLogger(ctx.repos)
-    await audit.record(
+    # Erasure deletes in many streamed batches, one transaction each, so it has no single transaction to
+    # audit in: the start is recorded before the first batch and the result after the last one.
+    await audit.record_event(
         principal.home_tenant_id,
         "platform.tenant_erasure_started",
         "tenant",
@@ -398,7 +400,7 @@ async def erase(
         "audit_entries_retained": report.audit_entries_retained,
     }
     for target, action in ((tenant.id, "tenant.erased"), (principal.home_tenant_id, "platform.tenant_erased")):
-        await audit.record(
+        await audit.record_event(
             target,
             action,
             "tenant",

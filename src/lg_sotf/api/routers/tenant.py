@@ -446,7 +446,7 @@ async def response_routes(request: Request, principal: Principal = Depends(requi
 async def clear_verdict_cache(request: Request, principal: Principal = Depends(require(ADMIN))) -> VerdictCacheClearedOut:
     ctx = get_ctx(request)
     removed = await VerdictCache(ctx.redis, ctx.prefix).clear_tenant(principal.tenant_id)
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         principal.tenant_id,
         "tenant.verdict_cache_cleared",
         "tenant",
@@ -480,7 +480,7 @@ async def test_llm(request: Request, principal: Principal = Depends(require(ADMI
         raise rate_limited(decision)
     report = await check_llm(ctx.settings, tenant_id)
     await _flush_usage(ctx)
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         tenant_id,
         "tenant.llm_tested",
         "tenant",

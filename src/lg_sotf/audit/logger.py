@@ -35,11 +35,47 @@ class AuditLogger:
         details: Optional[Mapping[str, Any]] = None,
         conn: Optional[Connection] = None,
     ) -> Optional[AuditEntry]:
-        """Persist an audit entry (when repositories are configured) and log it.
+        """Persist the audit entry of a change in the change's own transaction (``conn``), and log it.
 
         Persistence failures propagate: an action whose audit entry cannot
-        be written must not be reported as done.
+        be written must not be reported as done. Written on ``conn``, the
+        entry commits or rolls back with the change it records.
         """
+        return await self._write(tenant_id, action, resource_type, resource_id, actor_type, actor_id, details, conn)
+
+    async def record_event(
+        self,
+        tenant_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: Optional[str] = None,
+        *,
+        actor_type: str = "system",
+        actor_id: Optional[str] = None,
+        details: Optional[Mapping[str, Any]] = None,
+    ) -> Optional[AuditEntry]:
+        """Persist and log an event that has no database transaction to join.
+
+        For access events (sign-in, sign-out, exports, cross-tenant reads),
+        refused or failed attempts, and changes outside the database (Redis,
+        external systems) or spread over many transactions (streaming
+        erasure). The entry is written in a transaction of its own, before
+        the caller reports the action as done; failures propagate as with
+        :meth:`record`. A database change records with :meth:`record`.
+        """
+        return await self._write(tenant_id, action, resource_type, resource_id, actor_type, actor_id, details, None)
+
+    async def _write(
+        self,
+        tenant_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: Optional[str],
+        actor_type: str,
+        actor_id: Optional[str],
+        details: Optional[Mapping[str, Any]],
+        conn: Optional[Connection],
+    ) -> Optional[AuditEntry]:
         safe_details, _ = redact(dict(details or {}))
         entry = None
         if self._repos is not None:

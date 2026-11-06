@@ -201,7 +201,7 @@ USAGE_CSV_COLUMNS = (
 
 
 async def _audit_home(ctx: ApiContext, principal: Principal, action: str, resource_id: Optional[str], **details: Any) -> None:
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         principal.home_tenant_id,
         action,
         "tenant",

@@ -433,7 +433,7 @@ async def slack_interactions(
         outcome = "not_found"
     except DeliveryError:
         outcome = "slack_api_error"
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         tenant,
         "integration.slack_interaction",
         "response_action",

@@ -235,7 +235,7 @@ class MfaService:
         details = {"reason": reason}
         if client_ip is not None:
             details["client_ip"] = client_ip
-        await self._audit.record(
+        await self._audit.record_event(
             user.tenant_id,
             "auth.mfa_failed",
             "user",
