@@ -12,7 +12,7 @@ import binascii
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Generic, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
 from uuid import UUID
 
 from lg_sotf.db.errors import InvalidCursor
@@ -23,6 +23,11 @@ MAX_PAGE_SIZE = 500
 # The largest page an API list endpoint serves (its ``limit`` query parameter's maximum).
 API_MAX_LIMIT = 200
 _CURSOR_VERSION = 1
+MAX_CURSOR_CHARS = 512
+# Text keysets: the longest sort value (an email address is at most 320 characters) and the
+# cursor that carries it (base64 of the JSON document).
+MAX_TEXT_SORT_CHARS = 320
+MAX_TEXT_CURSOR_CHARS = 1_024
 
 
 @dataclass(frozen=True)
@@ -45,32 +50,59 @@ def check_limit(limit: int, maximum: int = MAX_PAGE_SIZE) -> int:
     return limit
 
 
-def encode_cursor(ts: datetime, key: Union[str, int]) -> str:
-    if ts.tzinfo is None:
-        raise ValueError("cursor timestamps must be timezone-aware")
-    doc = {"v": _CURSOR_VERSION, "t": ts.astimezone(UTC).isoformat(), "k": key}
-    raw = json.dumps(doc, separators=(",", ":")).encode()
+def _pack(doc: Dict[str, Any]) -> str:
+    raw = json.dumps({"v": _CURSOR_VERSION, **doc}, separators=(",", ":")).encode()
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def decode_cursor(cursor: str) -> Tuple[datetime, Union[str, int]]:
-    """Return ``(timestamp, key)`` from a cursor produced by :func:`encode_cursor`."""
-    if not isinstance(cursor, str) or not cursor or len(cursor) > 512:
+def _unpack(cursor: str, max_chars: int = MAX_CURSOR_CHARS) -> Dict[str, Any]:
+    """The JSON document of a cursor of this version (``InvalidCursor`` otherwise)."""
+    if not isinstance(cursor, str) or not cursor or len(cursor) > max_chars:
         raise InvalidCursor("malformed cursor")
     try:
         padded = cursor + "=" * (-len(cursor) % 4)
         doc = json.loads(base64.urlsafe_b64decode(padded.encode()))
-        if not isinstance(doc, dict) or doc.get("v") != _CURSOR_VERSION:
-            raise InvalidCursor("unsupported cursor version")
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise InvalidCursor("malformed cursor") from exc
+    if not isinstance(doc, dict) or doc.get("v") != _CURSOR_VERSION:
+        raise InvalidCursor("unsupported cursor version")
+    return doc
+
+
+def encode_cursor(ts: datetime, key: Union[str, int]) -> str:
+    if ts.tzinfo is None:
+        raise ValueError("cursor timestamps must be timezone-aware")
+    return _pack({"t": ts.astimezone(UTC).isoformat(), "k": key})
+
+
+def decode_cursor(cursor: str) -> Tuple[datetime, Union[str, int]]:
+    """Return ``(timestamp, key)`` from a cursor produced by :func:`encode_cursor`."""
+    doc = _unpack(cursor)
+    try:
         ts = datetime.fromisoformat(doc["t"])
         key = doc["k"]
-    except InvalidCursor:
-        raise
-    except (binascii.Error, UnicodeDecodeError, ValueError, KeyError, TypeError) as exc:
+    except (ValueError, KeyError, TypeError) as exc:
         raise InvalidCursor("malformed cursor") from exc
     if ts.tzinfo is None or not isinstance(key, (str, int)) or isinstance(key, bool):
         raise InvalidCursor("malformed cursor")
     return ts, key
+
+
+def encode_text_cursor(sort: str, key: str) -> str:
+    """Cursor for a ``(text sort column, id)`` keyset, such as users by ``(email, id)``."""
+    return _pack({"s": sort, "k": key})
+
+
+def decode_text_cursor(cursor: str) -> Tuple[str, str]:
+    """Return ``(sort value, key)`` from a cursor produced by :func:`encode_text_cursor`."""
+    doc = _unpack(cursor, MAX_TEXT_CURSOR_CHARS)
+    return _text_part(doc.get("s")), _text_part(doc.get("k"))
+
+
+def _text_part(value: Any) -> str:
+    if not isinstance(value, str) or not value or len(value) > MAX_TEXT_SORT_CHARS or "\x00" in value:
+        raise InvalidCursor("malformed cursor")
+    return value
 
 
 _INT64_MIN = -(2**63)

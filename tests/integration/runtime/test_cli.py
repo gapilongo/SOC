@@ -37,7 +37,7 @@ async def _users(url: str, tenant: str) -> List[Any]:
     db = _db(url)
     await db.open()
     try:
-        return await Repositories.create(db).users.list(tenant)
+        return (await Repositories.create(db).users.list(tenant)).items
     finally:
         await db.close()
 
@@ -132,7 +132,7 @@ async def _tenant_state(url: str, tenant: str) -> Any:
     try:
         repos = Repositories.create(db)
         audit = (await repos.audit.list(tenant, resource_type="tenant")).items
-        return await repos.tenants.get(tenant), await repos.users.list(tenant), [e.action for e in audit]
+        return await repos.tenants.get(tenant), (await repos.users.list(tenant)).items, [e.action for e in audit]
     finally:
         await db.close()
 
@@ -362,7 +362,7 @@ async def _tenant_left_behind(url: str, tenant: str) -> List[Any]:
     try:
         repos = Repositories.create(db)
         rows: List[Any] = [t for t in await repos.tenants.list_all_tenants() if t.id == tenant]
-        return rows + list(await repos.users.list(tenant)) + list((await repos.audit.list(tenant)).items)
+        return rows + (await repos.users.list(tenant)).items + list((await repos.audit.list(tenant)).items)
     finally:
         await db.close()
 

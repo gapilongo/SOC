@@ -56,7 +56,7 @@ async def test_provisioning_without_admin_and_input_validation(api: ApiHarness) 
 
     bare = await api.client.post("/api/v1/platform/tenants", json={"id": "initech", "name": "Initech"}, headers=headers)
     assert bare.status_code == 201 and bare.json()["admin"] is None
-    assert await api.repos.users.list("initech") == []
+    assert (await api.repos.users.list("initech")).items == []
 
     for body in (
         {"id": "Bad Id", "name": "x"},
@@ -100,7 +100,7 @@ async def _left_behind(api: ApiHarness, tenant_id: str) -> List[Any]:
         rows.append(await api.repos.tenants.get(tenant_id))
     except NotFound:
         pass
-    rows.extend(await api.repos.users.list(tenant_id))
+    rows.extend((await api.repos.users.list(tenant_id)).items)
     rows.extend((await api.repos.audit.list(tenant_id)).items)
     rows.extend(e for e in (await api.repos.audit.list(TENANT_A)).items if e.resource_id == tenant_id)
     return rows
@@ -198,7 +198,7 @@ async def test_concurrent_provisioning_of_one_id_creates_it_once(
     assert sorted(r.status_code for r in responses) == [201, 409]
     winner = next(r for r in responses if r.status_code == 201).json()
     assert (await api.repos.tenants.get("umbrella")).name == winner["name"]
-    assert [u.email for u in await api.repos.users.list("umbrella")] == [winner["admin"]["email"]]
+    assert [u.email for u in (await api.repos.users.list("umbrella")).items] == [winner["admin"]["email"]]
     assert len((await api.repos.audit.list("umbrella", action="tenant.created")).items) == 1
 
 

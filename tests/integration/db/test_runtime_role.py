@@ -235,13 +235,13 @@ async def test_runtime_role_provisions_a_tenant_in_one_transaction(app: Reposito
         await _provision_in_one_transaction(app, "new-co", fail=True)
     with pytest.raises(NotFound):
         await repos.tenants.get("new-co")
-    assert await repos.users.list("new-co") == []
+    assert (await repos.users.list("new-co")).items == []
     assert (await repos.audit.list("new-co")).items == []
 
     await _provision_in_one_transaction(app, "new-co")
     tenant = await repos.tenants.get("new-co")
     assert (tenant.name, tenant.settings) == ("New Co", {"autonomy": {"low": "auto"}})
-    assert [u.email for u in await repos.users.list("new-co")] == ["root@new-co.example.com"]
+    assert [u.email for u in (await repos.users.list("new-co")).items] == ["root@new-co.example.com"]
     assert [e.action for e in (await repos.audit.list("new-co")).items] == ["user.created", "tenant.created"]
     assert [e.action for e in (await repos.audit.list(TENANT_A)).items] == ["platform.tenant_created"]
     for tenant_id in ("new-co", TENANT_A):

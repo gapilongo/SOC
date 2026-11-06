@@ -238,7 +238,7 @@ async def test_approval_committed_during_execution_is_not_lost(
     action") without ever executing it. Expected: every approved action runs.
     """
     stack = platform.stack
-    admin = (await repos.users.list(TENANT_A))[0]
+    admin = (await repos.users.list(TENANT_A)).items[0]
     review = ReviewService(repos, stack.settings, stack.events)
     result = await stack.ingest(TENANT_A, "api", [driver.beacon_event("race", 1)])
     alert_id = result.inserted[0].alert_id

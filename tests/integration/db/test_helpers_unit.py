@@ -16,7 +16,9 @@ from lg_sotf.db.pagination import (
     decode_cursor_bigint,
     decode_cursor_text,
     decode_cursor_uuid,
+    decode_text_cursor,
     encode_cursor,
+    encode_text_cursor,
     escape_like,
     paginate,
 )
@@ -98,6 +100,16 @@ class TestCursors:
         for bad in (12, "", "x" * 257, "a\x00"):
             with pytest.raises(InvalidCursor):
                 decode_cursor_text(encode_cursor(ts, bad))
+
+    def test_text_keyset(self) -> None:
+        email = "a" * 64 + "@" + "b" * 255
+        key = str(uuid4())
+        assert decode_text_cursor(encode_text_cursor(email, key)) == (email, key)
+        timestamped = encode_cursor(datetime(2026, 1, 1, tzinfo=UTC), key)
+        for bad in (encode_text_cursor("", key), encode_text_cursor(email + "c", key), encode_text_cursor("a\x00", key),
+                    encode_text_cursor(email, ""), timestamped, "x" * 1_100):
+            with pytest.raises(InvalidCursor):
+                decode_text_cursor(bad)
 
     def test_escape_like(self) -> None:
         assert escape_like("50%_off\\") == "50\\%\\_off\\\\"

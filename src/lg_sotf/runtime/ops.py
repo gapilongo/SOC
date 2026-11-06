@@ -124,7 +124,7 @@ async def migrate(settings: Settings) -> MigrateReport:
         await repos.tenants.ensure(auth.bootstrap_tenant_id, auth.bootstrap_tenant_name)
         report.tenant_created = not existed
         if auth.bootstrap_admin_email and auth.bootstrap_admin_password is not None:
-            if not await repos.users.list(auth.bootstrap_tenant_id, limit=1):
+            if not (await repos.users.list(auth.bootstrap_tenant_id, limit=1)).items:
                 password = auth.bootstrap_admin_password.get_secret_value()
                 check_password(settings, password)
                 password_hash = await ahash_password(password)

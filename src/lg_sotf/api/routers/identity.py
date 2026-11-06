@@ -81,7 +81,14 @@ async def list_users(
     principal: Principal = Depends(require(ADMIN)),
 ) -> List[UserOut]:
     ctx = get_ctx(request)
-    rows = await ctx.repos.users.list(principal.tenant_id, include_inactive=include_inactive, limit=1000)
+    rows: List[User] = []
+    cursor: Optional[str] = None
+    while True:
+        page = await ctx.repos.users.list(principal.tenant_id, include_inactive=include_inactive, cursor=cursor)
+        rows.extend(page.items)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
     mfa = await ctx.repos.user_mfa.enabled_since(principal.tenant_id)
     return [user_out(u, mfa) for u in rows]
 

@@ -9,8 +9,8 @@ from uuid import UUID
 import asyncpg
 from pydantic import Field
 
-from lg_sotf.db.errors import Conflict, NotFound
-from lg_sotf.db.pagination import Params
+from lg_sotf.db.errors import Conflict, InvalidCursor, NotFound
+from lg_sotf.db.pagination import MAX_PAGE_SIZE, Page, Params, check_limit, decode_text_cursor, encode_text_cursor
 from lg_sotf.db.repos._base import (
     UNSET,
     Connection,
@@ -130,26 +130,35 @@ class UsersRepo(Repository):
         tenant_id: str,
         *,
         include_inactive: bool = True,
-        limit: int = 500,
-        offset: int = 0,
+        limit: int = MAX_PAGE_SIZE,
+        cursor: Optional[str] = None,
         conn: Optional[Connection] = None,
-    ) -> List[User]:
-        if limit < 1 or limit > 1000 or offset < 0:
-            raise ValueError("limit must be 1..1000 and offset >= 0")
+    ) -> Page[User]:
+        """The tenant's accounts by email (keyset over ``(email, id)``)."""
+        check_limit(limit)
+        params = Params(tenant_id, include_inactive)
+        after = ""
+        if cursor is not None:
+            email, key = decode_text_cursor(cursor)
+            try:
+                user_id = UUID(key)
+            except ValueError as exc:
+                raise InvalidCursor("malformed cursor") from exc
+            after = f"AND (email, id) > ({params.add(email)}, {params.add(user_id)})"
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(
-                """
+                f"""
                 SELECT * FROM users
-                WHERE tenant_id = $1 AND ($2 OR is_active)
-                ORDER BY email
-                LIMIT $3 OFFSET $4
-                """,
-                tenant_id,
-                include_inactive,
-                limit,
-                offset,
+                WHERE tenant_id = $1 AND ($2 OR is_active) {after}
+                ORDER BY email, id
+                LIMIT {params.add(limit + 1)}
+                """,  # noqa: S608 - only placeholders are interpolated
+                *params.values,
             )
-        return to_models(User, rows)
+        users = to_models(User, rows)
+        items = users[:limit]
+        next_cursor = encode_text_cursor(items[-1].email, str(items[-1].id)) if len(users) > limit else None
+        return Page(items=items, next_cursor=next_cursor)
 
     async def update(
         self,
