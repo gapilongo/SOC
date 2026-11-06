@@ -1459,6 +1459,242 @@
         "title": "BlastRadiusOut",
         "type": "object"
       },
+      "BulkClaimIn": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkItemIn"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BulkClaimIn",
+        "type": "object"
+      },
+      "BulkCloseIn": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "default": "false_positive",
+            "enum": [
+              "false_positive",
+              "benign_positive"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkItemIn"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "notes": {
+            "description": "Recorded on every escalation.",
+            "maxLength": 4000,
+            "minLength": 1,
+            "title": "Notes",
+            "type": "string"
+          },
+          "propose_suppression": {
+            "default": false,
+            "description": "Also propose one disabled suppression rule from the escalations that closed (instead of one suggestion per escalation).",
+            "title": "Propose Suppression",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "notes"
+        ],
+        "title": "BulkCloseIn",
+        "type": "object"
+      },
+      "BulkErrorOut": {
+        "description": "What the single-item endpoint would have answered for this item.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "title": "BulkErrorOut",
+        "type": "object"
+      },
+      "BulkItemIn": {
+        "additionalProperties": false,
+        "properties": {
+          "escalation_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Escalation Id",
+            "type": "string"
+          },
+          "version": {
+            "description": "The version you read; a stale one fails this item with 409.",
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "escalation_id",
+          "version"
+        ],
+        "title": "BulkItemIn",
+        "type": "object"
+      },
+      "BulkItemOut": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BulkErrorOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EscalationOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalation_id": {
+            "title": "Escalation Id",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "resumes_enqueued": {
+            "default": 0,
+            "title": "Resumes Enqueued",
+            "type": "integer"
+          },
+          "resumes_failed": {
+            "default": 0,
+            "title": "Resumes Failed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "escalation_id",
+          "ok"
+        ],
+        "title": "BulkItemOut",
+        "type": "object"
+      },
+      "BulkOut": {
+        "description": "Per-item results, in request order. Items that succeeded are committed whatever the others did.",
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/BulkItemOut"
+            },
+            "title": "Results",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "suppression": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuppressionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suppression_created": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suppression Created"
+          }
+        },
+        "required": [
+          "results",
+          "succeeded",
+          "failed"
+        ],
+        "title": "BulkOut",
+        "type": "object"
+      },
+      "BulkProposeSuppressionIn": {
+        "additionalProperties": false,
+        "properties": {
+          "escalation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Escalation Ids",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "escalation_ids"
+        ],
+        "title": "BulkProposeSuppressionIn",
+        "type": "object"
+      },
       "CapabilityCheck": {
         "properties": {
           "checks": {
@@ -2367,6 +2603,131 @@
           "blockers"
         ],
         "title": "ErasureStatusOut",
+        "type": "object"
+      },
+      "EscalationGroupOut": {
+        "description": "Active escalations whose alerts share a detection rule (and source).",
+        "properties": {
+          "by_severity": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Severity",
+            "type": "object"
+          },
+          "earliest_sla_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earliest Sla Deadline"
+          },
+          "escalation_ids": {
+            "description": "Up to 10 of the group's escalations, soonest deadline first.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Escalation Ids",
+            "type": "array"
+          },
+          "max_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Confidence"
+          },
+          "min_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Confidence"
+          },
+          "overdue": {
+            "title": "Overdue",
+            "type": "integer"
+          },
+          "rule": {
+            "description": "The detection rule name, else the alert title; filter with GET /escalations?rule=.",
+            "title": "Rule",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "unassigned": {
+            "title": "Unassigned",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_id",
+          "rule",
+          "size",
+          "unassigned",
+          "overdue",
+          "by_severity",
+          "escalation_ids"
+        ],
+        "title": "EscalationGroupOut",
+        "type": "object"
+      },
+      "EscalationGroupsOut": {
+        "properties": {
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EscalationGroupOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "truncated": {
+            "description": "More groups matched than ``limit``.",
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "truncated",
+          "generated_at"
+        ],
+        "title": "EscalationGroupsOut",
         "type": "object"
       },
       "EscalationOut": {
@@ -4433,6 +4794,190 @@
         "title": "PlatformEscalationOut",
         "type": "object"
       },
+      "PreviewActionOut": {
+        "properties": {
+          "action_type": {
+            "title": "Action Type",
+            "type": "string"
+          },
+          "approval_entry": {
+            "description": "The approved_actions entry naming exactly this action.",
+            "title": "Approval Entry",
+            "type": "string"
+          },
+          "autonomy": {
+            "description": "The tenant's autonomy mode for this risk: auto, approval or disabled.",
+            "title": "Autonomy",
+            "type": "string"
+          },
+          "can_preapprove": {
+            "description": "Your role may pre-approve it with a true_positive decision.",
+            "title": "Can Preapprove",
+            "type": "boolean"
+          },
+          "connector": {
+            "$ref": "#/components/schemas/PreviewConnectorOut"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "guardrail": {
+            "$ref": "#/components/schemas/PreviewGuardrailOut"
+          },
+          "inverse_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inverse Action"
+          },
+          "irreversible_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irreversible Note"
+          },
+          "reversible": {
+            "title": "Reversible",
+            "type": "boolean"
+          },
+          "risk": {
+            "title": "Risk",
+            "type": "string"
+          },
+          "role_lock": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "admin: high and critical risk need an admin; disabled: nobody may approve it.",
+            "title": "Role Lock"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "without_preapproval": {
+            "enum": [
+              "automatic",
+              "awaiting_approval",
+              "blocked"
+            ],
+            "title": "Without Preapproval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action_type",
+          "target",
+          "description",
+          "risk",
+          "reversible",
+          "connector",
+          "guardrail",
+          "autonomy",
+          "without_preapproval",
+          "can_preapprove",
+          "approval_entry"
+        ],
+        "title": "PreviewActionOut",
+        "type": "object"
+      },
+      "PreviewConnectorOut": {
+        "properties": {
+          "live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Microsoft: the capability changes the tenant for real.",
+            "title": "Live"
+          },
+          "name": {
+            "description": "microsoft, ticketing, webhook or dry_run.",
+            "title": "Name",
+            "type": "string"
+          },
+          "ready": {
+            "description": "False when the route has a configuration problem (the action would fail).",
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "source": {
+            "description": "Why this connector: kill_switch, tenant_dry_run, sample, explicit, ticketing, ...",
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "source",
+          "ready"
+        ],
+        "title": "PreviewConnectorOut",
+        "type": "object"
+      },
+      "PreviewGuardrailOut": {
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "verdict": {
+            "enum": [
+              "passed",
+              "blocked"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict"
+        ],
+        "title": "PreviewGuardrailOut",
+        "type": "object"
+      },
       "ProbeCheck": {
         "description": "One connection-test check. ``detail`` is safe to store (at most 300 characters).",
         "properties": {
@@ -4640,6 +5185,54 @@
           "entry_id"
         ],
         "title": "ReprocessOut",
+        "type": "object"
+      },
+      "ResponsePreviewOut": {
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewActionOut"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "dry_run_forced": {
+            "title": "Dry Run Forced",
+            "type": "boolean"
+          },
+          "escalation_id": {
+            "title": "Escalation Id",
+            "type": "string"
+          },
+          "evidence": {
+            "description": "Always analyst: the preview assumes a true_positive decision.",
+            "title": "Evidence",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "threat_type": {
+            "title": "Threat Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "escalation_id",
+          "alert_id",
+          "generated_at",
+          "threat_type",
+          "evidence",
+          "dry_run_forced",
+          "actions"
+        ],
+        "title": "ResponsePreviewOut",
         "type": "object"
       },
       "RetentionLimitsOut": {
@@ -5302,6 +5895,31 @@
           "updated_at"
         ],
         "title": "SuppressionOut",
+        "type": "object"
+      },
+      "SuppressionProposalOut": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "boolean"
+          },
+          "escalation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Escalation Ids",
+            "type": "array"
+          },
+          "suppression": {
+            "$ref": "#/components/schemas/SuppressionOut"
+          }
+        },
+        "required": [
+          "suppression",
+          "created",
+          "escalation_ids"
+        ],
+        "title": "SuppressionProposalOut",
         "type": "object"
       },
       "SuppressionUpdateIn": {
@@ -8868,6 +9486,44 @@
             }
           },
           {
+            "description": "The alert's source",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The alert's source",
+              "title": "Source Id"
+            }
+          },
+          {
+            "description": "The alert's detection rule (as in GET /escalations/groups)",
+            "in": "query",
+            "name": "rule",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 1024,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The alert's detection rule (as in GET /escalations/groups)",
+              "title": "Rule"
+            }
+          },
+          {
             "description": "created_at: newest first. sla_deadline: soonest deadline first, so overdue escalations come first and those without a deadline last.",
             "in": "query",
             "name": "order",
@@ -8936,6 +9592,210 @@
           }
         },
         "summary": "List escalations (newest first, or by SLA)",
+        "tags": [
+          "escalations"
+        ]
+      }
+    },
+    "/api/v1/escalations/bulk/claim": {
+      "post": {
+        "description": "Each item is ``POST /escalations/{id}/claim`` with its ``version``; failures are reported per item.",
+        "operationId": "bulk_claim_api_v1_escalations_bulk_claim_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkClaimIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Claim several escalations (per-item results)",
+        "tags": [
+          "escalations"
+        ]
+      }
+    },
+    "/api/v1/escalations/bulk/close": {
+      "post": {
+        "description": "Each item is ``POST /escalations/{id}/decision`` with ``decision`` and ``notes``; failures are reported\nper item. With ``propose_suppression`` one disabled rule is proposed from the escalations that closed\n(and no per-escalation suggestion is made).",
+        "operationId": "bulk_close_api_v1_escalations_bulk_close_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCloseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close several escalations as benign with one note (per-item results)",
+        "tags": [
+          "escalations"
+        ]
+      }
+    },
+    "/api/v1/escalations/bulk/propose-suppression": {
+      "post": {
+        "description": "All-or-nothing: 404 when an escalation is not found, 422 ``not_confirmed_benign`` (``details`` lists\nthem) when one has no false_positive/benign_positive decision. 200 with the existing rule when an\nunexpired rule already has the same match.",
+        "operationId": "bulk_propose_suppression_api_v1_escalations_bulk_propose_suppression_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProposeSuppressionIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressionProposalOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Propose one (disabled) suppression rule from escalations decided benign; an admin enables it",
+        "tags": [
+          "escalations"
+        ]
+      }
+    },
+    "/api/v1/escalations/groups": {
+      "get": {
+        "description": "Open and claimed escalations grouped by their alert's source and rule (largest group first).\n\nList a group's escalations with ``GET /escalations?source_id=&rule=``.",
+        "operationId": "groups_api_v1_escalations_groups_get",
+        "parameters": [
+          {
+            "description": "A user id, 'me', or 'none' (unassigned)",
+            "in": "query",
+            "name": "assigned_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A user id, 'me', or 'none' (unassigned)",
+              "title": "Assigned To"
+            }
+          },
+          {
+            "description": "Smallest group returned",
+            "in": "query",
+            "name": "min_size",
+            "required": false,
+            "schema": {
+              "default": 2,
+              "description": "Smallest group returned",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Min Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EscalationGroupsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Active escalations grouped by detection rule",
         "tags": [
           "escalations"
         ]
@@ -9082,6 +9942,49 @@
           }
         },
         "summary": "Record the analyst decision and resume the run(s)",
+        "tags": [
+          "escalations"
+        ]
+      }
+    },
+    "/api/v1/escalations/{escalation_id}/response-preview": {
+      "get": {
+        "description": "Nothing is written and no connector is called; ``can_preapprove`` and ``role_lock`` are for your role.",
+        "operationId": "preview_api_v1_escalations__escalation_id__response_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "escalation_id",
+            "required": true,
+            "schema": {
+              "title": "Escalation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponsePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dry run of the response plan a true_positive decision would produce",
         "tags": [
           "escalations"
         ]

@@ -53,6 +53,9 @@ _LIST_COLUMNS = (
     "disposition, confidence, threat_score, priority, assigned_to, occurred_at, ingested_at, "
     "updated_at, closed_at, summary, case_key"
 )
+# An alert's detection rule as console views group it: the normalized rule name, else the title
+# (the fingerprint uses the same fallback). ``a`` is the alerts table alias.
+ALERT_RULE_SQL = "COALESCE(NULLIF(btrim(a.normalized->>'rule_name'), ''), a.title)"
 # What a list row shows besides its columns: the source's name (NULL once the source is deleted)
 # and the normalized entities (``entities_preview``).
 _ROW_EXTRAS = (

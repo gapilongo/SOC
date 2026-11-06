@@ -60,6 +60,31 @@ All notable changes to this project are documented here. The format follows
   agent with its source (the provider) and `checked_at`, the time the
   platform received the result. Analyses recorded before this release have
   no `checked_at`.
+- `GET /escalations/groups` groups the open and claimed escalations by
+  their alert's source and detection rule ("Unusual sign-in pattern ×38"),
+  largest group first, with the number unassigned and overdue, the earliest
+  deadline, the confidence range and the count per severity. `GET
+  /escalations` takes `source_id` and `rule` to list one group.
+- Bulk triage: `POST /escalations/bulk/claim` claims up to 50 escalations
+  and `POST /escalations/bulk/close` closes up to 50 as false positive (or
+  benign positive) with one note. Each escalation is claimed or decided
+  exactly as with the single-escalation endpoints (same permissions, version
+  check, audit entry and notifications), and the response reports each one:
+  one that fails (not found, changed since you read it, already decided)
+  does not stop the others. With `propose_suppression`, a bulk close also
+  proposes one disabled suppression rule from the escalations it closed.
+- `POST /escalations/bulk/propose-suppression` proposes one disabled
+  suppression rule from up to 50 escalations an analyst decided false
+  positive or benign positive. It is all or nothing: if one escalation is
+  not found, or has no such decision, nothing is created. The rule matches
+  those alerts' detections (fingerprints) and sources, up to the most severe
+  of their severities; an admin enables it.
+- `GET /escalations/{id}/response-preview` shows the response plan a
+  true-positive decision would produce, without running or recording
+  anything: for each action its risk, whether it can be rolled back, the
+  connector that would run it, the guardrail verdict, whether it would run
+  automatically or wait for approval, and whether your role may pre-approve
+  it (high and critical risk need an admin).
 
 ### Changed
 

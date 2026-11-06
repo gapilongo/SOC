@@ -364,12 +364,12 @@ modules = [
     "lg_sotf.api.routers.sources",
     "lg_sotf.api.routers.suppressions",
     "lg_sotf.api.routers.tenant",
+    "lg_sotf.api.routers.triage",
     "lg_sotf.api.routers.ws",
 ]
 ignore_imports = [
     # S9 thin routers: move each shared helper to api/common.py
     "lg_sotf.api.routers.audit -> lg_sotf.api.routers.alerts",
-    "lg_sotf.api.routers.integrations -> lg_sotf.api.routers.review",
     "lg_sotf.api.routers.mfa -> lg_sotf.api.routers.auth",
     "lg_sotf.api.routers.platform -> lg_sotf.api.routers.identity",
     "lg_sotf.api.routers.reports -> lg_sotf.api.routers.suppressions",

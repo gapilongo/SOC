@@ -20,14 +20,14 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import escalations_out, one_escalation_out
+from lg_sotf.api.common import enqueue_resumes, escalations_out, one_escalation_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
@@ -57,7 +57,6 @@ from lg_sotf.models.vocabulary import VerificationState as Verification
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.action_views import ActionView, action_views
 from lg_sotf.services.response import ActionRequestError
-from lg_sotf.services.review import ResumeRequest
 from lg_sotf.services.rollback import RollbackService
 from lg_sotf.services.verification import VerificationService
 
@@ -113,18 +112,6 @@ def action_error(exc: ActionRequestError) -> ApiError:
     return ApiError(exc.status, exc.code, str(exc), details=[{"reason": exc.reason}] if exc.reason else None)
 
 
-async def enqueue_resumes(ctx: ApiContext, tenant_id: str, requests: Sequence[ResumeRequest]) -> Tuple[int, int]:
-    ok = failed = 0
-    for request in requests:
-        try:
-            await ctx.queue.enqueue_resume(tenant_id, request.alert_id, request.payload)
-            ok += 1
-        except Exception as exc:  # noqa: BLE001 - the decision is committed; report instead of failing it
-            failed += 1
-            log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
-    return ok, failed
-
-
 async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
     """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
     cache = VerdictCache(ctx.redis, ctx.prefix)
@@ -137,19 +124,6 @@ async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequen
             log.warning("api.verdict_invalidate_failed", alert_id=alert_id, error_type=type(exc).__name__)
 
 
-def _user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:
-    if value is None:
-        return None
-    if value == "me":
-        if principal.local_user_id is None:
-            raise ApiError(400, "invalid_request", "'me' needs a user account in this tenant")
-        return principal.local_user_id
-    try:
-        return UUID(value)
-    except ValueError as exc:
-        raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
-
-
 @escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first, or by SLA)")
 async def list_escalations(
     request: Request,
@@ -159,6 +133,10 @@ async def list_escalations(
     decided_by: Optional[str] = Query(default=None, description="A user id or 'me'"),
     overdue: bool = Query(default=False, description="Only active escalations past their SLA deadline"),
     alert_id: Optional[str] = Query(default=None, max_length=256),
+    source_id: Optional[str] = Query(default=None, max_length=128, description="The alert's source"),
+    rule: Optional[str] = Query(
+        default=None, max_length=1_024, description="The alert's detection rule (as in GET /escalations/groups)"
+    ),
     order: Literal["created_at", "sla_deadline"] = Query(
         default="created_at",
         description="created_at: newest first. sla_deadline: soonest deadline first, so overdue escalations "
@@ -174,11 +152,13 @@ async def list_escalations(
         principal.tenant_id,
         status=status,
         level=level,
-        assigned_to=None if unassigned else _user_ref(principal, assigned_to, "assigned_to"),
+        assigned_to=None if unassigned else user_ref(principal, assigned_to, "assigned_to"),
         unassigned=unassigned,
-        decided_by=_user_ref(principal, decided_by, "decided_by"),
+        decided_by=user_ref(principal, decided_by, "decided_by"),
         overdue_at=datetime.now(UTC) if overdue else None,
         alert_id=alert_id,
+        source_id=source_id,
+        rule=rule,
         order=order,
         limit=limit,
         cursor=cursor,

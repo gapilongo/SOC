@@ -8,7 +8,7 @@ generic 500 and its stack trace goes to the log only.
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Tuple, Type
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -51,6 +51,24 @@ _STATUS_CODES: Mapping[int, str] = {
     500: "internal_error",
     503: "service_unavailable",
 }
+
+
+# Exceptions answered with a fixed status and code and their own (client-safe) message.
+SIMPLE_ERRORS: Tuple[Tuple[Type[Exception], int, str], ...] = (
+    (NotFound, 404, "not_found"),
+    (InvalidCursor, 400, "invalid_cursor"),
+    (InvalidValue, 400, "invalid_value"),
+    (InvalidTenantId, 400, "invalid_tenant"),
+    (Conflict, 409, "conflict"),
+    (InvalidTransition, 409, "invalid_transition"),
+    (AlreadyInState, 409, "already_in_state"),
+    (ReviewError, 400, "invalid_request"),
+    (ReviewDenied, 403, "forbidden"),
+    (InvalidRule, 422, "invalid_rule"),
+    (SourceNotPushable, 404, "source_not_found"),
+    (SourceDisabled, 409, "source_disabled"),
+    (SourceConfigError, 422, "invalid_source"),
+)
 
 
 class ApiError(StarletteHTTPException):
@@ -140,6 +158,20 @@ def _simple(
     return handler
 
 
+def describe_error(exc: BaseException) -> Optional[Tuple[int, str, str]]:
+    """``(status, code, message)`` a request failing with ``exc`` answers, when :data:`SIMPLE_ERRORS` maps it.
+
+    Resolved like Starlette resolves handlers (the closest class in the MRO), so a bulk endpoint reports
+    an item's error exactly as the single-item endpoint would answer it.
+    """
+    table = {cls: (status, code) for cls, status, code in SIMPLE_ERRORS}
+    for cls in type(exc).__mro__:
+        if cls in table:
+            status, code = table[cls]
+            return status, code, _clip(str(exc) or code.replace("_", " "))
+    return None
+
+
 async def _policy(_: Request, exc: Exception) -> JSONResponse:
     assert isinstance(exc, ResponsePolicyError)
     problems = [_clip(p) for p in exc.problems]
@@ -166,20 +198,9 @@ def install_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(StarletteHTTPException, _http_exception)
     app.add_exception_handler(RequestValidationError, _validation)
     # Order does not matter: Starlette picks the handler of the closest class in the MRO.
-    app.add_exception_handler(NotFound, _simple(404, "not_found"))
-    app.add_exception_handler(InvalidCursor, _simple(400, "invalid_cursor"))
-    app.add_exception_handler(InvalidValue, _simple(400, "invalid_value"))
-    app.add_exception_handler(InvalidTenantId, _simple(400, "invalid_tenant"))
-    app.add_exception_handler(Conflict, _simple(409, "conflict"))
-    app.add_exception_handler(InvalidTransition, _simple(409, "invalid_transition"))
-    app.add_exception_handler(AlreadyInState, _simple(409, "already_in_state"))
+    for cls, status_code, code in SIMPLE_ERRORS:
+        app.add_exception_handler(cls, _simple(status_code, code))
     app.add_exception_handler(DatabaseUnavailable, _unavailable)
-    app.add_exception_handler(ReviewError, _simple(400, "invalid_request"))
-    app.add_exception_handler(ReviewDenied, _simple(403, "forbidden"))
     app.add_exception_handler(ResponsePolicyError, _policy)
-    app.add_exception_handler(InvalidRule, _simple(422, "invalid_rule"))
-    app.add_exception_handler(SourceNotPushable, _simple(404, "source_not_found"))
-    app.add_exception_handler(SourceDisabled, _simple(409, "source_disabled"))
-    app.add_exception_handler(SourceConfigError, _simple(422, "invalid_source"))
     app.add_exception_handler(ValueError, _value_error)
     app.add_exception_handler(Exception, _unhandled)

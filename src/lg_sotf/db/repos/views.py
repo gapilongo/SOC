@@ -17,13 +17,17 @@ window, never all-time).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
+from lg_sotf.db.pagination import check_limit
 from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_int, fetch_one, require_aware
-from lg_sotf.models.vocabulary import ALERT_STATUSES
+from lg_sotf.db.repos.alerts import ALERT_RULE_SQL
+from lg_sotf.models.vocabulary import ALERT_STATUSES, SEVERITIES
 
 MAX_LOOKUP_IDS = 500
+MAX_GROUPS = 100
+MAX_GROUP_SAMPLE = 10
 # Alert statuses counted all-time by alert_view_counts: every one but ``closed``.
 OPEN_ALERT_STATUSES = tuple(s for s in ALERT_STATUSES if s != "closed")
 
@@ -60,14 +64,44 @@ SELECT 'closed', count(*)::int FROM alerts
 WHERE tenant_id = $1 AND status = 'closed' AND closed_at >= $3 AND ($4::timestamptz IS NULL OR closed_at < $4)
 """
 _USER_EMAILS_SQL = "SELECT id, email FROM users WHERE tenant_id = $1 AND id = ANY($2::uuid[])"
-_ALERT_DIGESTS_SQL = """
+_ALERT_DIGESTS_SQL = f"""
 SELECT a.id, a.severity, a.title, a.fingerprint, a.source_id, s.name AS source_name,
-       a.normalized->>'rule_name' AS rule_name,
-       COALESCE(a.normalized->'entities', '{}'::jsonb) AS entities
+       {ALERT_RULE_SQL} AS rule,
+       COALESCE(a.normalized->'entities', '{{}}'::jsonb) AS entities
 FROM alerts a
 LEFT JOIN sources s ON s.tenant_id = a.tenant_id AND s.id = a.source_id
 WHERE a.tenant_id = $1 AND a.id = ANY($2::text[])
-"""
+"""  # noqa: S608 (constants)
+_SEVERITY_COUNTS = ", ".join(f"count(*) FILTER (WHERE g.severity = '{s}')::int AS sev_{s}" for s in SEVERITIES)
+# Active escalations grouped by their alert's source and rule ($2 now, $3 unassigned only, $4 assignee,
+# $5 smallest group, $6 limit).
+_GROUPS_SQL = f"""
+WITH active AS (
+    SELECT e.id, e.assigned_to, e.sla_deadline, a.severity, a.source_id, {ALERT_RULE_SQL} AS rule,
+           CASE WHEN jsonb_typeof(e.summary->'confidence') = 'number'
+                THEN (e.summary->>'confidence')::float8 END AS confidence
+    FROM escalations e
+    JOIN alerts a ON a.tenant_id = e.tenant_id AND a.id = e.alert_id
+    WHERE e.tenant_id = $1 AND e.status IN ('open', 'claimed')
+      AND ($3::boolean IS NOT TRUE OR e.assigned_to IS NULL)
+      AND ($4::uuid IS NULL OR e.assigned_to = $4)
+)
+SELECT g.source_id, g.rule,
+       (SELECT s.name FROM sources s WHERE s.tenant_id = $1 AND s.id = g.source_id) AS source_name,
+       count(*)::int AS size,
+       count(*) FILTER (WHERE g.assigned_to IS NULL)::int AS unassigned,
+       count(*) FILTER (WHERE g.sla_deadline < $2)::int AS overdue,
+       min(g.sla_deadline) AS earliest_sla_deadline,
+       min(g.confidence) AS min_confidence,
+       max(g.confidence) AS max_confidence,
+       {_SEVERITY_COUNTS},
+       (array_agg(g.id ORDER BY g.sla_deadline ASC NULLS LAST, g.id))[1:{MAX_GROUP_SAMPLE}] AS escalation_ids
+FROM active g
+GROUP BY g.source_id, g.rule
+HAVING count(*) >= $5
+ORDER BY size DESC, earliest_sla_deadline ASC NULLS LAST, g.source_id, g.rule
+LIMIT $6
+"""  # noqa: S608 (constants)
 
 
 class EscalationQueue(Record):
@@ -81,7 +115,10 @@ class EscalationQueue(Record):
 
 
 class AlertDigest(Record):
-    """What a list row shows about an escalation's alert: severity, rule, source and entities."""
+    """What a list row shows about an escalation's alert: severity, rule, source and entities.
+
+    ``rule`` is the detection rule name, or the title when the source has none (:data:`ALERT_RULE_SQL`).
+    """
 
     id: str
     severity: str
@@ -89,13 +126,24 @@ class AlertDigest(Record):
     fingerprint: str
     source_id: str
     source_name: Optional[str]
-    rule_name: Optional[str]
+    rule: str
     entities: Dict[str, Any]
 
-    @property
-    def rule(self) -> str:
-        """The detection rule name, or the title when the source has none (as the fingerprint does)."""
-        return (self.rule_name or "").strip() or self.title
+
+class EscalationGroup(Record):
+    """Active escalations whose alerts share a source and a rule."""
+
+    source_id: str
+    source_name: Optional[str]
+    rule: str
+    size: int
+    unassigned: int
+    overdue: int
+    earliest_sla_deadline: Optional[datetime]
+    min_confidence: Optional[float]
+    max_confidence: Optional[float]
+    by_severity: Dict[str, int]
+    escalation_ids: List[str]
 
 
 def _check_ids(ids: Sequence[Any]) -> None:
@@ -120,6 +168,42 @@ class ViewsRepo(Repository):
             next_sla_deadline=row["next_sla_deadline"],
             by_severity={str(r["severity"]): int(r["n"]) for r in rows},
         )
+
+    async def escalation_groups(
+        self,
+        tenant_id: str,
+        *,
+        now: datetime,
+        assigned_to: Optional[UUID] = None,
+        unassigned: bool = False,
+        min_size: int = 2,
+        limit: int = 50,
+        conn: Optional[Connection] = None,
+    ) -> Tuple[List[EscalationGroup], bool]:
+        """Open and claimed escalations grouped by their alert's ``(source_id, rule)``, largest group first.
+
+        Returns at most ``limit`` (<= :data:`MAX_GROUPS`) groups of at least ``min_size`` escalations and
+        whether more matched. ``overdue`` counts deadlines before ``now``; ``escalation_ids`` holds up to
+        :data:`MAX_GROUP_SAMPLE` ids, soonest deadline first.
+        """
+        check_limit(limit, MAX_GROUPS)
+        require_aware(now, "now")
+        if min_size < 1:
+            raise ValueError("min_size must be at least 1")
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_GROUPS_SQL, tenant_id, now, unassigned, assigned_to, min_size, limit + 1)
+        groups = [
+            EscalationGroup.model_validate(
+                {
+                    **{k: r[k] for k in ("source_id", "source_name", "rule", "size", "unassigned", "overdue")},
+                    **{k: r[k] for k in ("earliest_sla_deadline", "min_confidence", "max_confidence")},
+                    "by_severity": {s: int(r[f"sev_{s}"]) for s in SEVERITIES if r[f"sev_{s}"]},
+                    "escalation_ids": [str(i) for i in r["escalation_ids"] or []],
+                }
+            )
+            for r in rows
+        ]
+        return groups[:limit], len(groups) > limit
 
     async def assigned_active(self, tenant_id: str, user_id: UUID, *, conn: Optional[Connection] = None) -> int:
         """Active escalations assigned to ``user_id``."""

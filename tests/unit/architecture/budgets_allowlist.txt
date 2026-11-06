@@ -10,7 +10,7 @@ services/response.py	2530
 # Functions
 agents/analysis/base.py::AnalysisAgent._run	134
 agents/correlation/base.py::CorrelationAgent._run	88
-api/app.py::create_app	104
+api/app.py::create_app	82
 api/routers/integrations.py::slack_interactions	97
 compliance/evidence.py::build_evidence_pack	101
 compliance/evidence.py::human_oversight	121
