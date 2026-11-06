@@ -477,6 +477,8 @@ def test_seed_flow_against_a_stub_api(tmp_path: Path, capsys: pytest.CaptureFixt
         )
     finally:
         server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
     out = capsys.readouterr().out
     assert rc == 0, out
     assert _FakeApi.state["login"] == {"email": "admin@demo.example.com", "password": password, "tenant": "demo"}
