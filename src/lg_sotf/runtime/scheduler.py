@@ -35,7 +35,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Seq
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.partitions import ensure_partitions
-from lg_sotf.db.pool import Database
+from lg_sotf.db.pool import Database, owner_dsn
 from lg_sotf.db.repos import Escalation, Repositories, Source, WorkflowRun
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.retention import purge_expired
@@ -648,8 +648,7 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
     from lg_sotf.runtime.shutdown import GracefulShutdown, cancel_current_task
 
-    owner_url = settings.database.migration_url or settings.database.url
-    db = Database(settings.database, dsn=owner_url.get_secret_value(), application_name="lg-sotf-scheduler")
+    db = Database(settings.database, dsn=owner_dsn(settings), application_name="lg-sotf-scheduler")
     redis = create_redis(settings)
     try:
         await db.open()

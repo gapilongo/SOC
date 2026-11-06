@@ -38,6 +38,8 @@ BUDGETS: list[tuple[str, str]] = [
     # F3: the egress policy is a leaf; importing it used to load every pull connector and db.repos.
     ("lg_sotf.net.egress", "lg_sotf.db"),
     ("lg_sotf.net.egress", "lg_sotf.ingestion"),
+    # F7: compliance operations take the owner DSN from lg_sotf.db, not from a process role.
+    ("lg_sotf.compliance.ops", "lg_sotf.runtime"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded

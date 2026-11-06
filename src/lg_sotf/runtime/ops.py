@@ -10,7 +10,7 @@ from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upgrade_head
 from lg_sotf.db.partitions import ensure_partitions
-from lg_sotf.db.pool import Database
+from lg_sotf.db.pool import owner_database, owner_dsn
 from lg_sotf.db.repos import Repositories, User
 from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.users import ROLES, normalize_email
@@ -27,17 +27,6 @@ from lg_sotf.settings import Settings
 log = get_logger(__name__)
 
 MAX_TENANT_NAME_CHARS = 200
-
-
-def owner_url(settings: Settings) -> str:
-    url = settings.database.migration_url or settings.database.url
-    return url.get_secret_value()
-
-
-def owner_database(settings: Settings, application_name: str) -> Database:
-    return Database(
-        settings.database, dsn=owner_url(settings), application_name=application_name, min_size=0, max_size=2
-    )
 
 
 def check_password(settings: Settings, password: str) -> None:
@@ -110,7 +99,7 @@ class MigrateReport:
 
 async def migrate(settings: Settings) -> MigrateReport:
     """Schema upgrade, checkpointer tables, runtime grants and bootstrap tenant/admin. Idempotent."""
-    url = owner_url(settings)
+    url = owner_dsn(settings)
     report = MigrateReport(tenant_id=settings.auth.bootstrap_tenant_id)
     await asyncio.to_thread(upgrade_head, url)
     await setup_checkpointer(url)

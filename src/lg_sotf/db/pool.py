@@ -29,7 +29,7 @@ import structlog
 from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, SystemScopeDenied
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.urls import redact_url, to_libpq_url
-from lg_sotf.settings import DatabaseSettings, get_settings
+from lg_sotf.settings import DatabaseSettings, Settings, get_settings
 
 log = structlog.get_logger(__name__)
 
@@ -298,3 +298,21 @@ class Database:
             min_size=pool.get_min_size(),
             max_size=pool.get_max_size(),
         )
+
+
+def owner_dsn(settings: Settings) -> str:
+    """The schema-owner URL as ``postgresql://``: ``database.migration_url``, falling back to ``database.url``.
+
+    Migrations, the scheduler (retention, partitions, leader lease) and the
+    one-shot CLI operations connect as the schema owner; the API and the
+    workers use ``database.url`` (the RLS-bound runtime role).
+    """
+    url = settings.database.migration_url or settings.database.url
+    return to_libpq_url(url.get_secret_value())
+
+
+def owner_database(settings: Settings, application_name: str) -> Database:
+    """A small schema-owner pool (0 to 2 connections) for one-shot CLI operations."""
+    return Database(
+        settings.database, dsn=owner_dsn(settings), application_name=application_name, min_size=0, max_size=2
+    )
