@@ -418,7 +418,7 @@ Legend:
 - **Verify:** no runtime change; a Protocol is structural.
 - **Risk / Effort / Deps:** low · S · G1.
 
-#### F10 · mypy strictness promotion
+#### F10 · mypy strictness promotion (done in #103)
 - **Why:** strictness currently applies only to `settings`, `llm`, `security` and `observability`. The global `ignore_missing_imports` hides untyped dependencies.
 - **Change:**
   - Make `disallow_untyped_defs` and `disallow_incomplete_defs` global.
@@ -805,7 +805,7 @@ Legend:
 
 ### Phase 7 — Frontend (`src/lg_front`)
 
-#### FE1 · Coverage ratchet and characterization tests
+#### FE1 · Coverage ratchet and characterization tests (done in #102)
 - **Change:**
   - Add a pinned `@vitest/coverage-v8` with thresholds just below today's measured values, plus per-glob floors for `src/api`, `src/auth`, `src/live` and `src/lib`. Run it in `test:ci`.
   - New tests:
@@ -817,7 +817,7 @@ Legend:
     - a `Dashboard` smoke test.
 - **Risk / Effort / Deps:** low · M · none.
 
-#### FE2 · One owner of session cache clearing
+#### FE2 · One owner of session cache clearing (done in #102)
 - **Why:** `Login.tsx:278` and `OidcCallback.tsx:41` call `queryClient.clear()`. `auth/cacheBinding.ts:37-40` documents that `clear()` alone is not enough, because a mounted observer keeps rendering another identity's data.
 - **Change:**
   - Add a `cacheBinding` test: logging in after another identity's session renders no stale rows.
@@ -825,7 +825,7 @@ Legend:
   - Ban `QueryClient.clear` outside `auth/cacheBinding.ts` with `no-restricted-syntax`.
 - **Risk / Effort / Deps:** low · S · FE1.
 
-#### FE3 · Guarded success-body parsing
+#### FE3 · Guarded success-body parsing (done in #102)
 - **Change:**
   - In `client.ts:221-224`, raise `ApiError({status, code: "invalid_response", requestId})` when the Content-Type is not JSON or `JSON.parse` throws.
   - Keep the existing handling of empty bodies, 204, blob and text.
@@ -833,7 +833,7 @@ Legend:
 - **Behaviour change:** a misrouted `index.html` now shows an error card instead of a raw `SyntaxError`.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### FE4 · Query-key factory and invalidation policies
+#### FE4 · Query-key factory and invalidation policies (done in #102)
 - **Why:** there are 82 literal `queryKey`s. `PLATFORM_TENANTS_KEY` is queried four times with different options (`PlatformPage.tsx:167,308,526`, `TenantSwitcher.tsx:77`). `TenantSettingsPage.tsx:51` retypes `['onboarding-status']`.
 - **Change:**
   - **FE4.1:** add `src/api/queryKeys.ts` (`qk.*`, `as const`, values identical to today's literals) with a prefix-invariant test: every list and detail key starts with its `.all` key. Migrate alerts, escalations, actions and tickets. `keysForEvent` keeps returning `string[]` (derived from `qk.*.all[0]`), so `createInvalidator`'s `Set<string>` deduplication still works.
@@ -841,7 +841,7 @@ Legend:
   - **FE4.3:** add `src/api/invalidate.ts` with named policies (`afterAlertChange`, `afterEscalationChange`, `afterActionChange`, …) that keep today's semantics. Add ESLint rules: no array-literal `queryKey`, and no `invalidateQueries` outside `api/invalidate.ts`, `lib/pagination.ts` and `auth/cacheBinding.ts`. Tests and `src/test/**` are exempt.
 - **Risk / Effort / Deps:** low · M · FE1.
 
-#### FE5 · Harden `useKeysetList` (audit finding, open)
+#### FE5 · Harden `useKeysetList` (audit finding, done in #102)
 - **Change:**
   - Keep `itemKey` in a latest-value ref.
   - Memoize the flattened list and `reload` on `hashKey(queryKey)`, which is already computed at `pagination.ts:127`.
@@ -849,7 +849,7 @@ Legend:
 - **Verify:** no behaviour change.
 - **Risk / Effort / Deps:** low · S · FE4.1.
 
-#### FE6 · Bounded ticket lookup (audit finding, open)
+#### FE6 · Bounded ticket lookup (audit finding, done in #102)
 - **Why:** `EscalationsPage.tsx:193-198` sends up to 200 UUIDs as query parameters, about 10 KB. That exceeds nginx's 8 KB `large_client_header_buffers`, so the request fails with a silent 414.
 - **Change:**
   - Split the ids into chunks of at most 50, each fetched through `useQueries` with `qk.tickets.forEscalations(chunk)`.
@@ -912,14 +912,14 @@ Legend:
 
 ### Phase 8 — Test-suite hygiene
 
-#### Q1 · Controllable clock in the API harness
+#### Q1 · Controllable clock in the API harness (done in #104)
 - **Change:**
   - `ApiHarness` gets a clock, and sets `api.ctx.limiter = RateLimiter(redis, prefix, clock=clock)` after startup.
   - Replace the 8 `fresh_rate_window` calls, which sleep up to 15.1 s, and freeze the clock in `test_auth.py:328`, which flakes when a test straddles a minute boundary. Delete `fresh_rate_window`.
 - **Verify:** test-only change.
 - **Risk / Effort / Deps:** low · S · none.
 
-#### Q2 · Fixture and helper consolidation
+#### Q2 · Fixture and helper consolidation (done in #104)
 - **Change:**
   - Move the real-Redis case from `tests/unit/llm/test_budget.py` to `tests/integration/llm/`. Delete the root `redis_url`/`redis_client` (which shadow the flushing ones) and the unused `requires_*` markers. Move `integration/db/test_helpers_unit.py` to `tests/unit/db/`.
   - Add a collection check: a `tests/unit` item that requests `db`, `repos`, `redis_client` or `migrated_database_url` fails.
@@ -928,14 +928,14 @@ Legend:
   - Merge the duplicated session checkpointer fixture into `tests/integration/conftest.py`. Assert that every public non-partition table except `alembic_version` is in `ALL_TABLES` or `CHECKPOINT_TABLES`.
 - **Risk / Effort / Deps:** low · M · G9.
 
-#### Q3 · Injectable clock in runtime timing paths
+#### Q3 · Injectable clock in runtime timing paths (done in #104, worker shutdown fix in #105)
 - **Change:**
   - Add a defaulted `clock: Callable[[], float] = time.time` to `oldest_undelivered_age_s` (`runtime/orphans.py:129`) and to the worker and scheduler constructors, wherever the time is read in Python. Redis-side idle times stay real.
   - Replace the fixed 1.1–1.6 s sleeps that depend on Python-side time in `runtime/test_worker.py`, `e2e/test_recovery.py` and `runtime/test_scheduler.py`.
 - **Verify:** production defaults are unchanged.
 - **Risk / Effort / Deps:** low · S · G10.
 
-#### Q4 · Parallel integration tier
+#### Q4 · Parallel integration tier (done in #104; blocking after about 10 green runs)
 - **Change:**
   - `database_url` becomes `<name>_gw<N>` (`CREATE DATABASE` if missing; the `test` name guard stays). The Redis DB index becomes base + N, refusing above 15.
   - Add a guard that fails any harness built without `unique_prefix`, because pub/sub ignores DB indexes.
@@ -943,7 +943,7 @@ Legend:
   - Add a nightly `-p randomly` job with a pinned `pytest-randomly`.
 - **Risk / Effort / Deps:** medium · M · Q2.
 
-#### Q5 · One-command onboarding and testing docs
+#### Q5 · One-command onboarding and testing docs (done in #104)
 - **Change:**
   - Extract `scripts/ci/create_test_role.sql` (NOSUPERUSER NOBYPASSRLS CREATEDB) from `ci.yml:115-122`.
   - Add `docker/docker-compose.test.yml` (postgres:16 and redis:7, non-default ports, tmpfs), plus `make test-services`, `test-integration` and `test-services-down`. Add a deploy test that CI and the compose file use the same SQL file.
