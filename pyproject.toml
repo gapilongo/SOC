@@ -202,14 +202,6 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
 
-# Ratchet: modules moved into the strict domain package verbatim (roadmap Phase 2) keep their one
-# known strict finding until a behaviour-free follow-up fixes it; delete each line with its fix.
-[[tool.mypy.overrides]]
-module = [
-    "lg_sotf.domain.routing",  # route_after_decide returns a dict value (no-any-return)
-    "lg_sotf.domain.suppression",  # _eq returns a == b on Any (no-any-return)
-]
-warn_return_any = false
 
 # Architecture contracts (docs/design/refactor-roadmap.md section 1.1, docs/adr/0001-layering.md).
 # `make import-lint` / CI. ignore_imports pins today's exceptions as exact pairs; each roadmap
