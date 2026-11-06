@@ -68,7 +68,7 @@ class AuditRepo(Repository):
         if not action or not resource_type:
             raise ValueError("action and resource_type are required")
         async with self._tenant(tenant_id, conn) as c:
-            await c.execute("SELECT pg_advisory_xact_lock($1, hashtext($2))", locks.AUDIT_CHAIN, tenant_id)
+            await locks.tenant_xact_lock(c, locks.AUDIT_CHAIN, tenant_id)
             row = await c.fetchrow(
                 """
                 WITH prev AS (

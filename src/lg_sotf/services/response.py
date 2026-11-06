@@ -150,6 +150,7 @@ from pydantic import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.phishing import email_block_targets, plan_email_entities
+from lg_sotf.db import locks
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition
 from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
@@ -271,9 +272,6 @@ MIN_EXECUTION_S = 1.0
 MIN_STATEFUL_EXECUTION_S = DEADLINE_MARGIN_S + MIN_HANDLER_S + 0.5
 # How long a started stateful row waits while a kill switch holds it (each wait counts one attempt).
 HALTED_RETRY_S = 300.0
-# Advisory lock class for the per-tenant hourly cap (next to lg_sotf.db.locks' namespaces).
-ACTION_CAP_LOCK = 710_020
-_CAP_LOCK_SQL = "SELECT pg_advisory_xact_lock($1, hashtext($2))"
 _EXECUTED_COUNTS_SQL = """
     SELECT action_type, count(*)::int AS n FROM response_actions
     WHERE tenant_id = $1 AND status = ANY($3::text[])
@@ -2255,7 +2253,7 @@ class ResponseService:
                     await self._audit_claim(tenant_id, blocked, executing, connector, conn)
             else:
                 async with self._repos.db.tenant_tx(tenant_id) as conn:
-                    await conn.execute(_CAP_LOCK_SQL, ACTION_CAP_LOCK, tenant_id)
+                    await locks.tenant_xact_lock(conn, locks.ACTION_CAP, tenant_id)
                     window_start = now - timedelta(hours=1) if now is not None else None
                     used, by_type = await self.executed_counts(tenant_id, window_start, conn=conn)
                     cap_block = self._cap_block(policy, action.action_type, used, by_type)
@@ -2514,7 +2512,7 @@ class ResponseService:
                     reason="rollback_exists",
                 )
             result = action.result or {}
-            await conn.execute(_CAP_LOCK_SQL, ACTION_CAP_LOCK, tenant_id)
+            await locks.tenant_xact_lock(conn, locks.ACTION_CAP, tenant_id)
             guard = check_guardrails(action.action_type, action.target, policy, restorative=restorative)
             if guard is not None:
                 raise ActionRequestError(409, "guardrail_blocked", guard.explanation[:300], reason=guard.code)

@@ -481,7 +481,7 @@ events. About 12 events per alert reach every client of a tenant.
 
 **B6. Escalation grouping is serialized per tenant.**
 `EscalationService.open_or_attach` (`src/lg_sotf/services/escalation.py`)
-takes `pg_advisory_xact_lock(ESCALATION_GROUP_LOCK, hashtext(tenant_id))`
+takes `pg_advisory_xact_lock(locks.ESCALATION_GROUP, hashtext(tenant_id))`
 and then runs `sightings_for_alert`, `related_alerts` (limit 100 over the
 60-minute window) and `_FIND_PARENT_SQL` inside that lock. It also writes
 the audit record, which takes the tenant's audit-chain lock.
