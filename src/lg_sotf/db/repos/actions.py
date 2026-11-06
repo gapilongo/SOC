@@ -29,6 +29,7 @@ from uuid import UUID
 
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition, NotFound
 from lg_sotf.db.pagination import Page, Params, check_limit, decode_cursor_uuid, paginate
+from lg_sotf.db.repos import _actions_sql as _sql
 from lg_sotf.db.repos._base import (
     UNSET,
     Connection,
@@ -137,6 +138,15 @@ class ResponseAction(Record):
     verify_deadline: Optional[datetime] = None
     verified_at: Optional[datetime] = None
     verify_attempts: int = 0
+
+
+class WorkflowApprovals(Record):
+    """The approval state of an alert's workflow-owned actions (:meth:`ActionsRepo.workflow_approvals`)."""
+
+    approved: int
+    awaiting: int
+    approver: Optional[str]
+    """Who approved most recently, if anyone."""
 
 
 class ActionsRepo(Repository):
@@ -570,6 +580,27 @@ class ActionsRepo(Repository):
             )
         return [(str(r["tenant_id"]), r["id"], bool(r["late"]), bool(r["expired"])) for r in rows]
 
+    # -- resume recovery (runtime/resumes.py) ---------------------------------------------------
+
+    async def workflow_approvals(
+        self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None
+    ) -> WorkflowApprovals:
+        """Approved and awaiting counts of the alert's workflow-owned actions, and the latest approver."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await fetch_one(
+                c,
+                """
+            SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
+                   count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
+                   (array_agg(approved_by ORDER BY approved_at DESC NULLS LAST)
+                        FILTER (WHERE approved_by IS NOT NULL))[1] AS approver
+            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2 AND execution_owner = 'workflow'
+            """,
+                tenant_id,
+                alert_id,
+            )
+        return WorkflowApprovals.model_validate(dict(row))
+
     async def claim_due_verifications(
         self, *, limit: int, lease_s: float, conn: Optional[Connection] = None
     ) -> List[Tuple[str, UUID]]:
@@ -701,19 +732,45 @@ class ActionsRepo(Repository):
             )
         return int(count or 0)
 
-    async def count_executed_since(self, tenant_id: str, since: datetime, *, conn: Optional[Connection] = None) -> int:
-        """Actions that started real execution since ``since`` (per-tenant hourly cap)."""
+    # Guardrail counts and the orphaned-execution sweep (services/response.py).
+
+    async def executed_counts(
+        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Optional[Connection] = None
+    ) -> Tuple[int, Dict[str, int]]:
+        """(total, per action type) of actions that started real execution since ``since``.
+
+        ``since=None`` (what the guardrails use) means the last hour on the
+        database clock, the clock that stamps ``executed_at``: a worker whose
+        clock runs fast cannot shrink the window and exceed the caps. Without
+        ``conn`` the count runs in its own read-only transaction.
+        """
         require_aware(since, "since")
+        if conn is None:
+            async with self.db.tenant_tx(tenant_id, readonly=True) as scoped:
+                return await self.executed_counts(tenant_id, since, conn=scoped)
         async with self._tenant(tenant_id, conn) as c:
-            return await c.fetchval(
-                """
-                SELECT count(*) FROM response_actions
-                WHERE tenant_id = $1 AND executed_at >= $2 AND status = ANY($3::text[])
-                """,
-                tenant_id,
-                since,
-                list(EXECUTED_STATUSES),
-            )
+            rows = await c.fetch(_sql.EXECUTED_COUNTS_SQL, tenant_id, since, list(EXECUTED_STATUSES))
+        by_type = {str(r["action_type"]): int(r["n"]) for r in rows}
+        return sum(by_type.values()), by_type
+
+    async def find_orphaned_executing(
+        self, tenant_id: str, *, limit: int, grace_s: float, conn: Optional[Connection] = None
+    ) -> List[Tuple[str, UUID, Optional[str]]]:
+        """``(tenant, id, connector)`` of the tenant's workflow rows left ``executing`` by a run that ended.
+
+        Rows that started executing less than ``grace_s`` seconds ago are left alone.
+        """
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_sql.ORPHANED_EXECUTING_SQL, tenant_id, limit, grace_s)
+        return [(str(r["tenant_id"]), r["id"], r["connector"]) for r in rows]
+
+    async def find_orphaned_executing_all_tenants(
+        self, *, limit: int, grace_s: float, conn: Optional[Connection] = None
+    ) -> List[Tuple[str, UUID, Optional[str]]]:
+        """:meth:`find_orphaned_executing` over every tenant (scheduler; system transaction)."""
+        async with self._system(conn) as c:
+            rows = await c.fetch(_sql.ORPHANED_EXECUTING_SQL, None, limit, grace_s)
+        return [(str(r["tenant_id"]), r["id"], r["connector"]) for r in rows]
 
 
 def _verification_sets(write: VerificationWrite, params: Params) -> List[str]:

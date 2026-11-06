@@ -212,6 +212,22 @@ billing or self-service sign-up, no model fine-tuning or automatic threshold
 learning, and no published accuracy figures on real customer data: the
 accuracy report and `lg-sotf eval --from-history` measure it on yours.
 
+## Product tour
+
+A 75-second walkthrough. Captions explain each step: sign-in, the live
+dashboard, sending sample alerts, an alert with its verdict and workflow
+timeline, escalations, response actions, integrations, tenant settings, the
+audit log and LLM usage.
+
+![Product tour: LG-SOTF from sign-in to audit log](docs/media/tour.gif)
+
+[Download the full-quality video (MP4, 1.9 MB)](docs/media/tour.mp4?raw=true). GitHub
+plays the GIF above inline but only offers the MP4 as a download. The tour runs against the
+same demo stack as the screenshots below: synthetic alerts and the offline
+stand-in model. To record it again after a UI change, run
+`scripts/record_tour.mjs`, then `scripts/make_tour_media.sh`. Both scripts
+explain their usage at the top.
+
 ## Screenshots
 
 Taken by the browser end-to-end suite (`scripts/e2e_ui_stack.sh`) against

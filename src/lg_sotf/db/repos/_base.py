@@ -222,7 +222,9 @@ class Repository:
                 yield scoped
 
     @asynccontextmanager
-    async def _system(self, conn: Optional[Connection] = None) -> AsyncIterator[Connection]:
+    async def _system(
+        self, conn: Optional[Connection] = None, *, readonly: bool = False
+    ) -> AsyncIterator[Connection]:
         if conn is not None:
             if not conn.is_in_transaction():
                 raise RuntimeError("a connection passed to a repository must be inside db.system_tx()")
@@ -230,7 +232,7 @@ class Repository:
                 yield conn
             return
         async with _translated():
-            async with self._db.system_tx() as scoped:
+            async with self._db.system_tx(readonly=readonly) as scoped:
                 yield scoped
 
     @asynccontextmanager

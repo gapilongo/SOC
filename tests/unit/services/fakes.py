@@ -80,12 +80,13 @@ class FakeActions:
         self.rows[action_id] = row.model_copy(update=changes)
         return self.rows[action_id]
 
-    def executed_counts(self) -> Dict[str, int]:
+    async def executed_counts(self, tenant_id: str, since: Optional[datetime] = None,
+                              **_: Any) -> Tuple[int, Dict[str, int]]:
         counts = dict(self.executed_earlier)
         for row in self.rows.values():
             if row.status in EXECUTED_STATUSES:
                 counts[row.action_type] = counts.get(row.action_type, 0) + 1
-        return counts
+        return sum(counts.values()), counts
 
 
 class FakeIntegrations:
@@ -135,11 +136,10 @@ class FakeEvents:
 
 
 class FakeConnection:
-    """Records statements; answers the response service's executed-counts query from ``FakeActions``."""
+    """Records statements (the advisory locks); queries go through the fake repositories, not SQL."""
 
-    def __init__(self, actions: Optional[FakeActions] = None) -> None:
+    def __init__(self) -> None:
         self.statements: List[Tuple[str, Tuple[Any, ...]]] = []
-        self.actions = actions
 
     async def execute(self, sql: str, *args: Any) -> str:
         self.statements.append((sql, args))
@@ -147,14 +147,12 @@ class FakeConnection:
 
     async def fetch(self, sql: str, *args: Any) -> List[Dict[str, Any]]:
         self.statements.append((sql, args))
-        if "FROM response_actions" in sql and self.actions is not None:
-            return [{"action_type": t, "n": n} for t, n in self.actions.executed_counts().items()]
         return []
 
 
 class FakeDb:
-    def __init__(self, actions: Optional[FakeActions] = None) -> None:
-        self.conn = FakeConnection(actions)
+    def __init__(self) -> None:
+        self.conn = FakeConnection()
         self.transactions = 0
 
     @asynccontextmanager
@@ -171,6 +169,3 @@ class FakeRepos:
     escalations: Any = None
     db: FakeDb = field(default_factory=FakeDb)
     integrations: FakeIntegrations = field(default_factory=FakeIntegrations)
-
-    def __post_init__(self) -> None:
-        self.db.conn.actions = self.actions

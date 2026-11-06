@@ -70,3 +70,15 @@ async def test_pull_sources_wait_while_the_daily_alert_quota_is_used_up(repos: R
     await repos.tenants.update_admin(TENANT_B, max_alerts_per_day=None)
     await repos.usage.add_ingested(TENANT_B, 1_000)
     assert {s.tenant_id for s in await repos.sources.list_due_sources_all_tenants()} == {TENANT_A, TENANT_B}
+
+
+async def test_quota_counts(repos: Repositories) -> None:
+    """``ensure_capacity`` counts every source (disabled ones too) and only active users, per tenant."""
+    sources, users = await repos.sources.count(TENANT_A), await repos.users.count_active(TENANT_A)
+    other_sources, other_users = await repos.sources.count(TENANT_B), await repos.users.count_active(TENANT_B)
+    await repos.sources.create(TENANT_A, "splunk", "on")
+    await repos.sources.create(TENANT_A, "splunk", "off", enabled=False)
+    await repos.users.create(TENANT_A, "active@x.io", "analyst")
+    await repos.users.create(TENANT_A, "inactive@x.io", "analyst", is_active=False)
+    assert (await repos.sources.count(TENANT_A), await repos.users.count_active(TENANT_A)) == (sources + 2, users + 1)
+    assert (await repos.sources.count(TENANT_B), await repos.users.count_active(TENANT_B)) == (other_sources, other_users)

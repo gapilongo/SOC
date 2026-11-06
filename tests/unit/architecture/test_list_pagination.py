@@ -32,6 +32,7 @@ BOUNDED_LISTS = {
     "SuppressionsRepo.list": "a tenant's rules and suggestions; suggestions expire and are reused (find_reusable)",
     "SuppressionsRepo.list_active": "enabled, unexpired rules: the gate evaluates all of them",
     "TenantsRepo.list_all_tenants": "one row per tenant",
+    "TicketsRepo.list": "its limit (check_limit, MAX_TICKET_LIST): the tickets of one alert or a page of escalations",
     "UsageRepo.list_range": "one row per day in a date range the callers cap",
 }
 

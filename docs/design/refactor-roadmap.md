@@ -309,7 +309,7 @@ Legend:
   - Delete the ignores `db.errors -> core.exceptions` and `agents.* -> core.exceptions`.
 - **Risk / Effort / Deps:** low · S · G2, G6.
 
-#### F2 · Domain vocabulary `lg_sotf/models/vocabulary.py`
+#### F2 · Domain vocabulary `lg_sotf/models/vocabulary.py` (done in #91)
 - **Why:** each vocabulary is declared 6 to 14 times. Severity alone has about 12 sites. Derived subsets are copied too: `BENIGN_DECISIONS` ×4, `SEVERITY_RANK` ×2, `HIGH_SEVERITIES` ×3, and `ENDED_RUN_STATUSES` equals `TERMINAL_RUN_STATUSES`. `tests/unit/ingestion/test_push_source_types.py` exists because this duplication already caused a production bug. The audit finding on role, scope and severity is still open.
 - **Change:**
   - **F2.1:** create the module (stdlib only). Each vocabulary is one declaration, `AlertStatus = Literal[...]`, with `ALERT_STATUSES = get_args(AlertStatus)`. Cross-package sets only:
@@ -362,7 +362,7 @@ Legend:
   - Delete the ingestion ignore lines.
 - **Risk / Effort / Deps:** low · M · F1, G5.
 
-#### F4 · One reader of `allow_private_destinations`
+#### F4 · One reader of `allow_private_destinations` (done in #90)
 - **Why:** the rule is copied at `integrations/http.py:91-96` and `services/connectors/registry.py:113-117`, and Microsoft overrides it at `microsoft/http.py:284-286`.
 - **Change:**
   - Add `settings.IngestionSection`, the field-only pydantic model. It is not wired into `Settings` validation. `ingestion/options.IngestionOptions` subclasses it and keeps `from_settings`/`for_source`.
@@ -371,7 +371,7 @@ Legend:
 - **Verify:** new tests pin that an unrelated invalid key (`batch_size: 0`) yields `allow_private=False`, that `"true"` yields `True`, and that production still requires https.
 - **Risk / Effort / Deps:** low · S · F3.
 
-#### F5 · One backoff formula
+#### F5 · One backoff formula (done in #90)
 - **Why:** `min(max, base*2**n)*(0.5+rand/2)` is written four times: `integrations/http.py:208`, `microsoft/http.py:317`, `ingestion/sources/http.py:287-288` and `webhook.py:333-334`.
 - **Change:**
   - Add `net.retry.exp_backoff(attempt, base_s, max_s, rand)` and use it in the four sites, passing each class's existing `self._rand`.
@@ -379,7 +379,7 @@ Legend:
 - **Verify:** the tests that inject `rand` (`tests/unit/ingestion/test_http.py`, `services/test_webhook.py`, `integrations/microsoft/test_http.py`) see identical delays.
 - **Risk / Effort / Deps:** low · S · F3.
 
-#### F6 · Advisory lock registry
+#### F6 · Advisory lock registry (done in #90)
 - **Why:** `ACTION_CAP_LOCK=710_020` (`response.py:275`) and `ESCALATION_GROUP_LOCK=710_021` (`escalation.py:112`) sit outside `db/locks.py`, which is supposed to own the lock namespaces.
 - **Change:**
   - Add `ACTION_CAP`, `ESCALATION_GROUP` and `async def tenant_xact_lock(conn, lock_class, key)` to `db/locks.py`. It runs the same SQL: `SELECT pg_advisory_xact_lock($1, hashtext($2))`.
@@ -388,7 +388,7 @@ Legend:
 - **Verify:** same SQL text and same class numbers.
 - **Risk / Effort / Deps:** low · S · G5.
 
-#### F7 · One owner-DSN helper
+#### F7 · One owner-DSN helper (done in #90)
 - **Why:** `compliance/ops.py:32` imports `runtime.ops` (an application package depending on a process role). The `migration_url or url` fallback is copied at `runtime/ops.py:34`, `runtime/leader.py:54` and `runtime/scheduler.py:649`.
 - **Change:**
   - Add `db.pool.owner_dsn(settings)` and `owner_database(settings, application_name)`.
@@ -396,7 +396,7 @@ Legend:
   - Delete the `compliance.ops -> runtime.ops` ignore.
 - **Risk / Effort / Deps:** low · S · F1.
 
-#### F8 · No global settings in the data layer
+#### F8 · No global settings in the data layer (done in #90)
 - **Why:** `get_settings()` is a hidden fallback at `users.py:233,352`, `runs.py:459`, `pool.py:142` and `retention.py:121`. Every production caller already passes explicit values.
 - **Change:**
   - Make these required: keyword-only `max_attempts`/`lockout_minutes` on `UsersRepo.reserve_login_attempt` and `record_login_failure`, `max_attempts` on `RunsRepo.requeue_stale_all_tenants`, `settings: DatabaseSettings` on `Database`, and `RetentionSettings` on `purge_expired`.
@@ -405,7 +405,9 @@ Legend:
 - **Verify:** mypy flags any missed caller.
 - **Risk / Effort / Deps:** low · S · G5.
 
-#### F9 · Typed DB connection
+- **Left over:** `db/migrate.py::_ssl_params` and `libpq_url` still fall back to `get_settings()` (two G5 baseline lines). They also serve hand-run `alembic` with `db/alembic.ini`; removing them means threading `DatabaseSettings` through every migrate helper and `env.py`, so it is its own step.
+
+#### F9 · Typed DB connection (done in #91)
 - **Why:** `Connection` aliases untyped `asyncpg.Connection`, so it resolves to `Any` (`db/repos/_base.py:30`, `db/pool.py:36`). There are 15 explicit `conn: Any` parameters: `services/review.py` ×7, `services/escalation.py` ×2, `integrations/outbox.py` ×5 and `eval/history.py` ×1.
 - **Change:**
   - Add `db/types.py` with a `DbConnection` Protocol covering exactly the methods the code uses: `execute`, `fetch`, `fetchrow`, `fetchval`, `transaction`, `is_in_transaction`, `terminate`, `set_type_codec`, `is_closed` and `close`. Add `DbRecord`.
@@ -427,7 +429,7 @@ Legend:
   - Re-measure every count in the PR.
 - **Risk / Effort / Deps:** low · M · F9.
 
-#### F11 · `load_secret_box` and forwarding the injected box
+#### F11 · `load_secret_box` and forwarding the injected box (done in #90)
 - **Why:** there are five lazy loaders with three different failure behaviours. `ResponseService` receives a `secret_box` but builds `ConnectorRegistry` (`response.py:1592`) and `TicketService` (`:1662`) without it. `api/app.py:97` builds `ReviewService` without the box the context already holds.
 - **Change:**
   - Add `security.crypto.load_secret_box(settings) -> Optional[SecretBox]`. It returns None if and only if keys are unset, and raises on invalid keys.
@@ -442,7 +444,7 @@ Legend:
 
 `core` keeps its name and becomes the workflow engine only. See "Not doing" for why it is not renamed.
 
-#### C1 · `lg_sotf.domain`: urls, phishing, routing
+#### C1 · `lg_sotf.domain`: urls, phishing, routing (done in #89)
 - **Why:** `core` mixes pure policy that lower layers import (`routing.py` has 12 importers, `phishing.py` 7) with orchestration that imports those same layers (`nodes.py:23-39`, `workflow.py:30-48`). That is the agents↔core cycle.
 - **Change:**
   - `git mv`: `ingestion/email/urls.py` → `domain/urls.py`, `core/phishing.py` → `domain/phishing.py`, `core/routing.py` → `domain/routing.py`.
@@ -452,14 +454,14 @@ Legend:
 - **Verify:** pure move. Delete the `agents -> core.{routing,phishing}` ignores.
 - **Risk / Effort / Deps:** low · M · F1, G5.
 
-#### C2 · suppression and events to `domain`
+#### C2 · suppression and events to `domain` (done in #89)
 - **Change:**
   - `git mv core/suppression.py core/events.py domain/`. `events.py` keeps the `EventPublisher` port, `make_event` and `publish_event`. `queue.events.EventBus` stays the adapter.
   - Rewrite `services/{dispatch,escalation,review,response,reporting}.py`, `integrations/delivery.py:373` (lazy import becomes top-level), the API routers, `api/errors.py`, `eval/dataset.py` and the agents.
 - **Verify:** pure move. Delete the `services -> core.*` and `integrations.delivery -> core.events` ignores.
 - **Risk / Effort / Deps:** low · S · C1.
 
-#### C3 · indicators to `domain`
+#### C3 · indicators to `domain` (done in #89)
 - **Why:** `services/response.py:639` lazily imports `agents.correlation.indicators`, which drags the agents and the LLM stack into the API's import graph.
 - **Change:**
   - `git mv agents/correlation/indicators.py domain/indicators.py`. `agents/correlation/__init__` imports it from `domain`.
@@ -468,7 +470,7 @@ Legend:
 - **Verify:** the api-no-workflow contract loses its ignore.
 - **Risk / Effort / Deps:** low · S · C1.
 
-#### C4 · Checkpointer to `db`
+#### C4 · Checkpointer to `db` (done in #89)
 - **Why:** `core/checkpointer.py` is the tenant-isolation (RLS) adapter for LangGraph checkpoints. `db/migrate.py:284` lazily imports it from `core`.
 - **Change:**
   - `git mv core/checkpointer.py db/checkpointer.py`, verbatim. Do not export it from `db/__init__`, so API processes do not load langgraph.
@@ -481,7 +483,7 @@ Legend:
   - The db contract now has zero ignores.
 - **Risk / Effort / Deps:** low · S · F1.
 
-#### C5 · Connector port to `domain/connectors.py`
+#### C5 · Connector port to `domain/connectors.py` (done in #89)
 - **Why:** 16 integrations modules import `ConnectorResult`, `VerificationResult` and `VerifyPlan` from `services/connectors/base.py`, so adapters depend on the application package that uses them.
 - **Change:**
   - `git mv services/connectors/base.py domain/connectors.py`. It is stdlib-only, with a `TYPE_CHECKING`-only `ResponseAction` reference (recorded in ADR-0001).
@@ -500,7 +502,7 @@ Legend:
 - **Verify:** `check_invariants` and `tests/unit/integrations/microsoft/defender/test_catalog.py` guard the move. G7 still passes.
 - **Risk / Effort / Deps:** low · S · C5, F2.1.
 
-#### C7 · Webhook signing to `security/signing.py`
+#### C7 · Webhook signing to `security/signing.py` (done in #89)
 - **Change:**
   - Move the `X-LGSOTF-*` header constants, `SIGNATURE_VERSION`, `DEFAULT_TOLERANCE_S`, `MIN_SECRET_BYTES`, `_secret_bytes`, `sign`, `verify_signature`, `verify_request` and `encode_body`.
   - `webhook.py` re-exports them for `examples/soar`.

@@ -7,7 +7,9 @@ never need to import asyncpg to handle them.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple, Type
+
+import asyncpg
 
 from lg_sotf.errors import StorageError
 
@@ -128,3 +130,22 @@ class RefreshTokenReuse(Conflict):
         super().__init__(f"refresh token reuse detected; revoked {revoked} tokens")
         self.user_id = user_id
         self.revoked = revoked
+
+
+# Driver exception tuples, so code outside ``lg_sotf.db`` can catch driver errors without importing asyncpg.
+
+TRANSIENT_DB_ERRORS: Tuple[Type[BaseException], ...] = (
+    DatabaseUnavailable,
+    asyncpg.PostgresConnectionError,
+    asyncpg.ConnectionDoesNotExistError,
+    asyncpg.TooManyConnectionsError,
+    asyncpg.CannotConnectNowError,
+    asyncpg.SerializationError,
+    asyncpg.DeadlockDetectedError,
+)
+"""Errors that a retry of the same work may not hit: a lost or refused connection, a serialization
+failure or a deadlock (:func:`lg_sotf.core.retry.is_transient`)."""
+
+STATEMENT_ERRORS: Tuple[Type[BaseException], ...] = (asyncpg.PostgresError,)
+"""Any error the server reports for a statement (every SQLSTATE), for best-effort reads that degrade
+instead of failing. Code that needs a specific SQLSTATE belongs in a repository."""

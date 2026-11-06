@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.db.repos.runs import RunsRepo
 from lg_sotf.models.vocabulary import REVIEWER_ROLES
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.producer import WorkQueue
@@ -41,36 +42,6 @@ log = get_logger(__name__)
 
 RECOVERY_ACTOR = "system:resume-recovery"
 
-_STRANDED_WAITING_SQL = """
-SELECT r.tenant_id, r.alert_id, r.status
-FROM workflow_runs r
-WHERE r.updated_at < now() - make_interval(secs => $1)
-  AND EXISTS (SELECT 1 FROM tenants t WHERE t.id = r.tenant_id AND t.status = 'active')
-  AND (
-    (r.status = 'waiting_human' AND EXISTS (
-        SELECT 1 FROM escalations e
-        WHERE e.tenant_id = r.tenant_id AND e.status = 'decided'
-          AND e.decided_at < now() - make_interval(secs => $1)
-          AND (e.alert_id = r.alert_id OR r.alert_id = ANY(e.related_alert_ids))
-          AND NOT EXISTS (
-              SELECT 1 FROM escalations o
-              WHERE o.tenant_id = r.tenant_id AND o.status IN ('open', 'claimed', 'expired')
-                AND (o.alert_id = r.alert_id OR r.alert_id = ANY(o.related_alert_ids))
-          )
-    ))
-    OR (r.status = 'waiting_approval' AND (
-        EXISTS (SELECT 1 FROM response_actions a
-                WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id AND a.status = 'approved'
-                  AND a.execution_owner = 'workflow'
-                  AND COALESCE(a.approved_at, a.updated_at) < now() - make_interval(secs => $1))
-        OR NOT EXISTS (SELECT 1 FROM response_actions a
-                       WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id
-                         AND a.status = 'awaiting_approval' AND a.execution_owner = 'workflow')
-    ))
-  )
-ORDER BY r.updated_at
-LIMIT $2
-"""
 
 
 @dataclass(frozen=True)
@@ -82,9 +53,8 @@ class StrandedRun:
 
 async def find_stranded_waiting_runs(db: Database, *, older_than_s: float, limit: int) -> List[StrandedRun]:
     """Waiting runs whose resume should already have happened (cross-tenant; owner role, ``system_tx``)."""
-    async with db.system_tx(readonly=True) as conn:
-        rows = await conn.fetch(_STRANDED_WAITING_SQL, float(older_than_s), limit)
-    return [StrandedRun(r["tenant_id"], r["alert_id"], r["status"]) for r in rows]
+    rows = await RunsRepo(db).find_stranded_waiting_all_tenants(older_than_s=older_than_s, limit=limit)
+    return [StrandedRun(r.tenant_id, r.alert_id, r.status) for r in rows]
 
 
 async def rebuild_resume_payload(repos: Repositories, tenant_id: str, alert_id: str) -> Optional[Dict[str, Any]]:
@@ -102,18 +72,10 @@ async def rebuild_resume_payload(repos: Repositories, tenant_id: str, alert_id: 
 
 async def _decision_payload(repos: Repositories, tenant_id: str, alert_id: str) -> Optional[Dict[str, Any]]:
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT id FROM escalations
-            WHERE tenant_id = $1 AND (alert_id = $2 OR $2 = ANY(related_alert_ids))
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            tenant_id,
-            alert_id,
-        )
-    if row is None:
+        escalation_id = await repos.escalations.latest_id_for_alert(tenant_id, alert_id, conn=conn)
+    if escalation_id is None:
         return None
-    escalation = await repos.escalations.get(tenant_id, row["id"])
+    escalation = await repos.escalations.get(tenant_id, escalation_id)
     if escalation.status != "decided" or not escalation.decision or escalation.decided_by is None:
         return None
     role: Optional[str] = None
@@ -138,18 +100,8 @@ async def _decision_payload(repos: Repositories, tenant_id: str, alert_id: str) 
 
 async def _approval_payload(repos: Repositories, tenant_id: str, alert_id: str) -> Optional[Dict[str, Any]]:
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
-        counts = await conn.fetchrow(
-            """
-            SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
-                   count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
-                   (array_agg(approved_by ORDER BY approved_at DESC NULLS LAST)
-                        FILTER (WHERE approved_by IS NOT NULL))[1] AS approver
-            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2 AND execution_owner = 'workflow'
-            """,
-            tenant_id,
-            alert_id,
-        )
-    if counts is None or (counts["approved"] == 0 and counts["awaiting"] > 0):
+        counts = await repos.actions.workflow_approvals(tenant_id, alert_id, conn=conn)
+    if counts.approved == 0 and counts.awaiting > 0:
         return None
     # Named actions were already decided in the ledger; an empty payload makes execute_actions
     # run every approved action and wait again for anything still awaiting approval.
@@ -157,7 +109,7 @@ async def _approval_payload(repos: Repositories, tenant_id: str, alert_id: str) 
         "type": "approval",
         "approved_action_ids": [],
         "rejected_action_ids": [],
-        "decided_by": str(counts["approver"] or RECOVERY_ACTOR)[:128],
+        "decided_by": str(counts.approver or RECOVERY_ACTOR)[:128],
         "reject_remaining": False,
     }
 
@@ -167,6 +119,7 @@ async def recover_lost_resumes(
 ) -> Tuple[int, int]:
     """Rebuild and enqueue resumes for stranded waiting runs; returns ``(enqueued, examined)``."""
     stranded = await find_stranded_waiting_runs(db, older_than_s=older_than_s, limit=limit)
+    runs = RunsRepo(db)
     enqueued = 0
     for run in stranded:
         payload = await rebuild_resume_payload(repos, run.tenant_id, run.alert_id)
@@ -174,13 +127,7 @@ async def recover_lost_resumes(
             continue
         await queue.enqueue_resume(run.tenant_id, run.alert_id, payload)
         # Touch the run so it is examined again only after another full threshold.
-        async with db.tenant_tx(run.tenant_id) as conn:
-            await conn.execute(
-                "UPDATE workflow_runs SET updated_at = now() WHERE tenant_id = $1 AND alert_id = $2 AND status = $3",
-                run.tenant_id,
-                run.alert_id,
-                run.status,
-            )
+        await runs.touch(run.tenant_id, run.alert_id, status=run.status)
         enqueued += 1
         log.warning("resume.recovered", tenant_id=run.tenant_id, alert_id=run.alert_id, kind=payload["type"])
     return enqueued, len(stranded)

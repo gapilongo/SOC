@@ -179,8 +179,8 @@ class TestActionLedger:
         for i, action_id in enumerate(ids[:3]):
             await repos.actions.transition(TENANT_A, action_id, "executing", now=T0 + timedelta(minutes=i * 40))
         await repos.actions.transition(TENANT_A, ids[3], "dry_run")
-        assert await repos.actions.count_executed_since(TENANT_A, T0 + timedelta(minutes=30)) == 2
-        assert await repos.actions.count_executed_since(TENANT_B, T0) == 0
+        assert await repos.actions.executed_counts(TENANT_A, T0 + timedelta(minutes=30)) == (2, {"block_ip": 2})
+        assert await repos.actions.executed_counts(TENANT_B, T0) == (0, {})
 
         got = []
         cursor = None

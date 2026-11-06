@@ -18,7 +18,8 @@ import pytest
 
 from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
 from lg_sotf.db.repos.audit import AUDIT_ACTOR_TYPES
-from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, OUTBOX_OPERATIONS, OUTBOX_STATUSES, TICKETING_KINDS
+from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
+from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.db.urls import to_libpq_url

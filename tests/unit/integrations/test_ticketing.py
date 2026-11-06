@@ -11,7 +11,7 @@ from typing import Any, Callable, Dict, List
 import httpx
 import pytest
 
-from lg_sotf.db.repos.integrations import ExternalTicket
+from lg_sotf.db.repos.tickets import ExternalTicket
 from lg_sotf.integrations.config import IntegrationConfigError
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp
 from lg_sotf.integrations.ticketing import (
@@ -219,7 +219,7 @@ async def test_decision_sync_sees_a_create_that_finishes_concurrently(settings: 
         async def resolve(self, _ticket: ExternalTicket, _text: str) -> None:
             return None
 
-    repos = SimpleNamespace(integrations=SimpleNamespace(has_pending=has_pending, find_ticket=find_ticket))
+    repos = SimpleNamespace(outbox=SimpleNamespace(has_pending=has_pending), tickets=SimpleNamespace(find=find_ticket))
     service = TicketService(repos, settings)  # type: ignore[arg-type]
     service.client = lambda _integration: Client()  # type: ignore[method-assign]
     integration = SimpleNamespace(tenant_id="tenant-a", id=uuid.uuid4(), config={"comment_on_decision": True})

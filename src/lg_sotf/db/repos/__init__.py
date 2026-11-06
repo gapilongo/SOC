@@ -32,8 +32,9 @@ from lg_sotf.db.repos.audit import AuditEntry, AuditRepo, ChainVerification
 from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
-from lg_sotf.db.repos.integrations import ExternalTicket, Integration, IntegrationsRepo, OutboxEntry
+from lg_sotf.db.repos.integrations import Integration, IntegrationsRepo
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
+from lg_sotf.db.repos.outbox import NewOutboxEntry, OutboxEntry, OutboxRepo
 from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.reports import ReportsRepo
@@ -41,6 +42,7 @@ from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
+from lg_sotf.db.repos.tickets import ExternalTicket, TicketsRepo
 from lg_sotf.db.repos.usage import UsageDay, UsageRepo
 from lg_sotf.db.repos.user_mfa import UserMfa, UserMfaRepo
 from lg_sotf.db.repos.users import User, UsersRepo
@@ -70,6 +72,8 @@ class Repositories:
     usage: UsageRepo
     platform: PlatformRepo
     integrations: IntegrationsRepo
+    outbox: OutboxRepo
+    tickets: TicketsRepo
     reports: ReportsRepo
 
     @classmethod
@@ -95,6 +99,8 @@ class Repositories:
             usage=UsageRepo(db),
             platform=PlatformRepo(db),
             integrations=IntegrationsRepo(db),
+            outbox=OutboxRepo(db),
+            tickets=TicketsRepo(db),
             reports=ReportsRepo(db),
         )
 
@@ -128,9 +134,11 @@ __all__ = [
     "LLMUsageTotals",
     "NewAlert",
     "NewAlertEvent",
+    "NewOutboxEntry",
     "PlatformEscalation",
     "PlatformRepo",
     "OutboxEntry",
+    "OutboxRepo",
     "RefreshToken",
     "RefreshTokensRepo",
     "RelatedAlert",
@@ -148,6 +156,7 @@ __all__ = [
     "TenantStats",
     "TenantUsage",
     "TenantsRepo",
+    "TicketsRepo",
     "UNSET",
     "UsageDay",
     "UsageRepo",

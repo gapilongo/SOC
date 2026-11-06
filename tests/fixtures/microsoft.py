@@ -38,6 +38,7 @@ from urllib.parse import parse_qs
 import httpx
 
 from lg_sotf.db.repos.actions import ResponseAction, action_idempotency_key
+from lg_sotf.domain.actions import ACTION_CATALOG
 from lg_sotf.integrations.microsoft.alert_view import AlertView
 from lg_sotf.integrations.microsoft.auth import AppCredentials, TokenProvider, fingerprint_of
 from lg_sotf.integrations.microsoft.capability import (
@@ -292,8 +293,6 @@ class FakeMicrosoft:
 
 def make_action(action_type: str, target: str, **fields: Any) -> ResponseAction:
     """A ledger row as handlers receive it (status ``executing`` unless overridden)."""
-    from lg_sotf.services.response import ACTION_CATALOG
-
     spec = ACTION_CATALOG.get(action_type)
     now = datetime.now(UTC)
     tenant_id = fields.pop("tenant_id", TENANT)

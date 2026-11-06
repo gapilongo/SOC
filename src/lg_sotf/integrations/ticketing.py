@@ -30,7 +30,9 @@ from urllib.parse import quote
 import httpx
 
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db.repos.integrations import ExternalTicket, Integration
+from lg_sotf.db.repos.alerts import event_summaries
+from lg_sotf.db.repos.integrations import Integration
+from lg_sotf.db.repos.tickets import ExternalTicket
 from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.channels import entity_line, facts, link
 from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret
@@ -57,11 +59,6 @@ SERVICENOW_URGENCY: Dict[str, Tuple[str, str]] = {  # severity -> (urgency, impa
     "info": ("3", "3"),
 }
 MAX_SUMMARY_CHARS = 250
-_ALERT_SQL = """
-    SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
-           summary, jsonb_build_object('entities', normalized->'entities') AS normalized
-    FROM alerts WHERE tenant_id = $1 AND id = $2
-"""
 
 
 class DeliveryDeferred(Exception):
@@ -448,10 +445,10 @@ class TicketService:
     async def alert_event(self, tenant_id: str, alert_id: str, event_type: str) -> Dict[str, Any]:
         """A summary payload for ``alert_id`` (used by the ``create_ticket`` action)."""
         async with self._repos.db.tenant_tx(tenant_id, readonly=True) as conn:
-            row = await conn.fetchrow(_ALERT_SQL, tenant_id, alert_id)
+            row = (await event_summaries(conn, tenant_id, [alert_id])).get(alert_id)
         if row is None:
             raise DeliveryError("the alert no longer exists", retryable=False, code="alert_missing")
-        return build_event(event_type, tenant_id, alert=alert_summary(dict(row)))
+        return build_event(event_type, tenant_id, alert=alert_summary(row))
 
     async def ensure_ticket(
         self,
@@ -464,8 +461,8 @@ class TicketService:
     ) -> Tuple[ExternalTicket, bool]:
         """The ticket of this escalation (or alert) in ``integration``, opened if needed; (ticket, created)."""
         tenant_id = integration.tenant_id
-        repo = self._repos.integrations
-        existing = await repo.find_ticket(tenant_id, integration.id, alert_id=alert_id, escalation_id=escalation_id)
+        repo = self._repos.tickets
+        existing = await repo.find(tenant_id, integration.id, alert_id=alert_id, escalation_id=escalation_id)
         if existing is not None:
             if escalation_id and existing.escalation_id is None:
                 existing = await repo.link_escalation(tenant_id, existing.id, escalation_id)
@@ -481,7 +478,7 @@ class TicketService:
         if ref is None:
             ref = await client.create(draft_from_event(payload, self.base_url, correlation))
         async with self._repos.db.tenant_tx(tenant_id) as conn:
-            ticket = await repo.add_ticket(
+            ticket = await repo.add(
                 tenant_id,
                 integration.id,
                 system=client.system,
@@ -531,10 +528,10 @@ class TicketService:
         # Check for an unfinished create BEFORE looking the ticket up: a create records its ticket before its
         # outbox row is marked sent, so in this order a create finishing concurrently is always seen one way
         # or the other. The reverse order could miss both and drop the decision comment.
-        create_pending = await self._repos.integrations.has_pending(
+        create_pending = await self._repos.outbox.has_pending(
             tenant_id, integration.id, "ticket_create", escalation_id=escalation_id
         )
-        ticket = await self._repos.integrations.find_ticket(
+        ticket = await self._repos.tickets.find(
             tenant_id, integration.id, alert_id=str((alert or {}).get("id") or ""), escalation_id=escalation_id
         )
         if ticket is None or (ticket.escalation_id not in (None, escalation_id)):
@@ -551,7 +548,7 @@ class TicketService:
         if (esc or {}).get("decision") in FINAL_DECISIONS and not ticket.resolved:
             status = await client.resolve(ticket, text)
             if status:
-                await self._repos.integrations.record_sync(tenant_id, ticket.id, external_status=status)
+                await self._repos.tickets.record_sync(tenant_id, ticket.id, external_status=status)
                 result["resolved_status"] = status
         return result
 

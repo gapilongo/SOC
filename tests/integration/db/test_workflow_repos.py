@@ -441,3 +441,59 @@ class TestFeedback:
         assert stats.avg_review_duration_s == pytest.approx(90)
         empty = await repos.feedback.decision_stats(TENANT_B, T0)
         assert empty.total == 0 and empty.by_decision == {}
+
+
+class TestRecoverySweeps:
+    """The repository halves of runtime/orphans.py and runtime/resumes.py (their wrappers are tested there)."""
+
+    async def test_orphan_and_stranded_sweeps_return_typed_rows(self, repos: Repositories) -> None:
+        queued = await make_alert(repos, TENANT_A, severity="critical")
+        await repos.runs.queue_alerts(TENANT_A, [queued])
+        stranded = await make_alert(repos, TENANT_B, severity="low")
+        async with repos.db.system_tx() as conn:
+            await conn.execute("UPDATE workflow_runs SET updated_at = now() - interval '1 hour'")
+            await conn.execute("UPDATE alerts SET ingested_at = now() - interval '1 hour' WHERE id = $1", stranded)
+        with pytest.raises(ValueError):
+            await repos.runs.claim_orphaned_all_tenants(queued_older_than_s=60, failed_older_than_s=60, limit=0)
+        assert await repos.runs.claim_orphaned_all_tenants(
+            queued_older_than_s=None, failed_older_than_s=60, limit=10
+        ) == []
+        [orphan] = await repos.runs.claim_orphaned_all_tenants(queued_older_than_s=60, failed_older_than_s=60, limit=10)
+        assert (orphan.tenant_id, orphan.alert_id, orphan.status, orphan.severity) == (
+            TENANT_A, queued, "queued", "critical"
+        )
+        # Claimed once per threshold: the claim touched updated_at.
+        assert await repos.runs.claim_orphaned_all_tenants(queued_older_than_s=60, failed_older_than_s=60, limit=10) == []
+        [alert] = await repos.alerts.find_stranded_new_all_tenants(older_than_s=60, limit=10)
+        assert (alert.tenant_id, alert.alert_id, alert.severity) == (TENANT_B, stranded, "low")
+        assert await repos.runs.find_stranded_waiting_all_tenants(older_than_s=60, limit=10) == []
+
+    async def test_touch_only_bumps_a_run_still_in_the_given_status(self, repos: Repositories) -> None:
+        alert_id = await make_alert(repos, TENANT_A)
+        await repos.runs.queue_alerts(TENANT_A, [alert_id])
+        before = (await repos.runs.get(TENANT_A, alert_id)).updated_at
+        assert not await repos.runs.touch(TENANT_A, alert_id, status="waiting_human")
+        assert (await repos.runs.get(TENANT_A, alert_id)).updated_at == before
+        assert await repos.runs.touch(TENANT_A, alert_id, status="queued")
+        assert (await repos.runs.get(TENANT_A, alert_id)).updated_at > before
+        assert not await repos.runs.touch(TENANT_B, alert_id, status="queued")  # other tenant
+
+    async def test_latest_escalation_id_for_alert(self, repos: Repositories) -> None:
+        alert_id = await make_alert(repos, TENANT_A)
+        assert await repos.escalations.latest_id_for_alert(TENANT_A, alert_id) is None
+        esc, _ = await repos.escalations.create_or_attach(TENANT_A, alert_id, reason="r", related_alert_ids=["rel-1"])
+        assert await repos.escalations.latest_id_for_alert(TENANT_A, alert_id) == esc.id
+        assert await repos.escalations.latest_id_for_alert(TENANT_A, "rel-1") == esc.id
+        assert await repos.escalations.latest_id_for_alert(TENANT_B, alert_id) is None
+
+    async def test_workflow_approvals_count_only_workflow_owned_actions(self, repos: Repositories) -> None:
+        alert_id = await make_alert(repos, TENANT_A)
+        empty = await repos.actions.workflow_approvals(TENANT_A, alert_id)
+        assert (empty.approved, empty.awaiting, empty.approver) == (0, 0, None)
+        await repos.actions.propose(TENANT_A, alert_id, "isolate_host", "ws-1", "high", status="awaiting_approval")
+        await repos.actions.propose(TENANT_A, alert_id, "block_ip", "203.0.113.9", "low", status="approved")
+        await repos.actions.propose(
+            TENANT_A, alert_id, "disable_user", "bob", "low", status="approved", execution_owner="scheduler"
+        )
+        counts = await repos.actions.workflow_approvals(TENANT_A, alert_id)
+        assert (counts.approved, counts.awaiting, counts.approver) == (1, 1, None)

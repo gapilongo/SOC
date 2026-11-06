@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncpg
 import httpx
 import pytest
 from redis import exceptions as redis_exceptions
 
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy, is_transient
-from lg_sotf.db.errors import DatabaseUnavailable, InvalidValue, PoolExhausted
+from lg_sotf.db.errors import TRANSIENT_DB_ERRORS, DatabaseUnavailable, InvalidValue, PoolExhausted
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm.errors import LLMOutputError, LLMRefusal, LLMUnavailable
 
@@ -113,3 +114,13 @@ def test_gemini_server_errors_are_transient() -> None:
     throttled = errors.ClientError(429, {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED"}})
     assert is_transient(throttled)
     assert not is_transient(errors.ClientError(400, {"error": {"code": 400, "status": "INVALID_ARGUMENT"}}))
+
+
+@pytest.mark.parametrize("exc_type", TRANSIENT_DB_ERRORS)
+def test_database_transient_errors_are_retried(exc_type: type[BaseException]) -> None:
+    assert is_transient(exc_type("lost"))
+
+
+def test_a_rejected_statement_is_not_transient() -> None:
+    assert not any(issubclass(asyncpg.UniqueViolationError, t) for t in TRANSIENT_DB_ERRORS)
+    assert not is_transient(asyncpg.UniqueViolationError("duplicate key"))
