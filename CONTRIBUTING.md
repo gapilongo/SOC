@@ -66,8 +66,8 @@ its README.
 
 * Ruff (`make lint`) with the rules in `pyproject.toml`, line length 120.
 * Type hints everywhere. `make typecheck` runs mypy over every file listed in
-  `pyproject.toml` (`[tool.mypy] files`); new packages should also pass
-  `--disallow-untyped-defs` (add them to the strict override list).
+  `pyproject.toml` (`[tool.mypy] files`) with `disallow_untyped_defs` and
+  `warn_return_any` on; a new leaf package also joins the strict override list.
 * The architecture is enforced: see `docs/design/refactor-roadmap.md` for the
   layer rules, size budgets and data-access ratchets, and `docs/adr/` for the
   decisions behind them.

@@ -260,7 +260,8 @@ def _query(params: Optional[Mapping[str, QueryValue]]) -> Sequence[Tuple[str, st
 def _retry_delay(retry_after: Optional[str], attempt: int) -> float:
     if retry_after is not None and retry_after.strip().isdigit():
         return min(float(retry_after.strip()), MAX_RETRY_AFTER_S)
-    return min(BACKOFF_BASE_S * (2**attempt), MAX_RETRY_AFTER_S)
+    backoff: float = BACKOFF_BASE_S * (2**attempt)
+    return min(backoff, MAX_RETRY_AFTER_S)
 
 
 def json_params(values: Dict[str, Any]) -> Dict[str, QueryValue]:

@@ -142,7 +142,7 @@ class VerificationService:
             first = float(detail.get("first_check_s") or DEFAULT_FIRST_CHECK_S)
         except (TypeError, ValueError):
             first = DEFAULT_FIRST_CHECK_S
-        base = min(MAX_BACKOFF_S, max(1.0, first) * (2 ** min(int(action.verify_attempts), 20)))
+        base: float = min(MAX_BACKOFF_S, max(1.0, first) * (2 ** min(int(action.verify_attempts), 20)))
         wait = max(float(retry_after_s or 0.0), base)
         return wait * (0.8 + 0.4 * self._rand())
 

@@ -90,7 +90,7 @@ MAX_SYNC_TOTAL = 1_000
 
 def backoff_s(attempts: int, *, base_s: float, max_s: float, rand: Callable[[], float] = random.random) -> float:
     """Delay before the next attempt after ``attempts`` attempts: ``base * 2**(attempts-1)`` capped, jitter +-20%."""
-    raw = min(max_s, base_s * (2 ** max(0, attempts - 1)))
+    raw: float = min(max_s, base_s * (2 ** max(0, attempts - 1)))
     return max(1.0, raw * (0.8 + 0.4 * rand()))
 
 
