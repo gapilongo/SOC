@@ -26,6 +26,7 @@ import asyncpg
 import structlog
 
 from lg_sotf.db import locks
+from lg_sotf.db.types import Connection
 
 log = structlog.get_logger(__name__)
 
@@ -114,12 +115,12 @@ def create_default_partition_sql(table: str) -> List[str]:
     ]
 
 
-async def _require_bypass(conn: asyncpg.Connection) -> None:
+async def _require_bypass(conn: Connection) -> None:
     if not conn.is_in_transaction() or not await conn.fetchval("SELECT lgsotf_rls_bypass()"):
         raise RuntimeError("partition maintenance must run inside db.system_tx() as the schema owner")
 
 
-async def _set_lock_timeout(conn: asyncpg.Connection, lock_timeout_ms: int) -> str:
+async def _set_lock_timeout(conn: Connection, lock_timeout_ms: int) -> str:
     if lock_timeout_ms < 1:
         raise ValueError("lock_timeout_ms must be >= 1")
     previous = await conn.fetchval("SELECT current_setting('lock_timeout')")
@@ -127,11 +128,11 @@ async def _set_lock_timeout(conn: asyncpg.Connection, lock_timeout_ms: int) -> s
     return previous
 
 
-async def _restore_lock_timeout(conn: asyncpg.Connection, previous: str) -> None:
+async def _restore_lock_timeout(conn: Connection, previous: str) -> None:
     await conn.execute("SELECT set_config('lock_timeout', $1, true)", previous)
 
 
-async def _create_partition(conn: asyncpg.Connection, table: str, month: date) -> None:
+async def _create_partition(conn: Connection, table: str, month: date) -> None:
     name = partition_name(table, month)
     default = default_partition_name(table)
     lo, hi = partition_bounds(month)
@@ -156,7 +157,7 @@ async def _create_partition(conn: asyncpg.Connection, table: str, month: date) -
 
 
 async def ensure_partitions(
-    conn: asyncpg.Connection,
+    conn: Connection,
     months_ahead: int = 2,
     *,
     today: Optional[date] = None,
@@ -198,7 +199,7 @@ async def ensure_partitions(
     return created
 
 
-async def list_partitions(conn: asyncpg.Connection, table: str) -> List[str]:
+async def list_partitions(conn: Connection, table: str) -> List[str]:
     rows = await conn.fetch(
         "SELECT c.relname FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhrelid "
         "WHERE i.inhparent = to_regclass($1) ORDER BY c.relname",
@@ -208,7 +209,7 @@ async def list_partitions(conn: asyncpg.Connection, table: str) -> List[str]:
 
 
 async def expired_partitions(
-    conn: asyncpg.Connection,
+    conn: Connection,
     table: str,
     older_than_days: int,
     *,
@@ -230,7 +231,7 @@ async def expired_partitions(
 
 
 async def drop_expired_partitions(
-    conn: asyncpg.Connection,
+    conn: Connection,
     table: str,
     older_than_days: int,
     *,

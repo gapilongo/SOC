@@ -23,6 +23,7 @@ from typing import Any, AsyncIterator, Optional, Sequence
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
 
 from lg_sotf.db.tenancy import is_valid_tenant_id
 
@@ -161,7 +162,7 @@ def checkpoint_rls_statements(table: str) -> Sequence[str]:
     )
 
 
-async def secure_checkpoint_tables(conn: Any) -> None:
+async def secure_checkpoint_tables(conn: AsyncConnection[Any]) -> None:
     """Apply the tenant isolation policy to the checkpoint tables (psycopg async connection)."""
     for table in CHECKPOINT_RLS_TABLES:
         for statement in checkpoint_rls_statements(table):

@@ -50,9 +50,9 @@ from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core import routing
 from lg_sotf.core.graph import cap_alert
 from lg_sotf.core.routing import RoutingThresholds, refused_by
+from lg_sotf.db import Connection
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.alerts import AlertsRepo
 from lg_sotf.db.repos.indicators import IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.reports import DecidedAlert
@@ -129,7 +129,7 @@ class PointInTimeIndicatorsRepo(IndicatorsRepo):
         self._cutoff = cutoff
         self._offset = offset
 
-    async def add_sightings(self, tenant_id: str, alert_id: str, sightings: Any, *, conn: Any = None) -> int:
+    async def add_sightings(self, tenant_id: str, alert_id: str, sightings: Any, *, conn: Optional[Connection] = None) -> int:
         return 0
 
     async def related_alerts(

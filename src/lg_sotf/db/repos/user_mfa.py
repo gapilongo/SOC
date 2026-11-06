@@ -17,7 +17,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from lg_sotf.db.repos._base import Connection, Record, Repository, to_model
+from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_one, to_model
 
 MAX_RECOVERY_CODES = 20
 
@@ -70,7 +70,8 @@ class UserMfaRepo(Repository):
     ) -> UserMfa:
         """Store a new, not yet confirmed secret; an active secret stays in force until confirmation."""
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 INSERT INTO user_mfa (tenant_id, user_id, pending_secret_ciphertext, pending_created_at)
                 VALUES ($1, $2, $3, now())

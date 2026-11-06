@@ -19,6 +19,7 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_sha256_hex,
+    fetch_one,
     require_aware,
     to_model,
     utcnow,
@@ -52,7 +53,8 @@ class RefreshTokensRepo(Repository):
         require_aware(expires_at, "expires_at")
         check_sha256_hex(token_hash, "token_hash")
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at)
                 VALUES ($1, $2, $3, $4)
@@ -122,7 +124,8 @@ class RefreshTokensRepo(Repository):
             elif old["expires_at"] <= at:
                 raise RefreshTokenInvalid("expired")
             else:
-                new = await c.fetchrow(
+                new = await fetch_one(
+                    c,
                     """
                     INSERT INTO refresh_tokens (tenant_id, user_id, token_hash, expires_at, created_at)
                     VALUES ($1, $2, $3, $4, $5)

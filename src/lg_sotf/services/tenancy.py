@@ -37,8 +37,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Mapping, Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.db import Connection
 from lg_sotf.db.repos import Repositories, Tenant, User
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.tenancy import switch_tenant
 
 Profile = Literal["conservative", "balanced", "autonomous"]

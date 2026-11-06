@@ -150,7 +150,7 @@ from pydantic import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.phishing import email_block_targets, plan_email_entities
-from lg_sotf.db.errors import AlreadyInState, InvalidTransition
+from lg_sotf.db import AlreadyInState, Connection, InvalidTransition
 from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
@@ -163,7 +163,6 @@ from lg_sotf.integrations.events import (
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models import vocabulary
 from lg_sotf.models.vocabulary import POLICY_APPROVER, RISK_LEVELS, SCHEDULER_OWNER, WORKFLOW_OWNER, RiskLevel
-from lg_sotf.models.vocabulary import AutonomyMode as Autonomy
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
 from lg_sotf.security.crypto import SecretBox
@@ -1201,7 +1200,7 @@ def _catalog_actions(values: Optional[List[str]]) -> Optional[List[str]]:
 
 
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
-AutonomyMap = Dict[RiskLevel, Autonomy]
+AutonomyMap = Dict[RiskLevel, vocabulary.AutonomyMode]
 
 
 class ResponsePolicySettings(BaseModel):
@@ -1348,7 +1347,7 @@ def validate_response_settings(tenant_settings: Mapping[str, Any]) -> Dict[str, 
     return out
 
 
-def resolve_autonomy(risk: str, tenant_settings: Mapping[str, Any], settings: Settings) -> Autonomy:
+def resolve_autonomy(risk: str, tenant_settings: Mapping[str, Any], settings: Settings) -> vocabulary.AutonomyMode:
     """Tenant autonomy (``response.autonomy`` over top-level ``autonomy``) over the install default.
 
     A value outside ``auto``/``approval``/``disabled`` means ``disabled``: a
@@ -1370,7 +1369,7 @@ class ResponsePolicy:
     malformed: every action is blocked (``response_policy_invalid``).
     """
 
-    autonomy: Mapping[str, Autonomy]
+    autonomy: Mapping[str, vocabulary.AutonomyMode]
     protected: ProtectedAssets
     allow_internal_ip_blocks: bool = False
     allowed_actions: Optional[FrozenSet[str]] = None
@@ -1677,7 +1676,7 @@ class ResponseService:
         return connector
 
     async def executed_counts(
-        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Any = None
+        self, tenant_id: str, since: Optional[datetime] = None, *, conn: Optional[Connection] = None
     ) -> Tuple[int, Dict[str, int]]:
         """(total, per action type) of actions that started real execution since ``since``.
 
@@ -2162,7 +2161,7 @@ class ResponseService:
         return settled
 
     async def hand_off(
-        self, tenant_id: str, action_ids: Sequence[UUID], *, reason: str, conn: Any = None
+        self, tenant_id: str, action_ids: Sequence[UUID], *, reason: str, conn: Optional[Connection] = None
     ) -> List[UUID]:
         """Give workflow rows to the scheduler (audited ``response_action.handed_off``); returns the ids handed off."""
         if conn is None:
@@ -2201,7 +2200,7 @@ class ResponseService:
             return None
 
     async def _block_approved(
-        self, tenant_id: str, action: ResponseAction, code: str, detail: Mapping[str, Any], conn: Any = None
+        self, tenant_id: str, action: ResponseAction, code: str, detail: Mapping[str, Any], conn: Optional[Connection] = None
     ) -> ResponseAction:
         return await self._repos.actions.transition(
             tenant_id,
@@ -2291,7 +2290,7 @@ class ResponseService:
         blocked: Optional[ResponseAction],
         executing: Optional[ResponseAction],
         connector: Connector,
-        conn: Any,
+        conn: Connection,
     ) -> None:
         """Audit a claim inside its transaction (published by the caller after commit)."""
         if blocked is not None:
@@ -2432,7 +2431,7 @@ class ResponseService:
         return deferred.status
 
     async def record_verification_outcome(
-        self, tenant_id: str, action: ResponseAction, *, conn: Any, notify: bool = True
+        self, tenant_id: str, action: ResponseAction, *, conn: Connection, notify: bool = True
     ) -> None:
         """Audit, timeline entry and (failed or inconclusive) outbox event of a final verification, in ``conn``'s tx.
 
@@ -2590,7 +2589,7 @@ class ResponseService:
         *,
         actor_type: str,
         actor_id: Optional[str],
-        conn: Any,
+        conn: Connection,
     ) -> None:
         """An audit entry about an action without a status event (hand-offs, deferrals, verification, requests)."""
         await self._audit.record(
@@ -2619,7 +2618,7 @@ class ResponseService:
         *,
         actor_type: str,
         actor_id: Optional[str],
-        conn: Any,
+        conn: Connection,
     ) -> None:
         """Audit a request about an action made by another service (rollback, verification), in ``conn``'s tx."""
         await self._audit_only(
@@ -2635,7 +2634,7 @@ class ResponseService:
         *,
         actor_type: str = "agent",
         actor_id: Optional[str] = None,
-        conn: Any = None,
+        conn: Optional[Connection] = None,
     ) -> None:
         event_type = ACTION_EVENTS.get(action.status)
         if conn is None and event_type is not None:
@@ -2646,6 +2645,7 @@ class ResponseService:
                 )
             await self.publish_action(tenant_id, action)
             return
+        assert conn is not None  # every caller passes its transaction (AuditLogger.record refuses None)
         await self._audit.record(
             tenant_id,
             audit_action,
@@ -2686,7 +2686,7 @@ class ResponseService:
         *,
         actor_type: str = "agent",
         actor_id: Optional[str] = None,
-        conn: Any = None,
+        conn: Optional[Connection] = None,
     ) -> None:
         """Audit a ledger transition made by another service (the review service); see ``publish_action``."""
         await self._record_transition(

@@ -190,6 +190,7 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "lg_sotf.db.types",
     "lg_sotf.errors",
     "lg_sotf.models.vocabulary",
     "lg_sotf.net.*",
@@ -344,7 +345,7 @@ source_modules = [
 ]
 forbidden_modules = ["asyncpg", "psycopg", "psycopg_pool", "langgraph"]
 ignore_imports = [
-    # F9 typed DB connection (driver types stay behind lg_sotf.db)
+    # D4 SQL into repositories: driver exception classes (F9 typed the connections; lg_sotf.db.Connection)
     "lg_sotf.compliance.tenant_data -> asyncpg",
     "lg_sotf.onboarding.service -> asyncpg",
 ]

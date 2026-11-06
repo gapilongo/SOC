@@ -11,6 +11,7 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     require_aware,
     to_model,
     to_models,
@@ -88,7 +89,8 @@ class RunsRepo(Repository):
                 requeue_terminal,
             )
             if row is None:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     "SELECT * FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2", tenant_id, alert_id
                 )
         return WorkflowRun.model_validate(dict(row))
@@ -222,7 +224,8 @@ class RunsRepo(Repository):
             reason = self._refusal(kind, previous, current["live"])
             if reason is not None:
                 raise RunNotClaimable(tenant_id, alert_id, reason, WorkflowRun.model_validate(dict(current)))
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 UPDATE workflow_runs SET
                     status = 'running',
@@ -232,11 +235,7 @@ class RunsRepo(Repository):
                 WHERE tenant_id = $1 AND alert_id = $2
                 RETURNING *
                 """,
-                tenant_id,
-                alert_id,
-                worker_id,
-                now,
-                float(lease_s),
+                tenant_id, alert_id, worker_id, now, float(lease_s),
             )
         return WorkflowRun.model_validate({**dict(row), "claimed_from": previous})
 

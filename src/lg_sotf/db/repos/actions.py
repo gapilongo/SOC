@@ -36,6 +36,7 @@ from lg_sotf.db.repos._base import (
     Repository,
     check_choice,
     check_choices,
+    fetch_one,
     require_aware,
     set_clauses,
     to_model,
@@ -203,7 +204,8 @@ class ActionsRepo(Repository):
             )
             if row is not None:
                 return ResponseAction.model_validate(dict(row)), True
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 "SELECT * FROM response_actions WHERE tenant_id = $1 AND idempotency_key = $2", tenant_id, key
             )
         return ResponseAction.model_validate(dict(row)), False

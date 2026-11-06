@@ -27,10 +27,12 @@ from lg_sotf.db.tenancy import (
     thread_id_for,
     validate_tenant_id,
 )
+from lg_sotf.db.types import Connection
 
 __all__ = [
     "AlreadyInState",
     "Conflict",
+    "Connection",
     "DEFAULT_TENANT_ID",
     "Database",
     "DatabaseError",

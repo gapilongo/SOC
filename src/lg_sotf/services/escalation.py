@@ -64,6 +64,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.routing import BENIGN_DECISIONS
+from lg_sotf.db import Connection
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
 from lg_sotf.integrations.events import ESCALATION_CREATED, ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
@@ -474,7 +475,7 @@ class EscalationService:
 
     async def _find_parent(
         self,
-        conn: Any,
+        conn: Connection,
         tenant_id: str,
         alert_id: str,
         fingerprint: Optional[str],
@@ -505,7 +506,7 @@ class EscalationService:
             return await self._related_by_indicators(conn, tenant_id, alert_id, since, grouping.indicator_types)
 
     async def _related_by_indicators(
-        self, conn: Any, tenant_id: str, alert_id: str, since: datetime, types: Sequence[str]
+        self, conn: Connection, tenant_id: str, alert_id: str, since: datetime, types: Sequence[str]
     ) -> List[str]:
         sightings = await self._repos.indicators.sightings_for_alert(tenant_id, alert_id, conn=conn)
         keys = [(s.indicator_type, s.value_hash) for s in sightings if s.indicator_type in types]

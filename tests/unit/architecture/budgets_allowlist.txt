@@ -17,7 +17,6 @@ compliance/evidence.py::build_evidence_pack	101
 compliance/evidence.py::human_oversight	121
 compliance/evidence.py::render_evidence_html	193
 db/repos/actions.py::ActionsRepo.transition	94
-db/repos/runs.py::RunsRepo.start	83
 db/retention.py::purge_expired	149
 eval/command.py::execute	104
 eval/command.py::execute_history	98

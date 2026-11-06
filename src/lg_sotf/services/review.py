@@ -58,6 +58,7 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.routing import BENIGN_DECISIONS
 from lg_sotf.core.suppression import InvalidRule, validate_rule_match
+from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
 from lg_sotf.integrations.events import ESCALATION_DECIDED
@@ -396,7 +397,7 @@ class ReviewService:
         notes: Optional[str],
         approved: Sequence[str],
         now: datetime,
-        conn: Any,
+        conn: Connection,
     ) -> Escalation:
         """Record a decision on an escalation the SLA sweep expired (same optimistic lock as an active one).
 
@@ -442,7 +443,7 @@ class ReviewService:
             raise ReviewError(f"at most {MAX_APPROVED_ACTIONS} approved actions after resolving targets")
         return resolved
 
-    async def _own_review(self, tenant_id: str, escalation: Escalation, decision: str, conn: Any) -> List[str]:
+    async def _own_review(self, tenant_id: str, escalation: Escalation, decision: str, conn: Connection) -> List[str]:
         """Attached alerts a benign ``decision`` will not close (predicts the workflow's decision scope)."""
         attached = [a for a in escalation.related_alert_ids if a != escalation.alert_id]
         if not attached or decision not in BENIGN_DECISIONS:
@@ -485,7 +486,7 @@ class ReviewService:
         return resolve_review_policy(tenant_settings, self._settings).suggest_suppressions
 
     async def _suggest_suppression(
-        self, tenant_id: str, escalation: Escalation, feedback_id: str, user_id: UUID, now: datetime, conn: Any
+        self, tenant_id: str, escalation: Escalation, feedback_id: str, user_id: UUID, now: datetime, conn: Connection
     ) -> Optional[str]:
         """A disabled rule matching the alert's fingerprint (and source), for an admin to review and enable."""
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
@@ -532,7 +533,7 @@ class ReviewService:
         details: Optional[Mapping[str, Any]] = None,
         reuse_existing: bool = False,
         now: Optional[datetime] = None,
-        conn: Any = None,
+        conn: Optional[Connection] = None,
     ) -> Tuple[SuppressionRule, bool]:
         """Create a *disabled* suppression rule suggestion for an admin to review and enable.
 
@@ -670,7 +671,7 @@ class ReviewService:
             if approved.get(alert_id) or rejected.get(alert_id)
         ]
 
-    async def _run_ended(self, tenant_id: str, alert_id: str, conn: Any, cache: Dict[str, bool]) -> bool:
+    async def _run_ended(self, tenant_id: str, alert_id: str, conn: Connection, cache: Dict[str, bool]) -> bool:
         """Whether the alert's run has ended (or never existed); its row is locked ``FOR SHARE`` until commit."""
         if alert_id not in cache:
             status = await conn.fetchval(_RUN_FOR_SHARE_SQL, tenant_id, alert_id)
@@ -730,7 +731,7 @@ class ReviewService:
         ]
 
     async def _reject(
-        self, tenant_id: str, action: ResponseAction, user_id: UUID, role: str, reason: str, conn: Any
+        self, tenant_id: str, action: ResponseAction, user_id: UUID, role: str, reason: str, conn: Connection
     ) -> ResponseAction:
         updated = await self._repos.actions.transition(
             tenant_id, action.id, "rejected", expected_from="awaiting_approval", blocked_reason=reason, conn=conn
@@ -741,7 +742,7 @@ class ReviewService:
         )
         return updated
 
-    async def _pending_for_alert(self, tenant_id: str, alert_id: str, conn: Any) -> List[ResponseAction]:
+    async def _pending_for_alert(self, tenant_id: str, alert_id: str, conn: Connection) -> List[ResponseAction]:
         """The alert's workflow actions awaiting approval (rollbacks and other scheduler rows are never included)."""
         page = await self._repos.actions.list(
             tenant_id, status="awaiting_approval", alert_id=alert_id, execution_owner=WORKFLOW_OWNER, limit=200,

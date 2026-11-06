@@ -11,6 +11,7 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     require_aware,
     to_model,
     to_models,
@@ -91,7 +92,8 @@ class FeedbackRepo(Repository):
             )
             if row is not None:
                 return Feedback.model_validate(dict(row)), True
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 "SELECT * FROM analyst_feedback WHERE tenant_id = $1 AND escalation_id = $2",
                 tenant_id,
                 escalation_id,
@@ -136,7 +138,8 @@ class FeedbackRepo(Repository):
         require_aware(since, "since")
         require_aware(until, "until")
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 SELECT
                     count(*) AS total,

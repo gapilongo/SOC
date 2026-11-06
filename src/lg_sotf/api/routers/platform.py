@@ -51,9 +51,9 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.identity import check_password
 from lg_sotf.api.schemas import In, Out, PageOut, UserOut
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import Tenant, TenantStats
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN, switch_tenant

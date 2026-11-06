@@ -32,8 +32,8 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from lg_sotf import __version__
 from lg_sotf.compliance import html as h
 from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
+from lg_sotf.db import Connection
 from lg_sotf.db.repos import AlertEvent, Escalation, Feedback, Repositories, ResponseAction
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings

@@ -28,12 +28,12 @@ import structlog
 
 from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, SystemScopeDenied
 from lg_sotf.db.tenancy import validate_tenant_id
+from lg_sotf.db.types import Connection
 from lg_sotf.db.urls import redact_url, to_libpq_url
 from lg_sotf.settings import DatabaseSettings, get_settings
 
 log = structlog.get_logger(__name__)
 
-Connection: TypeAlias = asyncpg.Connection
 SSLArg: TypeAlias = Union[bool, str, ssl.SSLContext, None]
 
 # A ``\u0000`` escape that is not itself an escaped backslash followed by "u0000".

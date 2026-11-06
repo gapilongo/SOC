@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from lg_sotf.db.repos._base import Connection, Record, Repository, to_models
+from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_one, to_models
 from lg_sotf.db.tenancy import validate_tenant_id
 
 _COUNTERS = (
@@ -175,7 +175,8 @@ class LLMUsageRepo(Repository):
     async def day_totals(self, tenant_id: str, day: date, *, conn: Optional[Connection] = None) -> LLMUsageTotals:
         """Totals across models and agents for one day (daily token budget checks)."""
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 SELECT COALESCE(sum(calls), 0)::bigint AS calls,
                        COALESCE(sum(input_tokens), 0)::bigint AS input_tokens,

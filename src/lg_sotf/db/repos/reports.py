@@ -27,7 +27,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
-from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware
+from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_one, require_aware
 from lg_sotf.db.repos.alerts import SEVERITIES, Alert
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.models.vocabulary import POLICY_APPROVER
@@ -349,7 +349,7 @@ class ReportsRepo(Repository):
         """``(handled_without_human, needed_human)`` for alerts ingested in ``[start, end)``."""
         _window(start, end)
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(_AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
+            row = await fetch_one(c, _AUTOMATION_SQL, tenant_id, start, end, POLICY_APPROVER, SAMPLE_SOURCE_ID)
         return int(row["handled"]), int(row["needed"])
 
     async def escalations_daily(

@@ -14,7 +14,6 @@ from typing import (
     Optional,
     Sequence,
     Type,
-    TypeAlias,
     TypeVar,
     Union,
 )
@@ -26,8 +25,7 @@ from lg_sotf.db.errors import Conflict, DatabaseError, InvalidValue, ReferenceNo
 from lg_sotf.db.pagination import Params
 from lg_sotf.db.pool import Database
 from lg_sotf.db.tenancy import switch_tenant, validate_tenant_id
-
-Connection: TypeAlias = asyncpg.Connection
+from lg_sotf.db.types import Connection, DbRecord
 
 # Foreign-key constraint name suffix -> the resource that was missing.
 _FK_RESOURCES = (
@@ -76,11 +74,11 @@ class Record(BaseModel):
 R = TypeVar("R", bound=Record)
 
 
-def to_model(model: Type[R], row: Optional[asyncpg.Record]) -> Optional[R]:
+def to_model(model: Type[R], row: Optional[DbRecord]) -> Optional[R]:
     return None if row is None else model.model_validate(dict(row))
 
 
-def to_models(model: Type[R], rows: Iterable[asyncpg.Record]) -> List[R]:
+def to_models(model: Type[R], rows: Iterable[DbRecord]) -> List[R]:
     return [model.model_validate(dict(r)) for r in rows]
 
 
@@ -105,6 +103,36 @@ def set_clauses(values: Mapping[str, Any], params: Params) -> List[str]:
     Column names come from repository code, never from callers.
     """
     return [f"{col} = {params.add(value)}" for col, value in values.items() if value is not UNSET]
+
+
+# Typed query helpers: the driver's results are ``Any`` or optional; these state what a statement returns.
+
+
+async def fetch_one(conn: Connection, query: str, *args: Any) -> DbRecord:
+    """``fetchrow`` for a statement that always returns a row (``INSERT ... RETURNING``, an aggregate, a row
+    the transaction has just written or locked). No row means a broken invariant, never "not found"."""
+    row = await conn.fetchrow(query, *args)
+    if row is None:
+        raise DatabaseError("the statement returned no row")
+    return row
+
+
+async def fetch_int(conn: Connection, query: str, *args: Any) -> int:
+    """``fetchval`` of a non-null integer (``count(*)``, a ``COALESCE``d sum)."""
+    value = await conn.fetchval(query, *args)
+    if value is None:
+        raise DatabaseError("the statement returned no value")
+    return int(value)
+
+
+async def fetch_bool(conn: Connection, query: str, *args: Any) -> bool:
+    """``fetchval`` of a boolean (``EXISTS``, ``pg_try_advisory_lock``); no row or NULL is ``False``."""
+    return bool(await conn.fetchval(query, *args))
+
+
+def affected(status: str) -> int:
+    """Rows a statement changed, from its command tag (``"UPDATE 3"``, ``"INSERT 0 5"``)."""
+    return int(status.split()[-1])
 
 
 def check_choice(value: str, allowed: Sequence[str], what: str) -> str:

@@ -13,6 +13,7 @@ from lg_sotf.db.repos._base import (
     Connection,
     Record,
     Repository,
+    fetch_one,
     require_aware,
     set_clauses,
     to_model,
@@ -58,7 +59,8 @@ class SuppressionsRepo(Repository):
     ) -> SuppressionRule:
         require_aware(expires_at, "expires_at")
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 INSERT INTO suppression_rules (tenant_id, name, match, created_by, source_feedback_id,
                                                expires_at, enabled)

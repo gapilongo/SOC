@@ -96,7 +96,6 @@ SITES: List[Tuple[Any, str]] = [
     (v.RiskLevel, "lg_sotf.api.routers.review:Risk"),
     (v.RISK_LEVELS, "lg_sotf.mcp.tester:RISKS"),
     (v.RiskLevel, "lg_sotf.mcp.tester:Risk"),
-    (v.AutonomyMode, "lg_sotf.services.response:Autonomy"),
     (v.AutonomyMode, "lg_sotf.settings:Autonomy"),
     (v.VERIFICATION_STATES, "lg_sotf.db.repos.actions:VERIFICATION_STATES"),
     (v.VerificationState, "lg_sotf.db.repos.actions:VerificationStateName"),

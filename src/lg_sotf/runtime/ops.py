@@ -7,12 +7,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upgrade_head
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories, User
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.users import ROLES, normalize_email
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.errors import OperationError

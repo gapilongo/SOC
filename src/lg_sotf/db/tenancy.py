@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Tuple
 from lg_sotf.db.errors import InvalidTenantId
 
 if TYPE_CHECKING:
-    import asyncpg
+    from lg_sotf.db.types import Connection
 
 TENANT_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{1,62}$"
 _TENANT_ID_RE = re.compile(TENANT_ID_PATTERN)
@@ -27,7 +27,7 @@ def validate_tenant_id(tenant_id: object) -> str:
     return tenant_id  # type: ignore[return-value]
 
 
-async def switch_tenant(conn: asyncpg.Connection, tenant_id: str) -> None:
+async def switch_tenant(conn: Connection, tenant_id: str) -> None:
     """Re-scope an open ``db.tenant_tx`` transaction to ``tenant_id`` (transaction-local ``app.tenant_id``).
 
     For one transaction that writes to several tenants (multi-tenant batch
