@@ -213,16 +213,21 @@ class EscalationsRepo(Repository):
         notes: Optional[str] = None,
         approved_actions: Sequence[str] = (),
         now: Optional[datetime] = None,
+        allowed_from: Sequence[str] = ACTIVE_ESCALATION_STATUSES,
         conn: Optional[Connection] = None,
     ) -> Escalation:
-        """Record the analyst decision; :class:`Conflict` if the version moved."""
+        """Record the analyst decision; :class:`Conflict` if the version moved.
+
+        ``allowed_from`` are the statuses the escalation may be decided from:
+        ``("expired",)`` records a late decision on one the SLA sweep expired.
+        """
         check_choice(decision, DECISIONS, "decision")
         require_aware(now, "now")
         return await self._guarded_update(
             tenant_id,
             escalation_id,
             "decided",
-            ACTIVE_ESCALATION_STATUSES,
+            allowed_from,
             expected_version,
             """
             status = 'decided', decision = $5, decided_by = $6, decision_notes = $7,
