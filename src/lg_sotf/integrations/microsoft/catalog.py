@@ -4,7 +4,7 @@ Invariants (checked on first load, and by a unit test):
 
 * keys are unique and look like ``<package>.<name>`` for the spec's package;
 * every action type a capability lists is in
-  :data:`~lg_sotf.services.response.ACTION_CATALOG`, and every *reversible*
+  :data:`~lg_sotf.domain.actions.ACTION_CATALOG`, and every *reversible*
   type's inverse is listed by the same capability;
 * among capabilities that do not exclude each other, an action type is
   executed by at most one (so the enabled capabilities of an integration
@@ -25,6 +25,7 @@ from contextlib import contextmanager
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Mapping, Optional, Sequence
 
+from lg_sotf.domain.actions import ACTION_CATALOG
 from lg_sotf.integrations.microsoft.capability import CapabilitySpec, option_problems
 from lg_sotf.integrations.microsoft.clouds import ALL_CLOUDS, APIS, CLOUDS, DEFENDER_GEOS
 
@@ -55,8 +56,6 @@ def _excluded(a: CapabilitySpec, b: CapabilitySpec) -> bool:
 
 def check_invariants(specs: Sequence[CapabilitySpec]) -> Dict[str, CapabilitySpec]:  # noqa: C901
     """The specs by key; raises :class:`CatalogError` listing every broken invariant."""
-    from lg_sotf.services.response import ACTION_CATALOG
-
     problems: List[str] = []
     by_key: Dict[str, CapabilitySpec] = {}
     for spec in specs:
@@ -174,8 +173,6 @@ def executes(action_type: str) -> bool:
 
 
 def _action_out(action_type: str, spec: CapabilitySpec) -> Dict[str, Any]:
-    from lg_sotf.services.response import ACTION_CATALOG
-
     support = spec.actions[action_type]
     catalog_spec = ACTION_CATALOG.get(action_type)
     return {
