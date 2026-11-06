@@ -42,7 +42,9 @@ All notable changes to this project are documented here. The format follows
   audit entry failed, the tenant already existed without its admin, and
   retrying answered 409 "already exists". Now the tenant, its settings, its
   first admin and its audit entries are saved together, so a failure leaves
-  nothing behind and a retry succeeds. Changing a tenant's name, status or
+  nothing behind and a retry succeeds. `lg-sotf create-tenant` now does the
+  same: a failed run leaves no tenant, so running it again works instead of
+  reporting that the tenant already exists. Changing a tenant's name, status or
   quotas is also saved together with the platform admin's audit entry.
 
 ## [1.2.3] - 2026-11-05

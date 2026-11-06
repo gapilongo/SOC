@@ -6,20 +6,21 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upgrade_head
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories, User
 from lg_sotf.db.repos._base import Connection
-from lg_sotf.db.repos.users import ROLES
+from lg_sotf.db.repos.users import ROLES, normalize_email
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.dlq import DeadLetter, DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.hashing import ahash_password
+from lg_sotf.services.tenancy import TenantRequest, provision_tenant
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -253,7 +254,12 @@ async def create_tenant(
     admin_email: Optional[str] = None,
     admin_password: Optional[str] = None,
 ) -> TenantReport:
-    """Create a tenant (and optionally its first admin) with the schema-owner connection."""
+    """Create a tenant (and optionally its first admin) with the schema-owner connection.
+
+    One transaction (:func:`lg_sotf.services.tenancy.provision_tenant`, as
+    for the API): a failure leaves no tenant behind and the command can be
+    run again.
+    """
     if not is_valid_tenant_id(tenant_id):
         raise OperationError(
             f"invalid tenant id {tenant_id!r}: use 2-63 lowercase letters, digits, '-' or '_', "
@@ -262,36 +268,47 @@ async def create_tenant(
     name = name.strip()
     if not 1 <= len(name) <= MAX_TENANT_NAME_CHARS:
         raise OperationError(f"tenant name must be 1-{MAX_TENANT_NAME_CHARS} characters")
-    if admin_email is not None and admin_password is not None:
-        check_password(settings, admin_password)
+    request = await _tenant_request(settings, tenant_id, name, admin_email, admin_password)
     db = owner_database(settings, "lg-sotf-cli")
     await db.open()
     try:
         repos = Repositories.create(db)
         try:
-            tenant = await repos.tenants.create(tenant_id, name)
+            created = await provision_tenant(repos, AuditLogger(repos), request)
         except Conflict as exc:
             raise OperationError(f"tenant {tenant_id!r} already exists; nothing was changed") from exc
-        report = TenantReport(tenant_id=tenant.id, name=tenant.name)
-        await AuditLogger(repos).record(
-            tenant.id,
-            "tenant.created",
-            "tenant",
-            tenant.id,
-            actor_type="system",
-            actor_id="cli",
-            details={"name": tenant.name, "via": "cli"},
-        )
-        if admin_email is not None:
-            password_hash = await ahash_password(admin_password) if admin_password is not None else None
-            async with db.tenant_tx(tenant.id) as conn:
-                report.admin = await repos.users.create(
-                    tenant.id, admin_email, "admin", password_hash=password_hash, conn=conn
-                )
-                await audit_user_created(repos, report.admin, via="cli", conn=conn)
-        return report
+        return TenantReport(tenant_id=created.tenant.id, name=created.tenant.name, admin=created.admin)
     finally:
         await db.close()
+
+
+async def _tenant_request(
+    settings: Settings, tenant_id: str, name: str, admin_email: Optional[str], admin_password: Optional[str]
+) -> TenantRequest:
+    """The CLI's provisioning request: input checked and the password hashed before any transaction.
+
+    The audit entries carry ``via: cli``; the admin's ``user.created`` also
+    names the email and platform flag, as for every account the CLI creates.
+    """
+    email = None
+    password_hash = None
+    if admin_email is not None:
+        try:
+            email = normalize_email(admin_email)
+        except ValueError as exc:
+            raise OperationError("admin email is not a valid address") from exc
+        if admin_password is not None:
+            check_password(settings, admin_password)
+            password_hash = await ahash_password(admin_password)
+    return TenantRequest(
+        tenant_id=tenant_id,
+        name=name,
+        actor=Actor("system", "cli"),
+        admin_email=email,
+        admin_password_hash=password_hash,
+        audit_details={"via": "cli"},
+        admin_audit_details={"email": email, "platform_admin": False},
+    )
 
 
 async def _requeue_run(repos: Repositories, tenant_id: str, alert_id: str, *, force: bool, conn: Connection) -> str:
