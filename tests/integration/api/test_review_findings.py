@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness, fresh_rate_window
+from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -62,7 +62,6 @@ async def test_platform_admin_can_still_manage_platform_admins(api: ApiHarness) 
 
 async def test_valid_credentials_pass_after_failures_from_the_same_address(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 1})
-    await fresh_rate_window()
     garbage = [
         (await api.client.get("/api/v1/alerts", headers={"Authorization": f"Bearer junk-{i}"})) for i in range(25)
     ]
@@ -76,7 +75,6 @@ async def test_valid_credentials_pass_after_failures_from_the_same_address(make_
 
 async def test_a_repeatedly_failing_credential_is_refused_before_verification(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 1})
-    await fresh_rate_window()
     headers = {"Authorization": "Bearer the-same-bad-token"}
     statuses = [(await api.client.get("/api/v1/alerts", headers=headers)).status_code for _ in range(22)]
     assert statuses[:20] == [401] * 20
@@ -85,7 +83,6 @@ async def test_a_repeatedly_failing_credential_is_refused_before_verification(ma
 
 async def test_login_limit_is_per_account_with_a_looser_address_cap(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 2})
-    await fresh_rate_window()
     statuses = [
         (
             await api.client.post("/api/v1/auth/login", json={"email": f"u{i}@a.example.com", "password": "p"})
@@ -104,7 +101,6 @@ async def test_valid_refresh_is_not_throttled_by_other_clients(make_api) -> None
     login = await _login(api, user.email)
     assert login.status_code == 200
     good = api.client.cookies.get(REFRESH_COOKIE)
-    await fresh_rate_window()
     statuses = []
     for i in range(25):
         api.client.cookies.clear()

@@ -8,9 +8,8 @@ the auth tests exercise the real login flow.
 
 from __future__ import annotations
 
-import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Dict, Iterable, List, Optional, Tuple
 
 import httpx
@@ -20,6 +19,7 @@ from fastapi import FastAPI
 
 from lg_sotf.api.app import create_app
 from lg_sotf.api.context import ApiContext
+from lg_sotf.api.ratelimit import WINDOW_S, RateLimiter
 from lg_sotf.db.repos import ApiKey, Repositories, User
 from lg_sotf.security.hashing import generate_api_key, hash_password
 from lg_sotf.settings import Settings
@@ -30,17 +30,24 @@ UI_ORIGIN = "https://ui.example.com"
 TEST_JWT_SECRET = "lg-sotf-test-suite-only-jwt-secret-not-for-use"
 PASSWORD = "correct horse battery staple"
 
-# The rate limiter counts in fixed 60 s windows; a burst that straddles a minute
-# boundary is split across two counters and never reaches its cap.
-RATE_WINDOW_S = 60.0
-BURST_ALLOWANCE_S = 15.0
 
 
-async def fresh_rate_window() -> None:
-    """Wait for the next window when less than ``BURST_ALLOWANCE_S`` is left in this one."""
-    elapsed = time.time() % RATE_WINDOW_S
-    if elapsed > RATE_WINDOW_S - BURST_ALLOWANCE_S:
-        await asyncio.sleep(RATE_WINDOW_S - elapsed + 0.1)
+class ApiClock:
+    """The rate limiter's clock: frozen one second into a fixed window, moved only by ``advance``.
+
+    The limiter counts in fixed 60 s windows; on the wall clock a burst that
+    straddles a minute boundary is split across two counters and never
+    reaches its cap. Frozen, every burst in a test lands in one window.
+    """
+
+    def __init__(self) -> None:
+        self.now = float(int(time.time()) // WINDOW_S * WINDOW_S + 1)
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
 
 
 __all__ = ["BASE_URL", "PASSWORD", "TENANT_A", "TENANT_B", "UI_ORIGIN"]
@@ -86,6 +93,7 @@ class ApiHarness:
     app: FastAPI
     client: httpx.AsyncClient
     repos: Repositories
+    clock: ApiClock = field(default_factory=ApiClock)
 
     @property
     def ctx(self) -> ApiContext:
@@ -131,20 +139,30 @@ class ApiHarness:
         return {"X-API-Key": token}
 
 
+@pytest.fixture
+def api_clock() -> ApiClock:
+    return ApiClock()
+
+
 @pytest_asyncio.fixture
 async def make_api(
-    repos: Repositories, redis_client: Any, api_settings: Callable[..., Settings]
+    repos: Repositories, redis_client: Any, api_settings: Callable[..., Settings], api_clock: ApiClock
 ) -> AsyncIterator[Callable[..., Any]]:
-    """Start an app with settings overrides; every started app is shut down after the test."""
+    """Start an app with settings overrides; every started app is shut down after the test.
+
+    Every app's rate limiter reads ``api_clock`` (shared by the apps of one test).
+    """
     stack: List[Tuple[FastAPI, Any, httpx.AsyncClient]] = []
 
     async def start(transport: Optional[httpx.AsyncBaseTransport] = None, **overrides: Any) -> ApiHarness:
         app = create_app(api_settings(**overrides), http_transport=transport, configure_observability=False)
         lifespan = app.router.lifespan_context(app)
         await lifespan.__aenter__()
+        ctx: ApiContext = app.state.ctx
+        ctx.limiter = RateLimiter(ctx.redis, ctx.prefix, clock=api_clock)
         client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=BASE_URL)
         stack.append((app, lifespan, client))
-        return ApiHarness(app=app, client=client, repos=repos)
+        return ApiHarness(app=app, client=client, repos=repos, clock=api_clock)
 
     try:
         yield start
