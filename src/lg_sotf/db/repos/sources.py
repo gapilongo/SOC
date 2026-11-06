@@ -22,11 +22,8 @@ from lg_sotf.db.repos._base import (
     to_models,
     truncate,
 )
+from lg_sotf.models.vocabulary import PUSH_SOURCE_TYPES, SOURCE_TYPES
 
-SOURCE_TYPES = (
-    "splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file", "m365_mailbox", "imap"
-)
-PUSH_SOURCE_TYPES = ("webhook", "guardduty")
 SOURCE_HEALTH = ("unknown", "healthy", "degraded", "failing")
 
 FAILING_AFTER = 3

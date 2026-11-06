@@ -30,10 +30,10 @@ from typing import Dict, List, Optional, Tuple
 from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware
 from lg_sotf.db.repos.alerts import SEVERITIES, Alert
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.models.vocabulary import POLICY_APPROVER
 
 # Human involvement in a response: an action that waited for (or got) a person's approval or
-# rejection. Policy auto-approvals carry POLICY_APPROVER (lg_sotf.services.response).
-POLICY_APPROVER = "policy:auto"
+# rejection. Policy auto-approvals carry POLICY_APPROVER (lg_sotf.models.vocabulary).
 SLA_BREACH_ACTIONS = ("escalation.sla_escalated", "escalation.sla_expired")
 MAX_DETECTIONS = 500
 MAX_HISTORY_ALERTS = 10_000

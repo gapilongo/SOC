@@ -19,11 +19,9 @@ from lg_sotf.db.repos._base import (
     to_models,
 )
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.models.vocabulary import DECISIONS, ESCALATION_LEVELS, ESCALATION_STATUSES
 
-ESCALATION_LEVELS = ("L1", "L2", "L3")
-ESCALATION_STATUSES = ("open", "claimed", "decided", "expired", "cancelled")
 ACTIVE_ESCALATION_STATUSES = ("open", "claimed")
-DECISIONS = ("true_positive", "false_positive", "benign_positive", "needs_more_info")
 
 _CREATE_ATTEMPTS = 3
 

@@ -351,7 +351,9 @@ async def _reset_sla_deadlines(ctx: ApiContext, tenant: Tenant, conn: Connection
     """
     policy = resolve_review_policy(tenant.settings, ctx.settings)
     now = datetime.now(UTC)
-    deadlines = {level: now + timedelta(minutes=policy.sla_minutes[level]) for level in ESCALATION_LEVELS}
+    deadlines: Dict[str, datetime] = {
+        level: now + timedelta(minutes=policy.sla_minutes[level]) for level in ESCALATION_LEVELS
+    }
     return await ctx.repos.escalations.extend_sla_deadlines(tenant.id, deadlines, conn=conn)
 
 

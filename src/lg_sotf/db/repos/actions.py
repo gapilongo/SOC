@@ -24,7 +24,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union
 from uuid import UUID
 
 from lg_sotf.db.errors import AlreadyInState, InvalidTransition, NotFound
@@ -41,19 +41,16 @@ from lg_sotf.db.repos._base import (
     to_model,
     to_models,
 )
-
-ACTION_STATUSES = (
-    "proposed",
-    "awaiting_approval",
-    "approved",
-    "rejected",
-    "executing",
-    "succeeded",
-    "failed",
-    "dry_run",
-    "blocked",
+from lg_sotf.models.vocabulary import (
+    ACTION_STATUSES,
+    EXECUTION_OWNERS,
+    RISK_LEVELS,
+    VERIFICATION_STATES,
 )
-RISK_LEVELS = ("low", "medium", "high", "critical")
+from lg_sotf.models.vocabulary import FINAL_VERIFICATION_STATES as FINAL_VERIFICATION_STATES
+from lg_sotf.models.vocabulary import TERMINAL_ACTION_STATUSES as TERMINAL_ACTION_STATUSES
+from lg_sotf.models.vocabulary import VerificationState as VerificationStateName
+
 MIN_DEFER_S = 30.0
 
 ACTION_TRANSITIONS: Dict[str, FrozenSet[str]] = {
@@ -67,14 +64,9 @@ ACTION_TRANSITIONS: Dict[str, FrozenSet[str]] = {
     "dry_run": frozenset(),
     "blocked": frozenset(),
 }
-TERMINAL_ACTION_STATUSES = tuple(s for s, targets in ACTION_TRANSITIONS.items() if not targets)
 EXECUTED_STATUSES = ("executing", "succeeded", "failed")
-EXECUTION_OWNERS = ("workflow", "scheduler")
-VERIFICATION_STATES = ("pending", "verified", "failed", "inconclusive")
-FINAL_VERIFICATION_STATES = ("verified", "failed", "inconclusive")
 # A rollback row in one of these statuses is "live": at most one per original (unique index).
 LIVE_ROLLBACK_STATUSES = ("proposed", "awaiting_approval", "approved", "executing", "succeeded")
-VerificationStateName = Literal["pending", "verified", "failed", "inconclusive"]
 
 
 def action_idempotency_key(

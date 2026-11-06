@@ -17,19 +17,10 @@ from lg_sotf.db.repos._base import (
     truncate,
 )
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.models.vocabulary import RUN_STATUSES as RUN_STATUSES
+from lg_sotf.models.vocabulary import TERMINAL_RUN_STATUSES, WAITING_RUN_STATUSES
 from lg_sotf.settings import get_settings
 
-RUN_STATUSES = (
-    "queued",
-    "running",
-    "waiting_human",
-    "waiting_approval",
-    "completed",
-    "failed",
-    "dead_lettered",
-)
-TERMINAL_RUN_STATUSES = ("completed", "dead_lettered")
-WAITING_RUN_STATUSES = ("waiting_human", "waiting_approval")
 MAX_ERROR_CHARS = 4_000
 
 ClaimKind = Literal["process", "resume"]

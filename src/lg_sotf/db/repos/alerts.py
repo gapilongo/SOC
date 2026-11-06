@@ -23,10 +23,8 @@ from lg_sotf.db.repos._base import (
     to_model,
     utcnow,
 )
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
 
-ALERT_STATUSES = ("new", "queued", "processing", "waiting_human", "waiting_approval", "closed", "failed")
-SEVERITIES = ("info", "low", "medium", "high", "critical")
-DISPOSITIONS = ("malicious", "benign", "inconclusive")
 MAX_INSERT_BATCH = 5_000
 
 # ILIKE is not leakproof, so under FORCE RLS PostgreSQL cannot use an index for

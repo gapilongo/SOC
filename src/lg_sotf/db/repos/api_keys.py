@@ -20,8 +20,7 @@ from lg_sotf.db.repos._base import (
     to_model,
     to_models,
 )
-
-API_KEY_SCOPES = ("ingest", "read", "write")
+from lg_sotf.models.vocabulary import SCOPES as API_KEY_SCOPES
 
 
 class ApiKey(Record):
