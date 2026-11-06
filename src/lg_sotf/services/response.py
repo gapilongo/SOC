@@ -1589,7 +1589,7 @@ class ResponseService:
         self._audit = AuditLogger(repos)
         self._registry = registry or ConnectorRegistry(
             settings,
-            overrides=connectors,
+            overrides=connectors, secret_box=secret_box,
             target_kinds={name: spec.target_kind for name, spec in ACTION_CATALOG.items()},
         )
         self._execution_budget_s = float(settings.worker.node_timeout_s) * EXECUTION_BUDGET_FRACTION
@@ -1657,7 +1657,7 @@ class ResponseService:
         from lg_sotf.integrations.ticketing import TicketConnector, TicketService
 
         if self._ticketing is None:
-            self._ticketing = TicketService(self._repos, self._settings, retries=1)
+            self._ticketing = TicketService(self._repos, self._settings, retries=1, secret_box=self._box)
         return TicketConnector(self._ticketing, integration)
 
     async def _microsoft_connector(

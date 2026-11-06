@@ -6,7 +6,7 @@ from typing import Callable
 
 import pytest
 
-from lg_sotf.security.crypto import DecryptionError, SecretBox, generate_key, parse_keys
+from lg_sotf.security.crypto import DecryptionError, SecretBox, generate_key, load_secret_box, parse_keys
 from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.settings import Settings
 
@@ -108,3 +108,22 @@ def test_published_keys_refused_in_production(make_settings: Callable[..., Setti
 def test_generated_keys_accepted_in_production(make_settings: Callable[..., Settings]) -> None:
     box = SecretBox.from_settings(make_settings(environment="production", security={"encryption_keys": generate_key()}))
     assert box.decrypt_json(box.encrypt_json({"a": 1})) == {"a": 1}
+
+
+@pytest.mark.parametrize("keys", [None, ""])
+def test_load_secret_box_is_none_only_when_keys_are_unset(make_settings: Callable[..., Settings], keys: object) -> None:
+    assert load_secret_box(make_settings(security={"encryption_keys": keys})) is None
+
+
+def test_load_secret_box_builds_the_box_from_the_keys(make_settings: Callable[..., Settings]) -> None:
+    key = generate_key()
+    box = load_secret_box(make_settings(security={"encryption_keys": key}))
+    assert box is not None and box.key_count == 1
+    assert SecretBox([key]).decrypt_json(box.encrypt_json({"a": 1})) == {"a": 1}
+
+
+@pytest.mark.parametrize("keys", ["not-a-fernet-key", " , ", "bGctc290Zi10ZXN0LXN1aXRlLW9ubHkta2V5LTAwMDA="])
+def test_load_secret_box_raises_on_invalid_keys(make_settings: Callable[..., Settings], keys: str) -> None:
+    # The last one is the published test-suite key: valid Fernet, refused in production.
+    with pytest.raises(SecurityConfigError):
+        load_secret_box(make_settings(environment="production", security={"encryption_keys": keys}))

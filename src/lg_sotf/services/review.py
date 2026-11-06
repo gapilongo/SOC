@@ -63,6 +63,7 @@ from lg_sotf.db.repos.escalations import DECISIONS, Escalation
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
 from lg_sotf.services.response import (
     ACTION_CATALOG,
@@ -177,12 +178,14 @@ class ReviewService:
         events: Optional[EventPublisher] = None,
         *,
         responses: Optional[ResponseService] = None,
+        secret_box: Optional[SecretBox] = None,
     ) -> None:
+        """``secret_box`` is the process's box, forwarded to the response service it builds."""
         self._repos = repos
         self._settings = settings
         self._events = events
         self._audit = AuditLogger(repos)
-        self._responses = responses or ResponseService(repos, settings, events)
+        self._responses = responses or ResponseService(repos, settings, events, secret_box=secret_box)
 
     @property
     def responses(self) -> ResponseService:

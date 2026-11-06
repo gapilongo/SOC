@@ -658,9 +658,9 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
         def ingestion_factory() -> IngestionLike:
             from lg_sotf.ingestion.service import IngestionService
             from lg_sotf.llm import TokenBudget
-            from lg_sotf.security.crypto import SecretBox
+            from lg_sotf.security.crypto import load_secret_box
 
-            box = SecretBox.from_settings(settings) if settings.security.encryption_keys else None
+            box = load_secret_box(settings)
             # LLM normalization fallback during polls is charged to the tenant's daily budget.
             budget = TokenBudget(redis, settings, usage_seed=Repositories.create(db).llm_usage.day_tokens)
             service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=budget)
