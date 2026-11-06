@@ -145,7 +145,7 @@ test('security headers on every document, and the admin signs in under the CSP',
   expect(refresh?.sameSite).toBe('Strict');
   // A reload restores the session from the HttpOnly refresh cookie, not from storage.
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Dashboard', level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Overview', level: 1 })).toBeVisible();
   await assertNoTokenInStorage(page);
   await watch.assertClean();
   await context.close();
@@ -191,7 +191,7 @@ test('the dashboard updates live when alerts arrive through the ingest API', asy
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
-  const before = await statValue(page, 'Alerts');
+  const before = await statValue(page, 'Alerts ingested');
 
   const items = await ingest(request, apiKey, [beacon(), ...Array.from({ length: BURST }, (_, n) => burst(n))]);
   expect(items.filter((i) => i.status === 'inserted')).toHaveLength(BURST + 1);
@@ -199,7 +199,7 @@ test('the dashboard updates live when alerts arrive through the ingest API', asy
   escalatedId = items[1].alert_id as string;
 
   // No navigation, no Refresh click: the WebSocket events refresh the page.
-  await expect.poll(() => statValue(page, 'Alerts'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
+  await expect.poll(() => statValue(page, 'Alerts ingested'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
   await screenshot(page, '02-dashboard');
   await watch.assertClean();
   await context.close();
@@ -472,7 +472,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     ['/usage', 'LLM usage', '12-usage'],
     ['/audit', 'Audit log', '13-audit'],
     // Last: the summary is cached for 15 seconds, so it now reflects the decisions above.
-    ['/', 'Dashboard', '02-dashboard'],
+    ['/', 'Overview', '02-dashboard'],
   ];
   for (const [path, heading, shot] of pages) {
     await page.goto(path);

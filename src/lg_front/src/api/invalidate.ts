@@ -30,11 +30,41 @@ export const afterAlertsAdded = (client: QueryClient) => invalidate(client, qk.a
 
 // Escalations ----------------------------------------------------------------
 
-/** An escalation changed (claimed, or found changed by someone else). */
-export const afterEscalationChange = (client: QueryClient) => invalidate(client, qk.escalations.all);
+/**
+ * An escalation changed (claimed, or found changed by someone else): the
+ * lists, the decision page and the overview's queue figures.
+ */
+export const afterEscalationChange = (client: QueryClient) =>
+  invalidate(client, qk.escalations.all, qk.escalation.all, qk.dashboard.all);
 
-/** An escalation was decided: it and the alerts it resumed. */
-export const afterEscalationDecision = (client: QueryClient) => invalidate(client, qk.escalations.all, qk.alerts.all);
+/** An escalation was decided: it, the alerts it resumed and the overview. */
+export const afterEscalationDecision = (client: QueryClient) =>
+  invalidate(client, qk.escalations.all, qk.escalation.all, qk.alerts.all, qk.dashboard.all);
+
+/**
+ * A bulk claim ran. Items commit one by one, so this runs whether the request
+ * succeeded, partly failed or errored.
+ */
+export const afterBulkClaim = (client: QueryClient) =>
+  invalidate(client, qk.escalations.all, qk.escalation.all, qk.alerts.all, qk.dashboard.all);
+
+/**
+ * A bulk close ran (committed items resumed their alerts). With
+ * `suppressionProposed`, the proposed rule joins the suppressions list.
+ */
+export const afterBulkClose = (client: QueryClient, suppressionProposed = false) =>
+  invalidate(
+    client,
+    qk.escalations.all,
+    qk.escalation.all,
+    qk.alerts.all,
+    qk.alert.all,
+    qk.dashboard.all,
+    ...(suppressionProposed ? [qk.suppressions.all] : []),
+  );
+
+/** A suppression rule was proposed from decided escalations (disabled until an admin enables it). */
+export const afterBulkSuppressionProposal = (client: QueryClient) => invalidate(client, qk.suppressions.all);
 
 // Response actions -----------------------------------------------------------
 

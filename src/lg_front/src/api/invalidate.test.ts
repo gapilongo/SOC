@@ -8,8 +8,16 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
   ['afterAlertChange', (c) => policies.afterAlertChange(c, 'a-1'), [['alert', 'a-1'], ['alerts']]],
   ['afterAlertTimelineChange', (c) => policies.afterAlertTimelineChange(c, 'a-1'), [['alert', 'a-1', 'events']]],
   ['afterAlertsAdded', policies.afterAlertsAdded, [['alerts']]],
-  ['afterEscalationChange', policies.afterEscalationChange, [['escalations']]],
-  ['afterEscalationDecision', policies.afterEscalationDecision, [['escalations'], ['alerts']]],
+  ['afterEscalationChange', policies.afterEscalationChange, [['escalations'], ['escalation'], ['dashboard']]],
+  ['afterEscalationDecision', policies.afterEscalationDecision, [['escalations'], ['escalation'], ['alerts'], ['dashboard']]],
+  ['afterBulkClaim', policies.afterBulkClaim, [['escalations'], ['escalation'], ['alerts'], ['dashboard']]],
+  ['afterBulkClose', (c) => policies.afterBulkClose(c), [['escalations'], ['escalation'], ['alerts'], ['alert'], ['dashboard']]],
+  [
+    'afterBulkClose (with a proposed rule)',
+    (c) => policies.afterBulkClose(c, true),
+    [['escalations'], ['escalation'], ['alerts'], ['alert'], ['dashboard'], ['suppressions']],
+  ],
+  ['afterBulkSuppressionProposal', policies.afterBulkSuppressionProposal, [['suppressions']]],
   ['afterActionChange', policies.afterActionChange, [['actions']]],
   ['afterActionDecision', policies.afterActionDecision, [['actions'], ['alerts']]],
   ['afterSourceChange', policies.afterSourceChange, [['sources']]],
@@ -27,7 +35,8 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
 
 describe('invalidation policies', () => {
   it('covers every exported policy', () => {
-    expect(EXPECTED.map(([name]) => name).sort()).toEqual(Object.keys(policies).sort());
+    const names = new Set(EXPECTED.map(([name]) => name.split(' ')[0]));
+    expect([...names].sort()).toEqual(Object.keys(policies).sort());
   });
 
   it.each(EXPECTED)('%s invalidates the same keys as before', async (_name, policy, keys) => {

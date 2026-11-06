@@ -20,6 +20,27 @@ const SIZES: Record<ButtonSize, { box: string; square: string }> = {
   lg: { box: 'min-h-10 px-4 py-2 text-sm', square: 'h-10 w-10 flex-none' },
 };
 
+/**
+ * The classes of a button, for a link that looks like one (navigation stays a
+ * link: `<Link className={buttonClass('primary')}>`).
+ */
+export function buttonClass(variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', className?: string): string {
+  return cx(
+    'inline-flex items-center justify-center gap-2 rounded-control transition-colors touch:min-h-11',
+    SIZES[size].box,
+    LINK_VARIANTS[variant],
+    className,
+  );
+}
+
+// The variants without `enabled:` (a link has no disabled state); spelled out so Tailwind sees each class.
+const LINK_VARIANTS: Record<ButtonVariant, string> = {
+  primary: 'bg-accent font-semibold text-on-accent hover:bg-accent-hover hover:text-on-accent',
+  secondary: 'border border-control bg-raised font-medium text-fg hover:bg-raised-2',
+  quiet: 'bg-transparent font-medium text-link hover:bg-raised-2 hover:text-link-hover',
+  destructive: 'border border-danger bg-raised font-semibold text-danger-fg hover:bg-tint-danger',
+};
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;

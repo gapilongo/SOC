@@ -22,8 +22,10 @@ import {
   StatePill,
   TextAreaField,
   TextField,
+  Segmented,
   ToggleGroup,
   VisuallyHidden,
+  buttonClass,
 } from '.';
 import { apiError } from '../../test/helpers';
 
@@ -339,5 +341,43 @@ describe('feedback and misc', () => {
     expect(onChange).toHaveBeenLastCalledWith([]);
     expect(screen.getByRole('region', { name: 'Raw' })).toHaveTextContent('"a": 1');
     expect(screen.getByText('Analyst A')).toBeInTheDocument();
+  });
+});
+
+describe('Segmented and button-styled links', () => {
+  it('picks one option with native radios and names the short labels', async () => {
+    function Harness() {
+      const [value, setValue] = useState(24);
+      return (
+        <>
+          <Segmented
+            label="Time window"
+            options={[
+              { value: 24, label: '24h', title: 'Last 24 hours' },
+              { value: 168, label: '7d', title: 'Last 7 days' },
+              { value: 720, label: '30d' },
+            ]}
+            value={value}
+            onChange={setValue}
+          />
+          <output>{value}</output>
+        </>
+      );
+    }
+    render(<Harness />);
+    const group = screen.getByRole('group', { name: 'Time window' });
+    expect(within(group).getByRole('radio', { name: 'Last 24 hours' })).toBeChecked();
+    await userEvent.click(within(group).getByRole('radio', { name: 'Last 7 days' }));
+    expect(screen.getByText('168')).toBeInTheDocument();
+    await userEvent.click(within(group).getByRole('radio', { name: '30d' }));
+    expect(within(group).getByRole('radio', { name: '30d' })).toBeChecked();
+  });
+
+  it('gives links the button classes without disabled-state variants', () => {
+    expect(buttonClass()).toContain('border-control');
+    expect(buttonClass('primary', 'sm', 'self-start')).toContain('min-h-8');
+    expect(buttonClass('primary')).not.toContain('enabled:');
+    expect(buttonClass('quiet')).toContain('text-link');
+    expect(buttonClass('destructive')).toContain('text-danger-fg');
   });
 });

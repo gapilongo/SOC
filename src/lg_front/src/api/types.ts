@@ -37,11 +37,34 @@ export const DECISIONS = ['true_positive', 'false_positive', 'benign_positive', 
 export const SOURCE_TYPES = ['splunk', 'qradar', 'sentinel', 'wazuh', 'crowdstrike', 'guardduty', 'webhook', 'file', 'm365_mailbox', 'imap'] as const;
 export const API_KEY_SCOPES = ['ingest', 'read', 'write'] as const;
 export const AUTONOMY_MODES = ['auto', 'approval', 'disabled'] as const;
+/** Entity kinds of an `entities_preview`, in the order the API picks them. */
+export const ENTITY_KINDS = ['user', 'host', 'ip', 'email', 'domain', 'url', 'process', 'hash'] as const;
+/** Why an escalation was opened (`routing.code`); newer codes may appear, so readers accept any string. */
+export const ROUTING_CODES = [
+  'grey_zone',
+  'false_positive_review',
+  'inconclusive',
+  'model_refused',
+  'llm_normalized',
+  'analyst_request',
+  'response_review',
+  'group_review',
+] as const;
+/** The two decisions a bulk close may record. */
+export const BULK_CLOSE_DECISIONS = ['false_positive', 'benign_positive'] as const;
+/** Escalation list orders (`GET /escalations?order=`); both are keyset-paginated. */
+export const ESCALATION_ORDERS = ['created_at', 'sla_deadline'] as const;
+/** Most escalations one bulk request takes (422 above). */
+export const BULK_MAX_ITEMS = 50;
 
 export type Severity = (typeof SEVERITIES)[number];
 export type Decision = (typeof DECISIONS)[number];
 export type SourceType = (typeof SOURCE_TYPES)[number];
 export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+export type EntityKind = (typeof ENTITY_KINDS)[number];
+export type RoutingCode = (typeof ROUTING_CODES)[number];
+export type BulkCloseDecision = (typeof BULK_CLOSE_DECISIONS)[number];
+export type EscalationOrder = (typeof ESCALATION_ORDERS)[number];
 
 export type JsonObject = Record<string, unknown>;
 
@@ -154,11 +177,57 @@ export interface AlertOut {
   closed_at?: string | null;
   summary?: JsonObject;
   case_key?: string | null;
+  /** Name of the source; null once the source is deleted (newer APIs). */
+  source_name?: string | null;
+  /** First value of up to three entity kinds and how many each kind has; null without entities (newer APIs). */
+  entities_preview?: EntitiesPreviewOut | null;
+}
+
+/** One entity value of a preview. */
+export interface EntityRefOut {
+  kind: EntityKind;
+  value: string;
+}
+
+/**
+ * `{items, counts}`: the first value of up to three entity kinds (users,
+ * hosts, IPs, e-mails, domains, URLs, processes, hashes, in that order) and
+ * how many values each kind present has. Read it with `readEntitiesPreview`
+ * (api/fields.ts), which drops anything malformed.
+ */
+export interface EntitiesPreviewOut {
+  items: EntityRefOut[];
+  counts: Partial<Record<EntityKind, number>>;
+}
+
+/** One provider result of the analysis agent's lookups (`GET /alerts/{id}` `findings`). */
+export interface FindingOut {
+  origin: 'threat_intel' | 'history';
+  kind: string;
+  target: string;
+  source: string;
+  status: string;
+  verdict: string;
+  /** When the platform received the result; null for analyses recorded before it was stored. */
+  checked_at?: string | null;
+  /** Served from the provider cache. */
+  cached?: boolean;
+  data?: JsonObject;
 }
 
 export interface AlertDetailOut extends AlertOut {
   raw?: JsonObject;
   normalized?: JsonObject;
+  /** Absent on older APIs. */
+  findings?: FindingOut[];
+}
+
+/** `GET /alerts/counts`: alerts per status, all-time except `closed` (closed inside the window). */
+export interface AlertCountsOut {
+  by_status: Record<string, number>;
+  closed_from: string;
+  closed_to?: string | null;
+  generated_at: string;
 }
 
 export interface AlertEventOut {
@@ -199,6 +268,160 @@ export interface EscalationOut {
   version: number;
   created_at: string;
   updated_at: string;
+  // Newer APIs (console redesign): every one may be absent or null. Read them through api/fields.ts.
+  assigned_to_email?: string | null;
+  decided_by_email?: string | null;
+  /** The alert's severity. */
+  alert_severity?: string | null;
+  /** The detection rule name, else the alert title. */
+  rule?: string | null;
+  source_id?: string | null;
+  source_name?: string | null;
+  entities_preview?: EntitiesPreviewOut | null;
+  /** First sentence of the analysis conclusion. */
+  ai_reason?: string | null;
+  /** Who wrote `ai_reason`; null on escalations opened before it was recorded. */
+  ai_reason_source?: 'model' | 'rules' | null;
+  /** Why the escalation was opened; null on escalations opened before it was recorded. */
+  routing?: RoutingOut | null;
+}
+
+/** The confidence band that sent an alert to review (percent). */
+export interface ReviewBandOut {
+  min: number;
+  max: number;
+}
+
+/** `{code, confidence, band}`: the routing code that opened an escalation; `band` only for a grey-zone confidence inside it. */
+export interface RoutingOut {
+  code: RoutingCode | (string & {});
+  confidence?: number | null;
+  band?: ReviewBandOut | null;
+}
+
+/** `GET /escalations/groups` item: active escalations sharing a source and rule. */
+export interface EscalationGroupOut {
+  source_id: string;
+  source_name?: string | null;
+  rule: string;
+  size: number;
+  unassigned: number;
+  overdue: number;
+  earliest_sla_deadline?: string | null;
+  min_confidence?: number | null;
+  max_confidence?: number | null;
+  by_severity: Record<string, number>;
+  /** Up to 10 ids, soonest deadline first. */
+  escalation_ids: string[];
+}
+
+export interface EscalationGroupsOut {
+  items: EscalationGroupOut[];
+  /** More groups matched than were returned (at most 100). */
+  truncated: boolean;
+  generated_at: string;
+}
+
+/** One escalation of a bulk request, at the version the caller saw. */
+export interface BulkItemIn {
+  escalation_id: string;
+  version: number;
+}
+
+export interface BulkClaimIn {
+  items: BulkItemIn[];
+}
+
+export interface BulkCloseIn {
+  items: BulkItemIn[];
+  /** Required by the API. */
+  notes: string;
+  /** Default `false_positive`. */
+  decision?: BulkCloseDecision;
+  /** Propose one disabled suppression rule from the closed escalations. */
+  propose_suppression?: boolean;
+}
+
+/** What the single-escalation endpoint would have answered for this item. */
+export interface BulkErrorOut {
+  status: number;
+  code: string;
+  message: string;
+}
+
+export interface BulkItemOut {
+  escalation_id: string;
+  ok: boolean;
+  escalation?: EscalationOut | null;
+  error?: BulkErrorOut | null;
+  resumes_enqueued?: number;
+  resumes_failed?: number;
+}
+
+/** Per-item results of a bulk claim or close (HTTP 200 even when items failed). */
+export interface BulkOut {
+  results: BulkItemOut[];
+  succeeded: number;
+  failed: number;
+  /** The proposed rule, for a close with `propose_suppression`. */
+  suppression?: SuppressionOut | null;
+  suppression_created?: boolean | null;
+}
+
+export interface BulkProposeSuppressionIn {
+  escalation_ids: string[];
+  name?: string | null;
+}
+
+/** 201 with a new disabled rule, or 200 with the unexpired rule that already has the same match. */
+export interface SuppressionProposalOut {
+  suppression: SuppressionOut;
+  created: boolean;
+  escalation_ids: string[];
+}
+
+export interface PreviewConnectorOut {
+  name: string;
+  source: string;
+  live?: boolean | null;
+  ready: boolean;
+}
+
+export interface PreviewGuardrailOut {
+  verdict: 'passed' | 'blocked';
+  code?: string | null;
+  reason?: string | null;
+}
+
+/** One action of a response preview, judged for the caller's role. */
+export interface PreviewActionOut {
+  action_type: string;
+  target: string;
+  description: string;
+  risk: string;
+  reversible: boolean;
+  inverse_action?: string | null;
+  irreversible_note?: string | null;
+  connector: PreviewConnectorOut;
+  guardrail: PreviewGuardrailOut;
+  autonomy: string;
+  /** What happens to it if the analyst pre-approves nothing. */
+  without_preapproval: 'automatic' | 'awaiting_approval' | 'blocked';
+  can_preapprove: boolean;
+  role_lock?: 'admin' | 'disabled' | null;
+  /** The `approved_actions` entry that pre-approves this action in a decision. */
+  approval_entry: string;
+}
+
+/** `GET /escalations/{id}/response-preview`: the plan a true-positive decision would produce (a dry run). */
+export interface ResponsePreviewOut {
+  escalation_id: string;
+  alert_id: string;
+  generated_at: string;
+  threat_type: string;
+  evidence: string;
+  dry_run_forced: boolean;
+  actions: PreviewActionOut[];
 }
 
 export interface FeedbackIn {
@@ -269,6 +492,33 @@ export interface ActionOut {
   rollback?: RollbackEligibility;
   /** The live rollback of this action, if any. */
   rolled_back_by?: string | null;
+  // Newer APIs (console redesign).
+  /** Re-checked now for a pending action; the recorded result for a blocked one; null otherwise. */
+  guardrail?: GuardrailOut | null;
+  blast_radius?: BlastRadiusOut | null;
+  /** Its type has an inverse action (null when unknown). */
+  reversible?: boolean | null;
+  irreversible_note?: string | null;
+}
+
+export interface GuardrailOut {
+  verdict: 'passed' | 'blocked';
+  /** `now`: checked again against the current policy; `recorded`: the result stored when it was blocked. */
+  evaluated: 'now' | 'recorded';
+  code?: string | null;
+  reason?: string | null;
+  /** Why a human must approve (`admin_approval_required`, `llm_only_evidence`, ...). */
+  approval_reason?: string | null;
+}
+
+/** The scope of an action and, while it awaits approval, the hourly limits it will be checked against. */
+export interface BlastRadiusOut {
+  target_kind?: string | null;
+  scope_hosts?: string[];
+  hourly_limit?: number | null;
+  executed_last_hour?: number | null;
+  tenant_hourly_cap?: number | null;
+  tenant_executed_last_hour?: number | null;
 }
 
 export interface RollbackOut {
@@ -449,6 +699,21 @@ export interface DashboardOut {
   unassigned_breaching?: number;
   /** Pending actions the caller may approve (newer APIs; the sidebar hides the count without it). */
   pending_approvals?: number;
+  // Escalation and approval queue figures (newer APIs): active (open or claimed) escalations right
+  // now, not the window. Absent on older APIs; read them with `readQueueFigures` (api/fields.ts).
+  overdue_escalations?: number;
+  unassigned_escalations?: number;
+  /** The earliest deadline still ahead. */
+  next_sla_deadline?: string | null;
+  /** Active escalations by their alert's severity. */
+  open_escalations_by_severity?: Record<string, number>;
+  /** Every action awaiting approval in the tenant. */
+  pending_approvals_total?: number;
+  pending_approvals_by_risk?: Record<string, number>;
+  /** Active escalations assigned to the caller (computed per request). */
+  my_claimed?: number;
+  /** The deep-tier model that writes the analysis verdicts; null when LLM use is off. */
+  llm_model?: string | null;
 }
 
 export interface UsageDayOut {

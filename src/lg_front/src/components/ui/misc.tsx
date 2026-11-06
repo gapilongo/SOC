@@ -1,6 +1,60 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import { cx } from './cx';
+
+export interface SegmentedOption<T extends string | number> {
+  value: T;
+  label: string;
+  /** Read by screen readers and shown as a tooltip ("Last 7 days" for "7d"). */
+  title?: string;
+}
+
+/**
+ * A single choice among a few options (a time window): native radios, so the
+ * arrow keys move between them; the chosen one is raised with an underline.
+ */
+export function Segmented<T extends string | number>({
+  label,
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  label: string;
+  options: ReadonlyArray<SegmentedOption<T>>;
+  value: T;
+  onChange: (next: T) => void;
+  className?: string;
+}) {
+  const name = useId();
+  return (
+    <fieldset className={cx('inline-flex items-center rounded-control border border-strong bg-raised p-[3px]', className)}>
+      <legend className="sr-only">{label}</legend>
+      {options.map((opt) => (
+        <label key={String(opt.value)} title={opt.title} className="relative cursor-pointer">
+          <input
+            type="radio"
+            name={name}
+            value={String(opt.value)}
+            checked={opt.value === value}
+            onChange={() => onChange(opt.value)}
+            className="peer sr-only"
+          />
+          <span
+            className={cx(
+              'flex h-[30px] items-center rounded-tag border-b-2 border-transparent px-3 text-ctl text-secondary touch:min-h-11',
+              'hover:text-fg peer-checked:rounded-b-none peer-checked:border-link peer-checked:bg-raised-2 peer-checked:font-semibold peer-checked:text-fg',
+              'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
+            )}
+          >
+            <span aria-hidden={opt.title ? true : undefined}>{opt.label}</span>
+            {opt.title && <span className="sr-only">{opt.title}</span>}
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
 
 /** A group of toggle buttons for multi-valued filters (`?status=a&status=b`). */
 export function ToggleGroup({

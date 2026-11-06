@@ -1,11 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
 import { Activity } from 'lucide-react';
 import { useId } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 
-import { endpoints } from '../../api/endpoints';
-import { qk } from '../../api/queryKeys';
-import { useApi, useAuth } from '../../auth/AuthContext';
+import { useDashboardSummary } from '../../api/hooks';
+import { useAuth } from '../../auth/AuthContext';
 import { usePollInterval } from '../../lib/visibility';
 import { CountChip, cx } from '../ui';
 import { navCounts, navFor, roleNote } from './nav';
@@ -15,14 +13,7 @@ const COUNT_WINDOW_HOURS = 24;
 
 /** Nav counts (escalations breaching SLA, approvals waiting on me) from the dashboard summary. */
 export function useNavCounts() {
-  const api = useApi();
-  const interval = usePollInterval(60_000);
-  const q = useQuery({
-    queryKey: qk.dashboard.summary(COUNT_WINDOW_HOURS),
-    queryFn: ({ signal }) => endpoints.dashboard(api, COUNT_WINDOW_HOURS, signal),
-    refetchInterval: interval,
-    refetchIntervalInBackground: false,
-  });
+  const q = useDashboardSummary(COUNT_WINDOW_HOURS, { refetchInterval: usePollInterval(60_000) });
   return navCounts(q.data);
 }
 
