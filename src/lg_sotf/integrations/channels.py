@@ -11,11 +11,11 @@
   recipients per integration, plain text plus a simple HTML part.
 * **Webhook**: the event payload as canonical JSON, HMAC-SHA256 signed with
   the scheme of the response webhook connector
-  (:func:`lg_sotf.services.connectors.webhook.sign`): ``X-LGSOTF-Signature:
+  (:func:`lg_sotf.security.signing.sign`): ``X-LGSOTF-Signature:
   v1=<hex>`` over ``"<timestamp>.<body>"``, ``X-LGSOTF-Timestamp``,
   ``X-LGSOTF-Event`` (the event type), ``Idempotency-Key`` (the event id,
   identical on every retry) and ``X-LGSOTF-Delivery`` (the outbox row).
-  Receivers verify with :func:`~lg_sotf.services.connectors.webhook.verify_signature`
+  Receivers verify with :func:`~lg_sotf.security.signing.verify_signature`
   and deduplicate on the signed body's ``id``.
 
 Every formatter renders from the summary payload of
@@ -35,7 +35,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.integrations.events import EVENT_LABELS, with_links
 from lg_sotf.integrations.http import DeliveryError, HttpResult, IntegrationHttp, tls_verify
-from lg_sotf.services.connectors.webhook import (
+from lg_sotf.security.signing import (
     DELIVERY_HEADER,
     EVENT_HEADER,
     IDEMPOTENCY_HEADER,

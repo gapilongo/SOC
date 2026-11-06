@@ -47,6 +47,8 @@ BUDGETS: list[tuple[str, str]] = [
     # processes and Alembic runs (revision 0009 imports migrate) do not load langgraph.
     ("lg_sotf.db", "langgraph"),
     ("lg_sotf.db.migrate", "langgraph"),
+    # C7: notification webhooks sign with lg_sotf.security.signing, not through the response connectors.
+    ("lg_sotf.integrations.channels", "lg_sotf.services"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded

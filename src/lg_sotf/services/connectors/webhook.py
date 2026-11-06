@@ -91,15 +91,13 @@ the response body is capped.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import hmac
 import json
 import random
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Mapping, Optional
 
 import httpx
 
@@ -110,6 +108,21 @@ from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact
+from lg_sotf.security.signing import (  # the scheme; receivers and examples/soar may import it from here
+    DEFAULT_TOLERANCE_S,  # noqa: F401 - re-export
+    DELIVERY_HEADER,
+    EVENT_HEADER,
+    IDEMPOTENCY_HEADER,
+    MIN_SECRET_BYTES,
+    SIGNATURE_HEADER,
+    SIGNATURE_VERSION,  # noqa: F401 - re-export
+    TIMESTAMP_HEADER,
+    _json_object,
+    encode_body,
+    sign,
+    verify_request,  # noqa: F401 - re-export
+    verify_signature,  # noqa: F401 - re-export
+)
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction
@@ -119,14 +132,6 @@ log = get_logger(__name__)
 SCHEMA = "lg-sotf.response-action.v1"
 EVENT = "response_action.execute"
 USER_AGENT = "lg-sotf-response/1"
-SIGNATURE_HEADER = "X-LGSOTF-Signature"
-TIMESTAMP_HEADER = "X-LGSOTF-Timestamp"
-EVENT_HEADER = "X-LGSOTF-Event"
-DELIVERY_HEADER = "X-LGSOTF-Delivery"
-IDEMPOTENCY_HEADER = "Idempotency-Key"
-SIGNATURE_VERSION = "v1"
-DEFAULT_TOLERANCE_S = 300
-MIN_SECRET_BYTES = 16
 DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024
 MAX_RECORDED_RESPONSE_CHARS = 2_000
 FAILED_BODY_STATUSES = frozenset({"failed", "error", "rejected"})
@@ -136,68 +141,6 @@ DEFAULT_MAX_RETRY_AFTER_S = 15.0
 MIN_ATTEMPT_S = 1.0
 
 SleepFn = Callable[[float], Awaitable[None]]
-
-
-def _secret_bytes(secret: Union[str, bytes]) -> bytes:
-    return secret.encode("utf-8") if isinstance(secret, str) else bytes(secret)
-
-
-def sign(secret: Union[str, bytes], timestamp: str, body: bytes) -> str:
-    """``v1=<hex>`` HMAC-SHA256 over ``"<timestamp>.<body>"``."""
-    mac = hmac.new(_secret_bytes(secret), timestamp.encode("ascii") + b"." + body, hashlib.sha256)
-    return f"{SIGNATURE_VERSION}={mac.hexdigest()}"
-
-
-def verify_signature(
-    secret: Union[str, bytes],
-    timestamp: str,
-    body: bytes,
-    signature: str,
-    *,
-    now: Optional[float] = None,
-    tolerance_s: float = DEFAULT_TOLERANCE_S,
-) -> bool:
-    """Receiver-side check (reference implementation): signature matches and the timestamp is fresh."""
-    try:
-        ts = int(timestamp)
-    except (TypeError, ValueError):
-        return False
-    current = time.time() if now is None else now
-    if abs(current - ts) > tolerance_s:
-        return False
-    return hmac.compare_digest(sign(secret, timestamp, body), signature)
-
-
-def verify_request(
-    secret: Union[str, bytes],
-    headers: Mapping[str, str],
-    body: bytes,
-    *,
-    now: Optional[float] = None,
-    tolerance_s: float = DEFAULT_TOLERANCE_S,
-) -> Optional[str]:
-    """Receiver-side check of a whole request; returns the action id to deduplicate on, or ``None``.
-
-    Verifies the signature and timestamp, and that the (unsigned)
-    ``Idempotency-Key`` header, when present, equals the signed body's
-    ``action.id``. ``headers`` lookups must be case-insensitive (as in
-    ``httpx.Headers`` or most web frameworks).
-    """
-    timestamp = headers.get(TIMESTAMP_HEADER)
-    signature = headers.get(SIGNATURE_HEADER)
-    if not timestamp or not signature:
-        return None
-    if not verify_signature(secret, timestamp, body, signature, now=now, tolerance_s=tolerance_s):
-        return None
-    payload = _json_object(body)
-    action = payload.get("action") if payload is not None else None
-    action_id = action.get("id") if isinstance(action, Mapping) else None
-    if not isinstance(action_id, str) or not action_id:
-        return None
-    key = headers.get(IDEMPOTENCY_HEADER)
-    if key is not None and not hmac.compare_digest(key.encode("utf-8"), action_id.encode("utf-8")):
-        return None
-    return action_id
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
@@ -232,11 +175,6 @@ def build_payload(action: ResponseAction, *, target_type: Optional[str], sent_at
         },
         "rollback_of": str(action.rollback_of) if action.rollback_of is not None else None,
     }
-
-
-def encode_body(payload: Mapping[str, Any]) -> bytes:
-    """Canonical JSON bytes (what the signature covers)."""
-    return json.dumps(payload, separators=(",", ":"), sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -453,13 +391,3 @@ class WebhookConnector:
 class _Received:
     headers: httpx.Headers
     body: bytes = field(repr=False)
-
-
-def _json_object(body: bytes) -> Optional[Dict[str, Any]]:
-    if not body:
-        return None
-    try:
-        value = json.loads(body)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None

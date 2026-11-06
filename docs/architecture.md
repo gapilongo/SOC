@@ -46,7 +46,7 @@ import-lint`). What each package owns is in the
 | Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher and connector ports |
 | Value types | `models` | canonical alert and domain vocabulary |
 | Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
-| Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction; typed settings |
+| Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction, webhook signing; typed settings |
 
 Some modules still sit in the wrong layer (for example the action catalog
 in `services/response.py`); `pyproject.toml` lists each such import as an
