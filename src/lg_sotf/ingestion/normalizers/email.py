@@ -33,8 +33,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Dict, List, Mapping, Optional
 
+from lg_sotf.domain.urls import site
 from lg_sotf.ingestion.email.parser import SCHEMA
-from lg_sotf.ingestion.email.urls import site
 from lg_sotf.ingestion.errors import NormalizationError, UnrecognizedEvent
 from lg_sotf.ingestion.normalizers.base import AlertBuilder, NormalizeContext, require_mapping
 from lg_sotf.models.alert import CanonicalAlert, Severity

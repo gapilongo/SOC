@@ -31,6 +31,7 @@ import httpx
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.repos.integrations import ExternalTicket, Integration
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.channels import entity_line, facts, link
 from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret
 from lg_sotf.integrations.events import alert_summary, build_event, clean_text, ui_base_url
@@ -38,7 +39,6 @@ from lg_sotf.integrations.http import DeliveryError, HttpResult, IntegrationHttp
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import SecurityConfigError
-from lg_sotf.services.connectors.base import ConnectorResult
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:

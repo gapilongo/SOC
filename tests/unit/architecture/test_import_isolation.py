@@ -40,6 +40,17 @@ BUDGETS: list[tuple[str, str]] = [
     ("lg_sotf.net.egress", "lg_sotf.ingestion"),
     # F7: compliance operations take the owner DSN from lg_sotf.db, not from a process role.
     ("lg_sotf.compliance.ops", "lg_sotf.runtime"),
+    # C1: phishing policy is pure; it used to sit in core, next to the engine and the agents.
+    ("lg_sotf.domain.phishing", "lg_sotf.db"),
+    ("lg_sotf.domain.phishing", "langchain_core"),
+    # C3: response planning extracts indicators from domain, not from the agents (and their LLM stack).
+    ("lg_sotf.services.response", "lg_sotf.agents"),
+    # C4: the checkpointer lives in db but stays out of db/__init__ and migrate's import time, so API
+    # processes and Alembic runs (revision 0009 imports migrate) do not load langgraph.
+    ("lg_sotf.db", "langgraph"),
+    ("lg_sotf.db.migrate", "langgraph"),
+    # C7: notification webhooks sign with lg_sotf.security.signing, not through the response connectors.
+    ("lg_sotf.integrations.channels", "lg_sotf.services"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded

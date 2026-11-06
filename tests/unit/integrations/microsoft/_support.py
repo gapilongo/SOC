@@ -21,6 +21,7 @@ from pydantic import Field
 
 from lg_sotf.db.repos.actions import ResponseAction
 from lg_sotf.db.repos.integrations import Integration
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.config import encrypt_secret, validate_config
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.auth import TokenProvider
@@ -38,7 +39,6 @@ from lg_sotf.integrations.microsoft.capability import (
 from lg_sotf.integrations.microsoft.clouds import ALL_CLOUDS, GLOBAL_ONLY, Cloud
 from lg_sotf.integrations.microsoft.http import MicrosoftHttpFactory
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.services.connectors.microsoft import MicrosoftConnector, build_microsoft_connector
 from lg_sotf.settings import Settings
 from tests.fixtures.microsoft import FakeMicrosoft, fake_config, ms_settings

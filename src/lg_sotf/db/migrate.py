@@ -281,7 +281,7 @@ async def setup_checkpointer(database_url: Optional[str] = None) -> None:
     from psycopg import AsyncConnection
     from psycopg.rows import dict_row
 
-    from lg_sotf.core.checkpointer import secure_checkpoint_tables
+    from lg_sotf.db.checkpointer import secure_checkpoint_tables
 
     url = libpq_url(database_url)
     async with await AsyncConnection.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row) as conn:

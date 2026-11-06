@@ -42,7 +42,7 @@ lg-sotf eval (source "email") ─┘                                        │
 ## Signals
 
 Computed at triage against the tenant's profile
-(`lg_sotf.core.phishing`) and recorded in the triage digest (`rule_tp`,
+(`lg_sotf.domain.phishing`) and recorded in the triage digest (`rule_tp`,
 `rule_fp`, `phishing`).
 
 | Signal | Meaning | Strong |

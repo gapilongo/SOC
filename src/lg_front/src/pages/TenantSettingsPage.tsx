@@ -399,7 +399,7 @@ function RetentionSection({ data }: { data: TenantSettingsOut }) {
   );
 }
 
-/** Limits of the backend's PhishingSettings (lg_sotf.core.phishing). */
+/** Limits of the backend's PhishingSettings (lg_sotf.domain.phishing). */
 export const PHISHING_FIELDS = [
   { key: 'protected_brands', label: 'Protected brands', max: 200, maxChars: 253 },
   { key: 'executives', label: 'Executives', max: 500, maxChars: 128 },

@@ -136,7 +136,7 @@ async def test_false_positive_creates_a_disabled_suppression_suggestion(
         "severity": {"in": ["info", "low", "medium"]},
     }
     # LLM-W6-05: once enabled, the suggestion never suppresses a more severe alert of that detection.
-    from lg_sotf.core.suppression import alert_match_view, first_matching_rule
+    from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
 
     enabled = await repos.suppressions.update(TENANT_A, rule.id, enabled=True)
     for severity, expected in (("medium", True), ("low", True), ("high", False), ("critical", False)):

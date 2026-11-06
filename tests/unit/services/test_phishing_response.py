@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict
 
-from lg_sotf.core.phishing import PhishingProfile, assess, corroborated_email_targets
+from lg_sotf.domain.phishing import PhishingProfile, assess, corroborated_email_targets
 from lg_sotf.ingestion.email import parse_email
 from lg_sotf.ingestion.normalizers import get_normalizer
 from lg_sotf.services.response import (

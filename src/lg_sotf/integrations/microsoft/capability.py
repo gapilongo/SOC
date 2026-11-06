@@ -23,10 +23,10 @@ and calls exactly one of:
   targets with GETs only and return what *would* happen; recorded as
   ``dry_run`` with ``rehearsal: true``.
 * ``execute(action)``: perform the change and return a
-  :class:`~lg_sotf.services.connectors.base.ConnectorResult` with status
+  :class:`~lg_sotf.domain.connectors.ConnectorResult` with status
   ``succeeded``, ``failed`` or ``deferred``.
 * ``verify(action)``: re-read the state after ``succeeded`` (GETs only) and
-  return a :class:`~lg_sotf.services.connectors.base.VerificationResult`.
+  return a :class:`~lg_sotf.domain.connectors.VerificationResult`.
 * ``probe()``: GETs that show whether the permissions and licences work,
   for the connection test (no action; ``ctx.marker`` is empty).
 
@@ -45,7 +45,7 @@ Rules every handler follows (``docs/microsoft.md``):
   :mod:`lg_sotf.integrations.microsoft.odata` only.
 * **Deadline.** Every request passes ``deadline=ctx.deadline``; long
   operations return ``deferred`` or ``succeeded`` with a pending
-  :class:`~lg_sotf.services.connectors.base.VerifyPlan` rather than wait.
+  :class:`~lg_sotf.domain.connectors.VerifyPlan` rather than wait.
 * **Results.** ``detail`` is small (at most 8 KiB, no secrets, no Microsoft
   free text) with ``summary`` (one line), ``changed`` and ``already``;
   ``external_ref`` holds ids, per-target ``steps``, ``partial``,
@@ -83,10 +83,10 @@ from uuid import UUID
 from annotated_types import Ge, Le, MaxLen
 from pydantic import BaseModel, ConfigDict
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult
 from lg_sotf.integrations.microsoft.alert_view import AlertView
 from lg_sotf.integrations.microsoft.clouds import Api, Cloud, CloudProfile
 from lg_sotf.integrations.microsoft.http import MicrosoftApi
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

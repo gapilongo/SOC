@@ -2,7 +2,7 @@
 
 ``succeeded`` means Microsoft accepted the change; ``verification`` is a
 separate axis written when the connector returned a
-:class:`~lg_sotf.services.connectors.base.VerifyPlan`:
+:class:`~lg_sotf.domain.connectors.VerifyPlan`:
 
 * ``verified``: a re-read shows the change (e.g. the account is disabled,
   the isolation machine action completed);
@@ -52,11 +52,11 @@ from uuid import UUID
 
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos.actions import FINAL_VERIFICATION_STATES, VerificationWrite
+from lg_sotf.domain.connectors import VerificationResult
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, ReadOnlyViolation
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
 from lg_sotf.observability.logging import bound_context, get_logger
-from lg_sotf.services.connectors.base import VerificationResult
 from lg_sotf.services.connectors.routing import RoutingSnapshot
 from lg_sotf.services.response import ActionRequestError, ResponseService, bounded_detail
 

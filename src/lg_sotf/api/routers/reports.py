@@ -26,9 +26,9 @@ from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.suppressions import reject_catch_all
 from lg_sotf.api.schemas import SuppressionOut
-from lg_sotf.core.routing import RoutingThresholds
-from lg_sotf.core.suppression import InvalidRule
 from lg_sotf.db.errors import NotFound
+from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.services.report_render import REPORT_CSP, detections_csv, monthly_html, value_csv
 from lg_sotf.services.reporting import (
     AccuracyReport,

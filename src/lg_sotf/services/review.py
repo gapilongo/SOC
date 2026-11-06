@@ -55,11 +55,11 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.core.events import EventPublisher, publish_event
-from lg_sotf.core.routing import BENIGN_DECISIONS
-from lg_sotf.core.suppression import InvalidRule, validate_rule_match
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
+from lg_sotf.domain.events import EventPublisher, publish_event
+from lg_sotf.domain.routing import BENIGN_DECISIONS
+from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.observability.logging import get_logger

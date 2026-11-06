@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from lg_sotf.core.phishing import PhishingProfile, assess
+from lg_sotf.domain.phishing import PhishingProfile, assess
 from lg_sotf.eval.dataset import DatasetError, load_dataset, parse_dataset
 from lg_sotf.ingestion.email import parse_email
 from lg_sotf.ingestion.normalizers import get_normalizer

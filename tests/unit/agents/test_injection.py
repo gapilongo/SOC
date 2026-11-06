@@ -19,9 +19,9 @@ import pytest
 from lg_sotf.agents.analysis.base import AnalysisAgent
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.triage.base import TriageAgent, rule_confidence, rule_indicators
-from lg_sotf.core import routing
 from lg_sotf.core.nodes import WorkflowNodes
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain import routing
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.settings import Settings
 from tests.unit.agents._support import factory, fake_repos, scripted, texts

@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import pytest
 
-from lg_sotf.core.suppression import (
+from lg_sotf.domain.suppression import (
     MAX_SUBJECT_CHARS,
     InvalidRule,
     WorkBudget,

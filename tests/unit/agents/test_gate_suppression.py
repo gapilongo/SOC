@@ -10,7 +10,7 @@ from typing import Any, Dict
 
 import pytest
 
-from lg_sotf.core.suppression import (
+from lg_sotf.domain.suppression import (
     MAX_DFA_CACHE,
     MAX_DFA_CACHE_STATES,
     MAX_EVALUATION_WORK,

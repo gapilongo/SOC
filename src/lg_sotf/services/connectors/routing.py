@@ -10,7 +10,7 @@ Per action, first match wins:
    ``executing`` row, a rollback, a retry, or a scheduler row with
    ``connector`` set. A ``microsoft`` row needs ``integration_id`` to be the
    tenant's *enabled* Microsoft integration (deleted or disabled ->
-   :class:`~lg_sotf.services.connectors.base.MisconfiguredConnector`); a
+   :class:`~lg_sotf.domain.connectors.MisconfiguredConnector`); a
    ``ticketing`` row needs an enabled ticketing integration;
 5. **explicit** ``response.routes[action_type]``: ``microsoft`` needs an
    enabled capability executing the type, ``ticketing`` is for
@@ -38,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, Literal, Mapping, Optional
 
+from lg_sotf.domain.connectors import Connector, MisconfiguredConnector, Verifier
 from lg_sotf.integrations.config import (
     MICROSOFT_KIND,
     TICKETING_KINDS,
@@ -47,7 +48,6 @@ from lg_sotf.integrations.config import (
 )
 from lg_sotf.integrations.microsoft.catalog import capabilities, executor, is_live
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.services.connectors.base import Connector, MisconfiguredConnector, Verifier
 from lg_sotf.services.connectors.registry import ROUTE_NAMES, ConnectorRegistry, tenant_response_settings
 
 if TYPE_CHECKING:

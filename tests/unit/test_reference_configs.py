@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Mapping, Set
 import pytest
 import yaml
 
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.ingestion.email.parser import EmailLimits
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.services.escalation import ReviewPolicy

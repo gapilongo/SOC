@@ -45,10 +45,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
-from lg_sotf.core.routing import refused_by
 from lg_sotf.core.workflow import RunOutcome, WorkflowEngine
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.domain.routing import refused_by
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, IngestResult, email_source_id

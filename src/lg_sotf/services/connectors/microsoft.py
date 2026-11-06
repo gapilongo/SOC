@@ -34,7 +34,7 @@ the outcome to the ledger.
    invalid targets to ``invalid_target`` / ``unsupported_target``; anything
    else to ``connector_exception``. A database error while the handler
    checkpoints or reads the alert is raised as
-   :class:`~lg_sotf.services.connectors.base.LedgerUnavailable`, never
+   :class:`~lg_sotf.domain.connectors.LedgerUnavailable`, never
    recorded (the row stays ``executing`` and is run again). A failure after
    progress (``requested`` checkpointed, a step done) keeps the checkpointed
    state with ``partial: true``, ``reversible`` per the capability and
@@ -61,6 +61,15 @@ from uuid import UUID
 import httpx
 
 from lg_sotf.db.errors import NotFound
+from lg_sotf.domain.connectors import (
+    Connector,
+    ConnectorConfigError,
+    ConnectorResult,
+    LedgerUnavailable,
+    MisconfiguredConnector,
+    VerificationResult,
+    current_deadline,
+)
 from lg_sotf.integrations.config import IntegrationConfigError, MicrosoftConfig, decrypt_secret, parse_microsoft_config
 from lg_sotf.integrations.microsoft.alert_view import AlertView, load_alert_view
 from lg_sotf.integrations.microsoft.auth import AppCredentials, MicrosoftAuthError, TokenProvider, fingerprint_of
@@ -78,15 +87,6 @@ from lg_sotf.integrations.microsoft.http import MicrosoftApi, MicrosoftApiError,
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
 from lg_sotf.net.egress import Resolver
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.services.connectors.base import (
-    Connector,
-    ConnectorConfigError,
-    ConnectorResult,
-    LedgerUnavailable,
-    MisconfiguredConnector,
-    VerificationResult,
-    current_deadline,
-)
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ActionsRepo, Integration, Repositories, ResponseAction
