@@ -28,6 +28,8 @@ completes, checks and submits the report through the national channel.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, Optional, Sequence
@@ -35,9 +37,10 @@ from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, Option
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, ConfigDict
 
+from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.compliance import html as h
 from lg_sotf.compliance.canonical import jsonable
-from lg_sotf.db.repos import Alert, Escalation, Repositories, ResponseAction
+from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Repositories, ResponseAction
 from lg_sotf.llm import (
     USE_DEFAULT,
     BudgetLimit,
@@ -79,6 +82,8 @@ DEADLINES = {
 MAX_IOCS = 50
 MAX_ASSETS = 25
 MAX_VALUE_CHARS = 4_000
+# Longest field or narrative value stored in a draft's timeline event.
+MAX_EVENT_VALUE_CHARS = 4_000
 IOC_KINDS = {"ips": "ip", "domains": "domain", "urls": "url", "hashes": "hash", "emails": "email"}
 ASSET_KINDS = ("hosts", "users")
 DONE_STATUSES = frozenset({"succeeded", "dry_run"})
@@ -532,6 +537,75 @@ def render_draft_html(
                       subtitle="Prepared with LG-SOTF from case data. Complete, review and submit it yourself.")
 
 
+# --------------------------------------------------------------- storing a draft
+
+
+def _event_value(value: Optional[str]) -> Optional[str]:
+    if value is None or len(value) <= MAX_EVENT_VALUE_CHARS:
+        return value
+    return value[:MAX_EVENT_VALUE_CHARS]
+
+
+async def record_draft(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    alert_id: str,
+    *,
+    stage: str,
+    fields: List[Dict[str, Any]],
+    narrative: Optional[Dict[str, Any]],
+    author: str,
+    timeline_actor: Actor,
+) -> AlertEvent:
+    """Store a draft as an ``incident_report_draft`` timeline event; audited ``alert.incident_report_drafted``.
+
+    The event keeps each field's key, source and value (values clipped) and
+    the SHA-256 of the whole draft, so a submitted report can be matched to it.
+    """
+    draft = {"stage": stage, "fields": fields, "ai_narrative": narrative}
+    draft_sha256 = hashlib.sha256(
+        json.dumps(draft, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        event = await repos.alert_events.append(
+            tenant_id,
+            alert_id,
+            "incident_report_draft",
+            actor_type=timeline_actor.type,
+            actor_id=timeline_actor.id,
+            data={
+                "stage": stage,
+                "framework": "NIS2 Art. 23",
+                "status": "draft_not_submitted",
+                "author": author,
+                "draft_sha256": draft_sha256,
+                "fields": [
+                    {"key": f["key"], "source": f["source"], "value": _event_value(f["value"])} for f in fields
+                ],
+                "ai_narrative": {**narrative, "text": _event_value(narrative["text"])} if narrative else None,
+            },
+            conn=conn,
+        )
+        await audit.record(
+            tenant_id,
+            "alert.incident_report_drafted",
+            "alert",
+            alert_id,
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={
+                "stage": stage,
+                "event_id": event.id,
+                "draft_sha256": draft_sha256,
+                "ai_narrative": narrative is not None,
+            },
+            conn=conn,
+        )
+    return event
+
+
 __all__ = [
     "AI_LABEL",
     "DEADLINES",
@@ -547,5 +621,6 @@ __all__ = [
     "draft_narrative",
     "load_case",
     "narrative_input",
+    "record_draft",
     "render_draft_html",
 ]

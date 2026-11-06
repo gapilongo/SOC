@@ -41,6 +41,7 @@ from lg_sotf.api.schemas import (
     VerifyIn,
 )
 from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import ResponseAction
 from lg_sotf.models.vocabulary import ActionStatus, EscalationStatus
 from lg_sotf.models.vocabulary import EscalationLevel as Level
@@ -57,7 +58,6 @@ log = get_logger(__name__)
 escalations = APIRouter(prefix="/escalations", tags=["escalations"])
 actions = APIRouter(prefix="/actions", tags=["actions"])
 
-MAX_LIMIT = 200
 
 
 def _rollbacks(ctx: ApiContext) -> RollbackService:
@@ -138,7 +138,7 @@ async def list_escalations(
     assigned_to: Optional[str] = Query(default=None, description="A user id or 'me'"),
     alert_id: Optional[str] = Query(default=None, max_length=256),
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[EscalationOut]:
     page = await get_ctx(request).repos.escalations.list(
@@ -219,7 +219,7 @@ async def list_actions(
     action_type: Optional[str] = Query(default=None, max_length=64),
     verification: Optional[List[Verification]] = Query(default=None),
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[ActionOut]:
     ctx = get_ctx(request)

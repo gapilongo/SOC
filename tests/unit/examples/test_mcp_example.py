@@ -84,17 +84,24 @@ def test_the_docs_tell_windows_users_to_keep_the_key_file_in_wsl() -> None:
     assert "Docker Desktop on Windows" in mode_entry and "WSL 2" in mode_entry and "/mnt/c" in mode_entry
 
 
-def _audited(router: str) -> List[str]:
-    """The audit actions a REST router records (``AuditLogger(...).record[_event](tenant, "<action>", ...)``)."""
-    text = (ROOT / "src" / "lg_sotf" / "api" / "routers" / router).read_text()
-    return re.findall(r'AuditLogger\(ctx\.repos\)\.record(?:_event)?\(\s*[\w.]+,\s*"([a-z_.]+)"', text)
+def _audited(*modules: str) -> List[str]:
+    """The audit actions these modules record (``<audit logger>.record[_event](tenant, "<action>", ...)``).
+
+    A REST endpoint's audit entry is written by its router or by the service it calls.
+    """
+    actions: List[str] = []
+    for module in modules:
+        text = (ROOT / "src" / "lg_sotf" / module).read_text()
+        actions += re.findall(r'(?:AuditLogger\(ctx\.repos\)|audit)\.record(?:_event)?\(\s*[\w.]+,\s*"([a-z_.]+)"', text)
+    return actions
 
 
 def test_the_docs_claim_audit_only_for_the_writes_the_api_audits() -> None:
     """Notes and evidence exports are audited; an ingest call is not (only a quota refusal is), so test alerts are
     traced by their source id instead. If ingestion gains an audit entry, say so in docs/mcp.md."""
-    assert "alert.note_added" in _audited("alerts.py") and "alert.evidence_exported" in _audited("compliance.py")
-    assert _audited("ingest.py") == ["tenant.quota_exceeded"]
+    assert "alert.note_added" in _audited("api/routers/alerts.py", "services/alerts.py")
+    assert "alert.evidence_exported" in _audited("api/routers/compliance.py")
+    assert _audited("api/routers/ingest.py") == ["tenant.quota_exceeded"]
     bullet = " ".join(DOC.read_text().split("* **audit**:", 1)[1].split("\n\n", 1)[0].split())
     assert "notes and evidence exports are recorded in the tenant's hash-chained audit log" in bullet
     assert "test alerts are not audited" in bullet.lower() and "`api:<key id>`" in bullet and "`:<run_handle>`" in bullet

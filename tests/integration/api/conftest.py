@@ -103,7 +103,7 @@ class ApiHarness:
     ) -> User:
         return await self.repos.users.create(
             tenant_id,
-            email or f"{role}-{len(await self.repos.users.list(tenant_id)) + 1}@{tenant_id}.example.com",
+            email or f"{role}-{len((await self.repos.users.list(tenant_id)).items) + 1}@{tenant_id}.example.com",
             role,
             password_hash=password_hash(password) if password else None,
             is_platform_admin=platform_admin,

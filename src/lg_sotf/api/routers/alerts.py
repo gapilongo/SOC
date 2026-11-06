@@ -13,18 +13,16 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
+from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
-from lg_sotf.observability.logging import get_logger
-
-log = get_logger(__name__)
+from lg_sotf.services import alerts as alert_changes
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-MAX_LIMIT = 200
 
 
 def aware(value: Optional[datetime]) -> Optional[datetime]:
@@ -47,7 +45,7 @@ async def list_alerts(
     since: Optional[datetime] = Query(default=None, alias="from"),
     until: Optional[datetime] = Query(default=None, alias="to"),
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[AlertOut]:
     ctx = get_ctx(request)
@@ -88,15 +86,12 @@ async def alert_events(
     alert_id: str,
     request: Request,
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=100, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=100, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[AlertEventOut]:
-    ctx = get_ctx(request)
-    async with ctx.db.tenant_tx(principal.tenant_id, readonly=True) as conn:
-        await ctx.repos.alerts.get(principal.tenant_id, alert_id, conn=conn)
-        page = await ctx.repos.alert_events.list_for_alert(
-            principal.tenant_id, alert_id, limit=limit, cursor=cursor, conn=conn
-        )
+    page = await alert_changes.timeline(
+        get_ctx(request).repos, principal.tenant_id, alert_id, limit=limit, cursor=cursor
+    )
     return PageOut[AlertEventOut](
         items=[AlertEventOut.model_validate(e) for e in page.items], next_cursor=page.next_cursor
     )
@@ -108,27 +103,16 @@ async def add_note(
 ) -> AlertEventOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        await ctx.repos.alerts.get(tenant_id, alert_id, conn=conn)
-        event = await ctx.repos.alert_events.append(
-            tenant_id,
-            alert_id,
-            "note",
-            actor_type="user" if principal.is_user else "system",
-            actor_id=principal.actor_id,
-            data={"text": body.text, "author": principal.email or principal.actor_id},
-            conn=conn,
-        )
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "alert.note_added",
-            "alert",
-            alert_id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"event_id": event.id},
-            conn=conn,
-        )
+    event = await alert_changes.add_note(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        tenant_id,
+        principal.actor,
+        alert_id,
+        text=body.text,
+        author=principal.email or principal.actor_id,
+        timeline_actor=Actor("user" if principal.is_user else "system", principal.actor_id),
+    )
     await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"note_added": True})
     return AlertEventOut.model_validate(event)
 
@@ -137,26 +121,12 @@ async def add_note(
 async def reprocess(alert_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> ReprocessOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        alert = await ctx.repos.alerts.get(tenant_id, alert_id, conn=conn)
-        previous = alert.status
-        run = await ctx.repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=True, conn=conn)
-        if run.status != "queued":
-            raise ApiError(409, "run_active", f"the alert's run is {run.status}; it cannot be reprocessed now")
-        try:
-            alert = await ctx.repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
-        except InvalidTransition:
-            log.info("api.reprocess_status_kept", status=previous)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "alert.reprocess_requested",
-            "alert",
-            alert_id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"previous_status": previous},
-            conn=conn,
+    try:
+        alert = await alert_changes.request_reprocess(
+            ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, alert_id
         )
+    except InvalidTransition as exc:
+        raise ApiError(409, "run_active", f"the alert's run is {exc.current}; it cannot be reprocessed now") from exc
     entry_id = await ctx.queue.enqueue_process(tenant_id, alert_id, alert.severity)
     await publish_event(ctx.events, "alert.updated", tenant_id, alert_id, {"status": "queued", "reprocess": True})
     return ReprocessOut(alert_id=alert_id, status="queued", entry_id=entry_id)

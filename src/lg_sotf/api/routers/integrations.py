@@ -42,6 +42,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
+from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import ExternalTicket, Integration, OutboxEntry, User
 from lg_sotf.db.repos.integrations import IntegrationExists
 from lg_sotf.db.repos.outbox import NewOutboxEntry
@@ -705,7 +706,7 @@ async def list_deliveries(
     integration_id: UUID,
     request: Request,
     status: Optional[List[OutboxStatus]] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(ADMIN)),
 ) -> List[DeliveryOut]:
     ctx = get_ctx(request)

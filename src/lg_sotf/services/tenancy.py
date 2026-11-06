@@ -34,14 +34,21 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Mapping, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import Repositories, Tenant, User
+from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.tenancy import switch_tenant
+from lg_sotf.services.escalation import resolve_review_policy
+from lg_sotf.settings import Settings
 
 Profile = Literal["conservative", "balanced", "autonomous"]
+
+# Saving either settings section counts as the onboarding "autonomy reviewed" step.
+AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 
 PROFILES: Dict[str, Dict[str, Any]] = {
     # Nothing runs without a person; high-risk and critical actions are never proposed for execution.
@@ -277,12 +284,135 @@ async def _first_admin(
     return user
 
 
+# ---------------------------------------------------------- platform administration
+
+
+@dataclass(frozen=True)
+class TenantChange:
+    tenant: Tenant
+    status_changed: bool
+
+
+async def update_tenant(
+    repos: Repositories,
+    audit: AuditLogger,
+    settings: Settings,
+    tenant_id: str,
+    actor: Actor,
+    *,
+    home_tenant_id: str,
+    changes: Mapping[str, Any],
+) -> TenantChange:
+    """Rename, suspend or reactivate a tenant or set its quotas (``changes``: column values), in one transaction.
+
+    Audited in the tenant (``tenant.suspended``, ``tenant.reactivated`` or
+    ``tenant.updated``, with the changed values) and in the platform admin's
+    home tenant (``platform.tenant_updated``). Reactivation restarts the SLA
+    clock of the tenant's open escalations. Cache invalidation and requeueing
+    the tenant's queued runs are the caller's, after the commit.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        before = await repos.tenants.get(tenant_id, for_update=True, conn=conn)
+        updated = await repos.tenants.update_admin(tenant_id, **changes, conn=conn)
+        diff = {k: {"from": getattr(before, k), "to": v} for k, v in changes.items() if getattr(before, k) != v}
+        status_changed = before.status != updated.status
+        action = (
+            ("tenant.suspended" if updated.status == "suspended" else "tenant.reactivated")
+            if status_changed
+            else "tenant.updated"
+        )
+        extra: Dict[str, Any] = {}
+        if status_changed and updated.is_active:
+            extra["sla_deadlines_reset"] = await _reset_sla_deadlines(repos, settings, updated, conn)
+        who: Dict[str, Any] = {"actor_type": actor.type, "actor_id": actor.id}
+        details = {"home_tenant_id": home_tenant_id, "changes": diff}
+        await audit.record(tenant_id, action, "tenant", tenant_id, **who, details={**details, **extra}, conn=conn)
+        await switch_tenant(conn, home_tenant_id)
+        await audit.record(
+            home_tenant_id,
+            "platform.tenant_updated",
+            "tenant",
+            tenant_id,
+            **who,
+            details={**details, "tenant_action": action},
+            conn=conn,
+        )
+    return TenantChange(tenant=updated, status_changed=status_changed)
+
+
+async def _reset_sla_deadlines(repos: Repositories, settings: Settings, tenant: Tenant, conn: Connection) -> int:
+    """Restart the SLA clock of a reactivated tenant's open escalations (now + the level's SLA).
+
+    The sweep skips suspended tenants, so without this every escalation whose
+    deadline passed during the suspension would jump a level on the next
+    sweep. Deadlines are only ever pushed out, never shortened.
+    """
+    policy = resolve_review_policy(tenant.settings, settings)
+    now = datetime.now(UTC)
+    deadlines: Dict[str, datetime] = {
+        level: now + timedelta(minutes=policy.sla_minutes[level]) for level in ESCALATION_LEVELS
+    }
+    return await repos.escalations.extend_sla_deadlines(tenant.id, deadlines, conn=conn)
+
+
+async def update_settings(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    build_patch: Callable[[Tenant], Dict[str, Any]],
+) -> Tenant:
+    """Merge the top-level settings patch that ``build_patch`` makes from the locked current tenant.
+
+    The row is locked first: nested sections are merged from this snapshot,
+    so two concurrent changes to different sub-keys cannot drop one another.
+    ``build_patch`` validates and may raise, and then nothing changes.
+    Audited ``tenant.settings_updated`` with the patched keys (never their
+    values); saving ``autonomy`` or ``response`` also marks the onboarding
+    "autonomy reviewed" step. Cache invalidation is the caller's.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        tenant = await repos.tenants.get(tenant_id, for_update=True, conn=conn)
+        patch = build_patch(tenant)
+        updated = await repos.tenants.update_settings(tenant_id, patch, conn=conn)
+        await audit.record(
+            tenant_id,
+            "tenant.settings_updated",
+            "tenant",
+            tenant_id,
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={"keys": sorted(patch)},
+            conn=conn,
+        )
+        if AUTONOMY_REVIEW_KEYS & patch.keys():
+            await repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
+    return updated
+
+
+async def record_platform_access(
+    audit: AuditLogger, actor: Actor, home_tenant_id: str, action: str, resource_id: Optional[str], **details: Any
+) -> None:
+    """Audit a platform admin's cross-tenant read (``platform.*``) in their home tenant."""
+    await audit.record_event(
+        home_tenant_id,
+        action,
+        "tenant",
+        resource_id,
+        actor_type=actor.type,
+        actor_id=actor.id,
+        details={"home_tenant_id": home_tenant_id, **details},
+    )
+
+
 __all__ = [
+    "AUTONOMY_REVIEW_KEYS",
     "COPIED_KEYS",
     "PROFILES",
     "Profile",
     "ProvisionedTenant",
     "QuotaExceeded",
+    "TenantChange",
     "TenantRequest",
     "alert_quota_exceeded",
     "copyable_settings",
@@ -290,4 +420,7 @@ __all__ = [
     "profile_settings",
     "provision_tenant",
     "quotas_of",
+    "record_platform_access",
+    "update_settings",
+    "update_tenant",
 ]

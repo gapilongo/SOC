@@ -226,6 +226,19 @@ async def test_last_active_admin_cannot_be_removed(api: ApiHarness) -> None:
     assert await api.repos.users.count_active_admins(TENANT_A) == 1
 
 
+async def test_user_list_is_not_truncated_at_a_thousand(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin", email="admin@a.example.com")
+    async with api.repos.db.tenant_tx(TENANT_A) as conn:
+        for i in range(1_100):
+            await api.repos.users.create(TENANT_A, f"u{i:04d}@a.example.com", "viewer", is_active=i % 2 == 0, conn=conn)
+    listed = await api.client.get("/api/v1/users", headers=api.auth(admin))
+    assert listed.status_code == 200
+    emails = [u["email"] for u in listed.json()]
+    assert len(emails) == 1_101 and emails == sorted(emails) and emails[0] == "admin@a.example.com"
+    active = await api.client.get("/api/v1/users", params={"include_inactive": False}, headers=api.auth(admin))
+    assert len(active.json()) == 551
+
+
 async def test_api_key_secret_shown_once_and_revocable(api: ApiHarness) -> None:
     admin = await api.login_headers(TENANT_A, "admin")
     created = await api.client.post(

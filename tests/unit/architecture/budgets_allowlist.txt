@@ -11,7 +11,6 @@ services/response.py	2530
 agents/analysis/base.py::AnalysisAgent._run	136
 agents/correlation/base.py::CorrelationAgent._run	88
 api/app.py::create_app	104
-api/routers/compliance.py::incident_report	81
 api/routers/integrations.py::slack_interactions	97
 compliance/evidence.py::build_evidence_pack	101
 compliance/evidence.py::human_oversight	121

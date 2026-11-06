@@ -147,7 +147,7 @@ async def test_only_verified_identities_are_provisioned(make_api: Any, idp: IdP)
     assert me.status_code == 200 and me.json()["user_id"] is None
     no_email = _token(idp, ["SOC-Analysts"], email=None)
     assert (await api.client.get(f"{API}/auth/me", headers=bearer(no_email))).json()["user_id"] is None
-    assert await api.repos.users.list(TENANT_A) == []
+    assert (await api.repos.users.list(TENANT_A)).items == []
 
 
 async def test_provisioning_is_off_by_default(make_api: Any, idp: IdP) -> None:
@@ -157,7 +157,7 @@ async def test_provisioning_is_off_by_default(make_api: Any, idp: IdP) -> None:
     )
     me = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Analysts"])))
     assert me.status_code == 200 and me.json()["role"] == "analyst" and me.json()["user_id"] is None
-    assert await api.repos.users.list(TENANT_A) == []
+    assert (await api.repos.users.list(TENANT_A)).items == []
 
 
 async def test_provisioned_accounts_have_no_password_login_and_can_be_disabled(make_api: Any, idp: IdP) -> None:
@@ -181,7 +181,7 @@ async def test_an_account_of_another_subject_is_never_linked_by_email(make_api: 
     me = await api.client.get(f"{API}/auth/me", headers=bearer(impostor))
     assert me.status_code == 200 and me.json()["user_id"] is None and me.json()["role"] == "viewer"
     assert (await api.repos.users.get(TENANT_A, owner.id)).role == "admin"
-    assert len(await api.repos.users.list(TENANT_A)) == 1
+    assert len((await api.repos.users.list(TENANT_A)).items) == 1
 
 
 async def test_hand_made_accounts_keep_their_stored_role(make_api: Any, idp: IdP) -> None:
@@ -198,7 +198,7 @@ async def test_a_suspended_tenant_gains_no_accounts_or_audit_rows(make_api: Any,
     await api.repos.tenants.set_status(TENANT_A, "suspended")
     refused = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Analysts"])))
     assert refused.status_code == 403 and refused.json()["error"]["code"] == "tenant_suspended"
-    assert await api.repos.users.list(TENANT_A) == []
+    assert (await api.repos.users.list(TENANT_A)).items == []
     assert (await api.repos.audit.list(TENANT_A)).items == []
 
 

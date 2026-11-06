@@ -47,7 +47,7 @@ from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger
 from lg_sotf.security.hashing import InvalidApiKey, looks_like_api_key, parse_api_key, sha256_hex, verify_api_key
 from lg_sotf.services import accounts
-from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
+from lg_sotf.services.tenancy import QuotaExceeded
 from lg_sotf.settings import AuthSettings
 
 log = get_logger(__name__)
@@ -341,27 +341,9 @@ async def _provision(ctx: ApiContext, tenant_id: str, identity: OIDCIdentity, ro
     if identity.email is None or len(identity.subject) > MAX_OIDC_SUBJECT_CHARS:
         return None
     try:
-        async with ctx.db.tenant_tx(tenant_id) as conn:
-            await ensure_capacity(ctx.repos, tenant_id, "max_users", conn=conn)
-            user = await ctx.repos.users.create(
-                tenant_id,
-                identity.email,
-                role,
-                password_hash=None,
-                is_platform_admin=False,
-                oidc_subject=identity.subject,
-                conn=conn,
-            )
-            await AuditLogger(ctx.repos).record(
-                tenant_id,
-                "user.provisioned",
-                "user",
-                str(user.id),
-                actor_type="system",
-                actor_id="oidc",
-                details={"role": role, "via": "oidc_jit", "email_domain": user.email.rpartition("@")[2]},
-                conn=conn,
-            )
+        user = await accounts.provision_sso_user(
+            ctx.repos, AuditLogger(ctx.repos), tenant_id, email=identity.email, subject=identity.subject, role=role
+        )
     except QuotaExceeded as exc:
         log.info("auth.oidc_provisioning_refused", tenant_id=tenant_id, reason="max_users")
         raise quota_conflict(exc) from exc

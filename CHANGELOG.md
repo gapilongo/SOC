@@ -31,6 +31,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `GET /users` now lists every account of the tenant. Before, it stopped
+  at the first 1,000 accounts by email and left the rest out without
+  saying so. The response format and order (by email) are unchanged.
 - Web UI: the Actions page now explains the `internal_sender`,
   `invalid_email`, `invalid_message`, `rejected_by_reviewer` and
   `rejected_with_remaining` block reasons instead of showing the raw codes.

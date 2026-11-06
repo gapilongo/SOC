@@ -19,7 +19,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -36,7 +36,7 @@ from lg_sotf.db.repos import UNSET, User
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.security.hashing import ahash_password, generate_api_key
 from lg_sotf.services import accounts
-from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
+from lg_sotf.services.tenancy import QuotaExceeded
 
 users = APIRouter(prefix="/users", tags=["users"])
 api_keys = APIRouter(prefix="/api-keys", tags=["api-keys"])
@@ -54,14 +54,14 @@ def check_password(ctx: ApiContext, password: str) -> None:
         raise ApiError(422, "weak_password", "password is too repetitive")
 
 
-def _guard_platform_admin_target(principal: Principal, target: object) -> None:
-    """Only a platform admin may modify or delete a platform-admin account.
+_REFUSALS: Dict[str, Tuple[int, str, str]] = {
+    "platform_admin_target": (403, "forbidden", "only a platform admin can modify a platform-admin account"),
+    "last_admin": (409, "last_admin", "the tenant must keep at least one active admin"),
+}
 
-    Otherwise a tenant admin could reset a platform admin's password, log in as
-    them and use the cross-tenant ``X-Tenant-ID`` override.
-    """
-    if getattr(target, "is_platform_admin", False) and not principal.is_platform_admin:
-        raise ApiError(403, "forbidden", "only a platform admin can modify a platform-admin account")
+
+def _refused(refusal: accounts.UserRefusal) -> ApiError:
+    return ApiError(*_REFUSALS[refusal])
 
 
 # ------------------------------------------------------------------ users
@@ -81,7 +81,14 @@ async def list_users(
     principal: Principal = Depends(require(ADMIN)),
 ) -> List[UserOut]:
     ctx = get_ctx(request)
-    rows = await ctx.repos.users.list(principal.tenant_id, include_inactive=include_inactive, limit=1000)
+    rows: List[User] = []
+    cursor: Optional[str] = None
+    while True:
+        page = await ctx.repos.users.list(principal.tenant_id, include_inactive=include_inactive, cursor=cursor)
+        rows.extend(page.items)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
     mfa = await ctx.repos.user_mfa.enabled_since(principal.tenant_id)
     return [user_out(u, mfa) for u in rows]
 
@@ -144,48 +151,25 @@ async def update_user(
     if body.password is not None:
         check_password(ctx, body.password)
         password_hash = await ahash_password(body.password)
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        current = await ctx.repos.users.get(tenant_id, user_id, conn=conn)
-        _guard_platform_admin_target(principal, current)
-        demoting = (
-            current.role == "admin"
-            and current.is_active
-            and ((body.role is not None and body.role != "admin") or body.is_active is False)
-        )
-        if demoting and await ctx.repos.users.count_active_admins(tenant_id, conn=conn) <= 1:
-            raise ApiError(409, "last_admin", "the tenant must keep at least one active admin")
-        if body.is_active is True and not current.is_active:
-            try:
-                await ensure_capacity(ctx.repos, tenant_id, "max_users", conn=conn)
-            except QuotaExceeded as exc:
-                raise quota_conflict(exc) from exc
-        user = await ctx.repos.users.update(
+    try:
+        result = await accounts.update_user(
+            ctx.repos,
+            AuditLogger(ctx.repos),
             tenant_id,
+            principal.actor,
             user_id,
-            role=body.role if body.role is not None else UNSET,
-            is_active=body.is_active if body.is_active is not None else UNSET,
-            is_platform_admin=body.is_platform_admin if body.is_platform_admin is not None else UNSET,
+            by_platform_admin=principal.is_platform_admin,
+            fields=fields,
+            role=body.role,
+            is_active=body.is_active,
+            is_platform_admin=body.is_platform_admin,
             password_hash=password_hash,
-            conn=conn,
         )
-        revoked = 0
-        if body.password is not None or body.is_active is False:
-            revoked = await ctx.repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "user.updated",
-            "user",
-            str(user_id),
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={
-                "fields": sorted(fields - {"password"}) + (["password"] if "password" in fields else []),
-                "role": user.role,
-                "revoked_sessions": revoked,
-            },
-            conn=conn,
-        )
-    return user_out(user, await ctx.repos.user_mfa.enabled_since(tenant_id))
+    except QuotaExceeded as exc:
+        raise quota_conflict(exc) from exc
+    if isinstance(result, str):
+        raise _refused(result)
+    return user_out(result, await ctx.repos.user_mfa.enabled_since(tenant_id))
 
 
 @users.post("/{user_id}/mfa/reset", status_code=204, summary="Remove a user's MFA (lost device); signs them out")
@@ -194,27 +178,17 @@ async def reset_user_mfa(user_id: UUID, request: Request, principal: Principal =
     tenant_id = principal.tenant_id
     if user_id == principal.user_id:
         raise ApiError(403, "forbidden", "use /auth/mfa/disable for your own account")
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        current = await ctx.repos.users.get(tenant_id, user_id, conn=conn)
-        _guard_platform_admin_target(principal, current)
-        state = await ctx.repos.user_mfa.get(tenant_id, user_id, conn=conn)
-        await ctx.repos.user_mfa.delete(tenant_id, user_id, conn=conn)
-        revoked = await ctx.repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "auth.mfa_reset",
-            "user",
-            str(user_id),
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={
-                "was_enabled": state is not None and state.enabled,
-                "revoked_sessions": revoked,
-                "by_platform_admin": principal.is_platform_admin,
-                "actor_home_tenant_id": principal.home_tenant_id,
-            },
-            conn=conn,
-        )
+    refusal = await accounts.reset_mfa(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        tenant_id,
+        principal.actor,
+        user_id,
+        by_platform_admin=principal.is_platform_admin,
+        actor_home_tenant_id=principal.home_tenant_id,
+    )
+    if refusal is not None:
+        raise _refused(refusal)
     return Response(status_code=204)
 
 
@@ -224,33 +198,16 @@ async def delete_user(user_id: UUID, request: Request, principal: Principal = De
     tenant_id = principal.tenant_id
     if user_id == principal.user_id:
         raise ApiError(403, "forbidden", "you cannot delete yourself")
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        current = await ctx.repos.users.get(tenant_id, user_id, conn=conn)
-        _guard_platform_admin_target(principal, current)
-        if (
-            current.role == "admin"
-            and current.is_active
-            and await ctx.repos.users.count_active_admins(tenant_id, conn=conn) <= 1
-        ):
-            raise ApiError(409, "last_admin", "the tenant must keep at least one active admin")
-        await ctx.repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
-        try:
-            async with conn.transaction():
-                await ctx.repos.users.delete(tenant_id, user_id, conn=conn)
-        except Conflict as exc:
-            raise ApiError(
-                409, "conflict", "the user is referenced by review history; deactivate the account instead"
-            ) from exc
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "user.deleted",
-            "user",
-            str(user_id),
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"email_domain": current.email.rpartition("@")[2]},
-            conn=conn,
+    try:
+        refusal = await accounts.delete_user(
+            ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, user_id, by_platform_admin=principal.is_platform_admin
         )
+    except Conflict as exc:
+        raise ApiError(
+            409, "conflict", "the user is referenced by review history; deactivate the account instead"
+        ) from exc
+    if refusal is not None:
+        raise _refused(refusal)
     return Response(status_code=204)
 
 

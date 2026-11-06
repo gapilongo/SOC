@@ -70,6 +70,7 @@ from lg_sotf.domain.phishing import validate_phishing_settings
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.services import tenancy
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
 from lg_sotf.services.llm_check import check_llm
@@ -114,8 +115,6 @@ RESPONSE_KEYS = frozenset(
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
 SECURITY_KEYS = frozenset({"require_mfa"})
-# Saving either section counts as the onboarding "autonomy reviewed" step.
-AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
@@ -404,24 +403,9 @@ async def patch_settings(
 ) -> TenantSettingsOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        # Lock the row: nested sections (response, tools) are merged from this snapshot, so two
-        # concurrent PATCHes of different sub-keys would otherwise silently drop one of them.
-        tenant = await ctx.repos.tenants.get(tenant_id, for_update=True, conn=conn)
-        patch = build_patch(ctx, tenant, body)
-        updated = await ctx.repos.tenants.update_settings(tenant_id, patch, conn=conn)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "tenant.settings_updated",
-            "tenant",
-            tenant_id,
-            actor_type=principal.actor_type,
-            actor_id=principal.actor_id,
-            details={"keys": sorted(patch)},
-            conn=conn,
-        )
-        if AUTONOMY_REVIEW_KEYS & patch.keys():
-            await ctx.repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
+    updated = await tenancy.update_settings(
+        ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, lambda tenant: build_patch(ctx, tenant, body)
+    )
     ctx.tenants.invalidate(tenant_id)
     return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
 

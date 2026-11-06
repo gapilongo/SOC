@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import pytest
 
-from lg_sotf.db.errors import Conflict, NotFound, RefreshTokenInvalid, RefreshTokenReuse
+from lg_sotf.db.errors import Conflict, InvalidCursor, NotFound, RefreshTokenInvalid, RefreshTokenReuse
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from tests.integration.db._support import TENANT_A, TENANT_B
@@ -82,14 +82,35 @@ class TestUsers:
         b = await repos.users.create(TENANT_A, "b@x.io", "analyst")
         b = await repos.users.update(TENANT_A, b.id, role="admin", is_active=False)
         assert (b.role, b.is_active) == ("admin", False)
-        assert [u.email for u in await repos.users.list(TENANT_A)] == ["a@x.io", "b@x.io"]
-        assert [u.email for u in await repos.users.list(TENANT_A, include_inactive=False)] == ["a@x.io"]
+        assert [u.email for u in (await repos.users.list(TENANT_A)).items] == ["a@x.io", "b@x.io"]
+        assert [u.email for u in (await repos.users.list(TENANT_A, include_inactive=False)).items] == ["a@x.io"]
         assert await repos.users.count_active_admins(TENANT_A) == 1
         assert await repos.users.update(TENANT_A, a.id) == a
         assert await repos.users.delete(TENANT_A, b.id) is True
         assert await repos.users.delete(TENANT_A, b.id) is False
         with pytest.raises(NotFound):
             await repos.users.update(TENANT_A, b.id, role="viewer")
+
+    async def test_list_pages_by_email(self, repos: Repositories) -> None:
+        emails = [f"u{i:02d}@x.io" for i in range(7)]
+        for email in reversed(emails):
+            await repos.users.create(TENANT_A, email, "viewer", is_active=email != "u03@x.io")
+        await repos.users.create(TENANT_B, "u00@y.io", "viewer")
+        seen, cursor, pages = [], None, 0
+        while True:
+            page = await repos.users.list(TENANT_A, limit=3, cursor=cursor)
+            seen += [u.email for u in page.items]
+            pages += 1
+            cursor = page.next_cursor
+            if cursor is None:
+                break
+        assert (seen, pages) == (emails, 3)
+        active = await repos.users.list(TENANT_A, include_inactive=False, limit=6)
+        assert ([u.email for u in active.items], active.next_cursor) == ([e for e in emails if e != "u03@x.io"], None)
+        with pytest.raises(InvalidCursor):
+            await repos.users.list(TENANT_A, cursor="garbage")
+        with pytest.raises(ValueError):
+            await repos.users.list(TENANT_A, limit=501)
 
     async def test_lockout_after_max_failures_and_expiry(self, repos: Repositories) -> None:
         user = await repos.users.create(TENANT_A, "l@x.io", "analyst", password_hash="h")

@@ -10,12 +10,18 @@ the results to HTTP.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from typing import AbstractSet, List, Literal, Optional, Sequence, Union
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor, AuditLogger
-from lg_sotf.db.repos import ApiKey, Repositories, User, UserMfa
+from lg_sotf.db.repos import UNSET, ApiKey, Repositories, User, UserMfa
 from lg_sotf.services.tenancy import ensure_capacity
+
+# Why a change to another account is refused; nothing has changed when one is returned.
+# * platform_admin_target: only a platform admin may modify or delete a platform-admin account
+#   (otherwise a tenant admin could reset its password, sign in as it and act across tenants);
+# * last_admin: the tenant must keep at least one active admin.
+UserRefusal = Literal["platform_admin_target", "last_admin"]
 
 
 async def create_user(
@@ -54,6 +60,136 @@ async def create_user(
             conn=conn,
         )
     return user
+
+
+async def update_user(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    user_id: UUID,
+    *,
+    by_platform_admin: bool,
+    fields: AbstractSet[str],
+    role: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    is_platform_admin: Optional[bool] = None,
+    password_hash: Optional[str] = UNSET,
+) -> Union[User, UserRefusal]:
+    """Change role, status, platform flag or password (``None``/``UNSET``: keep); audited ``user.updated``.
+
+    A new password or a deactivation revokes the user's refresh tokens.
+    Reactivating an account counts against ``max_users`` (``QuotaExceeded``).
+    ``fields`` are the request's field names, recorded in the audit entry.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        current = await repos.users.get(tenant_id, user_id, conn=conn)
+        if current.is_platform_admin and not by_platform_admin:
+            return "platform_admin_target"
+        demoting = (
+            current.role == "admin"
+            and current.is_active
+            and ((role is not None and role != "admin") or is_active is False)
+        )
+        if demoting and await repos.users.count_active_admins(tenant_id, conn=conn) <= 1:
+            return "last_admin"
+        if is_active is True and not current.is_active:
+            await ensure_capacity(repos, tenant_id, "max_users", conn=conn)
+        user = await repos.users.update(
+            tenant_id,
+            user_id,
+            role=role if role is not None else UNSET,
+            is_active=is_active if is_active is not None else UNSET,
+            is_platform_admin=is_platform_admin if is_platform_admin is not None else UNSET,
+            password_hash=password_hash,
+            conn=conn,
+        )
+        revoked = 0
+        if password_hash is not UNSET or is_active is False:
+            revoked = await repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
+        await audit.record(
+            tenant_id,
+            "user.updated",
+            "user",
+            str(user_id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={
+                "fields": sorted(fields - {"password"}) + (["password"] if "password" in fields else []),
+                "role": user.role,
+                "revoked_sessions": revoked,
+            },
+            conn=conn,
+        )
+    return user
+
+
+async def reset_mfa(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    user_id: UUID,
+    *,
+    by_platform_admin: bool,
+    actor_home_tenant_id: str,
+) -> Optional[UserRefusal]:
+    """Remove another user's MFA (lost device) and revoke their sessions; audited ``auth.mfa_reset``."""
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        current = await repos.users.get(tenant_id, user_id, conn=conn)
+        if current.is_platform_admin and not by_platform_admin:
+            return "platform_admin_target"
+        state = await repos.user_mfa.get(tenant_id, user_id, conn=conn)
+        await repos.user_mfa.delete(tenant_id, user_id, conn=conn)
+        revoked = await repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
+        await audit.record(
+            tenant_id,
+            "auth.mfa_reset",
+            "user",
+            str(user_id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={
+                "was_enabled": state is not None and state.enabled,
+                "revoked_sessions": revoked,
+                "by_platform_admin": by_platform_admin,
+                "actor_home_tenant_id": actor_home_tenant_id,
+            },
+            conn=conn,
+        )
+    return None
+
+
+async def delete_user(
+    repos: Repositories, audit: AuditLogger, tenant_id: str, actor: Actor, user_id: UUID, *, by_platform_admin: bool
+) -> Optional[UserRefusal]:
+    """Delete an account and its sessions; audited ``user.deleted`` with the email's domain only.
+
+    ``Conflict`` (nothing changed) when review history still references the user.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        current = await repos.users.get(tenant_id, user_id, conn=conn)
+        if current.is_platform_admin and not by_platform_admin:
+            return "platform_admin_target"
+        if (
+            current.role == "admin"
+            and current.is_active
+            and await repos.users.count_active_admins(tenant_id, conn=conn) <= 1
+        ):
+            return "last_admin"
+        await repos.refresh_tokens.revoke_all_for_user(tenant_id, user_id, conn=conn)
+        await repos.users.delete(tenant_id, user_id, conn=conn)
+        await audit.record(
+            tenant_id,
+            "user.deleted",
+            "user",
+            str(user_id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={"email_domain": current.email.rpartition("@")[2]},
+            conn=conn,
+        )
+    return None
 
 
 async def create_api_key(
@@ -216,3 +352,38 @@ async def sync_sso_role(repos: Repositories, audit: AuditLogger, user: User, rol
             conn=conn,
         )
     return updated
+
+
+async def provision_sso_user(
+    repos: Repositories, audit: AuditLogger, tenant_id: str, *, email: str, subject: str, role: str
+) -> User:
+    """Just-in-time account for a verified SSO identity (no password, never a platform admin).
+
+    Counts against ``max_users`` (``QuotaExceeded``). ``Conflict`` when the
+    subject or email already has an account (a concurrent first sign-in won);
+    ``ValueError`` when the email is not a valid address. Nothing changes in
+    either case. Audited ``user.provisioned`` (actor ``system``/``oidc``) with
+    the email's domain only.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        await ensure_capacity(repos, tenant_id, "max_users", conn=conn)
+        user = await repos.users.create(
+            tenant_id,
+            email,
+            role,
+            password_hash=None,
+            is_platform_admin=False,
+            oidc_subject=subject,
+            conn=conn,
+        )
+        await audit.record(
+            tenant_id,
+            "user.provisioned",
+            "user",
+            str(user.id),
+            actor_type="system",
+            actor_id="oidc",
+            details={"role": role, "via": "oidc_jit", "email_domain": user.email.rpartition("@")[2]},
+            conn=conn,
+        )
+    return user
