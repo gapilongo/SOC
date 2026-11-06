@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { apiError, fakeTransport, token } from '../test/helpers';
-import { AuthStore, REFRESH_LOCK, type AuthStoreDeps } from './store';
+import { AuthStore, LOGOUT_WAIT_MS, REFRESH_LOCK, type AuthStoreDeps } from './store';
 
 function deferred<T>() {
   let resolve!: (v: T) => void;
@@ -165,6 +165,76 @@ describe('AuthStore', () => {
     expect(transport.logout).toHaveBeenCalledWith('login-token');
     expect(store.getState()).toMatchObject({ status: 'anonymous', principal: null });
     expect(store.getToken()).toBeNull();
+  });
+
+  it('reports signed out only after the API revoked the refresh cookie', async () => {
+    // The e2e flake: the app showed the sign-in page while POST /auth/logout was
+    // still in flight; a reload then restored the session from the cookie.
+    const gate = deferred<void>();
+    const transport = fakeTransport({ logout: vi.fn(() => gate.promise) });
+    const { store, lock } = makeStore({ transport });
+    await store.login('a@acme.test', 'pw', null);
+    const seen: string[] = [];
+    store.subscribe(() => seen.push(store.getState().status));
+
+    const done = store.logout();
+    await Promise.resolve();
+    expect(transport.logout).toHaveBeenCalledWith('login-token');
+    expect(lock).toHaveBeenCalledWith(REFRESH_LOCK, expect.any(Function));
+    expect(store.getState().status).toBe('authenticated');
+    // No rotation while signing out: it would hand the browser a cookie the logout does not revoke.
+    await expect(store.refresh()).resolves.toBeNull();
+    expect(transport.refresh).not.toHaveBeenCalled();
+    // A second click joins the same sign-out.
+    expect(store.logout()).toBe(done);
+
+    gate.resolve();
+    await done;
+    expect(seen).toEqual(['anonymous']);
+    expect(transport.logout).toHaveBeenCalledTimes(1);
+    expect(store.getToken()).toBeNull();
+  });
+
+  it('lets a refresh already in flight finish before revoking, so the current cookie is revoked', async () => {
+    const gate = deferred<ReturnType<typeof token>>();
+    const order: string[] = [];
+    const transport = fakeTransport({
+      refresh: vi.fn(() => gate.promise.then((t) => (order.push('refresh'), t))),
+      logout: vi.fn(async () => {
+        order.push('logout');
+      }),
+    });
+    const { store } = makeStore({ transport });
+    await store.login('a@acme.test', 'pw', null);
+    const refreshing = store.refresh();
+    const done = store.logout();
+    await Promise.resolve();
+    expect(transport.logout).not.toHaveBeenCalled();
+    gate.resolve(token('rotated-token'));
+    await refreshing;
+    await done;
+    expect(order).toEqual(['refresh', 'logout']);
+    expect(transport.logout).toHaveBeenCalledWith('login-token');
+    expect(store.getState().status).toBe('anonymous');
+  });
+
+  it('ends the local session when the logout request fails or hangs', async () => {
+    const failing = makeStore({ transport: fakeTransport({ logout: vi.fn(async () => Promise.reject(apiError(0, 'network_error'))) }) });
+    await failing.store.login('a@acme.test', 'pw', null);
+    await failing.store.logout();
+    expect(failing.store.getState().status).toBe('anonymous');
+
+    const hanging = makeStore({ transport: fakeTransport({ logout: vi.fn(() => new Promise<void>(() => undefined)) }) });
+    await hanging.store.login('a@acme.test', 'pw', null);
+    const done = hanging.store.logout();
+    await Promise.resolve();
+    await Promise.resolve();
+    const wait = hanging.timers.find((t) => t.ms === LOGOUT_WAIT_MS);
+    expect(wait).toBeDefined();
+    expect(hanging.store.getState().status).toBe('authenticated');
+    wait?.fn();
+    await done;
+    expect(hanging.store.getState().status).toBe('anonymous');
   });
 
   it('lets only platform admins act on another tenant', async () => {

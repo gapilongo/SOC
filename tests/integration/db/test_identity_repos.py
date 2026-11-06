@@ -161,6 +161,24 @@ class TestRefreshTokens:
         with pytest.raises(RefreshTokenInvalid):
             await repos.refresh_tokens.rotate(TENANT_B, sha("out"), sha("o3"), T0 + timedelta(days=1), now=T0)
 
+    async def test_revoke_lineage_follows_rotations(self, repos: Repositories) -> None:
+        # Logout racing a refresh: the presented token was rotated, its replacement must die too.
+        user = await self._user(repos)
+        await repos.refresh_tokens.create(TENANT_A, user.id, sha("l1"), T0 + timedelta(days=14))
+        await repos.refresh_tokens.create(TENANT_A, user.id, sha("other-device"), T0 + timedelta(days=14))
+        await repos.refresh_tokens.rotate(TENANT_A, sha("l1"), sha("l2"), T0 + timedelta(days=28), now=T0)
+        await repos.refresh_tokens.rotate(TENANT_A, sha("l2"), sha("l3"), T0 + timedelta(days=28), now=T0)
+        assert await repos.refresh_tokens.revoke_lineage(TENANT_A, sha("l1")) == 1
+        for token in ("l1", "l2", "l3"):
+            rt = await repos.refresh_tokens.get_by_hash(TENANT_A, sha(token))
+            assert rt.revoked_at is not None
+        assert (await repos.refresh_tokens.get_by_hash(TENANT_A, sha("other-device"))).revoked_at is None
+        with pytest.raises(RefreshTokenInvalid):
+            await repos.refresh_tokens.rotate(TENANT_A, sha("l3"), sha("l4"), T0 + timedelta(days=28), now=T0)
+        assert await repos.refresh_tokens.revoke_lineage(TENANT_A, sha("l1")) == 0
+        assert await repos.refresh_tokens.revoke_lineage(TENANT_A, sha("unknown")) == 0
+        assert await repos.refresh_tokens.revoke_lineage(TENANT_B, sha("other-device")) == 0
+
     async def test_revoke_all_for_user(self, repos: Repositories) -> None:
         user = await self._user(repos)
         for i in range(3):
