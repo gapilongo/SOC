@@ -22,15 +22,15 @@ from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.core.graph import WorkflowState
-from lg_sotf.core.suppression import alert_match_view, first_matching_rule
 from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import routing
+from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.phishing import message_context
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
+from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger

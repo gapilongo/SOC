@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import List, Optional, Protocol, Sequence, Tuple
 
-from lg_sotf.core.events import EventPublisher, publish_event
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.integrations.outbox import enqueue_critical_alerts
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.producer import WorkQueue

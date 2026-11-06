@@ -207,6 +207,7 @@ warn_return_any = true
 [[tool.mypy.overrides]]
 module = [
     "lg_sotf.domain.routing",  # route_after_decide returns a dict value (no-any-return)
+    "lg_sotf.domain.suppression",  # _eq returns a == b on Any (no-any-return)
 ]
 warn_return_any = false
 
@@ -239,13 +240,6 @@ layers = [
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C2 suppression and events to domain
-    "lg_sotf.integrations.delivery -> lg_sotf.core.events",
-    "lg_sotf.services.dispatch -> lg_sotf.core.events",
-    "lg_sotf.services.escalation -> lg_sotf.core.events",
-    "lg_sotf.services.response -> lg_sotf.core.events",
-    "lg_sotf.services.review -> lg_sotf.core.events",
-    "lg_sotf.services.review -> lg_sotf.core.suppression",
     # C3 indicators to domain
     "lg_sotf.services.response -> lg_sotf.agents.correlation.indicators",
     # C4 checkpointer to db
