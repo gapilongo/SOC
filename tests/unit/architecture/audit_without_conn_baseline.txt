@@ -2,37 +2,3 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-api/auth/authenticate.py::_apply_tenant_override
-api/auth/authenticate.py::_provisioned_user
-api/auth/mfa.py::MfaService._audit_failure
-api/auth/mfa.py::MfaService.check_code
-api/auth/mfa.py::MfaService.confirm_enrollment
-api/auth/mfa.py::MfaService.disable
-api/auth/mfa.py::MfaService.regenerate_recovery_codes
-api/auth/service.py::AuthService._audit_failure
-api/auth/service.py::AuthService._audit_login
-api/auth/service.py::AuthService.logout
-api/auth/service.py::AuthService.refresh
-api/routers/compliance.py::erase
-api/routers/compliance.py::erase
-api/routers/compliance.py::evidence_pack
-api/routers/compliance.py::export_tenant
-api/routers/identity.py::_audit
-api/routers/ingest.py::_enforce_alert_quota
-api/routers/integrations.py::_audit
-api/routers/integrations.py::slack_interactions
-api/routers/onboarding.py::_audit
-api/routers/platform.py::_audit_home
-api/routers/platform.py::create_tenant
-api/routers/platform.py::create_tenant
-api/routers/platform.py::create_tenant
-api/routers/sources.py::_audit
-api/routers/suppressions.py::_audit
-api/routers/tenant.py::clear_verdict_cache
-api/routers/tenant.py::test_llm
-compliance/ops.py::_audit
-compliance/ops.py::_audit
-runtime/ops.py::audit_reprocess
-runtime/ops.py::audit_user_created
-runtime/ops.py::audit_user_created
-runtime/ops.py::create_tenant

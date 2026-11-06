@@ -27,6 +27,7 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.onboarding import SAMPLE_SOURCE_ID, OnboardingStatus, onboarding_status, sample_events
+from lg_sotf.onboarding.progress import record_step
 from lg_sotf.services.dispatch import dispatch_new_alerts
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -75,18 +76,6 @@ async def _status(ctx: ApiContext, tenant_id: str) -> OnboardingStatusOut:
     return _out(await onboarding_status(ctx.db, await ctx.repos.tenants.get(tenant_id)))
 
 
-async def _audit(ctx: ApiContext, principal: Principal, action: str, **details: object) -> None:
-    await AuditLogger(ctx.repos).record(
-        principal.tenant_id,
-        action,
-        "tenant",
-        principal.tenant_id,
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details=details,
-    )
-
-
 @router.get("/status", response_model=OnboardingStatusOut, summary="Getting-started checklist")
 async def get_status(request: Request, principal: Principal = Depends(require(ADMIN))) -> OnboardingStatusOut:
     return await _status(get_ctx(request), principal.tenant_id)
@@ -101,15 +90,14 @@ async def send_sample_alerts(request: Request, principal: Principal = Depends(re
     events = sample_events()
     result = await ctx.ingestion.ingest(tenant_id, SAMPLE_SOURCE_ID, events)
     enqueued = await dispatch_new_alerts(ctx.repos, ctx.queue, tenant_id, list(result.inserted), events=ctx.events)
-    if result.inserted:
-        await ctx.repos.tenants.mark_onboarding(tenant_id, "samples_sent_at")
-    await _audit(
-        ctx,
-        principal,
+    await record_step(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        tenant_id,
+        principal.actor,
         "onboarding.sample_alerts_sent",
-        inserted=len(result.inserted),
-        duplicates=result.duplicates,
-        rejected=len(result.rejected),
+        mark="samples_sent_at" if result.inserted else None,
+        details={"inserted": len(result.inserted), "duplicates": result.duplicates, "rejected": len(result.rejected)},
     )
     return SampleAlertsOut(
         source_id=SAMPLE_SOURCE_ID,
@@ -124,14 +112,21 @@ async def send_sample_alerts(request: Request, principal: Principal = Depends(re
 @router.post("/autonomy-reviewed", response_model=OnboardingStatusOut, summary="Mark the autonomy policy reviewed")
 async def mark_autonomy_reviewed(request: Request, principal: Principal = Depends(require(ADMIN))) -> OnboardingStatusOut:
     ctx = get_ctx(request)
-    await ctx.repos.tenants.mark_onboarding(principal.tenant_id, "autonomy_reviewed_at")
-    await _audit(ctx, principal, "onboarding.autonomy_reviewed")
+    await record_step(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        principal.tenant_id,
+        principal.actor,
+        "onboarding.autonomy_reviewed",
+        mark="autonomy_reviewed_at",
+    )
     return await _status(ctx, principal.tenant_id)
 
 
 @router.post("/dismiss", response_model=OnboardingStatusOut, summary="Hide the getting-started banner")
 async def dismiss(request: Request, principal: Principal = Depends(require(ADMIN))) -> OnboardingStatusOut:
     ctx = get_ctx(request)
-    await ctx.repos.tenants.mark_onboarding(principal.tenant_id, "dismissed_at")
-    await _audit(ctx, principal, "onboarding.dismissed")
+    await record_step(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, "onboarding.dismissed", mark="dismissed_at"
+    )
     return await _status(ctx, principal.tenant_id)

@@ -46,6 +46,7 @@ from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger
 from lg_sotf.security.hashing import InvalidApiKey, looks_like_api_key, parse_api_key, sha256_hex, verify_api_key
+from lg_sotf.services import accounts
 from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
 from lg_sotf.settings import AuthSettings
 
@@ -325,17 +326,7 @@ async def _provisioned_user(ctx: ApiContext, tenant_id: str, identity: OIDCIdent
     if not user.is_active:
         raise unauthorized("account is disabled")
     if user.role != role:
-        previous = user.role
-        user = await ctx.repos.users.update(tenant_id, user.id, role=role)
-        await AuditLogger(ctx.repos).record(
-            tenant_id,
-            "user.role_synced",
-            "user",
-            str(user.id),
-            actor_type="system",
-            actor_id="oidc",
-            details={"from": previous, "to": role, "via": "oidc_role_map"},
-        )
+        user = await accounts.sync_sso_role(ctx.repos, AuditLogger(ctx.repos), user, role)
         log.info("auth.oidc_role_synced", tenant_id=tenant_id, role=role)
     return user
 
@@ -428,7 +419,7 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
     tenant = await ctx.tenants.get(requested)
     if tenant is None:
         raise ApiError(404, "not_found", "tenant not found")
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         requested,
         "platform_admin.tenant_access",
         "tenant",

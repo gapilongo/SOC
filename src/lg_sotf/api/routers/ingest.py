@@ -147,7 +147,7 @@ async def _enforce_alert_quota(ctx: ApiContext, principal: Principal, received: 
     if exceeded is None:
         return
     if await ctx.repos.usage.record_quota_rejection(tenant.id, received):
-        await AuditLogger(ctx.repos).record(
+        await AuditLogger(ctx.repos).record_event(
             tenant.id,
             "tenant.quota_exceeded",
             "tenant",

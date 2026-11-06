@@ -1,11 +1,14 @@
-"""Tenant identifier rules and LangGraph thread-id helpers."""
+"""Tenant identifier rules, re-scoping a transaction to another tenant, and LangGraph thread-id helpers."""
 
 from __future__ import annotations
 
 import re
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple
 
 from lg_sotf.db.errors import InvalidTenantId
+
+if TYPE_CHECKING:
+    import asyncpg
 
 TENANT_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{1,62}$"
 _TENANT_ID_RE = re.compile(TENANT_ID_PATTERN)
@@ -22,6 +25,16 @@ def validate_tenant_id(tenant_id: object) -> str:
     if not is_valid_tenant_id(tenant_id):
         raise InvalidTenantId(f"invalid tenant id: {tenant_id!r}")
     return tenant_id  # type: ignore[return-value]
+
+
+async def switch_tenant(conn: asyncpg.Connection, tenant_id: str) -> None:
+    """Re-scope an open ``db.tenant_tx`` transaction to ``tenant_id`` (transaction-local ``app.tenant_id``).
+
+    For one transaction that writes to several tenants (multi-tenant batch
+    writes, tenant provisioning and its platform-level audit entries). RLS
+    then checks every following statement against ``tenant_id``.
+    """
+    await conn.execute("SELECT set_config('app.tenant_id', $1, true)", validate_tenant_id(tenant_id))
 
 
 def thread_id_for(tenant_id: str, alert_id: str) -> str:

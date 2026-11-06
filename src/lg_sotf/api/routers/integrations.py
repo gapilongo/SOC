@@ -86,6 +86,7 @@ from lg_sotf.integrations.slack import (
 )
 from lg_sotf.integrations.ticketing import ticket_client
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services import integrations as integration_changes
 from lg_sotf.services.connectors.base import ConnectorConfigError
 from lg_sotf.services.connectors.microsoft import MicrosoftClients, build_microsoft_connector
 from lg_sotf.services.review import REVIEWER_ROLES, ReviewDenied
@@ -281,20 +282,6 @@ def _encrypt(
     return encrypt_secret(ctx.secret_box, tenant_id, integration_id, checked)
 
 
-async def _audit(
-    ctx: ApiContext, principal: Principal, action: str, integration_id: UUID, details: Dict[str, Any]
-) -> None:
-    await AuditLogger(ctx.repos).record(
-        principal.tenant_id,
-        action,
-        "integration",
-        str(integration_id),
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details=details,
-    )
-
-
 def _capability_flags(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
     caps = config.get("capabilities") if isinstance(config.get("capabilities"), dict) else {}
     return {str(k): v for k, v in (caps or {}).items() if isinstance(v, dict)}
@@ -433,7 +420,7 @@ async def slack_interactions(
         outcome = "not_found"
     except DeliveryError:
         outcome = "slack_api_error"
-    await AuditLogger(ctx.repos).record(
+    await AuditLogger(ctx.repos).record_event(
         tenant,
         "integration.slack_interaction",
         "response_action",
@@ -496,11 +483,20 @@ async def create_integration(
     events = _events(body.kind, body.events)
     integration_id = uuid.uuid4()
     ciphertext = _encrypt(ctx, body.kind, tenant_id, integration_id, merge_secret({}, body.secret or {}), config)
+    details: Dict[str, Any] = {
+        "kind": body.kind, "name": body.name, "events": events, "has_secret": ciphertext is not None,
+    }
+    if body.kind == MICROSOFT_KIND:
+        details.update(microsoft_audit({}, config, credential_rotated=ciphertext is not None))
     try:
-        integration = await ctx.repos.integrations.create(
+        integration = await integration_changes.create_integration(
+            ctx.repos,
+            AuditLogger(ctx.repos),
             tenant_id,
-            body.kind,
-            body.name,
+            principal.actor,
+            kind=body.kind,
+            name=body.name,
+            details=details,
             integration_id=integration_id,
             config=config,
             secret_ciphertext=ciphertext,
@@ -511,12 +507,6 @@ async def create_integration(
         )
     except IntegrationExists as exc:
         raise ApiError(409, "integration_exists", str(exc)) from None
-    details: Dict[str, Any] = {
-        "kind": integration.kind, "name": integration.name, "events": events, "has_secret": ciphertext is not None,
-    }
-    if integration.kind == MICROSOFT_KIND:
-        details.update(microsoft_audit({}, config, credential_rotated=ciphertext is not None))
-    await _audit(ctx, principal, "integration.created", integration.id, details)
     return integration_out(ctx, integration)
 
 
@@ -555,13 +545,14 @@ async def update_integration(
             ctx, current.kind, tenant_id, integration_id, merge_secret(existing, patch), new_config
         )
         changed_secrets = sorted(patch)
-    integration = await ctx.repos.integrations.update(tenant_id, integration_id, **changes)
     details: Dict[str, Any] = {"fields": sorted(f for f in fields if f != "secret"), "secret_fields": changed_secrets}
     if current.kind == MICROSOFT_KIND:
         details.update(
             microsoft_audit(dict(current.config), new_config, credential_rotated=bool(changed_secrets))
         )
-    await _audit(ctx, principal, "integration.updated", integration_id, details)
+    integration = await integration_changes.update_integration(
+        ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, integration_id, changes, details=details
+    )
     return integration_out(ctx, integration)
 
 
@@ -571,12 +562,13 @@ async def delete_integration(
 ) -> Response:
     ctx = get_ctx(request)
     current = await ctx.repos.integrations.get(principal.tenant_id, integration_id)
-    if not await ctx.repos.integrations.delete(principal.tenant_id, integration_id):
-        raise NotFound("integration", integration_id)
     details: Dict[str, Any] = {"kind": current.kind, "name": current.name}
     if current.kind == MICROSOFT_KIND:
         details.update(microsoft_audit(dict(current.config), {}, credential_rotated=False))
-    await _audit(ctx, principal, "integration.deleted", integration_id, details)
+    if not await integration_changes.delete_integration(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, integration_id, details=details
+    ):
+        raise NotFound("integration", integration_id)
     return Response(status_code=204)
 
 
@@ -618,8 +610,11 @@ async def test_integration(
         detail, status = str(exc), exc.status
     except IntegrationConfigError as exc:
         detail = str(exc)
-    await ctx.repos.integrations.record_test(
+    await integration_changes.record_test(
+        ctx.repos,
+        AuditLogger(ctx.repos),
         tenant_id,
+        principal.actor,
         NewOutboxEntry(
             integration_id=integration.id,
             event_id=UUID(payload["id"]),
@@ -631,8 +626,8 @@ async def test_integration(
         ok=ok,
         error=None if ok else detail,
         result=result if ok else ({"http_status": status} if status else None),
+        details={"ok": ok, "http_status": status},
     )
-    await _audit(ctx, principal, "integration.tested", integration_id, {"ok": ok, "http_status": status})
     return IntegrationTestOut(ok=ok, detail=detail[:500], http_status=status)
 
 
@@ -659,8 +654,11 @@ async def _test_microsoft(
         ok, detail = False, str(exc)
     event_id = uuid.uuid4()
     result: Dict[str, Any] = report.model_dump(mode="json") if report is not None else {}
-    await ctx.repos.integrations.record_test(
+    await integration_changes.record_test(
+        ctx.repos,
+        AuditLogger(ctx.repos),
         tenant_id,
+        principal.actor,
         NewOutboxEntry(
             integration_id=integration.id,
             event_id=event_id,
@@ -672,10 +670,7 @@ async def _test_microsoft(
         ok=ok,
         error=None if ok else detail,
         result=result,
-    )
-    await _audit(
-        ctx, principal, "integration.tested", integration.id,
-        {
+        details={
             "ok": ok,
             "tokens": {api: t.status for api, t in report.tokens.items()} if report is not None else {},
             "capabilities": {k: c.status for k, c in report.capabilities.items() if c.enabled} if report else {},

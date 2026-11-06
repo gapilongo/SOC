@@ -13,7 +13,6 @@ agents/correlation/base.py::CorrelationAgent._run	88
 api/app.py::create_app	104
 api/routers/compliance.py::incident_report	81
 api/routers/integrations.py::slack_interactions	97
-api/routers/platform.py::create_tenant	90
 compliance/evidence.py::build_evidence_pack	101
 compliance/evidence.py::human_oversight	121
 compliance/evidence.py::render_evidence_html	193

@@ -23,6 +23,29 @@ All notable changes to this project are documented here. The format follows
   A test now fails when the backend adds a guardrail reason that the web app
   cannot describe, or when the web app's source-type, integration-kind or
   ticketing-kind lists drift from the backend.
+- A change is no longer left in place when its audit log entry cannot be
+  written. Before, the change was saved first and the entry written
+  afterwards, so a failed write answered 500 but the change stayed, with no
+  trace in the audit log. Now the change and its entry are saved together:
+  either both are there or neither is, and the request can simply be
+  retried. This covers MFA enrollment, disabling MFA, new recovery codes,
+  using a recovery code, the role update of a single sign-on account,
+  creating, updating and deleting alert sources, suppression rules and
+  integrations, integration connection tests, creating users and API keys,
+  revoking API keys, the getting-started checklist steps, and, on the
+  command line, `create-admin`, the bootstrap admin of `migrate`, `enqueue`
+  and `dlq requeue`.
+- The scheduler's SLA escalation and expiry entries are now redacted and
+  logged like every other audit entry.
+- Provisioning a tenant (`POST /platform/tenants`) no longer leaves a
+  half-created tenant behind. Before, if creating the first admin or an
+  audit entry failed, the tenant already existed without its admin, and
+  retrying answered 409 "already exists". Now the tenant, its settings, its
+  first admin and its audit entries are saved together, so a failure leaves
+  nothing behind and a retry succeeds. `lg-sotf create-tenant` now does the
+  same: a failed run leaves no tenant, so running it again works instead of
+  reporting that the tenant already exists. Changing a tenant's name, status or
+  quotas is also saved together with the platform admin's audit entry.
 - Notifications, ticketing requests and response-action webhooks no longer
   build a new TLS context for every request. Each request used to load the CA
   bundle again, synchronously on the event loop, blocking other work in the

@@ -169,7 +169,7 @@ class AuthService:
         return user
 
     async def _audit_login(self, user: User, method: str, client_ip: str) -> None:
-        await self._audit.record(
+        await self._audit.record_event(
             user.tenant_id,
             "auth.login",
             "user",
@@ -334,7 +334,7 @@ class AuthService:
         return False
 
     async def _audit_failure(self, user: User, reason: str, client_ip: str) -> None:
-        await self._audit.record(
+        await self._audit.record_event(
             user.tenant_id,
             "auth.login_failed",
             "user",
@@ -360,7 +360,7 @@ class AuthService:
                 record.tenant_id, token_hash, new.token_hash, new.expires_at
             )
         except RefreshTokenReuse as exc:
-            await self._audit.record(
+            await self._audit.record_event(
                 record.tenant_id,
                 "auth.refresh_reuse_detected",
                 "user",
@@ -406,7 +406,7 @@ class AuthService:
             return None
         # The lineage, not just the token: a refresh racing this logout may have rotated it already.
         await self._ctx.repos.refresh_tokens.revoke_lineage(record.tenant_id, token_hash)
-        await self._audit.record(
+        await self._audit.record_event(
             record.tenant_id,
             "auth.logout",
             "user",

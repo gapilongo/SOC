@@ -19,7 +19,7 @@ import psycopg
 import pytest
 import pytest_asyncio
 
-from lg_sotf.db.errors import SystemScopeDenied
+from lg_sotf.db.errors import Conflict, NotFound, SystemScopeDenied
 from lg_sotf.db.migrate import (
     grant_runtime_privileges,
     schema_is_current,
@@ -28,6 +28,7 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.retention import purge_expired
+from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.db.urls import to_libpq_url
 from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert
 from tests.integration.db.test_rls import TENANT_TABLES, seed_everything
@@ -212,3 +213,43 @@ async def test_grants_are_least_privilege(app_db: Database, migrated_database_ur
         await asyncio.to_thread(grant_runtime_privileges, owner, migrated_database_url)
     with pytest.raises(ValueError):
         await asyncio.to_thread(grant_runtime_privileges, "no_such_role_xyz", migrated_database_url)
+
+
+async def _provision_in_one_transaction(app: Repositories, tenant_id: str, *, fail: bool = False) -> None:
+    """Tenant row, settings, first admin and both audit entries in one runtime-role transaction."""
+    async with app.db.tenant_tx(tenant_id) as conn:
+        await app.tenants.provision(tenant_id, "New Co", conn=conn)
+        await app.tenants.update_settings(tenant_id, {"autonomy": {"low": "auto"}}, conn=conn)
+        user = await app.users.create(tenant_id, f"root@{tenant_id}.example.com", "admin", conn=conn)
+        await app.audit.append(tenant_id, "system", "test", "tenant.created", "tenant", tenant_id, conn=conn)
+        await app.audit.append(tenant_id, "system", "test", "user.created", "user", str(user.id), conn=conn)
+        if fail:
+            raise RuntimeError("provisioning interrupted")
+        await switch_tenant(conn, TENANT_A)
+        await app.audit.append(TENANT_A, "system", "test", "platform.tenant_created", "tenant", tenant_id, conn=conn)
+
+
+async def test_runtime_role_provisions_a_tenant_in_one_transaction(app: Repositories, repos: Repositories) -> None:
+    with pytest.raises(RuntimeError):
+        await _provision_in_one_transaction(app, "new-co", fail=True)
+    with pytest.raises(NotFound):
+        await repos.tenants.get("new-co")
+    assert await repos.users.list("new-co") == []
+    assert (await repos.audit.list("new-co")).items == []
+
+    await _provision_in_one_transaction(app, "new-co")
+    tenant = await repos.tenants.get("new-co")
+    assert (tenant.name, tenant.settings) == ("New Co", {"autonomy": {"low": "auto"}})
+    assert [u.email for u in await repos.users.list("new-co")] == ["root@new-co.example.com"]
+    assert [e.action for e in (await repos.audit.list("new-co")).items] == ["user.created", "tenant.created"]
+    assert [e.action for e in (await repos.audit.list(TENANT_A)).items] == ["platform.tenant_created"]
+    for tenant_id in ("new-co", TENANT_A):
+        assert (await repos.audit.verify_chain(tenant_id)).ok
+    # The bypass the SECURITY DEFINER function turned on did not outlive its insert.
+    async with app.db.tenant_tx("other-co") as conn:
+        await app.tenants.provision("other-co", "Other", conn=conn)
+        assert await conn.fetchval("SELECT current_setting('app.bypass_rls', true)") in (None, "")
+        assert await conn.fetchval("SELECT count(*) FROM audit_log") == 0
+    with pytest.raises(Conflict):
+        async with app.db.tenant_tx("new-co") as conn:
+            await app.tenants.provision("new-co", "Again", conn=conn)

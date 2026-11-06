@@ -29,7 +29,8 @@ from lg_sotf.db.repos import Source
 from lg_sotf.ingestion.service import is_reserved_source_id
 from lg_sotf.ingestion.sources import encrypt_source_secret
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
+from lg_sotf.services import sources as source_changes
+from lg_sotf.services.tenancy import QuotaExceeded
 
 router = APIRouter(prefix="/sources", tags=["sources"])
 
@@ -74,18 +75,6 @@ def _draft(tenant_id: str, source_id: str, now: datetime, **fields: Any) -> Sour
     return Source.model_validate(base)
 
 
-async def _audit(ctx: ApiContext, principal: Principal, action: str, source_id: str, details: Dict[str, Any]) -> None:
-    await AuditLogger(ctx.repos).record(
-        principal.tenant_id,
-        action,
-        "source",
-        source_id,
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details=details,
-    )
-
-
 @router.get("", response_model=List[SourceOut], summary="List sources")
 async def list_sources(request: Request, principal: Principal = Depends(require(ADMIN))) -> List[SourceOut]:
     return [source_out(s) for s in await get_ctx(request).repos.sources.list(principal.tenant_id)]
@@ -120,24 +109,21 @@ async def create_source(
     )
     await ctx.ingestion.validate_source(tenant_id, draft)
     try:
-        async with ctx.db.tenant_tx(tenant_id) as conn:
-            await ensure_capacity(ctx.repos, tenant_id, "max_sources", conn=conn)
-            source = await ctx.repos.sources.create(
-                tenant_id,
-                body.type,
-                body.name,
-                source_id=source_id,
-                config=body.config,
-                secret_ciphertext=ciphertext,
-                poll_interval_s=body.poll_interval_s,
-                enabled=body.enabled,
-                conn=conn,
-            )
+        source = await source_changes.create_source(
+            ctx.repos,
+            AuditLogger(ctx.repos),
+            tenant_id,
+            principal.actor,
+            source_type=body.type,
+            name=body.name,
+            source_id=source_id,
+            config=body.config,
+            secret_ciphertext=ciphertext,
+            poll_interval_s=body.poll_interval_s,
+            enabled=body.enabled,
+        )
     except QuotaExceeded as exc:
         raise quota_conflict(exc) from exc
-    await _audit(
-        ctx, principal, "source.created", source.id, {"type": source.type, "has_secret": ciphertext is not None}
-    )
     return source_out(source)
 
 
@@ -162,17 +148,19 @@ async def update_source(
     if "config" in changes:
         _check_config(changes["config"])
     await ctx.ingestion.validate_source(tenant_id, current.model_copy(update=changes))
-    source = await ctx.repos.sources.update(tenant_id, source_id, **changes)
-    await _audit(ctx, principal, "source.updated", source_id, {"fields": sorted(fields)})
+    source = await source_changes.update_source(
+        ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, source_id, changes, fields=fields
+    )
     return source_out(source)
 
 
 @router.delete("/{source_id}", status_code=204, summary="Delete a source")
 async def delete_source(source_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
     ctx = get_ctx(request)
-    if not await ctx.repos.sources.delete(principal.tenant_id, source_id):
+    if not await source_changes.delete_source(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, source_id
+    ):
         raise NotFound("source", source_id)
-    await _audit(ctx, principal, "source.deleted", source_id, {})
     return Response(status_code=204)
 
 
@@ -185,5 +173,14 @@ async def test_source(
     ctx = get_ctx(request)
     source = await ctx.repos.sources.get(principal.tenant_id, source_id)
     health = await ctx.ingestion.test_source(principal.tenant_id, source)
-    await _audit(ctx, principal, "source.tested", source_id, {"ok": health.ok})
+    # A connectivity check, not a change: recorded on its own.
+    await AuditLogger(ctx.repos).record_event(
+        principal.tenant_id,
+        "source.tested",
+        "source",
+        source_id,
+        actor_type=principal.actor_type,
+        actor_id=principal.actor_id,
+        details={"ok": health.ok},
+    )
     return SourceTestOut(ok=health.ok, detail=health.detail)

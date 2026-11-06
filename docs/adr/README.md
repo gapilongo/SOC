@@ -10,7 +10,7 @@ edited afterwards except to mark it superseded by a newer one.
 | [0000](0000-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0001](0001-layering.md) | Layering, the dependency rule and accepted exceptions | Accepted |
 | 0002 | Module boundaries, size and complexity budgets; move PRs separate from behaviour PRs | Reserved (roadmap G5) |
-| 0003 | Data access: SQL only in repositories, services own transactions, audit in the same transaction | Reserved (D1, D5) |
+| [0003](0003-data-access-and-audit.md) | Data access: SQL only in repositories, services own transactions, audit in the same transaction | Accepted |
 | 0004 | Domain vocabulary: `Literal` over `StrEnum`, frozen migrations | Reserved (F2) |
 | 0005 | Exception text is never logged | Reserved (X1) |
 | 0006 | Encryption keys are validated at startup in every role | Reserved (D7) |

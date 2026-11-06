@@ -85,9 +85,9 @@ def test_the_docs_tell_windows_users_to_keep_the_key_file_in_wsl() -> None:
 
 
 def _audited(router: str) -> List[str]:
-    """The audit actions a REST router records (``AuditLogger(...).record(tenant, "<action>", ...)``)."""
+    """The audit actions a REST router records (``AuditLogger(...).record[_event](tenant, "<action>", ...)``)."""
     text = (ROOT / "src" / "lg_sotf" / "api" / "routers" / router).read_text()
-    return re.findall(r'AuditLogger\(ctx\.repos\)\.record\(\s*[\w.]+,\s*"([a-z_.]+)"', text)
+    return re.findall(r'AuditLogger\(ctx\.repos\)\.record(?:_event)?\(\s*[\w.]+,\s*"([a-z_.]+)"', text)
 
 
 def test_the_docs_claim_audit_only_for_the_writes_the_api_audits() -> None:

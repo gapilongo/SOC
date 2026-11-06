@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict
 from lg_sotf.db.errors import Conflict, DatabaseError, InvalidValue, ReferenceNotFound
 from lg_sotf.db.pagination import Params
 from lg_sotf.db.pool import Database
-from lg_sotf.db.tenancy import validate_tenant_id
+from lg_sotf.db.tenancy import switch_tenant, validate_tenant_id
 
 Connection: TypeAlias = asyncpg.Connection
 
@@ -215,4 +215,4 @@ class Repository:
     @staticmethod
     async def _switch_tenant(conn: Connection, tenant_id: str) -> None:
         """Re-scope an open tenant transaction to another tenant (multi-tenant batch writes)."""
-        await conn.execute("SELECT set_config('app.tenant_id', $1, true)", validate_tenant_id(tenant_id))
+        await switch_tenant(conn, tenant_id)

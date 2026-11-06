@@ -7,8 +7,10 @@ import pytest
 from click.testing import CliRunner
 
 from lg_sotf.cli import cli
+from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.db.repos.audit import AuditRepo
 from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.security.hashing import verify_password
 from lg_sotf.settings import Settings
@@ -307,3 +309,84 @@ def test_cli_account_creation_and_reprocess_are_audited(cli_env: str) -> None:
     alert_id = asyncio.run(_seed_alert(cli_env))
     assert runner.invoke(cli, ["enqueue", "--tenant", TENANT_A, "--alert", alert_id]).exit_code == 0
     assert "alert.reprocess_requested" in [a for a, _, _ in asyncio.run(_audit_actions(cli_env, TENANT_A))]
+
+
+def _fail_audit(monkeypatch: pytest.MonkeyPatch, action: str) -> None:
+    """Make the audit append of ``action`` raise, as a full disk or a lost connection would."""
+    original = AuditRepo.append
+
+    async def append(self: AuditRepo, tenant_id: str, actor_type: str, actor_id: Any, act: str, *a: Any, **kw: Any) -> Any:
+        if act == action:
+            raise RuntimeError("audit_log unavailable")
+        return await original(self, tenant_id, actor_type, actor_id, act, *a, **kw)
+
+    monkeypatch.setattr(AuditRepo, "append", append)
+
+
+async def _run_state(url: str, tenant: str, alert_id: str) -> Any:
+    db = _db(url)
+    await db.open()
+    try:
+        try:
+            return (await Repositories.create(db).runs.get(tenant, alert_id)).status
+        except NotFound:
+            return None
+    finally:
+        await db.close()
+
+
+def test_cli_changes_roll_back_when_their_audit_entry_fails(cli_env: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+    args = ["create-admin", "--tenant", "acme", "--email", "shadow@acme.example", "--platform-admin", "--password-stdin"]
+    _fail_audit(monkeypatch, "platform.admin_granted")
+    failed = runner.invoke(cli, args, input=f"{ADMIN_PASSWORD}\n")
+    assert failed.exit_code != 0
+    assert "shadow@acme.example" not in [u.email for u in asyncio.run(_users(cli_env, "acme"))]
+    assert not [d for _, _, d in asyncio.run(_audit_actions(cli_env, "acme")) if d.get("email") == "shadow@acme.example"]
+
+    alert_id = asyncio.run(_seed_alert(cli_env))
+    _fail_audit(monkeypatch, "alert.reprocess_requested")
+    assert runner.invoke(cli, ["enqueue", "--tenant", TENANT_A, "--alert", alert_id]).exit_code != 0
+    assert asyncio.run(_run_state(cli_env, TENANT_A, alert_id)) is None
+
+    monkeypatch.undo()
+    assert runner.invoke(cli, args, input=f"{ADMIN_PASSWORD}\n").exit_code == 0
+    assert runner.invoke(cli, ["enqueue", "--tenant", TENANT_A, "--alert", alert_id]).exit_code == 0
+    assert asyncio.run(_run_state(cli_env, TENANT_A, alert_id)) == "queued"
+
+
+async def _tenant_left_behind(url: str, tenant: str) -> List[Any]:
+    db = _db(url)
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        rows: List[Any] = [t for t in await repos.tenants.list_all_tenants() if t.id == tenant]
+        return rows + list(await repos.users.list(tenant)) + list((await repos.audit.list(tenant)).items)
+    finally:
+        await db.close()
+
+
+def test_create_tenant_leaves_nothing_behind_when_the_admin_fails(
+    cli_env: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = CliRunner()
+    assert runner.invoke(cli, ["migrate"]).exit_code == 0
+    args = ["create-tenant", "--id", "globex", "--name", "Globex", "--admin-email", "Root@Globex.example"]
+    _fail_audit(monkeypatch, "user.created")
+    failed = runner.invoke(cli, [*args, "--password-stdin"], input=f"{ADMIN_PASSWORD}\n")
+    assert failed.exit_code != 0
+    assert asyncio.run(_tenant_left_behind(cli_env, "globex")) == []
+
+    monkeypatch.undo()
+    retried = runner.invoke(cli, [*args, "--password-stdin"], input=f"{ADMIN_PASSWORD}\n")
+    assert retried.exit_code == 0, retried.output
+    entries = {a: (actor, d) for a, actor, d in asyncio.run(_audit_actions(cli_env, "globex"))}
+    assert entries["tenant.created"] == (
+        "cli",
+        {"name": "Globex", "with_admin": True, "settings_keys": [], "via": "cli"},
+    )
+    assert entries["user.created"] == (
+        "cli",
+        {"email": "root@globex.example", "role": "admin", "platform_admin": False, "sso_only": False, "via": "cli"},
+    )

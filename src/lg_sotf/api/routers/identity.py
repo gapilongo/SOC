@@ -35,6 +35,7 @@ from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import UNSET, User
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.security.hashing import ahash_password, generate_api_key
+from lg_sotf.services import accounts
 from lg_sotf.services.tenancy import QuotaExceeded, ensure_capacity
 
 users = APIRouter(prefix="/users", tags=["users"])
@@ -61,20 +62,6 @@ def _guard_platform_admin_target(principal: Principal, target: object) -> None:
     """
     if getattr(target, "is_platform_admin", False) and not principal.is_platform_admin:
         raise ApiError(403, "forbidden", "only a platform admin can modify a platform-admin account")
-
-
-async def _audit(
-    ctx: ApiContext, principal: Principal, action: str, resource: str, rid: str, **details: object
-) -> None:
-    await AuditLogger(ctx.repos).record(
-        principal.tenant_id,
-        action,
-        resource,
-        rid,
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details=details,
-    )
 
 
 # ------------------------------------------------------------------ users
@@ -120,23 +107,21 @@ async def create_user(body: UserCreateIn, request: Request, principal: Principal
         check_password(ctx, body.password)
         password_hash = await ahash_password(body.password)
     try:
-        async with ctx.db.tenant_tx(principal.tenant_id) as conn:
-            if body.is_active:
-                await ensure_capacity(ctx.repos, principal.tenant_id, "max_users", conn=conn)
-            user = await ctx.repos.users.create(
-                principal.tenant_id,
-                email,
-                body.role,
-                password_hash=password_hash,
-                is_platform_admin=body.is_platform_admin,
-                is_active=body.is_active,
-                conn=conn,
-            )
+        user = await accounts.create_user(
+            ctx.repos,
+            AuditLogger(ctx.repos),
+            principal.tenant_id,
+            principal.actor,
+            email=email,
+            role=body.role,
+            password_hash=password_hash,
+            is_platform_admin=body.is_platform_admin,
+            is_active=body.is_active,
+        )
     except QuotaExceeded as exc:
         raise quota_conflict(exc) from exc
     except Conflict as exc:
         raise ApiError(409, "conflict", "a user with this email already exists") from exc
-    await _audit(ctx, principal, "user.created", "user", str(user.id), role=user.role, sso_only=password_hash is None)
     return UserOut.model_validate(user)
 
 
@@ -288,25 +273,28 @@ async def create_key(
 ) -> ApiKeyCreatedOut:
     ctx = get_ctx(request)
     generated = generate_api_key()
-    key = await ctx.repos.api_keys.create(
+    key = await accounts.create_api_key(
+        ctx.repos,
+        AuditLogger(ctx.repos),
         principal.tenant_id,
-        body.name,
-        generated.prefix,
-        generated.key_hash,
-        list(body.scopes),
+        principal.actor,
+        name=body.name,
+        prefix=generated.prefix,
+        key_hash=generated.key_hash,
+        scopes=list(body.scopes),
         created_by=principal.local_user_id,
         key_id=generated.key_id,
     )
-    await _audit(ctx, principal, "api_key.created", "api_key", str(key.id), scopes=key.scopes, name=key.name)
     return ApiKeyCreatedOut.model_validate({**key.model_dump(exclude={"key_hash"}), "key": generated.token})
 
 
 @api_keys.delete("/{key_id}", status_code=204, summary="Revoke an API key")
 async def revoke_key(key_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
     ctx = get_ctx(request)
-    if not await ctx.repos.api_keys.revoke(principal.tenant_id, key_id):
+    if not await accounts.revoke_api_key(
+        ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, key_id
+    ):
         if await ctx.repos.api_keys.get_by_id(principal.tenant_id, key_id) is None:
             raise NotFound("api key", key_id)
         return Response(status_code=204)
-    await _audit(ctx, principal, "api_key.revoked", "api_key", str(key_id))
     return Response(status_code=204)

@@ -5,7 +5,9 @@ There is no platform-admin account behind a CLI call, so export and erasure
 are audited as ``actor_type=system, actor_id=cli`` in the target tenant's
 chain and, as the platform-level record, in the bootstrap tenant's chain
 (``auth.bootstrap_tenant_id``, the operator's tenant) when it exists and is
-not the tenant being erased.
+not the tenant being erased. Both stream over many transactions, so their
+entries are events (:meth:`AuditLogger.record_event`): written before the
+export or erasure starts and after the erasure ends.
 """
 
 from __future__ import annotations
@@ -52,14 +54,16 @@ async def _audit(
     settings: Settings, repos: Repositories, tenant_id: str, action: str, platform_action: str, details: Mapping[str, Any]
 ) -> None:
     audit = AuditLogger(repos)
-    await audit.record(tenant_id, action, "tenant", tenant_id, actor_type="system", actor_id=CLI_ACTOR, details=details)
+    await audit.record_event(
+        tenant_id, action, "tenant", tenant_id, actor_type="system", actor_id=CLI_ACTOR, details=details
+    )
     home = settings.auth.bootstrap_tenant_id
     if home and home != tenant_id:
         try:
             await repos.tenants.get(home)
         except NotFound:
             return
-        await audit.record(
+        await audit.record_event(
             home, platform_action, "tenant", tenant_id, actor_type="system", actor_id=CLI_ACTOR, details=details
         )
 

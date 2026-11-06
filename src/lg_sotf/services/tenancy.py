@@ -1,4 +1,10 @@
-"""Tenant lifecycle for MSSPs: settings templates, quotas and their enforcement.
+"""Tenant lifecycle for MSSPs: provisioning, settings templates, quotas and their enforcement.
+
+Provisioning (:func:`provision_tenant`, used by ``POST /platform/tenants``
+and ``lg-sotf create-tenant``) is one transaction: the tenant row, its
+seeded settings, its first admin and every audit entry (in the new tenant,
+the platform admin's home tenant and a copied tenant) commit together or
+not at all, so a failure leaves nothing behind and a retry succeeds.
 
 Templates seed a new tenant's settings:
 
@@ -27,10 +33,13 @@ Quotas (``tenants.max_*``, ``NULL`` = unlimited) are set by platform admins:
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, Literal, Mapping, Optional
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Literal, Mapping, Optional
 
-from lg_sotf.db.repos import Repositories, Tenant
+from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.db.repos import Repositories, Tenant, User
 from lg_sotf.db.repos._base import Connection
+from lg_sotf.db.tenancy import switch_tenant
 
 Profile = Literal["conservative", "balanced", "autonomous"]
 
@@ -170,14 +179,117 @@ async def ensure_capacity(repos: Repositories, tenant_id: str, quota: str, *, co
         raise QuotaExceeded(quota, limit, used)
 
 
+@dataclass(frozen=True)
+class TenantRequest:
+    """A validated provisioning request; hashing and template resolution happen before it is built.
+
+    ``audit_details`` is merged into every audit entry: the platform admin's
+    ``home_tenant_id`` for the API, ``{"via": "cli"}`` for the CLI.
+    ``admin_audit_details`` is added to the first admin's ``user.created``.
+    """
+
+    tenant_id: str
+    name: str
+    actor: Actor
+    settings: Mapping[str, Any] = field(default_factory=dict)
+    template: Mapping[str, Any] = field(default_factory=dict)
+    copied_from: Optional[str] = None
+    home_tenant_id: Optional[str] = None
+    admin_email: Optional[str] = None
+    admin_password_hash: Optional[str] = None
+    audit_details: Mapping[str, Any] = field(default_factory=dict)
+    admin_audit_details: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ProvisionedTenant:
+    tenant: Tenant
+    admin: Optional[User]
+    settings_keys: List[str]
+
+
+async def provision_tenant(repos: Repositories, audit: AuditLogger, request: TenantRequest) -> ProvisionedTenant:
+    """Create the tenant, its seeded settings, its first admin and every audit entry in one transaction.
+
+    Raises :class:`~lg_sotf.db.errors.Conflict` when the id exists (also when
+    a concurrent request for the same id commits first). Any failure leaves
+    nothing behind, so the request can be retried. Works for the runtime role:
+    the row is inserted by ``lgsotf_create_tenant`` on this transaction, and
+    the platform-level entries are written after :func:`switch_tenant` to the
+    home tenant and the copied tenant.
+    """
+    keys = sorted(request.settings)
+    who: Dict[str, Any] = {"actor_type": request.actor.type, "actor_id": request.actor.id}
+    async with repos.db.tenant_tx(request.tenant_id) as conn:
+        tenant = await repos.tenants.provision(request.tenant_id, request.name, conn=conn)
+        if request.settings:
+            tenant = await repos.tenants.update_settings(tenant.id, request.settings, conn=conn)
+        details = {
+            "name": tenant.name,
+            "with_admin": request.admin_email is not None,
+            **request.template,
+            "settings_keys": keys,
+            **request.audit_details,
+        }
+        await audit.record(tenant.id, "tenant.created", "tenant", tenant.id, **who, details=details, conn=conn)
+        admin = await _first_admin(repos, audit, tenant.id, request, conn)
+        if request.home_tenant_id is not None:
+            await switch_tenant(conn, request.home_tenant_id)
+            await audit.record(
+                request.home_tenant_id, "platform.tenant_created", "tenant", tenant.id, **who, details=details, conn=conn
+            )
+        if request.copied_from is not None:
+            # Reading another tenant's configuration is cross-tenant access: that tenant's log shows it.
+            await switch_tenant(conn, request.copied_from)
+            await audit.record(
+                request.copied_from,
+                "platform.settings_copied",
+                "tenant",
+                tenant.id,
+                **who,
+                details={"to_tenant": tenant.id, "keys": keys, **request.audit_details},
+                conn=conn,
+            )
+    return ProvisionedTenant(tenant=tenant, admin=admin, settings_keys=keys)
+
+
+async def _first_admin(
+    repos: Repositories, audit: AuditLogger, tenant_id: str, request: TenantRequest, conn: Connection
+) -> Optional[User]:
+    if request.admin_email is None:
+        return None
+    user = await repos.users.create(
+        tenant_id, request.admin_email, "admin", password_hash=request.admin_password_hash, conn=conn
+    )
+    await audit.record(
+        tenant_id,
+        "user.created",
+        "user",
+        str(user.id),
+        actor_type=request.actor.type,
+        actor_id=request.actor.id,
+        details={
+            "role": user.role,
+            "sso_only": request.admin_password_hash is None,
+            **request.audit_details,
+            **request.admin_audit_details,
+        },
+        conn=conn,
+    )
+    return user
+
+
 __all__ = [
     "COPIED_KEYS",
     "PROFILES",
     "Profile",
+    "ProvisionedTenant",
     "QuotaExceeded",
+    "TenantRequest",
     "alert_quota_exceeded",
     "copyable_settings",
     "ensure_capacity",
     "profile_settings",
+    "provision_tenant",
     "quotas_of",
 ]

@@ -11,7 +11,7 @@ pytestmark = pytest.mark.integration
 
 
 async def _record(api: ApiHarness, tenant_id: str, action: str, resource_id: str) -> None:
-    await AuditLogger(api.repos).record(
+    await AuditLogger(api.repos).record_event(
         tenant_id, action, "source", resource_id, actor_type="user", actor_id="u-1", details={"n": resource_id}
     )
 
