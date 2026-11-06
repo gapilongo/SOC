@@ -29,8 +29,10 @@ All notable changes to this project are documented here. The format follows
   trace in the audit log. Now the change and its entry are saved together:
   either both are there or neither is, and the request can simply be
   retried. This covers MFA enrollment, disabling MFA, new recovery codes,
-  using a recovery code, the role update of a single sign-on account, and
-  creating, updating and deleting alert sources and suppression rules.
+  using a recovery code, the role update of a single sign-on account,
+  creating, updating and deleting alert sources, suppression rules and
+  integrations, integration connection tests, creating users and API keys,
+  revoking API keys, and the getting-started checklist steps.
 
 ## [1.2.3] - 2026-11-05
 

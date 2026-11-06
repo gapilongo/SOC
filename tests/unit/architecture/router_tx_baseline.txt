@@ -8,7 +8,6 @@ api/routers/alerts.py::alert_events
 api/routers/alerts.py::reprocess
 api/routers/compliance.py::incident_report
 api/routers/dashboard.py::_compute
-api/routers/identity.py::create_user
 api/routers/identity.py::delete_user
 api/routers/identity.py::reset_user_mfa
 api/routers/identity.py::update_user

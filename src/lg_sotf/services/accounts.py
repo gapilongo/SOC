@@ -1,4 +1,4 @@
-"""Audited account changes: MFA factors, API keys and the SSO role sync.
+"""Audited account changes: users, MFA factors, API keys and the SSO role sync.
 
 Each function runs one change and its audit entry in a single
 ``db.tenant_tx``: when the audit entry cannot be written the change rolls
@@ -10,10 +10,99 @@ the results to HTTP.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Sequence
+from uuid import UUID
 
-from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db.repos import Repositories, User, UserMfa
+from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.db.repos import ApiKey, Repositories, User, UserMfa
+from lg_sotf.services.tenancy import ensure_capacity
+
+
+async def create_user(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    *,
+    email: str,
+    role: str,
+    password_hash: Optional[str],
+    is_platform_admin: bool,
+    is_active: bool,
+) -> User:
+    """Create an account; an active one counts against ``max_users`` (``QuotaExceeded``). Audited ``user.created``."""
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        if is_active:
+            await ensure_capacity(repos, tenant_id, "max_users", conn=conn)
+        user = await repos.users.create(
+            tenant_id,
+            email,
+            role,
+            password_hash=password_hash,
+            is_platform_admin=is_platform_admin,
+            is_active=is_active,
+            conn=conn,
+        )
+        await audit.record(
+            tenant_id,
+            "user.created",
+            "user",
+            str(user.id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={"role": user.role, "sso_only": password_hash is None},
+            conn=conn,
+        )
+    return user
+
+
+async def create_api_key(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    *,
+    name: str,
+    prefix: str,
+    key_hash: str,
+    scopes: Sequence[str],
+    created_by: Optional[UUID],
+    key_id: UUID,
+) -> ApiKey:
+    """Store a new API key (its hash only); audited ``api_key.created`` with the scopes and name."""
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        key = await repos.api_keys.create(
+            tenant_id, name, prefix, key_hash, scopes, created_by=created_by, key_id=key_id, conn=conn
+        )
+        await audit.record(
+            tenant_id,
+            "api_key.created",
+            "api_key",
+            str(key.id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={"scopes": key.scopes, "name": key.name},
+            conn=conn,
+        )
+    return key
+
+
+async def revoke_api_key(repos: Repositories, audit: AuditLogger, tenant_id: str, actor: Actor, key_id: UUID) -> bool:
+    """Revoke a key (audited ``api_key.revoked``); ``False`` when it is unknown or already revoked."""
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        if not await repos.api_keys.revoke(tenant_id, key_id, conn=conn):
+            return False
+        await audit.record(
+            tenant_id,
+            "api_key.revoked",
+            "api_key",
+            str(key_id),
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={},
+            conn=conn,
+        )
+    return True
 
 
 async def activate_mfa(

@@ -10,13 +10,16 @@ from __future__ import annotations
 
 from typing import Any, Set
 
+import httpx
 import pytest
 
 from lg_sotf.db.repos.audit import AuditRepo
+from lg_sotf.integrations.http import IntegrationHttp
 from tests.integration.api.conftest import PASSWORD, TENANT_A, ApiHarness
 from tests.integration.api.test_mfa import Clock, challenge, code_now, enroll, verify
 from tests.integration.api.test_oidc import IdP, bearer
 from tests.integration.api.test_oidc_jit import _jit_api, _token
+from tests.integration.integrations.conftest import Receiver, public_resolver, slack_url
 
 pytestmark = pytest.mark.integration
 
@@ -207,3 +210,88 @@ async def test_suppression_changes_roll_back_without_their_audit_entry(
     failing_audit.clear()
     assert (await api.client.delete(f"{API}/suppressions/{rule_id}", headers=headers)).status_code == 204
     assert await api.repos.suppressions.list(TENANT_A) == []
+
+
+# ------------------------------------------------------------------ integrations
+
+SLACK = {"kind": "slack", "name": "SOC channel", "events": ["escalation.created"], "secret": {"webhook_url": slack_url()}}
+
+
+async def test_integration_changes_roll_back_without_their_audit_entry(
+    api: ApiHarness, failing_audit: Set[str]
+) -> None:
+    headers = await api.login_headers(TENANT_A, "admin")
+    failing_audit.add("integration.created")
+    assert (await api.client.post(f"{API}/integrations", json=SLACK, headers=headers)).status_code == 500
+    assert await api.repos.integrations.list(TENANT_A) == []
+    failing_audit.clear()
+    created = await api.client.post(f"{API}/integrations", json=SLACK, headers=headers)
+    assert created.status_code == 201, created.text
+    integration_id = created.json()["id"]
+
+    failing_audit.add("integration.updated")
+    patched = await api.client.patch(f"{API}/integrations/{integration_id}", json={"enabled": False}, headers=headers)
+    assert patched.status_code == 500
+    assert (await api.repos.integrations.get(TENANT_A, integration_id)).enabled is True
+
+    api.app.state.integrations_http = IntegrationHttp(
+        api.ctx.settings, transport=httpx.MockTransport(Receiver()), resolver=public_resolver
+    )
+    failing_audit.add("integration.tested")
+    assert (await api.client.post(f"{API}/integrations/{integration_id}/test", headers=headers)).status_code == 500
+    assert await api.repos.integrations.deliveries(TENANT_A, integration_id) == []
+
+    failing_audit.add("integration.deleted")
+    assert (await api.client.delete(f"{API}/integrations/{integration_id}", headers=headers)).status_code == 500
+    assert (await api.repos.integrations.get(TENANT_A, integration_id)).enabled is True
+    failing_audit.clear()
+    assert (await api.client.delete(f"{API}/integrations/{integration_id}", headers=headers)).status_code == 204
+    assert await api.repos.integrations.list(TENANT_A) == []
+
+
+# ------------------------------------------------------------- users and API keys
+
+
+async def test_user_and_api_key_changes_roll_back_without_their_audit_entry(
+    api: ApiHarness, failing_audit: Set[str]
+) -> None:
+    headers = await api.login_headers(TENANT_A, "admin")
+    failing_audit.add("user.created")
+    body = {"email": "new.viewer@a.example.com", "role": "viewer"}
+    assert (await api.client.post(f"{API}/users", json=body, headers=headers)).status_code == 500
+    assert await api.repos.users.get_by_email(TENANT_A, "new.viewer@a.example.com") is None
+    failing_audit.clear()
+    assert (await api.client.post(f"{API}/users", json=body, headers=headers)).status_code == 201
+
+    failing_audit.add("api_key.created")
+    key_body = {"name": "siem", "scopes": ["ingest"]}
+    assert (await api.client.post(f"{API}/api-keys", json=key_body, headers=headers)).status_code == 500
+    assert await api.repos.api_keys.list(TENANT_A) == []
+    failing_audit.clear()
+    created = await api.client.post(f"{API}/api-keys", json=key_body, headers=headers)
+    assert created.status_code == 201, created.text
+    key_id = created.json()["id"]
+
+    failing_audit.add("api_key.revoked")
+    assert (await api.client.delete(f"{API}/api-keys/{key_id}", headers=headers)).status_code == 500
+    (key,) = await api.repos.api_keys.list(TENANT_A)
+    assert not key.is_revoked
+    failing_audit.clear()
+    assert (await api.client.delete(f"{API}/api-keys/{key_id}", headers=headers)).status_code == 204
+    assert await _count(api, "api_key.revoked") == 1
+
+
+# -------------------------------------------------------------------- onboarding
+
+
+async def test_onboarding_marks_are_not_set_without_their_audit_entry(
+    api: ApiHarness, failing_audit: Set[str]
+) -> None:
+    headers = await api.login_headers(TENANT_A, "admin")
+    failing_audit.update({"onboarding.dismissed", "onboarding.autonomy_reviewed"})
+    assert (await api.client.post(f"{API}/onboarding/dismiss", headers=headers)).status_code == 500
+    assert (await api.client.post(f"{API}/onboarding/autonomy-reviewed", headers=headers)).status_code == 500
+    assert (await api.repos.tenants.get(TENANT_A)).onboarding == {}
+    failing_audit.clear()
+    dismissed = await api.client.post(f"{API}/onboarding/dismiss", headers=headers)
+    assert dismissed.status_code == 200 and dismissed.json()["dismissed"] is True

@@ -2,9 +2,6 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-api/routers/identity.py::_audit
-api/routers/integrations.py::_audit
-api/routers/onboarding.py::_audit
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
