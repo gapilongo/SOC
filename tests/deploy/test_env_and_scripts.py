@@ -267,10 +267,22 @@ def test_only_useful_scripts_remain() -> None:
         "export_openapi.py",
         "generate_secrets.py",
         "load_test.py",
+        "make_tour_media.sh",
         "quickstart.sh",
+        "record_tour.mjs",
         "smoke_stack.py",
         "smoke_stack.sh",
     ]
+
+
+def test_tour_scripts_keep_the_admin_password_out_of_output() -> None:
+    """The README tour signs in with the demo stack's bootstrap password; it is read, never printed."""
+    tour = (REPO_ROOT / "scripts" / "record_tour.mjs").read_text()
+    media = REPO_ROOT / "scripts" / "make_tour_media.sh"
+    assert "BOOTSTRAP_ADMIN_PASSWORD" in tour
+    logged = [line for line in tour.splitlines() if "console." in line]
+    assert logged and not any("password" in line.lower() for line in logged), logged
+    assert os.access(media, os.X_OK) and "set -euo pipefail" in media.read_text()
 
 
 def test_smoke_script_is_strict_private_and_cleans_up() -> None:
