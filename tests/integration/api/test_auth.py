@@ -224,6 +224,21 @@ async def test_logout_revokes_refresh_and_access_token(api: ApiHarness) -> None:
     assert me.status_code == 401
 
 
+async def test_logout_racing_a_refresh_revokes_the_rotated_cookie(api: ApiHarness) -> None:
+    # The sign-out e2e flake: a reload's refresh rotated the cookie before the
+    # logout (which presented the old one) revoked it, and the new one survived.
+    await api.user(TENANT_A, "analyst", email="race@a.example.com")
+    old = (await _login(api, "race@a.example.com")).cookies[REFRESH_COOKIE]
+    rotated = await _refresh_with(api, old)
+    assert rotated.status_code == 200
+    new = rotated.cookies[REFRESH_COOKIE]
+
+    api.client.cookies.clear()
+    api.client.cookies.set(REFRESH_COOKIE, old)
+    assert (await api.client.post("/api/v1/auth/logout")).status_code == 204
+    assert (await _refresh_with(api, new)).status_code == 401
+
+
 async def test_deactivated_user_token_stops_working_immediately(api: ApiHarness) -> None:
     user = await api.user(TENANT_A, "admin")
     headers = api.auth(user)

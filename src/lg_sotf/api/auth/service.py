@@ -404,7 +404,8 @@ class AuthService:
         record = await self._ctx.repos.refresh_tokens.get_by_hash_all_tenants(token_hash)
         if record is None:
             return None
-        await self._ctx.repos.refresh_tokens.revoke(record.tenant_id, token_hash)
+        # The lineage, not just the token: a refresh racing this logout may have rotated it already.
+        await self._ctx.repos.refresh_tokens.revoke_lineage(record.tenant_id, token_hash)
         await self._audit.record(
             record.tenant_id,
             "auth.logout",
