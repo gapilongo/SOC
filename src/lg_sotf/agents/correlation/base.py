@@ -34,10 +34,10 @@ from pydantic import BaseModel, Field
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import agent_refusal
-from lg_sotf.core.exceptions import AgentError
 from lg_sotf.core.phishing import PhishingProfile
 from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.errors import NotFound
+from lg_sotf.errors import AgentError
 from lg_sotf.llm.schema import clipped_list, clipped_str
 from lg_sotf.security.hashing import hmac_indicator
 

@@ -797,7 +797,7 @@ There are no tenant labels.
 - **Registry (RT-18).** Per tenant, ADMIN-managed in the integrations UI. Each entry is one of two kinds:
   - **Vendor-hosted:**
     - `server_url` must be public `https`;
-    - it must pass `DestinationPolicy` (ingestion/sources/netpolicy.py) at save time and at every connection: no private, loopback, link-local, CGNAT or metadata addresses, and DNS pinned;
+    - it must pass `DestinationPolicy` (`net/egress.py`) at save time and at every connection: no private, loopback, link-local, CGNAT or metadata addresses, and DNS pinned;
     - tenants can never enter a private address.
   - **Named sidecar:** the tenant picks a **name** from the operator's map (`mcp.sidecars` Helm value or VM config: `name → in-cluster host, tenant_id, vendor`).
     - The worker resolves names only through that operator config.

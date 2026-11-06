@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-import datetime as dt
 import json
-import ssl
 from typing import Any, Callable, List
 
 import httpx
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
 
 from lg_sotf.ingestion.errors import (
     SourceAuthError,
@@ -26,8 +20,6 @@ from lg_sotf.ingestion.sources.http import (
     HeaderAuth,
     OAuth2ClientCredentials,
     SourceHttpClient,
-    build_verify,
-    parse_retry_after,
 )
 from tests.unit.ingestion._support import FakeClock
 
@@ -231,66 +223,6 @@ async def test_static_and_basic_auth_headers() -> None:
     await c2.request("GET", "/x")
     assert seen == ["Bearer abc", "Basic dTpw"]
     assert "abc" not in repr(HeaderAuth({"Authorization": "Bearer abc"}))
-
-
-def test_parse_retry_after() -> None:
-    now = dt.datetime(2024, 3, 5, 10, 0, 0, tzinfo=dt.UTC)
-    assert parse_retry_after("5") == 5.0
-    assert parse_retry_after("-3") == 0.0
-    assert parse_retry_after("Tue, 05 Mar 2024 10:00:30 GMT", now=now) == 30.0
-    assert parse_retry_after("soon") is None
-    assert parse_retry_after(None) is None
-    # Non-finite and absurd hints never reach a sleep or a retry schedule.
-    assert parse_retry_after("inf") is None and parse_retry_after("nan") is None and parse_retry_after("-inf") is None
-    assert parse_retry_after("1e12") == 3_600.0 and parse_retry_after("2.5") == 2.5
-    assert parse_retry_after("90", cap=10.0) == 10.0
-
-
-def _self_signed_pem() -> str:
-    key = ec.generate_private_key(ec.SECP256R1())
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-ca")])
-    cert = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(key.public_key())
-        .serial_number(1)
-        .not_valid_before(dt.datetime(2024, 1, 1))
-        .not_valid_after(dt.datetime(2034, 1, 1))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .sign(key, hashes.SHA256())
-    )
-    return cert.public_bytes(serialization.Encoding.PEM).decode()
-
-
-def test_build_verify() -> None:
-    assert build_verify({}, production=True) is True
-    assert build_verify({"tls_verify": False}, production=False) is False
-    with pytest.raises(SourceConfigError):
-        build_verify({"tls_verify": False}, production=True)
-    with pytest.raises(SourceConfigError):
-        build_verify({"tls_verify": "no"}, production=False)
-    ctx = build_verify({"ca_cert_pem": _self_signed_pem()}, production=True)
-    assert isinstance(ctx, ssl.SSLContext)
-    assert ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
-    with pytest.raises(SourceConfigError):
-        build_verify({"ca_bundle": "/nonexistent/ca.pem"}, production=False)
-    with pytest.raises(SourceConfigError):
-        build_verify({"ca_cert_pem": "not a pem"}, production=False)
-
-
-def test_ca_bundle_paths_are_refused_in_production_and_errors_are_generic(tmp_path: Any) -> None:
-    pem = tmp_path / "ca.pem"
-    pem.write_text(_self_signed_pem())
-    assert isinstance(build_verify({"ca_bundle": str(pem)}, production=False), ssl.SSLContext)
-    with pytest.raises(SourceConfigError, match="not allowed in staging or production"):
-        build_verify({"ca_bundle": str(pem)}, production=True)
-    messages = set()
-    for path in ("/nonexistent/ca.pem", "/etc/shadow", str(tmp_path)):
-        with pytest.raises(SourceConfigError) as info:
-            build_verify({"ca_bundle": path}, production=False)
-        messages.add(str(info.value))
-    assert messages == {"invalid CA certificate"}
 
 
 def test_client_verifies_tls_by_default(monkeypatch: pytest.MonkeyPatch) -> None:

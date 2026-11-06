@@ -66,10 +66,10 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
-from lg_sotf.ingestion.errors import SourceConfigError
-from lg_sotf.ingestion.sources.http import parse_retry_after
+from lg_sotf.errors import SourceConfigError
 from lg_sotf.integrations.microsoft.clouds import Api, CloudProfile
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MicrosoftHttpFactory
+from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)

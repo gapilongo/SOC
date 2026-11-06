@@ -1,6 +1,6 @@
-"""Where pull connectors may connect.
+"""Where outbound connections may go (SSRF egress policy).
 
-Source URLs are tenant-controlled, so every outbound request is checked
+Source, integration and webhook URLs are tenant-controlled, so every outbound request is checked
 before it is sent:
 
 * the scheme must be ``https`` in staging/production (``http`` is allowed in
@@ -31,7 +31,7 @@ from typing import Awaitable, Callable, List, Optional, Sequence, Tuple, Union
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
+from lg_sotf.errors import SourceConfigError
 
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 Resolver = Callable[[str, int], Awaitable[Sequence[str]]]

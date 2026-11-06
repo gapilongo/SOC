@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from lg_sotf.core.exceptions import InvalidResumePayload
 from lg_sotf.core.workflow import validate_resume_payload
+from lg_sotf.errors import InvalidResumePayload
 
 
 def test_valid_analyst_decision() -> None:

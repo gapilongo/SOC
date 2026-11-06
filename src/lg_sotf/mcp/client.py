@@ -4,7 +4,7 @@ The destination is the operator's own LG-SOTF API, configured in
 ``settings.mcp.api_url`` on the machine that runs ``lg-sotf mcp`` (usually
 an analyst's workstation or a jump host). It is not tenant-controlled, so
 the SSRF address policy that guards source connectors
-(:mod:`lg_sotf.ingestion.sources.netpolicy`, which refuses loopback and
+(:mod:`lg_sotf.net.egress`, which refuses loopback and
 private addresses) does not apply beyond its URL shape checks: ``http(s)``
 only, no credentials in the URL, a host present. Plain ``http`` is accepted
 only for a loopback host (``localhost``, ``127.0.0.0/8``, ``::1``), so the
@@ -34,8 +34,8 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, 
 import httpx
 
 from lg_sotf import __version__
-from lg_sotf.ingestion.errors import SourceConfigError
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy
+from lg_sotf.errors import SourceConfigError
+from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)

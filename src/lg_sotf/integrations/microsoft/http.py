@@ -18,7 +18,7 @@ Query parameters
 
 Transport
     Every request goes through
-    :class:`~lg_sotf.ingestion.sources.netpolicy.GuardedTransport` (``https``
+    :class:`~lg_sotf.net.egress.GuardedTransport` (``https``
     only, the resolved address checked and pinned, system CAs), follows no
     redirect, reads at most 1 MiB (4 MiB per page in :meth:`MicrosoftApi.pages`)
     and times out after ``min(response.microsoft_timeout_s, deadline - now)``.
@@ -83,11 +83,11 @@ from urllib.parse import quote, urlencode
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
-from lg_sotf.ingestion.sources.http import parse_retry_after
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.errors import SourceConfigError
 from lg_sotf.integrations.http import destination_policy
 from lg_sotf.integrations.microsoft.clouds import Api
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.observability.logging import get_logger
 
 if TYPE_CHECKING:

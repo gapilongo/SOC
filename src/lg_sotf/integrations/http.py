@@ -2,12 +2,13 @@
 
 Integration URLs (webhook receivers, Jira and ServiceNow instances) are
 tenant-controlled, so every request goes through
-:class:`~lg_sotf.ingestion.sources.netpolicy.GuardedTransport`: ``https``
+:class:`~lg_sotf.net.egress.GuardedTransport`: ``https``
 only in staging and production, loopback / link-local / metadata addresses
 always refused, private ranges only when the install sets
 ``ingestion.allow_private_destinations``, and the connection pinned to the
 address that was checked. Redirects are never followed, every request has a
-timeout, and response bodies are read up to a cap.
+timeout, and response bodies are read up to a cap. TLS contexts come from
+:class:`~lg_sotf.net.tls.TlsContexts` (one per CA, not one per request).
 
 Errors are raised as :class:`DeliveryError` with a message that is safe to
 store and show to a tenant admin: it never contains the request URL (Slack
@@ -25,10 +26,11 @@ from typing import Any, Awaitable, Callable, Mapping, Optional
 
 import httpx
 
-from lg_sotf.ingestion.errors import SourceConfigError
+from lg_sotf.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.ingestion.sources.http import Verify, build_verify, parse_retry_after
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify, build_verify
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.settings import Settings
 
@@ -96,11 +98,11 @@ def destination_policy(settings: Settings) -> DestinationPolicy:
     return DestinationPolicy(require_https=settings.is_production, allow_private=allow_private)
 
 
-def tls_verify(config: Mapping[str, Any]) -> Verify:
+def tls_verify(config: Mapping[str, Any], *, contexts: TlsContexts = PROCESS_TLS) -> Verify:
     """System CAs, plus the integration's own ``ca_cert_pem`` (private CA of an on-prem Jira/ServiceNow)."""
     pem = config.get("ca_cert_pem")
     try:
-        return build_verify({"ca_cert_pem": pem} if pem else {}, production=True)
+        return build_verify({"ca_cert_pem": pem} if pem else {}, production=True, contexts=contexts)
     except SourceConfigError as exc:
         raise DeliveryError(str(exc), retryable=False, code="invalid_ca") from exc
 
@@ -118,8 +120,10 @@ class IntegrationHttp:
         max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
         sleep: SleepFn = asyncio.sleep,
         rand: Callable[[], float] = random.random,
+        tls: TlsContexts = PROCESS_TLS,
     ) -> None:
         self._policy = destination_policy(settings)
+        self._tls = tls
         self._transport = transport
         self._resolver = resolver or system_resolve
         self._timeout_s = float(timeout_s if timeout_s is not None else settings.integrations.http_timeout_s)
@@ -139,6 +143,7 @@ class IntegrationHttp:
             raise DeliveryError(f"destination rejected: {exc}", retryable=False, code="destination_refused") from exc
 
     def _client(self, verify: Verify) -> httpx.AsyncClient:
+        verify = self._tls.resolve(verify)
         inner = self._transport or httpx.AsyncHTTPTransport(verify=verify)
         guarded = GuardedTransport(inner, self._policy, self._resolver, pin=self._transport is None)
         return httpx.AsyncClient(

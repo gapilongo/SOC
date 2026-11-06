@@ -15,6 +15,7 @@ from lg_sotf.db.repos import Repositories, User
 from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.users import ROLES, normalize_email
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.errors import OperationError
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.dlq import DeadLetter, DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
@@ -26,10 +27,6 @@ from lg_sotf.settings import Settings
 log = get_logger(__name__)
 
 MAX_TENANT_NAME_CHARS = 200
-
-
-class OperationError(Exception):
-    """A user-facing failure of an operations command (bad input or state)."""
 
 
 def owner_url(settings: Settings) -> str:

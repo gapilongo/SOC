@@ -267,7 +267,7 @@ Legend:
   - Warnings: set `filterwarnings = ["error", ...]` for the unit tier after fixing the 3 known `ResourceWarning`s. For integration, start with `error::RuntimeWarning` and `error::pytest.PytestUnraisableExceptionWarning`.
   - Replace the exact-SHA assertion with "pinned to a 40-hex SHA with a `# vX.Y.Z` comment" (already enforced generically at `test_ci_workflow.py:28`).
 - **Verify:** both jobs are green with the same total case count.
-- **Left over:** #82 turns only `RuntimeWarning` into an error. `ResourceWarning` and `PytestUnraisableExceptionWarning` stay warnings until 5 tests stop leaking sockets; tracing those leaks moves to Phase 8.
+- **Left over (done):** #82 turned only `RuntimeWarning` into an error. The leaks are fixed at their source (the stub API server in `tests/deploy/test_local_llm_deploy.py` was never `server_close()`d; the IMAP limit tests never closed their `makefile()` readers or the client, so the socket pair's descriptors outlived `close()` and surfaced in later tests). `ResourceWarning` and `PytestUnraisableExceptionWarning` are now errors for the whole suite, and `tests/unit/conftest.py` makes every warning an error in the unit tier, with no ignore-list.
 - **Risk / Effort / Deps:** low · S · G1.
 
 #### G10 · Coverage floors and runtime characterization tests (done in #82)

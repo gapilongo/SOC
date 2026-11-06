@@ -17,7 +17,7 @@ import pytest
 
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import Repositories
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy
+from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.services.connectors import WebhookConnector, WebhookTarget, verify_signature
 from lg_sotf.services.connectors.webhook import IDEMPOTENCY_HEADER, SIGNATURE_HEADER, TIMESTAMP_HEADER
 from lg_sotf.services.review import ReviewService

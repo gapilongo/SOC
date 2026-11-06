@@ -46,6 +46,21 @@ All notable changes to this project are documented here. The format follows
   same: a failed run leaves no tenant, so running it again works instead of
   reporting that the tenant already exists. Changing a tenant's name, status or
   quotas is also saved together with the platform admin's audit entry.
+- Notifications, ticketing requests and response-action webhooks no longer
+  build a new TLS context for every request. Each request used to load the CA
+  bundle again, synchronously on the event loop, blocking other work in the
+  API and the workers while it did. One context per process is now reused for
+  default verification, and one per distinct `ca_cert_pem` (up to 256), so an
+  integration with its own CA still trusts only that CA.
+- Sign-out could leave the session alive. The web app showed the sign-in
+  page before `POST /auth/logout` had finished; reloading at that moment
+  aborted the logout request, and the reload's `POST /auth/refresh` rotated
+  the refresh cookie before the logout revoked it. The API revoked only the
+  token presented at logout, so the rotated cookie stayed valid and the
+  reload signed the user back in. Now the web app reports signed out only
+  after the API answers (at most 5 seconds), starts no refresh meanwhile, and
+  sends the logout with `keepalive` so a navigation cannot abort it. Logout
+  also revokes every token the presented one was rotated into.
 
 ## [1.2.3] - 2026-11-05
 

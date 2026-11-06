@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from lg_sotf.core.exceptions import StorageError
+from lg_sotf.errors import StorageError
 
 
 class DatabaseError(StorageError):

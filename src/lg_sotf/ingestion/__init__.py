@@ -1,4 +1,8 @@
-"""Alert ingestion: normalizers, fingerprints, pull connectors and the ingestion service (contract section 12)."""
+"""Alert ingestion: normalizers, fingerprints, pull connectors and the ingestion service (contract section 12).
+
+Importing the package loads only the errors and the fingerprint; import
+connectors, the service and the normalizers from their modules.
+"""
 
 from lg_sotf.ingestion.errors import (
     IngestionError,
@@ -14,24 +18,18 @@ from lg_sotf.ingestion.errors import (
     UnrecognizedEvent,
 )
 from lg_sotf.ingestion.fingerprint import compute_fingerprint
-from lg_sotf.ingestion.sources import SourceHealth, encrypt_source_secret, source_secret_context
-from lg_sotf.ingestion.sources.netpolicy import DestinationRefused
 
 __all__ = [
-    "DestinationRefused",
     "IngestionError",
     "NormalizationError",
     "SourceAuthError",
     "SourceConfigError",
     "SourceDisabled",
     "SourceError",
-    "SourceHealth",
     "SourceNotPullable",
     "SourceNotPushable",
     "SourceRateLimited",
     "SourceUnavailable",
     "UnrecognizedEvent",
     "compute_fingerprint",
-    "encrypt_source_secret",
-    "source_secret_context",
 ]

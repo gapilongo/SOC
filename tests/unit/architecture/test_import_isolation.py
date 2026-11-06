@@ -7,8 +7,8 @@ from its own root, fails here instead of in production.
 
 ``BUDGETS`` lists ``(module, must_not_load)`` pairs: importing ``module`` in a fresh
 interpreter must not put ``must_not_load`` (or any of its submodules, which would
-load it too) in ``sys.modules``. It starts empty; refactor steps add an entry when
-they cut a dependency, so the cut stays cut.
+load it too) in ``sys.modules``. Refactor steps add an entry when they cut a
+dependency, so the cut stays cut.
 
 The interpreters run concurrently, so the whole file costs about as much as the
 slowest single import.
@@ -33,9 +33,12 @@ PACKAGE_DIR = Path(lg_sotf.__file__).resolve().parent
 SRC_DIR = PACKAGE_DIR.parent
 TIMEOUT_S = 120
 
-# (module, must_not_load). Add an entry when a step removes a dependency, e.g.
-# ("lg_sotf.net.egress", "lg_sotf.db").
-BUDGETS: list[tuple[str, str]] = []
+# (module, must_not_load). Add an entry when a step removes a dependency.
+BUDGETS: list[tuple[str, str]] = [
+    # F3: the egress policy is a leaf; importing it used to load every pull connector and db.repos.
+    ("lg_sotf.net.egress", "lg_sotf.db"),
+    ("lg_sotf.net.egress", "lg_sotf.ingestion"),
+]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded
 # name per line, so the probe itself cannot put a forbidden module in sys.modules.

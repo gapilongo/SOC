@@ -6,9 +6,9 @@ import httpx
 import pytest
 from redis import exceptions as redis_exceptions
 
-from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy, is_transient
 from lg_sotf.db.errors import DatabaseUnavailable, InvalidValue, PoolExhausted
+from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm.errors import LLMOutputError, LLMRefusal, LLMUnavailable
 
 

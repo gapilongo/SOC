@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 import httpx
 import pytest
 
+from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import (
@@ -25,7 +26,6 @@ from lg_sotf.tools.enrichment import (
     TenantTTLCache,
     VirusTotalProvider,
     encrypt_tool_secret,
-    parse_retry_after,
     public_url,
 )
 from tests.unit.agents._support import Related, StoredAlert, fake_repos

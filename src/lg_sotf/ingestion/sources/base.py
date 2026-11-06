@@ -30,9 +30,10 @@ import httpx
 from lg_sotf.db.repos import Source
 from lg_sotf.ingestion.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.ingestion.sources.http import AuthStrategy, SleepFn, SourceHttpClient, build_verify
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, Resolver, system_resolve
+from lg_sotf.ingestion.sources.http import AuthStrategy, SleepFn, SourceHttpClient
 from lg_sotf.ingestion.timeparse import parse_timestamp
+from lg_sotf.net.egress import DestinationPolicy, Resolver, system_resolve
+from lg_sotf.net.tls import build_verify
 from lg_sotf.settings import Settings
 
 CURSOR_VERSION = 1

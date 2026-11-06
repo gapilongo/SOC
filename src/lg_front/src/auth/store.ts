@@ -18,6 +18,8 @@
  *   becomes visible (timers are throttled in background tabs), and on a 401.
  * * A refresh the API refuses (401) ends the session with status `expired`;
  *   transient failures (network, 5xx, 429) keep the session and retry.
+ * * Sign-out reports `anonymous` only after the API revoked the refresh
+ *   cookie (bounded by a timeout), so a reload cannot restore the session.
  * * With MFA, `login` resolves to a challenge instead of a session. The
  *   challenge token is handed back to the caller (the login page keeps it in
  *   component state, never in storage); it is not a session and grants
@@ -103,6 +105,8 @@ export interface AuthStoreDeps {
 const MIN_REFRESH_DELAY_MS = 5_000;
 const EARLY_REFRESH_MS = 60_000;
 const RETRY_DELAY_MS = 15_000;
+/** How long sign-out waits for the API to revoke the refresh cookie before ending the local session anyway. */
+export const LOGOUT_WAIT_MS = 5_000;
 export const REFRESH_LOCK = 'lg-sotf-auth-refresh';
 
 /** Web Locks when available (serialises refresh across tabs), otherwise run directly. */
@@ -149,6 +153,7 @@ export class AuthStore {
   #expiresAt = 0;
   #oidcRefreshToken: string | null = null;
   #inflight: Promise<string | null> | null = null;
+  #signingOut: Promise<void> | null = null;
   #timer: unknown = null;
   #state: AuthState = { status: 'initializing', principal: null, actingTenant: null };
   #listeners = new Set<() => void>();
@@ -277,6 +282,8 @@ export class AuthStore {
   refresh = (): Promise<string | null> => {
     const status = this.#state.status;
     if (status !== 'initializing' && status !== 'authenticated') return Promise.resolve(null);
+    // Signing out: a rotation now would hand the browser a cookie the logout does not revoke.
+    if (this.#signingOut) return Promise.resolve(null);
     if (!this.#inflight) {
       this.#inflight = this.#doRefresh().finally(() => {
         this.#inflight = null;
@@ -292,17 +299,36 @@ export class AuthStore {
     return this.refresh();
   }
 
-  async logout(): Promise<void> {
+  /**
+   * End the session. The store reports `anonymous` (and the app shows the
+   * sign-in page) only once the API has revoked the refresh cookie, or the
+   * attempt failed or timed out. Ending the local session first left a
+   * window in which the cookie was still valid while the app looked signed
+   * out: a reload then restored the session through `POST /auth/refresh`
+   * (and the navigation aborted the logout request). Until then no refresh
+   * starts, and the request runs under the refresh lock so it cannot
+   * interleave with a rotation in another tab.
+   */
+  logout(): Promise<void> {
+    if (this.#signingOut) return this.#signingOut;
     const token = this.getToken();
     const method = this.#state.principal?.method;
-    this.#clear('anonymous');
-    if (method !== 'oidc') {
+    this.#cancelTimer();
+    const revoke = async (): Promise<void> => {
+      if (method === 'oidc') return;
       try {
-        await this.#deps.transport.logout(token);
+        // A refresh already in flight finishes first, so the cookie revoked is the current one.
+        await this.#inflight;
+        await this.#withTimeout(this.#deps.lock(REFRESH_LOCK, () => this.#deps.transport.logout(token)), LOGOUT_WAIT_MS);
       } catch {
-        // The local session is gone either way; the refresh cookie expires on its own.
+        // The local session ends either way; the refresh cookie expires on its own.
       }
-    }
+    };
+    this.#signingOut = revoke().finally(() => {
+      this.#signingOut = null;
+      this.#clear('anonymous');
+    });
+    return this.#signingOut;
   }
 
   /** The API refused our credentials outright (e.g. account disabled): end the session. */
@@ -397,6 +423,15 @@ export class AuthStore {
       this.#timer = null;
       void this.refresh();
     }, delayMs);
+  }
+
+  /** Settles with `work`, or resolves after `ms` if it has not settled by then. */
+  #withTimeout(work: Promise<unknown>, ms: number): Promise<unknown> {
+    let handle: unknown = null;
+    const timeout = new Promise<void>((resolve) => {
+      handle = this.#deps.setTimer(resolve, ms);
+    });
+    return Promise.race([work, timeout]).finally(() => this.#deps.clearTimer(handle));
   }
 
   #cancelTimer(): void {

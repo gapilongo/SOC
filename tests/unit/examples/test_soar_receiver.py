@@ -25,7 +25,7 @@ import httpx
 import pytest
 
 from lg_sotf.db.repos.actions import ResponseAction, action_idempotency_key
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy
+from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.services.connectors import WebhookConnector, WebhookTarget, sign, verify_request
 from lg_sotf.services.connectors.webhook import (
     IDEMPOTENCY_HEADER,

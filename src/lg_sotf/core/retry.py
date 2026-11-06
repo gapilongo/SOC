@@ -3,7 +3,7 @@
 Only infrastructure hiccups are retried inside a run: lost database or Redis
 connections, LLM transport errors, rate limits and 5xx responses, and
 timeouts of individual calls. The node's own time budget
-(:class:`~lg_sotf.core.exceptions.NodeTimeout`) is never retried, and nodes
+(:class:`~lg_sotf.errors.NodeTimeout`) is never retried, and nodes
 whose budget would not fit the worker's run timeout more than once get a
 single attempt (:func:`attempts_within_budget`). Everything else (bad data,
 validation, programming errors, LLM refusals or invalid output) raises
@@ -22,8 +22,8 @@ import psycopg
 from langgraph.types import RetryPolicy
 from redis import exceptions as redis_exceptions
 
-from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.db.errors import DatabaseUnavailable
+from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm.errors import LLMError
 
 _TRANSIENT_TYPES: Tuple[Type[BaseException], ...] = (
