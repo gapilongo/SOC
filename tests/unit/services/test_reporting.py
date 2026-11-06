@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.services.report_render import (
     REPORT_CSP,
     REPORT_CSS,

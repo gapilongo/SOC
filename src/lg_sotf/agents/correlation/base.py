@@ -13,7 +13,7 @@ whether they look like one campaign. Without related alerts no call is made.
 Email alerts are correlated on what the message is about, not on the
 tenant's own infrastructure: domains and URLs of the tenant's internal
 domains (``tools.internal_domains``) are left out, as is the reporter (see
-:mod:`lg_sotf.agents.correlation.indicators`), so ordinary internal mail
+:mod:`lg_sotf.domain.indicators`), so ordinary internal mail
 and a prolific reporter never look like a campaign.
 
 A refusal of that call leaves the alert's assessment open: its confidence is
@@ -32,11 +32,11 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, Field
 
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
-from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import agent_refusal
-from lg_sotf.core.phishing import PhishingProfile
-from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.errors import NotFound
+from lg_sotf.domain.indicators import Indicator, extract_indicators
+from lg_sotf.domain.phishing import PhishingProfile
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import AgentError
 from lg_sotf.llm.schema import clipped_list, clipped_str
 from lg_sotf.security.hashing import hmac_indicator

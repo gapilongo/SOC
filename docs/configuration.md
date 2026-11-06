@@ -355,7 +355,7 @@ Notifications and ticketing (docs/integrations.md): outbox delivery and ticket s
 
 ### `routing`
 
-Routing policy thresholds (`lg_sotf.core.routing.RoutingThresholds`). Free-form section: unknown keys are ignored, values are validated when a worker starts.
+Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-form section: unknown keys are ignored, values are validated when a worker starts.
 
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|

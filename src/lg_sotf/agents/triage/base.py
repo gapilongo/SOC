@@ -42,7 +42,7 @@ the ``prompt_injection_suspected`` true-positive signal and discards the
 false-positive evidence taken from text. It never raises a score.
 
 Email alerts (``alert["email"]``, from the email normalizer) add the phishing
-signals of :mod:`lg_sotf.core.phishing`, computed against the tenant's
+signals of :mod:`lg_sotf.domain.phishing`, computed against the tenant's
 internal domains, protected brands and executives: true-positive signals
 raise the full rules score (like description keywords, never the trusted
 score), and the one benign signal (an internal sender whose SPF, DKIM and
@@ -69,10 +69,10 @@ from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tupl
 from pydantic import BaseModel, Field
 
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult, refusal_digest
-from lg_sotf.core import routing
-from lg_sotf.core.phishing import PhishingAssessment, PhishingProfile, assess
-from lg_sotf.core.routing import RoutingThresholds
 from lg_sotf.db.errors import NotFound
+from lg_sotf.domain import routing
+from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 
 SEVERITY_WEIGHTS: Dict[str, int] = {"critical": 30, "high": 20, "medium": 10, "low": -10, "info": -20}
@@ -203,7 +203,7 @@ class TriageResult:
     threat_categories: List[str] = field(default_factory=list)
     reasoning: Optional[str] = None
     notes: List[str] = field(default_factory=list)
-    # Email alerts: sender authentication, lookalikes and suspicious links (lg_sotf.core.phishing).
+    # Email alerts: sender authentication, lookalikes and suspicious links (lg_sotf.domain.phishing).
     phishing: Optional[Dict[str, Any]] = None
 
     def digest(self) -> Dict[str, Any]:

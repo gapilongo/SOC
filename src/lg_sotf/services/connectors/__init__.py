@@ -12,7 +12,7 @@
   Microsoft 365, Entra ID and Defender for Endpoint (import it explicitly).
 """
 
-from lg_sotf.services.connectors.base import (
+from lg_sotf.domain.connectors import (
     Connector,
     ConnectorConfigError,
     ConnectorResult,
@@ -24,6 +24,7 @@ from lg_sotf.services.connectors.base import (
     Verifier,
     VerifyPlan,
 )
+from lg_sotf.security.signing import sign, verify_request, verify_signature
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.services.connectors.registry import (
     CONNECTOR_NAMES,
@@ -37,13 +38,7 @@ from lg_sotf.services.connectors.registry import (
 from lg_sotf.services.connectors.webhook import (
     SCHEMA as WEBHOOK_SCHEMA,
 )
-from lg_sotf.services.connectors.webhook import (
-    WebhookConnector,
-    WebhookTarget,
-    sign,
-    verify_request,
-    verify_signature,
-)
+from lg_sotf.services.connectors.webhook import WebhookConnector, WebhookTarget
 
 __all__ = [
     "CONNECTOR_NAMES",

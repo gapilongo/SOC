@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from lg_sotf.core import phishing as p
-from lg_sotf.core.phishing import PhishingProfile, assess, validate_phishing_settings
+from lg_sotf.domain import phishing as p
+from lg_sotf.domain.phishing import PhishingProfile, assess, validate_phishing_settings
 
 TENANT: Dict[str, Any] = {
     "tools": {"internal_domains": ["example.com"]},

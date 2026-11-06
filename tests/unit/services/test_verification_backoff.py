@@ -10,9 +10,9 @@ import pytest
 
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.repos.actions import VerificationWrite
+from lg_sotf.domain.connectors import VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import VerificationResult, VerifyPlan
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.verification import VerificationService, classify_error
 from lg_sotf.settings import Settings

@@ -191,6 +191,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = [
     "lg_sotf.errors",
+    "lg_sotf.domain.*",
     "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
@@ -200,6 +201,7 @@ module = [
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
+
 
 # Architecture contracts (docs/design/refactor-roadmap.md section 1.1, docs/adr/0001-layering.md).
 # `make import-lint` / CI. ignore_imports pins today's exceptions as exact pairs; each roadmap
@@ -224,52 +226,12 @@ layers = [
     "integrations | tools | llm | queue",
     "audit",
     "db",
-    "(domain)",
+    "domain",
     "models",
     "(net)",
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C1 urls, phishing and routing to lg_sotf.domain
-    "lg_sotf.agents.analysis.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.analysis.base -> lg_sotf.core.routing",
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.routing",
-    "lg_sotf.agents.triage.base -> lg_sotf.core.phishing",
-    "lg_sotf.agents.triage.base -> lg_sotf.core.routing",
-    "lg_sotf.services.escalation -> lg_sotf.core.routing",
-    "lg_sotf.services.reporting -> lg_sotf.core.routing",
-    "lg_sotf.services.response -> lg_sotf.core.phishing",
-    "lg_sotf.services.review -> lg_sotf.core.routing",
-    # C2 suppression and events to domain
-    "lg_sotf.integrations.delivery -> lg_sotf.core.events",
-    "lg_sotf.services.dispatch -> lg_sotf.core.events",
-    "lg_sotf.services.escalation -> lg_sotf.core.events",
-    "lg_sotf.services.response -> lg_sotf.core.events",
-    "lg_sotf.services.review -> lg_sotf.core.events",
-    "lg_sotf.services.review -> lg_sotf.core.suppression",
-    # C3 indicators to domain
-    "lg_sotf.services.response -> lg_sotf.agents.correlation.indicators",
-    # C4 checkpointer to db
-    "lg_sotf.db.migrate -> lg_sotf.core.checkpointer",
-    # C5 connector port to domain/connectors.py
-    "lg_sotf.integrations.channels -> lg_sotf.services.connectors.webhook",
-    "lg_sotf.integrations.microsoft.capability -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender._common -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.forensics -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.indicators -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.isolation -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.machine_actions -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.defender.stop_quarantine -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.account -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.password -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.risk -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.sessions -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.entra.users -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.mailboxes -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.notify -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.microsoft.mail.remediate -> lg_sotf.services.connectors.base",
-    "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
     # C6 action catalog to domain/actions.py
     "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
     # F4 one reader of allow_private_destinations (net.egress.egress_policy replaces IngestionOptions here)
@@ -285,7 +247,7 @@ ignore_imports = [
 id = "api-no-workflow"
 name = "The API never runs a workflow"
 type = "forbidden"
-allow_indirect_imports = true
+# Indirect imports count too (C3): no chain, lazy imports included, leads from the API to the workflow.
 source_modules = ["lg_sotf.api"]
 forbidden_modules = ["lg_sotf.core.workflow", "lg_sotf.core.nodes", "lg_sotf.core.graph", "lg_sotf.agents", "langgraph"]
 
@@ -307,6 +269,33 @@ source_modules = ["lg_sotf.net"]
 forbidden_modules = [
     "asyncpg", "psycopg", "psycopg_pool", "redis", "langgraph", "langchain_core", "fastapi", "starlette",
     "pydantic",
+]
+
+[[tool.importlinter.contracts]]
+id = "domain-pure"
+name = "Domain policy and value types do no I/O and import no higher layer"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["lg_sotf.domain", "lg_sotf.models"]
+# The layers contract says the same about lg_sotf packages; listing them here keeps this rule even if
+# a layers ignore is ever added. models -> domain is a layers rule (domain sits above models).
+forbidden_modules = [
+    "asyncpg", "psycopg", "psycopg_pool", "redis", "httpx", "langgraph", "langchain_core", "fastapi", "starlette",
+    "lg_sotf.db", "lg_sotf.audit", "lg_sotf.integrations", "lg_sotf.tools", "lg_sotf.llm", "lg_sotf.queue",
+    "lg_sotf.services", "lg_sotf.compliance", "lg_sotf.onboarding", "lg_sotf.agents", "lg_sotf.ingestion",
+    "lg_sotf.core", "lg_sotf.runtime", "lg_sotf.api", "lg_sotf.mcp", "lg_sotf.eval", "lg_sotf.cli",
+    "lg_sotf.__main__",
+]
+
+[[tool.importlinter.contracts]]
+id = "integrations-are-adapters"
+name = "Integrations are adapters: they never import the services, the workflow or the agents"
+type = "forbidden"
+source_modules = ["lg_sotf.integrations"]
+forbidden_modules = ["lg_sotf.services", "lg_sotf.core", "lg_sotf.agents"]
+ignore_imports = [
+    # C6 action catalog to domain/actions.py
+    "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
 ]
 
 [[tool.importlinter.contracts]]

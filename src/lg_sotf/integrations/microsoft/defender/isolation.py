@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 
 from pydantic import Field
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.capability import CapabilityOptions, HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.defender._common import (
@@ -62,7 +63,6 @@ from lg_sotf.integrations.microsoft.defender.machine_actions import (
 )
 from lg_sotf.integrations.microsoft.defender.machines import Machine, resolve_machine
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

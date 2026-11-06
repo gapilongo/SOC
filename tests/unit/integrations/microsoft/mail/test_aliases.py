@@ -14,10 +14,10 @@ from typing import Any, Tuple
 import pytest
 
 from lg_sotf.db.repos.actions import ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.alert_view import AlertView
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
 from lg_sotf.integrations.microsoft.mail.capabilities import MAIL_REMEDIATE
-from lg_sotf.services.connectors.base import ConnectorResult
 from tests.fixtures.microsoft import FakeMicrosoft, graph_error, make_action
 from tests.unit.integrations.microsoft.mail._scenario import (
     Run,

@@ -1,4 +1,4 @@
-"""Workflow core: graph state, routing policy and the durable workflow engine.
+"""Workflow core: graph state and the durable workflow engine.
 
 Importing this package has no side effects; the engine and agents are loaded
 only when :class:`WorkflowEngine` or :class:`RunOutcome` is first accessed.

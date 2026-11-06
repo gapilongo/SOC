@@ -40,6 +40,7 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.capability import HandlerContext, ProbeCheck
@@ -57,7 +58,6 @@ from lg_sotf.integrations.microsoft.entra.users import (
     write_failure,
 )
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

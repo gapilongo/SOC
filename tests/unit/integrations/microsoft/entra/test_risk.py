@@ -9,9 +9,9 @@ import httpx
 import pytest
 
 from lg_sotf.db.repos.actions import ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult
 from lg_sotf.integrations.microsoft.entra.capabilities import ENTRA_RISK
 from lg_sotf.integrations.microsoft.entra.risk import parse_risky_user
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult
 from tests.fixtures.microsoft import FakeMicrosoft, graph_error, make_action, make_context
 from tests.unit.integrations.microsoft.entra._support import Directory, FakeUser
 

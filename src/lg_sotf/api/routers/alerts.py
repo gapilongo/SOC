@@ -14,9 +14,9 @@ from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.core.events import publish_event
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
+from lg_sotf.domain.events import publish_event
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)

@@ -231,7 +231,7 @@ def _candidates(value: Any) -> List[Any]:
 def _eq(a: Any, b: Any) -> bool:
     if isinstance(a, bool) or isinstance(b, bool):
         return a is b
-    return a == b
+    return bool(a == b)
 
 
 # --------------------------------------------------------------------------

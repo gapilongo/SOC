@@ -9,9 +9,9 @@ from types import MappingProxyType
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.db.repos.actions import ResponseAction
+from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.alert_view import AlertView
 from lg_sotf.integrations.microsoft.capability import CapabilitySpec, HandlerContext
-from lg_sotf.services.connectors.base import ConnectorResult
 from tests.fixtures.microsoft import FakeMicrosoft, default_alert, make_action, make_context
 from tests.unit.integrations.microsoft.mail._exchange import FakeExchange
 

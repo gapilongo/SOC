@@ -15,7 +15,7 @@ from typing import Any, Iterator, Type
 import pytest
 from pydantic import BaseModel
 
-from lg_sotf.core.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.settings import Settings
 

@@ -11,8 +11,8 @@ from typing import Any, Dict, Iterator
 import httpx
 import pytest
 
+from lg_sotf.domain.connectors import ConnectorResult, LedgerUnavailable
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
-from lg_sotf.services.connectors.base import ConnectorResult, LedgerUnavailable
 from lg_sotf.services.rollback import RollbackService
 from tests.fixtures.microsoft import TOKEN_PATH, FakeMicrosoft, defender_error, make_action, token_error
 from tests.unit.integrations.microsoft._support import (

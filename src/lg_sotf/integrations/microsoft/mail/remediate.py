@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, List, Literal,
 
 from pydantic import Field
 
+from lg_sotf.domain.connectors import ConnectorResult, VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft import odata
 from lg_sotf.integrations.microsoft.capability import CapabilityOptions, HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.clouds import Cloud
@@ -82,7 +83,6 @@ from lg_sotf.integrations.microsoft.mail.mailboxes import (
     traced_recipients,
 )
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.services.connectors.base import ConnectorResult, VerificationResult, VerifyPlan
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction

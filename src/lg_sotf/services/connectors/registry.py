@@ -38,6 +38,7 @@ from typing import Any, Dict, Mapping, Optional
 
 import httpx
 
+from lg_sotf.domain.connectors import Connector, ConnectorConfigError, MisconfiguredConnector
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.net.egress import DestinationPolicy, Resolver
@@ -45,7 +46,6 @@ from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, build_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.security.hashing import SecurityConfigError
-from lg_sotf.services.connectors.base import Connector, ConnectorConfigError, MisconfiguredConnector
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.services.connectors.webhook import DEFAULT_DEADLINE_S, MIN_ATTEMPT_S, WebhookConnector, WebhookTarget
 from lg_sotf.settings import Settings
