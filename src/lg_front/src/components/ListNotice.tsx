@@ -22,8 +22,8 @@ export function ListNotice({ list, noun }: { list: ListNoticeState; noun: string
     <div
       role="status"
       className={cx(
-        'mb-3 flex flex-wrap items-center gap-3 rounded-md border px-3 py-2 text-sm',
-        list.outdated ? 'border-sky-700 bg-sky-950 text-sky-100' : 'border-slate-700 bg-slate-900 text-slate-300',
+        'mb-3 flex flex-wrap items-center gap-3 rounded-control border px-3 py-2 text-sm',
+        list.outdated ? 'border-link/50 bg-tint-info text-link' : 'border-strong bg-raised text-secondary',
       )}
     >
       <span>

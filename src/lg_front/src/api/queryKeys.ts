@@ -34,6 +34,11 @@ export const qk = {
     forAlert: (alertId: string) => ['tickets', 'alert', alertId] as const,
     forEscalations: (escalationIds: readonly string[]) => ['tickets', 'escalations', escalationIds] as const,
   },
+  /** The caller as the API sees it (GET /auth/me), per acting tenant. */
+  me: {
+    all: ['me'] as const,
+    forTenant: (tenantId: string) => ['me', tenantId] as const,
+  },
   dashboard: {
     all: ['dashboard'] as const,
     summary: (windowHours: number) => ['dashboard', windowHours] as const,

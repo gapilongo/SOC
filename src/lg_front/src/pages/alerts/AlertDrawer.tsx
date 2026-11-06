@@ -51,15 +51,15 @@ const ENTITY_LABELS: Record<string, string> = {
 function Entities({ normalized }: { normalized: JsonObject | null }) {
   const entities = obj(normalized?.entities);
   const kinds = entities ? Object.keys(entities).filter((k) => list(entities[k]).length > 0) : [];
-  if (!entities || kinds.length === 0) return <p className="text-sm text-slate-400">No entities were extracted.</p>;
+  if (!entities || kinds.length === 0) return <p className="text-sm text-muted">No entities were extracted.</p>;
   return (
     <dl className="space-y-3">
       {kinds.map((k) => (
         <div key={k}>
-          <dt className="mb-1 text-xs font-medium text-slate-400">{ENTITY_LABELS[k] ?? humanize(k)}</dt>
+          <dt className="mb-1 text-xs font-medium text-muted">{ENTITY_LABELS[k] ?? humanize(k)}</dt>
           <dd className="flex flex-wrap gap-1.5">
             {list(entities[k]).map((v, i) => (
-              <code key={`${v}-${i}`} className="max-w-full break-all rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-100">
+              <code key={`${v}-${i}`} className="max-w-full break-all rounded bg-raised-2 px-1.5 py-0.5 text-xs text-fg">
                 {v}
               </code>
             ))}
@@ -78,22 +78,22 @@ function Reasoning({ summary }: { summary: JsonObject }) {
   const reasoning = list(analysis?.reasoning);
   const recommended = list(analysis?.recommended_actions);
   const hasAny = triage || correlation || analysis || response || summary.suppressed_by || summary.llm_budget_exceeded;
-  if (!hasAny) return <p className="text-sm text-slate-400">The workflow has not produced a verdict yet.</p>;
+  if (!hasAny) return <p className="text-sm text-muted">The workflow has not produced a verdict yet.</p>;
   return (
     <div className="space-y-4 text-sm">
       {Boolean(summary.llm_budget_exceeded) && (
-        <p className="rounded border border-amber-700 bg-amber-950 px-3 py-2 text-amber-100">
+        <p className="rounded border border-warn/60 bg-tint-warn px-3 py-2 text-warn-fg">
           The tenant's daily LLM token budget was exhausted; this alert was assessed by rules only.
         </p>
       )}
       {text(summary.suppressed_by) && (
-        <p className="rounded border border-slate-700 bg-slate-800 px-3 py-2 text-slate-200">
+        <p className="rounded border border-strong bg-raised-2 px-3 py-2 text-body">
           Closed by suppression rule <code>{text(summary.suppressed_by)}</code>.
         </p>
       )}
       {analysis && (
         <section>
-          <h4 className="mb-1 font-medium text-slate-100">Analysis</h4>
+          <h4 className="mb-1 font-medium text-fg">Analysis</h4>
           <DefinitionList
             items={[
               ['Verdict', text(analysis.verdict) ?? '-'],
@@ -103,10 +103,10 @@ function Reasoning({ summary }: { summary: JsonObject }) {
               ['Stop reason', text(analysis.stop_reason) ?? '-'],
             ]}
           />
-          {text(analysis.conclusion) && <p className="mt-2 whitespace-pre-wrap text-slate-200">{text(analysis.conclusion)}</p>}
-          {analysis.llm_refusal ? <p className="mt-2 text-amber-200">The model declined to assess this alert; rule results were used.</p> : null}
+          {text(analysis.conclusion) && <p className="mt-2 whitespace-pre-wrap text-body">{text(analysis.conclusion)}</p>}
+          {analysis.llm_refusal ? <p className="mt-2 text-warn-fg">The model declined to assess this alert; rule results were used.</p> : null}
           {reasoning.length > 0 && (
-            <ol className="mt-2 list-decimal space-y-1 pl-5 text-slate-200">
+            <ol className="mt-2 list-decimal space-y-1 pl-5 text-body">
               {reasoning.map((r, i) => (
                 <li key={i}>{r}</li>
               ))}
@@ -114,7 +114,7 @@ function Reasoning({ summary }: { summary: JsonObject }) {
           )}
           {recommended.length > 0 && (
             <div className="mt-2">
-              <span className="text-slate-400">Recommended actions: </span>
+              <span className="text-muted">Recommended actions: </span>
               {recommended.join(', ')}
             </div>
           )}
@@ -122,7 +122,7 @@ function Reasoning({ summary }: { summary: JsonObject }) {
       )}
       {triage && (
         <section>
-          <h4 className="mb-1 font-medium text-slate-100">Triage</h4>
+          <h4 className="mb-1 font-medium text-fg">Triage</h4>
           <DefinitionList
             items={[
               ['Confidence', text(triage.confidence) ?? '-'],
@@ -131,12 +131,12 @@ function Reasoning({ summary }: { summary: JsonObject }) {
               ['True-positive indicators', [...list(triage.rule_tp), ...list(triage.llm_tp)].join(', ') || '-'],
             ]}
           />
-          {text(triage.reasoning) && <p className="mt-2 whitespace-pre-wrap text-slate-200">{text(triage.reasoning)}</p>}
+          {text(triage.reasoning) && <p className="mt-2 whitespace-pre-wrap text-body">{text(triage.reasoning)}</p>}
         </section>
       )}
       {correlation && (
         <section>
-          <h4 className="mb-1 font-medium text-slate-100">Correlation</h4>
+          <h4 className="mb-1 font-medium text-fg">Correlation</h4>
           <DefinitionList
             items={Object.entries(correlation)
               .filter(([, v]) => typeof v !== 'object' || v === null)
@@ -147,7 +147,7 @@ function Reasoning({ summary }: { summary: JsonObject }) {
       )}
       {response && (
         <section>
-          <h4 className="mb-1 font-medium text-slate-100">Response plan</h4>
+          <h4 className="mb-1 font-medium text-fg">Response plan</h4>
           <DefinitionList
             items={Object.entries(response)
               .filter(([k, v]) => k !== 'evidence' && (typeof v !== 'object' || v === null))
@@ -184,22 +184,22 @@ function Timeline({ alertId }: { alertId: string }) {
   if (q.items.length === 0) return <EmptyState title="No events yet" />;
   return (
     <div>
-      <ol className="relative space-y-3 border-l border-slate-700 pl-4">
+      <ol className="relative space-y-3 border-l border-strong pl-4">
         {q.items.map((e) => (
           <li key={e.id} className="text-sm">
-            <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-slate-500" aria-hidden="true" />
+            <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-muted" aria-hidden="true" />
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-medium text-slate-100">{humanize(e.event_type)}</span>
-              {e.node && <span className="text-xs text-slate-400">node {e.node}</span>}
-              <time dateTime={e.ts} className="text-xs text-slate-400">
+              <span className="font-medium text-fg">{humanize(e.event_type)}</span>
+              {e.node && <span className="text-xs text-muted">node {e.node}</span>}
+              <time dateTime={e.ts} className="text-xs text-muted">
                 {formatDateTime(e.ts)}
               </time>
             </div>
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-muted">
               by {e.actor_type}
               {e.actor_id ? ` ${e.actor_id}` : ''}
             </div>
-            {eventSummary(e) && <p className="mt-0.5 whitespace-pre-wrap break-words text-slate-200">{eventSummary(e)}</p>}
+            {eventSummary(e) && <p className="mt-0.5 whitespace-pre-wrap break-words text-body">{eventSummary(e)}</p>}
           </li>
         ))}
       </ol>
@@ -251,20 +251,20 @@ export function ResponseActions({ alertId }: { alertId: string }) {
   if (q.isPending) return <LoadingState label="Loading response actions" />;
   if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
   const items: ActionOut[] = Array.isArray(q.data?.items) ? q.data.items : [];
-  if (items.length === 0) return <p className="text-sm text-slate-400">No response action was planned for this alert.</p>;
+  if (items.length === 0) return <p className="text-sm text-muted">No response action was planned for this alert.</p>;
   return (
     <ul className="space-y-2">
       {items.map((a) => (
-        <li key={a.id} className="rounded-md border border-slate-800 p-2">
+        <li key={a.id} className="rounded-control border border-subtle p-2">
           <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-medium text-slate-100">{humanize(a.action_type)}</span>
-            <code className="break-all text-xs text-slate-300">{a.target}</code>
+            <span className="font-medium text-fg">{humanize(a.action_type)}</span>
+            <code className="break-all text-xs text-secondary">{a.target}</code>
             <RiskBadge value={a.risk_level} />
             <StatusBadge value={a.status} />
             <VerificationBadge value={a.verification} detail={a.verification_detail} />
             <Button
               size="sm"
-              variant="ghost"
+              variant="quiet"
               aria-expanded={open === a.id}
               onClick={() => setOpen(open === a.id ? null : a.id)}
               aria-label={`${open === a.id ? 'Hide' : 'Show'} details of ${humanize(a.action_type)} on ${a.target}`}
@@ -295,14 +295,14 @@ function Tickets({ alertId }: { alertId: string }) {
   if (q.isPending) return <LoadingState label="Loading tickets" />;
   if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
   const tickets = Array.isArray(q.data) ? q.data : [];
-  if (tickets.length === 0) return <p className="text-sm text-slate-400">No ticket is linked to this alert.</p>;
+  if (tickets.length === 0) return <p className="text-sm text-muted">No ticket is linked to this alert.</p>;
   return <TicketLinks tickets={tickets} />;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="border-t border-slate-800 py-4 first:border-t-0 first:pt-0">
-      <h3 className="mb-2 text-sm font-semibold text-white">{title}</h3>
+    <section className="border-t border-subtle py-4 first:border-t-0 first:pt-0">
+      <h3 className="mb-2 text-sm font-semibold text-fg">{title}</h3>
       {children}
     </section>
   );
@@ -332,9 +332,9 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
             ['Case', alert.case_key ?? '-'],
           ]}
         />
-        {text(normalized?.description) && <p className="mt-3 whitespace-pre-wrap text-sm text-slate-200">{text(normalized?.description)}</p>}
+        {text(normalized?.description) && <p className="mt-3 whitespace-pre-wrap text-sm text-body">{text(normalized?.description)}</p>}
         {list(normalized?.flags).length > 0 && (
-          <p className="mt-2 text-xs text-amber-200">Data quality flags: {list(normalized?.flags).join(', ')}</p>
+          <p className="mt-2 text-xs text-warn-fg">Data quality flags: {list(normalized?.flags).join(', ')}</p>
         )}
       </Section>
       {email && (
@@ -348,8 +348,8 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
       <Section title="Entities">
         <Entities normalized={normalized} />
         {mitre && (list(mitre.tactics).length > 0 || list(mitre.techniques).length > 0) && (
-          <p className="mt-3 text-sm text-slate-200">
-            <span className="text-slate-400">MITRE ATT&CK: </span>
+          <p className="mt-3 text-sm text-body">
+            <span className="text-muted">MITRE ATT&CK: </span>
             {[...list(mitre.tactics), ...list(mitre.techniques)].join(', ')}
           </p>
         )}
@@ -363,8 +363,8 @@ function AlertBody({ alert }: { alert: AlertDetailOut }) {
       <Section title="Timeline">
         <Timeline alertId={alert.id} />
       </Section>
-      <details className="border-t border-slate-800 py-4">
-        <summary className="cursor-pointer text-sm font-semibold text-white">Normalized record</summary>
+      <details className="border-t border-subtle py-4">
+        <summary className="cursor-pointer text-sm font-semibold text-fg">Normalized record</summary>
         <div className="mt-2">
           <JsonBlock value={alert.normalized} label="Normalized alert JSON" />
         </div>

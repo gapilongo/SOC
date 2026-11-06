@@ -50,7 +50,7 @@ export function RetryDialog({ action, onClose }: { action: ActionOut; onClose: (
         </>
       }
     >
-      <div className="space-y-3 text-sm text-slate-200">
+      <div className="space-y-3 text-sm text-body">
         <p>
           It failed with <strong>{failure}</strong>. The scheduler runs it again with the same integration; it reads the current state
           first, so a partial earlier attempt is completed, never repeated.

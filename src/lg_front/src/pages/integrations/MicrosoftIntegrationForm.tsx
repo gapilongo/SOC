@@ -193,11 +193,11 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
             onChange={(e) => set({ client_id: e.target.value })}
           />
         </div>
-        <fieldset className="space-y-3 rounded-md border border-slate-800 p-3">
-          <legend className="px-1 text-sm font-medium text-slate-200">Credential (write-only)</legend>
+        <fieldset className="space-y-3 rounded-control border border-subtle p-3">
+          <legend className="px-1 text-sm font-medium text-body">Credential (write-only)</legend>
           <div className="flex flex-wrap gap-4" role="radiogroup" aria-label="Credential type">
             {(['certificate', 'client_secret'] as const).map((c) => (
-              <label key={c} className="inline-flex items-center gap-2 text-sm text-slate-200">
+              <label key={c} className="inline-flex items-center gap-2 text-sm text-body">
                 <input
                   type="radio"
                   name="credential"
@@ -223,7 +223,7 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
                 hint="The certificate uploaded to the app registration (Certificates & secrets); RSA, 2048 bits or more."
               />
               {Object.keys(certificate).length > 0 && (
-                <p className="text-xs text-slate-300">
+                <p className="text-xs text-secondary">
                   Stored certificate: SHA-1 thumbprint <code className="select-all">{str(certificate.thumbprint_sha1)}</code>, expires{' '}
                   {formatDateTime(str(certificate.not_after))}.
                 </p>
@@ -264,8 +264,8 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
           )}
         </fieldset>
         <section aria-label="Capabilities" className="space-y-2">
-          <h3 className="text-sm font-semibold text-white">Capabilities</h3>
-          <p className="text-xs text-slate-400">
+          <h3 className="text-sm font-semibold text-fg">Capabilities</h3>
+          <p className="text-xs text-muted">
             Enabled capabilities rehearse (read-only, recorded as dry run) until you make them live. Kill switches (install and tenant dry run)
             always win.
           </p>

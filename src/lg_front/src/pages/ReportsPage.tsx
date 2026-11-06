@@ -27,10 +27,10 @@ const NEEDED_COLOR = '#d95926';
 
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums text-white">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-slate-400">{hint}</div>}
+    <div className="rounded-card border border-subtle bg-raised p-4">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-1 text-2xl font-semibold tabular-nums text-fg">{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
     </div>
   );
 }
@@ -39,7 +39,7 @@ function Notes({ notes }: { notes: string[] }) {
   if (!notes.length) return null;
   return (
     <Card title="How to read this">
-      <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
+      <ul className="list-disc space-y-1 pl-5 text-sm text-secondary">
         {notes.map((n) => (
           <li key={n}>{n}</li>
         ))}
@@ -50,7 +50,7 @@ function Notes({ notes }: { notes: string[] }) {
 
 function InsufficientData({ samples, needed }: { samples: number; needed: number }) {
   return (
-    <p role="status" className="rounded-md border border-amber-600 bg-amber-950 px-4 py-3 text-sm text-amber-100">
+    <p role="status" className="rounded-control border border-warn/60 bg-tint-warn px-4 py-3 text-sm text-warn-fg">
       Insufficient data: {formatInt(samples)} analyst-decided alert{samples === 1 ? '' : 's'} in this range; at least {formatInt(needed)} are needed
       before these rates mean much. They are shown for reference only.
     </p>
@@ -75,7 +75,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
   const active = hover !== null ? days[hover] : null;
   return (
     <figure>
-      <div className="mb-2 flex flex-wrap gap-4 text-xs text-slate-300" aria-hidden="true">
+      <div className="mb-2 flex flex-wrap gap-4 text-xs text-secondary" aria-hidden="true">
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: HANDLED_COLOR }} />
           Handled without a human
@@ -135,7 +135,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
           );
         })}
       </svg>
-      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-slate-300" aria-live="polite">
+      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-secondary" aria-live="polite">
         {active
           ? `${active.day}: ${formatInt(active.alerts_ingested)} ingested, ${formatInt(active.handled_without_human)} handled without a human, ${formatInt(active.needed_human)} needed a human, ${formatInt(active.in_progress)} in progress`
           : 'Hover a bar for the day. The table below lists every day.'}
@@ -174,7 +174,7 @@ function ValueTab({ from, to }: { from: string; to: string }) {
         <div className="max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <caption className="sr-only">Value report by day</caption>
-            <thead className="sticky top-0 bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3">Day</th>
                 <th scope="col" className="py-2 pr-3 text-right">Ingested</th>
@@ -188,8 +188,8 @@ function ValueTab({ from, to }: { from: string; to: string }) {
             </thead>
             <tbody>
               {r.days.map((d) => (
-                <tr key={d.day} className="border-t border-slate-800 tabular-nums">
-                  <td className="py-1.5 pr-3 text-slate-200">{d.day}</td>
+                <tr key={d.day} className="border-t border-subtle tabular-nums">
+                  <td className="py-1.5 pr-3 text-body">{d.day}</td>
                   <td className="py-1.5 pr-3 text-right">{formatInt(d.alerts_ingested)}</td>
                   <td className="py-1.5 pr-3 text-right">{formatInt(d.handled_without_human)}</td>
                   <td className="py-1.5 pr-3 text-right">{formatInt(d.needed_human)}</td>
@@ -214,8 +214,8 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
   const cols = ['malicious', 'benign', 'inconclusive'];
   return (
     <table className="w-full text-sm">
-      <caption className="mb-2 text-left text-xs text-slate-400">Rows: the analyst's final decision. Columns: the AI verdict on the first escalation.</caption>
-      <thead className="text-xs uppercase tracking-wide text-slate-400">
+      <caption className="mb-2 text-left text-xs text-muted">Rows: the analyst's final decision. Columns: the AI verdict on the first escalation.</caption>
+      <thead className="text-xs uppercase tracking-wide text-muted">
         <tr>
           <th scope="col" className="py-2 pr-3 text-left">Analyst \ AI</th>
           {cols.map((c) => (
@@ -227,15 +227,15 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
       </thead>
       <tbody>
         {['malicious', 'benign'].map((row) => (
-          <tr key={row} className="border-t border-slate-800 tabular-nums">
-            <th scope="row" className="py-1.5 pr-3 text-left font-normal capitalize text-slate-200">
+          <tr key={row} className="border-t border-subtle tabular-nums">
+            <th scope="row" className="py-1.5 pr-3 text-left font-normal capitalize text-body">
               {row}
             </th>
             {cols.map((c) => {
               const n = block.confusion_matrix[row]?.[c] ?? 0;
               const missed = row === 'malicious' && c === 'benign' && n > 0;
               return (
-                <td key={c} className={cx('py-1.5 pr-3 text-right', missed ? 'font-semibold text-orange-200' : 'text-slate-100')}>
+                <td key={c} className={cx('py-1.5 pr-3 text-right', missed ? 'font-semibold text-danger-fg' : 'text-fg')}>
                   {formatInt(n)}
                   {missed && <span className="sr-only"> (false negatives)</span>}
                 </td>
@@ -250,8 +250,8 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
 
 function feedbackRow(label: string, r: FeedbackRate) {
   return (
-    <tr key={label} className="border-t border-slate-800 tabular-nums">
-      <th scope="row" className="py-1.5 pr-3 text-left font-normal text-slate-200">
+    <tr key={label} className="border-t border-subtle tabular-nums">
+      <th scope="row" className="py-1.5 pr-3 text-left font-normal text-body">
         {label}
       </th>
       <td className="py-1.5 pr-3 text-right">{formatPct(r.rate)}</td>
@@ -301,7 +301,7 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
           ) : (
             <table className="w-full text-sm">
               <caption className="sr-only">Accuracy by model</caption>
-              <thead className="text-xs uppercase tracking-wide text-slate-400">
+              <thead className="text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th scope="col" className="py-2 pr-3 text-left">Model</th>
                   <th scope="col" className="py-2 pr-3 text-right">Samples</th>
@@ -312,8 +312,8 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
               </thead>
               <tbody>
                 {r.by_model.map((m) => (
-                  <tr key={m.model} className="border-t border-slate-800 tabular-nums">
-                    <th scope="row" className="break-all py-1.5 pr-3 text-left font-normal text-slate-200">
+                  <tr key={m.model} className="border-t border-subtle tabular-nums">
+                    <th scope="row" className="break-all py-1.5 pr-3 text-left font-normal text-body">
                       {m.model}
                     </th>
                     <td className="py-1.5 pr-3 text-right">{formatInt(m.accuracy.samples)}</td>
@@ -330,7 +330,7 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
       <Card title={`Analyst feedback (${formatInt(r.feedback.total)} decisions)`}>
         <table className="w-full text-sm">
           <caption className="sr-only">Structured analyst feedback</caption>
-          <thead className="text-xs uppercase tracking-wide text-slate-400">
+          <thead className="text-xs uppercase tracking-wide text-muted">
             <tr>
               <th scope="col" className="py-2 pr-3 text-left">Question</th>
               <th scope="col" className="py-2 pr-3 text-right">Yes</th>
@@ -344,7 +344,7 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
             {feedbackRow('Correlation was helpful', r.feedback.correlation_helpful)}
           </tbody>
         </table>
-        <p className="mt-2 text-xs text-slate-400">Average review time {formatDuration(r.feedback.avg_review_duration_s)}.</p>
+        <p className="mt-2 text-xs text-muted">Average review time {formatDuration(r.feedback.avg_review_duration_s)}.</p>
       </Card>
       <Notes notes={r.notes} />
     </div>
@@ -383,7 +383,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
               <caption className="sr-only">Detections by source and rule</caption>
-              <thead className="text-xs uppercase tracking-wide text-slate-400">
+              <thead className="text-xs uppercase tracking-wide text-muted">
                 <tr>
                   <th scope="col" className="py-2 pr-3">Source</th>
                   <th scope="col" className="py-2 pr-3">Rule</th>
@@ -402,28 +402,28 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                 {r.detections.map((d) => {
                   const done = proposed[key(d)];
                   return (
-                    <tr key={key(d)} className="border-t border-slate-800 align-top">
-                      <td className="py-2 pr-3 text-slate-200">{d.source_id}</td>
-                      <td className="max-w-xs break-words py-2 pr-3 text-slate-100">
+                    <tr key={key(d)} className="border-t border-subtle align-top">
+                      <td className="py-2 pr-3 text-body">{d.source_id}</td>
+                      <td className="max-w-xs break-words py-2 pr-3 text-fg">
                         {d.rule}
-                        {d.rule_field === 'title' && <span className="block text-xs text-slate-400">(alert title; no rule name)</span>}
+                        {d.rule_field === 'title' && <span className="block text-xs text-muted">(alert title; no rule name)</span>}
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.volume)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">
                         {formatPct(d.benign_rate, 0)}
-                        <span className="block text-xs text-slate-400">of {formatInt(d.decided)} decided</span>
+                        <span className="block text-xs text-muted">of {formatInt(d.decided)} decided</span>
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.auto_closed)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.analyst_false_positive)}</td>
-                      <td className="py-2 pr-3 capitalize text-slate-200">{d.median_severity ?? '-'}</td>
+                      <td className="py-2 pr-3 capitalize text-body">{d.median_severity ?? '-'}</td>
                       <td className="max-w-md py-2 pr-3">
-                        {d.suggestion ? <Badge tone={d.suggestion === 'candidate_suppression' ? 'info' : 'warn'}>{SUGGESTION_LABEL[d.suggestion]}</Badge> : <span className="text-slate-400">None</span>}
-                        <span className="mt-1 block text-xs text-slate-300">{d.reason}</span>
+                        {d.suggestion ? <Badge tone={d.suggestion === 'candidate_suppression' ? 'info' : 'warn'}>{SUGGESTION_LABEL[d.suggestion]}</Badge> : <span className="text-muted">None</span>}
+                        <span className="mt-1 block text-xs text-secondary">{d.reason}</span>
                       </td>
                       <td className="py-2">
                         {mayPropose && d.can_propose_suppression && (
                           done ? (
-                            <Link to="/suppressions" className="text-xs text-sky-300 hover:underline">
+                            <Link to="/suppressions" className="text-xs text-link hover:underline">
                               Proposed: review under Suppressions
                             </Link>
                           ) : (
@@ -440,7 +440,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
             </table>
           </div>
         )}
-        {r.truncated && <p className="mt-2 text-xs text-slate-400">Showing the {formatInt(r.limit)} busiest detections; export the CSV for the same list.</p>}
+        {r.truncated && <p className="mt-2 text-xs text-muted">Showing the {formatInt(r.limit)} busiest detections; export the CSV for the same list.</p>}
       </Card>
       <Notes notes={r.notes} />
     </div>
@@ -509,7 +509,7 @@ export default function ReportsPage() {
             </Button>
             <Link
               to={`/reports/monthly/${monthOf(to)}`}
-              className="inline-flex items-center gap-2 rounded-md border border-slate-600 px-3.5 py-2 text-sm font-medium text-slate-100 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+              className="inline-flex items-center gap-2 rounded-control border border-control px-3.5 py-2 text-sm font-medium text-fg hover:bg-raised-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
             >
               <FileText className="h-4 w-4" aria-hidden="true" />
               Open monthly report
@@ -521,12 +521,12 @@ export default function ReportsPage() {
         <TextField label="From" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
         <TextField label="To" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
         {invalid && (
-          <p role="alert" className="pb-2 text-sm text-amber-200">
+          <p role="alert" className="pb-2 text-sm text-warn-fg">
             {invalid}
           </p>
         )}
       </div>
-      <div role="tablist" aria-label="Report" className="mb-4 flex gap-1 border-b border-slate-800">
+      <div role="tablist" aria-label="Report" className="mb-4 flex gap-1 border-b border-subtle">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -539,8 +539,8 @@ export default function ReportsPage() {
             onClick={() => setTab(t.id)}
             onKeyDown={onTabKey}
             className={cx(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400',
-              tab === t.id ? 'border-sky-400 text-white' : 'border-transparent text-slate-300 hover:text-white',
+              '-mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === t.id ? 'border-link text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {t.label}

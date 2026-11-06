@@ -10,6 +10,8 @@ import { SessionProvider } from '../auth/AuthContext';
 import type { Session } from '../auth/session';
 import { AuthStore, type AuthTransport } from '../auth/store';
 import { ToastProvider } from '../components/Toast';
+import { DensityProvider } from '../theme/density';
+import { ThemeProvider } from '../theme/theme';
 
 export function user(overrides: Partial<UserOut> = {}): UserOut {
   return {
@@ -82,9 +84,13 @@ export function renderWithSession(ui: ReactElement, session: Session, { route = 
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
       <QueryClientProvider client={client}>
-        <ToastProvider>
-          <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
-        </ToastProvider>
+        <ThemeProvider>
+          <DensityProvider>
+            <ToastProvider>
+              <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+            </ToastProvider>
+          </DensityProvider>
+        </ThemeProvider>
       </QueryClientProvider>
     </SessionProvider>
   );

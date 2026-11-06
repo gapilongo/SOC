@@ -48,7 +48,7 @@ export function formatSecret(secret: string): string {
 export function EnrollmentDetails({ enrollment }: { enrollment: MfaEnrollOut }) {
   return (
     <div className="space-y-4">
-      <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-300">
+      <ol className="list-decimal space-y-1 pl-5 text-sm text-secondary">
         <li>Open an authenticator app (for example Microsoft Authenticator, Google Authenticator, 1Password or FreeOTP).</li>
         <li>Scan the QR code, or enter the key below by hand (time-based, 6 digits, 30 seconds).</li>
         <li>Enter the 6-digit code the app shows to finish.</li>
@@ -57,15 +57,15 @@ export function EnrollmentDetails({ enrollment }: { enrollment: MfaEnrollOut }) 
         {enrollment.qr && enrollment.qr.length > 0 ? (
           <QrCode rows={enrollment.qr} label="QR code for your authenticator app" />
         ) : (
-          <p className="max-w-xs text-sm text-slate-300">A QR code is not available for this account; enter the key by hand.</p>
+          <p className="max-w-xs text-sm text-secondary">A QR code is not available for this account; enter the key by hand.</p>
         )}
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-xs font-medium text-slate-300">Setup key</p>
-          <p className="break-all rounded-md border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm tracking-wider text-slate-100" data-testid="mfa-secret">
+          <p className="text-xs font-medium text-secondary">Setup key</p>
+          <p className="break-all rounded-control border border-strong bg-canvas px-3 py-2 font-mono text-sm tracking-wider text-fg" data-testid="mfa-secret">
             {formatSecret(enrollment.secret)}
           </p>
-          <p className="text-xs text-slate-400">
-            On a phone, <a href={enrollment.otpauth_uri} className="text-sky-300 underline">open this link in your authenticator app</a>.
+          <p className="text-xs text-muted">
+            On a phone, <a href={enrollment.otpauth_uri} className="text-link underline">open this link in your authenticator app</a>.
             The key is shown only now.
           </p>
         </div>
@@ -142,10 +142,10 @@ export function RecoveryCodes({ codes, account }: { codes: string[]; account?: s
   };
   return (
     <div className="space-y-3">
-      <p className="text-sm text-amber-200">
+      <p className="text-sm text-warn-fg">
         Save these recovery codes somewhere safe (a password manager). Each signs you in once if you lose your authenticator. They are not shown again.
       </p>
-      <ul className="grid grid-cols-2 gap-2 rounded-md border border-slate-700 bg-slate-950 p-3 font-mono text-sm text-slate-100" aria-label="Recovery codes" data-testid="recovery-codes">
+      <ul className="grid grid-cols-2 gap-2 rounded-control border border-strong bg-canvas p-3 font-mono text-sm text-fg" aria-label="Recovery codes" data-testid="recovery-codes">
         {codes.map((c) => (
           <li key={c}>{c}</li>
         ))}

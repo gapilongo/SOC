@@ -60,15 +60,15 @@ function codeErrorMessage(err: unknown): unknown {
 
 function Shell({ title, subtitle, children }: { title: string; subtitle: ReactNode; children: ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10">
+    <div className="flex min-h-screen items-center justify-center bg-canvas px-4 py-10">
       <main className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2">
-          <Activity className="h-7 w-7 text-sky-400" aria-hidden="true" />
-          <span className="text-xl font-semibold text-white">LG-SOTF</span>
+          <Activity className="h-7 w-7 text-link" aria-hidden="true" />
+          <span className="text-xl font-semibold text-fg">LG-SOTF</span>
         </div>
-        <div className="rounded-lg border border-slate-800 bg-slate-900 p-6 shadow-xl">
-          <h1 className="mb-1 text-lg font-semibold text-white">{title}</h1>
-          <div className="mb-5 text-sm text-slate-300">{subtitle}</div>
+        <div className="rounded-card border border-subtle bg-raised p-6 shadow-xl">
+          <h1 className="mb-1 text-lg font-semibold text-fg">{title}</h1>
+          <div className="mb-5 text-sm text-secondary">{subtitle}</div>
           {children}
         </div>
       </main>
@@ -116,7 +116,7 @@ function MfaStep({ challenge, onDone, onRestart }: { challenge: MfaChallenge; on
   if (remaining !== null) {
     return (
       <Shell title="Signed in with a recovery code" subtitle="That recovery code is now used up.">
-        <p role="status" className="mb-4 rounded-md border border-amber-700 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+        <p role="status" className="mb-4 rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
           {remaining === 0
             ? 'You have no recovery codes left. Generate new ones under Account security now.'
             : `You have ${remaining} recovery code${remaining === 1 ? '' : 's'} left. If you lost your authenticator, set up a new one under Account security.`}
@@ -145,7 +145,7 @@ function MfaStep({ challenge, onDone, onRestart }: { challenge: MfaChallenge; on
         {canRecover && (
           <button
             type="button"
-            className="text-sky-300 underline hover:text-sky-200"
+            className="text-link underline hover:text-link"
             onClick={() => {
               setRecovery(!recovery);
               setCode('');
@@ -155,7 +155,7 @@ function MfaStep({ challenge, onDone, onRestart }: { challenge: MfaChallenge; on
             {recovery ? 'Use an authenticator code' : 'Use a recovery code'}
           </button>
         )}
-        <button type="button" className="text-slate-300 underline hover:text-white" onClick={() => onRestart(false)}>
+        <button type="button" className="text-secondary underline hover:text-fg" onClick={() => onRestart(false)}>
           Start over
         </button>
       </div>
@@ -239,7 +239,7 @@ function EnrollStep({ challenge, onDone, onRestart }: { challenge: MfaChallenge;
         </form>
       )}
       <div className="mt-4 text-sm">
-        <button type="button" className="text-slate-300 underline hover:text-white" onClick={() => onRestart(false)}>
+        <button type="button" className="text-secondary underline hover:text-fg" onClick={() => onRestart(false)}>
           Start over
         </button>
       </div>
@@ -330,12 +330,12 @@ export default function LoginPage() {
   return (
     <Shell title="Sign in" subtitle="Security alert triage console">
       {expired && (
-        <p role="status" className="mb-4 rounded-md border border-amber-700 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+        <p role="status" className="mb-4 rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
           Your session has expired or was ended. Sign in again to continue.
         </p>
       )}
       {stepExpired && (
-        <p role="status" className="mb-4 rounded-md border border-amber-700 bg-amber-950 px-3 py-2 text-sm text-amber-100">
+        <p role="status" className="mb-4 rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
           The verification step expired. Sign in again.
         </p>
       )}
@@ -375,10 +375,10 @@ export default function LoginPage() {
       </form>
       {oidc && (
         <>
-          <div className="my-5 flex items-center gap-3 text-xs text-slate-400" aria-hidden="true">
-            <span className="h-px flex-1 bg-slate-700" />
+          <div className="my-5 flex items-center gap-3 text-xs text-muted" aria-hidden="true">
+            <span className="h-px flex-1 bg-selected" />
             or
-            <span className="h-px flex-1 bg-slate-700" />
+            <span className="h-px flex-1 bg-selected" />
           </div>
           <Button className="w-full" onClick={sso} busy={ssoBusy}>
             {oidc.label}

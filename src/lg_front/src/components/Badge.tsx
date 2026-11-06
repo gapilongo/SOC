@@ -1,72 +1,87 @@
-import { cx } from './ui';
+/**
+ * Domain badges on the token primitives: severity is a square plus the word
+ * (SeverityTag), workflow states are neutral pills with a coloured dot
+ * (StatePill). Colour never carries the meaning alone: the word is always there.
+ */
 
-const TONES = {
-  neutral: 'border-slate-600 bg-slate-800 text-slate-200',
-  info: 'border-sky-700 bg-sky-950 text-sky-200',
-  good: 'border-emerald-700 bg-emerald-950 text-emerald-200',
-  warn: 'border-amber-600 bg-amber-950 text-amber-200',
-  bad: 'border-orange-600 bg-orange-950 text-orange-200',
-  critical: 'border-red-600 bg-red-950 text-red-200',
-} as const;
+import type { ReactNode } from 'react';
 
-export type Tone = keyof typeof TONES;
+import { SeverityTag, StatePill, type StateTone } from './ui';
 
-export function Badge({ tone = 'neutral', children, title }: { tone?: Tone; children: React.ReactNode; title?: string }) {
+export type Tone = 'neutral' | 'info' | 'good' | 'warn' | 'bad' | 'critical';
+
+const TONE_STATE: Record<Tone, StateTone> = {
+  neutral: 'neutral',
+  info: 'processing',
+  good: 'ok',
+  warn: 'waiting',
+  bad: 'bad',
+  critical: 'bad',
+};
+
+/** A small labelled pill; the tone picks the dot colour. */
+export function Badge({ tone = 'neutral', children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
-    <span
-      title={title}
-      className={cx('inline-flex items-center whitespace-nowrap rounded border px-1.5 py-0.5 text-xs font-medium capitalize', TONES[tone])}
-    >
+    <StatePill tone={TONE_STATE[tone]} title={title} className="capitalize">
       {children}
-    </span>
+    </StatePill>
   );
 }
 
-const SEVERITY_TONE: Record<string, Tone> = { info: 'neutral', low: 'info', medium: 'warn', high: 'bad', critical: 'critical' };
-const STATUS_TONE: Record<string, Tone> = {
-  new: 'info',
-  queued: 'info',
-  processing: 'info',
-  waiting_human: 'warn',
-  waiting_approval: 'warn',
-  closed: 'good',
-  failed: 'critical',
-  open: 'warn',
-  claimed: 'info',
-  decided: 'good',
-  expired: 'critical',
+const STATUS_STATE: Record<string, StateTone> = {
+  new: 'processing',
+  queued: 'processing',
+  processing: 'processing',
+  waiting_human: 'waiting',
+  waiting_approval: 'approval',
+  closed: 'ok',
+  failed: 'bad',
+  open: 'waiting',
+  claimed: 'processing',
+  decided: 'ok',
+  expired: 'bad',
   cancelled: 'neutral',
-  proposed: 'info',
-  awaiting_approval: 'warn',
-  approved: 'info',
+  proposed: 'processing',
+  awaiting_approval: 'approval',
+  approved: 'processing',
   rejected: 'neutral',
-  executing: 'info',
-  succeeded: 'good',
+  executing: 'processing',
+  succeeded: 'ok',
   dry_run: 'neutral',
   blocked: 'bad',
-  healthy: 'good',
-  degraded: 'warn',
-  failing: 'critical',
+  healthy: 'ok',
+  degraded: 'waiting',
+  failing: 'bad',
   unknown: 'neutral',
 };
-const DISPOSITION_TONE: Record<string, Tone> = { malicious: 'critical', benign: 'good', inconclusive: 'warn' };
+const DISPOSITION_STATE: Record<string, StateTone> = { malicious: 'bad', benign: 'ok', inconclusive: 'waiting' };
+
+export function statusTone(value: string): StateTone {
+  return STATUS_STATE[value] ?? 'neutral';
+}
 
 export function SeverityBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-slate-400">-</span>;
-  return <Badge tone={SEVERITY_TONE[value] ?? 'neutral'}>{value}</Badge>;
+  return <SeverityTag value={value} />;
 }
 
 export function StatusBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-slate-400">-</span>;
-  return <Badge tone={STATUS_TONE[value] ?? 'neutral'}>{value.replace(/_/g, ' ')}</Badge>;
+  if (!value) return <span className="text-muted">-</span>;
+  return (
+    <StatePill tone={statusTone(value)} className="capitalize">
+      {value.replace(/_/g, ' ')}
+    </StatePill>
+  );
 }
 
 export function DispositionBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-slate-400">pending</span>;
-  return <Badge tone={DISPOSITION_TONE[value] ?? 'neutral'}>{value}</Badge>;
+  if (!value) return <span className="text-muted">pending</span>;
+  return (
+    <StatePill tone={DISPOSITION_STATE[value] ?? 'neutral'} className="capitalize">
+      {value}
+    </StatePill>
+  );
 }
 
 export function RiskBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-slate-400">-</span>;
-  return <Badge tone={SEVERITY_TONE[value] ?? 'neutral'}>{value} risk</Badge>;
+  return <SeverityTag value={value} suffix="risk" />;
 }

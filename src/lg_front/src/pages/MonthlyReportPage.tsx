@@ -22,10 +22,10 @@ function monthName(month: string): string {
 
 function PaperTile({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
-    <div className="break-inside-avoid rounded-md border border-slate-300 p-3">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-slate-600">{label}</div>
-      <div className="text-xl font-semibold tabular-nums text-slate-900">{value}</div>
-      {hint && <div className="text-xs text-slate-600">{hint}</div>}
+    <div className="break-inside-avoid rounded-control border border-strong p-3">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-secondary">{label}</div>
+      <div className="text-xl font-semibold tabular-nums text-fg">{value}</div>
+      {hint && <div className="text-xs text-secondary">{hint}</div>}
     </div>
   );
 }
@@ -39,12 +39,12 @@ function Report({ r }: { r: MonthlyReportOut }) {
         <h1 className="text-2xl font-bold">
           Monthly report: {r.tenant_name}, {monthName(r.month)}
         </h1>
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-secondary">
           Tenant {r.tenant_id}. Period {r.value.from} to {r.value.to} (UTC). Generated {formatDateTime(r.generated_at)}.
         </p>
       </header>
       <section aria-labelledby="m-value">
-        <h2 id="m-value" className="mb-2 border-b-2 border-slate-900 text-lg font-semibold">
+        <h2 id="m-value" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
           1. Value
         </h2>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 print:grid-cols-4">
@@ -62,17 +62,17 @@ function Report({ r }: { r: MonthlyReportOut }) {
         </div>
       </section>
       <section aria-labelledby="m-accuracy">
-        <h2 id="m-accuracy" className="mb-2 border-b-2 border-slate-900 text-lg font-semibold">
+        <h2 id="m-accuracy" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
           2. Accuracy on your data
         </h2>
         {o.status === 'insufficient_data' && (
-          <p className="mb-2 rounded-md border border-amber-700 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p className="mb-2 rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
             Insufficient data: {formatInt(o.samples)} analyst-decided alerts; at least {formatInt(r.accuracy.min_samples)} are needed before these rates mean much.
           </p>
         )}
         <p className="text-sm">
           <span className="text-2xl font-bold">{formatPct(o.false_negative_rate)}</span> false-negative rate: the AI said benign on {formatInt(o.false_negatives)} of{' '}
-          {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. <span className="text-slate-600">{formatRange(o.false_negative_ci95)}</span>
+          {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. <span className="text-secondary">{formatRange(o.false_negative_ci95)}</span>
         </p>
         <p className="text-sm">
           Agreement {formatPct(o.agreement_rate)} ({formatInt(o.agreement)} of {formatInt(o.samples)}); false-positive rate {formatPct(o.false_positive_rate)}; AI inconclusive{' '}
@@ -80,9 +80,9 @@ function Report({ r }: { r: MonthlyReportOut }) {
         </p>
         {r.accuracy.by_model.length > 0 && (
           <table className="mt-2 w-full text-sm">
-            <caption className="text-left text-xs text-slate-600">By model</caption>
+            <caption className="text-left text-xs text-secondary">By model</caption>
             <thead>
-              <tr className="text-left text-xs uppercase text-slate-600">
+              <tr className="text-left text-xs uppercase text-secondary">
                 <th scope="col" className="py-1 pr-2">Model</th>
                 <th scope="col" className="py-1 pr-2 text-right">Samples</th>
                 <th scope="col" className="py-1 pr-2 text-right">Agreement</th>
@@ -91,7 +91,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
             </thead>
             <tbody>
               {r.accuracy.by_model.map((m) => (
-                <tr key={m.model} className="border-t border-slate-200 tabular-nums">
+                <tr key={m.model} className="border-t border-subtle tabular-nums">
                   <td className="break-all py-1 pr-2">{m.model}</td>
                   <td className="py-1 pr-2 text-right">{formatInt(m.accuracy.samples)}</td>
                   <td className="py-1 pr-2 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
@@ -103,13 +103,13 @@ function Report({ r }: { r: MonthlyReportOut }) {
         )}
       </section>
       <section aria-labelledby="m-detections">
-        <h2 id="m-detections" className="mb-2 border-b-2 border-slate-900 text-lg font-semibold">
+        <h2 id="m-detections" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
           3. Detection tuning
         </h2>
         <table className="w-full text-sm">
-          <caption className="text-left text-xs text-slate-600">Busiest {Math.min(TOP_DETECTIONS, r.detections.detections.length)} detections by volume</caption>
+          <caption className="text-left text-xs text-secondary">Busiest {Math.min(TOP_DETECTIONS, r.detections.detections.length)} detections by volume</caption>
           <thead>
-            <tr className="text-left text-xs uppercase text-slate-600">
+            <tr className="text-left text-xs uppercase text-secondary">
               <th scope="col" className="py-1 pr-2">Source</th>
               <th scope="col" className="py-1 pr-2">Rule</th>
               <th scope="col" className="py-1 pr-2 text-right">Volume</th>
@@ -120,7 +120,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
           </thead>
           <tbody>
             {r.detections.detections.slice(0, TOP_DETECTIONS).map((d) => (
-              <tr key={`${d.source_id}-${d.rule_field}-${d.rule}`} className="break-inside-avoid border-t border-slate-200 align-top tabular-nums">
+              <tr key={`${d.source_id}-${d.rule_field}-${d.rule}`} className="break-inside-avoid border-t border-subtle align-top tabular-nums">
                 <td className="py-1 pr-2">{d.source_id}</td>
                 <td className="break-words py-1 pr-2">{d.rule}</td>
                 <td className="py-1 pr-2 text-right">{formatInt(d.volume)}</td>
@@ -128,7 +128,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
                 <td className="py-1 pr-2 text-right">{formatInt(d.analyst_false_positive)}</td>
                 <td className="py-1">
                   <strong>{d.suggestion ? SUGGESTION_LABEL[d.suggestion] : 'None'}</strong>
-                  <span className="block text-xs text-slate-600">{d.reason}</span>
+                  <span className="block text-xs text-secondary">{d.reason}</span>
                 </td>
               </tr>
             ))}
@@ -136,7 +136,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
         </table>
       </section>
       <section aria-labelledby="m-notes">
-        <h2 id="m-notes" className="mb-2 border-b-2 border-slate-900 text-lg font-semibold">
+        <h2 id="m-notes" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
           Definitions and limits
         </h2>
         <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -173,9 +173,10 @@ export default function MonthlyReportPage() {
     }
   };
   return (
-    <div className="min-h-screen bg-slate-100 py-6 print:bg-white print:py-0">
+    // A paper document: always the light palette, whatever the app theme.
+    <div data-theme="light" className="min-h-screen bg-canvas py-6 text-fg print:bg-raised print:py-0">
       <div className="mx-auto mb-4 flex max-w-4xl flex-wrap items-center gap-2 px-4 print:hidden">
-        <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-slate-700 hover:underline">
+        <Link to="/reports" className="inline-flex items-center gap-1 text-sm text-body hover:underline">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to reports
         </Link>
@@ -187,7 +188,7 @@ export default function MonthlyReportPage() {
           Download HTML
         </Button>
       </div>
-      <main className="mx-auto max-w-4xl rounded-md bg-white px-8 py-8 text-slate-900 shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+      <main className="mx-auto max-w-4xl rounded-control bg-raised px-8 py-8 text-fg shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         {!valid && <p role="alert">The month must be YYYY-MM.</p>}
         {valid && q.isPending && <LoadingState label="Loading monthly report" />}
         {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}

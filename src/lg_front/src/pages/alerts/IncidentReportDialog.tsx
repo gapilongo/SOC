@@ -24,19 +24,19 @@ const TO_COMPLETE = '— to be completed by you —';
 
 function FieldRow({ field }: { field: IncidentReportField }) {
   return (
-    <div className="border-b border-slate-800 py-2 last:border-b-0">
-      <dt className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-300">
+    <div className="border-b border-subtle py-2 last:border-b-0">
+      <dt className="flex flex-wrap items-center gap-2 text-xs font-medium text-secondary">
         <span>
           {field.label}
-          {field.required && <span className="text-slate-500"> (required)</span>}
+          {field.required && <span className="text-muted"> (required)</span>}
         </span>
         {field.source === 'requires_human' && <Badge tone="warn">Needs your input</Badge>}
         {field.source === 'ai_drafted' && <Badge tone="info">{AI_LABEL}</Badge>}
       </dt>
-      <dd className="mt-0.5 whitespace-pre-wrap break-words text-sm text-slate-100">
-        {field.value ?? <span className="italic text-slate-400">{TO_COMPLETE}</span>}
+      <dd className="mt-0.5 whitespace-pre-wrap break-words text-sm text-fg">
+        {field.value ?? <span className="italic text-muted">{TO_COMPLETE}</span>}
       </dd>
-      {field.help && <p className="mt-0.5 text-xs text-slate-400">{field.help}</p>}
+      {field.help && <p className="mt-0.5 text-xs text-muted">{field.help}</p>}
     </div>
   );
 }
@@ -54,27 +54,27 @@ function Draft({ report }: { report: IncidentReportOut }) {
   };
   return (
     <div className="space-y-3">
-      <p role="note" className="rounded border border-amber-600 bg-amber-950 px-3 py-2 text-sm font-medium text-amber-100">
+      <p role="note" className="rounded border border-warn/60 bg-tint-warn px-3 py-2 text-sm font-medium text-warn-fg">
         {report.disclaimer}
       </p>
-      <p className="text-sm text-slate-300">
-        <span className="text-slate-400">Deadline: </span>
+      <p className="text-sm text-secondary">
+        <span className="text-muted">Deadline: </span>
         {report.deadline_hint}
-        <span className="text-slate-500"> · generated {formatDateTime(report.generated_at)}</span>
+        <span className="text-muted"> · generated {formatDateTime(report.generated_at)}</span>
       </p>
       <dl>{report.fields.map((f) => <FieldRow key={f.key} field={f} />)}</dl>
       {report.ai_narrative && (
-        <section className="rounded border border-sky-800 bg-slate-950 p-3" aria-label="AI-drafted narrative">
+        <section className="rounded border border-link/50 bg-canvas p-3" aria-label="AI-drafted narrative">
           <div className="mb-1 flex flex-wrap items-center gap-2">
             <Badge tone="info">{report.ai_narrative.label || AI_LABEL}</Badge>
-            <span className="text-xs text-slate-400">
+            <span className="text-xs text-muted">
               {report.ai_narrative.provider} / {report.ai_narrative.model}
             </span>
           </div>
-          <p className="whitespace-pre-wrap text-sm text-slate-100">{report.ai_narrative.text}</p>
+          <p className="whitespace-pre-wrap text-sm text-fg">{report.ai_narrative.text}</p>
         </section>
       )}
-      {report.ai_narrative_error && <p className="text-xs text-slate-400">No AI narrative: {report.ai_narrative_error}</p>}
+      {report.ai_narrative_error && <p className="text-xs text-muted">No AI narrative: {report.ai_narrative_error}</p>}
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
@@ -114,10 +114,10 @@ export function IncidentReportDialog({ alertId, open, onClose }: { alertId: stri
     >
       <form onSubmit={submit} className="space-y-4">
         <fieldset>
-          <legend className="mb-1 text-xs font-medium text-slate-300">Stage</legend>
+          <legend className="mb-1 text-xs font-medium text-secondary">Stage</legend>
           <div className="space-y-1.5">
             {STAGES.map((s) => (
-              <label key={s.value} className="flex items-start gap-2 text-sm text-slate-200">
+              <label key={s.value} className="flex items-start gap-2 text-sm text-body">
                 <input
                   type="radio"
                   name="nis2-stage"
@@ -128,7 +128,7 @@ export function IncidentReportDialog({ alertId, open, onClose }: { alertId: stri
                 />
                 <span>
                   {s.label}
-                  <span className="block text-xs text-slate-400">{s.hint}</span>
+                  <span className="block text-xs text-muted">{s.hint}</span>
                 </span>
               </label>
             ))}
@@ -146,7 +146,7 @@ export function IncidentReportDialog({ alertId, open, onClose }: { alertId: stri
         </Button>
       </form>
       {m.data && (
-        <div className="mt-5 border-t border-slate-800 pt-4">
+        <div className="mt-5 border-t border-subtle pt-4">
           <Draft report={m.data} />
         </div>
       )}

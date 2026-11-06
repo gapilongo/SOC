@@ -52,11 +52,11 @@ export default function OidcCallbackPage() {
 
   return (
     <main className="mx-auto max-w-md px-4 py-16">
-      <h1 className="mb-4 text-lg font-semibold text-white">Completing single sign-on</h1>
+      <h1 className="mb-4 text-lg font-semibold text-fg">Completing single sign-on</h1>
       {error ? (
         <div className="space-y-4">
           <ErrorMessage error={error} />
-          <Link to="/login" className="text-sm text-sky-300 underline hover:text-sky-200">
+          <Link to="/login" className="text-sm text-link underline hover:text-link">
             Back to sign in
           </Link>
         </div>

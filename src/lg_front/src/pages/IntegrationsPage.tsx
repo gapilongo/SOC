@@ -357,15 +357,15 @@ function IntegrationForm({
           </SelectField>
           <Checkbox label="Enabled" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} className="self-end" />
         </div>
-        <p className="text-sm text-slate-300">{spec.note}</p>
+        <p className="text-sm text-secondary">{spec.note}</p>
         {kind === 'slack' && editing && flags.interactive_approvals && (
-          <p className="text-xs text-slate-300">
+          <p className="text-xs text-secondary">
             Slack app Interactivity Request URL:{' '}
-            <code className="select-all break-all rounded bg-slate-800 px-1 py-0.5">{slackRequestUrl(integration)}</code>
+            <code className="select-all break-all rounded bg-raised-2 px-1 py-0.5">{slackRequestUrl(integration)}</code>
           </p>
         )}
         <fieldset>
-          <legend className="mb-2 text-sm font-medium text-slate-200">Events</legend>
+          <legend className="mb-2 text-sm font-medium text-body">Events</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {allowed.map((event) => (
               <Checkbox
@@ -378,7 +378,7 @@ function IntegrationForm({
           </div>
         </fieldset>
         <fieldset className="grid gap-3 sm:grid-cols-2">
-          <legend className="mb-2 text-sm font-medium text-slate-200">Configuration</legend>
+          <legend className="mb-2 text-sm font-medium text-body">Configuration</legend>
           {spec.config.map((f) =>
             f.kind === 'bool' ? (
               <Checkbox
@@ -427,9 +427,9 @@ function IntegrationForm({
           onChange={(e) => setExtra(e.target.value)}
         />
         {spec.secrets.length > 0 && (
-          <fieldset className="space-y-3 rounded-md border border-slate-800 p-3">
-            <legend className="px-1 text-sm font-medium text-slate-200">Credentials (write-only)</legend>
-            <p className="text-xs text-slate-400">
+          <fieldset className="space-y-3 rounded-control border border-subtle p-3">
+            <legend className="px-1 text-sm font-medium text-body">Credentials (write-only)</legend>
+            <p className="text-xs text-muted">
               Stored encrypted and never shown again. {editing ? 'Leave a field empty to keep the stored value.' : ''}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -501,7 +501,7 @@ function DeliveryLog({ integration }: { integration: IntegrationOut }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
             <caption className="sr-only">Recent deliveries of {integration.name}</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2">Queued</th>
                 <th scope="col" className="px-3 py-2">Event</th>
@@ -512,24 +512,24 @@ function DeliveryLog({ integration }: { integration: IntegrationOut }) {
             </thead>
             <tbody>
               {q.data.map((d) => (
-                <tr key={d.id} className="border-b border-slate-800/70 align-top">
-                  <td className="px-3 py-2 text-slate-300">
+                <tr key={d.id} className="border-b border-subtle align-top">
+                  <td className="px-3 py-2 text-secondary">
                     <span title={formatDateTime(d.created_at)}>{formatRelative(d.created_at)}</span>
                   </td>
                   <td className="px-3 py-2">
-                    <div className="text-slate-100">{EVENT_LABELS[d.event_type] ?? d.event_type}</div>
-                    {d.operation !== 'notify' && <div className="text-xs text-slate-400">{humanize(d.operation)}</div>}
-                    {d.title && <div className="max-w-md truncate text-xs text-slate-400" title={d.title}>{d.title}</div>}
+                    <div className="text-fg">{EVENT_LABELS[d.event_type] ?? d.event_type}</div>
+                    {d.operation !== 'notify' && <div className="text-xs text-muted">{humanize(d.operation)}</div>}
+                    {d.title && <div className="max-w-md truncate text-xs text-muted" title={d.title}>{d.title}</div>}
                   </td>
                   <td className="px-3 py-2">
                     <Badge tone={DELIVERY_TONE[d.status] ?? 'neutral'}>{d.status}</Badge>
                     {(d.status === 'pending' || d.status === 'failed') && (
-                      <div className="mt-1 text-xs text-slate-400">next {formatRelative(d.next_attempt_at)}</div>
+                      <div className="mt-1 text-xs text-muted">next {formatRelative(d.next_attempt_at)}</div>
                     )}
                   </td>
-                  <td className="px-3 py-2 tabular-nums text-slate-200">{d.attempts}</td>
+                  <td className="px-3 py-2 tabular-nums text-body">{d.attempts}</td>
                   <td className="px-3 py-2 text-xs">
-                    {d.last_error ? <span className="break-words text-orange-200">{d.last_error}</span> : <span className="text-slate-300">{describeResult(d)}</span>}
+                    {d.last_error ? <span className="break-words text-danger-fg">{d.last_error}</span> : <span className="text-secondary">{describeResult(d)}</span>}
                   </td>
                 </tr>
               ))}
@@ -597,10 +597,10 @@ export default function IntegrationsPage() {
         <EmptyState title="No integrations yet">Add a channel so analysts hear about escalations and approvals where they work.</EmptyState>
       )}
       {q.data && q.data.length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900">
+        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Integrations</caption>
-            <thead className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-400">
+            <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="px-3 py-2">Name</th>
                 <th scope="col" className="px-3 py-2">Kind</th>
@@ -614,16 +614,16 @@ export default function IntegrationsPage() {
               {q.data.map((i) => {
                 const missing = missingCredentials(i);
                 return (
-                  <tr key={i.id} className="border-b border-slate-800/70 align-top">
+                  <tr key={i.id} className="border-b border-subtle align-top">
                     <td className="px-3 py-2">
-                      <div className="font-medium text-slate-100">{i.name}</div>
+                      <div className="font-medium text-fg">{i.name}</div>
                       {!i.enabled && <Badge>disabled</Badge>}
                     </td>
-                    <td className="px-3 py-2 text-slate-200">{KIND_SPECS[i.kind]?.label ?? i.kind}</td>
-                    <td className="px-3 py-2 text-xs text-slate-300">
-                      {i.events.length ? i.events.map((e) => EVENT_LABELS[e] ?? e).join(', ') : <span className="text-slate-400">none</span>}
+                    <td className="px-3 py-2 text-body">{KIND_SPECS[i.kind]?.label ?? i.kind}</td>
+                    <td className="px-3 py-2 text-xs text-secondary">
+                      {i.events.length ? i.events.map((e) => EVENT_LABELS[e] ?? e).join(', ') : <span className="text-muted">none</span>}
                     </td>
-                    <td className="px-3 py-2 capitalize text-slate-200">{i.min_severity}</td>
+                    <td className="px-3 py-2 capitalize text-body">{i.min_severity}</td>
                     <td className="px-3 py-2">
                       {missing.length ? <Badge tone="warn">missing {missing.join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
                     </td>
@@ -644,7 +644,7 @@ export default function IntegrationsPage() {
                         <Button size="sm" onClick={() => setEditing(i)} icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Edit ${i.name}`}>
                           Edit
                         </Button>
-                        <Button size="sm" variant="danger" onClick={() => setDeleting(i)} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Delete ${i.name}`}>
+                        <Button size="sm" variant="destructive" onClick={() => setDeleting(i)} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Delete ${i.name}`}>
                           Delete
                         </Button>
                       </div>

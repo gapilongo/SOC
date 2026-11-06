@@ -65,10 +65,10 @@ export function quotaText(used: number, limit: number | null): string {
 }
 
 function quotaTone(used: number, limit: number | null): string {
-  if (limit === null) return 'text-slate-100';
-  if (used >= limit) return 'text-red-300 font-medium';
-  if (used >= limit * 0.8) return 'text-amber-300';
-  return 'text-slate-100';
+  if (limit === null) return 'text-fg';
+  if (used >= limit) return 'text-danger-fg font-medium';
+  if (used >= limit * 0.8) return 'text-warn-fg';
+  return 'text-fg';
 }
 
 function currentMonth(now: Date = new Date()): string {
@@ -198,7 +198,7 @@ function TenantsTab() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
             <caption className="sr-only">Tenants with activity, quotas and status</caption>
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3">Tenant</th>
                 <th scope="col" className="py-2 pr-3">Status</th>
@@ -213,15 +213,15 @@ function TenantsTab() {
                 <th scope="col" className="py-2"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-subtle">
               {rows.map((t) => {
                 const s = t.stats;
                 const u = t.quota_usage;
                 return (
                   <tr key={t.id} className="align-top">
                     <th scope="row" className="py-2 pr-3 text-left font-normal">
-                      <div className="font-medium text-white">{t.name}</div>
-                      <div className="font-mono text-xs text-slate-400">
+                      <div className="font-medium text-fg">{t.name}</div>
+                      <div className="font-mono text-xs text-muted">
                         {t.id}
                         {t.id === home ? ' (home)' : ''}
                       </div>
@@ -233,14 +233,14 @@ function TenantsTab() {
                     <td className={cx('py-2 pr-3 text-right tabular-nums', quotaTone(u.max_alerts_per_day.used, u.max_alerts_per_day.limit))}>
                       {quotaText(u.max_alerts_per_day.used, u.max_alerts_per_day.limit)}
                     </td>
-                    <td className="py-2 pr-3 text-slate-300" title={s.last_ingest_at ?? undefined}>
+                    <td className="py-2 pr-3 text-secondary" title={s.last_ingest_at ?? undefined}>
                       {s.last_ingest_at ? formatRelative(s.last_ingest_at, now) : 'never'}
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">
                       {formatInt(s.open_escalations)}
-                      {s.overdue_escalations > 0 && <span className="ml-1 text-red-300">({formatInt(s.overdue_escalations)} overdue)</span>}
+                      {s.overdue_escalations > 0 && <span className="ml-1 text-danger-fg">({formatInt(s.overdue_escalations)} overdue)</span>}
                     </td>
-                    <td className={cx('py-2 pr-3 text-right tabular-nums', s.sla_breaches_24h > 0 && 'text-amber-300')}>{formatInt(s.sla_breaches_24h)}</td>
+                    <td className={cx('py-2 pr-3 text-right tabular-nums', s.sla_breaches_24h > 0 && 'text-warn-fg')}>{formatInt(s.sla_breaches_24h)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(s.llm_cost_mtd_usd)}</td>
                     <td className={cx('py-2 pr-3 text-right tabular-nums', quotaTone(u.max_users.used, u.max_users.limit))}>
                       {quotaText(u.max_users.used, u.max_users.limit)}
@@ -250,14 +250,14 @@ function TenantsTab() {
                     </td>
                     <td className="py-2">
                       <div className="flex flex-wrap justify-end gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => open(t)} icon={<LogIn className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Open tenant ${t.name}`}>
+                        <Button size="sm" variant="quiet" onClick={() => open(t)} icon={<LogIn className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Open tenant ${t.name}`}>
                           Open
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setQuotaFor(t)} aria-label={`Edit quotas of ${t.name}`}>
+                        <Button size="sm" variant="quiet" onClick={() => setQuotaFor(t)} aria-label={`Edit quotas of ${t.name}`}>
                           Quotas
                         </Button>
                         {t.id !== home && (
-                          <Button size="sm" variant={t.status === 'active' ? 'danger' : 'secondary'} onClick={() => setStatusFor(t)}>
+                          <Button size="sm" variant={t.status === 'active' ? 'destructive' : 'secondary'} onClick={() => setStatusFor(t)}>
                             {t.status === 'active' ? 'Suspend' : 'Reactivate'}
                           </Button>
                         )}
@@ -330,7 +330,7 @@ function EscalationsTab() {
         </SelectField>
       }
     >
-      <p className="mb-3 text-sm text-slate-300">
+      <p className="mb-3 text-sm text-secondary">
         Soonest SLA deadline first. Opening one switches to its tenant; deciding it needs an account in that tenant.
       </p>
       <ListNotice list={list} noun="escalations" />
@@ -341,7 +341,7 @@ function EscalationsTab() {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <caption className="sr-only">Open and claimed escalations of every tenant</caption>
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3">SLA</th>
                 <th scope="col" className="py-2 pr-3">Tenant</th>
@@ -352,21 +352,21 @@ function EscalationsTab() {
                 <th scope="col" className="py-2"><span className="sr-only">Open</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-subtle">
               {list.items.map((e) => {
                 const due = formatCountdown(e.sla_deadline, now);
                 return (
-                  <tr key={`${e.tenant_id}:${e.id}`} className="hover:bg-slate-800/40">
-                    <td className={cx('py-2 pr-3 whitespace-nowrap tabular-nums', due.overdue ? 'text-red-300' : 'text-slate-200')}>{due.text}</td>
+                  <tr key={`${e.tenant_id}:${e.id}`} className="hover:bg-raised-2">
+                    <td className={cx('py-2 pr-3 whitespace-nowrap tabular-nums', due.overdue ? 'text-danger-fg' : 'text-body')}>{due.text}</td>
                     <td className="py-2 pr-3">
-                      <div className="text-slate-100">{e.tenant_name}</div>
-                      <div className="font-mono text-xs text-slate-400">{e.tenant_id}</div>
+                      <div className="text-fg">{e.tenant_name}</div>
+                      <div className="font-mono text-xs text-muted">{e.tenant_id}</div>
                       {e.tenant_status !== 'active' && <Badge tone="bad">{e.tenant_status}</Badge>}
                     </td>
                     <td className="py-2 pr-3">
                       <div className="flex items-center gap-2">
                         <SeverityBadge value={e.alert_severity} />
-                        <button type="button" className="text-left text-slate-100 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400" onClick={() => open(e)}>
+                        <button type="button" className="text-left text-fg hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus" onClick={() => open(e)}>
                           {e.alert_title ?? e.alert_id}
                         </button>
                       </div>
@@ -375,11 +375,11 @@ function EscalationsTab() {
                     <td className="py-2 pr-3">
                       <StatusBadge value={e.status} />
                     </td>
-                    <td className="max-w-xs truncate py-2 pr-3 text-slate-300" title={e.reason}>
+                    <td className="max-w-xs truncate py-2 pr-3 text-secondary" title={e.reason}>
                       {e.reason}
                     </td>
                     <td className="py-2 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => open(e)} aria-label={`Open escalation in tenant ${e.tenant_name}`}>
+                      <Button size="sm" variant="quiet" onClick={() => open(e)} aria-label={`Open escalation in tenant ${e.tenant_name}`}>
                         Open
                       </Button>
                     </td>
@@ -443,18 +443,18 @@ function UsageTab() {
         </>
       }
     >
-      <p className="mb-3 text-sm text-slate-300">
+      <p className="mb-3 text-sm text-secondary">
         Alerts stored and triaged per tenant (sample alerts excluded), LLM tokens and cost, and active users (accounts that signed in
         or acted in the month). Counters survive alert retention, so past months stay billable.
       </p>
-      {!valid && <p className="text-sm text-red-300">Pick a month.</p>}
+      {!valid && <p className="text-sm text-danger-fg">Pick a month.</p>}
       {q.isPending && valid && <LoadingState label="Loading usage" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {q.data && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <caption className="sr-only">Usage per tenant for {q.data.month}</caption>
-            <thead className="text-left text-xs uppercase tracking-wide text-slate-400">
+            <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th scope="col" className="py-2 pr-3">Tenant</th>
                 <th scope="col" className="py-2 pr-3 text-right">Alerts ingested</th>
@@ -467,11 +467,11 @@ function UsageTab() {
                 <th scope="col" className="py-2 pr-3 text-right">Sources</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-subtle">
               {rows.map((r) => (
                 <tr key={r.tenant_id}>
                   <th scope="row" className="py-2 pr-3 text-left font-normal">
-                    <span className="text-slate-100">{r.tenant_name}</span> <span className="font-mono text-xs text-slate-400">{r.tenant_id}</span>
+                    <span className="text-fg">{r.tenant_name}</span> <span className="font-mono text-xs text-muted">{r.tenant_id}</span>
                   </th>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatInt(r.alerts_ingested)}</td>
                   <td className="py-2 pr-3 text-right tabular-nums">{formatInt(r.alerts_processed)}</td>
@@ -484,7 +484,7 @@ function UsageTab() {
                 </tr>
               ))}
             </tbody>
-            <tfoot className="border-t border-slate-700 font-medium">
+            <tfoot className="border-t border-strong font-medium">
               <tr>
                 <th scope="row" className="py-2 pr-3 text-left">Total</th>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatInt(Number(q.data.totals.alerts_ingested))}</td>
@@ -553,7 +553,7 @@ function CreateTenantTab() {
       <form onSubmit={submit} className="space-y-4" autoComplete="off">
         {m.isError && <ErrorMessage error={m.error} compact />}
         {created && (
-          <p role="status" className="rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">
+          <p role="status" className="rounded-control border border-state-ok/60 bg-tint-ok px-3 py-2 text-sm text-ok-fg">
             Tenant {created.name} ({created.id}) created{created.admin ? ` with admin ${created.admin.email}` : ''}
             {created.settings_keys && created.settings_keys.length > 0 ? `; seeded settings: ${created.settings_keys.join(', ')}` : ''}.
           </p>
@@ -618,7 +618,7 @@ export default function PlatformPage() {
         title="MSSP console"
         description="Every tenant at a glance: activity, SLA risk, quotas and usage. Opening a tenant switches the header's tenant context; every request is recorded in that tenant's audit log."
       />
-      <div role="tablist" aria-label="MSSP console" className="mb-4 flex flex-wrap gap-1 border-b border-slate-800">
+      <div role="tablist" aria-label="MSSP console" className="mb-4 flex flex-wrap gap-1 border-b border-subtle">
         {TABS.map((t, i) => (
           <button
             key={t.id}
@@ -631,8 +631,8 @@ export default function PlatformPage() {
             onClick={() => select(t.id)}
             onKeyDown={(e) => onTabKey(e, i)}
             className={cx(
-              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400',
-              tab === t.id ? 'border-sky-400 font-medium text-white' : 'border-transparent text-slate-300 hover:text-white',
+              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === t.id ? 'border-link font-medium text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {t.label}
