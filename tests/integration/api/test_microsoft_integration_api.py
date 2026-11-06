@@ -12,7 +12,7 @@ import pytest
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
 from lg_sotf.services.connectors.microsoft import MicrosoftClients
 from tests.fixtures.microsoft import FakeMicrosoft, fake_config, fake_secret
-from tests.integration.api.conftest import ApiHarness
+from tests.integration.api._support import ApiHarness
 from tests.integration.db._support import TENANT_A
 from tests.unit.integrations.microsoft._support import FAKE_SPECS
 

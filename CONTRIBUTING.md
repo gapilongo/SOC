@@ -18,13 +18,18 @@ python3.11 -m venv .venv && . .venv/bin/activate
 make dev          # pinned dependencies from requirements-dev.txt, editable install
 pre-commit install --hook-type pre-commit --hook-type pre-push
 make check        # what CI's lint and fast jobs run: ruff, mypy, import contracts, unit + deploy tests
-make test         # the whole suite; integration tests skip without the variables below
 
-# Integration tests: dedicated databases whose names contain "test" (they are reset)
+# Integration tests, one command each: throwaway PostgreSQL and Redis in Docker (tmpfs, CI's role)
+make test-services && make test-integration && make test-services-down
+
+# Or your own services: dedicated databases whose names contain "test" (they are reset)
 export LG_SOTF_TEST_DATABASE_URL=postgresql://soc:<password>@127.0.0.1:5432/soc_test
 export LG_SOTF_TEST_REDIS_URL=redis://127.0.0.1:6379/5
-make test
+make test         # the whole suite, one process (make test-parallel: four xdist workers)
 ```
+
+[docs/testing.md](docs/testing.md) covers the tiers, helpers, clocks,
+isolation rules and the flaky-test policy.
 
 `make help` lists every target (image build, compose stack, smoke test, Helm
 lint). The web application in `src/lg_front` has its own `npm` scripts; see

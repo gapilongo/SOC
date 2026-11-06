@@ -19,7 +19,7 @@ from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine.conftest import RecordingEvents
+from tests.integration.engine._support import RecordingEvents
 
 pytestmark = pytest.mark.integration
 
@@ -585,14 +585,17 @@ async def test_action_left_executing_by_a_crash_is_finished(
     with pytest.raises(RuntimeError, match="mid-execution"):
         await engine.resume(TENANT_A, alert_id, payload)
     stuck = [a for a in (await repos.actions.list(TENANT_A, alert_id=alert_id, limit=50)).items if a.status == "executing"]
-    assert len(stuck) == 1
+    # Actions run concurrently (ResponseService.execute): the crash leaves its own action executing, and any
+    # other that had already started is cancelled in the same state. How many depends on scheduling.
+    assert stuck
 
     outcome = await engine.resume(TENANT_A, alert_id, payload)
 
     assert outcome.status == "waiting_approval"
     actions = (await repos.actions.list(TENANT_A, alert_id=alert_id, limit=50)).items
     assert not [a for a in actions if a.status == "executing"]
-    assert next(a for a in actions if a.id == stuck[0].id).status == "dry_run"
+    finished = {a.id: a.status for a in actions}
+    assert all(finished[a.id] == "dry_run" for a in stuck), finished
 
 
 async def _policy_response_alert(engine_factory: Any, engine_settings: Settings, repos: Repositories) -> tuple[WorkflowEngine, str]:

@@ -16,9 +16,9 @@ from lg_sotf.integrations.http import IntegrationHttp
 from lg_sotf.integrations.slack import slack_signature
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.response import PlanContext, ResponseService
-from tests.integration.api.conftest import ApiHarness
+from tests.integration.api._support import ApiHarness
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.integrations.conftest import Receiver, add_integration, fake_secret, public_resolver, slack_url
+from tests.integration.integrations._support import Receiver, add_integration, fake_secret, public_resolver, slack_url
 from tests.integration.services._support import add_alert
 
 pytestmark = pytest.mark.integration

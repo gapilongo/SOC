@@ -28,7 +28,7 @@ from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.runtime.worker import Worker
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import WAITING_OR_DONE, Stack, eventually, running
+from tests.integration.e2e._support import WAITING_OR_DONE, Stack, eventually, running
 
 pytestmark = pytest.mark.integration
 

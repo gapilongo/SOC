@@ -127,12 +127,16 @@ class Scheduler:
         stop_grace_s: float = DEFAULT_STOP_GRACE_S,
         delivery: Optional[OutboxDelivery] = None,
         responses: Optional[ResponseService] = None,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
         if max_concurrent_polls < 1:
             raise ValueError("max_concurrent_polls must be >= 1")
         if stop_grace_s < 0:
             raise ValueError("stop_grace_s must be >= 0")
         self._stop_grace_s = stop_grace_s
+        self._clock = clock  # job due times and liveness (tests inject a fake)
+        self._wall_clock = wall_clock  # backlog age against stream ids, SLA deadlines
         self._settings = settings
         self._db = db
         self._redis = redis
@@ -147,7 +151,7 @@ class Scheduler:
         self._polls: Dict[Tuple[str, str], asyncio.Task[None]] = {}
         self._undispatched: List[Tuple[str, str, str]] = []
         self._stop = asyncio.Event()
-        self._loop_tick = time.monotonic()
+        self._loop_tick = self._clock()
         self._running = False
         self._delivery = delivery
         self._responses = responses
@@ -195,14 +199,14 @@ class Scheduler:
     def is_alive(self) -> bool:
         if not self._running:
             return not self._stop.is_set()
-        return time.monotonic() - self._loop_tick < self._settings.scheduler.tick_s * 3 + 30.0
+        return self._clock() - self._loop_tick < self._settings.scheduler.tick_s * 3 + 30.0
 
     async def run(self) -> None:
         self._running = True
         log.info("scheduler.started")
         try:
             while not self._stop.is_set():
-                self._loop_tick = time.monotonic()
+                self._loop_tick = self._clock()
                 await self.tick()
                 await wait_or_stop(self._stop, self._settings.scheduler.tick_s)
         finally:
@@ -222,17 +226,17 @@ class Scheduler:
             return
         if not was_leader:
             log.info("scheduler.leadership_acquired")
-            now = time.monotonic()
+            now = self._clock()
             for job in self.jobs.values():
                 job.next_due = now
-        now = time.monotonic()
+        now = self._clock()
         for job in self.jobs.values():
             if job.next_due <= now and (job.task is None or job.task.done()):
                 job.next_due = now + job.interval_s
                 job.task = asyncio.create_task(self._run_job(job), name=f"job:{job.name}")
 
     async def _run_job(self, job: _Job) -> None:
-        started = time.monotonic()
+        started = self._clock()
         try:
             override = await job.fn()
         except asyncio.CancelledError:
@@ -243,8 +247,8 @@ class Scheduler:
             return
         job.runs += 1
         if override is not None:
-            job.next_due = min(job.next_due, time.monotonic() + override)
-        log.debug("scheduler.job_done", job=job.name, seconds=round(time.monotonic() - started, 3))
+            job.next_due = min(job.next_due, self._clock() + override)
+        log.debug("scheduler.job_done", job=job.name, seconds=round(self._clock() - started, 3))
 
     async def _stand_down(self, *, grace_s: float = 0.0) -> None:
         tasks = [job.task for job in self.jobs.values() if job.task is not None and not job.task.done()]
@@ -460,7 +464,7 @@ class Scheduler:
         """Re-enqueue queued/failed runs that have not changed for longer than their threshold."""
         queued_s, failed_s = orphan_thresholds(self._settings)
         include_queued: Optional[float] = queued_s
-        backlog_s = await oldest_undelivered_age_s(self._redis, self._queue.streams)
+        backlog_s = await oldest_undelivered_age_s(self._redis, self._queue.streams, clock=self._wall_clock)
         if backlog_s >= queued_s:
             # Queued runs may just be waiting in a deep backlog; re-enqueueing them would double it.
             include_queued = None
@@ -503,7 +507,7 @@ class Scheduler:
         return now + window
 
     async def _handle_breach(self, esc: Escalation) -> None:
-        now = datetime.now(UTC)
+        now = datetime.fromtimestamp(self._wall_clock(), UTC)
         with bound_context(tenant_id=esc.tenant_id, alert_id=esc.alert_id):
             try:
                 async with self._db.tenant_tx(esc.tenant_id) as conn:

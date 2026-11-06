@@ -8,8 +8,7 @@ from uuid import uuid4
 import pytest
 
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import eventually, running
-from tests.integration.e2e.test_pipeline import analyst_decides
+from tests.integration.e2e._support import analyst_decides, eventually, running
 
 pytestmark = pytest.mark.integration
 

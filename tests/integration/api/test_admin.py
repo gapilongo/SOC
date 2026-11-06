@@ -14,7 +14,7 @@ from lg_sotf.ingestion.service import IngestionService
 from lg_sotf.ingestion.sources import ConnectorDeps, source_secret_context
 from lg_sotf.services.connectors.registry import webhook_secret_context
 from lg_sotf.tools.enrichment.service import tool_secret_context
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 
@@ -205,7 +205,7 @@ async def test_users_crud_policy_and_no_hashes(api: ApiHarness) -> None:
 
 
 async def test_last_active_admin_cannot_be_removed(api: ApiHarness) -> None:
-    from tests.integration.api.conftest import TENANT_B
+    from tests.integration.api._support import TENANT_B
 
     only_admin = await api.user(TENANT_A, "admin")
     operator = await api.user(TENANT_B, "admin", platform_admin=True)

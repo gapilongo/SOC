@@ -7,84 +7,16 @@ import hashlib
 import hmac
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import httpx
 import jwt
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
-from tests.integration.api.conftest import TENANT_A, ApiHarness
+from tests.integration.api._support import AUDIENCE, ISSUER, TENANT_A, ApiHarness, IdP, bearer
 
 pytestmark = pytest.mark.integration
-
-ISSUER = "https://idp.example.com/realms/soc"
-AUDIENCE = "lg-sotf-api"
-
-
-class IdP:
-    """A tiny identity provider: signing keys, a discovery document and a JWKS endpoint."""
-
-    def __init__(self) -> None:
-        self.keys: Dict[str, Any] = {}
-        self.published: List[str] = []
-        self.jwks_fetches = 0
-        self.available = True
-        self.add_rsa("rsa-1")
-
-    def add_rsa(self, kid: str, publish: bool = True) -> None:
-        self.keys[kid] = ("RS256", rsa.generate_private_key(public_exponent=65537, key_size=2048))
-        if publish:
-            self.published.append(kid)
-
-    def add_ec(self, kid: str) -> None:
-        self.keys[kid] = ("ES256", ec.generate_private_key(ec.SECP256R1()))
-        self.published.append(kid)
-
-    def jwks(self) -> Dict[str, Any]:
-        out = []
-        for kid in self.published:
-            alg, key = self.keys[kid]
-            algorithm = RSAAlgorithm if alg == "RS256" else ECAlgorithm
-            jwk = json.loads(algorithm.to_jwk(key.public_key()))
-            out.append({**jwk, "kid": kid, "use": "sig", "alg": alg})
-        return {"keys": out}
-
-    def handler(self, request: httpx.Request) -> httpx.Response:
-        if not self.available:
-            return httpx.Response(503)
-        if request.url.path.endswith("/.well-known/openid-configuration"):
-            return httpx.Response(200, json={"issuer": ISSUER, "jwks_uri": f"{ISSUER}/protocol/openid-connect/certs"})
-        if request.url.path.endswith("/certs"):
-            self.jwks_fetches += 1
-            return httpx.Response(200, json=self.jwks())
-        return httpx.Response(404)
-
-    def token(self, kid: str = "rsa-1", *, alg: Optional[str] = None, **claims: Any) -> str:
-        key_alg, key = self.keys[kid]
-        now = int(time.time())
-        body = {
-            "iss": ISSUER,
-            "aud": AUDIENCE,
-            "sub": "idp-user-1",
-            "iat": now,
-            "exp": now + 300,
-            "tenant_id": TENANT_A,
-            "roles": ["viewer", "analyst"],
-            "email": "sso.analyst@a.example.com",
-            "email_verified": True,
-        }
-        body.update(claims)
-        body = {k: v for k, v in body.items() if v is not None}
-        return jwt.encode(body, key, algorithm=alg or key_alg, headers={"kid": kid})
-
-
-@pytest.fixture
-def idp() -> IdP:
-    return IdP()
-
 
 @pytest.fixture
 async def oidc_api(make_api, idp: IdP) -> ApiHarness:
@@ -103,10 +35,6 @@ def _hmac_token(header: Dict[str, Any], claims: Dict[str, Any], secret: bytes) -
     signing_input = f"{_b64(json.dumps(header).encode())}.{_b64(json.dumps(claims).encode())}"
     signature = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
     return f"{signing_input}.{_b64(signature)}"
-
-
-def bearer(token: str) -> Dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 async def test_valid_token_maps_tenant_role_and_local_user(oidc_api: ApiHarness, idp: IdP) -> None:

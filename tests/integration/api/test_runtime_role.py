@@ -14,7 +14,7 @@ from typing import Callable
 import pytest
 
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
-from tests.integration.api.conftest import PASSWORD, TENANT_A, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration

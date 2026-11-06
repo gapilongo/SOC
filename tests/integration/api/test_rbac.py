@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from tests.integration.api.conftest import TENANT_A, ApiHarness
+from tests.integration.api._support import TENANT_A, ApiHarness
 
 pytestmark = pytest.mark.integration
 

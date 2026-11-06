@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Tuple
 
 from langchain_core.messages import BaseMessage
 
+from lg_sotf.agents.base import AgentContext
 from lg_sotf.db.errors import NotFound
 from lg_sotf.llm.fake import ScriptedChatModel
 from lg_sotf.llm.fake import _message_text as message_text
@@ -125,3 +126,34 @@ def factory(model: ScriptedChatModel) -> Any:
 
 def texts(messages: Sequence[BaseMessage]) -> List[str]:
     return [message_text(m) for m in messages]
+
+
+# ------------------------------------------------------------- triage inputs
+
+BENIGN = {"title": "Scheduled backup maintenance test", "severity": "low", "source_id": "prod-siem"}
+MALICIOUS = {
+    "title": "Malware backdoor exploit detected",
+    "severity": "critical",
+    "source_id": "edr-prod",
+    "raw": {"destination_port": 4444, "file_hash": "d41d8cd98f00b204e9800998ecf8427e"},
+}
+AMBIGUOUS = {
+    "title": "Unusual outbound connection from workstation",
+    "severity": "medium",
+    "source_id": "fw-prod",
+    "entities": {"ips": ["203.0.113.7"], "hosts": ["ws-042"]},
+}
+ASSESSMENT = {
+    "threat_likelihood": 90,
+    "threat_assessment": "likely_threat",
+    "false_positive_indicators": [],
+    "true_positive_indicators": ["beaconing interval"],
+    "threat_categories": ["c2"],
+    "urgency_level": "high",
+    "recommended_actions": ["isolate host"],
+    "reasoning": "Regular beaconing to a rare external address.",
+}
+
+
+def ctx(settings: Settings, **kwargs: Any) -> AgentContext:
+    return AgentContext(tenant_id="t1", alert_id="a1", settings=settings, **kwargs)

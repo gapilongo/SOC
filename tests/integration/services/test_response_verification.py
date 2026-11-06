@@ -19,7 +19,7 @@ from lg_sotf.integrations.microsoft.catalog import override_for_tests
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.rollback import RollbackService
 from tests.integration.db._support import TENANT_A
-from tests.integration.integrations.microsoft.conftest import MicrosoftEnv, MicrosoftEnvFactory
+from tests.integration.integrations.microsoft._support import MicrosoftEnv, MicrosoftEnvFactory
 from tests.unit.integrations.microsoft._support import FAKE_SPECS, OPERATION_ID, script_isolation
 
 pytestmark = pytest.mark.integration

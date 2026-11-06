@@ -25,7 +25,7 @@ from lg_sotf.services.response import PlanContext, ResponseService
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.integrations.conftest import add_integration, slack_url
+from tests.integration.integrations._support import add_integration, slack_url
 from tests.integration.services._support import add_alert
 
 pytestmark = pytest.mark.integration

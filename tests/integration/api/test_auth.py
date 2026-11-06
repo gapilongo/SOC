@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness, fresh_rate_window
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -334,7 +334,6 @@ async def test_platform_admin_override_is_audited_and_others_cannot(api: ApiHarn
 
 async def test_repeated_auth_failures_from_one_address_are_throttled(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 1})
-    await fresh_rate_window()
     headers = {"Authorization": "Bearer not-a-token"}
     statuses = [(await api.client.get("/api/v1/alerts", headers=headers)).status_code for _ in range(25)]
     assert statuses[0] == 401
@@ -348,8 +347,11 @@ async def test_login_is_rate_limited_per_address_and_account(make_api) -> None:
         response = await api.client.post("/api/v1/auth/login", json={"email": "x@a.example.com", "password": "p"})
         statuses.append(response.status_code)
     assert statuses == [401, 401, 429]
-    assert int(response.headers["retry-after"]) >= 1
+    assert int(response.headers["retry-after"]) == 59  # the harness clock is frozen 1 s into its window
     assert response.json()["error"]["code"] == "rate_limited"
+    api.clock.advance(60)
+    again = await api.client.post("/api/v1/auth/login", json={"email": "x@a.example.com", "password": "p"})
+    assert again.status_code == 401  # a new window
 
 
 async def test_per_address_login_cap_counts_only_failures(make_api) -> None:
@@ -358,7 +360,6 @@ async def test_per_address_login_cap_counts_only_failures(make_api) -> None:
     api = await make_api(api={"login_rate_limit_per_minute": 1})  # address cap: 10 per minute
     for i in range(12):
         await api.user(TENANT_A, "viewer", email=f"shared{i}@a.example.com")
-    await fresh_rate_window()
     for i in range(12):
         ok = await api.client.post(
             "/api/v1/auth/login", json={"email": f"shared{i}@a.example.com", "password": PASSWORD}
@@ -375,7 +376,7 @@ async def test_per_address_login_cap_counts_only_failures(make_api) -> None:
 
 async def test_cookie_endpoints_refuse_other_origins(api: ApiHarness) -> None:
     """WSC-8: a same-site sibling origin cannot rotate (and so revoke) or log out a user's session."""
-    from tests.integration.api.conftest import UI_ORIGIN
+    from tests.integration.api._support import UI_ORIGIN
 
     await api.user(TENANT_A, "analyst", email="csrf@a.example.com")
     assert (await _login(api, "csrf@a.example.com")).status_code == 200

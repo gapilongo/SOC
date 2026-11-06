@@ -17,8 +17,7 @@ from lg_sotf.compliance.evidence import build_evidence_pack
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.settings import Settings, get_settings
-from tests.integration.conftest import truncate_all
-from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert
+from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert, truncate_all
 
 pytestmark = pytest.mark.integration
 

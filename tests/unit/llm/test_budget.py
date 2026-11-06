@@ -1,4 +1,4 @@
-"""Per-tenant daily token budget (fakeredis, plus real Redis when configured)."""
+"""Per-tenant daily token budget (fakeredis; the real-Redis case is in tests/integration/llm)."""
 
 from __future__ import annotations
 
@@ -84,21 +84,6 @@ async def test_key_layout_and_ttl(fake_redis: Any, make_settings: Callable[..., 
 async def test_negative_estimate_rejected(fake_redis: Any, make_settings: Callable[..., Settings]) -> None:
     with pytest.raises(ValueError):
         await TokenBudget(fake_redis, make_settings()).check_and_reserve("t1", -1)
-
-
-@pytest.mark.integration
-async def test_real_redis(redis_client: Any, unique_prefix: str, make_settings: Callable[..., Settings]) -> None:
-    budget = TokenBudget(redis_client, make_settings(llm={"daily_token_budget_per_tenant": 1000}), key_prefix=unique_prefix)
-    try:
-        r = await budget.check_and_reserve("t1", 900)
-        with pytest.raises(LLMBudgetExceeded):
-            await budget.check_and_reserve("t1", 200)
-        await budget.settle(r, 100)
-        await budget.check_and_reserve("t1", 800)
-        assert await budget.used("t1") == 900
-        assert await redis_client.ttl(budget.key("t1")) > 0
-    finally:
-        await redis_client.delete(budget.key("t1"))
 
 
 async def test_lost_counter_is_seeded_from_recorded_usage(fake_redis: Any, make_settings: Callable[..., Settings]) -> None:

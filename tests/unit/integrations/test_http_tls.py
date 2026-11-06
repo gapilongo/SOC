@@ -23,7 +23,7 @@ from lg_sotf.services.connectors import ConnectorRegistry, WebhookConnector, Web
 from lg_sotf.settings import Settings
 from tests.unit.ingestion._support import public_resolver
 from tests.unit.net._support import self_signed_pem
-from tests.unit.services.test_webhook import make_action
+from tests.unit.services._support import make_action
 
 SECRET = b"s3cr3t-webhook-key-0123456789abcdef"
 

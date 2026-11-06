@@ -75,8 +75,32 @@ security-scan: ## Bandit over the product and the SOAR examples (pip install "ba
 	bandit -q -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
 
 .PHONY: test
-test: ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)
+test: test-serial ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)
+
+.PHONY: test-serial
+test-serial: ## The whole suite in one process (what CI's blocking test job runs)
 	$(PYTHON) -m pytest
+
+.PHONY: test-parallel
+test-parallel: ## The whole suite on 4 xdist workers (own database <name>_gw<N> and Redis DB base+N each)
+	$(PYTHON) -m pytest -n 4 --dist loadfile
+
+# Throwaway PostgreSQL and Redis for the integration tier (docker/docker-compose.test.yml, docs/testing.md).
+TEST_COMPOSE = docker compose -f docker/docker-compose.test.yml
+TEST_SERVICES_ENV = LG_SOTF_TEST_DATABASE_URL=postgresql://soc:ci_only_password@127.0.0.1:55433/soc_test \
+	LG_SOTF_TEST_REDIS_URL=redis://127.0.0.1:56380/5
+
+.PHONY: test-services
+test-services: ## Start the test PostgreSQL (:55433) and Redis (:56380) on tmpfs and wait until healthy
+	$(TEST_COMPOSE) up -d --wait
+
+.PHONY: test-integration
+test-integration: ## Integration tier against `make test-services` (PYTEST_ARGS="-n 4 --dist loadfile" for parallel)
+	$(TEST_SERVICES_ENV) $(PYTHON) -m pytest tests/integration $(PYTEST_ARGS)
+
+.PHONY: test-services-down
+test-services-down: ## Stop and remove the test services (their data was on tmpfs)
+	$(TEST_COMPOSE) down -v
 
 .PHONY: test-deploy
 test-deploy: ## Deployment packaging tests only (Dockerfile, compose, Helm)

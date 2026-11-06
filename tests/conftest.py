@@ -1,36 +1,19 @@
 """Shared fixtures.
 
 Integration tests use real services named by ``LG_SOTF_TEST_DATABASE_URL`` and
-``LG_SOTF_TEST_REDIS_URL`` and are skipped when those are unset. Database
-fixtures live in ``tests/integration/db/conftest.py``.
+``LG_SOTF_TEST_REDIS_URL`` and are skipped when those are unset. Their
+fixtures (``db``, ``repos``, ``redis_client``, the API harness) live in
+``tests/integration/conftest.py``; see docs/testing.md.
 """
 
 from __future__ import annotations
 
-import os
 import uuid
-from typing import Any, AsyncIterator, Callable, Iterator, Optional
+from typing import Any, Callable, Iterator
 
 import pytest
 
 from lg_sotf.settings import Settings, get_settings, reset_settings
-
-TEST_DATABASE_URL_ENV = "LG_SOTF_TEST_DATABASE_URL"
-TEST_REDIS_URL_ENV = "LG_SOTF_TEST_REDIS_URL"
-
-
-def get_test_database_url() -> Optional[str]:
-    return os.environ.get(TEST_DATABASE_URL_ENV) or None
-
-
-def get_test_redis_url() -> Optional[str]:
-    return os.environ.get(TEST_REDIS_URL_ENV) or None
-
-
-requires_postgres = pytest.mark.skipif(
-    get_test_database_url() is None, reason=f"{TEST_DATABASE_URL_ENV} is not set"
-)
-requires_redis = pytest.mark.skipif(get_test_redis_url() is None, reason=f"{TEST_REDIS_URL_ENV} is not set")
 
 
 def _reset_process_state() -> None:
@@ -91,27 +74,6 @@ def make_settings() -> Callable[..., Settings]:
         return Settings(_env_file=None, **base)
 
     return build
-
-
-@pytest.fixture
-def redis_url() -> str:
-    url = get_test_redis_url()
-    if url is None:
-        pytest.skip(f"{TEST_REDIS_URL_ENV} is not set")
-    return url
-
-
-@pytest.fixture
-async def redis_client(redis_url: str) -> AsyncIterator[Any]:
-    """Client for the test Redis database. Tests must namespace keys (see ``unique_prefix``)."""
-    from redis.asyncio import Redis
-
-    client = Redis.from_url(redis_url, decode_responses=False)
-    try:
-        await client.ping()
-        yield client
-    finally:
-        await client.aclose()
 
 
 @pytest.fixture

@@ -12,6 +12,7 @@ ast-serialize==0.11.2
 cfgv==3.5.0
 coverage==7.16.2
 distlib==0.4.4
+execnet==2.1.2
 fakeredis==2.38.0
 filelock==4.2.9
 grimp==3.17
@@ -34,6 +35,7 @@ pytest-asyncio==1.4.0
 pytest-cov==7.1.0
 pytest-mock==3.16.0
 pytest-timeout==2.4.0
+pytest-xdist==3.8.0
 python-discovery==1.9.4
 rich==15.0.0
 ruff==0.16.9

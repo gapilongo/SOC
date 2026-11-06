@@ -1,0 +1,43 @@
+# PostgreSQL and Redis for the test suite only (`make test-services`, docs/testing.md).
+#
+# The same images and the same role as CI (.github/workflows/ci.yml): postgres:16 with the plain
+# `soc` role from scripts/ci/create_test_role.sql (NOSUPERUSER NOBYPASSRLS CREATEDB) and redis:7.
+# Non-default ports, so it runs beside the dev stack (docker-compose.yml); data on tmpfs, so every
+# start is clean and nothing is written to disk. Not for anything but tests.
+#
+#   make test-services       # start and wait until healthy
+#   make test-integration    # LG_SOTF_TEST_* point here
+#   make test-services-down
+name: lg-sotf-test
+
+services:
+  postgres:
+    image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci_only_superuser_password
+    volumes:
+      - ../scripts/ci/create_test_role.sql:/docker-entrypoint-initdb.d/10-create-test-role.sql:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:55433:5432"
+    healthcheck:
+      # The init script runs before the server listens on TCP; a TCP check waits for it.
+      test: ["CMD-SHELL", "pg_isready -U postgres -h 127.0.0.1"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    tmpfs:
+      - /data
+    ports:
+      - "127.0.0.1:56380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

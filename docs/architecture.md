@@ -393,12 +393,10 @@ everywhere. Every transition is written to `audit_log`.
 
 ## 14. Testing conventions
 
-* `pytest` with `asyncio_mode=auto`. Integration tests use real Postgres and
-  Redis from `LG_SOTF_TEST_DATABASE_URL` / `LG_SOTF_TEST_REDIS_URL` and are
-  skipped when unset. Each test database is migrated once per session and
-  truncated between tests.
-* LLM paths are tested with the `fake` provider; no test requires network.
-* Every bug fix and every guardrail has a test.
+See [testing.md](testing.md): the unit, deploy and integration tiers, the
+test services (`make test-services`), `_support.py` helpers, the fake LLM,
+clocks, timeouts, isolation rules and the flaky-test policy. Every bug fix and
+every guardrail has a test.
 
 ## 15. Evaluation harness (`lg_sotf.eval`)
 
