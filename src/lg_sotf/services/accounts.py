@@ -352,3 +352,38 @@ async def sync_sso_role(repos: Repositories, audit: AuditLogger, user: User, rol
             conn=conn,
         )
     return updated
+
+
+async def provision_sso_user(
+    repos: Repositories, audit: AuditLogger, tenant_id: str, *, email: str, subject: str, role: str
+) -> User:
+    """Just-in-time account for a verified SSO identity (no password, never a platform admin).
+
+    Counts against ``max_users`` (``QuotaExceeded``). ``Conflict`` when the
+    subject or email already has an account (a concurrent first sign-in won);
+    ``ValueError`` when the email is not a valid address. Nothing changes in
+    either case. Audited ``user.provisioned`` (actor ``system``/``oidc``) with
+    the email's domain only.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        await ensure_capacity(repos, tenant_id, "max_users", conn=conn)
+        user = await repos.users.create(
+            tenant_id,
+            email,
+            role,
+            password_hash=None,
+            is_platform_admin=False,
+            oidc_subject=subject,
+            conn=conn,
+        )
+        await audit.record(
+            tenant_id,
+            "user.provisioned",
+            "user",
+            str(user.id),
+            actor_type="system",
+            actor_id="oidc",
+            details={"role": role, "via": "oidc_jit", "email_domain": user.email.rpartition("@")[2]},
+            conn=conn,
+        )
+    return user

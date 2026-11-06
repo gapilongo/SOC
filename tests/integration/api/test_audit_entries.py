@@ -275,3 +275,19 @@ async def test_invalid_tenant_settings_change_nothing(api: ApiHarness) -> None:
     response = await api.client.patch(f"{API}/tenant/settings", json={"nope": 1}, headers=api.auth(admin))
     assert response.status_code == 422
     assert "tenant.settings_updated" not in await _actions(api)
+
+
+# -------------------------------------------------------------------------------- auth
+
+
+async def test_sso_provisioning_entry(make_api: Any) -> None:
+    from tests.integration.api.test_oidc import IdP, bearer
+    from tests.integration.api.test_oidc_jit import _jit_api, _token
+
+    idp = IdP()
+    api = await _jit_api(make_api, idp)
+    me = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
+    assert me.status_code == 200, me.text
+    user_id = me.json()["user_id"]
+    details = {"role": "admin", "via": "oidc_jit", "email_domain": "a.example.com"}
+    assert await _only(api, "user.provisioned") == ("user", user_id, "system", "oidc", details)
