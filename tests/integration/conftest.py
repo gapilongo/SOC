@@ -22,6 +22,7 @@ import httpx
 import pytest
 import pytest_asyncio
 import redis.asyncio as aioredis
+import structlog
 from fastapi import FastAPI
 
 from lg_sotf.api.app import create_app
@@ -67,6 +68,31 @@ def _test_database_url() -> Optional[str]:
 
 def _test_redis_url() -> Optional[str]:
     return os.environ.get("LG_SOTF_TEST_REDIS_URL") or None
+
+
+@pytest.fixture(autouse=True)
+def _plain_tracebacks() -> Iterator[None]:
+    """structlog's defaults with plain tracebacks while an integration test runs.
+
+    The app is started without ``configure_logging``, so structlog's default
+    renderer applies, and with ``rich`` installed it renders every logged
+    exception (``api.unhandled_error``) as a rich traceback with locals: 15 to
+    30 s of CPU per 500 response, on the event loop. The audit-atomicity
+    tests answer 500 on purpose and took 50 to 120 s each, enough to reach the
+    120 s timeout under coverage or load. The same processors, a plain traceback.
+    """
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.dev.set_exc_info,
+            structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
+            structlog.dev.ConsoleRenderer(colors=False, exception_formatter=structlog.dev.plain_traceback),
+        ]
+    )
+    yield
+    structlog.reset_defaults()
 
 
 @pytest.fixture(scope="session")
