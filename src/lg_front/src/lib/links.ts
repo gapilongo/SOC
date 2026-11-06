@@ -41,5 +41,5 @@ export function alertsHref(filters: Record<string, string | undefined>): string 
   return withQuery('/alerts', params);
 }
 
-/** Actions waiting for an approval. */
-export const APPROVALS_HREF = '/actions?status=awaiting_approval';
+/** The Approvals page: actions waiting for an approval first (`/actions` redirects there). */
+export const APPROVALS_HREF = '/approvals';

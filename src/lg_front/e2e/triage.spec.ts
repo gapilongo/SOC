@@ -111,8 +111,14 @@ async function findEscalation(page: Page, title: string) {
   return card;
 }
 
+/** Rows of the All actions ledger (/approvals?view=all) for this alert. */
 function actionRows(page: Page, alertId: string) {
   return page.getByRole('row').filter({ has: page.getByRole('button', { name: `Open alert ${alertId}` }) });
+}
+
+/** Pending approval cards (/approvals) for this alert. */
+function pendingCards(page: Page, alertId: string) {
+  return page.getByRole('listitem').filter({ has: page.getByRole('button', { name: `Open alert ${alertId}` }) });
 }
 
 test('security headers on every document, and the admin signs in under the CSP', async ({ browser, request }) => {
@@ -388,37 +394,38 @@ test('response approval: role gating, the admin approves, the alert closes as ma
   const approve = async () => {
     if (approved === 0) {
       await test.step('viewer: pending actions are visible but cannot be approved or rejected', async () => {
-        await v.page.goto('/actions?status=awaiting_approval');
-        const rows = actionRows(v.page, beaconId);
+        await v.page.goto('/approvals');
+        const rows = pendingCards(v.page, beaconId);
         await expect(rows.first()).toBeVisible();
         await expect(v.page.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
         await expect(v.page.getByRole('button', { name: 'Reject', exact: true })).toHaveCount(0);
         await expect(rows.first()).toContainText('Requires the analyst role.');
       });
       await test.step('analyst: approve only low and medium risk, reject at any risk', async () => {
-        await a.page.goto('/actions?status=awaiting_approval');
-        const rows = actionRows(a.page, beaconId);
+        await a.page.goto('/approvals');
+        const rows = pendingCards(a.page, beaconId);
         await expect(rows.first()).toBeVisible();
         const n = await rows.count();
         expect(n).toBeGreaterThan(0);
         for (let i = 0; i < n; i += 1) {
           const row = rows.nth(i);
-          // Found by content, not position: the table's columns change between releases.
-          const risk = ((await row.getByRole('cell').filter({ hasText: /^(low|medium|high|critical) risk$/i }).first().textContent()) ?? '').trim().toLowerCase();
+          // Found by content, not position: the card's layout changes between releases.
+          const risk = ((await row.getByText(/^(low|medium|high|critical) risk$/i).first().textContent()) ?? '').trim().toLowerCase();
           await expect(row.getByRole('button', { name: 'Reject', exact: true })).toBeVisible();
           if (risk.includes('high') || risk.includes('critical')) {
-            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toHaveCount(0);
+            // Locked, with the reason next to it.
+            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toBeDisabled();
             await expect(row).toContainText('needs an admin');
           } else {
-            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toBeVisible();
+            await expect(row.getByRole('button', { name: 'Approve', exact: true })).toBeEnabled();
           }
         }
       });
     }
     await test.step("admin: approve one action and reject the alert's other pending actions", async () => {
       const page = ad.page;
-      await page.goto('/actions?status=awaiting_approval');
-      const row = actionRows(page, beaconId).first();
+      await page.goto('/approvals');
+      const row = pendingCards(page, beaconId).first();
       await expect(row).toBeVisible();
       if (approved === 0) await screenshot(page, '07-actions');
       await row.getByRole('button', { name: 'Approve', exact: true }).click();
@@ -444,7 +451,7 @@ test('response approval: role gating, the admin approves, the alert closes as ma
 
   // The approved action ran as a dry run (response.dry_run defaults to true); the rest were rejected.
   const page = ad.page;
-  await page.goto('/actions');
+  await page.goto('/approvals?view=all');
   const rows = actionRows(page, beaconId);
   await expect(rows.filter({ hasText: 'Recorded only (dry run)' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: 'awaiting approval' })).toHaveCount(0);
@@ -464,7 +471,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
   const pages: [string, string, string][] = [
     ['/alerts', 'Alerts', '03-alerts'],
     ['/escalations?status=decided', 'Escalations', '05-escalations-decided'],
-    ['/actions', 'Actions and approvals', '07-actions-ledger'],
+    ['/approvals?view=all', 'Approvals', '07-actions-ledger'],
     ['/suppressions', 'Suppressions', '08-suppressions'],
     ['/sources', 'Sources', '09-sources'],
     ['/users', 'Users and API keys', '10-users'],
