@@ -260,6 +260,7 @@ def test_only_useful_scripts_remain() -> None:
         "ci/bandit-baseline.json",
         "ci/compare_junit.py",
         "ci/coverage_floors.py",
+        "ci/create_test_role.sql",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
         "demo/alerts.json",
