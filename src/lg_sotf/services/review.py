@@ -62,6 +62,7 @@ from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINAL_RUN_STATUSES, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
 from lg_sotf.services.response import (
@@ -78,8 +79,6 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-ROLES = ("viewer", "analyst", "admin")
-REVIEWER_ROLES = frozenset({"analyst", "admin"})
 MAX_NOTES_CHARS = 4_000
 MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
@@ -88,8 +87,6 @@ MAX_ACTION_IDS = 100
 _ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
-ENDED_RUN_STATUSES = frozenset({"completed", "dead_lettered"})
-WORKFLOW_OWNER = "workflow"
 # EscalationsRepo.decide accepts only open/claimed escalations; a late decision on an expired one.
 _DECIDE_EXPIRED_SQL = """
     UPDATE escalations
@@ -497,9 +494,8 @@ class ReviewService:
         # Bounded to the severity the analyst judged (and below): a benign medium detection says
         # nothing about a later critical one with the same fingerprint, which fingerprints do not
         # distinguish (no severity, command line or process in them).
-        order = ("info", "low", "medium", "high", "critical")
-        decided_rank = order.index(alert.severity) if alert.severity in order else 0
-        severities = list(order[: decided_rank + 1])
+        decided_rank = SEVERITIES.index(alert.severity) if alert.severity in SEVERITIES else 0
+        severities = list(SEVERITIES[: decided_rank + 1])
         match: Dict[str, Any] = {
             "fingerprint": alert.fingerprint,
             "source_id": alert.source_id,
@@ -678,7 +674,7 @@ class ReviewService:
         """Whether the alert's run has ended (or never existed); its row is locked ``FOR SHARE`` until commit."""
         if alert_id not in cache:
             status = await conn.fetchval(_RUN_FOR_SHARE_SQL, tenant_id, alert_id)
-            cache[alert_id] = status is None or status in ENDED_RUN_STATUSES
+            cache[alert_id] = status is None or status in TERMINAL_RUN_STATUSES
         return cache[alert_id]
 
     async def reject_actions(

@@ -23,6 +23,7 @@ from datetime import date
 from html import escape
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
+from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.services.reporting import (
     AccuracyBlock,
     Detection,
@@ -246,7 +247,7 @@ def _accuracy_block(block: AccuracyBlock, min_samples: int) -> str:
     matrix = _table(
         [("Analyst \\ AI", False), ("Malicious", True), ("Benign", True), ("Inconclusive", True)],
         [
-            [_e(actual.capitalize()), *(_int(m[actual][p]) for p in ("malicious", "benign", "inconclusive"))]
+            [_e(actual.capitalize()), *(_int(m[actual][p]) for p in DISPOSITIONS)]
             for actual in ("malicious", "benign")
         ],
         "Confusion matrix: rows are the analyst's final decision, columns the AI verdict",

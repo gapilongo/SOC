@@ -32,6 +32,8 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote
 
+from lg_sotf.models.vocabulary import ESCALATION_LEVELS as LEVELS
+from lg_sotf.models.vocabulary import SEVERITIES, SEVERITY_RANK
 from lg_sotf.security.redaction import redact_text
 
 SCHEMA = "lg-sotf.event.v1"
@@ -71,9 +73,6 @@ EVENT_LABELS: Dict[str, str] = {
     TEST_EVENT: "Test message",
 }
 
-SEVERITIES: Tuple[str, ...] = ("info", "low", "medium", "high", "critical")
-SEVERITY_RANK: Dict[str, int] = {s: i for i, s in enumerate(SEVERITIES)}
-LEVELS: Tuple[str, ...] = ("L1", "L2", "L3")
 
 # Summary caps: notifications carry enough to triage from a phone, never the alert body.
 MAX_TITLE_CHARS = 300

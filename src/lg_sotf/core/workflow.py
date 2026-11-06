@@ -42,6 +42,7 @@ from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.db.urls import to_libpq_url, with_query_params
 from lg_sotf.errors import InvalidResumePayload, WorkflowError
 from lg_sotf.llm import TokenBudget
+from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.services.escalation import EscalationService
@@ -75,7 +76,7 @@ class AnalystDecisionPayload(BaseModel):
 
     type: Literal["analyst_decision"]
     escalation_id: str = Field(min_length=1, max_length=128)
-    decision: Literal["true_positive", "false_positive", "benign_positive", "needs_more_info"]
+    decision: Decision
     approved_actions: List[Annotated[str, Field(min_length=1, max_length=256)]] = Field(
         default_factory=list, max_length=50
     )

@@ -36,14 +36,14 @@ from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequ
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
 from lg_sotf.core.phishing import PhishingSettings
+from lg_sotf.models.vocabulary import DISPOSITIONS as DISPOSITIONS
+from lg_sotf.models.vocabulary import Disposition
 
-Disposition = Literal["malicious", "benign", "inconclusive"]
 Route = Literal["close", "escalate", "plan_response"]
 SourceType = Literal[
     "canonical", "splunk", "crowdstrike", "sentinel", "wazuh", "guardduty", "qradar", "webhook", "email"
 ]
 
-DISPOSITIONS: tuple[str, ...] = ("malicious", "benign", "inconclusive")
 ROUTES: tuple[str, ...] = ("close", "escalate", "plan_response")
 SOURCE_TYPES: tuple[str, ...] = (
     "canonical",

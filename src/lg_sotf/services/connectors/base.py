@@ -33,11 +33,12 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Protocol, runtime_checkable
 
+from lg_sotf.models.vocabulary import VerificationState
+
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction
 
 ConnectorStatus = Literal["succeeded", "failed", "dry_run", "deferred"]
-VerificationState = Literal["pending", "verified", "failed", "inconclusive"]
 
 # The deadline (event loop clock) of the connector call in progress; None outside one.
 call_deadline: ContextVar[Optional[float]] = ContextVar("lg_sotf_connector_call_deadline", default=None)

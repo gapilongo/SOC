@@ -59,6 +59,7 @@ from lg_sotf.db.repos.reports import DecidedAlert
 from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary
+from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -258,7 +259,7 @@ def classify(result: ItemResult, replay: Replay) -> None:
         verdict = analysis.get("verdict")
         result.status = "waiting_human"
         result.escalated = True
-        result.predicted = verdict if verdict in ("malicious", "benign", "inconclusive") else "inconclusive"
+        result.predicted = verdict if verdict in DISPOSITIONS else "inconclusive"
     usage = replay.usage
     result.llm_calls = int(usage.get("calls") or 0)
     result.input_tokens = int(usage.get("input_tokens") or 0)

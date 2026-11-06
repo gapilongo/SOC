@@ -22,6 +22,9 @@ from lg_sotf.ingestion.sources.qradar import QRadarConnector
 from lg_sotf.ingestion.sources.sentinel import SentinelConnector
 from lg_sotf.ingestion.sources.splunk import SplunkConnector
 from lg_sotf.ingestion.sources.wazuh import WazuhConnector
+
+# Push-only types are declared in the vocabulary, shared with the scheduler's due-source query.
+from lg_sotf.models.vocabulary import PUSH_SOURCE_TYPES as PUSH_ONLY_TYPES
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.settings import Settings
 
@@ -38,7 +41,6 @@ CONNECTORS: Dict[str, Type[PullConnector]] = {
         ImapConnector,
     )
 }
-PUSH_ONLY_TYPES = ("webhook", "guardduty")
 
 
 def source_secret_context(tenant_id: str, source_id: str) -> str:

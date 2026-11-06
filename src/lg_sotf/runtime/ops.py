@@ -16,6 +16,7 @@ from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.users import ROLES, normalize_email
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.errors import OperationError
+from lg_sotf.models.vocabulary import TERMINAL_RUN_STATUSES
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.dlq import DeadLetter, DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
@@ -316,7 +317,7 @@ async def _requeue_run(repos: Repositories, tenant_id: str, alert_id: str, *, fo
         raise OperationError(f"alert {alert_id!r} not found in tenant {tenant_id!r}") from exc
     run = await repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=force, conn=conn)
     if run.status not in ("queued", "failed"):
-        hint = "; pass --force to reprocess a finished run" if run.status in ("completed", "dead_lettered") else ""
+        hint = "; pass --force to reprocess a finished run" if run.status in TERMINAL_RUN_STATUSES else ""
         raise OperationError(f"run is {run.status}{hint}")
     try:
         await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)

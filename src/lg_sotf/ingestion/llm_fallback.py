@@ -26,7 +26,7 @@ model's answer is treated as untrusted too:
 from __future__ import annotations
 
 import re
-from typing import Any, Callable, Dict, List, Literal, Mapping, Optional, Set
+from typing import Any, Callable, Dict, List, Mapping, Optional, Set
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -58,7 +58,7 @@ class LLMNormalizedAlert(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     title: str = Field(min_length=1, max_length=300)
-    severity: Literal["info", "low", "medium", "high", "critical"]
+    severity: Severity
     category: Optional[str] = Field(default=None, max_length=128)
     description: Optional[str] = Field(default=None, max_length=2_000)
     rule_name: Optional[str] = Field(default=None, max_length=300)

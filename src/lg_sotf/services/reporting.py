@@ -69,6 +69,9 @@ from lg_sotf.db.repos.alerts import SEVERITIES
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
 from lg_sotf.llm.pricing import LOCAL_PREFIX
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS
+from lg_sotf.models.vocabulary import DISPOSITIONS as AI_CLASSES
+from lg_sotf.models.vocabulary import Disposition as AiClass
 from lg_sotf.observability.logging import get_logger
 
 if TYPE_CHECKING:
@@ -92,10 +95,7 @@ MIN_CONFIRMED_BENIGN = 3
 Z_95 = 1.959963984540054
 
 AnalystClass = Literal["malicious", "benign"]
-AiClass = Literal["malicious", "benign", "inconclusive"]
 ANALYST_CLASSES: Tuple[str, ...] = ("malicious", "benign")
-AI_CLASSES: Tuple[str, ...] = ("malicious", "benign", "inconclusive")
-BENIGN_DECISIONS = frozenset({"false_positive", "benign_positive"})
 Suggestion = Literal["tune_rule", "candidate_suppression"]
 
 
@@ -224,7 +224,7 @@ def analyst_class(decision: str) -> Optional[AnalystClass]:
 def ai_class(verdict: Optional[str], score_band: Optional[str]) -> AiClass:
     """The AI's verdict class: the analysis verdict, else the banded threat score/confidence."""
     if verdict in AI_CLASSES:
-        return verdict  # type: ignore[return-value]
+        return verdict
     if score_band == "high":
         return "malicious"
     if score_band == "low":

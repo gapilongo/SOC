@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.models.vocabulary import REVIEWER_ROLES
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.producer import WorkQueue
 
@@ -120,7 +121,7 @@ async def _decision_payload(repos: Repositories, tenant_id: str, alert_id: str) 
         user = await repos.users.get(tenant_id, escalation.decided_by)
         # The approver's authority as it is now: never more than when the decision was made
         # (decide() refused pre-approvals above the role), possibly less.
-        role = user.role if user.is_active and user.role in ("analyst", "admin") else None
+        role = user.role if user.is_active and user.role in REVIEWER_ROLES else None
     except NotFound:
         role = None
     own = alert_id == escalation.alert_id

@@ -28,14 +28,12 @@ from typing import Any, Literal, Mapping, Optional
 
 from pydantic import BaseModel, ConfigDict
 
-HIGH_SEVERITIES = frozenset({"high", "critical"})
-BENIGN_DECISIONS = frozenset({"false_positive", "benign_positive"})
-COMPLETED_ACTION_STATUSES = frozenset({"succeeded", "dry_run"})
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
+from lg_sotf.models.vocabulary import Route as DecideRoute
 
 GateRoute = Literal["triage", "close"]
 TriageRoute = Literal["correlation", "close"]
 CorrelationRoute = Literal["analysis", "decide"]
-DecideRoute = Literal["escalate", "plan_response", "close"]
 AnalystRoute = Literal["plan_response", "close", "analysis", "escalate"]
 PlanRoute = Literal["execute_actions", "await_approval", "close", "escalate"]
 ExecuteRoute = Literal["await_approval", "close", "escalate"]
@@ -204,7 +202,7 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
 def route_after_decide(state: Mapping[str, Any]) -> DecideRoute:
     decision = state.get("decision") or {}
     route = decision.get("route")
-    if route not in ("escalate", "plan_response", "close"):
+    if route not in ROUTES:
         raise ValueError(f"decide produced no valid route: {route!r}")
     return route
 

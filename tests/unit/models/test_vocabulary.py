@@ -47,7 +47,6 @@ SITES: List[Tuple[Any, str]] = [
     (v.SEVERITIES, "lg_sotf.mcp.tools:SEVERITIES"),
     (v.HIGH_SEVERITIES, "lg_sotf.core.routing:HIGH_SEVERITIES"),
     (v.HIGH_SEVERITIES, "lg_sotf.eval.metrics:HIGH_SEVERITIES"),
-    (v.HIGH_SEVERITIES, "lg_sotf.queue.streams:HIGH_PRIORITY_SEVERITIES"),
     # alert status, disposition, route
     (v.ALERT_STATUSES, "lg_sotf.db.repos.alerts:ALERT_STATUSES"),
     (v.AlertStatus, "lg_sotf.api.routers.alerts:AlertStatus"),
@@ -98,7 +97,6 @@ SITES: List[Tuple[Any, str]] = [
     (v.RISK_LEVELS, "lg_sotf.mcp.tester:RISKS"),
     (v.RiskLevel, "lg_sotf.mcp.tester:Risk"),
     (v.AutonomyMode, "lg_sotf.services.response:Autonomy"),
-    (v.AUTONOMY_MODES, "lg_sotf.services.response:AUTONOMY_MODES"),
     (v.AutonomyMode, "lg_sotf.settings:Autonomy"),
     (v.VERIFICATION_STATES, "lg_sotf.db.repos.actions:VERIFICATION_STATES"),
     (v.VerificationState, "lg_sotf.db.repos.actions:VerificationStateName"),
@@ -111,14 +109,12 @@ SITES: List[Tuple[Any, str]] = [
     (v.WORKFLOW_OWNER, "lg_sotf.services.response:WORKFLOW_OWNER"),
     (v.WORKFLOW_OWNER, "lg_sotf.services.review:WORKFLOW_OWNER"),
     (v.SCHEDULER_OWNER, "lg_sotf.services.response:SCHEDULER_OWNER"),
-    (v.REQUESTED_BY, "lg_sotf.services.response:REQUESTED_BY"),
     (v.POLICY_APPROVER, "lg_sotf.services.response:POLICY_APPROVER"),
     (v.POLICY_APPROVER, "lg_sotf.compliance.evidence:POLICY_APPROVER"),
     (v.POLICY_APPROVER, "lg_sotf.db.repos.reports:POLICY_APPROVER"),
     # workflow runs
     (v.RUN_STATUSES, "lg_sotf.db.repos.runs:RUN_STATUSES"),
     (v.TERMINAL_RUN_STATUSES, "lg_sotf.db.repos.runs:TERMINAL_RUN_STATUSES"),
-    (v.TERMINAL_RUN_STATUSES, "lg_sotf.services.review:ENDED_RUN_STATUSES"),
     (v.WAITING_RUN_STATUSES, "lg_sotf.db.repos.runs:WAITING_RUN_STATUSES"),
     # sources
     (v.SOURCE_TYPES, "lg_sotf.db.repos.sources:SOURCE_TYPES"),

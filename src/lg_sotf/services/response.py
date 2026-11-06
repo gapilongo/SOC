@@ -161,6 +161,9 @@ from lg_sotf.integrations.events import (
     ACTION_VERIFICATION_FAILED,
 )
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.models import vocabulary
+from lg_sotf.models.vocabulary import POLICY_APPROVER, RISK_LEVELS, SCHEDULER_OWNER, WORKFLOW_OWNER, RiskLevel
+from lg_sotf.models.vocabulary import AutonomyMode as Autonomy
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
 from lg_sotf.security.crypto import SecretBox
@@ -224,17 +227,12 @@ __all__ = [
 
 log = get_logger(__name__)
 
-Autonomy = Literal["auto", "approval", "disabled"]
 Evidence = Literal["rules", "llm_only", "analyst"]
 TargetKind = Literal["ip", "domain", "url", "hash", "user", "host", "process", "alert", "email", "message"]
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 IPNetwork = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
-RISK_LEVELS = ("low", "medium", "high", "critical")
-AUTONOMY_MODES = ("auto", "approval", "disabled")
 MAX_TARGETS_PER_TYPE = 3
 MAX_ACTIONS = 15
-REQUESTED_BY = "agent:workflow"
-POLICY_APPROVER = "policy:auto"
 PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
 ANALYST_APPROVAL_RISKS = frozenset({"low", "medium"})
 ANALYST_PREAPPROVAL_RISKS = ANALYST_APPROVAL_RISKS
@@ -293,8 +291,6 @@ _ORPHANED_EXECUTING_SQL = """
     LIMIT $2
 """
 ORPHAN_GRACE_S = 60.0
-WORKFLOW_OWNER = "workflow"
-SCHEDULER_OWNER = "scheduler"
 SCHEDULER_ACTOR = "scheduler"
 # Connector results are stored in response_actions.result; larger details keep their essential keys.
 MAX_RESULT_BYTES = 8 * 1024
@@ -1205,7 +1201,7 @@ def _catalog_actions(values: Optional[List[str]]) -> Optional[List[str]]:
 
 
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
-AutonomyMap = Dict[Literal["low", "medium", "high", "critical"], Literal["auto", "approval", "disabled"]]
+AutonomyMap = Dict[RiskLevel, Autonomy]
 
 
 class ResponsePolicySettings(BaseModel):
@@ -1363,7 +1359,7 @@ def resolve_autonomy(risk: str, tenant_settings: Mapping[str, Any], settings: Se
         if isinstance(override, Mapping):
             policy.update({k: v for k, v in override.items() if k in RISK_LEVELS})
     mode = policy.get(risk, "approval")
-    return mode if mode in AUTONOMY_MODES else "disabled"
+    return mode if mode in vocabulary.AUTONOMY_MODES else "disabled"
 
 
 @dataclass(frozen=True)
@@ -1784,7 +1780,7 @@ class ResponseService:
                     cand.target,
                     spec.risk,
                     params=params,
-                    requested_by=REQUESTED_BY,
+                    requested_by=vocabulary.REQUESTED_BY,
                     status="proposed" if status == "approved" else status,
                     blocked_reason=reason,
                     conn=conn,

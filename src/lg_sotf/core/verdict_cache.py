@@ -20,10 +20,10 @@ from typing import Any, Dict, Optional
 
 from redis.asyncio import Redis
 
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITY_RANK
+
 VERDICT_TTL_S = 7 * 24 * 3600
-BENIGN_DECISIONS = frozenset({"false_positive", "benign_positive"})
 MAX_FINGERPRINT_CHARS = 256
-SEVERITY_RANK = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 
 
 def cache_applies(cached: Dict[str, Any], severity: str) -> bool:
