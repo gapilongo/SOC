@@ -14,6 +14,7 @@ from lg_sotf.db.repos._base import (
     Repository,
     check_choice,
     check_choices,
+    fetch_int,
     require_aware,
     to_model,
     to_models,
@@ -514,12 +515,11 @@ class EscalationsRepo(Repository):
 
     async def count_active(self, tenant_id: str, *, conn: Optional[Connection] = None) -> int:
         async with self._tenant(tenant_id, conn) as c:
-            return await c.fetchval(
-                "SELECT count(*) FROM escalations WHERE tenant_id = $1 AND status IN ('open', 'claimed')",
-                tenant_id,
+            return await fetch_int(
+                c, "SELECT count(*) FROM escalations WHERE tenant_id = $1 AND status IN ('open', 'claimed')", tenant_id
             )
 
     async def count_active_all_tenants(self) -> int:
         """Platform-wide open/claimed count for the ``lgsotf_escalations_open`` gauge."""
         async with self._system() as c:
-            return await c.fetchval("SELECT count(*) FROM escalations WHERE status IN ('open', 'claimed')")
+            return await fetch_int(c, "SELECT count(*) FROM escalations WHERE status IN ('open', 'claimed')")

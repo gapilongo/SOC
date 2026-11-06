@@ -186,14 +186,24 @@ warn_unused_ignores = true
 no_implicit_optional = true
 strict_equality = true
 check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_return_any = true
+
+# Untyped imports only: asyncpg ships no type information (lg_sotf.db.types describes the parts used), and
+# typeshed has no stubs for the CPython-internal regex parser modules domain/suppression.py reads.
+[[tool.mypy.overrides]]
+module = ["asyncpg.*", "re._constants", "re._parser"]
 ignore_missing_imports = true
 
+# The strict list. Its three flags are global now; it stays the list each further strictness flag is
+# promoted onto first, and a new leaf package joins it in its first commit.
 [[tool.mypy.overrides]]
 module = [
-    "lg_sotf.db.types",
+    "lg_sotf.db.*",
     "lg_sotf.errors",
     "lg_sotf.domain.*",
-    "lg_sotf.models.vocabulary",
+    "lg_sotf.models.*",
     "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
@@ -203,6 +213,10 @@ module = [
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 warn_return_any = true
+
+[tool.pydantic-mypy]
+# A model's __init__ rejects unknown keyword arguments at type-check time.
+init_forbid_extra = true
 
 
 # Architecture contracts (docs/design/refactor-roadmap.md section 1.1, docs/adr/0001-layering.md).

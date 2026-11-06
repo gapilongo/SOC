@@ -119,7 +119,7 @@ class ApiContext:
 
 
 def get_ctx(conn: HTTPConnection) -> ApiContext:
-    ctx = getattr(conn.app.state, "ctx", None)
+    ctx: Optional[ApiContext] = getattr(conn.app.state, "ctx", None)
     if ctx is None:
         raise RuntimeError("API context is not initialised (lifespan not started)")
     return ctx

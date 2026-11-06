@@ -134,7 +134,8 @@ def entity_line(payload: Mapping[str, Any]) -> Optional[str]:
 
 
 def link(payload: Mapping[str, Any], base_url: str) -> Optional[str]:
-    return with_links(payload, base_url)["links"].get("alert")
+    links: Dict[str, str] = with_links(payload, base_url)["links"]
+    return links.get("alert")
 
 
 # -------------------------------------------------------------------- Slack
