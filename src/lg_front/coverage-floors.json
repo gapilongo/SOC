@@ -1,0 +1,8 @@
+{
+  "$comment": "Coverage floors (%) checked by scripts/coverage-floors.mjs in `npm run test:ci`. Floors only go up: about one point below the measured value, raised in the PR that adds coverage. Lowering one needs code-owner review.",
+  "all": { "statements": 69.4, "branches": 66.2, "functions": 59.7, "lines": 70.9 },
+  "src/api/": { "statements": 83.7, "branches": 82.9, "functions": 72.1, "lines": 82.9 },
+  "src/auth/": { "statements": 78.4, "branches": 73.3, "functions": 76.2, "lines": 82.1 },
+  "src/live/": { "statements": 82.9, "branches": 79.2, "functions": 77.1, "lines": 87.9 },
+  "src/lib/": { "statements": 78.4, "branches": 83.1, "functions": 82.8, "lines": 82.4 }
+}

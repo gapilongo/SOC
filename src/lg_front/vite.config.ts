@@ -48,5 +48,16 @@ export default defineConfig({
     css: false,
     restoreMocks: true,
     include: ['src/**/*.test.{ts,tsx}'],
+    // Form tests type into jsdom; coverage instrumentation slows them on a busy runner.
+    testTimeout: 15_000,
+    // `npm run test:ci` measures coverage; scripts/coverage-floors.mjs then holds each area to
+    // its floor in coverage-floors.json (a ratchet: floors only go up).
+    coverage: {
+      provider: 'v8',
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: ['src/**/*.test.{ts,tsx}', 'src/test/**', 'src/**/*.d.ts'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: 'coverage',
+    },
   },
 });

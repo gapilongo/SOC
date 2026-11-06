@@ -290,6 +290,25 @@ def test_package_scripts_and_no_create_react_app() -> None:
     assert not re.search(r"(secret|password|api[_-]?key)\s*:", default_config, re.IGNORECASE)
 
 
+def test_frontend_coverage_floors_are_enforced_in_ci() -> None:
+    """FE1: `test:ci` measures coverage and checks the floors; CI always runs it; floors are guarded."""
+    import json
+
+    pkg = json.loads((FRONT / "package.json").read_text())
+    assert pkg["scripts"]["test:ci"] == "vitest run --coverage && node scripts/coverage-floors.mjs"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pkg["devDependencies"]["@vitest/coverage-v8"])
+    floors = json.loads((FRONT / "coverage-floors.json").read_text())
+    for area in ("all", "src/api/", "src/auth/", "src/live/", "src/lib/"):
+        assert set(floors[area]) == {"statements", "branches", "functions", "lines"}, area
+        assert all(value > 0 for value in floors[area].values()), area
+    steps = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text())["jobs"]["frontend"]["steps"]
+    runs = "\n".join(step.get("run", "") for step in steps)
+    assert re.search(r"^\s*npm run test:ci\s*$", runs, re.MULTILINE), "the ratchet must not be optional"
+    owners = (REPO_ROOT / ".github" / "CODEOWNERS").read_text()
+    for path in ("/src/lg_front/coverage-floors.json", "/src/lg_front/scripts/coverage-floors.mjs"):
+        assert re.search(rf"^{re.escape(path)}\s+@", owners, re.MULTILINE), path
+
+
 # --------------------------------------------------------------------------- compose
 
 
