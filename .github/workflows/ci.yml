@@ -130,9 +130,7 @@ jobs:
         env:
           PGPASSWORD: ci_only_superuser_password
         run: |
-          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB" \
-            -c "CREATE DATABASE soc_test OWNER soc"
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
       # tests/deploy renders the chart; without helm those tests skip.
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
@@ -209,9 +207,7 @@ jobs:
         env:
           PGPASSWORD: ci_only_superuser_password
         run: |
-          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB" \
-            -c "CREATE DATABASE soc_test OWNER soc"
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
       - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
           version: ${{ env.HELM_VERSION }}

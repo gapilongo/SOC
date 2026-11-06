@@ -64,9 +64,7 @@ jobs:
         env:
           PGPASSWORD: ci_only_superuser_password
         run: |
-          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 \
-            -c "CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB" \
-            -c "CREATE DATABASE soc_test OWNER soc"
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
       - name: Pytest (random order)
         run: pytest -p randomly --junitxml=junit-random.xml
       - name: Upload the report
