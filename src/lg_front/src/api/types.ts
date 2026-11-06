@@ -129,6 +129,8 @@ export interface MeOut {
   email?: string | null;
   is_platform_admin?: boolean;
   expires_at?: string | null;
+  /** Display name of `tenant_id` (newer APIs; the header falls back to the id). */
+  tenant_name?: string | null;
 }
 
 export interface AlertOut {
@@ -443,6 +445,10 @@ export interface DashboardOut {
   handled_without_human_rate?: number | null;
   analyst_hours_saved?: number;
   minutes_per_alert?: number;
+  /** Unassigned escalations past their SLA (newer APIs; the sidebar hides the count without it). */
+  unassigned_breaching?: number;
+  /** Pending actions the caller may approve (newer APIs; the sidebar hides the count without it). */
+  pending_approvals?: number;
 }
 
 export interface UsageDayOut {
