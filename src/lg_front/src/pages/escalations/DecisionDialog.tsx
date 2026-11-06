@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../api/client';
+import { afterEscalationChange, afterEscalationDecision } from '../../api/invalidate';
 import { endpoints } from '../../api/endpoints';
 import { DECISIONS, type Decision, type DecisionIn, type DecisionOut, type EscalationOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
@@ -102,8 +103,7 @@ export function DecisionDialog({
     try {
       const out = await endpoints.decide(api, current.id, build());
       toast.success(`Decision recorded; ${out.resumed_alert_ids.length} alert(s) resumed.`);
-      void client.invalidateQueries({ queryKey: ['escalations'] });
-      void client.invalidateQueries({ queryKey: ['alerts'] });
+      void afterEscalationDecision(client);
       onDecided?.(out);
       onClose();
     } catch (err) {
@@ -111,7 +111,7 @@ export function DecisionDialog({
         try {
           const latest = await endpoints.escalation(api, current.id);
           setCurrent(latest);
-          void client.invalidateQueries({ queryKey: ['escalations'] });
+          void afterEscalationChange(client);
           setConflict(
             DECIDABLE.has(latest.status)
               ? `This escalation changed while you were reviewing it (now ${latest.status}${latest.assigned_to ? `, assigned to ${latest.assigned_to}` : ''}). Your input is kept; review the current state and submit again.`

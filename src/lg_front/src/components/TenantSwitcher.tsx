@@ -14,6 +14,7 @@ import { Building2, Check, ChevronDown, LogOut } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { TenantSummaryOut } from '../api/types';
 import { useApi, useAuth, useAuthStore } from '../auth/AuthContext';
 import { isTenantOverride } from '../auth/roles';
@@ -21,7 +22,6 @@ import { Badge } from './Badge';
 import { useToast } from './Toast';
 import { Button, cx } from './ui';
 
-export const PLATFORM_TENANTS_KEY = ['platform-tenants'] as const;
 const TENANT_ID = /^[a-z0-9][a-z0-9_-]{1,62}$/;
 const MAX_OPTIONS = 50;
 
@@ -33,6 +33,28 @@ interface Option {
 }
 
 /** Tenants whose id or name contains every word of `query` (case-insensitive), home tenant first. */
+/** Options a caller of {@link usePlatformTenants} may set; anything left out keeps the client default. */
+export interface PlatformTenantsOptions {
+  refetchInterval?: number | false;
+  staleTime?: number;
+  enabled?: boolean;
+}
+
+/**
+ * Every tenant (platform admins). One query shared by the tenant switcher and
+ * the platform page; each caller states its own freshness options.
+ */
+export function usePlatformTenants(options: PlatformTenantsOptions = {}) {
+  const api = useApi();
+  // Only the options a caller set: an explicit undefined would override the client defaults.
+  const set = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined)) as PlatformTenantsOptions;
+  return useQuery({
+    queryKey: qk.platformTenants.all,
+    queryFn: ({ signal }) => endpoints.platformTenants(api, signal),
+    ...set,
+  });
+}
+
 export function filterTenants(tenants: readonly TenantSummaryOut[], query: string, home: string): TenantSummaryOut[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   return tenants
@@ -64,7 +86,6 @@ export function useSwitchTenant(): (tenant: string | null, name?: string) => boo
 
 export function TenantSwitcher() {
   const { principal } = useAuth();
-  const api = useApi();
   const switchTo = useSwitchTenant();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -74,12 +95,7 @@ export function TenantSwitcher() {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const enabled = Boolean(principal?.isPlatformAdmin) && open;
-  const tenants = useQuery({
-    queryKey: PLATFORM_TENANTS_KEY,
-    queryFn: ({ signal }) => endpoints.platformTenants(api, signal),
-    enabled,
-    staleTime: 60_000,
-  });
+  const tenants = usePlatformTenants({ enabled, staleTime: 60_000 });
 
   useEffect(() => {
     if (!open) return;
