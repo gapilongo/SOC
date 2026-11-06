@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import pytest
 
-from tests.integration.api.conftest import TENANT_A, ApiHarness
+from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -112,3 +112,80 @@ async def test_incident_report_draft_entry(api: ApiHarness) -> None:
     sha = draft.data["draft_sha256"]
     details = {"stage": "early_warning", "event_id": event_id, "draft_sha256": sha, "ai_narrative": False}
     assert await _only(api, "alert.incident_report_drafted") == ("alert", alert_id, "user", str(analyst.id), details)
+
+
+# ---------------------------------------------------------------------------- identity
+
+
+async def _signed_in(api: ApiHarness, email: str) -> Any:
+    user = await api.user(TENANT_A, "analyst", email=email)
+    login = await api.client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    return user
+
+
+async def test_user_update_entry(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    user = await _signed_in(api, "updated@a.example.com")
+    response = await api.client.patch(
+        f"{API}/users/{user.id}",
+        json={"password": "another long passphrase", "role": "viewer", "is_active": False},
+        headers=api.auth(admin),
+    )
+    assert response.status_code == 200, response.text
+    details = {"fields": ["is_active", "role", "password"], "role": "viewer", "revoked_sessions": 1}
+    assert await _only(api, "user.updated") == ("user", str(user.id), "user", str(admin.id), details)
+
+
+async def test_user_reactivation_over_quota_is_refused_and_changes_nothing(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    dormant = await api.user(TENANT_A, "analyst", active=False)
+    await api.repos.tenants.update_admin(TENANT_A, max_users=1)
+    response = await api.client.patch(f"{API}/users/{dormant.id}", json={"is_active": True}, headers=api.auth(admin))
+    assert response.status_code == 409 and response.json()["error"]["code"] == "quota_exceeded"
+    assert (await api.repos.users.get(TENANT_A, dormant.id)).is_active is False
+    assert "user.updated" not in await _actions(api)
+
+
+async def test_user_refusals_keep_their_codes_and_messages(api: ApiHarness) -> None:
+    only_admin = await api.user(TENANT_A, "admin")
+    operator = await api.user(TENANT_B, "admin", platform_admin=True)
+    platform = await api.user(TENANT_A, "viewer", platform_admin=True)
+    as_operator = {**api.auth(operator), "X-Tenant-ID": TENANT_A}
+    last_admin = ["last_admin", "the tenant must keep at least one active admin"]
+    guarded = ["forbidden", "only a platform admin can modify a platform-admin account"]
+    for method, path, body, headers, expected in (
+        ("PATCH", f"users/{only_admin.id}", {"role": "viewer"}, as_operator, last_admin),
+        ("DELETE", f"users/{only_admin.id}", None, as_operator, last_admin),
+        ("PATCH", f"users/{platform.id}", {"role": "admin"}, api.auth(only_admin), guarded),
+        ("DELETE", f"users/{platform.id}", None, api.auth(only_admin), guarded),
+        ("POST", f"users/{platform.id}/mfa/reset", None, api.auth(only_admin), guarded),
+    ):
+        response = await api.client.request(method, f"{API}/{path}", json=body, headers=headers)
+        error = response.json()["error"]
+        assert [error["code"], error["message"]] == expected, (method, path)
+    assert not {"user.updated", "user.deleted", "auth.mfa_reset"} & set(await _actions(api))
+
+
+async def test_user_delete_entry(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    user = await _signed_in(api, "gone@b.example.org")
+    response = await api.client.delete(f"{API}/users/{user.id}", headers=api.auth(admin))
+    assert response.status_code == 204, response.text
+    details = {"email_domain": "b.example.org"}
+    assert await _only(api, "user.deleted") == ("user", str(user.id), "user", str(admin.id), details)
+
+
+async def test_user_mfa_reset_entry(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    user = await _signed_in(api, "reset@a.example.com")
+    response = await api.client.post(f"{API}/users/{user.id}/mfa/reset", headers=api.auth(admin))
+    assert response.status_code == 204, response.text
+    details = {
+        "was_enabled": False,
+        "revoked_sessions": 1,
+        "by_platform_admin": False,
+        "actor_home_tenant_id": TENANT_A,
+    }
+    assert await _only(api, "auth.mfa_reset") == ("user", str(user.id), "user", str(admin.id), details)
+
