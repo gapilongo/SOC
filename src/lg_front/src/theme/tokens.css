@@ -1,0 +1,127 @@
+/*
+ * Design tokens (docs: the "Design tokens and components" board of the UI redesign).
+ *
+ * Every colour is an RGB triplet so Tailwind's opacity modifiers work
+ * (`bg-raised/60`); tailwind.config.js maps each token to a theme colour of
+ * the same name. Dark is the default; `<html data-theme="light">` switches to
+ * the light palette (src/theme/theme.tsx sets it, "System" follows
+ * prefers-color-scheme). Any element can pin a palette for its subtree with
+ * data-theme (the printable monthly report is always light).
+ *
+ * Contrast rules (checked by src/theme/tokens.test.ts against this file):
+ *   - text tokens reach 4.5:1 on every surface,
+ *   - controls, focus, severity squares and state dots reach 3:1,
+ *   - text on the tinted backgrounds reaches 4.5:1.
+ */
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --c-canvas: 10 14 19; /* #0A0E13 */
+  --c-sidebar: 13 18 24; /* #0D1218 */
+  --c-raised: 16 21 28; /* #10151C cards */
+  --c-raised-2: 22 29 39; /* #161D27 hover, banners, chips */
+  --c-selected: 26 36 51; /* #1A2433 */
+
+  /* Lines */
+  --c-subtle: 28 35 45; /* #1C232D */
+  --c-strong: 42 52 66; /* #2A3442 */
+  --c-control: 100 112 132; /* #647084 control borders (3:1) */
+
+  /* Text */
+  --c-fg: 230 234 240; /* #E6EAF0 primary */
+  --c-body: 196 203 214; /* #C4CBD6 body in cards */
+  --c-secondary: 167 176 190; /* #A7B0BE */
+  --c-muted: 131 141 156; /* #838D9C floor: 4.5:1 on every surface */
+  --c-eyebrow: 135 146 162; /* #8792A2 */
+
+  /* Accent: primary buttons, links, focus, AI output */
+  --c-accent: 47 111 228; /* #2F6FE4 */
+  --c-accent-hover: 37 99 212; /* #2563D4 */
+  --c-on-accent: 255 255 255;
+  --c-link: 138 182 255; /* #8AB6FF */
+  --c-link-hover: 181 208 255; /* #B5D0FF */
+  --c-focus: 138 182 255; /* #8AB6FF */
+
+  /* Severity: square + word, never colour alone */
+  --c-sev-critical: 255 107 112; /* #FF6B70 */
+  --c-sev-high: 255 159 67; /* #FF9F43 */
+  --c-sev-medium: 245 208 76; /* #F5D04C */
+  --c-sev-low: 76 195 217; /* #4CC3D9 */
+  --c-sev-info: 154 164 178; /* #9AA4B2 */
+
+  /* State: neutral pill + coloured dot */
+  --c-state-waiting: 255 176 32; /* #FFB020 waiting for an analyst */
+  --c-state-approval: 169 155 255; /* #A99BFF waiting for approval */
+  --c-state-processing: 138 182 255; /* #8AB6FF */
+  --c-state-ok: 127 217 168; /* #7FD9A8 closed / verified */
+  --c-state-bad: 255 138 142; /* #FF8A8E failed / malicious */
+
+  /* Feedback */
+  --c-danger: 192 85 93; /* #C0555D destructive border */
+  --c-danger-fg: 255 179 182; /* #FFB3B6 destructive / error text */
+  --c-warn: 255 176 32; /* #FFB020 SLA at risk / breaching */
+  --c-warn-fg: 255 213 138; /* #FFD58A text on the warning tint */
+  --c-ok-fg: 157 230 191; /* #9DE6BF */
+  --c-tint-danger: 42 22 25; /* #2A1619 */
+  --c-tint-warn: 39 31 14; /* #271F0E */
+  --c-tint-ok: 15 36 25; /* #0F2419 */
+  --c-tint-info: 20 33 58; /* #14213A */
+
+
+  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.45);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --c-canvas: 245 247 250; /* #F5F7FA */
+  --c-sidebar: 237 240 244; /* #EDF0F4 */
+  --c-raised: 255 255 255; /* #FFFFFF */
+  --c-raised-2: 240 242 246; /* #F0F2F6 */
+  --c-selected: 225 234 248; /* #E1EAF8 */
+
+  --c-subtle: 226 230 236; /* #E2E6EC */
+  --c-strong: 203 210 219; /* #CBD2DB */
+  --c-control: 122 133 150; /* #7A8596 */
+
+  --c-fg: 14 20 27; /* #0E141B */
+  --c-body: 39 48 60; /* #27303C */
+  --c-secondary: 71 82 98; /* #475262 */
+  --c-muted: 92 102 119; /* #5C6677 */
+  --c-eyebrow: 86 97 115; /* #566173 */
+
+  --c-accent: 47 111 228; /* #2F6FE4 */
+  --c-accent-hover: 37 96 204; /* #2560CC */
+  --c-on-accent: 255 255 255;
+  --c-link: 29 87 199; /* #1D57C7 */
+  --c-link-hover: 20 66 156; /* #14429C */
+  /* #8AB6FF is under 3:1 on light surfaces: the light theme uses the link blue. */
+  --c-focus: 29 87 199; /* #1D57C7 */
+
+  --c-sev-critical: 212 47 59; /* #D42F3B */
+  --c-sev-high: 193 90 0; /* #C15A00 */
+  --c-sev-medium: 160 120 0; /* #A07800 */
+  --c-sev-low: 11 127 150; /* #0B7F96 */
+  --c-sev-info: 107 117 133; /* #6B7585 */
+
+  --c-state-waiting: 178 106 0; /* #B26A00 */
+  --c-state-approval: 106 85 216; /* #6A55D8 */
+  --c-state-processing: 29 87 199; /* #1D57C7 */
+  --c-state-ok: 27 133 80; /* #1B8550 */
+  --c-state-bad: 199 52 62; /* #C7343E */
+
+  --c-danger: 194 51 61; /* #C2333D */
+  --c-danger-fg: 168 35 44; /* #A8232C */
+  --c-warn: 143 86 0; /* #8F5600 */
+  --c-warn-fg: 122 74 0; /* #7A4A00 */
+  --c-ok-fg: 22 107 65; /* #166B41 */
+  --c-tint-danger: 252 235 236; /* #FCEBEC */
+  --c-tint-warn: 253 243 223; /* #FDF3DF */
+  --c-tint-ok: 230 245 236; /* #E6F5EC */
+  --c-tint-info: 230 238 251; /* #E6EEFB */
+
+  --shadow-popover: 0 12px 32px rgb(15 23 42 / 0.16);
+}

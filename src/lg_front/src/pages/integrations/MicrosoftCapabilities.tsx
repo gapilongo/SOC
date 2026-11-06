@@ -173,11 +173,11 @@ function CapabilityCard({
   const fields = optionFields(spec.options_schema);
   const title = `${spec.title} (${spec.key})`;
   return (
-    <article className="rounded-md border border-slate-800 p-3" aria-label={title}>
+    <article className="rounded-control border border-subtle p-3" aria-label={title}>
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h4 className="text-sm font-semibold text-slate-100">{spec.title}</h4>
-          <p className="text-xs text-slate-400">
+          <h4 className="text-sm font-semibold text-fg">{spec.title}</h4>
+          <p className="text-xs text-muted">
             {spec.key} · {spec.api === 'graph' ? 'Microsoft Graph' : 'Defender for Endpoint'}
             {spec.licence ? ` · ${spec.licence}` : ''}
           </p>
@@ -198,40 +198,40 @@ function CapabilityCard({
           />
         </div>
       </header>
-      <p className="mt-2 text-sm text-slate-300">{spec.description}</p>
-      {!supported && <p className="mt-2 text-xs text-amber-200">Not available in the {humanize(cloud)} cloud.</p>}
+      <p className="mt-2 text-sm text-secondary">{spec.description}</p>
+      {!supported && <p className="mt-2 text-xs text-warn-fg">Not available in the {humanize(cloud)} cloud.</p>}
       {conflicts.length > 0 && (
-        <p className="mt-2 flex items-center gap-1 text-xs text-amber-200">
+        <p className="mt-2 flex items-center gap-1 text-xs text-warn-fg">
           <AlertTriangle className="h-3.5 w-3.5" aria-hidden="true" />
           Cannot be enabled together with {conflicts.join(', ')}.
         </p>
       )}
       <div className="mt-2 grid gap-3 sm:grid-cols-2">
         <div>
-          <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Actions</h5>
-          <ul className="space-y-1 text-xs text-slate-200">
+          <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Actions</h5>
+          <ul className="space-y-1 text-xs text-body">
             {Object.entries(spec.actions).map(([type, support]) => (
               <li key={type}>
                 <span className="font-medium">{humanize(type)}</span>
-                {support.reversible && <span className="text-emerald-300"> · reversible{support.inverse ? ` (${humanize(support.inverse)})` : ''}</span>}
-                {support.restorative && <span className="text-slate-400"> · rollback only</span>}
-                {support.irreversible_note && <span className="block text-amber-200">{support.irreversible_note}</span>}
-                {support.note && <span className="block text-slate-400">{support.note}</span>}
+                {support.reversible && <span className="text-ok-fg"> · reversible{support.inverse ? ` (${humanize(support.inverse)})` : ''}</span>}
+                {support.restorative && <span className="text-muted"> · rollback only</span>}
+                {support.irreversible_note && <span className="block text-warn-fg">{support.irreversible_note}</span>}
+                {support.note && <span className="block text-muted">{support.note}</span>}
               </li>
             ))}
           </ul>
         </div>
         <div>
-          <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Permissions</h5>
-          <ul className="space-y-1 text-xs text-slate-200">
+          <h5 className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Permissions</h5>
+          <ul className="space-y-1 text-xs text-body">
             {spec.permissions.map((p) => (
               <li key={`${p.api}:${p.role}`}>
-                <code>{p.role}</code> <span className="text-slate-400">({p.api})</span>
-                {!p.required && <span className="text-slate-400"> optional</span>}
-                {p.when && <span className="text-slate-400"> when {p.when}</span>}
-                {p.directory_role && <span className="block text-sky-200">Entra role: {p.directory_role}</span>}
-                {p.exchange_rbac && <span className="block text-sky-200">Exchange RBAC: {p.exchange_rbac}</span>}
-                <span className="block text-slate-400">{p.purpose}</span>
+                <code>{p.role}</code> <span className="text-muted">({p.api})</span>
+                {!p.required && <span className="text-muted"> optional</span>}
+                {p.when && <span className="text-muted"> when {p.when}</span>}
+                {p.directory_role && <span className="block text-link">Entra role: {p.directory_role}</span>}
+                {p.exchange_rbac && <span className="block text-link">Exchange RBAC: {p.exchange_rbac}</span>}
+                <span className="block text-muted">{p.purpose}</span>
               </li>
             ))}
           </ul>
@@ -239,7 +239,7 @@ function CapabilityCard({
       </div>
       {fields.length > 0 && (
         <fieldset className="mt-3 grid gap-3 sm:grid-cols-2">
-          <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Options</legend>
+          <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Options</legend>
           {fields.map((f) => (
             <OptionInput
               key={f.key}
@@ -287,7 +287,7 @@ export function MicrosoftCapabilities({
   onChange: (next: CapabilityStates) => void;
 }) {
   if (catalog.length === 0) {
-    return <p className="text-sm text-slate-400">No capability is installed yet. The connection test still checks the credential.</p>;
+    return <p className="text-sm text-muted">No capability is installed yet. The connection test still checks the credential.</p>;
   }
   return (
     <div className="space-y-3">

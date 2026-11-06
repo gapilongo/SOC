@@ -13,6 +13,8 @@ import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { LoadingState } from './components/ui';
 import { LiveProvider } from './live/LiveProvider';
+import { DensityProvider } from './theme/density';
+import { ThemeProvider } from './theme/theme';
 
 // One chunk per route.
 const LoginPage = lazy(() => import('./pages/Login'));
@@ -100,12 +102,16 @@ export function App({ session, queryClient }: { session: Session; queryClient: Q
     <ErrorBoundary>
       <SessionProvider session={session}>
         <QueryClientProvider client={queryClient}>
-          <ToastProvider>
-            <BrowserRouter>
-              <SessionLifecycle />
-              <AppRoutes />
-            </BrowserRouter>
-          </ToastProvider>
+          <ThemeProvider>
+            <DensityProvider>
+              <ToastProvider>
+                <BrowserRouter>
+                  <SessionLifecycle />
+                  <AppRoutes />
+                </BrowserRouter>
+              </ToastProvider>
+            </DensityProvider>
+          </ThemeProvider>
         </QueryClientProvider>
       </SessionProvider>
     </ErrorBoundary>

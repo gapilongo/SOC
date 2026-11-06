@@ -54,13 +54,13 @@ export function RollbackDialog({ action, onClose }: { action: ActionOut; onClose
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="danger" onClick={() => void submit()} busy={busy} disabled={!reason.trim()}>
+          <Button variant="destructive" onClick={() => void submit()} busy={busy} disabled={!reason.trim()}>
             Request rollback
           </Button>
         </>
       }
     >
-      <div className="space-y-3 text-sm text-slate-200">
+      <div className="space-y-3 text-sm text-body">
         <p>
           A new action <strong>{humanize(inverse)}</strong> undoes it on <code className="break-all">{action.target}</code>, through
           the connector that executed it.
@@ -68,9 +68,9 @@ export function RollbackDialog({ action, onClose }: { action: ActionOut; onClose
         <p className="flex flex-wrap items-center gap-2">
           <RiskBadge value={risk} />
           {selfApproved ? (
-            <span className="text-emerald-200">Approved by you: it runs within seconds.</span>
+            <span className="text-ok-fg">Approved by you: it runs within seconds.</span>
           ) : (
-            <span className="text-amber-200">Needs admin approval: it waits in the ledger until an admin approves it.</span>
+            <span className="text-warn-fg">Needs admin approval: it waits in the ledger until an admin approves it.</span>
           )}
         </p>
         <TextAreaField

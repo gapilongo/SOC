@@ -29,7 +29,7 @@ export function EvidenceActions({ alertId }: { alertId: string }) {
   const busy = (kind: Kind) => m.isPending && m.variables === kind;
   return (
     <div className="space-y-2">
-      <p className="text-xs text-slate-400">
+      <p className="text-xs text-muted">
         A reconstructable record of this case with a SHA-256 bundle hash and the related audit-log entries. Exports are audited.
       </p>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Export evidence">

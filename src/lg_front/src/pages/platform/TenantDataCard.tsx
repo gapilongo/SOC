@@ -44,7 +44,7 @@ export function EraseTenantDialog({
             Cancel
           </Button>
           <Button
-            variant="danger"
+            variant="destructive"
             busy={busy}
             disabled={!matches}
             onClick={onConfirm}
@@ -55,8 +55,8 @@ export function EraseTenantDialog({
         </>
       }
     >
-      <div className="space-y-3 text-sm text-slate-200">
-        <p className="rounded border border-red-700 bg-red-950 px-3 py-2 font-medium text-red-100">
+      <div className="space-y-3 text-sm text-body">
+        <p className="rounded border border-danger bg-tint-danger px-3 py-2 font-medium text-danger-fg">
           This permanently deletes all of the tenant&apos;s data and cannot be undone. Export the tenant&apos;s data first if it
           may be needed.
         </p>
@@ -72,7 +72,7 @@ export function EraseTenantDialog({
         <TextField
           label={
             <>
-              Type <code className="text-red-200">{tenantId}</code> to confirm
+              Type <code className="text-danger-fg">{tenantId}</code> to confirm
             </>
           }
           autoComplete="off"
@@ -152,14 +152,14 @@ export function TenantDataCard() {
         {lookup.isError && <ErrorMessage error={lookup.error} compact />}
         {status && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-200">
+            <p className="text-sm text-body">
               <span className="font-medium">{status.name}</span> (<code>{status.tenant_id}</code>) is{' '}
-              <span className={suspended ? 'text-amber-200' : 'text-emerald-200'}>{status.status}</span>
+              <span className={suspended ? 'text-warn-fg' : 'text-ok-fg'}>{status.status}</span>
               {status.erased_at ? `, erased ${status.erased_at}` : ''}.
             </p>
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold text-white">Export tenant data</h3>
-              <p className="text-xs text-slate-400">
+              <h3 className="text-sm font-semibold text-fg">Export tenant data</h3>
+              <p className="text-xs text-muted">
                 A zip of JSON Lines files: settings, users, sources, alerts, events, escalations, feedback, actions, suppression rules
                 and the audit log. Secrets, password hashes and key hashes are left out. The export contains personal data: store and
                 transfer it accordingly. For very large tenants use <code>lg-sotf tenant-export</code> on the server instead. Every
@@ -175,10 +175,10 @@ export function TenantDataCard() {
               </Button>
             </section>
             <section className="space-y-2">
-              <h3 className="text-sm font-semibold text-white">Erase tenant</h3>
-              {!suspended && <p className="text-xs text-amber-200">Suspend the tenant first: only a suspended tenant can be erased.</p>}
+              <h3 className="text-sm font-semibold text-fg">Erase tenant</h3>
+              {!suspended && <p className="text-xs text-warn-fg">Suspend the tenant first: only a suspended tenant can be erased.</p>}
               {status.blockers.length > 0 && (
-                <ul className="list-disc pl-5 text-xs text-amber-200">
+                <ul className="list-disc pl-5 text-xs text-warn-fg">
                   {status.blockers.map((b) => (
                     <li key={b}>{b}</li>
                   ))}
@@ -186,7 +186,7 @@ export function TenantDataCard() {
               )}
               <Button
                 size="sm"
-                variant="danger"
+                variant="destructive"
                 disabled={!canErase}
                 onClick={() => {
                   eraser.reset();
@@ -208,7 +208,7 @@ export function TenantDataCard() {
           </div>
         )}
         {erased && (
-          <p role="status" className="rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">
+          <p role="status" className="rounded-control border border-state-ok/60 bg-tint-ok px-3 py-2 text-sm text-ok-fg">
             Tenant {erased.tenant_id} erased: {totalRows(erased)} rows, {erased.redis_keys} cached keys and {erased.queue_entries} queued
             entries deleted; {erased.audit_entries_retained} audit entries retained.
           </p>

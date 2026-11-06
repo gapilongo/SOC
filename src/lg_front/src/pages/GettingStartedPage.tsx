@@ -11,7 +11,7 @@ export default function GettingStartedPage() {
         title="Getting started"
         description="The steps that take a new tenant from empty to triaging real alerts. Progress is worked out from your tenant's data."
         actions={s && !s.dismissed ? (
-          <Button size="sm" variant="ghost" busy={dismiss.isPending} onClick={() => dismiss.mutate()}>
+          <Button size="sm" variant="quiet" busy={dismiss.isPending} onClick={() => dismiss.mutate()}>
             Hide the dashboard banner
           </Button>
         ) : undefined}
@@ -24,7 +24,7 @@ export default function GettingStartedPage() {
             <OnboardingChecklist status={s} />
           </Card>
           <Card title="Try it with sample alerts">
-            <div className="space-y-3 text-sm text-slate-300">
+            <div className="space-y-3 text-sm text-secondary">
               <p>
                 Send five synthetic alerts (a brute-force login, a test-file detection, beaconing, an encoded PowerShell command and a
                 scheduled scan) through the normal ingestion pipeline and watch them being triaged.

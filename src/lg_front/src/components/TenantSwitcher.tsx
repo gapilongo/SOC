@@ -164,7 +164,7 @@ export function TenantSwitcher() {
         <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
       </Button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-80 rounded-md border border-slate-700 bg-slate-900 p-2 shadow-xl">
+        <div className="absolute right-0 z-40 mt-1 w-80 rounded-control border border-strong bg-raised p-2 shadow-xl">
           <label htmlFor={`${listId}-search`} className="sr-only">
             Search tenants
           </label>
@@ -184,10 +184,10 @@ export function TenantSwitcher() {
             onKeyDown={onKey}
             placeholder="Search by name or id"
             autoComplete="off"
-            className="mb-2 block w-full rounded-md border border-slate-600 bg-slate-950 px-2 py-1.5 text-sm text-slate-100 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none"
+            className="mb-2 block w-full rounded-control border border-control bg-canvas px-2 py-1.5 text-sm text-fg placeholder:text-muted focus:border-link focus:outline-none"
           />
-          {tenants.isPending && <p className="px-2 py-1 text-xs text-slate-400">Loading tenants...</p>}
-          {tenants.isError && <p className="px-2 py-1 text-xs text-red-300">The tenant list could not be loaded; type a tenant id.</p>}
+          {tenants.isPending && <p className="px-2 py-1 text-xs text-muted">Loading tenants...</p>}
+          {tenants.isError && <p className="px-2 py-1 text-xs text-danger-fg">The tenant list could not be loaded; type a tenant id.</p>}
           <ul id={listId} role="listbox" aria-label="Tenants" className="max-h-72 overflow-y-auto">
             {options.map((o, i) => (
               // Keyboard selection runs through the combobox input (aria-activedescendant), as the ARIA pattern prescribes.
@@ -202,23 +202,23 @@ export function TenantSwitcher() {
                 onMouseEnter={() => setActive(i)}
                 className={cx(
                   'flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-1.5 text-sm',
-                  i === active ? 'bg-slate-800 text-white' : 'text-slate-200',
+                  i === active ? 'bg-raised-2 text-fg' : 'text-body',
                 )}
               >
                 <span className="min-w-0">
                   <span className="block truncate">{o.label}</span>
-                  {o.hint && <span className="block truncate font-mono text-xs text-slate-400">{o.hint}</span>}
+                  {o.hint && <span className="block truncate font-mono text-xs text-muted">{o.hint}</span>}
                 </span>
                 <span className="flex flex-none items-center gap-1">
                   {o.status === 'suspended' && <Badge tone="bad">suspended</Badge>}
-                  {o.id === principal.tenantId && <Check className="h-4 w-4 text-sky-400" aria-label="current" />}
+                  {o.id === principal.tenantId && <Check className="h-4 w-4 text-link" aria-label="current" />}
                 </span>
               </li>
             ))}
-            {!tenants.isPending && options.length === 0 && <li className="px-2 py-1 text-xs text-slate-400">No tenant matches.</li>}
+            {!tenants.isPending && options.length === 0 && <li className="px-2 py-1 text-xs text-muted">No tenant matches.</li>}
           </ul>
           {override && (
-            <Button size="sm" variant="ghost" className="mt-2 w-full" onClick={() => choose({ id: home, label: home })}>
+            <Button size="sm" variant="quiet" className="mt-2 w-full" onClick={() => choose({ id: home, label: home })}>
               Back to home tenant ({home})
             </Button>
           )}
@@ -234,12 +234,12 @@ export function ActingTenantBanner() {
   const switchTo = useSwitchTenant();
   if (!principal || !isTenantOverride(principal)) return null;
   return (
-    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-amber-700 bg-amber-950 px-4 py-2 text-sm text-amber-100">
+    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-warn/60 bg-tint-warn px-4 py-2 text-sm text-warn-fg">
       <span>
         Acting as tenant <strong className="font-semibold">{principal.tenantId}</strong>. Every request is recorded in that tenant&apos;s
         audit log; live updates are off.
       </span>
-      <Button size="sm" variant="ghost" className="ml-auto" onClick={() => switchTo(null)} icon={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />}>
+      <Button size="sm" variant="quiet" className="ml-auto" onClick={() => switchTo(null)} icon={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />}>
         Return to {principal.homeTenantId}
       </Button>
     </div>

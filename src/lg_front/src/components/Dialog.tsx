@@ -96,8 +96,8 @@ export function Modal({
   const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' };
   const panelClass =
     variant === 'drawer'
-      ? cx('fixed inset-y-0 right-0 flex w-full flex-col border-l border-slate-700 bg-slate-900 shadow-2xl', widths[size])
-      : cx('relative mx-4 flex max-h-[90vh] w-full flex-col rounded-lg border border-slate-700 bg-slate-900 shadow-2xl', widths[size]);
+      ? cx('fixed inset-y-0 right-0 flex w-full flex-col border-l border-strong bg-raised shadow-2xl', widths[size])
+      : cx('relative mx-4 flex max-h-[90vh] w-full flex-col rounded-card border border-strong bg-raised shadow-2xl', widths[size]);
 
   return createPortal(
     <div className={cx('fixed inset-0 z-50 flex', variant === 'dialog' && 'items-center justify-center')}>
@@ -111,21 +111,21 @@ export function Modal({
         tabIndex={-1}
         className={cx(panelClass, 'focus:outline-none')}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-slate-800 px-5 py-4">
+        <header className="flex items-start justify-between gap-3 border-b border-subtle px-5 py-4">
           <div className="min-w-0">
-            <h2 id={titleId} className="break-words text-base font-semibold text-white">
+            <h2 id={titleId} className="break-words text-base font-semibold text-fg">
               {title}
             </h2>
             {description && (
-              <div id={descId} className="mt-1 text-sm text-slate-300">
+              <div id={descId} className="mt-1 text-sm text-secondary">
                 {description}
               </div>
             )}
           </div>
-          <Button variant="ghost" size="sm" aria-label="Close" onClick={onClose} icon={<X className="h-4 w-4" aria-hidden="true" />} />
+          <Button variant="quiet" size="sm" aria-label="Close" onClick={onClose} icon={<X className="h-4 w-4" aria-hidden="true" />} />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-slate-800 px-5 py-3">{footer}</footer>}
+        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-subtle px-5 py-3">{footer}</footer>}
       </div>
     </div>,
     document.body,
@@ -162,13 +162,13 @@ export function ConfirmDialog({
           <Button onClick={onCancel} data-autofocus>
             Cancel
           </Button>
-          <Button variant={danger ? 'danger' : 'primary'} busy={busy} onClick={onConfirm}>
+          <Button variant={danger ? 'destructive' : 'primary'} busy={busy} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </>
       }
     >
-      <div className="text-sm text-slate-200">{children}</div>
+      <div className="text-sm text-body">{children}</div>
     </Modal>
   );
 }
