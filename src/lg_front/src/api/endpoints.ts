@@ -27,6 +27,7 @@ import type {
   IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
+  MeOut,
   MicrosoftCatalogOut,
   MfaConfirmOut,
   MfaEnrollOut,
@@ -105,6 +106,9 @@ export interface AuditFilters {
 }
 
 export const endpoints = {
+  /** Who the caller is, in the tenant it acts on (tenant_name on newer APIs). */
+  me: (api: ApiClient, signal?: AbortSignal) => api.get<MeOut>('/auth/me', { signal }),
+
   dashboard: (api: ApiClient, windowHours: number, signal?: AbortSignal) =>
     api.get<DashboardOut>('/dashboard/summary', { query: { window_hours: windowHours }, signal }),
 

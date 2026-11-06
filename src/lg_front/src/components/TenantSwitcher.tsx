@@ -10,7 +10,7 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { Building2, Check, ChevronDown, LogOut } from 'lucide-react';
+import { AlertTriangle, Building2, Check, ChevronDown, LogOut } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
@@ -84,7 +84,8 @@ export function useSwitchTenant(): (tenant: string | null, name?: string) => boo
   };
 }
 
-export function TenantSwitcher() {
+/** `label`: the tenant's display name for the button (defaults to the tenant id). */
+export function TenantSwitcher({ label }: { label?: string } = {}) {
   const { principal } = useAuth();
   const switchTo = useSwitchTenant();
   const [open, setOpen] = useState(false);
@@ -157,14 +158,17 @@ export function TenantSwitcher() {
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
-        icon={<Building2 className="h-3.5 w-3.5" aria-hidden="true" />}
+        className="max-w-full font-semibold"
+        icon={<Building2 className="h-4 w-4 flex-none text-secondary" strokeWidth={1.75} aria-hidden="true" />}
       >
         <span className="sr-only">Switch tenant, current: </span>
-        <span className="max-w-[10rem] truncate">{principal.tenantId}</span>
-        <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className={cx('max-w-[12rem] truncate', isTenantOverride(principal) && 'text-warn-fg')} data-testid="tenant-name">
+          {label ?? principal.tenantId}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 flex-none text-secondary" strokeWidth={2} aria-hidden="true" />
       </Button>
       {open && (
-        <div className="absolute right-0 z-40 mt-1 w-80 rounded-control border border-strong bg-raised p-2 shadow-xl">
+        <div className="absolute left-0 z-40 mt-1 w-80 max-w-[calc(100vw-2rem)] rounded-card border border-strong bg-raised-2 p-2 shadow-popover">
           <label htmlFor={`${listId}-search`} className="sr-only">
             Search tenants
           </label>
@@ -234,12 +238,13 @@ export function ActingTenantBanner() {
   const switchTo = useSwitchTenant();
   if (!principal || !isTenantOverride(principal)) return null;
   return (
-    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-warn/60 bg-tint-warn px-4 py-2 text-sm text-warn-fg">
-      <span>
+    <div role="status" className="flex flex-wrap items-center gap-3 border-b border-warn/60 bg-tint-warn px-4 py-1.5 text-ctl font-medium text-fg md:px-6">
+      <AlertTriangle className="h-4 w-4 flex-none text-warn-fg" strokeWidth={1.75} aria-hidden="true" />
+      <span className="min-w-0 flex-1">
         Acting as tenant <strong className="font-semibold">{principal.tenantId}</strong>. Every request is recorded in that tenant&apos;s
         audit log; live updates are off.
       </span>
-      <Button size="sm" variant="quiet" className="ml-auto" onClick={() => switchTo(null)} icon={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />}>
+      <Button size="sm" onClick={() => switchTo(null)} icon={<LogOut className="h-3.5 w-3.5" aria-hidden="true" />}>
         Return to {principal.homeTenantId}
       </Button>
     </div>
