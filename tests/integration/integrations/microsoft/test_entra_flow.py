@@ -13,7 +13,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.services.review import ReviewService
 from lg_sotf.services.rollback import RollbackService
 from tests.integration.db._support import TENANT_A
-from tests.integration.integrations.microsoft.conftest import MicrosoftEnv, MicrosoftEnvFactory
+from tests.integration.integrations.microsoft._support import MicrosoftEnv, MicrosoftEnvFactory
 from tests.unit.integrations.microsoft.entra._support import Directory
 
 pytestmark = pytest.mark.integration

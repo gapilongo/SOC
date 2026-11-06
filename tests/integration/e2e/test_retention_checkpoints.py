@@ -9,8 +9,7 @@ import pytest
 
 from lg_sotf.db.retention import purge_expired
 from tests.integration.db._support import TENANT_A, make_alert
-from tests.integration.e2e.conftest import eventually, running
-from tests.integration.e2e.test_pipeline import BENIGN_EVENT
+from tests.integration.e2e._support import BENIGN_EVENT, eventually, running
 
 pytestmark = pytest.mark.integration
 

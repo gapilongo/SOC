@@ -1,0 +1,76 @@
+name: Nightly
+
+# Roadmap Q4: the whole suite in a random order, to catch tests that pass only after (or before)
+# another one. The seed is printed at the top of the log ("Using --randomly-seed=N"); reproduce a
+# failure locally with `pip install pytest-randomly==5.0.0` and `pytest -p randomly --randomly-seed=N`
+# (docs/testing.md). pytest-randomly is pinned here and deliberately not in requirements-dev.txt:
+# installed, it shuffles every local run.
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTEST_RANDOMLY_VERSION: "5.0.0"
+
+jobs:
+  random-order:
+    name: Tests in random order (pytest-randomly)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only_superuser_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      LG_SOTF_TEST_DATABASE_URL: postgresql://soc:ci_only_password@127.0.0.1:5432/soc_test
+      LG_SOTF_TEST_REDIS_URL: redis://127.0.0.1:6379/5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt "pytest-randomly==${PYTEST_RANDOMLY_VERSION}"
+          pip install --no-deps -e .
+      - name: Create the non-superuser test role
+        env:
+          PGPASSWORD: ci_only_superuser_password
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
+      - name: Pytest (random order)
+        run: pytest -p randomly --junitxml=junit-random.xml
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-reports-random
+          path: junit-random.xml
+          retention-days: 14

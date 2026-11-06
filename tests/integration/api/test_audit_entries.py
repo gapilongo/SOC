@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import pytest
 
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness, IdP, bearer, jit_api, jit_token
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -281,12 +281,9 @@ async def test_invalid_tenant_settings_change_nothing(api: ApiHarness) -> None:
 
 
 async def test_sso_provisioning_entry(make_api: Any) -> None:
-    from tests.integration.api.test_oidc import IdP, bearer
-    from tests.integration.api.test_oidc_jit import _jit_api, _token
-
     idp = IdP()
-    api = await _jit_api(make_api, idp)
-    me = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
+    api = await jit_api(make_api, idp)
+    me = await api.client.get(f"{API}/auth/me", headers=bearer(jit_token(idp, ["SOC-Admins"])))
     assert me.status_code == 200, me.text
     user_id = me.json()["user_id"]
     details = {"role": "admin", "via": "oidc_jit", "email_domain": "a.example.com"}

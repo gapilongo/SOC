@@ -9,7 +9,7 @@ import pytest
 from redis.asyncio import Redis
 
 from lg_sotf.db.errors import DatabaseUnavailable
-from tests.integration.api.conftest import TENANT_A, UI_ORIGIN, ApiHarness
+from tests.integration.api._support import TENANT_A, UI_ORIGIN, ApiHarness
 
 pytestmark = pytest.mark.integration
 

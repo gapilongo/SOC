@@ -16,8 +16,7 @@ import pytest
 
 from lg_sotf.db.repos import Repositories
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack
-from tests.integration.e2e.test_pipeline import SUSPICIOUS_EVENT
+from tests.integration.e2e._support import SUSPICIOUS_EVENT, Stack
 
 pytestmark = pytest.mark.integration
 

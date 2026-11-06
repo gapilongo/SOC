@@ -16,7 +16,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.eval.dataset import load_dataset, parse_dataset
 from lg_sotf.eval.runner import EvalRunner
-from tests.integration.eval.conftest import EVAL_TENANT
+from tests.integration.eval._support import EVAL_TENANT
 
 pytestmark = pytest.mark.integration
 
@@ -133,11 +133,11 @@ def run_psql_export(psql: str, dsn: str, workdir: Path) -> List[Dict[str, Any]]:
 
 
 async def test_export_script_runs_under_psql_and_requires_an_output_path(
-    eval_runner: EvalRunner, db: Database, repos: Repositories, eval_database_url: str, tmp_path: Path
+    eval_runner: EvalRunner, db: Database, repos: Repositories, checkpointed_database_url: str, tmp_path: Path
 ) -> None:
     psql = shutil.which("psql")
     if psql is None:
         pytest.skip("psql is not installed")
     await labelled_alerts(eval_runner, db, repos)
-    lines = await asyncio.to_thread(run_psql_export, psql, eval_database_url, tmp_path)
+    lines = await asyncio.to_thread(run_psql_export, psql, checkpointed_database_url, tmp_path)
     assert sorted(line["expected"]["disposition"] for line in lines) == ["inconclusive", "malicious"]

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 from redis.asyncio import Redis
 from redis.exceptions import ResponseError
@@ -84,12 +84,15 @@ def _text(value: object) -> str:
     return value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
 
 
-async def oldest_undelivered_age_s(redis: Redis, streams: QueueStreams) -> float:
+async def oldest_undelivered_age_s(
+    redis: Redis, streams: QueueStreams, *, clock: Callable[[], float] = time.time
+) -> float:
     """Age of the oldest work entry not yet delivered to the ``workers`` group (0 when caught up).
 
-    A queued run older than this may simply be waiting its turn in the backlog.
+    A queued run older than this may simply be waiting its turn in the backlog. ``clock`` is
+    the wall clock (stream ids are epoch milliseconds).
     """
-    now_ms = time.time() * 1000
+    now_ms = clock() * 1000
     oldest = 0.0
     for stream in streams.work:
         try:

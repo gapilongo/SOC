@@ -11,7 +11,7 @@ from lg_sotf.db.repos import Integration, ResponseAction
 from lg_sotf.integrations.config import encrypt_secret, validate_config
 from lg_sotf.integrations.microsoft.catalog import override_for_tests
 from tests.fixtures.microsoft import fake_config
-from tests.integration.api.conftest import ApiHarness
+from tests.integration.api._support import ApiHarness
 from tests.integration.db._support import TENANT_A, make_alert
 from tests.unit.integrations.microsoft._support import FAKE_SPECS
 

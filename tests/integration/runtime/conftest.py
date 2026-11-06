@@ -1,11 +1,11 @@
-"""Runtime tests use the shared Postgres/Redis fixtures from tests/integration/conftest.py."""
+"""Runtime tests use the shared Postgres/Redis fixtures from tests/integration/conftest.py.
+
+Helpers (the scripted engine, worker builders, ``eventually``) live in ``_support.py``.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import time
-from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 import pytest
 
@@ -34,69 +34,3 @@ def runtime_settings(
         )
 
     return build
-
-
-async def eventually(predicate: Callable[[], Awaitable[bool]], within: float = 8.0, interval: float = 0.05) -> None:
-    deadline = time.monotonic() + within
-    while True:
-        if await predicate():
-            return
-        if time.monotonic() > deadline:
-            raise AssertionError("condition not met in time")
-        await asyncio.sleep(interval)
-
-
-@dataclass
-class Outcome:
-    status: str
-    alert_status: str = "closed"
-    interrupt: Optional[dict] = None
-
-
-Behaviour = Callable[[str, str, str, Optional[dict]], Awaitable[Outcome]]
-
-
-@dataclass
-class FakeEngine:
-    """Stands in for WorkflowEngine: records calls and runs a scripted behaviour."""
-
-    behaviour: Behaviour
-    calls: List[tuple] = field(default_factory=list)
-    active: Dict[str, int] = field(default_factory=dict)
-    max_active: Dict[str, int] = field(default_factory=dict)
-    closed: bool = False
-
-    async def _call(self, kind: str, tenant_id: str, alert_id: str, payload: Optional[dict]) -> Outcome:
-        self.calls.append((kind, tenant_id, alert_id, payload))
-        self.active[tenant_id] = self.active.get(tenant_id, 0) + 1
-        self.max_active[tenant_id] = max(self.max_active.get(tenant_id, 0), self.active[tenant_id])
-        try:
-            return await self.behaviour(kind, tenant_id, alert_id, payload)
-        finally:
-            self.active[tenant_id] -= 1
-
-    async def run(self, tenant_id: str, alert_id: str) -> Outcome:
-        return await self._call("process", tenant_id, alert_id, None)
-
-    async def resume(self, tenant_id: str, alert_id: str, payload: dict) -> Outcome:
-        return await self._call("resume", tenant_id, alert_id, payload)
-
-    async def close(self) -> None:
-        self.closed = True
-
-
-def returns(status: str, delay: float = 0.0) -> Behaviour:
-    async def behaviour(kind: str, tenant_id: str, alert_id: str, payload: Optional[dict]) -> Outcome:
-        if delay:
-            await asyncio.sleep(delay)
-        return Outcome(status)
-
-    return behaviour
-
-
-@dataclass
-class RecordingEvents:
-    events: List[tuple] = field(default_factory=list)
-
-    async def publish(self, tenant_id: str, event: dict) -> None:
-        self.events.append((tenant_id, event))

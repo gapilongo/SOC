@@ -7,7 +7,7 @@ from typing import Any, Dict
 import pytest
 
 from lg_sotf.onboarding import SAMPLE_COUNT, SAMPLE_SOURCE_ID
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 

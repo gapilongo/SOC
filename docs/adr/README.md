@@ -18,9 +18,9 @@ edited afterwards except to mark it superseded by a newer one.
 | 0008 | Tracing: instrument at choke points, or remove | Reserved (X5) |
 | 0009 | API contract: committed OpenAPI snapshot, tolerant reader | Reserved (T2) |
 | 0010 | Frontend structure and boundaries | Reserved (FE9) |
-| 0011 | Postgres RLS per tenant and the non-BYPASSRLS runtime role | Reserved (Q5) |
-| 0012 | Redis Streams work queue with DLQ | Reserved (Q5) |
-| 0013 | Configuration only through `lg_sotf.settings` | Reserved (Q5) |
+| [0011](0011-rls-per-tenant.md) | Postgres RLS per tenant and the non-BYPASSRLS runtime role | Accepted |
+| [0012](0012-redis-streams-queue.md) | Redis Streams work queue with DLQ | Accepted |
+| [0013](0013-configuration-through-settings.md) | Configuration only through `lg_sotf.settings` | Accepted |
 
 Earlier design documents: [MCP architecture](../design/mcp-architecture.md)
 (read, safe writes and proposals over MCP; decisions are human-only) and the

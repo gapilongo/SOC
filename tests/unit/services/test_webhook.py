@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import UTC, datetime
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, List, Optional, Sequence
 
 import httpx
 import pytest
 
-from lg_sotf.db.repos.actions import ResponseAction, action_idempotency_key
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.security.crypto import SecretBox, generate_key
 from lg_sotf.services.connectors import (
@@ -34,23 +32,11 @@ from lg_sotf.services.connectors.webhook import (
     TIMESTAMP_HEADER,
 )
 from lg_sotf.settings import Settings
+from tests.unit.services._support import make_action
 
 SECRET = b"s3cr3t-webhook-key-0123456789abcdef"
 URL = "https://soar.example.com/hooks/lgsotf"
 NOW = 1_790_000_000.0
-
-
-def make_action(**kw: Any) -> ResponseAction:
-    now = datetime.now(UTC)
-    base: Dict[str, Any] = dict(
-        id=uuid.uuid4(), tenant_id="t1", alert_id="a1", action_type="block_ip", target="185.220.101.44",
-        params={"playbook": "malware", "alert": {"severity": "high", "title": "C2 beacon"}}, risk_level="medium",
-        idempotency_key=action_idempotency_key("t1", "a1", "block_ip", "185.220.101.44"), status="executing",
-        blocked_reason=None, requested_by="agent:workflow", approved_by="u1", approved_at=now, executed_at=now,
-        connector="webhook", result=None, rollback_of=None, created_at=now, updated_at=now,
-    )
-    base.update(kw)
-    return ResponseAction(**base)
 
 
 class Soar:

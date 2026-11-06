@@ -371,7 +371,7 @@ def cap_mapping(value: Mapping[str, Any], max_bytes: int) -> Dict[str, Any]:
     if size <= max_bytes:
         return data
     for str_chars, list_items in ((4_096, 100), (1_024, 25), (256, 10)):
-        shrunk = _shrink(data, str_chars, list_items)
+        shrunk: Dict[str, Any] = _shrink(data, str_chars, list_items)  # a mapping shrinks to a dict
         shrunk[TRUNCATED_MARKER] = {"original_bytes": size}
         if json_size(shrunk) <= max_bytes:
             return shrunk

@@ -8,7 +8,7 @@ from typing import Any, List
 import pytest
 
 from lg_sotf.queue.streams import QueueStreams, parse_message
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration

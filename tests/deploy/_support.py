@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -14,6 +16,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCKER_DIR = REPO_ROOT / "docker"
 CHART_DIR = REPO_ROOT / "deploy" / "helm" / "lg-sotf"
 FULL_VALUES = CHART_DIR / "ci" / "full-values.yaml"
+COMPOSE = DOCKER_DIR / "docker-compose.yml"
+PROD = DOCKER_DIR / "docker-compose.prod.yml"
 
 Manifest = Dict[str, Any]
 
@@ -54,3 +58,59 @@ def one(manifests: List[Manifest], kind: str, name_suffix: str) -> Manifest:
     found = find(manifests, kind, name_suffix)
     assert len(found) == 1, f"expected one {kind} *{name_suffix}, found {[m['metadata']['name'] for m in found]}"
     return found[0]
+
+
+# ------------------------------------------------------------- docker compose
+
+PROD_SECRETS = {
+    "POSTGRES_SUPERUSER_PASSWORD": "compose-test-superuser",
+    "LGSOTF_OWNER_PASSWORD": "compose-test-owner",
+    "LGSOTF_APP_PASSWORD": "compose-test-app",
+    "LG_SOTF_AUTH__JWT_SECRET": "compose-test-jwt",
+    "LG_SOTF_SECURITY__ENCRYPTION_KEYS": "compose-test-fernet",
+    "LG_SOTF_SECURITY__INDICATOR_HMAC_KEY": "compose-test-hmac",
+}
+
+
+class ComposeLoader(yaml.SafeLoader):
+    """SafeLoader that understands Compose's merge tags (!reset, !override)."""
+
+
+def _compose_tag(loader: yaml.SafeLoader, node: yaml.Node) -> Any:
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node, deep=True)
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node, deep=True)
+    return loader.construct_scalar(node)  # type: ignore[arg-type]
+
+
+ComposeLoader.add_constructor("!reset", _compose_tag)
+ComposeLoader.add_constructor("!override", _compose_tag)
+
+
+def load(path: Any) -> Dict[str, Any]:
+    data = yaml.load(path.read_text(), Loader=ComposeLoader)  # noqa: S506 - SafeLoader subclass
+    assert isinstance(data, dict)
+    return data
+
+
+requires_compose = pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI is not installed")
+
+
+def compose_config(*files: str, env: Dict[str, str], env_file: Optional[Path] = None) -> Dict[str, Any]:
+    argv = ["docker", "compose"]
+    for f in files:
+        argv += ["-f", f]
+    if env_file is not None:
+        argv += ["--env-file", str(env_file)]
+    proc = subprocess.run(
+        [*argv, "config", "--format", "json"],
+        capture_output=True,
+        text=True,
+        env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "/tmp"), **env},
+        timeout=60,
+    )
+    if proc.returncode != 0 and "is not a docker command" in proc.stderr:
+        pytest.skip("docker compose plugin is not installed")
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)

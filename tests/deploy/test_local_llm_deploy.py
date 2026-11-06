@@ -26,8 +26,16 @@ from lg_sotf.ingestion.normalizers.base import NormalizeContext
 from lg_sotf.ingestion.normalizers.canonical import CanonicalNormalizer
 from lg_sotf.llm.client import get_chat_model, provider_of
 from lg_sotf.llm.endpoint import check_base_url
-from tests.deploy._support import DOCKER_DIR, REPO_ROOT
-from tests.deploy.test_compose import COMPOSE, PROD, PROD_SECRETS, compose_config, load, requires_compose
+from tests.deploy._support import (
+    COMPOSE,
+    DOCKER_DIR,
+    PROD,
+    PROD_SECRETS,
+    REPO_ROOT,
+    compose_config,
+    load,
+    requires_compose,
+)
 
 OLLAMA = DOCKER_DIR / "docker-compose.ollama.yml"
 BUNDLE = REPO_ROOT / "scripts" / "airgap" / "bundle.sh"

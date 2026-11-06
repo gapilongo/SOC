@@ -8,7 +8,6 @@ import httpx
 import pytest
 
 import lg_sotf.agents.base as agent_base
-from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.triage.base import (
     TriageAgent,
     decisive_reason,
@@ -22,35 +21,16 @@ from lg_sotf.llm.errors import LLMBudgetExceeded
 from lg_sotf.llm.fake import Invalid, Refuse, Truncate
 from lg_sotf.observability.metrics import REGISTRY
 from lg_sotf.settings import Settings
-from tests.unit.agents._support import factory, fake_repos, scripted
-
-BENIGN = {"title": "Scheduled backup maintenance test", "severity": "low", "source_id": "prod-siem"}
-MALICIOUS = {
-    "title": "Malware backdoor exploit detected",
-    "severity": "critical",
-    "source_id": "edr-prod",
-    "raw": {"destination_port": 4444, "file_hash": "d41d8cd98f00b204e9800998ecf8427e"},
-}
-AMBIGUOUS = {
-    "title": "Unusual outbound connection from workstation",
-    "severity": "medium",
-    "source_id": "fw-prod",
-    "entities": {"ips": ["203.0.113.7"], "hosts": ["ws-042"]},
-}
-ASSESSMENT = {
-    "threat_likelihood": 90,
-    "threat_assessment": "likely_threat",
-    "false_positive_indicators": [],
-    "true_positive_indicators": ["beaconing interval"],
-    "threat_categories": ["c2"],
-    "urgency_level": "high",
-    "recommended_actions": ["isolate host"],
-    "reasoning": "Regular beaconing to a rare external address.",
-}
-
-
-def ctx(settings: Settings, **kwargs: Any) -> AgentContext:
-    return AgentContext(tenant_id="t1", alert_id="a1", settings=settings, **kwargs)
+from tests.unit.agents._support import (
+    AMBIGUOUS,
+    ASSESSMENT,
+    BENIGN,
+    MALICIOUS,
+    ctx,
+    factory,
+    fake_repos,
+    scripted,
+)
 
 
 def metric(name: str, **labels: str) -> float:

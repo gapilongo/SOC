@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import tomllib
+from pathlib import Path
 from typing import Any, Dict, List
 
 import yaml
@@ -220,3 +223,47 @@ def test_coverage_floors_are_enforced_in_ci() -> None:
     assert "python scripts/ci/coverage_floors.py coverage.json" in runs
     omit = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text())["tool"]["coverage"]["run"]["omit"]
     assert "*/lg_sotf/db/migrations/*" in omit
+
+
+def test_the_parallel_tier_runs_beside_the_serial_job_until_it_is_proven() -> None:
+    """Roadmap Q4: xdist runs non-blocking, and a parity job compares its JUnit report with the serial one."""
+    jobs = workflow()["jobs"]
+    parallel = jobs["test-parallel"]
+    runs = [s.get("run", "") for s in parallel["steps"]]
+    assert "pytest -n 4 --dist loadfile --junitxml=junit-parallel.xml" in runs
+    assert parallel["continue-on-error"] is True and parallel["env"] == jobs["test"]["env"]
+    parity = jobs["parallel-parity"]
+    assert parity["needs"] == ["test", "test-parallel"] and parity["continue-on-error"] is True
+    assert "python3 scripts/ci/compare_junit.py junit.xml junit-parallel.xml" in [s.get("run", "") for s in parity["steps"]]
+    # The blocking serial job keeps coverage and stays one process.
+    assert not any("-n " in s.get("run", "") for s in jobs["test"]["steps"])
+    make = (REPO_ROOT / "Makefile").read_text()
+    assert "test-serial:" in make and "-n 4 --dist loadfile" in make
+
+
+def test_a_nightly_job_runs_the_suite_in_random_order_with_a_pinned_plugin() -> None:
+    nightly = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "nightly.yml").read_text())
+    assert re.fullmatch(r"\d+\.\d+\.\d+", nightly["env"]["PYTEST_RANDOMLY_VERSION"])
+    runs = " ".join(s.get("run", "") for s in nightly["jobs"]["random-order"]["steps"])
+    assert '"pytest-randomly==${PYTEST_RANDOMLY_VERSION}"' in runs and "pytest -p randomly" in runs
+    # Installed, pytest-randomly shuffles every run: it stays out of the dev requirements.
+    assert "pytest-randomly" not in (REPO_ROOT / "requirements-dev.txt").read_text()
+
+
+JUNIT = """<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest">
+<testcase classname="tests.a" name="test_ok"/>
+<testcase classname="tests.a" name="test_skip"><skipped message="x"/></testcase>
+{extra}</testsuite></testsuites>"""
+
+
+def test_compare_junit_requires_the_same_tests_and_outcomes(tmp_path: Path) -> None:
+    script = REPO_ROOT / "scripts" / "ci" / "compare_junit.py"
+    serial, same, other = tmp_path / "s.xml", tmp_path / "p.xml", tmp_path / "o.xml"
+    serial.write_text(JUNIT.format(extra=""))
+    same.write_text(JUNIT.format(extra=""))
+    other.write_text(JUNIT.format(extra='<testcase classname="tests.b" name="test_new"><failure message="x"/></testcase>'))
+    ok = subprocess.run([sys.executable, str(script), str(serial), str(same)], capture_output=True, text=True)
+    assert ok.returncode == 0, ok.stdout
+    assert "serial: 2 tests, passed 1, failure 0, error 0, skipped 1" in ok.stdout
+    bad = subprocess.run([sys.executable, str(script), str(serial), str(other)], capture_output=True, text=True)
+    assert bad.returncode == 1 and "only in the parallel run: tests.b::test_new" in bad.stdout

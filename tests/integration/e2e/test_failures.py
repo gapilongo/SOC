@@ -15,8 +15,7 @@ from lg_sotf.runtime.ops import dlq_requeue
 from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.response import ResponseService
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack, count_calls, eventually, running
-from tests.integration.e2e.test_pipeline import SUSPICIOUS_EVENT, analyst_decides
+from tests.integration.e2e._support import SUSPICIOUS_EVENT, Stack, analyst_decides, count_calls, eventually, running
 
 pytestmark = pytest.mark.integration
 

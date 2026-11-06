@@ -10,8 +10,18 @@ from lg_sotf.runtime.orphans import claim_orphaned_runs, find_stranded_new_alert
 from lg_sotf.services.dispatch import dispatch_new_alerts
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.runtime.conftest import FakeEngine, Outcome, eventually, returns
-from tests.integration.runtime.test_worker import Ingested, _dispatch, _status, _stream_empty, _worker, running
+from tests.integration.runtime._support import (
+    FakeEngine,
+    Ingested,
+    Outcome,
+    dispatch_alert,
+    eventually,
+    make_worker,
+    returns,
+    run_status,
+    running,
+    stream_empty,
+)
 
 
 async def test_worker_leaves_a_suspended_tenants_work_queued(
@@ -19,17 +29,17 @@ async def test_worker_leaves_a_suspended_tenants_work_queued(
 ) -> None:
     s = runtime_settings()
     engine = FakeEngine(returns("completed"))
-    worker = _worker(s, repos.db, redis_client, engine)
+    worker = make_worker(s, repos.db, redis_client, engine)
     await repos.tenants.set_status(TENANT_B, "suspended")
-    alert_a = await _dispatch(repos, s, redis_client, TENANT_A)
-    alert_b = await _dispatch(repos, s, redis_client, TENANT_B)
+    alert_a = await dispatch_alert(repos, s, redis_client, TENANT_A)
+    alert_b = await dispatch_alert(repos, s, redis_client, TENANT_B)
 
     async with running(worker):
-        await eventually(lambda: _stream_empty(redis_client, s))
+        await eventually(lambda: stream_empty(redis_client, s))
         await eventually(lambda: _is(repos, TENANT_A, alert_a, "completed"))
 
     assert [c[1] for c in engine.calls] == [TENANT_A]
-    assert await _status(repos, TENANT_B, alert_b) == "queued"
+    assert await run_status(repos, TENANT_B, alert_b) == "queued"
     assert worker.stats.skipped == 1
     assert (await repos.alerts.get(TENANT_B, alert_b)).status == "queued"
 
@@ -61,8 +71,8 @@ async def test_finished_triage_is_metered_once_and_samples_never(
         return Outcome("waiting_human" if kind == "process" else "completed")
 
     engine = FakeEngine(behaviour)
-    worker = _worker(s, repos.db, redis_client, engine)
-    alert_id = await _dispatch(repos, s, redis_client, TENANT_A)
+    worker = make_worker(s, repos.db, redis_client, engine)
+    alert_id = await dispatch_alert(repos, s, redis_client, TENANT_A)
     sample_id = await make_alert(repos, TENANT_A, source_id="demo:samples")
     await dispatch_new_alerts(repos, WorkQueue(redis_client, s), TENANT_A, [Ingested(sample_id, "high")])
     payload = {
@@ -84,4 +94,4 @@ async def test_finished_triage_is_metered_once_and_samples_never(
 
 
 async def _is(repos: Repositories, tenant: str, alert_id: str, status: str) -> bool:
-    return await _status(repos, tenant, alert_id) == status
+    return await run_status(repos, tenant, alert_id) == status

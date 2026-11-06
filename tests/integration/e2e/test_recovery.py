@@ -22,16 +22,20 @@ from lg_sotf.runtime.resumes import rebuild_resume_payload
 from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.services.review import ReviewService
 from tests.integration.db._support import TENANT_A, make_alert
-from tests.integration.e2e.conftest import eventually, running
-from tests.integration.e2e.test_review_response import related_event
-from tests.integration.ingestion.test_poll import ScriptedConnector, page
+from tests.integration.e2e._support import eventually, related_event, running
+from tests.integration.ingestion._support import ScriptedConnector, page
 
 pytestmark = pytest.mark.integration
 
 
 class _SlowSecondPage(ScriptedConnector):
+    def __init__(self, *args: Any, second_page_requested: asyncio.Event, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.second_page_requested = second_page_requested
+
     async def pages(self, cursor: Optional[Mapping[str, Any]]) -> AsyncGenerator:
         yield self.scripted[0]
+        self.second_page_requested.set()  # the first page is stored; the next request hangs
         await asyncio.sleep(3600)  # the next page's request is in flight when the pod stops
         yield self.scripted[1]
 
@@ -64,9 +68,15 @@ async def test_cancelled_poll_strands_no_alert(
         scheduler={"tick_s": 0.05},
     )
     await repos.sources.create(TENANT_A, "splunk", "splunk src", source_id="splunk-1")
+    second_page_requested = asyncio.Event()
 
     def factory(source: Any, credentials: Any) -> ScriptedConnector:
-        return _SlowSecondPage(source, [page(0, 2, watermark_min=1), page(2, 2, watermark_min=2)], settings=settings)
+        return _SlowSecondPage(
+            source,
+            [page(0, 2, watermark_min=1), page(2, 2, watermark_min=2)],
+            settings=settings,
+            second_page_requested=second_page_requested,
+        )
 
     queue = WorkQueue(redis_client, settings)
     scheduler = Scheduler(
@@ -80,7 +90,7 @@ async def test_cancelled_poll_strands_no_alert(
         stop_grace_s=0.3,
     )
     task = asyncio.create_task(scheduler.run())
-    await asyncio.sleep(1.0)
+    await asyncio.wait_for(second_page_requested.wait(), 20)
     scheduler.request_stop()  # SIGTERM during a rolling upgrade: the poll outlives the grace period
     await task
     async with db.system_tx() as conn:
@@ -156,11 +166,11 @@ async def _run_is(stack: Any, alert_id: str, status: str) -> bool:
     return await stack.run_status(TENANT_A, alert_id) == status
 
 
-async def test_checkpointer_survives_a_database_restart(stack_factory: Any, repos: Any, e2e_database_url: str) -> None:
+async def test_checkpointer_survives_a_database_restart(stack_factory: Any, repos: Any, checkpointed_database_url: str) -> None:
     """M1: dead pooled checkpointer connections are replaced, not handed to the next run."""
     import asyncpg
 
-    from tests.integration.e2e.test_pipeline import BENIGN_EVENT
+    from tests.integration.e2e._support import BENIGN_EVENT
 
     stack = stack_factory(visibility_timeout_s=1200)
     engine = await stack.engine()
@@ -171,7 +181,7 @@ async def test_checkpointer_survives_a_database_restart(stack_factory: Any, repo
     async with running(worker):
         await stack.dispatch(TENANT_A, first)
         await eventually(lambda: _run_is(stack, a1, "completed"))
-        conn = await asyncpg.connect(e2e_database_url)
+        conn = await asyncpg.connect(checkpointed_database_url)
         try:
             await conn.fetchval(
                 "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
