@@ -30,10 +30,11 @@ integration: they would page on-call staff and open real tickets.
 from __future__ import annotations
 
 import uuid
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, List, Mapping, Optional, Sequence
 
 from lg_sotf.db import Connection
-from lg_sotf.db.repos.outbox import ENQUEUE_SQL, NewOutboxEntry
+from lg_sotf.db.repos.alerts import event_summaries
+from lg_sotf.db.repos.outbox import NewOutboxEntry, enqueue_on, matching_enabled
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import MICROSOFT_KIND, NOTIFY_KINDS, TICKETING_KINDS
 from lg_sotf.integrations.events import (
@@ -50,16 +51,6 @@ from lg_sotf.integrations.events import (
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
-
-_INTEGRATIONS_SQL = """
-    SELECT id, kind, events, min_severity, config FROM integrations
-    WHERE tenant_id = $1 AND enabled AND $2 = ANY(events)
-"""
-_ALERTS_SQL = """
-    SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
-           summary, jsonb_build_object('entities', normalized->'entities') AS normalized
-    FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[]) AND source_id IS DISTINCT FROM $3
-"""
 
 
 def operation_for(integration: Mapping[str, Any], event_type: str, severity: Optional[str], level: Optional[str]) -> Optional[str]:
@@ -84,26 +75,6 @@ def operation_for(integration: Mapping[str, Any], event_type: str, severity: Opt
     return None
 
 
-async def _matching(conn: Connection, tenant_id: str, event_type: str) -> List[Mapping[str, Any]]:
-    return [dict(r) for r in await conn.fetch(_INTEGRATIONS_SQL, tenant_id, event_type)]
-
-
-async def _alerts(conn: Connection, tenant_id: str, alert_ids: Sequence[str]) -> Dict[str, Mapping[str, Any]]:
-    rows = await conn.fetch(_ALERTS_SQL, tenant_id, list(alert_ids), SAMPLE_SOURCE_ID)
-    return {str(r["id"]): dict(r) for r in rows}
-
-
-async def _insert(conn: Connection, tenant_id: str, entries: List[NewOutboxEntry]) -> int:
-    if not entries:
-        return 0
-    status = await conn.execute(
-        ENQUEUE_SQL,
-        tenant_id,
-        [e.model_dump(mode="json") for e in entries],
-    )
-    return int(str(status).split()[-1]) if status else 0
-
-
 async def enqueue_event(
     conn: Connection,
     tenant_id: str,
@@ -122,10 +93,10 @@ async def enqueue_event(
     ``conn`` must be inside the tenant transaction that makes the change.
     ``escalation`` / ``action`` are the repository records the event is about.
     """
-    integrations = await _matching(conn, tenant_id, event_type)
+    integrations = await matching_enabled(conn, tenant_id, event_type)
     if not integrations:
         return 0
-    alerts = await _alerts(conn, tenant_id, [alert_id])
+    alerts = await event_summaries(conn, tenant_id, [alert_id], SAMPLE_SOURCE_ID)
     row = alerts.get(alert_id)
     if row is None:
         return 0
@@ -158,7 +129,7 @@ async def enqueue_event(
         )
         for i, op in targets
     ]
-    queued = await _insert(conn, tenant_id, entries)
+    queued = await enqueue_on(conn, tenant_id, entries)
     if queued:
         log.info("integrations.event_queued", event_type=event_type, integrations=queued)
     return queued
@@ -168,10 +139,10 @@ async def enqueue_critical_alerts(conn: Connection, tenant_id: str, alert_ids: S
     """``alert.critical_received`` for newly dispatched critical alerts (one message per alert, ever)."""
     if not alert_ids:
         return 0
-    integrations = await _matching(conn, tenant_id, ALERT_CRITICAL_RECEIVED)
+    integrations = await matching_enabled(conn, tenant_id, ALERT_CRITICAL_RECEIVED)
     if not integrations:
         return 0
-    rows = await _alerts(conn, tenant_id, alert_ids)
+    rows = await event_summaries(conn, tenant_id, alert_ids, SAMPLE_SOURCE_ID)
     entries: List[NewOutboxEntry] = []
     for alert_id in alert_ids:
         row = rows.get(alert_id)
@@ -195,4 +166,4 @@ async def enqueue_critical_alerts(conn: Connection, tenant_id: str, alert_ids: S
             )
             for i in targets
         )
-    return await _insert(conn, tenant_id, entries)
+    return await enqueue_on(conn, tenant_id, entries)

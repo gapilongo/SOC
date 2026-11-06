@@ -30,6 +30,7 @@ from urllib.parse import quote
 import httpx
 
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.db.repos.alerts import event_summaries
 from lg_sotf.db.repos.integrations import Integration
 from lg_sotf.db.repos.tickets import ExternalTicket
 from lg_sotf.domain.connectors import ConnectorResult
@@ -58,11 +59,6 @@ SERVICENOW_URGENCY: Dict[str, Tuple[str, str]] = {  # severity -> (urgency, impa
     "info": ("3", "3"),
 }
 MAX_SUMMARY_CHARS = 250
-_ALERT_SQL = """
-    SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
-           summary, jsonb_build_object('entities', normalized->'entities') AS normalized
-    FROM alerts WHERE tenant_id = $1 AND id = $2
-"""
 
 
 class DeliveryDeferred(Exception):
@@ -449,10 +445,10 @@ class TicketService:
     async def alert_event(self, tenant_id: str, alert_id: str, event_type: str) -> Dict[str, Any]:
         """A summary payload for ``alert_id`` (used by the ``create_ticket`` action)."""
         async with self._repos.db.tenant_tx(tenant_id, readonly=True) as conn:
-            row = await conn.fetchrow(_ALERT_SQL, tenant_id, alert_id)
+            row = (await event_summaries(conn, tenant_id, [alert_id])).get(alert_id)
         if row is None:
             raise DeliveryError("the alert no longer exists", retryable=False, code="alert_missing")
-        return build_event(event_type, tenant_id, alert=alert_summary(dict(row)))
+        return build_event(event_type, tenant_id, alert=alert_summary(row))
 
     async def ensure_ticket(
         self,

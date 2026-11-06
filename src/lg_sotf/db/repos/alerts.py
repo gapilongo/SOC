@@ -52,10 +52,27 @@ _LIST_COLUMNS = (
     "disposition, confidence, threat_score, priority, assigned_to, occurred_at, ingested_at, "
     "updated_at, closed_at, summary, case_key"
 )
+# The event summary columns of alerts ($2), excluding one source ($3; NULL excludes none: source_id is NOT NULL).
+_EVENT_SUMMARIES_SQL = """
+    SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
+           summary, jsonb_build_object('entities', normalized->'entities') AS normalized
+    FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[]) AND source_id IS DISTINCT FROM $3
+"""
 
 
 def can_transition(current: str, target: str) -> bool:
     return target in ALERT_TRANSITIONS.get(current, frozenset())
+
+
+async def event_summaries(
+    conn: Connection, tenant_id: str, ids: Sequence[str], exclude_source_id: Optional[str] = None
+) -> Dict[str, Dict[str, Any]]:
+    """The columns an integration event summarises, by alert id; ids not found (or from ``exclude_source_id``) are absent.
+
+    Connection-level: the caller holds the tenant transaction, and driver errors are not translated.
+    """
+    rows = await conn.fetch(_EVENT_SUMMARIES_SQL, tenant_id, list(ids), exclude_source_id)
+    return {str(r["id"]): dict(r) for r in rows}
 
 
 class NewAlert(BaseModel):

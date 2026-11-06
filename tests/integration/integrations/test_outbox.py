@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Callable, List
 from uuid import uuid4
 
 import pytest
 
 from lg_sotf.db.errors import NotFound
-from lg_sotf.db.repos import Repositories
+from lg_sotf.db.repos import NewAlert, NewOutboxEntry, Repositories
+from lg_sotf.db.repos.alerts import event_summaries
+from lg_sotf.db.repos.outbox import enqueue_on, matching_enabled
+from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.integrations.http import DeliveryError
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.integrations.ticketing import TicketService
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.dispatch import dispatch_new_alerts
@@ -167,3 +173,53 @@ async def test_integrations_are_isolated_per_tenant(
         updated = await conn.execute("UPDATE integrations SET enabled = false")
     assert updated == "UPDATE 0"
     assert (await repos.integrations.get(TENANT_B, other.id)).enabled
+
+
+async def _sample_alert(repos: Repositories, tenant_id: str = TENANT_A) -> str:
+    alert = NewAlert(
+        source_id=SAMPLE_SOURCE_ID, source_alert_id=uuid4().hex, fingerprint=f"fp-{uuid4().hex}", title="Sample",
+        severity="critical", occurred_at=datetime.now(UTC), raw={}, normalized={"entities": {"hosts": ["h"]}},
+    )
+    assert await repos.alerts.insert_many_if_absent(tenant_id, [alert]) == [alert.id]
+    return alert.id
+
+
+async def test_event_summaries_cover_both_outbox_and_ticket_lookups(repos: Repositories) -> None:
+    """One query serves the outbox (sample alerts excluded) and the ticket action (nothing excluded)."""
+    real = await add_alert(repos, TENANT_A, entities={"hosts": ["ws-042"]})
+    sample = await _sample_alert(repos)
+    other_tenant = await add_alert(repos, TENANT_B)
+    async with repos.db.tenant_tx(TENANT_A, readonly=True) as conn:
+        everything = await event_summaries(conn, TENANT_A, [real, sample, other_tenant, "missing"])
+        no_samples = await event_summaries(conn, TENANT_A, [real, sample], SAMPLE_SOURCE_ID)
+    assert set(everything) == {real, sample} and set(no_samples) == {real}
+    assert everything[real]["normalized"] == {"entities": {"hosts": ["ws-042"]}} and "raw" not in everything[real]
+
+
+async def test_connection_level_outbox_writes_match_the_repository(repos: Repositories, box: SecretBox) -> None:
+    hook = await slack(repos, box, events=("escalation.created", "alert.critical_received"))
+    await slack(repos, box, events=("escalation.decided",))
+    alert_id = await add_alert(repos, TENANT_A)
+    entry = NewOutboxEntry(integration_id=hook.id, event_id=uuid4(), event_type="escalation.created",
+                           operation="notify", dedupe_key="k1", alert_id=alert_id)
+    async with repos.db.tenant_tx(TENANT_A) as conn:
+        assert [i["id"] for i in await matching_enabled(conn, TENANT_A, "alert.critical_received")] == [hook.id]
+        assert await enqueue_on(conn, TENANT_A, []) == 0
+        assert await enqueue_on(conn, TENANT_A, [entry]) == 1
+        assert await enqueue_on(conn, TENANT_A, [entry]) == 0  # already queued
+    assert await repos.outbox.enqueue(TENANT_A, [entry]) == 0
+    assert await repos.outbox.enqueue(TENANT_A, [entry.model_copy(update={"dedupe_key": "k2"})]) == 1
+    assert sorted(r["dedupe_key"] for r in await outbox(repos)) == ["k1", "k2"]
+
+
+async def test_ticket_action_payload_summarises_the_alert(
+    repos: Repositories, integ_settings: Callable[..., Settings]
+) -> None:
+    service = TicketService(repos, integ_settings())
+    alert_id = await add_alert(repos, TENANT_A, entities={"hosts": ["ws-042"]})
+    payload = await service.alert_event(TENANT_A, alert_id, "action.executed")
+    assert payload["alert"]["id"] == alert_id and payload["alert"]["entities"] == {"hosts": ["ws-042"]}
+    # A sample alert still gets a summary for the ticket action (only the outbox skips samples).
+    assert (await service.alert_event(TENANT_A, await _sample_alert(repos), "action.executed"))["alert"]
+    with pytest.raises(DeliveryError):
+        await service.alert_event(TENANT_A, "missing", "action.executed")

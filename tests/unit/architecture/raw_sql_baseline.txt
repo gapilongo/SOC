@@ -8,10 +8,6 @@ compliance/tenant_data.py::erase_tenant
 compliance/tenant_data.py::erase_tenant_rows
 compliance/tenant_data.py::erasure_blockers
 eval/runner.py::check_services
-integrations/outbox.py::_alerts
-integrations/outbox.py::_insert
-integrations/outbox.py::_matching
-integrations/ticketing.py::TicketService.alert_event
 onboarding/service.py::_notifications_configured
 onboarding/service.py::_notifications_configured
 onboarding/service.py::onboarding_status

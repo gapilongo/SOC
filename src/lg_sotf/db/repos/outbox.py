@@ -34,7 +34,7 @@ OUTBOX_OPERATIONS = ("notify", "ticket_create", "ticket_update", "test")
 MAX_ERROR_CHARS = 1_000
 MAX_DELIVERY_LIST = 200
 # Rows as ``NewOutboxEntry.model_dump(mode="json")`` in $2; an already queued (integration, dedupe_key) is skipped.
-ENQUEUE_SQL = """
+_ENQUEUE_SQL = """
     INSERT INTO notification_outbox
         (tenant_id, integration_id, event_id, event_type, operation, dedupe_key, alert_id, escalation_id, payload)
     SELECT $1, e.integration_id, e.event_id, e.event_type, e.operation, e.dedupe_key,
@@ -44,6 +44,11 @@ ENQUEUE_SQL = """
         alert_id text, escalation_id text, payload jsonb
     )
     ON CONFLICT (tenant_id, integration_id, dedupe_key) DO NOTHING
+"""
+# The tenant's enabled integrations subscribed to an event type ($2).
+_INTEGRATIONS_SQL = """
+    SELECT id, kind, events, min_severity, config FROM integrations
+    WHERE tenant_id = $1 AND enabled AND $2 = ANY(events)
 """
 
 
@@ -79,6 +84,27 @@ class NewOutboxEntry(Record):
     payload: Dict[str, Any] = Field(default_factory=dict)
 
 
+# Connection-level queries for writers that already hold the tenant transaction of the change
+# (lg_sotf.integrations.outbox). Driver errors are not translated: they abort that transaction.
+
+
+async def matching_enabled(conn: Connection, tenant_id: str, event_type: str) -> List[Dict[str, Any]]:
+    """The tenant's enabled integrations subscribed to ``event_type`` (``id, kind, events, min_severity, config``)."""
+    return [dict(r) for r in await conn.fetch(_INTEGRATIONS_SQL, tenant_id, event_type)]
+
+
+async def enqueue_on(conn: Connection, tenant_id: str, entries: Sequence[NewOutboxEntry]) -> int:
+    """Insert outbox rows on ``conn``; a (integration, ``dedupe_key``) already queued is skipped. Returns rows inserted."""
+    if not entries:
+        return 0
+    status = await conn.execute(
+        _ENQUEUE_SQL,
+        tenant_id,
+        [e.model_dump(mode="json") for e in entries],
+    )
+    return int(str(status).split()[-1]) if status else 0
+
+
 class OutboxRepo(Repository):
     async def enqueue(
         self, tenant_id: str, entries: Sequence[NewOutboxEntry], *, conn: Optional[Connection] = None
@@ -87,12 +113,7 @@ class OutboxRepo(Repository):
         if not entries:
             return 0
         async with self._tenant(tenant_id, conn) as c:
-            status = await c.execute(
-                ENQUEUE_SQL,
-                tenant_id,
-                [e.model_dump(mode="json") for e in entries],
-            )
-        return int(status.split()[-1])
+            return await enqueue_on(c, tenant_id, entries)
 
     async def record_test(
         self,
