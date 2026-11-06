@@ -28,7 +28,7 @@ import httpx
 
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, egress_policy, system_resolve
-from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify, build_verify
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.settings import Settings
@@ -201,7 +201,7 @@ class IntegrationHttp:
                 return result
 
     def _backoff(self, attempt: int) -> float:
-        return min(8.0, 0.5 * (2**attempt)) * (0.5 + self._rand() / 2)
+        return exp_backoff(attempt, 0.5, 8.0, self._rand)
 
     async def _send(
         self,
