@@ -37,9 +37,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
 from lg_sotf.api.auth.mfa import MfaService
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import enqueue_resumes
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.routers.review import enqueue_resumes
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.pagination import API_MAX_LIMIT

@@ -19,6 +19,7 @@ from lg_sotf.db.repos._base import (
     to_model,
     to_models,
 )
+from lg_sotf.db.repos.alerts import ALERT_RULE_SQL
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.models.vocabulary import DECISIONS, ESCALATION_LEVELS, ESCALATION_STATUSES
 
@@ -103,6 +104,17 @@ def _list_filters(
         ref = params.add(alert_id)
         where.append(f"(alert_id = {ref} OR {ref} = ANY(related_alert_ids))" if include_attached else f"alert_id = {ref}")
     return where
+
+
+def _alert_filters(params: Params, *, source_id: Optional[str], rule: Optional[str]) -> List[str]:
+    """An EXISTS clause on the primary alert's source and rule (none when neither is given)."""
+    conds = ["a.tenant_id = escalations.tenant_id", "a.id = escalations.alert_id"]
+    if source_id is not None:
+        conds.append(f"a.source_id = {params.add(source_id)}")
+    if rule is not None:
+        conds.append(f"{ALERT_RULE_SQL} = {params.add(rule)}")
+    clause = f"EXISTS (SELECT 1 FROM alerts a WHERE {' AND '.join(conds)})"  # noqa: S608 (placeholders only)
+    return [clause] if len(conds) > 2 else []
 
 
 class Escalation(Record):
@@ -226,6 +238,8 @@ class EscalationsRepo(Repository):
         overdue_at: Optional[datetime] = None,
         alert_id: Optional[str] = None,
         include_attached: bool = False,
+        source_id: Optional[str] = None,
+        rule: Optional[str] = None,
         order: str = "created_at",
         limit: int = 50,
         cursor: Optional[str] = None,
@@ -239,7 +253,8 @@ class EscalationsRepo(Repository):
         ``overdue_at`` keeps active (open or claimed) ones whose deadline is before it.
         ``alert_id`` matches the escalation's primary alert; with ``include_attached`` it also
         matches escalations the alert was attached to (``related_alert_ids``), whose decision
-        resolved it too.
+        resolved it too. ``source_id`` and ``rule`` match the primary alert's source and detection rule
+        (:data:`~lg_sotf.db.repos.alerts.ALERT_RULE_SQL`), as console groups do.
         """
         check_limit(limit)
         check_choice(order, ESCALATION_ORDERS, "escalation order")
@@ -256,6 +271,7 @@ class EscalationsRepo(Repository):
             alert_id=alert_id,
             include_attached=include_attached,
         )
+        where += _alert_filters(params, source_id=source_id, rule=rule)
         if order == "sla_deadline":
             sort = f"COALESCE(sla_deadline, {params.add(NO_DEADLINE)}::timestamptz)"
             direction, compare = "ASC", ">"

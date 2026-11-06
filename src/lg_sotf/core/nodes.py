@@ -28,7 +28,6 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import routing
 from lg_sotf.domain.events import EventPublisher, publish_event
-from lg_sotf.domain.phishing import message_context
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
 from lg_sotf.errors import NodeTimeout
@@ -36,7 +35,8 @@ from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.services.escalation import EscalationService
-from lg_sotf.services.response import PlanContext, ResponseService, plan_entities
+from lg_sotf.services.plan_context import plan_context
+from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -431,33 +431,17 @@ class WorkflowNodes:
         analysis = state.get("analysis") or {}
         triage = state.get("triage") or {}
         analyst = state.get("analyst") or {}
-        mitre = alert.get("mitre") if isinstance(alert.get("mitre"), Mapping) else {}
-        threat_texts = [str(analysis.get("conclusion") or ""), *[str(c) for c in triage.get("threat_categories") or []]]
-        for key in ("tactics", "techniques"):
-            threat_texts.extend(str(v) for v in (mitre or {}).get(key) or [] if isinstance(v, (str, int)))
         # An inherited group decision (attached alert) never pre-approves this alert's actions.
         is_tp = analyst.get("decision") == "true_positive" and not analyst.get("inherited_from")
-        targets = analysis.get("corroborated_targets")
-        corroborated = (
-            frozenset((str(t[0]), str(t[1])) for t in targets if isinstance(t, (list, tuple)) and len(t) == 2)
-            if isinstance(targets, list)
-            else None
-        )
-        entities = alert.get("entities") if isinstance(alert.get("entities"), Mapping) else {}
-        ctx = PlanContext(
+        ctx = plan_context(
+            alert,
             severity=state["severity"],
             evidence=self._evidence(state),  # type: ignore[arg-type]
-            title=str(alert.get("title", "")),
-            category=alert.get("category"),
-            entities=plan_entities(alert),
-            recommended_actions=list(analysis.get("recommended_actions") or []),
-            threat_texts=threat_texts,
+            analysis=analysis,
+            triage=triage,
             approved_actions=list(analyst.get("approved_actions") or []) if is_tp else [],
             approved_by=str(analyst.get("decided_by")) if is_tp and analyst.get("decided_by") else None,
             approver_role=analyst.get("approver_role") if is_tp else None,
-            corroborated_targets=corroborated,
-            hosts=[str(h) for h in (entities or {}).get("hosts") or [] if isinstance(h, str)],
-            message=message_context(alert),
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
         await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))

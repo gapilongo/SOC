@@ -34,7 +34,7 @@ def make_escalation(**kw: Any) -> Escalation:
 def digest(**kw: Any) -> AlertDigest:
     base: Dict[str, Any] = dict(
         id="a1", severity="high", title="Unusual sign-in", fingerprint="fp", source_id="entra", source_name="Entra ID",
-        rule_name=None, entities={"users": ["j.doe@example.com"], "ips": ["203.0.113.4"]},
+        rule="Unusual sign-in", entities={"users": ["j.doe@example.com"], "ips": ["203.0.113.4"]},
     )
     base.update(kw)
     return AlertDigest(**base)
@@ -51,7 +51,7 @@ def test_escalation_view_joins_owner_alert_and_summary() -> None:
             "routing": {"code": "grey_zone", "confidence": 42, "band": {"min": 30, "max": 70}},
         },
     )
-    view = escalation_view(escalation, {owner: "owner@example.com"}, digest(rule_name="Unusual sign-in pattern"))
+    view = escalation_view(escalation, {owner: "owner@example.com"}, digest(rule="Unusual sign-in pattern"))
     assert view.assigned_to_email == "owner@example.com"
     assert view.decided_by_email is None  # a user who no longer exists
     assert (view.rule, view.source_id, view.source_name, view.alert_severity) == (
@@ -71,7 +71,6 @@ def test_escalation_view_of_an_older_escalation_leaves_unknowns_empty() -> None:
     assert view.rule is None and view.entities_preview is None and view.routing is None
     assert view.ai_reason == "Rules only." and view.ai_reason_source is None
     assert escalation_view(make_escalation(summary={"llm_used": False}), {}, digest()).ai_reason_source is None
-    assert digest(rule_name="  ").rule == "Unusual sign-in"
 
 
 @pytest.mark.parametrize(

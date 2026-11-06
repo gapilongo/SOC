@@ -7,7 +7,7 @@ enqueues work; it never runs a workflow in-process (contract section 1).
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, FastAPI
@@ -38,6 +38,7 @@ from lg_sotf.api.routers import (
     sources,
     suppressions,
     tenant,
+    triage,
     ws,
 )
 from lg_sotf.db.pool import Database
@@ -119,6 +120,35 @@ async def close_context(ctx: ApiContext) -> None:
     await ctx.db.close()
 
 
+def api_routers() -> Tuple[APIRouter, ...]:
+    """The ``/api/v1`` routers, in matching order (the first route that matches a path wins)."""
+    return (
+        auth.router,
+        mfa.router,
+        ingest.router,
+        alerts.router,
+        # Before review.escalations: /escalations/groups and /escalations/bulk/... are not escalation ids.
+        triage.router,
+        review.escalations,
+        review.actions,
+        sources.router,
+        suppressions.router,
+        identity.users,
+        identity.api_keys,
+        tenant.router,
+        dashboard.dashboard,
+        dashboard.usage,
+        audit.router,
+        platform.router,
+        onboarding.router,
+        compliance.alerts,
+        compliance.platform,
+        integrations.router,
+        integrations.tickets,
+        reports.router,
+    )
+
+
 def create_app(
     settings: Optional[Settings] = None,
     *,
@@ -164,29 +194,7 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for router in (
-        auth.router,
-        mfa.router,
-        ingest.router,
-        alerts.router,
-        review.escalations,
-        review.actions,
-        sources.router,
-        suppressions.router,
-        identity.users,
-        identity.api_keys,
-        tenant.router,
-        dashboard.dashboard,
-        dashboard.usage,
-        audit.router,
-        platform.router,
-        onboarding.router,
-        compliance.alerts,
-        compliance.platform,
-        integrations.router,
-        integrations.tickets,
-        reports.router,
-    ):
+    for router in api_routers():
         api.include_router(router)
     app.include_router(health.router)
     app.include_router(health.metrics_router)

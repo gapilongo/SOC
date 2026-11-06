@@ -168,8 +168,9 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/alerts`, `/alerts/counts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
-| GET | `/escalations`, `/escalations/{id}` | viewer / `read` |
-| POST | `/escalations/{id}/claim`, `/escalations/{id}/decision` | analyst (user account) |
+| GET | `/escalations`, `/escalations/{id}`, `/escalations/groups`, `/escalations/{id}/response-preview` | viewer / `read` |
+| POST | `/escalations/{id}/claim`, `/escalations/{id}/decision`, `/escalations/bulk/claim`, `/escalations/bulk/close` | analyst (user account) |
+| POST | `/escalations/bulk/propose-suppression` (creates a disabled rule) | analyst / `write` |
 | GET | `/actions`, `/actions/{id}` | viewer / `read` |
 | POST | `/actions/{id}/approve`, `/actions/{id}/reject` | analyst (low/medium), admin (high/critical) |
 | POST | `/actions/{id}/rollback` `{reason, approve?}` (201; 409 `rollback_unavailable` with `details[0].reason`), `/actions/{id}/retry` `{reason}` (failed Microsoft actions without a rollback; 409 `retry_unavailable`/`guardrail_blocked`/`cap_reached`), `/actions/{id}/verify` (409 not applicable, 429 within 5 minutes); docs/microsoft.md | analyst (user account); retry: the role that may approve the action's risk |
@@ -273,6 +274,46 @@ window.
   (`{min, max}`, `routing.correlation_grey_zone_min`..`_max`). Escalations
   opened before this was recorded have `routing` and `ai_reason_source`
   null.
+* `GET /escalations/groups?assigned_to=&min_size=2&limit=50` groups the open
+  and claimed escalations by their alert's `source_id` and `rule`, largest
+  first (at most 100 groups; `truncated` says more matched): `{source_id,
+  source_name, rule, size, unassigned, overdue, earliest_sla_deadline,
+  min_confidence, max_confidence, by_severity, escalation_ids}` (up to 10
+  ids, soonest deadline first). `GET /escalations?source_id=&rule=` lists a
+  group's escalations.
+* Bulk triage takes at most 50 escalations, each once (422 otherwise).
+  `POST /escalations/bulk/claim` `{"items": [{"escalation_id", "version"}]}`
+  and `POST /escalations/bulk/close` `{"items", "notes", "decision"?:
+  "false_positive"|"benign_positive", "propose_suppression"?}` run the
+  single-escalation claim or decision for each item, in order, each in its
+  own transaction and audited the same way, and answer 200 with per-item
+  results: `{results: [{escalation_id, ok, escalation, error: {status,
+  code, message}, resumes_enqueued, resumes_failed}], succeeded, failed,
+  suppression, suppression_created}`. An item's `error` is what the
+  single endpoint would have answered (404 `not_found`, 409 `conflict` for
+  a stale version, 409 `invalid_transition`, 403 `forbidden`); the other
+  items still go through and committed items stay committed. With
+  `propose_suppression`, one disabled rule is proposed from the closed
+  escalations (no per-escalation suggestion is made).
+* `POST /escalations/bulk/propose-suppression` `{"escalation_ids", "name"?}`
+  is all or nothing: 404 when an escalation is not found, 422
+  `not_confirmed_benign` (`details` lists them) when one has no
+  `false_positive` or `benign_positive` decision. Otherwise one disabled rule
+  matching the alerts' fingerprints and sources, up to the most severe of
+  their severities: 201 `{suppression, created: true, escalation_ids}`, or
+  200 with the unexpired rule that already has the same match.
+* `GET /escalations/{id}/response-preview` computes the plan a
+  `true_positive` decision would produce, without writing anything or
+  calling a connector: `{escalation_id, alert_id, generated_at,
+  threat_type, evidence: "analyst", dry_run_forced, actions: [{action_type,
+  target, description, risk, reversible, inverse_action, irreversible_note,
+  connector: {name, source, live, ready}, guardrail: {verdict, code,
+  reason}, autonomy, without_preapproval: "automatic"|"awaiting_approval"|
+  "blocked", can_preapprove, role_lock: null|"admin"|"disabled",
+  approval_entry}]}`. `can_preapprove` and `role_lock` are for the caller's
+  role; `approval_entry` is the `approved_actions` entry for that action.
+  The final plan is computed from the alert as it is when the decision is
+  recorded.
 * Claim and decision bodies carry the escalation's `version`; a stale
   version is `409 conflict` (re-read and retry). Decisions on escalations
   whose SLA expired are accepted and audited with `after_sla_expiry`.
