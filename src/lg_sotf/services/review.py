@@ -565,9 +565,9 @@ class ReviewService:
                     conn=tx,
                 )
         if reuse_existing:
-            for existing in await self._repos.suppressions.list(tenant_id, include_disabled=True, conn=conn):
-                if existing.match == dict(match) and (existing.expires_at is None or existing.expires_at > now):
-                    return existing, False
+            existing = await self._repos.suppressions.find_reusable(tenant_id, match, now, conn=conn)
+            if existing is not None:
+                return existing, False
         rule = await self._repos.suppressions.create(
             tenant_id,
             name[:200],

@@ -197,6 +197,22 @@ class TestActionLedger:
 
 
 class TestSuppressions:
+    async def test_find_reusable_is_the_newest_unexpired_rule_with_that_match(self, repos: Repositories) -> None:
+        match = {"title": "scan", "source_ip": {"cidr": "10.9.0.0/16"}}
+        same = {"source_ip": {"cidr": "10.9.0.0/16"}, "title": "scan"}
+        assert await repos.suppressions.find_reusable(TENANT_A, match, T0) is None
+        await repos.suppressions.create(TENANT_A, "expired", match, expires_at=T0 - timedelta(seconds=1))
+        older = await repos.suppressions.create(TENANT_A, "older", match, expires_at=T0 + timedelta(days=1))
+        newer = await repos.suppressions.create(TENANT_A, "newer", match, enabled=False)
+        await repos.suppressions.create(TENANT_A, "other", {"title": "scan"})
+        await repos.suppressions.create(TENANT_B, "elsewhere", match)
+        found = await repos.suppressions.find_reusable(TENANT_A, same, T0)
+        assert found is not None and found.id == newer.id and not found.enabled
+        await repos.suppressions.delete(TENANT_A, newer.id)
+        found = await repos.suppressions.find_reusable(TENANT_A, match, T0)
+        assert found is not None and found.id == older.id
+        assert await repos.suppressions.find_reusable(TENANT_A, match, T0 + timedelta(days=2)) is None
+
     async def test_crud_active_and_hits(self, repos: Repositories) -> None:
         live = await repos.suppressions.create(TENANT_A, "scanner", {"source_ip": {"cidr": "10.9.0.0/16"}})
         expired = await repos.suppressions.create(TENANT_A, "old", {"title": "x"}, expires_at=T0 - timedelta(days=1))

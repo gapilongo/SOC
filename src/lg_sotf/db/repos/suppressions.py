@@ -102,6 +102,25 @@ class SuppressionsRepo(Repository):
             )
         return to_models(SuppressionRule, rows)
 
+    async def find_reusable(
+        self, tenant_id: str, match: Mapping[str, Any], now: datetime, *, conn: Optional[Connection] = None
+    ) -> Optional[SuppressionRule]:
+        """The newest unexpired rule (enabled or not) whose ``match`` equals this one, else ``None``."""
+        require_aware(now, "now")
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                """
+                SELECT * FROM suppression_rules
+                WHERE tenant_id = $1 AND match = $2::jsonb AND (expires_at IS NULL OR expires_at > $3)
+                ORDER BY created_at DESC, id
+                LIMIT 1
+                """,
+                tenant_id,
+                dict(match),
+                now,
+            )
+        return to_model(SuppressionRule, row)
+
     async def list_active(
         self, tenant_id: str, *, now: Optional[datetime] = None, conn: Optional[Connection] = None
     ) -> List[SuppressionRule]:
