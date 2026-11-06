@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from lg_sotf.db.pagination import check_limit
 from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware, to_models, truncate
 
 MAX_DISPLAY_CHARS = 256
 MAX_QUERY_INDICATORS = 500
+MAX_RELATED_ALERTS = 500
 
 Sighting = Tuple[str, str, Optional[str], datetime]
 """``(indicator_type, value_hash, value_display, seen_at)``."""
@@ -89,8 +91,7 @@ class IndicatorsRepo(Repository):
         """
         require_aware(since, "since")
         require_aware(until, "until")
-        if limit < 1 or limit > 500:
-            raise ValueError("limit must be between 1 and 500")
+        check_limit(limit, MAX_RELATED_ALERTS)
         unique = list(dict.fromkeys(indicators))[:MAX_QUERY_INDICATORS]
         if not unique:
             return []

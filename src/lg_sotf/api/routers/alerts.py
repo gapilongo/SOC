@@ -15,6 +15,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
+from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
@@ -22,7 +23,6 @@ from lg_sotf.services import alerts as alert_changes
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-MAX_LIMIT = 200
 
 
 def aware(value: Optional[datetime]) -> Optional[datetime]:
@@ -45,7 +45,7 @@ async def list_alerts(
     since: Optional[datetime] = Query(default=None, alias="from"),
     until: Optional[datetime] = Query(default=None, alias="to"),
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=50, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[AlertOut]:
     ctx = get_ctx(request)
@@ -86,7 +86,7 @@ async def alert_events(
     alert_id: str,
     request: Request,
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=100, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=100, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[AlertEventOut]:
     page = await alert_changes.timeline(

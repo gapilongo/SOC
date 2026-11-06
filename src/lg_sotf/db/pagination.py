@@ -20,6 +20,8 @@ from lg_sotf.db.errors import InvalidCursor
 T = TypeVar("T")
 
 MAX_PAGE_SIZE = 500
+# The largest page an API list endpoint serves (its ``limit`` query parameter's maximum).
+API_MAX_LIMIT = 200
 _CURSOR_VERSION = 1
 
 

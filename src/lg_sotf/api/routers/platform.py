@@ -52,7 +52,9 @@ from lg_sotf.api.routers.identity import check_password
 from lg_sotf.api.schemas import In, Out, PageOut, UserOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
+from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import Tenant, TenantStats
+from lg_sotf.db.repos.runs import MAX_QUEUED_LISTED
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
 from lg_sotf.observability.logging import get_logger
@@ -74,7 +76,7 @@ router = APIRouter(prefix="/platform", tags=["platform"])
 
 MAX_ALERTS_PER_DAY = 1_000_000_000
 MAX_COUNT_QUOTA = 1_000_000
-REQUEUE_LIMIT = 10_000
+REQUEUE_LIMIT = MAX_QUEUED_LISTED
 REQUEUE_CHUNK = 500
 _MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _CSV_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
@@ -387,7 +389,7 @@ async def update_tenant(
 async def list_escalations(
     request: Request,
     tenant_id: Optional[str] = Query(default=None, pattern=TENANT_ID_PATTERN),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     cursor: Optional[str] = Query(default=None, max_length=512),
     principal: Principal = Depends(require(PLATFORM_ADMIN)),
 ) -> PageOut[PlatformEscalationOut]:

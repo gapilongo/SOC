@@ -21,10 +21,9 @@ from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.alerts import aware
 from lg_sotf.api.schemas import Out, PageOut
+from lg_sotf.db.pagination import API_MAX_LIMIT
 
 router = APIRouter(prefix="/audit", tags=["audit"])
-
-MAX_LIMIT = 200
 
 
 class AuditEntryOut(Out):
@@ -57,7 +56,7 @@ async def list_audit(
     since: Optional[datetime] = Query(default=None, alias="from"),
     until: Optional[datetime] = Query(default=None, alias="to"),
     cursor: Optional[str] = Query(default=None, max_length=512),
-    limit: int = Query(default=100, ge=1, le=MAX_LIMIT),
+    limit: int = Query(default=100, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(ADMIN)),
 ) -> PageOut[AuditEntryOut]:
     since, until = aware(since), aware(until)

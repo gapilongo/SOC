@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple
 
 from lg_sotf.db.errors import InvalidTransition, LeaseLost, NotFound, RunNotClaimable
+from lg_sotf.db.pagination import check_limit
 from lg_sotf.db.repos._base import (
     Connection,
     Record,
@@ -22,6 +23,8 @@ from lg_sotf.models.vocabulary import RUN_STATUSES as RUN_STATUSES
 from lg_sotf.models.vocabulary import TERMINAL_RUN_STATUSES, WAITING_RUN_STATUSES
 
 MAX_ERROR_CHARS = 4_000
+# Most queued runs list_queued returns at once (a reactivation requeues at most this many).
+MAX_QUEUED_LISTED = 10_000
 
 ClaimKind = Literal["process", "resume"]
 # ``running`` is claimable only once its lease has expired (the holder died).
@@ -141,8 +144,7 @@ class RunsRepo(Repository):
         self, tenant_id: str, *, limit: int = 1_000, conn: Optional[Connection] = None
     ) -> List[Tuple[str, str]]:
         """``(alert_id, severity)`` of the tenant's queued runs, oldest first (re-enqueue after a reactivation)."""
-        if limit < 1:
-            raise ValueError("limit must be >= 1")
+        check_limit(limit, MAX_QUEUED_LISTED)
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(
                 """
