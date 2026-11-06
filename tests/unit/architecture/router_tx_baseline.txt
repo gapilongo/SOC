@@ -3,7 +3,6 @@
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
 api/auth/authenticate.py::_provision
-api/routers/dashboard.py::_compute
 api/routers/identity.py::delete_user
 api/routers/identity.py::reset_user_mfa
 api/routers/identity.py::update_user
