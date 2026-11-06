@@ -45,8 +45,8 @@ describe('links', () => {
     );
   });
 
-  it('opens an escalation at its alert and filters alerts', () => {
-    expect(escalationHref({ alert_id: 'a/1' })).toBe('/alerts?alert=a%2F1');
+  it('opens an escalation on its decision page and filters alerts', () => {
+    expect(escalationHref({ id: 'e/1' })).toBe('/escalations/e%2F1');
     expect(alertsHref({ severity: 'high', from: '2026-11-05T12:00:00Z', q: undefined })).toBe(
       '/alerts?severity=high&from=2026-11-05T12%3A00%3A00Z',
     );

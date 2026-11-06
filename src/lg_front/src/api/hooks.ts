@@ -81,12 +81,12 @@ export function useAlertCounts(window: AlertCountsWindow = {}, opts: PollOptions
   });
 }
 
-/** The escalation queue, keyset-paged ("Load more", bounded refetch). */
-export function useEscalationList(filters: EscalationFilters, opts: PollOptions = {}) {
+/** The escalation queue, keyset-paged ("Load more", bounded refetch); `limit` rows per page (default PAGE_SIZE). */
+export function useEscalationList(filters: EscalationFilters, opts: PollOptions & { limit?: number } = {}) {
   const api = useApi();
   return useKeysetList<EscalationOut>({
     queryKey: qk.escalations.list(filters),
-    fetchPage: (cursor, signal) => endpoints.escalations(api, filters, cursor, signal),
+    fetchPage: (cursor, signal) => endpoints.escalations(api, filters, cursor, signal, opts.limit),
     itemKey: (e) => e.id,
     enabled: opts.enabled,
     refetchInterval: opts.refetchInterval,

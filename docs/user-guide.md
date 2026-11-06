@@ -204,8 +204,8 @@ Under **Integrations**, send escalations, SLA breaches, pending approvals and
 action outcomes to Slack, Microsoft Teams (Workflows), email or a signed
 webhook, and open a Jira or ServiceNow ticket for each escalation. Choose the
 events and the minimum severity, use **Test**, and check the **Log** for
-failed deliveries. Linked tickets appear in the alert drawer and on
-escalation cards. See [integrations.md](integrations.md) for each tool's setup.
+failed deliveries. Linked tickets appear in the alert drawer and on the
+escalation decision page. See [integrations.md](integrations.md) for each tool's setup.
 
 ### Set the response policy
 

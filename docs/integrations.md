@@ -286,7 +286,7 @@ created with the Table API; `urgency`/`impact` follow the alert severity.
   SOC-7 done by Jo Analyst*). **The escalation is never decided from ticket
   state**: an analyst decides it in LG-SOTF.
 
-Ticket links appear in the alert drawer and on the escalation cards
+Ticket links appear in the alert drawer and on the escalation decision page
 (`GET /api/v1/tickets?alert_id=` or `?escalation_id=`, viewer role).
 
 ## API
