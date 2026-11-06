@@ -92,7 +92,7 @@ truststore==0.10.4
 typing-extensions==4.16.0
 typing-inspection==0.4.4
 urllib3==2.8.0
-uuid-utils==0.17.1
+uuid-utils==1.0.0
 uvicorn==0.54.0
 uvloop==0.22.1
 watchfiles==1.3.0
