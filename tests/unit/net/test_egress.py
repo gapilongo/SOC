@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import List
+from typing import Any, Callable, Dict, List
 
 import httpx
 import pytest
 
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.net.egress import REFUSED_MESSAGE, DestinationPolicy, DestinationRefused, GuardedTransport
+from lg_sotf.ingestion.options import IngestionOptions
+from lg_sotf.integrations.http import IntegrationHttp
+from lg_sotf.integrations.microsoft.http import MicrosoftHttpFactory
+from lg_sotf.net.egress import REFUSED_MESSAGE, DestinationPolicy, DestinationRefused, GuardedTransport, egress_policy
+from lg_sotf.services.connectors.registry import ConnectorRegistry
+from lg_sotf.settings import Settings
 from tests.unit.ingestion._support import MapResolver
 
 STRICT = DestinationPolicy(require_https=True)
@@ -91,3 +96,48 @@ async def test_dns_rebinding_to_metadata_is_refused_per_request() -> None:
         with pytest.raises(DestinationRefused):
             await client.get("https://siem.example.com/")
     assert len(inner.requests) == 1
+
+
+# --- egress_policy: the one lenient reader of ingestion.allow_private_destinations (F4, ADR-0007) ---
+
+
+def test_egress_policy_defaults_refuse_private_destinations(make_settings: Callable[..., Settings]) -> None:
+    assert egress_policy(make_settings()) == DestinationPolicy(require_https=False, allow_private=False)
+
+
+def test_egress_policy_reads_allow_private_destinations(make_settings: Callable[..., Settings]) -> None:
+    assert egress_policy(make_settings(ingestion={"allow_private_destinations": True})).allow_private is True
+    # The section is free-form YAML/env text: "true" is read as true, as every ingestion reader does.
+    assert egress_policy(make_settings(ingestion={"allow_private_destinations": "true"})).allow_private is True
+
+
+def test_egress_policy_fails_closed_on_an_invalid_section(make_settings: Callable[..., Settings]) -> None:
+    # An unrelated invalid key refuses private destinations, without raising.
+    settings = make_settings(ingestion={"allow_private_destinations": True, "batch_size": 0})
+    assert egress_policy(settings).allow_private is False
+    assert egress_policy(make_settings(ingestion={"allow_private_destinations": "maybe"})).allow_private is False
+    # Pull sources read the same section strictly and refuse to run.
+    with pytest.raises(SourceConfigError, match="batch_size"):
+        IngestionOptions.from_settings(settings)
+
+
+def test_egress_policy_requires_https_in_production(make_settings: Callable[..., Settings]) -> None:
+    prod = make_settings(environment="production", ingestion={"allow_private_destinations": True})
+    assert egress_policy(prod) == DestinationPolicy(require_https=True, allow_private=True)
+    assert egress_policy(make_settings(environment="staging")).require_https is True
+    assert egress_policy(make_settings()).require_https is False
+    # An explicit require_https (Microsoft Graph) wins over the environment; allow_private is still the install's.
+    dev = make_settings(ingestion={"allow_private_destinations": True})
+    assert egress_policy(dev, require_https=True) == DestinationPolicy(require_https=True, allow_private=True)
+
+
+@pytest.mark.parametrize("ingestion", [{}, {"allow_private_destinations": True}, {"batch_size": 0}])
+@pytest.mark.parametrize("environment", ["development", "production"])
+def test_every_integration_client_uses_egress_policy(
+    make_settings: Callable[..., Settings], environment: str, ingestion: Dict[str, Any]
+) -> None:
+    settings = make_settings(environment=environment, ingestion=ingestion)
+    expected = egress_policy(settings)
+    assert IntegrationHttp(settings).policy == expected
+    assert ConnectorRegistry(settings)._policy == expected
+    assert MicrosoftHttpFactory(settings)._policy == egress_policy(settings, require_https=True)

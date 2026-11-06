@@ -27,8 +27,7 @@ from typing import Any, Awaitable, Callable, Mapping, Optional
 import httpx
 
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.ingestion.options import IngestionOptions
-from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, egress_policy, system_resolve
 from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify, build_verify
 from lg_sotf.security.redaction import redact_text
@@ -90,14 +89,6 @@ def error_snippet(body: bytes) -> str:
     return text[:MAX_ERROR_BODY_CHARS]
 
 
-def destination_policy(settings: Settings) -> DestinationPolicy:
-    try:
-        allow_private = IngestionOptions.from_settings(settings).allow_private_destinations
-    except SourceConfigError:
-        allow_private = False
-    return DestinationPolicy(require_https=settings.is_production, allow_private=allow_private)
-
-
 def tls_verify(config: Mapping[str, Any], *, contexts: TlsContexts = PROCESS_TLS) -> Verify:
     """System CAs, plus the integration's own ``ca_cert_pem`` (private CA of an on-prem Jira/ServiceNow)."""
     pem = config.get("ca_cert_pem")
@@ -122,7 +113,7 @@ class IntegrationHttp:
         rand: Callable[[], float] = random.random,
         tls: TlsContexts = PROCESS_TLS,
     ) -> None:
-        self._policy = destination_policy(settings)
+        self._policy = egress_policy(settings)
         self._tls = tls
         self._transport = transport
         self._resolver = resolver or system_resolve

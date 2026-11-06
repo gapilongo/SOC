@@ -272,9 +272,6 @@ ignore_imports = [
     "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
     # C6 action catalog to domain/actions.py
     "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
-    # F4 one reader of allow_private_destinations (net.egress.egress_policy replaces IngestionOptions here)
-    "lg_sotf.integrations.http -> lg_sotf.ingestion.options",
-    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.options",
     # F7 one owner-DSN helper / D2 atomic provisioning
     "lg_sotf.compliance.ops -> lg_sotf.runtime.ops",
     # ADR-0001 accepted: lazy import inside Settings.production_problems

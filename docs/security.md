@@ -172,6 +172,10 @@ Details and the endpoint/role matrix: `docs/api.md`.
   always refused; private ranges only when the install sets
   `ingestion.allow_private_destinations`; the connection is pinned to the
   checked address (no DNS rebinding) while TLS still verifies the host name.
+  Integrations, response webhooks and Microsoft Graph use the same policy
+  (`lg_sotf.net.egress.egress_policy`; Graph is HTTPS in every environment).
+  If the `ingestion` section is invalid, pull sources refuse to run and the
+  others refuse private ranges (ADR-0007).
 * **Response webhooks**: HMAC-SHA256 signed (`X-LGSOTF-Signature` over
   timestamp and body), with an idempotency key per action; receivers must
   verify the signature and reject stale timestamps.

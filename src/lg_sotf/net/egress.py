@@ -32,6 +32,7 @@ from typing import Awaitable, Callable, List, Optional, Sequence, Tuple, Union
 import httpx
 
 from lg_sotf.errors import SourceConfigError
+from lg_sotf.settings import IngestionSection, Settings
 
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
 Resolver = Callable[[str, int], Awaitable[Sequence[str]]]
@@ -118,6 +119,27 @@ class DestinationPolicy:
     async def check(self, url: Union[str, httpx.URL], resolver: Resolver) -> None:
         host, port = self.check_url(url)
         await self.resolve_allowed(host, port, resolver)
+
+
+def egress_policy(settings: Settings, *, require_https: Optional[bool] = None) -> DestinationPolicy:
+    """The install's destination policy for integrations, webhooks and Microsoft Graph.
+
+    ``require_https`` defaults to ``settings.is_production``. Private
+    destinations follow ``ingestion.allow_private_destinations``, read
+    leniently: if the ``ingestion`` section is invalid (any key, not only this
+    one) they are refused, and no error is raised, so a typo in an unrelated
+    ingestion limit fails closed instead of stopping the API or the scheduler.
+    Pull sources read the section strictly through
+    :class:`~lg_sotf.ingestion.options.IngestionOptions` instead (ADR-0007).
+    """
+    try:
+        allow_private = IngestionSection.model_validate(settings.ingestion or {}).allow_private_destinations
+    except ValueError:  # pydantic's ValidationError; net does not import pydantic itself
+        allow_private = False
+    return DestinationPolicy(
+        require_https=settings.is_production if require_https is None else require_https,
+        allow_private=allow_private,
+    )
 
 
 def ip_literal(value: str) -> Optional[IPAddress]:
