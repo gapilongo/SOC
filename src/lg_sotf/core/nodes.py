@@ -87,6 +87,8 @@ def _escalation_summary(state: WorkflowState) -> Dict[str, Any]:
         "conclusion": str(analysis.get("conclusion") or "")[:1_000],
         "simulated_evidence": bool(analysis.get("simulated_evidence")),
         "recommended_actions": list(analysis.get("recommended_actions") or [])[:10],
+        # Whether ``conclusion`` was written by the model (else by the rules); unknown without an analysis.
+        "llm_used": analysis["llm_used"] if isinstance(analysis.get("llm_used"), bool) else None,
     }
 
 
@@ -302,6 +304,7 @@ class WorkflowNodes:
             else:
                 decision["reason"] = "automatic response left the threat without a human or a completed action"
             decision["code"] = "response_review"
+        code = str(decision.get("code") or "inconclusive")
         ticket = await self.deps.escalations.open_or_attach(
             tenant_id,
             alert_id,
@@ -309,8 +312,11 @@ class WorkflowNodes:
             confidence=confidence,
             threat_score=float(analysis.get("threat_score", confidence)),
             reason=str(decision.get("reason") or "analyst review required"),
-            reason_code=str(decision.get("code") or "inconclusive"),
-            summary=_escalation_summary(state),
+            reason_code=code,
+            summary={
+                **_escalation_summary(state),
+                "routing": routing.routing_digest(code, confidence, self.deps.thresholds),
+            },
             correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
             fingerprint=state.get("fingerprint") or None,
         )
@@ -369,7 +375,10 @@ class WorkflowNodes:
             severity=state["severity"],
             confidence=confidence,
             threat_score=float(analysis.get("threat_score", confidence)),
-            summary=_escalation_summary(state),
+            summary={
+                **_escalation_summary(state),
+                "routing": routing.routing_digest("group_review", confidence, self.deps.thresholds),
+            },
         )
         if ticket.created:
             await self.deps.repos.alerts.update(

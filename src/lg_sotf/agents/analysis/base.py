@@ -48,6 +48,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, Field
@@ -422,6 +423,16 @@ def upstream_refusal(triage: Mapping[str, Any], correlation: Mapping[str, Any]) 
     return None
 
 
+def history_digests(
+    history: Sequence[Tuple[Indicator, EnrichmentResult]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """The history lookups for the model's prompt, and for the stored digest, which also says when they were
+    made (``checked_at``; the prompt carries no clock)."""
+    checked = datetime.now(UTC).isoformat()
+    prompt = [{"kind": ind.type, "value": _display(ind.value), **res.as_dict()} for ind, res in history]
+    return prompt, [{**entry, "checked_at": checked} for entry in prompt]
+
+
 def evidence_indicators(history: Sequence[Tuple[Indicator, EnrichmentResult]], observations: Sequence[Any]) -> List[str]:
     out: List[str] = []
     if any(r.status == "ok" and r.verdict == "malicious" for _, r in history):
@@ -508,9 +519,7 @@ class AnalysisAgent(BaseAgent):
         analyst_notes: Optional[str],
     ) -> AnalysisResult:
         history = await self.history(ctx, alert)
-        history_digest = [
-            {"kind": ind.type, "value": _display(ind.value), **res.as_dict()} for ind, res in history
-        ]
+        history_digest, history_stored = history_digests(history)
         threshold = RoutingThresholds.from_settings(ctx.settings.routing).response_threshold
         email_evidence = evidence_from_triage(triage)
         base_indicators = rule_threat_indicators(alert, correlation, evidence_indicators(history, ()) + email_evidence)
@@ -585,7 +594,7 @@ class AnalysisAgent(BaseAgent):
             "llm_calls": run.llm_calls,
             "stop_reason": run.stop_reason,
             "observations": observations,
-            "history": history_digest,
+            "history": history_stored,
             "reasoning": run.thoughts,
             "notes": run.notes,
         }

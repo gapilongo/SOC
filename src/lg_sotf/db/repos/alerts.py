@@ -53,6 +53,12 @@ _LIST_COLUMNS = (
     "disposition, confidence, threat_score, priority, assigned_to, occurred_at, ingested_at, "
     "updated_at, closed_at, summary, case_key"
 )
+# What a list row shows besides its columns: the source's name (NULL once the source is deleted)
+# and the normalized entities (``entities_preview``).
+_ROW_EXTRAS = (
+    "(SELECT s.name FROM sources s WHERE s.tenant_id = alerts.tenant_id AND s.id = alerts.source_id) AS source_name, "
+    "COALESCE(normalized->'entities', '{}'::jsonb) AS entities"
+)
 _STRANDED_NEW_SQL = """
 SELECT a.tenant_id, a.id AS alert_id, a.severity
 FROM alerts a
@@ -152,6 +158,9 @@ class AlertListItem(Record):
     closed_at: Optional[datetime]
     summary: Dict[str, Any]
     case_key: Optional[str]
+    #: Read by ``list`` and ``get`` only (rows returned by writes leave them empty).
+    source_name: Optional[str] = None
+    entities: Dict[str, Any] = Field(default_factory=dict)
 
 
 class Alert(AlertListItem):
@@ -246,7 +255,11 @@ class AlertsRepo(Repository):
 
     async def get(self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None) -> Alert:
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow("SELECT * FROM alerts WHERE tenant_id = $1 AND id = $2", tenant_id, alert_id)
+            row = await c.fetchrow(
+                f"SELECT *, {_ROW_EXTRAS} FROM alerts WHERE tenant_id = $1 AND id = $2",  # noqa: S608 (constants)
+                tenant_id,
+                alert_id,
+            )
         alert = to_model(Alert, row)
         if alert is None:
             raise NotFound("alert", alert_id)
@@ -264,11 +277,14 @@ class AlertsRepo(Repository):
         q: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
+        closed_from: Optional[datetime] = None,
+        closed_to: Optional[datetime] = None,
         limit: int = 50,
         cursor: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> Page[AlertListItem]:
-        """Newest first by (ingested_at, id); ``since``/``until`` bound ``ingested_at``.
+        """Newest first by (ingested_at, id); ``since``/``until`` bound ``ingested_at``,
+        ``closed_from``/``closed_to`` bound ``closed_at`` (so only closed alerts match them).
 
         ``q`` is a case-insensitive substring match on the title. A ``q``
         search always has a time window: without ``since`` it covers
@@ -278,6 +294,8 @@ class AlertsRepo(Repository):
         check_limit(limit)
         require_aware(since, "since")
         require_aware(until, "until")
+        require_aware(closed_from, "closed_from")
+        require_aware(closed_to, "closed_to")
         if q is not None:
             q = q.strip()[:MAX_QUERY_CHARS]
         if q:
@@ -307,11 +325,15 @@ class AlertsRepo(Repository):
             where.append(f"ingested_at >= {params.add(since)}")
         if until is not None:
             where.append(f"ingested_at < {params.add(until)}")
+        if closed_from is not None:
+            where.append(f"closed_at >= {params.add(closed_from)}")
+        if closed_to is not None:
+            where.append(f"closed_at < {params.add(closed_to)}")
         if cursor:
             ts, key = decode_cursor_text(cursor)
             where.append(f"(ingested_at, id) < ({params.add(ts)}, {params.add(key)})")
         sql = (
-            f"SELECT {_LIST_COLUMNS} FROM alerts WHERE {' AND '.join(where)} "  # noqa: S608
+            f"SELECT {_LIST_COLUMNS}, {_ROW_EXTRAS} FROM alerts WHERE {' AND '.join(where)} "  # noqa: S608
             f"ORDER BY ingested_at DESC, id DESC LIMIT {params.add(limit + 1)}"
         )
         async with self._tenant(tenant_id, conn) as c:

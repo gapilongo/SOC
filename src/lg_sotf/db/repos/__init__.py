@@ -46,6 +46,7 @@ from lg_sotf.db.repos.tickets import ExternalTicket, TicketsRepo
 from lg_sotf.db.repos.usage import UsageDay, UsageRepo
 from lg_sotf.db.repos.user_mfa import UserMfa, UserMfaRepo
 from lg_sotf.db.repos.users import User, UsersRepo
+from lg_sotf.db.repos.views import AlertDigest, EscalationQueue, ViewsRepo
 
 
 @dataclass(frozen=True)
@@ -75,6 +76,7 @@ class Repositories:
     outbox: OutboxRepo
     tickets: TicketsRepo
     reports: ReportsRepo
+    views: ViewsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -102,12 +104,14 @@ class Repositories:
             outbox=OutboxRepo(db),
             tickets=TicketsRepo(db),
             reports=ReportsRepo(db),
+            views=ViewsRepo(db),
         )
 
 
 __all__ = [
     "ActionsRepo",
     "Alert",
+    "AlertDigest",
     "AlertEvent",
     "AlertEventsRepo",
     "AlertListItem",
@@ -119,6 +123,7 @@ __all__ = [
     "ChainVerification",
     "DashboardCounts",
     "Escalation",
+    "EscalationQueue",
     "ExternalTicket",
     "EscalationsRepo",
     "Feedback",
@@ -164,6 +169,7 @@ __all__ = [
     "UserMfa",
     "UserMfaRepo",
     "UsersRepo",
+    "ViewsRepo",
     "WorkflowRun",
     "action_idempotency_key",
 ]

@@ -259,6 +259,16 @@
             "title": "Attempts",
             "type": "integer"
           },
+          "blast_radius": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlastRadiusOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "blocked_reason": {
             "anyOf": [
               {
@@ -315,6 +325,16 @@
             ],
             "title": "External Ref"
           },
+          "guardrail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GuardrailOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -331,6 +351,17 @@
               }
             ],
             "title": "Integration Id"
+          },
+          "irreversible_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irreversible Note"
           },
           "params": {
             "additionalProperties": true,
@@ -359,6 +390,18 @@
               }
             ],
             "title": "Result"
+          },
+          "reversible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The action type has an inverse (rollback).",
+            "title": "Reversible"
           },
           "risk_level": {
             "title": "Risk Level",
@@ -505,6 +548,48 @@
         "title": "AiNarrativeOut",
         "type": "object"
       },
+      "AlertCountsOut": {
+        "description": "Alert counts for the list views: every status but ``closed`` all-time, ``closed`` in the window.",
+        "properties": {
+          "by_status": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Status",
+            "type": "object"
+          },
+          "closed_from": {
+            "format": "date-time",
+            "title": "Closed From",
+            "type": "string"
+          },
+          "closed_to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "End of the closed window; null: open-ended.",
+            "title": "Closed To"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "by_status",
+          "closed_from",
+          "generated_at"
+        ],
+        "title": "AlertCountsOut",
+        "type": "object"
+      },
       "AlertDetailOut": {
         "properties": {
           "assigned_to": {
@@ -575,6 +660,23 @@
             ],
             "title": "Disposition"
           },
+          "entities_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntitiesPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/FindingOut"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
           "fingerprint": {
             "title": "Fingerprint",
             "type": "string"
@@ -625,6 +727,18 @@
           "source_id": {
             "title": "Source Id",
             "type": "string"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The source's name; null once it is deleted.",
+            "title": "Source Name"
           },
           "status": {
             "title": "Status",
@@ -807,6 +921,16 @@
             ],
             "title": "Disposition"
           },
+          "entities_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntitiesPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "fingerprint": {
             "title": "Fingerprint",
             "type": "string"
@@ -847,6 +971,18 @@
           "source_id": {
             "title": "Source Id",
             "type": "string"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The source's name; null once it is deleted.",
+            "title": "Source Name"
           },
           "status": {
             "title": "Status",
@@ -1253,6 +1389,76 @@
         "title": "AuditVerifyOut",
         "type": "object"
       },
+      "BlastRadiusOut": {
+        "description": "What the action changes; the hourly limits are given for actions awaiting approval only.",
+        "properties": {
+          "executed_last_hour": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed Last Hour"
+          },
+          "hourly_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-type executions allowed per hour.",
+            "title": "Hourly Limit"
+          },
+          "scope_hosts": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scope Hosts",
+            "type": "array"
+          },
+          "target_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Kind"
+          },
+          "tenant_executed_last_hour": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Executed Last Hour"
+          },
+          "tenant_hourly_cap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Hourly Cap"
+          }
+        },
+        "title": "BlastRadiusOut",
+        "type": "object"
+      },
       "CapabilityCheck": {
         "properties": {
           "checks": {
@@ -1409,6 +1615,17 @@
             "title": "Llm Cost Usd",
             "type": "number"
           },
+          "llm_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Model"
+          },
           "llm_tokens": {
             "title": "Llm Tokens",
             "type": "integer"
@@ -1440,13 +1657,59 @@
             ],
             "title": "Mttr S"
           },
+          "my_claimed": {
+            "default": 0,
+            "title": "My Claimed",
+            "type": "integer"
+          },
           "needed_human": {
             "default": 0,
             "title": "Needed Human",
             "type": "integer"
           },
+          "next_sla_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Sla Deadline"
+          },
           "open_escalations": {
             "title": "Open Escalations",
+            "type": "integer"
+          },
+          "open_escalations_by_severity": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Open Escalations By Severity",
+            "type": "object"
+          },
+          "overdue_escalations": {
+            "default": 0,
+            "title": "Overdue Escalations",
+            "type": "integer"
+          },
+          "pending_approvals": {
+            "default": 0,
+            "title": "Pending Approvals",
+            "type": "integer"
+          },
+          "pending_approvals_by_risk": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Pending Approvals By Risk",
+            "type": "object"
+          },
+          "pending_approvals_total": {
+            "default": 0,
+            "title": "Pending Approvals Total",
             "type": "integer"
           },
           "queue_depth": {
@@ -1468,6 +1731,16 @@
             "format": "date-time",
             "title": "Since",
             "type": "string"
+          },
+          "unassigned_breaching": {
+            "default": 0,
+            "title": "Unassigned Breaching",
+            "type": "integer"
+          },
+          "unassigned_escalations": {
+            "default": 0,
+            "title": "Unassigned Escalations",
+            "type": "integer"
           },
           "window_hours": {
             "title": "Window Hours",
@@ -1996,6 +2269,59 @@
         "title": "DraftFieldOut",
         "type": "object"
       },
+      "EntitiesPreviewOut": {
+        "description": "The first value of up to 3 entity kinds (users, hosts, IPs, e-mails, domains, URLs, processes,\nhashes, in that order) and how many values each kind present has.",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EntityRefOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "counts"
+        ],
+        "title": "EntitiesPreviewOut",
+        "type": "object"
+      },
+      "EntityRefOut": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "user",
+              "host",
+              "ip",
+              "email",
+              "domain",
+              "url",
+              "process",
+              "hash"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "EntityRefOut",
+        "type": "object"
+      },
       "ErasureStatusOut": {
         "properties": {
           "blockers": {
@@ -2045,9 +2371,48 @@
       },
       "EscalationOut": {
         "properties": {
+          "ai_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "First sentence of the analysis conclusion.",
+            "title": "Ai Reason"
+          },
+          "ai_reason_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "model",
+                  "rules"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who wrote the conclusion; null for older escalations.",
+            "title": "Ai Reason Source"
+          },
           "alert_id": {
             "title": "Alert Id",
             "type": "string"
+          },
+          "alert_severity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Severity"
           },
           "approved_actions": {
             "items": {
@@ -2067,6 +2432,17 @@
               }
             ],
             "title": "Assigned To"
+          },
+          "assigned_to_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To Email"
           },
           "claimed_at": {
             "anyOf": [
@@ -2109,6 +2485,17 @@
             ],
             "title": "Decided By"
           },
+          "decided_by_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided By Email"
+          },
           "decision": {
             "anyOf": [
               {
@@ -2130,6 +2517,16 @@
               }
             ],
             "title": "Decision Notes"
+          },
+          "entities_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntitiesPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -2154,6 +2551,28 @@
             "title": "Related Alert Ids",
             "type": "array"
           },
+          "routing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoutingOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rule": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The alert's detection rule name, else its title.",
+            "title": "Rule"
+          },
           "sla_deadline": {
             "anyOf": [
               {
@@ -2165,6 +2584,28 @@
               }
             ],
             "title": "Sla Deadline"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
           },
           "status": {
             "title": "Status",
@@ -2334,6 +2775,134 @@
           "avg_review_duration_s"
         ],
         "title": "FeedbackSummary",
+        "type": "object"
+      },
+      "FindingOut": {
+        "description": "One evidence lookup of the analysis agent: a provider's result for one indicator.",
+        "properties": {
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the platform received the result; null for older analyses.",
+            "title": "Checked At"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "origin": {
+            "enum": [
+              "threat_intel",
+              "history"
+            ],
+            "title": "Origin",
+            "type": "string"
+          },
+          "source": {
+            "description": "The provider (e.g. abuseipdb, virustotal, history).",
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "verdict": {
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "origin",
+          "kind",
+          "target",
+          "source",
+          "status",
+          "verdict"
+        ],
+        "title": "FindingOut",
+        "type": "object"
+      },
+      "GuardrailOut": {
+        "description": "Guardrail verdict: checked now for an action awaiting approval, as recorded for a blocked one.",
+        "properties": {
+          "approval_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why a human must approve (planner code).",
+            "title": "Approval Reason"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "evaluated": {
+            "enum": [
+              "now",
+              "recorded"
+            ],
+            "title": "Evaluated",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "verdict": {
+            "enum": [
+              "passed",
+              "blocked"
+            ],
+            "title": "Verdict",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict",
+          "evaluated"
+        ],
+        "title": "GuardrailOut",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -3048,6 +3617,17 @@
           "tenant_id": {
             "title": "Tenant Id",
             "type": "string"
+          },
+          "tenant_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant Name"
           },
           "user_id": {
             "anyOf": [
@@ -4107,6 +4687,24 @@
         "title": "RetryIn",
         "type": "object"
       },
+      "ReviewBandOut": {
+        "properties": {
+          "max": {
+            "title": "Max",
+            "type": "integer"
+          },
+          "min": {
+            "title": "Min",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "ReviewBandOut",
+        "type": "object"
+      },
       "RollbackEligibilityOut": {
         "description": "Whether the action can be rolled back now, with the inverse type and its risk; ``reason`` when not.",
         "properties": {
@@ -4205,6 +4803,43 @@
           "created"
         ],
         "title": "RollbackOut",
+        "type": "object"
+      },
+      "RoutingOut": {
+        "description": "The routing outcome that created the escalation (null on escalations created before it was recorded).",
+        "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReviewBandOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The confidence band that sent the alert to an analyst (grey_zone only)."
+          },
+          "code": {
+            "description": "grey_zone, false_positive_review, inconclusive, high_risk, model_refused, ...",
+            "title": "Code",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "RoutingOut",
         "type": "object"
       },
       "SampleAlertsOut": {
@@ -6926,6 +7561,44 @@
             }
           },
           {
+            "description": "Closed at or after (closed alerts only)",
+            "in": "query",
+            "name": "closed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed at or after (closed alerts only)",
+              "title": "Closed From"
+            }
+          },
+          {
+            "description": "Closed before (closed alerts only)",
+            "in": "query",
+            "name": "closed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Closed before (closed alerts only)",
+              "title": "Closed To"
+            }
+          },
+          {
             "in": "query",
             "name": "cursor",
             "required": false,
@@ -6978,6 +7651,78 @@
           }
         },
         "summary": "List alerts (newest first, keyset pagination)",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/v1/alerts/counts": {
+      "get": {
+        "description": "Every status but ``closed`` is counted over all alerts; ``closed`` only inside the closed window.",
+        "operationId": "alert_counts_api_v1_alerts_counts_get",
+        "parameters": [
+          {
+            "description": "Count closed alerts closed at or after this time (default: today 00:00 UTC)",
+            "in": "query",
+            "name": "closed_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Count closed alerts closed at or after this time (default: today 00:00 UTC)",
+              "title": "Closed From"
+            }
+          },
+          {
+            "description": "... and before this time (default: no end)",
+            "in": "query",
+            "name": "closed_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "... and before this time (default: no end)",
+              "title": "Closed To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Alert counts by status for the list views (cached 15 s)",
         "tags": [
           "alerts"
         ]
@@ -7959,6 +8704,7 @@
     },
     "/api/v1/dashboard/summary": {
       "get": {
+        "description": "The tenant's figures are cached per tenant and window; ``pending_approvals`` and ``my_claimed``\ndepend on the caller and are computed on every request.",
         "operationId": "summary_api_v1_dashboard_summary_get",
         "parameters": [
           {
@@ -8057,7 +8803,7 @@
             }
           },
           {
-            "description": "A user id or 'me'",
+            "description": "A user id, 'me', or 'none' (unassigned)",
             "in": "query",
             "name": "assigned_to",
             "required": false,
@@ -8070,8 +8816,38 @@
                   "type": "null"
                 }
               ],
-              "description": "A user id or 'me'",
+              "description": "A user id, 'me', or 'none' (unassigned)",
               "title": "Assigned To"
+            }
+          },
+          {
+            "description": "A user id or 'me'",
+            "in": "query",
+            "name": "decided_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A user id or 'me'",
+              "title": "Decided By"
+            }
+          },
+          {
+            "description": "Only active escalations past their SLA deadline",
+            "in": "query",
+            "name": "overdue",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Only active escalations past their SLA deadline",
+              "title": "Overdue",
+              "type": "boolean"
             }
           },
           {
@@ -8089,6 +8865,22 @@
                 }
               ],
               "title": "Alert Id"
+            }
+          },
+          {
+            "description": "created_at: newest first. sla_deadline: soonest deadline first, so overdue escalations come first and those without a deadline last.",
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "created_at",
+              "description": "created_at: newest first. sla_deadline: soonest deadline first, so overdue escalations come first and those without a deadline last.",
+              "enum": [
+                "created_at",
+                "sla_deadline"
+              ],
+              "title": "Order",
+              "type": "string"
             }
           },
           {
@@ -8143,7 +8935,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "List escalations (newest first)",
+        "summary": "List escalations (newest first, or by SLA)",
         "tags": [
           "escalations"
         ]

@@ -20,6 +20,46 @@ All notable changes to this project are documented here. The format follows
   windows: a DeepSeek call between 01:00-04:00 or 06:00-10:00 UTC on a weekday
   costs twice the off-peak rate. Before this, DeepSeek usage showed as $0 and
   logged `llm.price_unknown`.
+- `GET /auth/me` now returns `tenant_name`, the display name of the tenant
+  the request acts on.
+- `GET /dashboard/summary` now describes the escalation and approval queues:
+  `overdue_escalations`, `unassigned_escalations`, `unassigned_breaching`,
+  `next_sla_deadline` (the earliest deadline still ahead),
+  `open_escalations_by_severity`, `pending_approvals_total` and
+  `pending_approvals_by_risk`, plus two figures for the caller:
+  `pending_approvals` (the pending actions your role may approve) and
+  `my_claimed` (active escalations assigned to you). `llm_model` names the
+  model that writes the analysis verdicts. The caller's figures are never
+  served from another caller's cache.
+- `GET /escalations` can sort by SLA with `order=sla_deadline`: soonest
+  deadline first, so overdue escalations come first and those without a
+  deadline last. New filters: `assigned_to=none` (unassigned), `overdue=true`
+  and `decided_by` (a user id or `me`).
+- Escalations now carry `assigned_to_email` and `decided_by_email`, and a
+  digest of their alert: `rule` (the detection rule, else the title),
+  `source_id`, `source_name`, `alert_severity` and `entities_preview` (the
+  first user, host, IP and so on, with a count per kind). `ai_reason` is the
+  first sentence of the analysis conclusion and `ai_reason_source` says
+  whether the model or the rules wrote it. `routing` gives the routing code
+  that opened the escalation, the confidence, and the review band when a
+  band decided it (the grey zone). Escalations opened before this release
+  have no `routing` or `ai_reason_source`.
+- Alerts now carry `source_name` and `entities_preview`, and the alert list
+  takes `closed_from` and `closed_to` to list alerts closed in a window. The
+  new `GET /alerts/counts` returns the alert count per status for the list
+  views in one call (cached 15 seconds); closed alerts are counted only
+  inside a window, today (UTC) by default.
+- Response actions now carry `blast_radius` (what kind of target the action
+  changes, the hosts it is scoped to and, while it waits for approval, the
+  hourly limits it will be checked against), `reversible` and
+  `irreversible_note`. Actions waiting for approval carry `guardrail`: the
+  verdict of the guardrails checked again now against the tenant's current
+  policy, with the reason, and why a human must approve. Blocked actions
+  carry the guardrail that blocked them.
+- Alert details now list `findings`: each evidence lookup of the analysis
+  agent with its source (the provider) and `checked_at`, the time the
+  platform received the result. Analyses recorded before this release have
+  no `checked_at`.
 
 ### Changed
 

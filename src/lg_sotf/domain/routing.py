@@ -24,7 +24,7 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Optional, cast
+from typing import Any, Dict, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -197,6 +197,29 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
         return Decision("escalate", "low threat verdict lacks rule corroboration", None, "false_positive_review")
 
     return Decision("escalate", "no automatic policy applies", None, "inconclusive")
+
+
+def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[Tuple[int, int]]:
+    """The confidence band that sent the alert to an analyst, when one did.
+
+    Only ``grey_zone`` escalations are decided by a band: the confidence lies
+    in ``[correlation_grey_zone_min, correlation_grey_zone_max]``. A
+    ``grey_zone`` escalation caused by an ``inconclusive`` verdict outside the
+    band, and every other code, has none.
+    """
+    if code == "grey_zone" and t.correlation_grey_zone_min <= confidence <= t.correlation_grey_zone_max:
+        return t.correlation_grey_zone_min, t.correlation_grey_zone_max
+    return None
+
+
+def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> Dict[str, Any]:
+    """What an escalation records about the routing that created it: the code, the confidence and the band."""
+    band = review_band(code, confidence, t)
+    return {
+        "code": code,
+        "confidence": confidence,
+        "band": {"min": band[0], "max": band[1]} if band is not None else None,
+    }
 
 
 def route_after_decide(state: Mapping[str, Any]) -> DecideRoute:

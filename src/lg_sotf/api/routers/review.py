@@ -6,8 +6,11 @@ returns are enqueued afterwards (one per waiting alert). A resume that
 cannot be enqueued is reported in the response (``resumes_failed``) and
 logged; the decision itself stands.
 
-Every action carries its rollback eligibility (``rollback``) and its live
-rollback (``rolled_back_by``). ``POST /actions/{id}/rollback`` requests a
+Escalations carry their owners' addresses and a digest of their alert
+(:mod:`lg_sotf.services.escalation_views`). Every action carries its
+guardrail verdict, blast radius and reversibility
+(:mod:`lg_sotf.services.action_views`), its rollback eligibility
+(``rollback``) and its live rollback (``rolled_back_by``). ``POST /actions/{id}/rollback`` requests a
 rollback (:mod:`lg_sotf.services.rollback`), ``POST /actions/{id}/retry``
 runs a failed Microsoft action again, and ``POST /actions/{id}/verify``
 re-checks a finished verification (:mod:`lg_sotf.services.verification`).
@@ -15,24 +18,28 @@ re-checks a finished verification (:mod:`lg_sotf.services.verification`).
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Literal, Optional, Sequence, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import escalations_out, one_escalation_out
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
     ActionOut,
     ApprovalIn,
     ApprovalOut,
+    BlastRadiusOut,
     ClaimIn,
     DecisionIn,
     DecisionOut,
     EscalationOut,
+    GuardrailOut,
     PageOut,
     RetryIn,
     RollbackEligibilityOut,
@@ -48,6 +55,7 @@ from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.models.vocabulary import RiskLevel as Risk
 from lg_sotf.models.vocabulary import VerificationState as Verification
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.services.action_views import ActionView, action_views
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import ResumeRequest
 from lg_sotf.services.rollback import RollbackService
@@ -65,24 +73,36 @@ def _rollbacks(ctx: ApiContext) -> RollbackService:
 
 
 def action_out(
-    rollbacks: RollbackService, action: ResponseAction, live: Optional[ResponseAction], *, now: datetime
+    rollbacks: RollbackService,
+    action: ResponseAction,
+    live: Optional[ResponseAction],
+    *,
+    now: datetime,
+    view: Optional[ActionView] = None,
 ) -> ActionOut:
-    """An action with its rollback eligibility and live rollback."""
+    """An action with its rollback eligibility and live rollback, and its guardrail and blast-radius view."""
     eligibility = rollbacks.eligibility(action, live, now=now)
-    return ActionOut.model_validate(action).model_copy(
-        update={
-            "rollback": RollbackEligibilityOut(**eligibility.as_dict()),
-            "rolled_back_by": live.id if live is not None else None,
-        }
-    )
+    update: Dict[str, object] = {
+        "rollback": RollbackEligibilityOut(**eligibility.as_dict()),
+        "rolled_back_by": live.id if live is not None else None,
+    }
+    if view is not None:
+        update.update(
+            guardrail=GuardrailOut(**asdict(view.guardrail)) if view.guardrail else None,
+            blast_radius=BlastRadiusOut(**asdict(view.blast_radius)),
+            reversible=view.reversible,
+            irreversible_note=view.irreversible_note,
+        )
+    return ActionOut.model_validate(action).model_copy(update=update)
 
 
 async def actions_out(ctx: ApiContext, tenant_id: str, actions: Sequence[ResponseAction]) -> List[ActionOut]:
-    """Many actions with their rollback state (live rollbacks read in one query)."""
+    """Many actions with their rollback state (live rollbacks read in one query) and their views."""
     live: Dict[UUID, ResponseAction] = await ctx.repos.actions.live_rollbacks(tenant_id, [a.id for a in actions])
+    views = await action_views(ctx.repos, ctx.settings, tenant_id, actions)
     rollbacks = _rollbacks(ctx)
     now = datetime.now(UTC)
-    return [action_out(rollbacks, a, live.get(a.id), now=now) for a in actions]
+    return [action_out(rollbacks, a, live.get(a.id), now=now, view=views.get(a.id)) for a in actions]
 
 
 async def one_action_out(ctx: ApiContext, tenant_id: str, action: ResponseAction) -> ActionOut:
@@ -117,7 +137,7 @@ async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequen
             log.warning("api.verdict_invalidate_failed", alert_id=alert_id, error_type=type(exc).__name__)
 
 
-def _assignee(principal: Principal, value: Optional[str]) -> Optional[UUID]:
+def _user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:
     if value is None:
         return None
     if value == "me":
@@ -127,40 +147,53 @@ def _assignee(principal: Principal, value: Optional[str]) -> Optional[UUID]:
     try:
         return UUID(value)
     except ValueError as exc:
-        raise ApiError(400, "invalid_request", "assigned_to must be a user id or 'me'") from exc
+        raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
 
 
-@escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first)")
+@escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first, or by SLA)")
 async def list_escalations(
     request: Request,
     status: Optional[List[EscalationStatus]] = Query(default=None),
     level: Optional[List[Level]] = Query(default=None),
-    assigned_to: Optional[str] = Query(default=None, description="A user id or 'me'"),
+    assigned_to: Optional[str] = Query(default=None, description="A user id, 'me', or 'none' (unassigned)"),
+    decided_by: Optional[str] = Query(default=None, description="A user id or 'me'"),
+    overdue: bool = Query(default=False, description="Only active escalations past their SLA deadline"),
     alert_id: Optional[str] = Query(default=None, max_length=256),
+    order: Literal["created_at", "sla_deadline"] = Query(
+        default="created_at",
+        description="created_at: newest first. sla_deadline: soonest deadline first, so overdue escalations "
+        "come first and those without a deadline last.",
+    ),
     cursor: Optional[str] = Query(default=None, max_length=512),
     limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[EscalationOut]:
-    page = await get_ctx(request).repos.escalations.list(
+    ctx = get_ctx(request)
+    unassigned = assigned_to == "none"
+    page = await ctx.repos.escalations.list(
         principal.tenant_id,
         status=status,
         level=level,
-        assigned_to=_assignee(principal, assigned_to),
+        assigned_to=None if unassigned else _user_ref(principal, assigned_to, "assigned_to"),
+        unassigned=unassigned,
+        decided_by=_user_ref(principal, decided_by, "decided_by"),
+        overdue_at=datetime.now(UTC) if overdue else None,
         alert_id=alert_id,
+        order=order,
         limit=limit,
         cursor=cursor,
     )
-    return PageOut[EscalationOut](
-        items=[EscalationOut.model_validate(e) for e in page.items], next_cursor=page.next_cursor
-    )
+    items = await escalations_out(ctx, principal.tenant_id, page.items)
+    return PageOut[EscalationOut](items=items, next_cursor=page.next_cursor)
 
 
 @escalations.get("/{escalation_id}", response_model=EscalationOut, summary="Escalation detail")
 async def get_escalation(
     escalation_id: str, request: Request, principal: Principal = Depends(require(VIEWER))
 ) -> EscalationOut:
-    return EscalationOut.model_validate(
-        await get_ctx(request).repos.escalations.get(principal.tenant_id, escalation_id)
+    ctx = get_ctx(request)
+    return await one_escalation_out(
+        ctx, principal.tenant_id, await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
     )
 
 
@@ -169,10 +202,11 @@ async def claim(
     escalation_id: str, body: ClaimIn, request: Request, principal: Principal = Depends(require(REVIEWER))
 ) -> EscalationOut:
     assert principal.user_id is not None and principal.role is not None
-    claimed = await get_ctx(request).review.claim(
+    ctx = get_ctx(request)
+    claimed = await ctx.review.claim(
         principal.tenant_id, escalation_id, principal.user_id, body.version, role=principal.role
     )
-    return EscalationOut.model_validate(claimed)
+    return await one_escalation_out(ctx, principal.tenant_id, claimed)
 
 
 @escalations.post(
@@ -199,7 +233,7 @@ async def decide(
         await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])
     ok, failed = await enqueue_resumes(ctx, principal.tenant_id, result)
     return DecisionOut(
-        escalation=EscalationOut.model_validate(result.escalation),
+        escalation=await one_escalation_out(ctx, principal.tenant_id, result.escalation),
         approved_actions=result.approved_actions,
         resumed_alert_ids=[r.alert_id for r in result],
         own_review_alert_ids=result.own_review_alert_ids,
