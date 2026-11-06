@@ -1,9 +1,13 @@
 import { QueryClient } from '@tanstack/react-query';
 import { act, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AlertOut, Page } from '../api/types';
+import { RequireAuth } from '../components/Guards';
 import AlertsPage from '../pages/alerts/AlertsPage';
+import LoginPage from '../pages/Login';
 import { apiError, fakeApi, fakeTransport, renderWithSession, token } from '../test/helpers';
 import { bindQueryCacheToSession, identityKey } from './cacheBinding';
 import { AuthStore } from './store';
@@ -106,5 +110,42 @@ describe('query cache bound to the session identity', () => {
     await waitFor(() => expect(screen.getByText(/Not allowed/)).toBeInTheDocument());
     expect(screen.queryByRole('grid', { name: 'Alerts' })).not.toBeInTheDocument();
     expect(screen.queryByText('1 row loaded')).not.toBeInTheDocument();
+  });
+
+  it('shows no stale rows when another identity signs in through the sign-in page', async () => {
+    const store = storeWith([token('a', { id: 'u-a', tenant_id: 'acme' }), token('b', { id: 'u-b', tenant_id: 'globex' })]);
+    await store.login('a@acme.test', 'pw', null);
+    let releaseB: (page: Page<AlertOut>) => void = () => undefined;
+    const pageForB = new Promise<Page<AlertOut>>((resolve) => (releaseB = resolve));
+    const { api } = fakeApi((_m, path) => {
+      if (path !== '/alerts') return {};
+      if (store.getState().principal?.userId === 'u-a') return { items: [alert('a-1', 'Secret alert of tenant acme', 'acme')], next_cursor: null };
+      return pageForB;
+    });
+    const { client } = renderWithSession(
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/alerts" element={<RequireAuth><AlertsPage /></RequireAuth>} />
+      </Routes>,
+      { auth: store, api },
+      { route: '/alerts' },
+    );
+    bindQueryCacheToSession(store, client);
+    expect(await screen.findByText('1 row loaded')).toBeInTheDocument();
+
+    await act(async () => store.expire());
+    expect(await screen.findByRole('button', { name: 'Sign in' })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Email'), 'b@globex.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'pw');
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+
+    // Back on the alerts page for B, whose first page has not arrived yet: nothing of A shows.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('grid', { name: 'Alerts' })).not.toBeInTheDocument();
+    expect(screen.queryByText('1 row loaded')).not.toBeInTheDocument();
+    expect(JSON.stringify(client.getQueryCache().getAll().map((q) => q.state.data ?? null))).not.toContain('Secret alert');
+
+    await act(async () => releaseB({ items: [alert('b-1', 'Alert of globex', 'globex')], next_cursor: null }));
+    expect(await screen.findByText('1 row loaded')).toBeInTheDocument();
   });
 });

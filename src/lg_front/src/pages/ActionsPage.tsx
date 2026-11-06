@@ -4,6 +4,8 @@ import { Fragment, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { endpoints, type ActionFilters } from '../api/endpoints';
+import { afterActionChange, afterActionDecision } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
 import { ACTION_STATUSES, RISK_LEVELS, VERIFICATION_STATES, type ActionOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { approvalRoleFor, can, decisionBlockedReason } from '../auth/roles';
@@ -57,12 +59,11 @@ function ApprovalDialog({ pending, onClose }: { pending: Pending; onClose: () =>
     try {
       const out = verb === 'approve' ? await endpoints.approve(api, action.id, rejectRemaining) : await endpoints.reject(api, action.id, rejectRemaining);
       toast.success(`${verb === 'approve' ? 'Approved' : 'Rejected'} ${action.action_type} on ${action.target}.${out.resumes_enqueued ? ' The alert workflow resumed.' : ''}`);
-      void client.invalidateQueries({ queryKey: ['actions'] });
-      void client.invalidateQueries({ queryKey: ['alerts'] });
+      void afterActionDecision(client);
       onClose();
     } catch (err) {
       setError(err);
-      void client.invalidateQueries({ queryKey: ['actions'] });
+      void afterActionChange(client);
     } finally {
       setBusy(false);
     }
@@ -125,7 +126,7 @@ export default function ActionsPage() {
   const blocked = decisionBlockedReason(principal);
 
   const list = useKeysetList({
-    queryKey: ['actions', filters],
+    queryKey: qk.actions.list(filters),
     fetchPage: (cursor, signal) => endpoints.actions(api, filters, cursor, signal),
     itemKey: (a: ActionOut) => a.id,
     refetchInterval: interval,

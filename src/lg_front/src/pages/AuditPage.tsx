@@ -2,6 +2,7 @@ import { CheckCircle2, Download, ShieldCheck, XCircle } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints, type AuditFilters } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { AuditEntryOut, AuditVerifyOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Button, EmptyState, ErrorMessage, JsonBlock, LoadingState, PageHeader, TextField } from '../components/ui';
@@ -30,7 +31,7 @@ export default function AuditPage() {
   const [verify, setVerify] = useState<{ busy: boolean; result: AuditVerifyOut | null; error: unknown }>({ busy: false, result: null, error: null });
 
   const list = useKeysetList({
-    queryKey: ['audit', filters],
+    queryKey: qk.audit.list(filters),
     fetchPage: (cursor, signal) => endpoints.audit(api, filters, cursor, signal),
     itemKey: (e: AuditEntryOut) => e.id,
   });

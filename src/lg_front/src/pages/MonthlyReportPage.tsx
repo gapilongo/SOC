@@ -4,6 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { MonthlyReportOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
@@ -156,7 +157,7 @@ export default function MonthlyReportPage() {
   const valid = MONTH.test(month);
   const [downloading, setDownloading] = useState(false);
   const q = useQuery({
-    queryKey: ['report-monthly', month],
+    queryKey: qk.reportMonthly.month(month),
     queryFn: ({ signal }) => endpoints.monthlyReport(api, month, signal),
     enabled: valid,
   });

@@ -1,9 +1,11 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Clock, Download, Hand, Gavel } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
+import { afterEscalationChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
 import { endpoints, type EscalationFilters } from '../../api/endpoints';
 import { ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut, type TicketOut } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
@@ -20,6 +22,18 @@ import { useNow } from '../../lib/useNow';
 import { usePollInterval } from '../../lib/visibility';
 import { AlertDrawer } from '../alerts/AlertDrawer';
 import { DecisionDialog } from './DecisionDialog';
+
+/** Escalations whose linked tickets the queue looks up: bounds the ticket requests per poll to four. */
+export const TICKET_LOOKUP_MAX = 200;
+/** Ids per ticket request: 50 UUIDs keep the request line near 2.5 KB. */
+export const TICKET_LOOKUP_CHUNK = 50;
+
+/** Split `items` into consecutive chunks of at most `size`. */
+export function chunked<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 const DEFAULT_STATUS = ['open', 'claimed', 'expired'];
 
@@ -89,7 +103,7 @@ function EscalationCard({
       else toast.error(err, 'Claim failed');
     } finally {
       setClaiming(false);
-      void client.invalidateQueries({ queryKey: ['escalations'] });
+      void afterEscalationChange(client);
     }
   };
 
@@ -184,22 +198,24 @@ export default function EscalationsPage() {
   const interval = usePollInterval(30_000);
 
   const list = useKeysetList({
-    queryKey: ['escalations', filters],
+    queryKey: qk.escalations.list(filters),
     fetchPage: (cursor, signal) => endpoints.escalations(api, filters, cursor, signal),
     itemKey: (e: EscalationOut) => e.id,
     refetchInterval: interval,
   });
 
-  // Linked Jira/ServiceNow tickets of the listed escalations, in one request.
-  const escalationIds = list.items.map((e) => e.id).slice(0, 200);
-  const tickets = useQuery({
-    queryKey: ['tickets', 'escalations', escalationIds],
-    queryFn: ({ signal }) => endpoints.tickets(api, { escalation_id: escalationIds }, signal),
-    enabled: escalationIds.length > 0,
-    refetchInterval: interval,
+  // Linked Jira/ServiceNow tickets of the listed escalations, in chunks that keep each request
+  // line well under the proxy's 8 KB limit. A chunk already loaded stays cached as more pages load.
+  const escalationIds = list.items.map((e) => e.id).slice(0, TICKET_LOOKUP_MAX);
+  const tickets = useQueries({
+    queries: chunked(escalationIds, TICKET_LOOKUP_CHUNK).map((ids) => ({
+      queryKey: qk.tickets.forEscalations(ids),
+      queryFn: ({ signal }: { signal: AbortSignal }) => endpoints.tickets(api, { escalation_id: ids }, signal),
+      refetchInterval: interval,
+    })),
   });
   const ticketsByEscalation = new Map<string, TicketOut[]>();
-  for (const t of Array.isArray(tickets.data) ? tickets.data : []) {
+  for (const t of tickets.flatMap((q) => (Array.isArray(q.data) ? q.data : []))) {
     if (t.escalation_id) ticketsByEscalation.set(t.escalation_id, [...(ticketsByEscalation.get(t.escalation_id) ?? []), t]);
   }
 

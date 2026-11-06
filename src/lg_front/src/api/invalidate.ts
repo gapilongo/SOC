@@ -1,0 +1,80 @@
+/**
+ * What a change makes stale, declared once per kind of change.
+ *
+ * Pages call these after a mutation instead of invalidating keys themselves
+ * (ESLint bans `invalidateQueries` elsewhere, except `lib/pagination.ts` for
+ * live events and `auth/cacheBinding.ts` for session changes). Each policy
+ * invalidates the listed keys in order and resolves once they have all been
+ * refetched, exactly as the inline calls it replaced.
+ */
+
+import type { QueryClient, QueryKey } from '@tanstack/react-query';
+
+import { qk } from './queryKeys';
+
+function invalidate(client: QueryClient, ...keys: QueryKey[]): Promise<void> {
+  return Promise.all(keys.map((queryKey) => client.invalidateQueries({ queryKey }))).then(() => undefined);
+}
+
+// Alerts ---------------------------------------------------------------------
+
+/** One alert changed (reprocessed): its drawer and every alert list. */
+export const afterAlertChange = (client: QueryClient, alertId: string | null) =>
+  invalidate(client, qk.alert.detail(alertId), qk.alerts.all);
+
+/** Something was added to an alert's timeline (a note, an incident report). */
+export const afterAlertTimelineChange = (client: QueryClient, alertId: string) => invalidate(client, qk.alert.events(alertId));
+
+/** New alerts were created (sample alerts). */
+export const afterAlertsAdded = (client: QueryClient) => invalidate(client, qk.alerts.all);
+
+// Escalations ----------------------------------------------------------------
+
+/** An escalation changed (claimed, or found changed by someone else). */
+export const afterEscalationChange = (client: QueryClient) => invalidate(client, qk.escalations.all);
+
+/** An escalation was decided: it and the alerts it resumed. */
+export const afterEscalationDecision = (client: QueryClient) => invalidate(client, qk.escalations.all, qk.alerts.all);
+
+// Response actions -----------------------------------------------------------
+
+/** An action changed (retried, rolled back, re-verified, or a decision failed). */
+export const afterActionChange = (client: QueryClient) => invalidate(client, qk.actions.all);
+
+/** An action was approved or rejected: it and the alert workflow it may resume. */
+export const afterActionDecision = (client: QueryClient) => invalidate(client, qk.actions.all, qk.alerts.all);
+
+// Tenant configuration -------------------------------------------------------
+
+export const afterSourceChange = (client: QueryClient) => invalidate(client, qk.sources.all);
+
+export const afterSuppressionChange = (client: QueryClient) => invalidate(client, qk.suppressions.all);
+
+/** Integrations changed (created, updated, deleted); their delivery logs too. */
+export const afterIntegrationChange = (client: QueryClient) => invalidate(client, qk.integrations.all);
+
+/** A connection test wrote a delivery to the integration's log. */
+export const afterIntegrationTest = (client: QueryClient, integrationId: string) =>
+  invalidate(client, qk.integrations.deliveries(integrationId));
+
+/** Tenant settings were saved: they may complete the checklist's "autonomy reviewed" step. */
+export const afterTenantSettingsChange = (client: QueryClient) => invalidate(client, qk.onboarding.all);
+
+export const afterOnboardingChange = (client: QueryClient) => invalidate(client, qk.onboarding.all);
+
+// Users and credentials ------------------------------------------------------
+
+export const afterUserChange = (client: QueryClient) => invalidate(client, qk.users.all);
+
+export const afterApiKeyChange = (client: QueryClient) => invalidate(client, qk.apiKeys.all);
+
+/** Your MFA was turned on or off: your status and the users list (its MFA column). */
+export const afterMfaChange = (client: QueryClient) => invalidate(client, qk.mfaStatus.all, qk.users.all);
+
+/** New recovery codes: only your MFA status changes. */
+export const afterRecoveryCodesChange = (client: QueryClient) => invalidate(client, qk.mfaStatus.all);
+
+// Platform -------------------------------------------------------------------
+
+/** A tenant was created or updated. */
+export const afterTenantChange = (client: QueryClient) => invalidate(client, qk.platformTenants.all);

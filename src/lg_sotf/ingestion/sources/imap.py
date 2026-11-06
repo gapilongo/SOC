@@ -103,6 +103,9 @@ class BoundedIMAP4_SSL(imaplib.IMAP4_SSL):
     left), so the whole session ends within ``lifetime_s`` plus one read.
     """
 
+    # Set by ``IMAP4_SSL.__init__``; typeshed leaves it to ``IMAP4.__getattr__`` (``Any``).
+    ssl_context: ssl.SSLContext
+
     def __init__(self, host: str, port: int, ssl_context: ssl.SSLContext, timeout: float, *,
                  max_literal: int, lifetime_s: float):
         self._io_timeout = timeout

@@ -9,12 +9,12 @@ import { CheckCircle2, Circle, Send, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { afterAlertsAdded, afterOnboardingChange } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
 import type { OnboardingStatusOut, OnboardingStepOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { useToast } from './Toast';
 import { Button, cx } from './ui';
-
-export const ONBOARDING_KEY = ['onboarding-status'] as const;
 
 export interface StepText {
   title: string;
@@ -59,7 +59,7 @@ export const STEP_TEXT: Record<string, StepText> = {
 export function useOnboardingStatus(enabled = true) {
   const api = useApi();
   return useQuery({
-    queryKey: ONBOARDING_KEY,
+    queryKey: qk.onboarding.all,
     queryFn: ({ signal }) => endpoints.onboardingStatus(api, signal),
     enabled,
     staleTime: 30_000,
@@ -72,7 +72,7 @@ function useOnboardingMutation<T>(fn: () => Promise<T>, onDone: (out: T) => void
     mutationFn: fn,
     onSuccess: (out) => {
       onDone(out);
-      void client.invalidateQueries({ queryKey: ONBOARDING_KEY });
+      void afterOnboardingChange(client);
     },
   });
 }
@@ -84,7 +84,7 @@ export function useSendSamples() {
   return useOnboardingMutation(
     () => endpoints.sendSampleAlerts(api),
     (out) => {
-      void client.invalidateQueries({ queryKey: ['alerts'] });
+      void afterAlertsAdded(client);
       toast.success(
         out.inserted
           ? `${out.inserted} sample alerts sent; they are being triaged now.`
@@ -99,7 +99,7 @@ export function useDismissOnboarding() {
   const client = useQueryClient();
   return useOnboardingMutation(
     () => endpoints.dismissOnboarding(api),
-    (out: OnboardingStatusOut) => client.setQueryData(ONBOARDING_KEY, out),
+    (out: OnboardingStatusOut) => client.setQueryData(qk.onboarding.all, out),
   );
 }
 
@@ -108,7 +108,7 @@ export function useMarkReviewed() {
   const client = useQueryClient();
   return useOnboardingMutation(
     () => endpoints.markAutonomyReviewed(api),
-    (out: OnboardingStatusOut) => client.setQueryData(ONBOARDING_KEY, out),
+    (out: OnboardingStatusOut) => client.setQueryData(qk.onboarding.all, out),
   );
 }
 

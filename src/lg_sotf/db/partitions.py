@@ -123,7 +123,7 @@ async def _require_bypass(conn: Connection) -> None:
 async def _set_lock_timeout(conn: Connection, lock_timeout_ms: int) -> str:
     if lock_timeout_ms < 1:
         raise ValueError("lock_timeout_ms must be >= 1")
-    previous = await conn.fetchval("SELECT current_setting('lock_timeout')")
+    previous: str = await conn.fetchval("SELECT current_setting('lock_timeout')")  # text, never NULL
     await conn.execute("SELECT set_config('lock_timeout', $1, true)", f"{int(lock_timeout_ms)}ms")
     return previous
 

@@ -151,3 +151,47 @@ describe('api client', () => {
     expect(buildQuery({})).toBe('');
   });
 });
+
+describe('successful bodies', () => {
+  const client = (response: () => Response) => createApiClient({ baseUrl: '/api/v1', auth: bridge(), fetchImpl: vi.fn(async () => response()) });
+
+  it('raises invalid_response for a 200 with an HTML page (a misrouted index.html)', async () => {
+    const api = client(() => new Response('<!doctype html><html><body>app</body></html>', { status: 200, headers: { 'content-type': 'text/html', 'x-request-id': 'edge-req-4242' } }));
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e).toBeInstanceOf(ApiError);
+    expect(e.status).toBe(200);
+    expect(e.code).toBe('invalid_response');
+    expect(e.requestId).toBe('edge-req-4242');
+    expect(e.message).toMatch(/could not be read/);
+  });
+
+  it('raises invalid_response for a JSON content type with a body that is not JSON', async () => {
+    const api = client(() => new Response('{"items": [', { status: 200, headers: { 'content-type': 'application/json' } }));
+    const e = (await api.get('/alerts').catch((x: unknown) => x)) as ApiError;
+    expect(e).toBeInstanceOf(ApiError);
+    expect(e.code).toBe('invalid_response');
+    expect(e.requestId).toMatch(/^web-/);
+  });
+
+  it('raises invalid_response for a JSON body without a JSON content type', async () => {
+    const api = client(() => new Response('{"ok": true}', { status: 200, headers: { 'content-type': 'text/plain' } }));
+    await expect(api.get('/alerts')).rejects.toMatchObject({ code: 'invalid_response', status: 200 });
+  });
+
+  it('accepts JSON media types with parameters and +json suffixes', async () => {
+    const api = client(() => new Response('{"ok": true}', { status: 200, headers: { 'content-type': 'application/problem+json; charset=utf-8' } }));
+    await expect(api.get('/alerts')).resolves.toEqual({ ok: true });
+  });
+
+  it('keeps empty bodies and 204 as undefined, whatever the content type', async () => {
+    await expect(client(() => new Response('', { status: 200 })).post('/onboarding/dismiss')).resolves.toBeUndefined();
+    await expect(client(() => new Response(null, { status: 204 })).del('/sources/s-1')).resolves.toBeUndefined();
+    await expect(client(() => new Response('', { status: 202, headers: { 'content-type': 'text/html' } })).post('/x')).resolves.toBeUndefined();
+  });
+
+  it('still returns text bodies as text when asked', async () => {
+    const api = client(() => new Response('<html>report</html>', { status: 200, headers: { 'content-type': 'text/html' } }));
+    await expect(api.get('/reports/monthly', { responseType: 'text' })).resolves.toBe('<html>report</html>');
+  });
+});
+
