@@ -209,22 +209,7 @@ def _build_model(settings: Settings, tier: Tier) -> BaseChatModel:
         return ChatAnthropic(metadata=metadata, **kwargs)
 
     if provider == "openai":
-        try:
-            from langchain_openai import ChatOpenAI
-        except ImportError as exc:
-            raise LLMUnavailable("provider 'openai' requires the optional extra: pip install 'lg-sotf[openai]'") from exc
-        kwargs = {
-            "model": cfg.model,
-            "max_completion_tokens": cfg.max_tokens,
-            "timeout": cfg.timeout_s,
-            "max_retries": cfg.max_retries,
-            "api_key": api_key,
-        }
-        if base_url:
-            kwargs["base_url"] = base_url
-        if temperature is not None:
-            kwargs["temperature"] = temperature
-        return ChatOpenAI(metadata=metadata, **kwargs)
+        return _build_openai(settings, cfg, api_key, base_url, temperature, metadata)
 
     if provider == "gemini":
         try:
@@ -245,6 +230,39 @@ def _build_model(settings: Settings, tier: Tier) -> BaseChatModel:
         return ChatGoogleGenerativeAI(metadata=metadata, **kwargs)
 
     raise LLMUnavailable(f"unsupported LLM provider {provider!r}")
+
+
+def _build_openai(
+    settings: Settings,
+    cfg: LLMTierSettings,
+    api_key: str,
+    base_url: Optional[str],
+    temperature: Optional[float],
+    metadata: Dict[str, Any],
+) -> BaseChatModel:
+    """OpenAI, or another OpenAI-compatible cloud API at ``llm.base_url``."""
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError as exc:
+        raise LLMUnavailable("provider 'openai' requires the optional extra: pip install 'lg-sotf[openai]'") from exc
+    kwargs: Dict[str, Any] = {
+        "model": cfg.model,
+        "max_completion_tokens": cfg.max_tokens,
+        "timeout": cfg.timeout_s,
+        "max_retries": cfg.max_retries,
+        "api_key": api_key,
+    }
+    if base_url:
+        kwargs["base_url"] = base_url
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    method = settings.llm.structured_output
+    if base_url and method != "auto":
+        # Another OpenAI-compatible cloud API may refuse OpenAI's native method: DeepSeek's
+        # thinking models reject a forced tool_choice, so they answer in JSON mode.
+        # OpenAI itself (no base_url) always keeps tool calling.
+        metadata = {**metadata, STRUCTURED_KEY: method}
+    return ChatOpenAI(metadata=metadata, **kwargs)
 
 
 def _build_self_hosted(

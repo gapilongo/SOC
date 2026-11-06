@@ -289,6 +289,7 @@ Fernet key without keeping the old one makes stored credentials unreadable
 | `LLM_PROVIDER` | no | `anthropic`, `openai`, `gemini` or `fake`. Default: the first of `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY` that is set (`anthropic`, `gemini`, `openai`), otherwise `fake` |
 | `LLM_FAST_MODEL`, `LLM_DEEP_MODEL` | no | Model names for the fast and deep tiers (default: the provider's defaults) |
 | `LLM_BASE_URL` | no | `https://` URL of an OpenAI-compatible endpoint for the `openai` provider |
+| `LLM_STRUCTURED_OUTPUT` | no | `json_mode`, `json_schema` or `function_calling` for an OpenAI-compatible endpoint that refuses OpenAI's native tool calling (DeepSeek: `json_mode`). Default `auto` |
 | `LLM_MAX_CONCURRENCY` | no | Concurrent LLM calls per tier and process, 1-64 (keep it low on free tiers) |
 | `WORKER_CONCURRENCY` | no | Alerts each worker triages at once, 1-64 |
 | `ACME_EMAIL` | no | Email for Let's Encrypt expiry notices |
