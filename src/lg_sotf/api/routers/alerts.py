@@ -1,5 +1,9 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/alerts``: listing, detail, timeline, notes and reprocessing."""
+"""``/alerts``: listing, view counts, detail, timeline, notes and reprocessing.
+
+``GET /alerts/counts`` is cached for :data:`COUNTS_CACHE_TTL_S` seconds per
+tenant and window in Redis (Redis being down only disables the cache).
+"""
 
 from __future__ import annotations
 
@@ -7,21 +11,28 @@ from datetime import UTC, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
+from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.context import get_ctx
+from lg_sotf.api.common import alert_detail_out, alert_out
+from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
+from lg_sotf.api.schemas import AlertCountsOut, AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.services import alerts as alert_changes
 
+log = get_logger(__name__)
+
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+COUNTS_CACHE_TTL_S = 15
 
 
 
@@ -44,14 +55,19 @@ async def list_alerts(
     ),
     since: Optional[datetime] = Query(default=None, alias="from"),
     until: Optional[datetime] = Query(default=None, alias="to"),
+    closed_from: Optional[datetime] = Query(default=None, description="Closed at or after (closed alerts only)"),
+    closed_to: Optional[datetime] = Query(default=None, description="Closed before (closed alerts only)"),
     cursor: Optional[str] = Query(default=None, max_length=512),
     limit: int = Query(default=50, ge=1, le=API_MAX_LIMIT),
     principal: Principal = Depends(require(VIEWER)),
 ) -> PageOut[AlertOut]:
     ctx = get_ctx(request)
     since, until = aware(since), aware(until)
+    closed_from, closed_to = aware(closed_from), aware(closed_to)
     if since is not None and until is not None and until <= since:
         raise ApiError(400, "invalid_window", "'to' must be after 'from'")
+    if closed_from is not None and closed_to is not None and closed_to <= closed_from:
+        raise ApiError(400, "invalid_window", "'closed_to' must be after 'closed_from'")
     if q is not None and q.strip():
         end = until or datetime.now(UTC)
         start = since or end - DEFAULT_SEARCH_WINDOW
@@ -69,16 +85,55 @@ async def list_alerts(
         q=q,
         since=since,
         until=until,
+        closed_from=closed_from,
+        closed_to=closed_to,
         limit=limit,
         cursor=cursor,
     )
-    return PageOut[AlertOut](items=[AlertOut.model_validate(a) for a in page.items], next_cursor=page.next_cursor)
+    return PageOut[AlertOut](items=[alert_out(a) for a in page.items], next_cursor=page.next_cursor)
+
+
+def counts_cache_key(ctx: ApiContext, tenant_id: str, closed_from: datetime, closed_to: Optional[datetime]) -> str:
+    end = int(closed_to.timestamp()) if closed_to is not None else "open"
+    return f"{ctx.prefix}:t:{tenant_id}:cache:alert-counts:{int(closed_from.timestamp())}:{end}"
+
+
+@router.get("/counts", response_model=AlertCountsOut, summary="Alert counts by status for the list views (cached 15 s)")
+async def alert_counts(
+    request: Request,
+    closed_from: Optional[datetime] = Query(
+        default=None, description="Count closed alerts closed at or after this time (default: today 00:00 UTC)"
+    ),
+    closed_to: Optional[datetime] = Query(default=None, description="... and before this time (default: no end)"),
+    principal: Principal = Depends(require(VIEWER)),
+) -> AlertCountsOut:
+    """Every status but ``closed`` is counted over all alerts; ``closed`` only inside the closed window."""
+    ctx = get_ctx(request)
+    now = datetime.now(UTC)
+    start = aware(closed_from) or now.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = aware(closed_to)
+    if end is not None and end <= start:
+        raise ApiError(400, "invalid_window", "'closed_to' must be after 'closed_from'")
+    key = counts_cache_key(ctx, principal.tenant_id, start, end)
+    try:
+        cached = await ctx.redis.get(key)
+        if cached is not None:
+            return AlertCountsOut.model_validate_json(cached)
+    except (RedisError, OSError, TimeoutError, ValueError) as exc:
+        log.warning("alerts.counts_cache_unavailable", error_type=type(exc).__name__)
+    counts = await ctx.repos.views.alert_view_counts(principal.tenant_id, start, end)
+    result = AlertCountsOut(by_status=counts, closed_from=start, closed_to=end, generated_at=now)
+    try:
+        await ctx.redis.set(key, result.model_dump_json().encode(), ex=COUNTS_CACHE_TTL_S)
+    except (RedisError, OSError, TimeoutError) as exc:
+        log.warning("alerts.counts_cache_unavailable", error_type=type(exc).__name__)
+    return result
 
 
 @router.get("/{alert_id}", response_model=AlertDetailOut, summary="Alert detail")
 async def get_alert(alert_id: str, request: Request, principal: Principal = Depends(require(VIEWER))) -> AlertDetailOut:
     alert = await get_ctx(request).repos.alerts.get(principal.tenant_id, alert_id)
-    return AlertDetailOut.model_validate(alert)
+    return alert_detail_out(alert)
 
 
 @router.get("/{alert_id}/events", response_model=PageOut[AlertEventOut], summary="Alert timeline (oldest first)")

@@ -40,15 +40,33 @@ async def summary(
     window_hours: int = Query(default=24, ge=1, le=MAX_WINDOW_HOURS),
     principal: Principal = Depends(require(VIEWER)),
 ) -> DashboardOut:
+    """The tenant's figures are cached per tenant and window; ``pending_approvals`` and ``my_claimed``
+    depend on the caller and are computed on every request."""
     ctx = get_ctx(request)
-    key = cache_key(ctx, principal.tenant_id, window_hours)
+    result = await _tenant_summary(ctx, principal.tenant_id, window_hours)
+    mine = await dashboard_figures.caller_figures(
+        ctx.repos,
+        ctx.settings,
+        principal.tenant_id,
+        role=principal.role,
+        user_id=principal.local_user_id,
+        pending_by_risk=result.pending_approvals_by_risk,
+    )
+    return result.model_copy(update=asdict(mine))
+
+
+async def _tenant_summary(ctx: ApiContext, tenant_id: str, window_hours: int) -> DashboardOut:
+    key = cache_key(ctx, tenant_id, window_hours)
     try:
         cached = await ctx.redis.get(key)
         if cached is not None:
             return DashboardOut.model_validate_json(cached)
     except (RedisError, OSError, TimeoutError, ValueError) as exc:
         log.warning("dashboard.cache_unavailable", error_type=type(exc).__name__)
-    result = DashboardOut(**asdict(await dashboard_figures.summary(ctx.repos, principal.tenant_id, window_hours)))
+    figures = await dashboard_figures.summary(
+        ctx.repos, tenant_id, window_hours, model=dashboard_figures.llm_model(ctx.settings)
+    )
+    result = DashboardOut(**asdict(figures))
     try:
         await ctx.redis.set(key, result.model_dump_json().encode(), ex=CACHE_TTL_S)
     except (RedisError, OSError, TimeoutError) as exc:

@@ -225,10 +225,12 @@ async def logout(request: Request) -> Response:
 
 
 @router.get("/me", response_model=MeOut, summary="The authenticated principal")
-async def me(principal: Principal = Depends(require(ANY))) -> MeOut:
+async def me(request: Request, principal: Principal = Depends(require(ANY))) -> MeOut:
+    tenant = await get_ctx(request).tenants.get(principal.tenant_id)
     return MeOut(
         kind=principal.kind,
         tenant_id=principal.tenant_id,
+        tenant_name=tenant.name if tenant is not None else None,
         home_tenant_id=principal.home_tenant_id,
         auth_method=principal.auth_method,
         role=principal.role,

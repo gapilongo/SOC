@@ -28,6 +28,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", "/api/v1/ingest/webhook/no-such-source", "ingest", {"a": 1}),
     ("POST", "/api/v1/ingest/email", "ingest", {"a": 1}),
     ("GET", "/api/v1/alerts", "viewer", None),
+    ("GET", "/api/v1/alerts/counts", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}", "viewer", None),
     ("GET", f"/api/v1/alerts/{X}/events", "viewer", None),
     ("POST", f"/api/v1/alerts/{X}/notes", "analyst", {"text": "note"}),

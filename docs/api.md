@@ -165,7 +165,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/ingest/alerts` | API key `ingest` |
 | POST | `/ingest/webhook/{source_id}` | API key `ingest` |
 | POST | `/ingest/email` (raw `message/rfc822`, optional `?reporter=`) | API key `ingest` |
-| GET | `/alerts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
+| GET | `/alerts`, `/alerts/counts`, `/alerts/{id}`, `/alerts/{id}/events` | viewer / `read` |
 | POST | `/alerts/{id}/notes` | analyst / `write` |
 | POST | `/alerts/{id}/reprocess` | admin |
 | GET | `/escalations`, `/escalations/{id}` | viewer / `read` |
@@ -230,14 +230,49 @@ Redis fails; a database whose pool is fully busy counts as ready.
 ### Alerts
 
 `GET /alerts` filters: `status`, `severity`, `disposition`, `source_id`,
-`from`/`to` (ingestion time), `q` (title substring). A `q` search is limited
+`from`/`to` (ingestion time), `closed_from`/`closed_to` (closing time; only
+closed alerts match), `q` (title substring). A `q` search is limited
 to a window of at most 93 days (default: the 30 days before `to`); a wider
 window is a `400 search_window_too_large`. Notes are stored as `note`
 events on the alert timeline. `reprocess` requeues a finished alert (409
 while its run is active).
 
+Every alert carries `source_name` (null once the source is deleted) and
+`entities_preview`: `{"items": [{"kind", "value"}], "counts": {kind: n}}`,
+the first value of up to three entity kinds (users, hosts, IPs, e-mails,
+domains, URLs, processes, hashes, in that order) and how many values each
+kind present has; null without entities. `GET /alerts/{id}` also lists
+`findings`: one entry per provider result of the analysis agent's lookups,
+`{origin: "threat_intel"|"history", kind, target, source, status, verdict,
+checked_at, cached, data}`; `checked_at` is when the platform received the
+result (null for analyses recorded before it was stored).
+
+`GET /alerts/counts?closed_from=&closed_to=` returns `{by_status,
+closed_from, closed_to, generated_at}`: the number of alerts in every status,
+all-time except `closed`, which counts alerts closed in the window (default:
+from today 00:00 UTC, no end). It is cached for 15 seconds per tenant and
+window.
+
 ### Escalations and actions
 
+* `GET /escalations` filters: `status`, `level`, `assigned_to` (a user id,
+  `me`, or `none` for unassigned), `decided_by` (a user id or `me`),
+  `overdue=true` (active escalations past their deadline) and `alert_id`.
+  `order=created_at` (default) lists newest first; `order=sla_deadline`
+  lists the soonest deadline first, so overdue escalations come first and
+  escalations without a deadline last. Both are keyset-paginated.
+* Every escalation carries `assigned_to_email`, `decided_by_email`, and a
+  digest of its alert: `alert_severity`, `rule` (the detection rule name,
+  else the title), `source_id`, `source_name` and `entities_preview` (as on
+  alerts). `ai_reason` is the first sentence of the analysis conclusion,
+  `ai_reason_source` `model` or `rules` (who wrote it). `routing` is
+  `{code, confidence, band}`: the routing code that opened the escalation
+  (`grey_zone`, `false_positive_review`, `inconclusive`, `model_refused`,
+  `llm_normalized`, `analyst_request`, `response_review`, `group_review`)
+  and, for `grey_zone` when the confidence was inside it, the band
+  (`{min, max}`, `routing.correlation_grey_zone_min`..`_max`). Escalations
+  opened before this was recorded have `routing` and `ai_reason_source`
+  null.
 * Claim and decision bodies carry the escalation's `version`; a stale
   version is `409 conflict` (re-read and retry). Decisions on escalations
   whose SLA expired are accepted and audited with `after_sla_expiry`.
@@ -256,6 +291,16 @@ while its run is active).
   `verification_detail`, `verify_deadline`, `verified_at`), `rollback`
   (eligibility: `available`, `action_type`, `risk`, `until`, `reason`) and
   `rolled_back_by`; see docs/microsoft.md.
+* Every action also carries `reversible` (its type has an inverse),
+  `irreversible_note`, and `blast_radius`: `{target_kind, scope_hosts}`
+  and, while it awaits approval, the limits it will be checked against when
+  it executes: `hourly_limit` and `executed_last_hour` for its type,
+  `tenant_hourly_cap` and `tenant_executed_last_hour`. An action awaiting
+  approval carries `guardrail` `{verdict: "passed"|"blocked", evaluated:
+  "now", code, reason, approval_reason}`, the guardrails checked again
+  against the tenant's current policy (`approval_reason` is why a human
+  must approve, e.g. `admin_approval_required`, `llm_only_evidence`); a
+  blocked action carries the recorded one (`evaluated: "recorded"`).
 * A response the policy chose on its own (no analyst `true_positive`
   decision) closes the alert only when an action really `succeeded` through
   a connector. When every approved action ran as `dry_run` (the default),
@@ -344,7 +389,16 @@ status (the tenant's queue depth; completed and dead-lettered runs are not
 counted) and LLM tokens and cost; it is cached for 15 seconds
 per tenant and window. It also carries `handled_without_human`,
 `needed_human`, `handled_without_human_rate` and `analyst_hours_saved`
-(definitions in docs/reporting.md). `GET /usage/llm?from=&to=` returns daily
+(definitions in docs/reporting.md). The escalation queue figures count
+active escalations: `overdue_escalations`, `unassigned_escalations`,
+`unassigned_breaching`, `next_sla_deadline` (the earliest deadline still
+ahead) and `open_escalations_by_severity` (by the alert's severity); the
+approval queue figures are `pending_approvals_total` and
+`pending_approvals_by_risk`. `pending_approvals` (what the caller's role may
+approve under the tenant's autonomy policy) and `my_claimed` (active
+escalations assigned to the caller) are computed for each request, never
+cached. `llm_model` is the model of the deep tier, which writes the analysis
+verdicts (null when LLM use is off). `GET /usage/llm?from=&to=` returns daily
 usage rows (at most 400 days).
 
 ### Reports

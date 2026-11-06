@@ -131,6 +131,8 @@ class MfaStatusOut(BaseModel):
 class MeOut(BaseModel):
     kind: Literal["user", "api_key"]
     tenant_id: str
+    #: Display name of ``tenant_id`` (the tenant the request acts on).
+    tenant_name: Optional[str] = None
     home_tenant_id: str
     auth_method: str
     role: Optional[str] = None
@@ -165,6 +167,44 @@ class IngestOut(BaseModel):
 # ----------------------------------------------------------------- alerts
 
 
+class EntityRefOut(BaseModel):
+    kind: Literal["user", "host", "ip", "email", "domain", "url", "process", "hash"]
+    value: str
+
+
+class EntitiesPreviewOut(BaseModel):
+    """The first value of up to 3 entity kinds (users, hosts, IPs, e-mails, domains, URLs, processes,
+    hashes, in that order) and how many values each kind present has."""
+
+    items: List[EntityRefOut]
+    counts: Dict[str, int]
+
+
+class FindingOut(BaseModel):
+    """One evidence lookup of the analysis agent: a provider's result for one indicator."""
+
+    origin: Literal["threat_intel", "history"]
+    kind: str
+    target: str
+    source: str = Field(description="The provider (e.g. abuseipdb, virustotal, history).")
+    status: str
+    verdict: str
+    checked_at: Optional[datetime] = Field(
+        default=None, description="When the platform received the result; null for older analyses."
+    )
+    cached: bool = False
+    data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AlertCountsOut(BaseModel):
+    """Alert counts for the list views: every status but ``closed`` all-time, ``closed`` in the window."""
+
+    by_status: Dict[str, int]
+    closed_from: datetime
+    closed_to: Optional[datetime] = Field(default=None, description="End of the closed window; null: open-ended.")
+    generated_at: datetime
+
+
 class AlertOut(Out):
     id: str
     tenant_id: str
@@ -186,11 +226,14 @@ class AlertOut(Out):
     closed_at: Optional[datetime] = None
     summary: Dict[str, Any] = Field(default_factory=dict)
     case_key: Optional[str] = None
+    source_name: Optional[str] = Field(default=None, description="The source's name; null once it is deleted.")
+    entities_preview: Optional[EntitiesPreviewOut] = None
 
 
 class AlertDetailOut(AlertOut):
     raw: Dict[str, Any] = Field(default_factory=dict)
     normalized: Dict[str, Any] = Field(default_factory=dict)
+    findings: List[FindingOut] = Field(default_factory=list)
 
 
 class AlertEventOut(Out):
@@ -225,6 +268,21 @@ class ReprocessOut(BaseModel):
 # ------------------------------------------------------------ escalations
 
 
+class ReviewBandOut(BaseModel):
+    min: int
+    max: int
+
+
+class RoutingOut(BaseModel):
+    """The routing outcome that created the escalation (null on escalations created before it was recorded)."""
+
+    code: str = Field(description="grey_zone, false_positive_review, inconclusive, high_risk, model_refused, ...")
+    confidence: Optional[float] = None
+    band: Optional[ReviewBandOut] = Field(
+        default=None, description="The confidence band that sent the alert to an analyst (grey_zone only)."
+    )
+
+
 class EscalationOut(Out):
     id: str
     tenant_id: str
@@ -246,6 +304,18 @@ class EscalationOut(Out):
     version: int
     created_at: datetime
     updated_at: datetime
+    assigned_to_email: Optional[str] = None
+    decided_by_email: Optional[str] = None
+    alert_severity: Optional[str] = None
+    rule: Optional[str] = Field(default=None, description="The alert's detection rule name, else its title.")
+    source_id: Optional[str] = None
+    source_name: Optional[str] = None
+    entities_preview: Optional[EntitiesPreviewOut] = None
+    ai_reason: Optional[str] = Field(default=None, description="First sentence of the analysis conclusion.")
+    ai_reason_source: Optional[Literal["model", "rules"]] = Field(
+        default=None, description="Who wrote the conclusion; null for older escalations."
+    )
+    routing: Optional[RoutingOut] = None
 
 
 class ClaimIn(In):
@@ -292,6 +362,27 @@ class RollbackEligibilityOut(BaseModel):
     reason: Optional[str] = None
 
 
+class GuardrailOut(BaseModel):
+    """Guardrail verdict: checked now for an action awaiting approval, as recorded for a blocked one."""
+
+    verdict: Literal["passed", "blocked"]
+    evaluated: Literal["now", "recorded"]
+    code: Optional[str] = None
+    reason: Optional[str] = None
+    approval_reason: Optional[str] = Field(default=None, description="Why a human must approve (planner code).")
+
+
+class BlastRadiusOut(BaseModel):
+    """What the action changes; the hourly limits are given for actions awaiting approval only."""
+
+    target_kind: Optional[str] = None
+    scope_hosts: List[str] = Field(default_factory=list)
+    hourly_limit: Optional[int] = Field(default=None, description="Per-type executions allowed per hour.")
+    executed_last_hour: Optional[int] = None
+    tenant_hourly_cap: Optional[int] = None
+    tenant_executed_last_hour: Optional[int] = None
+
+
 class ActionOut(Out):
     id: UUID
     tenant_id: str
@@ -321,6 +412,10 @@ class ActionOut(Out):
     verified_at: Optional[datetime] = None
     rollback: RollbackEligibilityOut = Field(default_factory=RollbackEligibilityOut)
     rolled_back_by: Optional[UUID] = Field(default=None, description="The live rollback of this action, if any.")
+    guardrail: Optional[GuardrailOut] = None
+    blast_radius: Optional[BlastRadiusOut] = None
+    reversible: Optional[bool] = Field(default=None, description="The action type has an inverse (rollback).")
+    irreversible_note: Optional[str] = None
 
 
 class ApprovalIn(In):
@@ -530,6 +625,18 @@ class DashboardOut(BaseModel):
     handled_without_human_rate: Optional[float] = None
     analyst_hours_saved: float = 0.0
     minutes_per_alert: int = 15
+    # Escalation queue (active escalations, as of generated_at).
+    open_escalations_by_severity: Dict[str, int] = Field(default_factory=dict)
+    overdue_escalations: int = 0
+    unassigned_escalations: int = 0
+    unassigned_breaching: int = 0
+    next_sla_deadline: Optional[datetime] = None
+    # Approval queue: all pending actions, and those the caller may approve.
+    pending_approvals_total: int = 0
+    pending_approvals_by_risk: Dict[str, int] = Field(default_factory=dict)
+    pending_approvals: int = 0
+    my_claimed: int = 0
+    llm_model: Optional[str] = None
 
 
 class UsageDayOut(Out):

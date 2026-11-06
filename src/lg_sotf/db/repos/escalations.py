@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from uuid import UUID
 
@@ -25,6 +25,9 @@ from lg_sotf.models.vocabulary import DECISIONS, ESCALATION_LEVELS, ESCALATION_S
 ACTIVE_ESCALATION_STATUSES = ("open", "claimed")
 
 _CREATE_ATTEMPTS = 3
+ESCALATION_ORDERS = ("created_at", "sla_deadline")
+# Sort key of an escalation without a deadline in deadline order (after every real deadline).
+NO_DEADLINE = datetime(9999, 12, 31, tzinfo=UTC)
 
 # ACTIVE_ESCALATION_STATUSES as a SQL list literal: ('open', 'claimed').
 _ACTIVE_IN = "(" + ", ".join(f"'{status}'" for status in ACTIVE_ESCALATION_STATUSES) + ")"
@@ -66,6 +69,40 @@ _ATTACH_SQL = """
     WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(related_alert_ids))
     RETURNING *
 """
+
+
+def _list_filters(
+    params: Params,
+    *,
+    status: Union[str, Sequence[str], None],
+    level: Union[str, Sequence[str], None],
+    assigned_to: Optional[UUID],
+    unassigned: bool,
+    decided_by: Optional[UUID],
+    overdue_at: Optional[datetime],
+    alert_id: Optional[str],
+    include_attached: bool,
+) -> List[str]:
+    """The WHERE clauses of :meth:`EscalationsRepo.list` (``$1`` is the tenant)."""
+    where = ["tenant_id = $1"]
+    statuses = check_choices(status, ESCALATION_STATUSES, "escalation status")
+    if statuses:
+        where.append(f"status = ANY({params.add(statuses)}::text[])")
+    levels = check_choices(level, ESCALATION_LEVELS, "escalation level")
+    if levels:
+        where.append(f"level = ANY({params.add(levels)}::text[])")
+    if assigned_to is not None:
+        where.append(f"assigned_to = {params.add(assigned_to)}")
+    if unassigned:
+        where.append("assigned_to IS NULL")
+    if decided_by is not None:
+        where.append(f"decided_by = {params.add(decided_by)}")
+    if overdue_at is not None:
+        where.append(f"status IN {_ACTIVE_IN} AND sla_deadline < {params.add(overdue_at)}")
+    if alert_id is not None:
+        ref = params.add(alert_id)
+        where.append(f"(alert_id = {ref} OR {ref} = ANY(related_alert_ids))" if include_attached else f"alert_id = {ref}")
+    return where
 
 
 class Escalation(Record):
@@ -184,41 +221,57 @@ class EscalationsRepo(Repository):
         status: Union[str, Sequence[str], None] = None,
         level: Union[str, Sequence[str], None] = None,
         assigned_to: Optional[UUID] = None,
+        unassigned: bool = False,
+        decided_by: Optional[UUID] = None,
+        overdue_at: Optional[datetime] = None,
         alert_id: Optional[str] = None,
         include_attached: bool = False,
+        order: str = "created_at",
         limit: int = 50,
         cursor: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> Page[Escalation]:
-        """Newest first, keyset-paginated over (created_at, id).
+        """Keyset-paginated: newest first over (created_at, id), or with ``order="sla_deadline"`` by
+        deadline, soonest first, over (sla_deadline, id).
 
-        ``alert_id`` matches the escalation's primary alert; with
-        ``include_attached`` it also matches escalations the alert was attached
-        to (``related_alert_ids``), whose decision resolved it too.
+        Deadline order puts overdue escalations (deadline in the past) first and escalations
+        without a deadline last. ``unassigned`` keeps those nobody is assigned to;
+        ``overdue_at`` keeps active (open or claimed) ones whose deadline is before it.
+        ``alert_id`` matches the escalation's primary alert; with ``include_attached`` it also
+        matches escalations the alert was attached to (``related_alert_ids``), whose decision
+        resolved it too.
         """
         check_limit(limit)
+        check_choice(order, ESCALATION_ORDERS, "escalation order")
+        require_aware(overdue_at, "overdue_at")
         params = Params(tenant_id)
-        where = ["tenant_id = $1"]
-        statuses = check_choices(status, ESCALATION_STATUSES, "escalation status")
-        if statuses:
-            where.append(f"status = ANY({params.add(statuses)}::text[])")
-        levels = check_choices(level, ESCALATION_LEVELS, "escalation level")
-        if levels:
-            where.append(f"level = ANY({params.add(levels)}::text[])")
-        if assigned_to is not None:
-            where.append(f"assigned_to = {params.add(assigned_to)}")
-        if alert_id is not None:
-            ref = params.add(alert_id)
-            where.append(f"(alert_id = {ref} OR {ref} = ANY(related_alert_ids))" if include_attached else f"alert_id = {ref}")
+        where = _list_filters(
+            params,
+            status=status,
+            level=level,
+            assigned_to=assigned_to,
+            unassigned=unassigned,
+            decided_by=decided_by,
+            overdue_at=overdue_at,
+            alert_id=alert_id,
+            include_attached=include_attached,
+        )
+        if order == "sla_deadline":
+            sort = f"COALESCE(sla_deadline, {params.add(NO_DEADLINE)}::timestamptz)"
+            direction, compare = "ASC", ">"
+        else:
+            sort, direction, compare = "created_at", "DESC", "<"
         if cursor:
             ts, key = decode_cursor_text(cursor)
-            where.append(f"(created_at, id) < ({params.add(ts)}, {params.add(key)})")
+            where.append(f"({sort}, id) {compare} ({params.add(ts)}, {params.add(key)})")
         sql = (
             f"SELECT * FROM escalations WHERE {' AND '.join(where)} "  # noqa: S608
-            f"ORDER BY created_at DESC, id DESC LIMIT {params.add(limit + 1)}"
+            f"ORDER BY {sort} {direction}, id {direction} LIMIT {params.add(limit + 1)}"
         )
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(sql, *params.values)
+        if order == "sla_deadline":
+            return paginate(to_models(Escalation, rows), limit, lambda e: (e.sla_deadline or NO_DEADLINE, e.id))
         return paginate(to_models(Escalation, rows), limit, lambda e: (e.created_at, e.id))
 
     async def claim(

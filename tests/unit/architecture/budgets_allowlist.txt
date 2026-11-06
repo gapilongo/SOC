@@ -8,7 +8,7 @@ services/reporting.py	852
 services/response.py	2530
 
 # Functions
-agents/analysis/base.py::AnalysisAgent._run	136
+agents/analysis/base.py::AnalysisAgent._run	134
 agents/correlation/base.py::CorrelationAgent._run	88
 api/app.py::create_app	104
 api/routers/integrations.py::slack_interactions	97

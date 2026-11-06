@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Mapping, Optional
 
 from pydantic import BaseModel, Field
@@ -107,6 +108,8 @@ class Candidate:
 class Observation:
     candidate: Candidate
     results: List[EnrichmentResult]
+    # When the platform received the results (cached ones were fetched earlier: ``cached`` in each result).
+    checked_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def verdicts(self) -> List[str]:
@@ -124,6 +127,7 @@ class Observation:
             "target": display[:128],
             "results": [r.as_dict() for r in self.results],
             "simulated": False,
+            "checked_at": self.checked_at.isoformat(),
         }
 
 

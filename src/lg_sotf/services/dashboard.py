@@ -2,7 +2,14 @@
 
 Every figure is read in one read-only ``db.tenant_tx``, so the counts,
 response times, queue and LLM cost describe the same snapshot. Caching is the
-caller's (``api.routers.dashboard``).
+caller's (``api.routers.dashboard``): :func:`summary` is the same for every
+caller of a tenant, :func:`caller_figures` depends on who asks (their role and
+their assignments) and is never cached across callers.
+
+Escalation queue figures count active (open or claimed) escalations as of
+``generated_at``: ``overdue_escalations`` have a deadline in the past,
+``next_sla_deadline`` is the earliest deadline still ahead, and
+``open_escalations_by_severity`` groups them by their alert's severity.
 """
 
 from __future__ import annotations
@@ -10,10 +17,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
+from uuid import UUID
 
 from lg_sotf.db.repos import Repositories
+from lg_sotf.models.vocabulary import RISK_LEVELS
 from lg_sotf.services.reporting import hours_saved, ratio, resolve_reporting_policy
+from lg_sotf.services.response import approval_allowed, resolve_autonomy
+from lg_sotf.settings import Settings
 
 
 @dataclass(frozen=True)
@@ -41,16 +52,41 @@ class DashboardSummary:
     handled_without_human_rate: Optional[float]
     analyst_hours_saved: float
     minutes_per_alert: int
+    open_escalations_by_severity: Dict[str, int]
+    overdue_escalations: int
+    unassigned_escalations: int
+    unassigned_breaching: int
+    next_sla_deadline: Optional[datetime]
+    pending_approvals_total: int
+    pending_approvals_by_risk: Dict[str, int]
+    llm_model: Optional[str]
 
 
-async def summary(repos: Repositories, tenant_id: str, window_hours: int) -> DashboardSummary:
-    """The figures of the last ``window_hours``, as of now."""
+@dataclass(frozen=True)
+class CallerFigures:
+    """The figures that depend on the caller: what they can approve and what they hold."""
+
+    pending_approvals: int
+    my_claimed: int
+
+
+def llm_model(settings: Settings) -> Optional[str]:
+    """The model that writes the analysis verdicts (the deep tier); ``None`` when LLM use is off."""
+    return settings.llm.deep.model if settings.llm.enabled else None
+
+
+async def summary(
+    repos: Repositories, tenant_id: str, window_hours: int, *, model: Optional[str] = None
+) -> DashboardSummary:
+    """The figures of the last ``window_hours``, as of now; ``model`` is reported as ``llm_model``."""
     now = datetime.now(UTC)
     since = now - timedelta(hours=window_hours)
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
         counts = await repos.alerts.dashboard_counts(tenant_id, since, conn=conn)
         times = await repos.alerts.response_times(tenant_id, since, conn=conn)
         open_escalations = await repos.escalations.count_active(tenant_id, conn=conn)
+        queue = await repos.views.escalation_queue(tenant_id, now, conn=conn)
+        pending = await repos.views.pending_actions_by_risk(tenant_id, conn=conn)
         runs = await repos.runs.counts_by_status(tenant_id, active_only=True, conn=conn)
         usage_rows = await repos.llm_usage.list_range(tenant_id, since.date(), now.date(), conn=conn)
         handled, needed = await repos.reports.automation_counts(tenant_id, since, now, conn=conn)
@@ -78,4 +114,41 @@ async def summary(repos: Repositories, tenant_id: str, window_hours: int) -> Das
         handled_without_human_rate=ratio(handled, handled + needed),
         analyst_hours_saved=hours_saved(handled, minutes),
         minutes_per_alert=minutes,
+        open_escalations_by_severity=queue.by_severity,
+        overdue_escalations=queue.overdue,
+        unassigned_escalations=queue.unassigned,
+        unassigned_breaching=queue.unassigned_breaching,
+        next_sla_deadline=queue.next_sla_deadline,
+        pending_approvals_total=sum(pending.values()),
+        pending_approvals_by_risk=pending,
+        llm_model=model,
+    )
+
+
+def approvable(
+    pending_by_risk: Mapping[str, int], role: Optional[str], tenant_settings: Mapping[str, Any], settings: Settings
+) -> int:
+    """How many of the pending actions ``role`` may approve (risk vs role, and not disabled by autonomy)."""
+    return sum(
+        n
+        for risk, n in pending_by_risk.items()
+        if risk in RISK_LEVELS and approval_allowed(risk, role, resolve_autonomy(risk, tenant_settings, settings))
+    )
+
+
+async def caller_figures(
+    repos: Repositories,
+    settings: Settings,
+    tenant_id: str,
+    *,
+    role: Optional[str],
+    user_id: Optional[UUID],
+    pending_by_risk: Mapping[str, int],
+) -> CallerFigures:
+    """``pending_approvals``: of ``pending_by_risk``, what ``role`` may approve under the tenant's
+    current autonomy policy. ``my_claimed``: active escalations assigned to ``user_id`` (0 without one)."""
+    tenant = await repos.tenants.get(tenant_id)
+    mine = await repos.views.assigned_active(tenant_id, user_id) if user_id is not None else 0
+    return CallerFigures(
+        pending_approvals=approvable(pending_by_risk, role, tenant.settings, settings), my_claimed=mine
     )
