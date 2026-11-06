@@ -1,8 +1,7 @@
 /**
  * The sidebar's navigation model: groups (Operate / Report / Configure /
  * Platform) of items filtered by role with the helpers of auth/roles.ts. Each
- * item maps to an existing route; the Approvals item opens the actions page
- * until a dedicated approvals page exists.
+ * item maps to an existing route.
  */
 
 import {
@@ -63,7 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
         },
       },
       {
-        to: '/actions',
+        to: '/approvals',
         label: 'Approvals',
         icon: UserCheck,
         allowed: can.view,

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActionOut, Page } from '../api/types';
 import { NAV_ITEMS } from '../components/Layout';
 import { RequireRole } from '../components/Guards';
-import ActionsPage from '../pages/ActionsPage';
+import ApprovalsPage from '../pages/approvals/ApprovalsPage';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import { approvalRoleFor, can, decisionBlockedReason, escalationDecisionBlockedReason, roleAtLeast } from './roles';
 import type { Principal } from './store';
@@ -120,11 +120,14 @@ describe('role-gated UI', () => {
     const page: Page<ActionOut> = { items: [action('a', 'medium'), action('bb', 'critical')], next_cursor: null };
     const { api } = fakeApi(() => page);
     const session = await signedInSession(api, { role: 'analyst' });
-    renderWithSession(<ActionsPage />, session);
-    expect(await screen.findAllByRole('button', { name: /Approve/ })).toHaveLength(1);
+    renderWithSession(<ApprovalsPage />, session);
+    const approve = await screen.findAllByRole('button', { name: 'Approve' });
+    expect(approve.filter((b) => !(b as HTMLButtonElement).disabled)).toHaveLength(1);
+    // The critical one is locked, and says why.
+    const locked = approve.find((b) => (b as HTMLButtonElement).disabled);
+    expect(locked).toHaveAccessibleDescription('Critical risk needs an admin to approve.');
     // The API lets analysts reject at any risk: rejecting a dangerous action is the safe choice.
-    expect(screen.getAllByRole('button', { name: /Reject/ })).toHaveLength(2);
-    expect(screen.getByText('Approving high and critical risk actions needs an admin.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Reject' })).toHaveLength(2);
   });
 
   it('offers viewers neither approve nor reject', async () => {
@@ -146,7 +149,7 @@ describe('role-gated UI', () => {
     };
     const { api } = fakeApi(() => page);
     const session = await signedInSession(api, { role: 'viewer' });
-    renderWithSession(<ActionsPage />, session);
+    renderWithSession(<ApprovalsPage />, session);
     expect(await screen.findByText('Requires the analyst role.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Approve|Reject/ })).not.toBeInTheDocument();
   });

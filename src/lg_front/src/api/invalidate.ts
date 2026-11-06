@@ -71,8 +71,8 @@ export const afterBulkSuppressionProposal = (client: QueryClient) => invalidate(
 /** An action changed (retried, rolled back, re-verified, or a decision failed). */
 export const afterActionChange = (client: QueryClient) => invalidate(client, qk.actions.all);
 
-/** An action was approved or rejected: it and the alert workflow it may resume. */
-export const afterActionDecision = (client: QueryClient) => invalidate(client, qk.actions.all, qk.alerts.all);
+/** An action was approved or rejected: it, the alert workflow it may resume and the approval counts. */
+export const afterActionDecision = (client: QueryClient) => invalidate(client, qk.actions.all, qk.alerts.all, qk.dashboard.all);
 
 // Tenant configuration -------------------------------------------------------
 

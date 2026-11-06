@@ -19,7 +19,7 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
   ],
   ['afterBulkSuppressionProposal', policies.afterBulkSuppressionProposal, [['suppressions']]],
   ['afterActionChange', policies.afterActionChange, [['actions']]],
-  ['afterActionDecision', policies.afterActionDecision, [['actions'], ['alerts']]],
+  ['afterActionDecision', policies.afterActionDecision, [['actions'], ['alerts'], ['dashboard']]],
   ['afterSourceChange', policies.afterSourceChange, [['sources']]],
   ['afterSuppressionChange', policies.afterSuppressionChange, [['suppressions']]],
   ['afterIntegrationChange', policies.afterIntegrationChange, [['integrations']]],

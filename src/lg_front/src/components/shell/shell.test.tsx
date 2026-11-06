@@ -64,9 +64,9 @@ describe('navigation model', () => {
     expect(navFor(null)).toEqual([]);
   });
 
-  it('maps every item to an existing route, Approvals to the actions page', () => {
+  it('maps every item to an existing route', () => {
     const items = navFor(principal({ role: 'admin', isPlatformAdmin: true })).flatMap((g) => g.items);
-    expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Approvals: '/actions', 'MSSP console': '/platform' });
+    expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Approvals: '/approvals', 'MSSP console': '/platform' });
   });
 
   it('reads nav counts defensively from the dashboard summary', () => {
@@ -81,7 +81,7 @@ describe('navigation model', () => {
 
   it('names pages for the breadcrumb', () => {
     expect(pageLabel('/')).toBe('Overview');
-    expect(pageLabel('/actions')).toBe('Approvals');
+    expect(pageLabel('/approvals')).toBe('Approvals');
     expect(pageLabel('/reports/x')).toBe('Reports');
     expect(pageLabel('/account')).toBe('Account security');
     expect(pageLabel('/nowhere')).toBeNull();
@@ -114,7 +114,7 @@ describe('Sidebar', () => {
     await waitFor(() => expect(calls.some((c) => c.path === '/dashboard/summary')).toBe(true));
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('aria-current', 'page');
-    expect(within(nav).getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', '/actions');
+    expect(within(nav).getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', '/approvals');
     expect(within(nav).getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
     expect(within(nav).queryByText(/breaching SLA/)).not.toBeInTheDocument();
     expect(within(nav).queryByText(/you can approve/)).not.toBeInTheDocument();

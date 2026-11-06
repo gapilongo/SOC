@@ -103,7 +103,7 @@ describe('OverviewPage', () => {
     expect(within(now).getByText('and 1 more in your queue')).toBeInTheDocument();
     expect(within(now).getByText(/of 2 pending · 1 needs an admin/)).toBeInTheDocument();
     expect(within(now).getByRole('list', { name: 'Pending approvals by risk' })).toHaveTextContent('high risk 1medium risk 1');
-    expect(within(now).getByRole('link', { name: 'Review approvals' })).toHaveAttribute('href', '/actions?status=awaiting_approval');
+    expect(within(now).getByRole('link', { name: 'Review approvals' })).toHaveAttribute('href', '/approvals');
 
     // Window figures: small samples are not shown as rates or means.
     const window = screen.getByRole('region', { name: 'Last 24 hours' });
