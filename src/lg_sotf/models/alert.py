@@ -20,8 +20,10 @@ from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-Severity = Literal["info", "low", "medium", "high", "critical"]
-SEVERITIES: Tuple[Severity, ...] = ("info", "low", "medium", "high", "critical")
+# Severity is declared in the vocabulary (ADR-0004) and re-exported here.
+from lg_sotf.models.vocabulary import SEVERITIES as SEVERITIES
+from lg_sotf.models.vocabulary import Severity
+
 SeverityScale = Literal["0-10", "0-15", "0-100", "1-4", "1-5", "guardduty"]
 SEVERITY_SCALES: Tuple[str, ...] = ("0-10", "0-15", "0-100", "1-4", "1-5", "guardduty")
 
