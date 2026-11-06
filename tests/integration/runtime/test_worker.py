@@ -567,3 +567,34 @@ async def test_heartbeat_stops_even_when_its_cancellation_is_swallowed(
 
 async def _no_inflight(worker: Any) -> bool:
     return worker.inflight == 0
+
+
+async def test_stop_finishes_even_when_the_liveness_loop_swallows_its_cancellation(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    """Python 3.11 wait_for (inside redis-py) can swallow cancel(): the liveness loop must still stop."""
+    s = runtime_settings()
+    worker = make_worker(s, repos.db, redis_client, FakeEngine(returns("completed")), lease_s=0.15)
+    real = worker._consumer.announce_alive
+    inside = asyncio.Event()
+    swallowed: list[bool] = []
+
+    async def announce_alive(lease_s: float) -> None:
+        inside.set()
+        try:
+            await asyncio.sleep(0.5)
+        except asyncio.CancelledError:
+            if not swallowed:
+                swallowed.append(True)
+                return  # exactly what wait_for does when the inner command finished at that moment
+            raise
+        await real(lease_s)
+
+    task = asyncio.create_task(worker.run())
+    await asyncio.sleep(0.2)
+    worker._consumer.announce_alive = announce_alive  # type: ignore[method-assign]
+    inside.clear()
+    await asyncio.wait_for(inside.wait(), 5)
+    worker.request_stop()
+    await asyncio.wait_for(task, 8)
+    assert swallowed
