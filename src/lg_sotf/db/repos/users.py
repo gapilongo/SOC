@@ -23,9 +23,8 @@ from lg_sotf.db.repos._base import (
     to_models,
     utcnow,
 )
+from lg_sotf.models.vocabulary import ROLES
 from lg_sotf.settings import get_settings
-
-ROLES = ("admin", "analyst", "viewer")
 
 
 class User(Record):
