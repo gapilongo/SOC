@@ -32,7 +32,11 @@ All notable changes to this project are documented here. The format follows
   using a recovery code, the role update of a single sign-on account,
   creating, updating and deleting alert sources, suppression rules and
   integrations, integration connection tests, creating users and API keys,
-  revoking API keys, and the getting-started checklist steps.
+  revoking API keys, the getting-started checklist steps, and, on the
+  command line, `create-admin`, the bootstrap admin of `migrate`, `enqueue`
+  and `dlq requeue`.
+- The scheduler's SLA escalation and expiry entries are now redacted and
+  logged like every other audit entry.
 
 ## [1.2.3] - 2026-11-05
 

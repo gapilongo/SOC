@@ -20,6 +20,9 @@ Rules:
 ``audit_without_conn_baseline.txt``
     ``<...>audit.record(...)`` calls without ``conn=``. An audit row written outside
     the caller's transaction can disagree with the change it records.
+``.audit.append(`` (no baseline)
+    ``<...>.audit.append(...)`` outside ``audit/logger.py`` and ``db/``. Every audit row goes
+    through ``AuditLogger``, which redacts the details and logs the entry.
 ``get_settings_baseline.txt``
     ``get_settings()`` calls outside the composition roots (``cli.py``,
     ``api/app.py``, ``runtime/``, ``settings.py``, ``__main__.py``). Everything else
@@ -118,6 +121,19 @@ def scan_audit_without_conn(rel: str, tree: ast.Module) -> list[str]:
         if any(kw.arg in ("conn", None) for kw in call.keywords):
             continue
         found.append(_loc(rel, qual))
+    return found
+
+
+def scan_audit_append(rel: str, tree: ast.Module) -> list[str]:
+    """``X.audit.append(...)`` calls: the audit repository written to directly."""
+    found: list[str] = []
+    for call, qual in iter_calls(tree):
+        if attr_name(call) != "append":
+            continue
+        assert isinstance(call.func, ast.Attribute)
+        receiver = call.func.value
+        if isinstance(receiver, ast.Attribute) and receiver.attr == "audit":
+            found.append(_loc(rel, qual))
     return found
 
 
@@ -233,6 +249,14 @@ def test_audit_records_pass_conn() -> None:
     )
 
 
+def test_audit_rows_are_written_only_through_audit_logger() -> None:
+    allowed = ("audit/logger.py",)
+    found = collect(scan_audit_append, lambda rel: rel not in allowed and not in_dir(rel, "db"))
+    assert not found, "write audit entries with AuditLogger.record/record_event, not repos.audit.append: " + ", ".join(
+        found
+    )
+
+
 def test_get_settings_only_in_composition_roots() -> None:
     found = collect(scan_get_settings, lambda rel: not _is_settings_root(rel))
     check("get_settings() outside composition roots", found, "get_settings_baseline.txt")
@@ -330,6 +354,18 @@ async def handler(ctx, self, audit, recorder, conn, kw):
     await Recorder(ctx).record("i")
 """
     assert _scan(scan_audit_without_conn, code) == ["m.py::handler"] * 3
+
+
+def test_audit_append_scanner_flags_the_audit_repository_only() -> None:
+    code = """
+async def handler(self, repos, items, audit):
+    await self._repos.audit.append("t", "system", None, "a", "r")
+    await repos.audit.append("t", "system", None, "a", "r")
+    items.append(1)
+    audit.append(2)
+    self.audit_trail.append(3)
+"""
+    assert _scan(scan_audit_append, code) == ["m.py::handler"] * 2
 
 
 def test_get_settings_scanner_flags_calls_not_references() -> None:

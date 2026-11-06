@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
@@ -12,6 +12,7 @@ from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upg
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories, User
+from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.users import ROLES
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import get_logger
@@ -46,11 +47,12 @@ def check_password(settings: Settings, password: str) -> None:
         raise OperationError(f"password must be at least {settings.auth.password_min_length} characters")
 
 
-async def audit_user_created(repos: Repositories, user: User, *, via: str) -> None:
+async def audit_user_created(repos: Repositories, user: User, *, via: str, conn: Connection) -> None:
     """Hash-chained audit entries for an account created outside the API (CLI, migrate).
 
     ``user.created`` always; ``platform.admin_granted`` as well when the account
-    is a platform admin (the cross-tenant super-user flag).
+    is a platform admin (the cross-tenant super-user flag). ``conn`` is the
+    transaction that created the account.
     """
     audit = AuditLogger(repos)
     details = {
@@ -61,7 +63,14 @@ async def audit_user_created(repos: Repositories, user: User, *, via: str) -> No
         "via": via,
     }
     await audit.record(
-        user.tenant_id, "user.created", "user", str(user.id), actor_type="system", actor_id=via, details=details
+        user.tenant_id,
+        "user.created",
+        "user",
+        str(user.id),
+        actor_type="system",
+        actor_id=via,
+        details=details,
+        conn=conn,
     )
     if user.is_platform_admin:
         await audit.record(
@@ -72,19 +81,24 @@ async def audit_user_created(repos: Repositories, user: User, *, via: str) -> No
             actor_type="system",
             actor_id=via,
             details={"email": user.email, "via": via},
+            conn=conn,
         )
 
 
-async def audit_reprocess(repos: Repositories, tenant_id: str, alert_id: str, *, via: str, **details: object) -> None:
-    await AuditLogger(repos).record(
-        tenant_id,
-        "alert.reprocess_requested",
-        "alert",
-        alert_id,
-        actor_type="system",
-        actor_id="cli",
-        details={"via": via, **details},
-    )
+async def audit_reprocess(
+    repos: Repositories, tenant_id: str, alert_id: str, *, via: str, conn: Optional[Connection], **details: object
+) -> None:
+    """``alert.reprocess_requested``, on ``conn`` when the request requeued the run in that transaction.
+
+    ``conn=None`` records a request that changed nothing in the database
+    (a rebuilt resume message only), before the message is queued.
+    """
+    audit = AuditLogger(repos)
+    entry: Dict[str, Any] = {"actor_type": "system", "actor_id": "cli", "details": {"via": via, **details}}
+    if conn is None:
+        await audit.record_event(tenant_id, "alert.reprocess_requested", "alert", alert_id, **entry)
+    else:
+        await audit.record(tenant_id, "alert.reprocess_requested", "alert", alert_id, **entry, conn=conn)
 
 
 @dataclass
@@ -125,14 +139,17 @@ async def migrate(settings: Settings) -> MigrateReport:
             if not await repos.users.list(auth.bootstrap_tenant_id, limit=1):
                 password = auth.bootstrap_admin_password.get_secret_value()
                 check_password(settings, password)
-                user = await repos.users.create(
-                    auth.bootstrap_tenant_id,
-                    auth.bootstrap_admin_email,
-                    "admin",
-                    password_hash=await ahash_password(password),
-                    is_platform_admin=True,
-                )
-                await audit_user_created(repos, user, via="migrate")
+                password_hash = await ahash_password(password)
+                async with db.tenant_tx(auth.bootstrap_tenant_id) as conn:
+                    user = await repos.users.create(
+                        auth.bootstrap_tenant_id,
+                        auth.bootstrap_admin_email,
+                        "admin",
+                        password_hash=password_hash,
+                        is_platform_admin=True,
+                        conn=conn,
+                    )
+                    await audit_user_created(repos, user, via="migrate", conn=conn)
                 report.admin_created = user.email
     finally:
         await db.close()
@@ -165,13 +182,15 @@ async def create_user(
             await repos.tenants.get(tenant_id)
         except NotFound as exc:
             raise OperationError(f"tenant {tenant_id!r} does not exist") from exc
+        password_hash = await ahash_password(password)
         try:
-            user = await repos.users.create(
-                tenant_id, email, role, password_hash=await ahash_password(password), is_platform_admin=platform_admin
-            )
+            async with db.tenant_tx(tenant_id) as conn:
+                user = await repos.users.create(
+                    tenant_id, email, role, password_hash=password_hash, is_platform_admin=platform_admin, conn=conn
+                )
+                await audit_user_created(repos, user, via="cli", conn=conn)
         except Conflict as exc:
             raise OperationError("a user with this email already exists in the tenant") from exc
-        await audit_user_created(repos, user, via="cli")
         return user
     finally:
         await db.close()
@@ -265,25 +284,28 @@ async def create_tenant(
         )
         if admin_email is not None:
             password_hash = await ahash_password(admin_password) if admin_password is not None else None
-            report.admin = await repos.users.create(tenant.id, admin_email, "admin", password_hash=password_hash)
-            await audit_user_created(repos, report.admin, via="cli")
+            async with db.tenant_tx(tenant.id) as conn:
+                report.admin = await repos.users.create(
+                    tenant.id, admin_email, "admin", password_hash=password_hash, conn=conn
+                )
+                await audit_user_created(repos, report.admin, via="cli", conn=conn)
         return report
     finally:
         await db.close()
 
 
-async def _requeue_run(repos: Repositories, tenant_id: str, alert_id: str, *, force: bool) -> str:
-    """Make the run claimable by a ``process`` message and return the alert severity."""
+async def _requeue_run(repos: Repositories, tenant_id: str, alert_id: str, *, force: bool, conn: Connection) -> str:
+    """Make the run claimable by a ``process`` message (in ``conn``'s transaction) and return the alert severity."""
     try:
-        alert = await repos.alerts.get(tenant_id, alert_id)
+        alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
     except NotFound as exc:
         raise OperationError(f"alert {alert_id!r} not found in tenant {tenant_id!r}") from exc
-    run = await repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=force)
+    run = await repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=force, conn=conn)
     if run.status not in ("queued", "failed"):
         hint = "; pass --force to reprocess a finished run" if run.status in ("completed", "dead_lettered") else ""
         raise OperationError(f"run is {run.status}{hint}")
     try:
-        await repos.alerts.update_status(tenant_id, alert_id, "queued")
+        await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
     except InvalidTransition:
         log.info("ops.alert_status_kept", status=alert.status)
     return alert.severity
@@ -296,8 +318,9 @@ async def enqueue_alert(settings: Settings, *, tenant_id: str, alert_id: str, fo
     await db.open()
     try:
         repos = Repositories.create(db)
-        severity = await _requeue_run(repos, tenant_id, alert_id, force=force)
-        await audit_reprocess(repos, tenant_id, alert_id, via="enqueue", force=force)
+        async with db.tenant_tx(tenant_id) as conn:
+            severity = await _requeue_run(repos, tenant_id, alert_id, force=force, conn=conn)
+            await audit_reprocess(repos, tenant_id, alert_id, via="enqueue", force=force, conn=conn)
         return await WorkQueue(redis, settings).enqueue_process(tenant_id, alert_id, severity)
     finally:
         await redis.aclose()
@@ -320,7 +343,9 @@ async def enqueue_lost_resume(settings: Settings, *, tenant_id: str, alert_id: s
             except NotFound as exc:
                 raise OperationError(f"no workflow run for alert {alert_id!r} in tenant {tenant_id!r}") from exc
             raise OperationError(f"run is {run.status}; there is no decided escalation or approval to resume with")
-        await audit_reprocess(repos, tenant_id, alert_id, via="enqueue_resume", resume_type=payload["type"])
+        await audit_reprocess(
+            repos, tenant_id, alert_id, via="enqueue_resume", resume_type=payload["type"], conn=None
+        )
         return await WorkQueue(redis, settings).enqueue_resume(tenant_id, alert_id, payload)
     finally:
         await redis.aclose()
@@ -351,16 +376,19 @@ async def _requeue_letter(repos: Repositories, dlq: DeadLetterQueue, queue: Work
     if letter is None:
         raise OperationError(f"dead letter {entry_id} not found")
     run_reset = True
-    try:
-        severity = await _requeue_run(repos, letter.tenant_id, letter.alert_id, force=True)
-    except OperationError as exc:
-        if letter.kind != "resume":
-            raise
-        # e.g. the run is still waiting: the resume message alone continues it.
-        run_reset = False
-        severity = "high"
-        log.info("ops.dlq_resume_run_state", detail=str(exc))
-    await audit_reprocess(repos, letter.tenant_id, letter.alert_id, via="dlq_requeue", kind=letter.kind)
+    async with repos.db.tenant_tx(letter.tenant_id) as conn:
+        try:
+            severity = await _requeue_run(repos, letter.tenant_id, letter.alert_id, force=True, conn=conn)
+        except OperationError as exc:
+            if letter.kind != "resume":
+                raise
+            # e.g. the run is still waiting: the resume message alone continues it.
+            run_reset = False
+            severity = "high"
+            log.info("ops.dlq_resume_run_state", detail=str(exc))
+        await audit_reprocess(
+            repos, letter.tenant_id, letter.alert_id, via="dlq_requeue", kind=letter.kind, conn=conn
+        )
     if letter.kind == "resume" and run_reset:
         # The run restarts from its checkpoint and interrupts again; the resume then applies.
         await queue.enqueue_process(letter.tenant_id, letter.alert_id, severity)

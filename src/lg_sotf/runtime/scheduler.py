@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Protocol, Sequence, Tuple
 
+from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import Database
@@ -136,6 +137,7 @@ class Scheduler:
         self._db = db
         self._redis = redis
         self._repos = Repositories.create(db)
+        self._audit = AuditLogger(self._repos)
         self._ingestion_factory = ingestion_factory
         self._ingestion: Optional[IngestionLike] = None
         self._queue = queue
@@ -529,14 +531,14 @@ class Scheduler:
                         data={"escalation_id": esc.id, "from_level": esc.level, "to_level": updated.level},
                         conn=conn,
                     )
-                    await self._repos.audit.append(
+                    await self._audit.record(
                         esc.tenant_id,
-                        "system",
-                        ACTOR_ID,
                         action,
                         "escalation",
                         esc.id,
-                        {
+                        actor_type="system",
+                        actor_id=ACTOR_ID,
+                        details={
                             "alert_id": esc.alert_id,
                             "from_level": esc.level,
                             "to_level": updated.level,

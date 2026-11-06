@@ -7,6 +7,7 @@ from typing import Any, Callable, List, Optional
 
 import pytest
 
+from lg_sotf.audit import logger as audit_logger
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories, Source
 from lg_sotf.observability.metrics import ESCALATIONS_OPEN, QUEUE_DEPTH
@@ -236,6 +237,28 @@ async def test_sla_sweep_escalates_then_expires_with_audit(
 
     await sched.sweep_sla()
     assert (await repos.escalations.get(TENANT_A, l1.id)).level == "L2"
+
+
+async def test_sla_breach_audit_goes_through_the_audit_logger(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The breach entry is redacted and logged like every other audit entry, in the breach's transaction."""
+    lines: List[Any] = []
+
+    class Spy:
+        def info(self, event: str, **fields: Any) -> None:
+            lines.append((event, fields))
+
+    monkeypatch.setattr(audit_logger, "_log", Spy())
+    sched = _scheduler(runtime_settings(), repos.db, redis_client, events=RecordingEvents())
+    alert_id = await make_alert(repos, TENANT_A)
+    late, _ = await repos.escalations.create_or_attach(
+        TENANT_A, alert_id, reason="r", sla_deadline=datetime.now(UTC) - timedelta(seconds=1)
+    )
+    await sched.sweep_sla()
+    assert [(f["audit_action"], f["resource_id"], f["persisted"]) for e, f in lines if e == "audit"] == [
+        ("escalation.sla_escalated", late.id, True)
+    ]
 
 
 async def test_dispatch_is_idempotent(

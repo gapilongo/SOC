@@ -5,7 +5,4 @@
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
 api/routers/platform.py::create_tenant
-runtime/ops.py::audit_reprocess
-runtime/ops.py::audit_user_created
-runtime/ops.py::audit_user_created
 runtime/ops.py::create_tenant
