@@ -11,6 +11,7 @@ import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { afterTenantChange } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import {
   QUOTA_KEYS,
@@ -100,7 +101,7 @@ function useUpdateTenant(onDone?: () => void) {
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof endpoints.updateTenant>[2] }) => endpoints.updateTenant(api, id, body),
     onSuccess: (updated) => {
       client.setQueryData<TenantSummaryOut[]>(qk.platformTenants.all, (rows) => rows?.map((r) => (r.id === updated.id ? updated : r)));
-      void client.invalidateQueries({ queryKey: qk.platformTenants.all });
+      void afterTenantChange(client);
       toast.success(`Tenant ${updated.name} updated.`);
       onDone?.();
     },
@@ -539,7 +540,7 @@ function CreateTenantTab() {
       setName('');
       setAdminEmail('');
       setAdminPassword('');
-      void client.invalidateQueries({ queryKey: qk.platformTenants.all });
+      void afterTenantChange(client);
     },
   });
   const submit = (e: FormEvent) => {

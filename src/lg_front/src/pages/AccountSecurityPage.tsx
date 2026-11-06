@@ -3,6 +3,7 @@ import { KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../api/client';
+import { afterMfaChange, afterRecoveryCodesChange } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import { endpoints } from '../api/endpoints';
 import type { MfaEnrollOut, MfaStatusOut } from '../api/types';
@@ -57,8 +58,7 @@ function EnrollCard({ onEnrolled }: { onEnrolled: (codes: string[]) => void }) {
     onSuccess: (out) => {
       setEnrollment(null);
       setCode('');
-      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
-      void client.invalidateQueries({ queryKey: qk.users.all });
+      void afterMfaChange(client);
       onEnrolled(out.recovery_codes);
     },
     onError: () => setCode(''),
@@ -101,7 +101,7 @@ function RegenerateDialog({ onClose, onCodes }: { onClose: () => void; onCodes: 
   const m = useMutation({
     mutationFn: () => endpoints.mfaRegenerate(api, code.trim()),
     onSuccess: (out) => {
-      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
+      void afterRecoveryCodesChange(client);
       onCodes(out.recovery_codes);
     },
     onError: () => setCode(''),
@@ -146,8 +146,7 @@ function DisableDialog({ status, onClose }: { status: MfaStatusOut; onClose: () 
     mutationFn: () => endpoints.mfaDisable(api, password, code.trim()),
     onSuccess: () => {
       toast.success('Two-step verification is off.');
-      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
-      void client.invalidateQueries({ queryKey: qk.users.all });
+      void afterMfaChange(client);
       onClose();
     },
     onError: () => {

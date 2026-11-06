@@ -15,6 +15,22 @@ const CACHE_CLEAR = [
       'Do not clear the React Query cache directly: a mounted observer keeps rendering removed data. Use forgetCachedData from auth/cacheBinding.ts.',
   },
 ];
+const QUERY_KEY_LITERAL = [
+  {
+    selector: "Property[key.name='queryKey'][value.type='ArrayExpression']",
+    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+  },
+  {
+    selector: "CallExpression[callee.property.name=/^(get|set)QueryData$/][arguments.0.type='ArrayExpression']",
+    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+  },
+];
+const INVALIDATE = [
+  {
+    selector: "CallExpression[callee.property.name='invalidateQueries']",
+    message: 'Use a named policy from api/invalidate.ts (or invalidateBounded from lib/pagination.ts).',
+  },
+];
 
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
@@ -46,14 +62,21 @@ export default tseslint.config(
       ],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE],
     },
   },
   {
     // The one owner of session cache clearing.
     files: ['src/auth/cacheBinding.ts'],
     rules: {
-      'no-restricted-syntax': 'off',
+      'no-restricted-syntax': ['error', ...QUERY_KEY_LITERAL],
+    },
+  },
+  {
+    // The owners of invalidation: named policies, and bounded refetch for paged lists and live events.
+    files: ['src/api/invalidate.ts', 'src/lib/pagination.ts'],
+    rules: {
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL],
     },
   },
   {

@@ -4,6 +4,7 @@ import { Fragment, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { endpoints, type ActionFilters } from '../api/endpoints';
+import { afterActionChange, afterActionDecision } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import { ACTION_STATUSES, RISK_LEVELS, VERIFICATION_STATES, type ActionOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
@@ -58,12 +59,11 @@ function ApprovalDialog({ pending, onClose }: { pending: Pending; onClose: () =>
     try {
       const out = verb === 'approve' ? await endpoints.approve(api, action.id, rejectRemaining) : await endpoints.reject(api, action.id, rejectRemaining);
       toast.success(`${verb === 'approve' ? 'Approved' : 'Rejected'} ${action.action_type} on ${action.target}.${out.resumes_enqueued ? ' The alert workflow resumed.' : ''}`);
-      void client.invalidateQueries({ queryKey: qk.actions.all });
-      void client.invalidateQueries({ queryKey: qk.alerts.all });
+      void afterActionDecision(client);
       onClose();
     } catch (err) {
       setError(err);
-      void client.invalidateQueries({ queryKey: qk.actions.all });
+      void afterActionChange(client);
     } finally {
       setBusy(false);
     }

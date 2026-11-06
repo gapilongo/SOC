@@ -3,6 +3,7 @@ import { RotateCcw } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../api/client';
+import { afterAlertChange, afterAlertTimelineChange } from '../../api/invalidate';
 import { qk } from '../../api/queryKeys';
 import { endpoints } from '../../api/endpoints';
 import type { ActionOut, AlertDetailOut, AlertEventOut, JsonObject } from '../../api/types';
@@ -221,7 +222,7 @@ function NoteForm({ alertId }: { alertId: string }) {
     onSuccess: () => {
       setValue('');
       toast.success('Note added.');
-      void client.invalidateQueries({ queryKey: qk.alert.events(alertId) });
+      void afterAlertTimelineChange(client, alertId);
     },
   });
   const submit = (e: FormEvent) => {
@@ -389,8 +390,7 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
     onSuccess: () => {
       setConfirm(false);
       toast.success('Alert queued for reprocessing.');
-      void client.invalidateQueries({ queryKey: qk.alert.detail(alertId) });
-      void client.invalidateQueries({ queryKey: qk.alerts.all });
+      void afterAlertChange(client, alertId);
     },
     onError: (err) => {
       setConfirm(false);

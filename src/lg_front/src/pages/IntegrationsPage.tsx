@@ -3,6 +3,7 @@ import { History, Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { afterIntegrationChange, afterIntegrationTest } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import {
   INTEGRATION_EVENTS,
@@ -299,7 +300,7 @@ function IntegrationForm({
       // Credentials leave component state as soon as they have been sent.
       setSecrets({});
       toast.success(`Integration ${saved.name} saved.`);
-      void client.invalidateQueries({ queryKey: qk.integrations.all });
+      void afterIntegrationChange(client);
       onClose();
     },
     onError: (err) => setError(err),
@@ -557,7 +558,7 @@ export default function IntegrationsPage() {
       toast.success('Integration deleted.');
       setDeleting(null);
       if (logFor === i.id) setLogFor(null);
-      void client.invalidateQueries({ queryKey: qk.integrations.all });
+      void afterIntegrationChange(client);
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });
@@ -573,7 +574,7 @@ export default function IntegrationsPage() {
       toast.error(err, `${i.name}: test failed`);
     } finally {
       setTesting(null);
-      void client.invalidateQueries({ queryKey: qk.integrations.deliveries(i.id) });
+      void afterIntegrationTest(client, i.id);
     }
   };
 

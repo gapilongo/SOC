@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
+import { afterEscalationChange } from '../../api/invalidate';
 import { qk } from '../../api/queryKeys';
 import { endpoints, type EscalationFilters } from '../../api/endpoints';
 import { ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut, type TicketOut } from '../../api/types';
@@ -90,7 +91,7 @@ function EscalationCard({
       else toast.error(err, 'Claim failed');
     } finally {
       setClaiming(false);
-      void client.invalidateQueries({ queryKey: qk.escalations.all });
+      void afterEscalationChange(client);
     }
   };
 

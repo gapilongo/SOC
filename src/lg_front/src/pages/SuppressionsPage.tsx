@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { afterSuppressionChange } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import type { JsonObject, SuppressionOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
@@ -69,7 +70,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (rule) => {
       toast.success(rule.enabled ? 'Suppression rule created and active.' : 'Suppression rule created; an admin must enable it before it takes effect.');
-      void client.invalidateQueries({ queryKey: qk.suppressions.all });
+      void afterSuppressionChange(client);
       onClose();
     },
     onError: (err) => setError(err),
@@ -153,7 +154,7 @@ export default function SuppressionsPage() {
     mutationFn: (r: SuppressionOut) => endpoints.updateSuppression(api, r.id, { enabled: !r.enabled }),
     onSuccess: (r) => {
       toast.success(`Rule ${r.name} ${r.enabled ? 'enabled' : 'disabled'}.`);
-      void client.invalidateQueries({ queryKey: qk.suppressions.all });
+      void afterSuppressionChange(client);
     },
     onError: (err) => toast.error(err, 'Update failed'),
   });
@@ -162,7 +163,7 @@ export default function SuppressionsPage() {
     onSuccess: () => {
       setDeleting(null);
       toast.success('Rule deleted.');
-      void client.invalidateQueries({ queryKey: qk.suppressions.all });
+      void afterSuppressionChange(client);
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });

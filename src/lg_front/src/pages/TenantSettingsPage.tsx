@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { afterTenantSettingsChange } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import { AUTONOMY_MODES, RISK_LEVELS, ROUTE_NAMES, type JsonObject, type RouteOut, type TenantSettingsOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
@@ -49,7 +50,7 @@ function useSave(onDone?: () => void) {
     onSuccess: (out) => {
       client.setQueryData(qk.tenantSettings.all, out);
       // Saving autonomy or response settings completes the checklist's "autonomy reviewed" step.
-      void client.invalidateQueries({ queryKey: qk.onboarding.all });
+      void afterTenantSettingsChange(client);
       toast.success('Settings saved.');
       onDone?.();
     },

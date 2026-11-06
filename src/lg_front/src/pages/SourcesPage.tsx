@@ -3,6 +3,7 @@ import { Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { afterSourceChange } from '../api/invalidate';
 import { qk } from '../api/queryKeys';
 import { SOURCE_TYPES, type JsonObject, type SourceCreateIn, type SourceOut, type SourceType, type SourceUpdateIn } from '../api/types';
 import { useApi } from '../auth/AuthContext';
@@ -225,7 +226,7 @@ function SourceForm({ source, onClose }: { source: SourceOut | null; onClose: ()
       setSecrets({});
       setExtraSecret('');
       toast.success(`Source ${s.name} saved.`);
-      void client.invalidateQueries({ queryKey: qk.sources.all });
+      void afterSourceChange(client);
       onClose();
     },
     onError: (err) => setError(err),
@@ -349,7 +350,7 @@ export default function SourcesPage() {
     onSuccess: () => {
       toast.success('Source deleted.');
       setDeleting(null);
-      void client.invalidateQueries({ queryKey: qk.sources.all });
+      void afterSourceChange(client);
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });
