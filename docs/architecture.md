@@ -45,7 +45,7 @@ import-lint`). What each package owns is in the
 | Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), migrations, locks |
 | Domain (no I/O) | `domain` (roadmap Phase 2) | routing, phishing and suppression policy; connector ports; action catalog |
 | Value types | `models` | canonical alert and domain vocabulary |
-| Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification (`net/tls.py`), Retry-After (`net/retry.py`) |
+| Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
 | Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction; typed settings |
 
 Some modules still sit in the wrong layer (for example policy modules in

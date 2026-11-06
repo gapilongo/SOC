@@ -41,7 +41,7 @@ import httpx
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.net.egress import DestinationPolicy, Resolver
-from lg_sotf.net.tls import build_verify
+from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, build_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.security.hashing import SecurityConfigError
@@ -100,6 +100,7 @@ class ConnectorRegistry:
         transport: Optional[httpx.AsyncBaseTransport] = None,
         resolver: Optional[Resolver] = None,
         webhook_options: Optional[Mapping[str, Any]] = None,
+        tls: TlsContexts = PROCESS_TLS,
     ) -> None:
         """``overrides`` replace built-in connectors by name; ``transport``/``resolver`` are test hooks."""
         self._settings = settings
@@ -109,6 +110,7 @@ class ConnectorRegistry:
         self._transport = transport
         self._resolver = resolver
         self._webhook_options = dict(webhook_options or {})
+        self._tls = tls
         self.dry_run = DryRunConnector()
         try:
             allow_private = IngestionOptions.from_settings(settings).allow_private_destinations
@@ -190,6 +192,7 @@ class ConnectorRegistry:
             verify = build_verify(
                 {k: rs[k] for k in ("tls_verify", "ca_cert_pem") if k in rs} if origin == "tenant" else {},
                 production=True,  # never allow a server-side CA path or tls_verify=false for outbound actions
+                contexts=self._tls,
             )
         except SourceConfigError as exc:
             raise ConnectorConfigError(str(exc)) from exc
@@ -204,5 +207,6 @@ class ConnectorRegistry:
             target_kinds=self._target_kinds,
             transport=self._transport,
             resolver=self._resolver,
+            tls=self._tls,
             **options,
         )
