@@ -56,6 +56,72 @@ class StaleRunSweep(Record):
     """Leases expired ``max_attempts`` times (poison alerts); not to be enqueued again."""
 
 
+class OrphanedRunRef(Record):
+    """A queued or failed run with no queue message (:meth:`RunsRepo.claim_orphaned_all_tenants`)."""
+
+    tenant_id: str
+    alert_id: str
+    status: str
+    attempt: int
+    severity: str
+
+
+class StrandedRunRef(Record):
+    """A waiting run whose resume should already have happened (:meth:`RunsRepo.find_stranded_waiting_all_tenants`)."""
+
+    tenant_id: str
+    alert_id: str
+    status: str
+
+
+_CLAIM_ORPHANS_SQL = """
+WITH picked AS (
+    SELECT tenant_id, alert_id FROM workflow_runs
+    WHERE (($1::float8 IS NOT NULL AND status = 'queued' AND updated_at < now() - make_interval(secs => $1))
+           OR (status = 'failed' AND updated_at < now() - make_interval(secs => $2)))
+      AND tenant_id IN (SELECT id FROM tenants WHERE status = 'active')
+    ORDER BY updated_at
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE workflow_runs r SET updated_at = now()
+FROM picked p, alerts a
+WHERE r.tenant_id = p.tenant_id AND r.alert_id = p.alert_id
+  AND a.tenant_id = r.tenant_id AND a.id = r.alert_id
+RETURNING r.tenant_id, r.alert_id, r.status, r.attempt, a.severity
+"""
+_STRANDED_WAITING_SQL = """
+SELECT r.tenant_id, r.alert_id, r.status
+FROM workflow_runs r
+WHERE r.updated_at < now() - make_interval(secs => $1)
+  AND EXISTS (SELECT 1 FROM tenants t WHERE t.id = r.tenant_id AND t.status = 'active')
+  AND (
+    (r.status = 'waiting_human' AND EXISTS (
+        SELECT 1 FROM escalations e
+        WHERE e.tenant_id = r.tenant_id AND e.status = 'decided'
+          AND e.decided_at < now() - make_interval(secs => $1)
+          AND (e.alert_id = r.alert_id OR r.alert_id = ANY(e.related_alert_ids))
+          AND NOT EXISTS (
+              SELECT 1 FROM escalations o
+              WHERE o.tenant_id = r.tenant_id AND o.status IN ('open', 'claimed', 'expired')
+                AND (o.alert_id = r.alert_id OR r.alert_id = ANY(o.related_alert_ids))
+          )
+    ))
+    OR (r.status = 'waiting_approval' AND (
+        EXISTS (SELECT 1 FROM response_actions a
+                WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id AND a.status = 'approved'
+                  AND a.execution_owner = 'workflow'
+                  AND COALESCE(a.approved_at, a.updated_at) < now() - make_interval(secs => $1))
+        OR NOT EXISTS (SELECT 1 FROM response_actions a
+                       WHERE a.tenant_id = r.tenant_id AND a.alert_id = r.alert_id
+                         AND a.status = 'awaiting_approval' AND a.execution_owner = 'workflow')
+    ))
+  )
+ORDER BY r.updated_at
+LIMIT $2
+"""
+
+
 class RunsRepo(Repository):
     async def upsert_queued(
         self,
@@ -503,3 +569,39 @@ class RunsRepo(Repository):
         async with self._system() as c:
             rows = await c.fetch("SELECT status, count(*) AS n FROM workflow_runs GROUP BY status")
         return {r["status"]: r["n"] for r in rows}
+
+    # -- recovery sweeps (runtime/orphans.py, runtime/resumes.py) --------------------------------
+
+    async def claim_orphaned_all_tenants(
+        self, *, queued_older_than_s: Optional[float], failed_older_than_s: float, limit: int
+    ) -> List[OrphanedRunRef]:
+        """Pick orphaned runs of active tenants, oldest first, and touch ``updated_at`` so each is returned
+        once per threshold. ``queued_older_than_s=None`` skips queued runs (schema owner, ``system_tx``)."""
+        if limit < 1:
+            raise ValueError("limit must be >= 1")
+        async with self._system() as c:
+            rows = await c.fetch(
+                _CLAIM_ORPHANS_SQL,
+                None if queued_older_than_s is None else float(queued_older_than_s),
+                float(failed_older_than_s),
+                limit,
+            )
+        return to_models(OrphanedRunRef, rows)
+
+    async def find_stranded_waiting_all_tenants(self, *, older_than_s: float, limit: int) -> List[StrandedRunRef]:
+        """Runs of active tenants waiting for a decision or approval that was made longer than
+        ``older_than_s`` ago (see :mod:`lg_sotf.runtime.resumes`; schema owner, read-only ``system_tx``)."""
+        async with self._system(readonly=True) as c:
+            rows = await c.fetch(_STRANDED_WAITING_SQL, float(older_than_s), limit)
+        return to_models(StrandedRunRef, rows)
+
+    async def touch(self, tenant_id: str, alert_id: str, *, status: str, conn: Optional[Connection] = None) -> bool:
+        """Bump ``updated_at`` while the run is still ``status`` (a recovered run waits a full threshold again)."""
+        async with self._tenant(tenant_id, conn) as c:
+            outcome = await c.execute(
+                "UPDATE workflow_runs SET updated_at = now() WHERE tenant_id = $1 AND alert_id = $2 AND status = $3",
+                tenant_id,
+                alert_id,
+                status,
+            )
+        return outcome.endswith(" 1")

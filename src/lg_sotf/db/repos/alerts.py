@@ -22,6 +22,7 @@ from lg_sotf.db.repos._base import (
     require_aware,
     set_clauses,
     to_model,
+    to_models,
     utcnow,
 )
 from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
@@ -52,6 +53,15 @@ _LIST_COLUMNS = (
     "disposition, confidence, threat_score, priority, assigned_to, occurred_at, ingested_at, "
     "updated_at, closed_at, summary, case_key"
 )
+_STRANDED_NEW_SQL = """
+SELECT a.tenant_id, a.id AS alert_id, a.severity
+FROM alerts a
+WHERE a.status = 'new' AND a.ingested_at < now() - make_interval(secs => $1)
+  AND a.tenant_id IN (SELECT id FROM tenants WHERE status = 'active')
+  AND NOT EXISTS (SELECT 1 FROM workflow_runs r WHERE r.tenant_id = a.tenant_id AND r.alert_id = a.id)
+ORDER BY a.ingested_at
+LIMIT $2
+"""
 # The event summary columns of alerts ($2), excluding one source ($3; NULL excludes none: source_id is NOT NULL).
 _EVENT_SUMMARIES_SQL = """
     SELECT id, title, severity, status, disposition, confidence, threat_score, category, source_id,
@@ -147,6 +157,14 @@ class AlertListItem(Record):
 class Alert(AlertListItem):
     raw: Dict[str, Any]
     normalized: Dict[str, Any]
+
+
+class StrandedAlertRef(Record):
+    """An alert stored but never dispatched (:meth:`AlertsRepo.find_stranded_new_all_tenants`)."""
+
+    tenant_id: str
+    alert_id: str
+    severity: str
 
 
 class DashboardCounts(Record):
@@ -459,3 +477,12 @@ class AlertsRepo(Repository):
             acknowledged=row["acknowledged"],
             resolved=row["resolved"],
         )
+
+    # -- recovery sweeps (runtime/orphans.py) ------------------------------------------------------
+
+    async def find_stranded_new_all_tenants(self, *, older_than_s: float, limit: int) -> List[StrandedAlertRef]:
+        """Alerts of active tenants still ``new`` and without a run after ``older_than_s``: a crash or
+        cancel between insert and dispatch (schema owner, read-only ``system_tx``)."""
+        async with self._system(readonly=True) as c:
+            rows = await c.fetch(_STRANDED_NEW_SQL, float(older_than_s), limit)
+        return to_models(StrandedAlertRef, rows)

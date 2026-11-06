@@ -139,6 +139,15 @@ class ResponseAction(Record):
     verify_attempts: int = 0
 
 
+class WorkflowApprovals(Record):
+    """The approval state of an alert's workflow-owned actions (:meth:`ActionsRepo.workflow_approvals`)."""
+
+    approved: int
+    awaiting: int
+    approver: Optional[str]
+    """Who approved most recently, if anyone."""
+
+
 class ActionsRepo(Repository):
     async def propose(
         self,
@@ -569,6 +578,27 @@ class ActionsRepo(Repository):
                 float(ttl_s),
             )
         return [(str(r["tenant_id"]), r["id"], bool(r["late"]), bool(r["expired"])) for r in rows]
+
+    # -- resume recovery (runtime/resumes.py) ---------------------------------------------------
+
+    async def workflow_approvals(
+        self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None
+    ) -> WorkflowApprovals:
+        """Approved and awaiting counts of the alert's workflow-owned actions, and the latest approver."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await fetch_one(
+                c,
+                """
+            SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
+                   count(*) FILTER (WHERE status = 'awaiting_approval') AS awaiting,
+                   (array_agg(approved_by ORDER BY approved_at DESC NULLS LAST)
+                        FILTER (WHERE approved_by IS NOT NULL))[1] AS approver
+            FROM response_actions WHERE tenant_id = $1 AND alert_id = $2 AND execution_owner = 'workflow'
+            """,
+                tenant_id,
+                alert_id,
+            )
+        return WorkflowApprovals.model_validate(dict(row))
 
     async def claim_due_verifications(
         self, *, limit: int, lease_s: float, conn: Optional[Connection] = None
