@@ -492,7 +492,7 @@ Legend:
 - **Verify:** pure move. Delete the `integrations.* -> services.connectors.base` ignores.
 - **Risk / Effort / Deps:** low · M · C1.
 
-#### C6 · Action catalog to `domain/actions.py`
+#### C6 · Action catalog to `domain/actions.py` (done in #95)
 - **Why:** `ACTION_CATALOG` lives in the 2,707-line `services/response.py`. That forces function-local imports at `connectors/microsoft.py:251`, `connectors/routing.py:249` and `integrations/microsoft/catalog.py:58,177`.
 - **Change:**
   - Move `TargetKind` (l.229), `ActionSpec` (l.309), `ACTION_CATALOG` (l.327), `FORWARD_OF`, `ACTION_TARGET_KINDS`, `DEFAULT_BLAST_RADIUS`, the reason-code constants and `GUARDRAIL_REASONS` (l.398-450).
@@ -559,7 +559,7 @@ Legend:
 - **Behaviour change:** performance only.
 - **Risk / Effort / Deps:** low · S · F3.
 
-#### D4 · All tenant SQL in repositories
+#### D4 · All tenant SQL in repositories (done in #95, #98)
 - **Why:** there are about 35 domain queries outside `db/`. Three of them duplicate repository methods and differ in behaviour. `tests/unit/services/fakes.py:146-150` answers queries by string-matching SQL.
 - **Change (one PR each; each deletes its G5 baseline lines):**
   - **D4.1:** add `allowed_from` to `EscalationsRepo.decide` (default `ACTIVE_ESCALATION_STATUSES`). `review.decide` passes `("expired",)` when the decision is late. Delete `_DECIDE_EXPIRED_SQL` and `_decide_expired` (`review.py:94-102,393-421`). This is equivalent because `now` is always passed, so `COALESCE($9, now())` equals `$8`. Covered by `test_review.py`.
@@ -573,7 +573,7 @@ Legend:
 - **Caveat:** moving SQL behind `Repository._tenant` changes which errors surface (`_translated` maps them to `Conflict`, `ReferenceNotFound` and `InvalidValue`). Each moved method keeps the error types its callers catch.
 - **Risk / Effort / Deps:** medium · M · F6, F9.
 
-#### D5 · Routers own no transactions
+#### D5 · Routers own no transactions (done in #99)
 - **Why:** 14 router call sites open transactions (in `alerts.py`, `identity.py`, `sources.py`, `platform.py`, `tenant.py`, `dashboard.py`, `compliance.py` and `auth/authenticate.py`), and there are 9 router-local `_audit` helpers.
 - **Change:**
   - One router per PR. Each `async with ctx.db.tenant_tx(...)` block and its audit call move into a service function that takes the repos and the audit logger. For `authenticate`, the function goes in `api/auth`.
@@ -582,7 +582,7 @@ Legend:
 - **Verify:** API integration tests pass unchanged.
 - **Risk / Effort / Deps:** low · M · D1.3.
 
-#### D6 · Pagination fixes
+#### D6 · Pagination fixes (done in #99)
 - **Change:**
   - **D6.1:** `db/pagination` exports `API_MAX_LIMIT = 200`. Replace the `MAX_LIMIT` copies (`alerts.py:29`, `audit.py:27`, `review.py:63`) and the `le=200` literals (`platform.py:448`, `integrations.py:712`). Use `check_limit` where limits are hand-checked (`runs.py:152`, `users.py:137`, `indicators.py:92`).
   - **D6.2:** add `SuppressionsRepo.find_reusable(tenant_id, match, now, *, conn)`, newest first with disabled rules included. Use it instead of the full scan at `review.py:567-570`.
