@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
+import { qk } from '../../api/queryKeys';
 import { endpoints, type EscalationFilters } from '../../api/endpoints';
 import { ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut, type TicketOut } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
@@ -89,7 +90,7 @@ function EscalationCard({
       else toast.error(err, 'Claim failed');
     } finally {
       setClaiming(false);
-      void client.invalidateQueries({ queryKey: ['escalations'] });
+      void client.invalidateQueries({ queryKey: qk.escalations.all });
     }
   };
 
@@ -184,7 +185,7 @@ export default function EscalationsPage() {
   const interval = usePollInterval(30_000);
 
   const list = useKeysetList({
-    queryKey: ['escalations', filters],
+    queryKey: qk.escalations.list(filters),
     fetchPage: (cursor, signal) => endpoints.escalations(api, filters, cursor, signal),
     itemKey: (e: EscalationOut) => e.id,
     refetchInterval: interval,
@@ -193,7 +194,7 @@ export default function EscalationsPage() {
   // Linked Jira/ServiceNow tickets of the listed escalations, in one request.
   const escalationIds = list.items.map((e) => e.id).slice(0, 200);
   const tickets = useQuery({
-    queryKey: ['tickets', 'escalations', escalationIds],
+    queryKey: qk.tickets.forEscalations(escalationIds),
     queryFn: ({ signal }) => endpoints.tickets(api, { escalation_id: escalationIds }, signal),
     enabled: escalationIds.length > 0,
     refetchInterval: interval,

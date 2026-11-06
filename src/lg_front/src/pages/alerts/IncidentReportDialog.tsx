@@ -3,6 +3,7 @@ import { FileText } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import type { IncidentReportField, IncidentReportOut, IncidentReportStage } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
@@ -97,7 +98,7 @@ export function IncidentReportDialog({ alertId, open, onClose }: { alertId: stri
   const [withAi, setWithAi] = useState(true);
   const m = useMutation({
     mutationFn: () => endpoints.incidentReport(api, alertId, stage, withAi),
-    onSuccess: () => void client.invalidateQueries({ queryKey: ['alert', alertId, 'events'] }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: qk.alert.events(alertId) }),
   });
   const submit = (e: FormEvent) => {
     e.preventDefault();

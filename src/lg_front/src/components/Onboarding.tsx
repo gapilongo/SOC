@@ -9,6 +9,7 @@ import { CheckCircle2, Circle, Send, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { OnboardingStatusOut, OnboardingStepOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { useToast } from './Toast';
@@ -84,7 +85,7 @@ export function useSendSamples() {
   return useOnboardingMutation(
     () => endpoints.sendSampleAlerts(api),
     (out) => {
-      void client.invalidateQueries({ queryKey: ['alerts'] });
+      void client.invalidateQueries({ queryKey: qk.alerts.all });
       toast.success(
         out.inserted
           ? `${out.inserted} sample alerts sent; they are being triaged now.`

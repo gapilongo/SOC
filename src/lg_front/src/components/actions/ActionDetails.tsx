@@ -3,6 +3,7 @@ import { RefreshCcw, RotateCcw, Undo2 } from 'lucide-react';
 import { useState } from 'react';
 
 import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import type { ActionOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
@@ -151,7 +152,7 @@ export function ActionControls({ action }: { action: ActionOut }) {
     try {
       await endpoints.verifyAction(api, action.id);
       toast.success(`Re-checking ${humanize(action.action_type)} on ${action.target}.`);
-      void client.invalidateQueries({ queryKey: ['actions'] });
+      void client.invalidateQueries({ queryKey: qk.actions.all });
     } catch (err) {
       toast.error(err, 'Re-check refused');
     } finally {
