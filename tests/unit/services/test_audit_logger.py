@@ -11,12 +11,16 @@ import structlog
 from lg_sotf.audit import AuditLogger
 from tests.unit.services.fakes import FakeAudit
 
+CONN: Any = object()  # stands in for the caller's open transaction
+
 
 async def test_record_persists_redacted_details() -> None:
     audit = FakeAudit()
     before = structlog.get_config()
     logger = AuditLogger(SimpleNamespace(audit=audit))  # type: ignore[arg-type]
-    await logger.record("t1", "escalation.created", "escalation", "e1", details={"password": "hunter2", "level": "L1"})
+    await logger.record(
+        "t1", "escalation.created", "escalation", "e1", details={"password": "hunter2", "level": "L1"}, conn=CONN
+    )
     assert structlog.get_config() == before
     (tenant, actor_type, action, resource_type, resource_id, details), = audit.entries
     assert (tenant, action, resource_id) == ("t1", "escalation.created", "e1")
@@ -24,8 +28,18 @@ async def test_record_persists_redacted_details() -> None:
 
 
 async def test_record_without_repositories_only_logs() -> None:
-    assert await AuditLogger().record("t1", "x.y", "thing") is None
+    assert await AuditLogger().record("t1", "x.y", "thing", conn=CONN) is None
     assert await AuditLogger().record_event("t1", "x.y", "thing") is None
+
+
+async def test_record_requires_the_changes_connection() -> None:
+    """``record`` is for changes: without their transaction it refuses; ``record_event`` is the way for events."""
+    audit = FakeAudit()
+    with pytest.raises(TypeError):
+        await AuditLogger(SimpleNamespace(audit=audit)).record("t1", "x.y", "thing", conn=None)  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        await AuditLogger(SimpleNamespace(audit=audit)).record("t1", "x.y", "thing")  # type: ignore[call-arg]
+    assert audit.entries == []
 
 
 class _ConnAudit:

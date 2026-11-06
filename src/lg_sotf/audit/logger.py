@@ -1,5 +1,11 @@
 """Audit trail: structured log line plus, for security-relevant events, a hash-chained ``audit_log`` row.
 
+:meth:`AuditLogger.record` writes a change's entry on the change's own
+connection (required), so both commit or neither does;
+:meth:`AuditLogger.record_event` is the one write without a connection, for
+access events and other entries that have no transaction to join
+(``docs/adr/0003-data-access-and-audit.md``).
+
 Logging goes through :mod:`lg_sotf.observability.logging` (this module never
 configures logging). ``details`` must be small and must not contain secrets
 or raw alert bodies; they are redacted before logging as defence in depth.
@@ -42,14 +48,17 @@ class AuditLogger:
         actor_type: str = "system",
         actor_id: Optional[str] = None,
         details: Optional[Mapping[str, Any]] = None,
-        conn: Optional[Connection] = None,
+        conn: Connection,
     ) -> Optional[AuditEntry]:
         """Persist the audit entry of a change in the change's own transaction (``conn``), and log it.
 
         Persistence failures propagate: an action whose audit entry cannot
         be written must not be reported as done. Written on ``conn``, the
-        entry commits or rolls back with the change it records.
+        entry commits or rolls back with the change it records (ADR-0003).
+        An entry with no transaction to join uses :meth:`record_event`.
         """
+        if conn is None:
+            raise TypeError("AuditLogger.record needs the change's connection; use record_event for an event")
         return await self._write(tenant_id, action, resource_type, resource_id, actor_type, actor_id, details, conn)
 
     async def record_event(
