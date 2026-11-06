@@ -57,6 +57,16 @@ web app does). Every call is audited in your home tenant
 `tenant.reactivated`), and a settings copy in the source tenant
 (`platform.settings_copied`).
 
+Provisioning is atomic. `POST /platform/tenants` and `lg-sotf create-tenant`
+run the same code (`services.tenancy.provision_tenant`): the tenant row, its
+seeded settings, its first admin and every audit entry (in the new tenant,
+your home tenant and a copied tenant) are saved in one database
+transaction. If any part fails, for example the admin account or an audit
+entry, nothing is saved and the request answers 500 (the command exits with
+an error); send it again. Two requests for the same id at the same time
+create the tenant once; the other gets `409 conflict`. A `PATCH` is saved
+together with its audit entries in the same way.
+
 `stats` fields: `alerts_24h`, `alerts_today` (UTC day, what the quota
 counts), `last_ingest_at` (sample alerts excluded), `open_escalations`,
 `overdue_escalations` (past their SLA deadline now), `sla_breaches_24h` (SLA
