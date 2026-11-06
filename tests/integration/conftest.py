@@ -4,6 +4,11 @@ The database named by ``LG_SOTF_TEST_DATABASE_URL`` is reset (public schema
 dropped and recreated) and migrated once per session, then truncated before
 each test. The Redis database named by ``LG_SOTF_TEST_REDIS_URL`` is flushed
 before and after each test that uses it. Tests skip when a variable is unset.
+
+Under pytest-xdist each worker ``gw<N>`` uses its own database
+(``<name>_gw<N>``, created when missing) and Redis database (base index + N);
+see ``_support.py``. Every ``Settings`` built here carries the test's
+``unique_prefix``, because Redis pub/sub channels are shared by all databases.
 """
 
 from __future__ import annotations
@@ -31,6 +36,13 @@ from lg_sotf.services.connectors.microsoft import MicrosoftClients
 from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
 from tests.fixtures.microsoft import FakeMicrosoft, fake_config
+from tests.integration._support import (
+    ensure_database,
+    require_unique_prefix,
+    worker_database_url,
+    worker_redis_url,
+    xdist_worker_index,
+)
 from tests.integration.api._support import BASE_URL, TEST_JWT_SECRET, UI_ORIGIN, ApiClock, ApiHarness
 from tests.integration.db._support import (
     TENANT_A,
@@ -62,7 +74,11 @@ def database_url() -> str:
     url = _test_database_url()
     if not url:
         pytest.skip("LG_SOTF_TEST_DATABASE_URL is not set")
-    return url
+    index = xdist_worker_index()
+    worker_url = worker_database_url(url, index)
+    if index is not None:
+        ensure_database(url, worker_url)
+    return worker_url
 
 
 @pytest.fixture(scope="session")
@@ -104,7 +120,21 @@ def redis_url() -> str:
     url = _test_redis_url()
     if not url:
         pytest.skip("LG_SOTF_TEST_REDIS_URL is not set")
-    return url
+    return worker_redis_url(url, xdist_worker_index())
+
+
+@pytest.fixture
+def make_settings(make_settings: Callable[..., Settings], unique_prefix: str) -> Callable[..., Settings]:
+    """The root ``make_settings`` with ``redis.key_prefix`` defaulting to this test's ``unique_prefix``.
+
+    Any other prefix fails the test (``require_unique_prefix``): pub/sub ignores Redis database indexes.
+    """
+
+    def build(**overrides: Any) -> Settings:
+        redis = {"key_prefix": unique_prefix, **dict(overrides.pop("redis", None) or {})}
+        return require_unique_prefix(make_settings(redis=redis, **overrides), unique_prefix)
+
+    return build
 
 
 @pytest_asyncio.fixture

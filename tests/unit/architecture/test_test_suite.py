@@ -16,6 +16,7 @@ from typing import List
 
 import pytest
 
+from tests.integration._support import worker_database_url, worker_redis_url, xdist_worker_index
 from tests.unit._support import SERVICE_FIXTURES, UNIT_ROOT, service_fixture_offenders
 
 pytestmark = pytest.mark.unit
@@ -66,3 +67,24 @@ def test_unit_items_requesting_service_fixtures_are_reported() -> None:
     items = [_item(unit, "repos", "db"), _item(unit, "make_settings"), _item(integration, "db")]
     assert service_fixture_offenders(items) == ["test_x.py::test_x: db, repos"]
     assert {"db", "repos", "redis_client", "migrated_database_url"} <= SERVICE_FIXTURES
+
+
+# ------------------------------------------------- parallel tier (pytest-xdist, roadmap Q4)
+
+
+def test_each_xdist_worker_gets_its_own_database_and_redis_index(monkeypatch: pytest.MonkeyPatch) -> None:
+    pg = "postgresql://soc:pw@127.0.0.1:5432/soc_test?sslmode=disable"
+    monkeypatch.delenv("PYTEST_XDIST_WORKER", raising=False)
+    assert xdist_worker_index() is None
+    assert worker_database_url(pg, None) == pg
+    assert worker_redis_url("redis://127.0.0.1:6379/5", None) == "redis://127.0.0.1:6379/5"
+    monkeypatch.setenv("PYTEST_XDIST_WORKER", "gw3")
+    assert xdist_worker_index() == 3
+    assert worker_database_url(pg, 3) == "postgresql://soc:pw@127.0.0.1:5432/soc_test_gw3?sslmode=disable"
+    assert worker_redis_url("redis://127.0.0.1:6379/5", 3) == "redis://127.0.0.1:6379/8"
+    assert worker_redis_url("redis://127.0.0.1:6379", 2) == "redis://127.0.0.1:6379/2"
+
+
+def test_a_worker_redis_index_above_15_is_refused() -> None:
+    with pytest.raises(pytest.fail.Exception, match="Redis database 16"):
+        worker_redis_url("redis://127.0.0.1:6379/13", 3)

@@ -75,8 +75,15 @@ security-scan: ## Bandit over the product and the SOAR examples (pip install "ba
 	bandit -q -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
 
 .PHONY: test
-test: ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)
+test: test-serial ## Run the test suite (integration tests need LG_SOTF_TEST_DATABASE_URL / LG_SOTF_TEST_REDIS_URL)
+
+.PHONY: test-serial
+test-serial: ## The whole suite in one process (what CI's blocking test job runs)
 	$(PYTHON) -m pytest
+
+.PHONY: test-parallel
+test-parallel: ## The whole suite on 4 xdist workers (own database <name>_gw<N> and Redis DB base+N each)
+	$(PYTHON) -m pytest -n 4 --dist loadfile
 
 .PHONY: test-deploy
 test-deploy: ## Deployment packaging tests only (Dockerfile, compose, Helm)

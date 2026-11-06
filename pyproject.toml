@@ -74,6 +74,7 @@ dev = [
     "import-linter>=2.15",
     "pre-commit>=4.0",
     "pytest-timeout>=2.3",
+    "pytest-xdist>=3.6",
 ]
 
 [project.urls]
