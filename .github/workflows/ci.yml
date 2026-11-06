@@ -56,7 +56,7 @@ jobs:
         # Every deploy script (deploy/vm: VMs and the Funnel mode; deploy/pc: the self-hosted PC).
         run: |
           shopt -s nullglob
-          shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh \
+          shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh scripts/make_tour_media.sh \
             src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
 
   fast:

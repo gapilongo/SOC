@@ -234,8 +234,6 @@ layers = [
     "(errors) : observability : security : settings",
 ]
 ignore_imports = [
-    # C6 action catalog to domain/actions.py
-    "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
     # ADR-0001 accepted: lazy import inside Settings.production_problems
     "lg_sotf.settings -> lg_sotf.llm.endpoint",
 ]
@@ -302,10 +300,6 @@ name = "Integrations are adapters: they never import the services, the workflow 
 type = "forbidden"
 source_modules = ["lg_sotf.integrations"]
 forbidden_modules = ["lg_sotf.services", "lg_sotf.core", "lg_sotf.agents"]
-ignore_imports = [
-    # C6 action catalog to domain/actions.py
-    "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
-]
 
 [[tool.importlinter.contracts]]
 id = "mcp-thin-client"

@@ -56,8 +56,8 @@ from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db import Connection
-from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
-from lg_sotf.db.repos.escalations import DECISIONS, Escalation
+from lg_sotf.db.errors import InvalidTransition, NotFound
+from lg_sotf.db.repos.escalations import ACTIVE_ESCALATION_STATUSES, DECISIONS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
 from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
@@ -89,15 +89,6 @@ MAX_ACTION_IDS = 100
 _ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
-# EscalationsRepo.decide accepts only open/claimed escalations; a late decision on an expired one.
-_DECIDE_EXPIRED_SQL = """
-    UPDATE escalations
-    SET status = 'decided', decision = $4, decided_by = $5, decision_notes = $6, approved_actions = $7,
-        decided_at = $8, claimed_at = COALESCE(claimed_at, $8), assigned_to = COALESCE(assigned_to, $5),
-        version = version + 1
-    WHERE tenant_id = $1 AND id = $2 AND status = 'expired' AND version = $3
-    RETURNING *
-"""
 SUPPRESSION_SUGGESTION_DAYS = 90
 FEEDBACK_FIELDS = ("confidence", "triage_correct", "correlation_helpful", "analysis_accurate")
 
@@ -294,22 +285,20 @@ class ReviewService:
 
         suggestion_id: Optional[str] = None
         async with self._repos.db.tenant_tx(tenant_id) as conn:
-            if late:
-                decided = await self._decide_expired(
-                    tenant_id, escalation_id, decision, user_id, expected_version, notes, approved, now, conn
-                )
-            else:
-                decided = await self._repos.escalations.decide(
-                    tenant_id,
-                    escalation_id,
-                    decision=decision,
-                    decided_by=user_id,
-                    expected_version=expected_version,
-                    notes=notes,
-                    approved_actions=approved,
-                    now=now,
-                    conn=conn,
-                )
+            # Expiry only means the SLA was missed: the alert's run still waits on this escalation, so a
+            # late decision is recorded (same optimistic lock as on an active one) rather than refused.
+            decided = await self._repos.escalations.decide(
+                tenant_id,
+                escalation_id,
+                decision=decision,
+                decided_by=user_id,
+                expected_version=expected_version,
+                notes=notes,
+                approved_actions=approved,
+                now=now,
+                allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES,
+                conn=conn,
+            )
             fb, _ = await self._repos.feedback.create(
                 tenant_id,
                 escalation_id,
@@ -389,37 +378,6 @@ class ReviewService:
             approved_actions=approved,
             own_review_alert_ids=own_review,
         )
-
-    @staticmethod
-    async def _decide_expired(
-        tenant_id: str,
-        escalation_id: str,
-        decision: str,
-        user_id: UUID,
-        expected_version: int,
-        notes: Optional[str],
-        approved: Sequence[str],
-        now: datetime,
-        conn: Connection,
-    ) -> Escalation:
-        """Record a decision on an escalation the SLA sweep expired (same optimistic lock as an active one).
-
-        Expiry only means the SLA was missed: the alert's run still waits on
-        this escalation, so refusing the decision would strand the alert.
-        """
-        row = await conn.fetchrow(
-            _DECIDE_EXPIRED_SQL, tenant_id, escalation_id, expected_version, decision, user_id, notes, list(approved), now
-        )
-        if row is not None:
-            return Escalation.model_validate(dict(row))
-        current = await conn.fetchrow("SELECT status, version FROM escalations WHERE tenant_id = $1 AND id = $2", tenant_id, escalation_id)
-        if current is None:
-            raise NotFound("escalation", escalation_id)
-        if current["version"] != expected_version:
-            raise Conflict(
-                f"escalation {escalation_id} was modified (version {current['version']}, expected {expected_version})"
-            )
-        raise InvalidTransition("escalation", escalation_id, str(current["status"]), "decided")
 
     async def _resolve_approvals(self, tenant_id: str, alert_id: str, requested: Sequence[str]) -> List[str]:
         """Explicit ``action_type:target`` entries; a bare type becomes one entry per target the planner proposes."""

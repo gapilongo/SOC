@@ -38,6 +38,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, Literal, Mapping, Optional
 
+from lg_sotf.domain.actions import ACTION_CATALOG
 from lg_sotf.domain.connectors import Connector, MisconfiguredConnector, Verifier
 from lg_sotf.integrations.config import (
     MICROSOFT_KIND,
@@ -246,8 +247,6 @@ class RoutingSnapshot:
 
     def routes(self) -> Dict[str, Route]:
         """Every catalog action type's route (not a sample)."""
-        from lg_sotf.services.response import ACTION_CATALOG
-
         return {action_type: self.route(action_type) for action_type in ACTION_CATALOG}
 
     # ------------------------------------------------------------- connectors

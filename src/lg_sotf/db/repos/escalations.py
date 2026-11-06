@@ -25,6 +25,47 @@ ACTIVE_ESCALATION_STATUSES = ("open", "claimed")
 
 _CREATE_ATTEMPTS = 3
 
+# ACTIVE_ESCALATION_STATUSES as a SQL list literal: ('open', 'claimed').
+_ACTIVE_IN = "(" + ", ".join(f"'{status}'" for status in ACTIVE_ESCALATION_STATUSES) + ")"
+# Alert grouping (services/escalation.py), run under the per-tenant grouping lock.
+_DETACHED_SQL = """
+    SELECT * FROM escalations
+    WHERE tenant_id = $1 AND alert_id = $2 AND summary->>'detached_from' = $3
+    ORDER BY created_at DESC LIMIT 1
+"""
+_ATTACHED_TO_SQL = f"""
+    SELECT * FROM escalations
+    WHERE tenant_id = $1 AND status IN {_ACTIVE_IN} AND $2 = ANY(related_alert_ids)
+    ORDER BY created_at LIMIT 1
+"""  # noqa: S608 (a constant: ACTIVE_ESCALATION_STATUSES)
+_FIND_PARENT_SQL = f"""
+    SELECT e.* FROM escalations e
+    WHERE e.tenant_id = $1 AND e.status IN {_ACTIVE_IN} AND e.alert_id <> $2
+      AND e.created_at >= $3
+      AND cardinality(e.related_alert_ids) < $6
+      AND (
+            e.alert_id = ANY($4::text[])
+         OR e.related_alert_ids && $4::text[]
+         OR ($5::text IS NOT NULL AND EXISTS (
+                SELECT 1 FROM alerts a
+                WHERE a.tenant_id = e.tenant_id AND a.id = e.alert_id AND a.fingerprint = $5))
+      )
+    ORDER BY e.created_at, e.id
+    LIMIT 1
+    FOR UPDATE OF e
+"""  # noqa: S608 (a constant: ACTIVE_ESCALATION_STATUSES)
+_ATTACH_SQL = """
+    UPDATE escalations
+    SET related_alert_ids = array_append(related_alert_ids, $3),
+        priority = GREATEST(priority, $4),
+        level = $5,
+        sla_deadline = CASE WHEN sla_deadline IS NULL THEN $6 ELSE LEAST(sla_deadline, $6) END,
+        summary = summary || jsonb_build_object('attached_count', cardinality(related_alert_ids) + 1),
+        version = version + 1
+    WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(related_alert_ids))
+    RETURNING *
+"""
+
 
 class Escalation(Record):
     id: str
@@ -213,16 +254,21 @@ class EscalationsRepo(Repository):
         notes: Optional[str] = None,
         approved_actions: Sequence[str] = (),
         now: Optional[datetime] = None,
+        allowed_from: Sequence[str] = ACTIVE_ESCALATION_STATUSES,
         conn: Optional[Connection] = None,
     ) -> Escalation:
-        """Record the analyst decision; :class:`Conflict` if the version moved."""
+        """Record the analyst decision; :class:`Conflict` if the version moved.
+
+        ``allowed_from`` are the statuses the escalation may be decided from:
+        ``("expired",)`` records a late decision on one the SLA sweep expired.
+        """
         check_choice(decision, DECISIONS, "decision")
         require_aware(now, "now")
         return await self._guarded_update(
             tenant_id,
             escalation_id,
             "decided",
-            ACTIVE_ESCALATION_STATUSES,
+            allowed_from,
             expected_version,
             """
             status = 'decided', decision = $5, decided_by = $6, decision_notes = $7,
@@ -300,6 +346,62 @@ class EscalationsRepo(Repository):
             [],
             conn=conn,
         )
+
+    # ------------------------------------------------------- alert grouping (services/escalation.py)
+
+    async def find_attached_to(self, tenant_id: str, alert_id: str, *, conn: Connection) -> Optional[Escalation]:
+        """The oldest active escalation ``alert_id`` is attached to (``related_alert_ids``)."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(_ATTACHED_TO_SQL, tenant_id, alert_id)
+        return to_model(Escalation, row)
+
+    async def find_group_parent(
+        self,
+        tenant_id: str,
+        alert_id: str,
+        *,
+        since: datetime,
+        related: Sequence[str],
+        fingerprint: Optional[str],
+        max_attached: int,
+        conn: Connection,
+    ) -> Optional[Escalation]:
+        """The oldest active escalation of another alert, created since ``since``, that ``alert_id`` can join.
+
+        It must have room (fewer than ``max_attached`` attached alerts) and
+        involve one of the ``related`` alerts or, with ``fingerprint``, a
+        primary alert of that fingerprint. The row is locked ``FOR UPDATE``.
+        """
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(_FIND_PARENT_SQL, tenant_id, alert_id, since, list(related), fingerprint, max_attached)
+        return to_model(Escalation, row)
+
+    async def attach(
+        self,
+        tenant_id: str,
+        escalation_id: str,
+        alert_id: str,
+        *,
+        priority: int,
+        level: str,
+        sla_deadline: datetime,
+        conn: Connection,
+    ) -> Optional[Escalation]:
+        """Add ``alert_id`` to the escalation's ``related_alert_ids``; ``None`` if it is already there.
+
+        Priority only rises, the SLA deadline only shortens, ``level`` is set as given.
+        """
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(_ATTACH_SQL, tenant_id, escalation_id, alert_id, priority, level, sla_deadline)
+        return to_model(Escalation, row)
+
+    async def find_detached(
+        self, tenant_id: str, alert_id: str, parent_id: str, *, conn: Connection
+    ) -> Optional[Escalation]:
+        """The newest escalation of ``alert_id`` detached from the group escalation ``parent_id``."""
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(_DETACHED_SQL, tenant_id, alert_id, parent_id)
+        return to_model(Escalation, row)
 
     async def _guarded_update(
         self,

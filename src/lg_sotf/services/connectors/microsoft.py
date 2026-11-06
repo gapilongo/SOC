@@ -61,6 +61,7 @@ from uuid import UUID
 import httpx
 
 from lg_sotf.db.errors import NotFound
+from lg_sotf.domain.actions import ACTION_CATALOG
 from lg_sotf.domain.connectors import (
     Connector,
     ConnectorConfigError,
@@ -248,8 +249,6 @@ class MicrosoftConnector:
 
     def _protected_lookup(self, action: Optional[ResponseAction]) -> ProtectedLookup:
         """``ctx.protected`` of one call: the restorative exemption of the guardrails, else the tenant's list."""
-        from lg_sotf.services.response import ACTION_CATALOG
-
         action_spec = ACTION_CATALOG.get(action.action_type) if action is not None else None
         restorative = bool(action is not None and action.rollback_of is not None and action_spec is not None
                            and action_spec.restorative)
