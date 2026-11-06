@@ -267,7 +267,7 @@ Legend:
   - Warnings: set `filterwarnings = ["error", ...]` for the unit tier after fixing the 3 known `ResourceWarning`s. For integration, start with `error::RuntimeWarning` and `error::pytest.PytestUnraisableExceptionWarning`.
   - Replace the exact-SHA assertion with "pinned to a 40-hex SHA with a `# vX.Y.Z` comment" (already enforced generically at `test_ci_workflow.py:28`).
 - **Verify:** both jobs are green with the same total case count.
-- **Left over (done):** #82 turned only `RuntimeWarning` into an error. The leaks are fixed at their source (the stub API server in `tests/deploy/test_local_llm_deploy.py` was never `server_close()`d; the IMAP limit tests never closed their `makefile()` readers or the client, so the socket pair's descriptors outlived `close()` and surfaced in later tests). `ResourceWarning` and `PytestUnraisableExceptionWarning` are now errors for the whole suite, and `tests/unit/conftest.py` makes every warning an error in the unit tier, with no ignore-list.
+- **Left over (done in #85):** #82 turned only `RuntimeWarning` into an error. The leaks are fixed at their source (the stub API server in `tests/deploy/test_local_llm_deploy.py` was never `server_close()`d; the IMAP limit tests never closed their `makefile()` readers or the client, so the socket pair's descriptors outlived `close()` and surfaced in later tests). `ResourceWarning` and `PytestUnraisableExceptionWarning` are now errors for the whole suite, and `tests/unit/conftest.py` makes every warning an error in the unit tier, with no ignore-list.
 - **Risk / Effort / Deps:** low · S · G1.
 
 #### G10 · Coverage floors and runtime characterization tests (done in #82)
@@ -294,7 +294,7 @@ Legend:
 
 ### Phase 1 — Foundations (leaf modules)
 
-#### F1 · Kernel error module `lg_sotf/errors.py`
+#### F1 · Kernel error module `lg_sotf/errors.py` (done in #86)
 - **Why:** `db/errors.py:12` imports `StorageError` from `core.exceptions`. That is the only top-level db→core edge. `agents/correlation/base.py:37` imports `core.exceptions`. `ingestion/sources/netpolicy.py:34` needs `SourceConfigError` from a domain package.
 - **Change:**
   - `git mv core/exceptions.py errors.py`. It holds `LG_SOTFError`, `WorkflowError`, `InvalidResumePayload`, `NodeError`, `NodeTimeout`, `AgentError` and `StorageError` verbatim.
@@ -335,7 +335,7 @@ Legend:
 - **Verify:** pure re-binding to identical values, checked by the set-equality test.
 - **Risk / Effort / Deps:** low · M · G2.
 
-#### F3 · Extract `lg_sotf.net` (egress, TLS, Retry-After)
+#### F3 · Extract `lg_sotf.net` (egress, TLS, Retry-After) (done in #86)
 - **Why:** install-wide SSRF and TLS controls live in `ingestion`. That causes 19 import lines from `llm`, `integrations`, `services`, `tools` and `mcp`, two of them function-local at `llm/endpoint.py:56,75`. `ingestion/__init__.py` eagerly imports every pull connector, so importing a 162-line policy module loads 62 modules, `db.repos` among them. The MCP stdio client loads 73 modules.
 - **Change:**
   - `git mv`:
@@ -514,7 +514,7 @@ Legend:
 
 ### Phase 3 — Data access and correctness
 
-#### D1 · Audit entries commit with their change
+#### D1 · Audit entries commit with their change (done in #87)
 - **Why:** `AuditLogger.record` promises that an action whose audit entry cannot be written is not reported as done (`audit/logger.py:43-47`). 34 of its 54 calls pass no `conn=`, and many record a change that has already committed:
   - sources CRUD (`api/routers/sources.py:122-170`)
   - integrations CRUD
@@ -535,7 +535,7 @@ Legend:
 - **Behaviour change:** an audit write failure now rolls back the change (500, nothing changed) instead of leaving it committed. CHANGELOG entry. ADR-0003 records the rule.
 - **Risk / Effort / Deps:** medium · M · G5.
 
-#### D2 · Atomic tenant provisioning shared by the API and the CLI
+#### D2 · Atomic tenant provisioning shared by the API and the CLI (done in #87)
 - **Why:** `api/routers/platform.py:219-297` runs up to 7 separate transactions, and `TenantsRepo.provision` uses an autocommit `_lookup`. If `users.create` fails, the tenant exists without an admin and a retry returns 409. `runtime/ops.py:229-272` is a second, divergent implementation.
 - **Change:**
   - **D2.1:**
@@ -548,7 +548,7 @@ Legend:
 - **Behaviour change:** a failure leaves nothing behind, and a retry succeeds. CHANGELOG entry. A unified CLI password policy is a separate change, made only if it does not tighten what the CLI accepts today.
 - **Risk / Effort / Deps:** medium · M · D1.1.
 
-#### D3 · Cached TLS contexts (audit finding, open)
+#### D3 · Cached TLS contexts (done in #86)
 - **Why:** `IntegrationHttp._client` (`integrations/http.py:136-145`) and `WebhookConnector._client` (`webhook.py:321-330`) build a new transport, and with it a new `SSLContext` that loads the CA bundle synchronously on the event loop, on every call.
 - **Change:**
   - Add `net/tls.py` `TlsContexts`: a process default (`httpx.create_ssl_context()`, as `microsoft/http.py:322` already does) and a 256-entry LRU of custom-CA contexts keyed by `sha256(pem)`.
