@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { memo, useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { Page } from '../api/types';
@@ -144,3 +144,70 @@ describe('keyset pagination', () => {
     expect(fetchPage).toHaveBeenCalledTimes(MAX_PAGES);
   });
 });
+
+describe('useKeysetList render stability', () => {
+  type Row = { id: string };
+  const PAGE: Page<Row> = { items: [{ id: 'a' }, { id: 'b' }], next_cursor: null };
+
+  it('keeps items and reloadFromTop stable across re-renders with inline itemKey and an equal queryKey', async () => {
+    const fetchPage = vi.fn(async () => PAGE);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    const { result, rerender } = renderHook(
+      ({ status }: { status: string[] }) => useKeysetList({ queryKey: ['alerts', { status }], fetchPage, itemKey: (r: Row) => r.id }),
+      { wrapper, initialProps: { status: ['queued'] } },
+    );
+    await waitFor(() => expect(result.current.items).toHaveLength(2));
+    const { items, reloadFromTop } = result.current;
+
+    rerender({ status: ['queued'] }); // a new array with the same content: the same query
+    expect(result.current.items).toBe(items);
+    expect(result.current.reloadFromTop).toBe(reloadFromTop);
+
+    rerender({ status: ['closed'] }); // another query: a new reload target
+    expect(result.current.reloadFromTop).not.toBe(reloadFromTop);
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not re-render a memoized row list when the page re-renders for unrelated state', async () => {
+    const fetchPage = vi.fn(async () => PAGE);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let rowRenders = 0;
+    const Rows = memo(function Rows({ items, onReload }: { items: Row[]; onReload: () => void }) {
+      rowRenders += 1;
+      return (
+        <ul aria-label="rows" data-reload={typeof onReload}>
+          {items.map((r) => (
+            <li key={r.id}>{r.id}</li>
+          ))}
+        </ul>
+      );
+    });
+    function Page() {
+      const [clicks, setClicks] = useState(0);
+      const list = useKeysetList({ queryKey: ['alerts', { q: 'x' }], fetchPage, itemKey: (r: Row) => r.id });
+      return (
+        <>
+          <button type="button" onClick={() => setClicks(clicks + 1)}>
+            clicked {clicks}
+          </button>
+          <Rows items={list.items} onReload={list.reloadFromTop} />
+        </>
+      );
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Page />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getAllByRole('listitem')).toHaveLength(2));
+    const settled = rowRenders;
+    for (let i = 1; i <= 3; i += 1) {
+      act(() => screen.getByRole('button').click());
+      expect(screen.getByRole('button')).toHaveTextContent(`clicked ${i}`);
+    }
+    expect(rowRenders).toBe(settled);
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+});
+

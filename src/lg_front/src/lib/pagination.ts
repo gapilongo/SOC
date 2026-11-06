@@ -21,7 +21,7 @@ import {
   type QueryClient,
   type QueryKey,
 } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { Page } from '../api/types';
 
@@ -115,8 +115,12 @@ export function useKeysetList<T>(opts: {
     refetchInterval: interval ? (q) => (shallow(q) ? interval : false) : interval,
     refetchOnWindowFocus: (q) => shallow(q),
   });
-  const { itemKey } = opts;
-  const items = useMemo(() => flattenPages(query.data?.pages, itemKey), [query.data, itemKey]);
+  // Callers pass an inline itemKey and a fresh queryKey array on every render. Keep the latest
+  // itemKey in a ref so `items` changes only with the data, and reuse the queryKey while its hash
+  // holds so `reloadFromTop` changes only with the query: memoized rows skip page re-renders.
+  const itemKeyRef = useRef(opts.itemKey);
+  itemKeyRef.current = opts.itemKey;
+  const items = useMemo(() => flattenPages(query.data?.pages, itemKeyRef.current), [query.data]);
   const pages = query.data?.pages.length ?? 0;
   const lastPage = query.data?.pages[pages - 1];
   /** The list stopped at MAX_PAGES although the API has more rows. */
@@ -134,7 +138,9 @@ export function useKeysetList<T>(opts: {
     });
   }, [client, hash]);
 
-  const queryKey = opts.queryKey;
+  const keyRef = useRef({ hash, queryKey: opts.queryKey });
+  if (keyRef.current.hash !== hash) keyRef.current = { hash, queryKey: opts.queryKey };
+  const queryKey = keyRef.current.queryKey;
   const reload = useCallback(() => reloadFromTop(client, queryKey), [client, queryKey]);
   return { ...query, items, pages, capped, outdated: outdated && pages > 1, reloadFromTop: reload };
 }

@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { endpoints } from '../../api/endpoints';
+import { afterActionChange } from '../../api/invalidate';
 import type { ActionOut } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
@@ -35,7 +36,7 @@ export function RollbackDialog({ action, onClose }: { action: ActionOut; onClose
       const out = await endpoints.rollbackAction(api, action.id, reason.trim(), true);
       const state = out.rollback.status === 'approved' ? 'approved and queued' : humanize(out.rollback.status);
       toast.success(`${out.created ? 'Rollback requested' : 'A rollback already exists'}: ${humanize(out.rollback.action_type)} (${state}).`);
-      void client.invalidateQueries({ queryKey: ['actions'] });
+      void afterActionChange(client);
       onClose();
     } catch (err) {
       setError(err);

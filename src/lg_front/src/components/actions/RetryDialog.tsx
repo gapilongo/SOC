@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { endpoints } from '../../api/endpoints';
+import { afterActionChange } from '../../api/invalidate';
 import type { ActionOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { humanize } from '../../lib/format';
@@ -25,7 +26,7 @@ export function RetryDialog({ action, onClose }: { action: ActionOut; onClose: (
     try {
       await endpoints.retryAction(api, action.id, reason.trim());
       toast.success(`${humanize(action.action_type)} on ${action.target} queued to run again.`);
-      void client.invalidateQueries({ queryKey: ['actions'] });
+      void afterActionChange(client);
       onClose();
     } catch (err) {
       setError(err);

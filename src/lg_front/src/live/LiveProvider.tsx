@@ -1,6 +1,7 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
+import { qk } from '../api/queryKeys';
 import type { LiveEvent } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { wsEndpoint } from '../config';
@@ -13,17 +14,17 @@ interface LiveContextValue {
 
 const LiveContext = createContext<LiveContextValue>({ status: 'idle' });
 
-/** Query key prefixes each event type makes stale. */
+/** Query key prefixes (first key elements, see api/queryKeys.ts) each event type makes stale. */
 export function keysForEvent(type: LiveEvent['type']): string[] {
   switch (type) {
     case 'alert.created':
     case 'alert.updated':
-      return ['alerts', 'alert', 'dashboard'];
+      return [qk.alerts.all[0], qk.alert.all[0], qk.dashboard.all[0]];
     case 'escalation.created':
     case 'escalation.updated':
-      return ['escalations', 'dashboard'];
+      return [qk.escalations.all[0], qk.dashboard.all[0]];
     case 'action.updated':
-      return ['actions', 'dashboard'];
+      return [qk.actions.all[0], qk.dashboard.all[0]];
     default:
       return [];
   }
