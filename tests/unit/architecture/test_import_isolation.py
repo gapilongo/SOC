@@ -41,6 +41,8 @@ BUDGETS: list[tuple[str, str]] = [
     # C1: phishing policy is pure; it used to sit in core, next to the engine and the agents.
     ("lg_sotf.domain.phishing", "lg_sotf.db"),
     ("lg_sotf.domain.phishing", "langchain_core"),
+    # C3: response planning extracts indicators from domain, not from the agents (and their LLM stack).
+    ("lg_sotf.services.response", "lg_sotf.agents"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded

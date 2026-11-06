@@ -62,8 +62,8 @@ from lg_sotf.agents.analysis.react import (
     ReActReasoner,
 )
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
-from lg_sotf.agents.correlation.indicators import Indicator, extract_indicators
 from lg_sotf.agents.triage.base import INJECTION_SIGNAL, agent_refusal, injection_suspected, source_environment
+from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import (
     ANALYSIS_BENIGN_ADJUSTMENT,
     EVIDENCE_SIGNALS,

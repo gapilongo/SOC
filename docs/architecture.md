@@ -43,7 +43,7 @@ import-lint`). What each package owns is in the
 | Adapters | `integrations` \| `tools` \| `llm` \| `queue` | notifications, ticketing, Microsoft clients; enrichment; model clients; Redis Streams |
 | Audit | `audit` | `AuditLogger`, the only writer of `audit_log` |
 | Persistence | `db` | pool, tenancy (RLS), repositories (all SQL), migrations, locks |
-| Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts; the event publisher port |
+| Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher port |
 | Value types | `models` | canonical alert and domain vocabulary |
 | Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
 | Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction; typed settings |

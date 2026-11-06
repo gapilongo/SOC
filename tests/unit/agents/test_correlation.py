@@ -8,7 +8,7 @@ from typing import Callable
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.correlation.base import MAX_DIGESTS, CorrelationAgent, frequency_level
-from lg_sotf.agents.correlation.indicators import extract_indicators, is_public_ip
+from lg_sotf.domain.indicators import extract_indicators, is_public_ip
 from lg_sotf.llm.fake import Refuse
 from lg_sotf.settings import Settings
 from tests.unit.agents._support import NOW, Related, StoredAlert, factory, fake_repos, scripted, texts

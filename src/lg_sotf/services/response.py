@@ -153,6 +153,7 @@ from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import EXECUTED_STATUSES, VerificationWrite
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.domain.events import EventPublisher, publish_event
+from lg_sotf.domain.indicators import extract_indicators
 from lg_sotf.domain.phishing import email_block_targets, plan_email_entities
 from lg_sotf.integrations.events import (
     ACTION_AWAITING_APPROVAL,
@@ -635,9 +636,6 @@ def actions_from_recommendations(recommendations: Iterable[str]) -> List[str]:
 
 def plan_entities(alert: Mapping[str, Any]) -> Dict[str, List[str]]:
     """Response targets by kind in a canonical alert (the extraction correlation uses)."""
-    # Imported here: the agents package pulls in the LLM stack, which API processes need not load.
-    from lg_sotf.agents.correlation.indicators import extract_indicators
-
     by_kind: Dict[str, List[str]] = {}
     for indicator in extract_indicators(alert):
         by_kind.setdefault(indicator.type, []).append(indicator.value)
