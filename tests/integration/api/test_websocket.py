@@ -16,7 +16,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from lg_sotf.queue.events import make_event
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, UI_ORIGIN, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, UI_ORIGIN, ApiHarness
 
 pytestmark = pytest.mark.integration
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
@@ -376,7 +376,7 @@ async def test_per_address_login_cap_counts_only_failures(make_api) -> None:
 
 async def test_cookie_endpoints_refuse_other_origins(api: ApiHarness) -> None:
     """WSC-8: a same-site sibling origin cannot rotate (and so revoke) or log out a user's session."""
-    from tests.integration.api.conftest import UI_ORIGIN
+    from tests.integration.api._support import UI_ORIGIN
 
     await api.user(TENANT_A, "analyst", email="csrf@a.example.com")
     assert (await _login(api, "csrf@a.example.com")).status_code == 200

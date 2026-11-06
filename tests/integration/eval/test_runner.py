@@ -15,7 +15,7 @@ from lg_sotf.eval.gate import evaluate_gate, load_thresholds
 from lg_sotf.eval.report import build_report, render_markdown
 from lg_sotf.eval.runner import EvalRunner, EvalSetupError, run_evaluation
 from lg_sotf.settings import Settings
-from tests.integration.eval.conftest import EVAL_TENANT
+from tests.integration.eval._support import EVAL_TENANT
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(300)]
 

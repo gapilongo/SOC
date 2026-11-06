@@ -26,8 +26,7 @@ from lg_sotf.eval.report import HISTORY_NOTE
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService
 from lg_sotf.security.hashing import hmac_indicator
 from lg_sotf.settings import Settings
-from tests.integration.conftest import ALL_TABLES
-from tests.integration.db._support import TENANT_A, TENANT_B
+from tests.integration.db._support import ALL_TABLES, TENANT_A, TENANT_B
 
 pytestmark = pytest.mark.integration
 
@@ -227,7 +226,7 @@ async def test_eval_command_from_history_writes_a_report(
 
 async def test_pipeline_records_provider_and_model_on_the_alert(eval_runner: Any, repos: Repositories) -> None:
     """Going forward every alert carries the provider/model per agent (the accuracy report's model key)."""
-    from tests.integration.eval.conftest import EVAL_TENANT
+    from tests.integration.eval._support import EVAL_TENANT
 
     item = next(i for i in load_dataset(DATASET).items if i.source_type == "canonical")
     result = (await eval_runner.run([item]))[0]

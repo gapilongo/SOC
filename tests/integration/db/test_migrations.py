@@ -25,8 +25,7 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.partitions import add_months, month_start, partition_name
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import to_libpq_url
-from tests.integration.db._support import db_settings
-from tests.integration.db.test_rls import TENANT_TABLES
+from tests.integration.db._support import TENANT_TABLES, db_settings
 
 pytestmark = pytest.mark.asyncio
 

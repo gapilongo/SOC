@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration

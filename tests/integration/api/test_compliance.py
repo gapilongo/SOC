@@ -19,7 +19,7 @@ from lg_sotf.db.repos import User
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.integrations.events import TEST_EVENT
 from lg_sotf.queue.streams import QueueStreams, encode_work
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 from tests.integration.services._support import sight
 

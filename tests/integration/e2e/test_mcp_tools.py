@@ -35,7 +35,7 @@ from lg_sotf.mcp.runs import ROUTES, TERMINAL_STATUSES
 from lg_sotf.mcp.shaping import CLOSE_TAG, INVISIBLE_RE, OPEN_TAG, UNTRUSTED_HEADER
 from lg_sotf.security.hashing import generate_api_key
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack, eventually, running
+from tests.integration.e2e._support import Stack, eventually, running
 from tests.unit.mcp._support import initialized, request
 
 pytestmark = pytest.mark.integration

@@ -23,7 +23,7 @@ from lg_sotf.services.review import ReviewService
 from lg_sotf.services.rollback import RollbackService
 from tests.fixtures.microsoft import graph_error
 from tests.integration.db._support import TENANT_A
-from tests.integration.integrations.microsoft.conftest import MicrosoftEnv, MicrosoftEnvFactory
+from tests.integration.integrations.microsoft._support import MicrosoftEnv, MicrosoftEnvFactory
 from tests.unit.integrations.microsoft.mail._exchange import FakeExchange, FakeMessage
 from tests.unit.integrations.microsoft.mail._scenario import ALICE, BOB, SENDER, SOC, SUBJECT, message_id
 

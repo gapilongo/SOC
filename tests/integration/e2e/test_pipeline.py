@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 from typing import Any, Callable, Dict, List, Tuple
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -15,31 +15,17 @@ from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.queue.events import EventBus
 from tests.fixtures.vendors import vendor_events
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.e2e.conftest import Stack, count_calls, eventually, running
+from tests.integration.e2e._support import (
+    BENIGN_EVENT,
+    SUSPICIOUS_EVENT,
+    Stack,
+    analyst_decides,
+    count_calls,
+    eventually,
+    running,
+)
 
 pytestmark = pytest.mark.integration
-
-BENIGN_EVENT: Dict[str, Any] = {
-    "source_alert_id": "bk-001",
-    "title": "Scheduled backup maintenance test job",
-    "severity": "low",
-    "occurred_at": "2024-03-05T10:00:00Z",
-    "entities": {"hosts": ["backup-01"]},
-}
-SUSPICIOUS_EVENT: Dict[str, Any] = {
-    "source_alert_id": "c2-001",
-    "title": "Possible C2 beacon from workstation",
-    "severity": "medium",
-    "occurred_at": "2024-03-05T10:05:00Z",
-    "entities": {
-        "ips": ["185.220.101.44", "10.0.0.5"],
-        "hosts": ["ws-042"],
-        "users": ["jdoe"],
-        "hashes": ["44d88612fea8a8f36de82e1278abb02f"],
-        "processes": ["powershell.exe"],
-    },
-}
-
 
 async def ingest_fixtures(stack: Stack, tenant_id: str = TENANT_A) -> Tuple[str, List[str]]:
     """A benign canonical event through ``api`` and the Splunk notables through a webhook source."""
@@ -55,27 +41,7 @@ async def ingest_fixtures(stack: Stack, tenant_id: str = TENANT_A) -> Tuple[str,
     return benign.inserted[0].alert_id, [a.alert_id for a in vendor.inserted]
 
 
-async def analyst_decides(
-    stack: Stack, tenant_id: str, alert_id: str, decision: str, user_id: str, **extra: Any
-) -> str:
-    """What ``POST /escalations/{id}/decision`` does: record the decision, then enqueue the resume."""
-    esc = await stack.repos.escalations.get_active_for_alert(tenant_id, alert_id)
-    assert esc is not None
-    await stack.repos.escalations.decide(
-        tenant_id, esc.id, decision=decision, decided_by=UUID(user_id), expected_version=esc.version
-    )
-    payload: Dict[str, Any] = {
-        "type": "analyst_decision",
-        "escalation_id": esc.id,
-        "decision": decision,
-        "approved_actions": [],
-        "decided_by": user_id,
-        "notes": "confirmed on the host",
-        "approver_role": "analyst",
-    }
-    payload.update(extra)
-    await stack.queue.enqueue_resume(tenant_id, alert_id, payload)
-    return esc.id
+
 
 
 async def test_ingested_alerts_are_triaged_by_the_worker(

@@ -6,8 +6,7 @@ from typing import Callable
 
 from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.settings import Settings
-from tests.unit.agents._support import factory, fake_repos, scripted
-from tests.unit.agents.test_triage import AMBIGUOUS, ASSESSMENT, BENIGN, ctx
+from tests.unit.agents._support import AMBIGUOUS, ASSESSMENT, BENIGN, ctx, factory, fake_repos, scripted
 
 
 async def test_llm_call_records_provider_model_and_tier(make_settings: Callable[..., Settings]) -> None:

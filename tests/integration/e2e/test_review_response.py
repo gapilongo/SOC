@@ -23,7 +23,7 @@ from lg_sotf.services.connectors.webhook import IDEMPOTENCY_HEADER, SIGNATURE_HE
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import ResponseSettings
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack, eventually, running
+from tests.integration.e2e._support import Stack, eventually, related_event, running
 
 pytestmark = pytest.mark.integration
 
@@ -31,20 +31,7 @@ SECRET = b"e2e-webhook-secret-0123456789abcdef"
 SOAR_URL = "https://soar.example.com/hooks/lgsotf"
 
 
-def related_event(n: int) -> Dict[str, Any]:
-    return {
-        "source_alert_id": f"c2-related-{n}",
-        "title": "Possible C2 beacon from workstation",
-        "severity": "medium",
-        "occurred_at": "2024-03-05T10:05:00Z",
-        "entities": {
-            "ips": ["185.220.101.44", "10.0.0.5"],
-            "hosts": ["ws-042"],
-            "users": ["jdoe"],
-            "hashes": ["44d88612fea8a8f36de82e1278abb02f"],
-            "processes": ["powershell.exe"],
-        },
-    }
+
 
 
 class Soar:

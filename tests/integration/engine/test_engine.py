@@ -19,7 +19,7 @@ from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine.conftest import RecordingEvents
+from tests.integration.engine._support import RecordingEvents
 
 pytestmark = pytest.mark.integration
 

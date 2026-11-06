@@ -8,7 +8,7 @@ import pytest
 
 from lg_sotf.llm.usage import get_usage_recorder
 from lg_sotf.services.llm_check import AGENT
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 

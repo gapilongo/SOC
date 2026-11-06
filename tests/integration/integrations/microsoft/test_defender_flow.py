@@ -12,7 +12,7 @@ import pytest
 from lg_sotf.db.repos import Repositories
 from lg_sotf.services.rollback import RollbackService
 from tests.integration.db._support import TENANT_A
-from tests.integration.integrations.microsoft.conftest import MicrosoftEnv, MicrosoftEnvFactory
+from tests.integration.integrations.microsoft._support import MicrosoftEnv, MicrosoftEnvFactory
 from tests.unit.integrations.microsoft.defender._support import FakeDefender
 
 pytestmark = pytest.mark.integration

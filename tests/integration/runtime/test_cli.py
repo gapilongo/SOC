@@ -14,8 +14,7 @@ from lg_sotf.db.repos.audit import AuditRepo
 from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.security.hashing import verify_password
 from lg_sotf.settings import Settings
-from tests.integration.conftest import truncate_all
-from tests.integration.db._support import TENANT_A, db_settings, new_alert
+from tests.integration.db._support import TENANT_A, db_settings, new_alert, truncate_all
 
 ADMIN_PASSWORD = "correct horse battery staple"
 

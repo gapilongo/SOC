@@ -4,81 +4,30 @@ from __future__ import annotations
 
 import base64
 import json
-import time
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List
 
 import pytest
 
-from lg_sotf.api.auth import mfa as mfa_module
 from lg_sotf.api.routers.auth import REFRESH_COOKIE
-from lg_sotf.db.repos import User
 from lg_sotf.security import totp
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import (
+    PASSWORD,
+    TENANT_A,
+    TENANT_B,
+    ApiHarness,
+    TotpClock,
+    bearer,
+    challenge,
+    code_now,
+    enroll,
+    login,
+    verify,
+)
 
 pytestmark = pytest.mark.integration
 
 API = "/api/v1"
-
-
-class Clock:
-    """The TOTP clock, advanced one 30 s step at a time so each test code is fresh."""
-
-    def __init__(self) -> None:
-        self.now = float(int(time.time()) // 30 * 30 + 5)
-
-    def __call__(self) -> float:
-        return self.now
-
-    def tick(self, steps: int = 1) -> None:
-        self.now += totp.STEP_S * steps
-
-
-@pytest.fixture
-def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
-    c = Clock()
-    monkeypatch.setattr(mfa_module, "clock", c)
-    return c
-
-
-def code_now(secret: str, clock: Clock) -> str:
-    return totp.totp(secret, at=clock.now)
-
-
-async def login(api: ApiHarness, email: str, password: str = PASSWORD, tenant: Optional[str] = None):
-    body: Dict[str, Any] = {"email": email, "password": password}
-    if tenant:
-        body["tenant"] = tenant
-    return await api.client.post(f"{API}/auth/login", json=body)
-
-
-async def verify(api: ApiHarness, token: str, code: str):
-    return await api.client.post(f"{API}/auth/mfa/verify", json={"mfa_token": token, "code": code})
-
-
-async def enroll(api: ApiHarness, user: User, clock: Clock) -> Tuple[str, List[str]]:
-    headers = api.auth(user)
-    started = await api.client.post(f"{API}/auth/mfa/enroll", json={}, headers=headers)
-    assert started.status_code == 200, started.text
-    secret = started.json()["secret"]
-    confirmed = await api.client.post(
-        f"{API}/auth/mfa/confirm", json={"code": code_now(secret, clock)}, headers=headers
-    )
-    assert confirmed.status_code == 200, confirmed.text
-    clock.tick()
-    return secret, confirmed.json()["recovery_codes"]
-
-
-async def challenge(api: ApiHarness, email: str) -> str:
-    response = await login(api, email)
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["mfa_required"] is True and body["enrollment_required"] is False
-    return body["mfa_token"]
-
-
-def bearer(token: str) -> Dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 async def actions(api: ApiHarness, tenant_id: str, action: str) -> List[Any]:
@@ -88,7 +37,7 @@ async def actions(api: ApiHarness, tenant_id: str, action: str) -> List[Any]:
 # ---------------------------------------------------------------- enrollment and sign-in
 
 
-async def test_enroll_confirm_then_sign_in_with_totp(api: ApiHarness, clock: Clock) -> None:
+async def test_enroll_confirm_then_sign_in_with_totp(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="mfa@a.example.com")
     headers = api.auth(user)
     status = (await api.client.get(f"{API}/auth/mfa", headers=headers)).json()
@@ -141,7 +90,7 @@ async def test_enroll_confirm_then_sign_in_with_totp(api: ApiHarness, clock: Clo
     assert logins[0].details["method"] == "password+totp"
 
 
-async def test_a_code_cannot_be_used_twice(api: ApiHarness, clock: Clock) -> None:
+async def test_a_code_cannot_be_used_twice(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="replay@a.example.com")
     secret, _ = await enroll(api, user, clock)
     code = code_now(secret, clock)
@@ -158,7 +107,7 @@ async def test_a_code_cannot_be_used_twice(api: ApiHarness, clock: Clock) -> Non
     assert (await verify(api, await challenge(api, "replay@a.example.com"), code_now(secret, clock))).status_code == 200
 
 
-async def test_recovery_codes_sign_in_once_each(api: ApiHarness, clock: Clock) -> None:
+async def test_recovery_codes_sign_in_once_each(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "viewer", email="recover@a.example.com")
     _, codes = await enroll(api, user, clock)
     used = await verify(api, await challenge(api, "recover@a.example.com"), codes[3].upper())
@@ -172,7 +121,7 @@ async def test_recovery_codes_sign_in_once_each(api: ApiHarness, clock: Clock) -
 # ---------------------------------------------------------------- the challenge token
 
 
-async def test_challenge_token_is_not_a_session_and_is_single_use(api: ApiHarness, clock: Clock) -> None:
+async def test_challenge_token_is_not_a_session_and_is_single_use(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "admin", email="chal@a.example.com")
     secret, _ = await enroll(api, user, clock)
     token = await challenge(api, "chal@a.example.com")
@@ -188,7 +137,7 @@ async def test_challenge_token_is_not_a_session_and_is_single_use(api: ApiHarnes
     assert reused.status_code == 401 and reused.json()["error"]["code"] == "invalid_mfa_token"
 
 
-async def test_challenge_is_bound_to_its_user(api: ApiHarness, clock: Clock) -> None:
+async def test_challenge_is_bound_to_its_user(api: ApiHarness, clock: TotpClock) -> None:
     alice = await api.user(TENANT_A, "analyst", email="alice@a.example.com")
     bob = await api.user(TENANT_A, "analyst", email="bob@a.example.com")
     await enroll(api, alice, clock)
@@ -210,7 +159,7 @@ async def test_challenge_is_bound_to_its_user(api: ApiHarness, clock: Clock) -> 
     assert (await verify(api, forged, code_now(bob_secret, clock))).json()["error"]["code"] == "invalid_mfa_token"
 
 
-async def test_challenge_expires_and_dies_with_a_password_change(api: ApiHarness, clock: Clock) -> None:
+async def test_challenge_expires_and_dies_with_a_password_change(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="exp@a.example.com")
     secret, _ = await enroll(api, user, clock)
     current = await api.repos.users.get(TENANT_A, user.id)
@@ -230,7 +179,7 @@ async def test_challenge_expires_and_dies_with_a_password_change(api: ApiHarness
 # ---------------------------------------------------------------- lockout
 
 
-async def test_wrong_codes_count_toward_the_lockout(api: ApiHarness, clock: Clock) -> None:
+async def test_wrong_codes_count_toward_the_lockout(api: ApiHarness, clock: TotpClock) -> None:
     max_attempts = api.ctx.settings.auth.max_login_attempts
     assert max_attempts == 3
     user = await api.user(TENANT_A, "analyst", email="guess@a.example.com")
@@ -250,7 +199,7 @@ async def test_wrong_codes_count_toward_the_lockout(api: ApiHarness, clock: Cloc
     assert not await actions(api, TENANT_A, "auth.login")
 
 
-async def test_a_successful_second_factor_clears_earlier_failures(api: ApiHarness, clock: Clock) -> None:
+async def test_a_successful_second_factor_clears_earlier_failures(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="ok@a.example.com")
     secret, _ = await enroll(api, user, clock)
     assert (await login(api, "ok@a.example.com", "wrong password")).status_code == 401
@@ -263,7 +212,7 @@ async def test_a_successful_second_factor_clears_earlier_failures(api: ApiHarnes
 # ---------------------------------------------------------------- policy and forced enrollment
 
 
-async def test_tenant_policy_forces_enrollment_before_anything_else(api: ApiHarness, clock: Clock) -> None:
+async def test_tenant_policy_forces_enrollment_before_anything_else(api: ApiHarness, clock: TotpClock) -> None:
     admin = await api.user(TENANT_A, "admin", email="admin@a.example.com")
     user = await api.user(TENANT_A, "analyst", email="late@a.example.com")
     old_session = await login(api, "late@a.example.com")
@@ -317,7 +266,7 @@ async def test_tenant_policy_forces_enrollment_before_anything_else(api: ApiHarn
     assert (await verify(api, await challenge(api, "late@a.example.com"), code_now(secret, clock))).status_code == 200
 
 
-async def test_platform_admins_must_enroll_when_the_install_requires_it(make_api, clock: Clock) -> None:
+async def test_platform_admins_must_enroll_when_the_install_requires_it(make_api, clock: TotpClock) -> None:
     api = await make_api(auth={"require_mfa_for_platform_admins": True})
     await api.user(TENANT_A, "admin", email="root@a.example.com", platform_admin=True)
     await api.user(TENANT_A, "admin", email="plain@a.example.com")
@@ -334,7 +283,7 @@ async def test_platform_admin_mfa_is_off_by_default_in_tests(api: ApiHarness) ->
 # ---------------------------------------------------------------- self-service management
 
 
-async def test_disable_needs_password_and_code_and_counts_failures(api: ApiHarness, clock: Clock) -> None:
+async def test_disable_needs_password_and_code_and_counts_failures(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="off@a.example.com")
     secret, codes = await enroll(api, user, clock)
     headers = api.auth(user)
@@ -361,7 +310,7 @@ async def test_disable_needs_password_and_code_and_counts_failures(api: ApiHarne
     assert again.status_code == 409
 
 
-async def test_regenerate_recovery_codes_needs_a_totp_code(api: ApiHarness, clock: Clock) -> None:
+async def test_regenerate_recovery_codes_needs_a_totp_code(api: ApiHarness, clock: TotpClock) -> None:
     user = await api.user(TENANT_A, "analyst", email="regen@a.example.com")
     secret, old_codes = await enroll(api, user, clock)
     headers = api.auth(user)
@@ -392,7 +341,7 @@ async def test_sso_and_api_key_principals_cannot_manage_mfa(api: ApiHarness) -> 
 # ---------------------------------------------------------------- admin reset
 
 
-async def test_admin_resets_a_user_s_mfa_and_ends_their_sessions(api: ApiHarness, clock: Clock) -> None:
+async def test_admin_resets_a_user_s_mfa_and_ends_their_sessions(api: ApiHarness, clock: TotpClock) -> None:
     admin = await api.user(TENANT_A, "admin", email="adm@a.example.com")
     user = await api.user(TENANT_A, "analyst", email="lost@a.example.com")
     await enroll(api, user, clock)
@@ -415,7 +364,7 @@ async def test_admin_resets_a_user_s_mfa_and_ends_their_sessions(api: ApiHarness
     assert "access_token" in (await login(api, "lost@a.example.com")).json()
 
 
-async def test_reset_is_confined_to_the_admin_s_tenant(api: ApiHarness, clock: Clock) -> None:
+async def test_reset_is_confined_to_the_admin_s_tenant(api: ApiHarness, clock: TotpClock) -> None:
     victim = await api.user(TENANT_A, "analyst", email="victim@a.example.com")
     await enroll(api, victim, clock)
     other_admin = await api.user(TENANT_B, "admin", email="adm@b.example.com")
@@ -429,7 +378,7 @@ async def test_reset_is_confined_to_the_admin_s_tenant(api: ApiHarness, clock: C
     assert not await actions(api, TENANT_A, "auth.mfa_reset")
 
 
-async def test_only_a_platform_admin_resets_a_platform_admin_or_across_tenants(api: ApiHarness, clock: Clock) -> None:
+async def test_only_a_platform_admin_resets_a_platform_admin_or_across_tenants(api: ApiHarness, clock: TotpClock) -> None:
     root = await api.user(TENANT_A, "admin", email="root@a.example.com", platform_admin=True)
     await enroll(api, root, clock)
     tenant_admin = await api.user(TENANT_A, "admin", email="adm@a.example.com")
@@ -447,7 +396,7 @@ async def test_only_a_platform_admin_resets_a_platform_admin_or_across_tenants(a
     assert await actions(api, TENANT_A, "platform_admin.tenant_access")
 
 
-async def test_cli_reset_is_audited(api: ApiHarness, clock: Clock) -> None:
+async def test_cli_reset_is_audited(api: ApiHarness, clock: TotpClock) -> None:
     from lg_sotf.runtime.ops import OperationError, reset_mfa
 
     user = await api.user(TENANT_A, "analyst", email="cli@a.example.com")
@@ -461,7 +410,7 @@ async def test_cli_reset_is_audited(api: ApiHarness, clock: Clock) -> None:
         await reset_mfa(api.ctx.settings, tenant_id=TENANT_B, email="cli@a.example.com")
 
 
-async def test_secrets_move_to_a_new_encryption_key_on_their_next_use(make_api: Any, clock: Clock) -> None:
+async def test_secrets_move_to_a_new_encryption_key_on_their_next_use(make_api: Any, clock: TotpClock) -> None:
     from lg_sotf.security.crypto import generate_key
 
     api = await make_api()

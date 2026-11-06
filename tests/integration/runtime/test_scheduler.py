@@ -20,7 +20,7 @@ from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.services.dispatch import dispatch_new_alerts
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.runtime.conftest import RecordingEvents, eventually
+from tests.integration.runtime._support import RecordingEvents, eventually
 
 
 @dataclass(frozen=True)

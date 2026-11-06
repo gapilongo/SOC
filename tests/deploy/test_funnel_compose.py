@@ -16,8 +16,7 @@ from typing import Any, Dict
 
 import pytest
 
-from tests.deploy._support import DOCKER_DIR, REPO_ROOT
-from tests.deploy.test_compose import PROD_SECRETS, compose_config, load, requires_compose
+from tests.deploy._support import DOCKER_DIR, PROD_SECRETS, REPO_ROOT, compose_config, load, requires_compose
 
 VM = REPO_ROOT / "deploy" / "vm"
 FUNNEL = VM / "docker-compose.funnel.yml"

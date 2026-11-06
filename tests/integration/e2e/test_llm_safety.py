@@ -23,7 +23,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.llm.fake import Refuse, ScriptedChatModel
 from lg_sotf.services.response import ACTION_CATALOG
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack, eventually, running
+from tests.integration.e2e._support import Stack, eventually, running
 
 pytestmark = pytest.mark.integration
 

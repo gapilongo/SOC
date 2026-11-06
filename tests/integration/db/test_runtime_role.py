@@ -31,8 +31,7 @@ from lg_sotf.db.retention import purge_expired
 from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.db.urls import to_libpq_url
 from lg_sotf.settings import RetentionSettings
-from tests.integration.db._support import TENANT_A, TENANT_B, db_settings, make_alert
-from tests.integration.db.test_rls import TENANT_TABLES, seed_everything
+from tests.integration.db._support import TENANT_A, TENANT_B, TENANT_TABLES, db_settings, make_alert, seed_everything
 
 pytestmark = pytest.mark.asyncio
 
