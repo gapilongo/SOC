@@ -193,7 +193,7 @@ module = [
     "lg_sotf.db.*",
     "lg_sotf.errors",
     "lg_sotf.domain.*",
-    "lg_sotf.models.vocabulary",
+    "lg_sotf.models.*",
     "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",

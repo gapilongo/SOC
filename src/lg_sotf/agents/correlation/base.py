@@ -285,7 +285,7 @@ class CorrelationAgent(BaseAgent):
         if not related:
             return 0
         weight = max((TYPE_WEIGHTS.get(i.type, 10) for i in indicators), default=10)
-        score = sum(min(3, r.shared_indicator_count) * weight // 3 for r in related)
+        score: int = sum(min(3, r.shared_indicator_count) * weight // 3 for r in related)
         if burst:
             score += 20
         return max(0, min(100, score))
