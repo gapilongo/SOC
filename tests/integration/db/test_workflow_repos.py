@@ -201,10 +201,10 @@ class TestRuns:
         await repos.runs.start(TENANT_A, c, "w3", lease_s=3_600, now=T0)
         stale = await repos.runs.find_stale_all_tenants(now=T0 + timedelta(seconds=11))
         assert {(r.tenant_id, r.alert_id) for r in stale} == {(TENANT_A, a), (TENANT_B, b)}
-        sweep = await repos.runs.requeue_stale_all_tenants(now=T0 + timedelta(seconds=11))
+        sweep = await repos.runs.requeue_stale_all_tenants(max_attempts=5, now=T0 + timedelta(seconds=11))
         assert {(r.tenant_id, r.alert_id) for r in sweep.requeued} == {(TENANT_A, a), (TENANT_B, b)}
         assert sweep.dead_lettered == []
-        again = await repos.runs.requeue_stale_all_tenants(now=T0 + timedelta(seconds=11))
+        again = await repos.runs.requeue_stale_all_tenants(max_attempts=5, now=T0 + timedelta(seconds=11))
         assert again.requeued == [] and again.dead_lettered == []
         assert (await repos.runs.get(TENANT_A, a)).status == "queued"
         assert await repos.runs.counts_by_status(TENANT_A) == {"queued": 1, "running": 1}

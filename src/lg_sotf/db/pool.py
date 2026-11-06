@@ -29,7 +29,7 @@ import structlog
 from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, SystemScopeDenied
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.urls import redact_url, to_libpq_url
-from lg_sotf.settings import DatabaseSettings, Settings, get_settings
+from lg_sotf.settings import DatabaseSettings, Settings
 
 log = structlog.get_logger(__name__)
 
@@ -130,7 +130,7 @@ class Database:
 
     def __init__(
         self,
-        settings: Optional[DatabaseSettings] = None,
+        settings: DatabaseSettings,
         *,
         dsn: Optional[str] = None,
         application_name: str = "lg-sotf",
@@ -139,7 +139,7 @@ class Database:
         max_size: Optional[int] = None,
         server_settings: Optional[Mapping[str, str]] = None,
     ) -> None:
-        self._settings = settings or get_settings().database
+        self._settings = settings
         self._dsn = to_libpq_url(dsn or self._settings.url.get_secret_value())
         self._application_name = application_name
         self._acquire_timeout_s = acquire_timeout_s
@@ -153,7 +153,7 @@ class Database:
         self._system_scope_verified = False
 
     @classmethod
-    async def connect(cls, settings: Optional[DatabaseSettings] = None, **kwargs: Any) -> Database:
+    async def connect(cls, settings: DatabaseSettings, **kwargs: Any) -> Database:
         db = cls(settings, **kwargs)
         await db.open()
         return db
