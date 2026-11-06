@@ -3,4 +3,3 @@
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
 api/auth/authenticate.py::_provision
-api/routers/tenant.py::patch_settings

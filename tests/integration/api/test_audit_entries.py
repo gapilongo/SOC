@@ -245,3 +245,33 @@ async def test_platform_reads_are_audited_in_the_home_tenant(api: ApiHarness) ->
     assert exported[:4] == ("tenant", None, *actor)
     expected = {"home_tenant_id": TENANT_A, "month": "2026-01", "format": "json"}
     assert {k: v for k, v in exported[4].items() if k != "tenants"} == expected
+
+
+# ------------------------------------------------------------------------------ tenant
+
+
+async def test_tenant_settings_entry_and_onboarding_mark(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    budget = await api.client.patch(
+        f"{API}/tenant/settings", json={"llm_daily_token_budget": 500_000}, headers=api.auth(admin)
+    )
+    assert budget.status_code == 200, budget.text
+    details = {"keys": ["llm_daily_token_budget"]}
+    assert await _only(api, "tenant.settings_updated") == ("tenant", TENANT_A, "user", str(admin.id), details)
+    assert "autonomy_reviewed_at" not in ((await api.repos.tenants.get(TENANT_A)).onboarding or {})
+    autonomy = await api.client.patch(
+        f"{API}/tenant/settings",
+        json={"autonomy": {"low": "auto"}, "llm_daily_token_budget": None},
+        headers=api.auth(admin),
+    )
+    assert autonomy.status_code == 200, autonomy.text
+    entries = (await api.repos.audit.list(TENANT_A, action="tenant.settings_updated")).items
+    assert sorted(e.details["keys"] for e in entries) == [["autonomy", "llm_daily_token_budget"], ["llm_daily_token_budget"]]
+    assert "autonomy_reviewed_at" in (await api.repos.tenants.get(TENANT_A)).onboarding
+
+
+async def test_invalid_tenant_settings_change_nothing(api: ApiHarness) -> None:
+    admin = await api.user(TENANT_A, "admin")
+    response = await api.client.patch(f"{API}/tenant/settings", json={"nope": 1}, headers=api.auth(admin))
+    assert response.status_code == 422
+    assert "tenant.settings_updated" not in await _actions(api)

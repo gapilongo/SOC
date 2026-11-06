@@ -35,7 +35,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Literal, Mapping, Optional
+from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection
@@ -46,6 +46,9 @@ from lg_sotf.services.escalation import resolve_review_policy
 from lg_sotf.settings import Settings
 
 Profile = Literal["conservative", "balanced", "autonomous"]
+
+# Saving either settings section counts as the onboarding "autonomy reviewed" step.
+AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 
 PROFILES: Dict[str, Dict[str, Any]] = {
     # Nothing runs without a person; high-risk and critical actions are never proposed for execution.
@@ -354,6 +357,41 @@ async def _reset_sla_deadlines(repos: Repositories, settings: Settings, tenant: 
     return await repos.escalations.extend_sla_deadlines(tenant.id, deadlines, conn=conn)
 
 
+async def update_settings(
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    build_patch: Callable[[Tenant], Dict[str, Any]],
+) -> Tenant:
+    """Merge the top-level settings patch that ``build_patch`` makes from the locked current tenant.
+
+    The row is locked first: nested sections are merged from this snapshot,
+    so two concurrent changes to different sub-keys cannot drop one another.
+    ``build_patch`` validates and may raise, and then nothing changes.
+    Audited ``tenant.settings_updated`` with the patched keys (never their
+    values); saving ``autonomy`` or ``response`` also marks the onboarding
+    "autonomy reviewed" step. Cache invalidation is the caller's.
+    """
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        tenant = await repos.tenants.get(tenant_id, for_update=True, conn=conn)
+        patch = build_patch(tenant)
+        updated = await repos.tenants.update_settings(tenant_id, patch, conn=conn)
+        await audit.record(
+            tenant_id,
+            "tenant.settings_updated",
+            "tenant",
+            tenant_id,
+            actor_type=actor.type,
+            actor_id=actor.id,
+            details={"keys": sorted(patch)},
+            conn=conn,
+        )
+        if AUTONOMY_REVIEW_KEYS & patch.keys():
+            await repos.tenants.mark_onboarding(tenant_id, "autonomy_reviewed_at", conn=conn)
+    return updated
+
+
 async def record_platform_access(
     audit: AuditLogger, actor: Actor, home_tenant_id: str, action: str, resource_id: Optional[str], **details: Any
 ) -> None:
@@ -370,6 +408,7 @@ async def record_platform_access(
 
 
 __all__ = [
+    "AUTONOMY_REVIEW_KEYS",
     "COPIED_KEYS",
     "PROFILES",
     "Profile",
@@ -384,5 +423,6 @@ __all__ = [
     "provision_tenant",
     "quotas_of",
     "record_platform_access",
+    "update_settings",
     "update_tenant",
 ]
