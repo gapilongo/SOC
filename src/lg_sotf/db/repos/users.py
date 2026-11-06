@@ -212,9 +212,8 @@ class UsersRepo(Repository):
 
     async def count_active_admins(self, tenant_id: str, *, conn: Optional[Connection] = None) -> int:
         async with self._tenant(tenant_id, conn) as c:
-            return await c.fetchval(
-                "SELECT count(*) FROM users WHERE tenant_id = $1 AND role = 'admin' AND is_active",
-                tenant_id,
+            return await fetch_int(
+                c, "SELECT count(*) FROM users WHERE tenant_id = $1 AND role = 'admin' AND is_active", tenant_id
             )
 
     async def reserve_login_attempt(

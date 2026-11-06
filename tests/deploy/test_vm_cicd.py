@@ -19,8 +19,7 @@ from typing import Any, Dict, Iterator, List, Set, Tuple
 import pytest
 import yaml
 
-from tests.deploy._support import DOCKER_DIR, REPO_ROOT
-from tests.deploy.test_compose import PROD_SECRETS, compose_config, load, requires_compose
+from tests.deploy._support import DOCKER_DIR, PROD_SECRETS, REPO_ROOT, compose_config, load, requires_compose
 
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RELEASE = WORKFLOWS / "release-images.yml"

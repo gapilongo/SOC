@@ -45,7 +45,7 @@ from lg_sotf.services.dispatch import dispatch_new_alerts
 from lg_sotf.services.review import ReviewDenied, ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.e2e.conftest import eventually
+from tests.integration.e2e._support import eventually
 
 pytestmark = [pytest.mark.integration, pytest.mark.slow, pytest.mark.timeout(300)]
 

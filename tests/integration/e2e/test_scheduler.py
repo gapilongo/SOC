@@ -19,9 +19,8 @@ from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.security.crypto import SecretBox
 from tests.fixtures.vendors import vendor_events
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.e2e.conftest import Stack, eventually, running
-from tests.integration.e2e.test_pipeline import BENIGN_EVENT, SUSPICIOUS_EVENT
-from tests.integration.ingestion.test_poll import QRadarMock
+from tests.integration.e2e._support import BENIGN_EVENT, SUSPICIOUS_EVENT, Stack, eventually, running
+from tests.integration.ingestion._support import QRadarMock
 from tests.unit.ingestion._support import public_resolver
 
 pytestmark = pytest.mark.integration

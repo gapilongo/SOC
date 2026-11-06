@@ -17,7 +17,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.runtime.scheduler import Scheduler
 from lg_sotf.services.review import ReviewService
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import Stack, eventually, running
+from tests.integration.e2e._support import Stack, eventually, running
 
 pytestmark = pytest.mark.integration
 

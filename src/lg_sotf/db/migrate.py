@@ -194,7 +194,7 @@ async def schema_is_current(db: Database) -> bool:
     async with db.connection() as conn:
         if await conn.fetchval("SELECT to_regclass('public.alembic_version')") is None:
             return False
-        version = await conn.fetchval("SELECT version_num FROM alembic_version")
+        version: Optional[str] = await conn.fetchval("SELECT version_num FROM alembic_version")
     return version == head_revision()
 
 

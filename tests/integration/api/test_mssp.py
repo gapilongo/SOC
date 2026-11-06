@@ -14,7 +14,7 @@ import pytest
 
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import LLMUsageDelta
-from tests.integration.api.conftest import PASSWORD, TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration

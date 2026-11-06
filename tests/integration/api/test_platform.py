@@ -10,7 +10,7 @@ import pytest
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos.audit import AuditRepo
 from lg_sotf.db.repos.users import UsersRepo
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 

@@ -20,7 +20,7 @@ from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.llm.fake import ScriptedChatModel
 from tests.integration.db._support import TENANT_A
-from tests.integration.e2e.conftest import eventually, running
+from tests.integration.e2e._support import eventually, running
 
 pytestmark = pytest.mark.integration
 

@@ -182,6 +182,8 @@ def decode(rows: List[str]) -> Tuple[int, bytes]:
         totp.provisioning_uri(totp.generate_secret(), "x" * 300 + "@example.com", "LG-SOTF"),
         "Zürich ✓ " * 20,
     ],
+    # Fixed ids: two of the inputs hold a random secret, and pytest-xdist needs every worker to collect the same ids.
+    ids=["one-char", "otpauth", "long-account", "overlong-account", "unicode"],
 )
 def test_symbols_decode_back_to_the_input(text: str) -> None:
     version, payload = decode(qr.matrix_rows(text))

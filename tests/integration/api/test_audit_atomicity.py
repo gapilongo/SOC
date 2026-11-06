@@ -15,11 +15,21 @@ import pytest
 
 from lg_sotf.db.repos.audit import AuditRepo
 from lg_sotf.integrations.http import IntegrationHttp
-from tests.integration.api.conftest import PASSWORD, TENANT_A, ApiHarness
-from tests.integration.api.test_mfa import Clock, challenge, code_now, enroll, verify
-from tests.integration.api.test_oidc import IdP, bearer
-from tests.integration.api.test_oidc_jit import _jit_api, _token
-from tests.integration.integrations.conftest import Receiver, public_resolver, slack_url
+from tests.integration.api._support import (
+    PASSWORD,
+    TENANT_A,
+    ApiHarness,
+    IdP,
+    TotpClock,
+    bearer,
+    challenge,
+    code_now,
+    enroll,
+    jit_api,
+    jit_token,
+    verify,
+)
+from tests.integration.integrations._support import Receiver, public_resolver, slack_url
 
 pytestmark = pytest.mark.integration
 
@@ -45,20 +55,6 @@ def failing_audit(monkeypatch: pytest.MonkeyPatch) -> Set[str]:
     return failing
 
 
-@pytest.fixture
-def idp() -> IdP:
-    return IdP()
-
-
-@pytest.fixture
-def clock(monkeypatch: pytest.MonkeyPatch) -> Clock:
-    from lg_sotf.api.auth import mfa as mfa_module
-
-    c = Clock()
-    monkeypatch.setattr(mfa_module, "clock", c)
-    return c
-
-
 async def _count(api: ApiHarness, action: str, tenant_id: str = TENANT_A) -> int:
     return len((await api.repos.audit.list(tenant_id, action=action)).items)
 
@@ -67,7 +63,7 @@ async def _count(api: ApiHarness, action: str, tenant_id: str = TENANT_A) -> int
 
 
 async def test_mfa_enrollment_is_not_activated_without_its_audit_entry(
-    api: ApiHarness, clock: Clock, failing_audit: Set[str]
+    api: ApiHarness, clock: TotpClock, failing_audit: Set[str]
 ) -> None:
     user = await api.user(TENANT_A, "analyst", email="enroll-atomic@a.example.com")
     headers = api.auth(user)
@@ -85,7 +81,7 @@ async def test_mfa_enrollment_is_not_activated_without_its_audit_entry(
 
 
 async def test_mfa_stays_enabled_when_disable_cannot_be_audited(
-    api: ApiHarness, clock: Clock, failing_audit: Set[str]
+    api: ApiHarness, clock: TotpClock, failing_audit: Set[str]
 ) -> None:
     user = await api.user(TENANT_A, "analyst", email="disable-atomic@a.example.com")
     secret, _ = await enroll(api, user, clock)
@@ -104,7 +100,7 @@ async def test_mfa_stays_enabled_when_disable_cannot_be_audited(
 
 
 async def test_recovery_codes_are_kept_when_regeneration_cannot_be_audited(
-    api: ApiHarness, clock: Clock, failing_audit: Set[str]
+    api: ApiHarness, clock: TotpClock, failing_audit: Set[str]
 ) -> None:
     user = await api.user(TENANT_A, "analyst", email="regen-atomic@a.example.com")
     secret, codes = await enroll(api, user, clock)
@@ -122,7 +118,7 @@ async def test_recovery_codes_are_kept_when_regeneration_cannot_be_audited(
 
 
 async def test_a_recovery_code_is_not_used_up_when_its_use_cannot_be_audited(
-    api: ApiHarness, clock: Clock, failing_audit: Set[str]
+    api: ApiHarness, clock: TotpClock, failing_audit: Set[str]
 ) -> None:
     user = await api.user(TENANT_A, "viewer", email="recover-atomic@a.example.com")
     _, codes = await enroll(api, user, clock)
@@ -140,16 +136,16 @@ async def test_a_recovery_code_is_not_used_up_when_its_use_cannot_be_audited(
 async def test_an_sso_role_is_not_synced_without_its_audit_entry(
     make_api: Any, idp: IdP, failing_audit: Set[str]
 ) -> None:
-    api = await _jit_api(make_api, idp)
-    assert (await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Viewers"])))).status_code == 200
+    api = await jit_api(make_api, idp)
+    assert (await api.client.get(f"{API}/auth/me", headers=bearer(jit_token(idp, ["SOC-Viewers"])))).status_code == 200
     user = await api.repos.users.get_by_oidc_subject(TENANT_A, "entra-oid-1")
     assert user is not None and user.role == "viewer"
     failing_audit.add("user.role_synced")
-    promoted = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
+    promoted = await api.client.get(f"{API}/auth/me", headers=bearer(jit_token(idp, ["SOC-Admins"])))
     assert promoted.status_code == 500
     assert (await api.repos.users.get(TENANT_A, user.id)).role == "viewer"
     failing_audit.clear()
-    promoted = await api.client.get(f"{API}/auth/me", headers=bearer(_token(idp, ["SOC-Admins"])))
+    promoted = await api.client.get(f"{API}/auth/me", headers=bearer(jit_token(idp, ["SOC-Admins"])))
     assert promoted.json()["role"] == "admin"
     assert await _count(api, "user.role_synced") == 1
 

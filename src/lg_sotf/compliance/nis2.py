@@ -403,7 +403,7 @@ def narrative_input(case: CaseData) -> Dict[str, Any]:
     summary = _obj(alert.summary)
     analysis = _obj(summary.get("analysis"))
     normalized = _obj(alert.normalized)
-    return jsonable(
+    data: Dict[str, Any] = jsonable(  # a mapping comes back as a dict
         {
             "title": alert.title,
             "description": normalized.get("description"),
@@ -421,6 +421,7 @@ def narrative_input(case: CaseData) -> Dict[str, Any]:
             "actions": [{"action_type": a.action_type, "target": a.target, "status": a.status} for a in case.actions[:20]],
         }
     )
+    return data
 
 
 @dataclass(frozen=True)

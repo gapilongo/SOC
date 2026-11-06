@@ -4,53 +4,28 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import pytest
 import yaml
 
-from tests.deploy._support import DOCKER_DIR, REPO_ROOT
+from tests.deploy._support import (
+    COMPOSE,
+    DOCKER_DIR,
+    PROD,
+    PROD_SECRETS,
+    REPO_ROOT,
+    ComposeLoader,
+    compose_config,
+    load,
+    requires_compose,
+)
 
-COMPOSE = DOCKER_DIR / "docker-compose.yml"
-PROD = DOCKER_DIR / "docker-compose.prod.yml"
 APP_SERVICES = ("migrate", "api", "worker", "scheduler")
 LONG_RUNNING = ("postgres", "redis", "api", "worker", "scheduler", "frontend")
 DB_PASSWORD_VARS = ("POSTGRES_SUPERUSER_PASSWORD", "LGSOTF_OWNER_PASSWORD", "LGSOTF_APP_PASSWORD")
-PROD_SECRETS = {
-    "POSTGRES_SUPERUSER_PASSWORD": "compose-test-superuser",
-    "LGSOTF_OWNER_PASSWORD": "compose-test-owner",
-    "LGSOTF_APP_PASSWORD": "compose-test-app",
-    "LG_SOTF_AUTH__JWT_SECRET": "compose-test-jwt",
-    "LG_SOTF_SECURITY__ENCRYPTION_KEYS": "compose-test-fernet",
-    "LG_SOTF_SECURITY__INDICATOR_HMAC_KEY": "compose-test-hmac",
-}
-
-
-class ComposeLoader(yaml.SafeLoader):
-    """SafeLoader that understands Compose's merge tags (!reset, !override)."""
-
-
-def _compose_tag(loader: yaml.SafeLoader, node: yaml.Node) -> Any:
-    if isinstance(node, yaml.SequenceNode):
-        return loader.construct_sequence(node, deep=True)
-    if isinstance(node, yaml.MappingNode):
-        return loader.construct_mapping(node, deep=True)
-    return loader.construct_scalar(node)  # type: ignore[arg-type]
-
-
-ComposeLoader.add_constructor("!reset", _compose_tag)
-ComposeLoader.add_constructor("!override", _compose_tag)
-
-
-def load(path: Any) -> Dict[str, Any]:
-    data = yaml.load(path.read_text(), Loader=ComposeLoader)  # noqa: S506 - SafeLoader subclass
-    assert isinstance(data, dict)
-    return data
-
-
 @pytest.fixture(scope="module")
 def compose() -> Dict[str, Any]:
     return load(COMPOSE)
@@ -170,28 +145,6 @@ def test_init_roles_script_passes_passwords_as_psql_variables() -> None:
     assert "PASSWORD :'owner_pw'" in sql and "PASSWORD :'app_pw'" in sql
     assert "NOBYPASSRLS" in sql and "NOSUPERUSER" in sql
     assert os.access(DOCKER_DIR / "postgres" / "init-roles.sh", os.X_OK)
-
-
-requires_compose = pytest.mark.skipif(shutil.which("docker") is None, reason="docker CLI is not installed")
-
-
-def compose_config(*files: str, env: Dict[str, str], env_file: Optional[Path] = None) -> Dict[str, Any]:
-    argv = ["docker", "compose"]
-    for f in files:
-        argv += ["-f", f]
-    if env_file is not None:
-        argv += ["--env-file", str(env_file)]
-    proc = subprocess.run(
-        [*argv, "config", "--format", "json"],
-        capture_output=True,
-        text=True,
-        env={"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "/tmp"), **env},
-        timeout=60,
-    )
-    if proc.returncode != 0 and "is not a docker command" in proc.stderr:
-        pytest.skip("docker compose plugin is not installed")
-    assert proc.returncode == 0, proc.stderr
-    return json.loads(proc.stdout)
 
 
 @requires_compose

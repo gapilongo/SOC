@@ -9,9 +9,9 @@ import httpx
 import pytest
 
 from lg_sotf.integrations.http import IntegrationHttp
-from tests.integration.api.conftest import ApiHarness
+from tests.integration.api._support import ApiHarness
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.integrations.conftest import Receiver, fake_secret, public_resolver, slack_url
+from tests.integration.integrations._support import Receiver, fake_secret, public_resolver, slack_url
 from tests.integration.services._support import add_alert
 
 pytestmark = pytest.mark.integration

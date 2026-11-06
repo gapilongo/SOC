@@ -8,7 +8,7 @@ import pytest
 
 from lg_sotf.llm.usage import get_usage_recorder
 from lg_sotf.services.llm_check import AGENT
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness, fresh_rate_window
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 
 pytestmark = pytest.mark.integration
 
@@ -59,7 +59,6 @@ async def test_misconfigured_model_is_reported_not_500(make_api) -> None:  # typ
 
 
 async def test_the_probe_is_rate_limited_per_tenant(api: ApiHarness) -> None:
-    await fresh_rate_window()
     admin = await api.login_headers(TENANT_A, "admin")
     statuses = [(await api.client.post(URL, headers=admin)).status_code for _ in range(7)]
     assert statuses[:6] == [200] * 6 and statuses[6] == 429

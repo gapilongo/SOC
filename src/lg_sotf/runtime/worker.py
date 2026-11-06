@@ -44,7 +44,7 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Protocol, Set, Tuple, Type
 
 from lg_sotf.db.errors import InvalidTransition, LeaseLost, NotFound, RunNotClaimable
 from lg_sotf.db.pool import Database
@@ -165,6 +165,7 @@ class Worker:
         usage_flush_interval_s: float = USAGE_FLUSH_INTERVAL_S,
         liveness_tick_s: float = LIVENESS_TICK_S,
         stall_limit_s: Optional[float] = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if lease_s <= 0:
             raise ValueError("lease_s must be positive")
@@ -183,6 +184,7 @@ class Worker:
         self._heartbeat_s = max(lease_s / 3.0, 0.05)
         self._usage_flush_interval_s = usage_flush_interval_s
         self._liveness_tick_s = liveness_tick_s
+        self._clock = clock  # liveness, tenant activity windows, lease bookkeeping (tests inject a fake)
         if stall_limit_s is None:
             longest_wait_s = max(settings.worker.block_ms / 1000.0 + settings.redis.socket_timeout_s, liveness_tick_s)
             stall_limit_s = longest_wait_s + LIVENESS_GRACE_S
@@ -193,7 +195,7 @@ class Worker:
         self._tenant_seen: Dict[str, float] = {}
         self._tenant_status: Dict[str, Tuple[float, bool]] = {}
         self._retries: Set[asyncio.Task[None]] = set()
-        self._loop_tick = time.monotonic()
+        self._loop_tick = self._clock()
         self._running = False
         self.stats = WorkerStats()
 
@@ -217,7 +219,7 @@ class Worker:
         """
         if not self._running:
             return not self._stop.is_set()
-        return time.monotonic() - self._loop_tick < self._stall_limit_s
+        return self._clock() - self._loop_tick < self._stall_limit_s
 
     async def run(self) -> None:
         """Consume until :meth:`request_stop`, then drain and return.
@@ -239,9 +241,8 @@ class Worker:
         finally:
             self._running = False
             await self._drain()
-            flusher.cancel()
-            liveness.cancel()
-            await asyncio.gather(flusher, liveness, return_exceptions=True)
+            # Re-cancelled until done: a cancel can be swallowed inside a Redis command (cancel_and_wait).
+            await cancel_and_wait([flusher, liveness])
             # Scheduled resume retries: their entries stay pending and are recovered like any other.
             await cancel_and_wait(list(self._retries))
             await self.flush_usage()
@@ -263,7 +264,7 @@ class Worker:
     async def _consume(self) -> None:
         errors = 0
         while not self._stop.is_set():
-            self._loop_tick = time.monotonic()
+            self._loop_tick = self._clock()
             free = self._cfg.concurrency - len(self._inflight)
             if free <= 0:
                 await self._wait_for_free_slot()
@@ -279,9 +280,9 @@ class Worker:
                 await self._sleep_unless_stopped(delay)
                 continue
             errors = 0
-            self._loop_tick = time.monotonic()
+            self._loop_tick = self._clock()
             deferred = 0
-            now = time.monotonic()
+            now = self._clock()
             for msg in messages:
                 # Every tenant in this batch competes for the slots, whatever its position.
                 self._tenant_seen[msg.tenant_id] = now
@@ -304,15 +305,15 @@ class Worker:
     async def _wait_for_free_slot(self, timeout_s: Optional[float] = None) -> None:
         """Wait until a run finishes or a stop is requested (or ``timeout_s``), ticking liveness meanwhile."""
         stop_waiter = asyncio.create_task(self._stop.wait())
-        deadline = None if timeout_s is None else time.monotonic() + timeout_s
+        deadline = None if timeout_s is None else self._clock() + timeout_s
         try:
-            while not self._stop.is_set() and (deadline is None or time.monotonic() < deadline):
+            while not self._stop.is_set() and (deadline is None or self._clock() < deadline):
                 done, _ = await asyncio.wait(
                     set(self._inflight) | {stop_waiter},
                     timeout=self._liveness_tick_s,
                     return_when=asyncio.FIRST_COMPLETED,
                 )
-                self._loop_tick = time.monotonic()
+                self._loop_tick = self._clock()
                 if done:
                     return
         finally:
@@ -326,7 +327,7 @@ class Worker:
             pass
 
     def _other_tenants_active(self, tenant_id: str) -> bool:
-        now = time.monotonic()
+        now = self._clock()
         if any(t != tenant_id and n > 0 for t, n in self._tenant_running.items()):
             return True
         return any(t != tenant_id and now - seen < TENANT_ACTIVITY_WINDOW_S for t, seen in self._tenant_seen.items())
@@ -338,7 +339,7 @@ class Worker:
         alone on this worker (a single-organisation install, or a quiet
         period) may use every slot.
         """
-        now = time.monotonic()
+        now = self._clock()
         self._tenant_seen[tenant_id] = now
         if len(self._tenant_seen) > 10_000:
             self._tenant_seen = {t: s for t, s in self._tenant_seen.items() if now - s < TENANT_ACTIVITY_WINDOW_S}
@@ -392,7 +393,7 @@ class Worker:
 
     async def _tenant_active(self, tenant_id: str) -> bool:
         """Whether the tenant may run work (cached); unknown tenants and lookup errors count as active."""
-        now = time.monotonic()
+        now = self._clock()
         hit = self._tenant_status.get(tenant_id)
         if hit is not None and hit[0] > now:
             return hit[1]
@@ -434,7 +435,7 @@ class Worker:
             return
 
         self.stats.started += 1
-        started = time.monotonic()
+        started = self._clock()
         try:
             outcome = await self._execute_with_lease(msg)
         except _LeaseLostError:
@@ -482,7 +483,7 @@ class Worker:
             "worker.run_finished",
             outcome=outcome.status,
             kind=msg.kind,
-            seconds=round(time.monotonic() - started, 3),
+            seconds=round(self._clock() - started, 3),
         )
 
     async def _handle_unclaimable(self, msg: Message, exc: RunNotClaimable) -> None:
@@ -647,7 +648,7 @@ class Worker:
         The loop checks ``stop`` and the engine task after every await, so it
         ends even when a ``cancel()`` was swallowed inside a Redis command.
         """
-        last_ok = time.monotonic()
+        last_ok = self._clock()
         while not stop.is_set() and not engine_task.done():
             if await wait_or_stop(stop, self._heartbeat_s) or engine_task.done():
                 return
@@ -657,10 +658,10 @@ class Worker:
                 )
             except Exception as exc:  # noqa: BLE001 - transient DB errors; give up only once the lease has run out
                 log.warning("worker.heartbeat_failed", error=type(exc).__name__)
-                held = time.monotonic() - last_ok < self._lease_s
+                held = self._clock() - last_ok < self._lease_s
             else:
                 if held:
-                    last_ok = time.monotonic()
+                    last_ok = self._clock()
             if stop.is_set():
                 return
             if not held:

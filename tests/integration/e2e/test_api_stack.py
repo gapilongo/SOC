@@ -46,7 +46,7 @@ from lg_sotf.security.hashing import hash_password
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService
 from tests.integration.db._support import TENANT_A, TENANT_B
-from tests.integration.e2e.conftest import Stack, eventually, running
+from tests.integration.e2e._support import Stack, eventually, running
 
 pytestmark = pytest.mark.integration
 

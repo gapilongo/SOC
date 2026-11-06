@@ -9,7 +9,7 @@ import pytest
 
 from lg_sotf.ingestion.service import IngestionService
 from lg_sotf.ingestion.sources import ConnectorDeps, source_secret_context
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.unit.ingestion._email import auth, build, wrap
 
 pytestmark = pytest.mark.integration

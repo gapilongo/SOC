@@ -13,7 +13,7 @@ from lg_sotf.eval.gate import evaluate_gate, load_thresholds
 from lg_sotf.eval.report import build_report
 from lg_sotf.eval.runner import EMAIL_EVAL_SOURCE, EvalRunner, apply_tenant_settings, run_evaluation
 from lg_sotf.settings import Settings
-from tests.integration.eval.conftest import EVAL_TENANT
+from tests.integration.eval._support import EVAL_TENANT
 
 pytestmark = pytest.mark.integration
 

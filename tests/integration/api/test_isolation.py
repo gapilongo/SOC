@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from tests.integration.api.conftest import TENANT_A, TENANT_B, ApiHarness
+from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
 pytestmark = pytest.mark.integration
