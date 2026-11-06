@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent, type ReactNode } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import { AUTONOMY_MODES, RISK_LEVELS, ROUTE_NAMES, type JsonObject, type RouteOut, type TenantSettingsOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Badge } from '../components/Badge';
@@ -46,9 +47,9 @@ function useSave(onDone?: () => void) {
   return useMutation({
     mutationFn: (patch: JsonObject) => endpoints.patchTenantSettings(api, patch),
     onSuccess: (out) => {
-      client.setQueryData(['tenant-settings'], out);
+      client.setQueryData(qk.tenantSettings.all, out);
       // Saving autonomy or response settings completes the checklist's "autonomy reviewed" step.
-      void client.invalidateQueries({ queryKey: ['onboarding-status'] });
+      void client.invalidateQueries({ queryKey: qk.onboarding.all });
       toast.success('Settings saved.');
       onDone?.();
     },
@@ -503,7 +504,7 @@ export function describeRoute(route: RouteOut): string {
 
 function RoutingSection({ data }: { data: TenantSettingsOut }) {
   const api = useApi();
-  const q = useQuery({ queryKey: ['response-routes', data.updated_at], queryFn: ({ signal }) => endpoints.responseRoutes(api, signal) });
+  const q = useQuery({ queryKey: qk.responseRoutes.forSettings(data.updated_at), queryFn: ({ signal }) => endpoints.responseRoutes(api, signal) });
   const stored = obj(obj(data.settings.response).routes) as Record<string, string>;
   const [choice, setChoice] = useState<Record<string, string>>(stored);
   const save = useSave();
@@ -594,7 +595,7 @@ function SecuritySection({ data }: { data: TenantSettingsOut }) {
 
 export default function TenantSettingsPage() {
   const api = useApi();
-  const q = useQuery({ queryKey: ['tenant-settings'], queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
+  const q = useQuery({ queryKey: qk.tenantSettings.all, queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
   const d = q.data;
   return (
     <>

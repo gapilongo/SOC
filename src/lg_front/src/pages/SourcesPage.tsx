@@ -3,6 +3,7 @@ import { Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import { SOURCE_TYPES, type JsonObject, type SourceCreateIn, type SourceOut, type SourceType, type SourceUpdateIn } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Badge, StatusBadge } from '../components/Badge';
@@ -224,7 +225,7 @@ function SourceForm({ source, onClose }: { source: SourceOut | null; onClose: ()
       setSecrets({});
       setExtraSecret('');
       toast.success(`Source ${s.name} saved.`);
-      void client.invalidateQueries({ queryKey: ['sources'] });
+      void client.invalidateQueries({ queryKey: qk.sources.all });
       onClose();
     },
     onError: (err) => setError(err),
@@ -341,14 +342,14 @@ export default function SourcesPage() {
   const [editing, setEditing] = useState<SourceOut | null | 'new'>(null);
   const [deleting, setDeleting] = useState<SourceOut | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
-  const q = useQuery({ queryKey: ['sources'], queryFn: ({ signal }) => endpoints.sources(api, signal) });
+  const q = useQuery({ queryKey: qk.sources.all, queryFn: ({ signal }) => endpoints.sources(api, signal) });
 
   const del = useMutation({
     mutationFn: (s: SourceOut) => endpoints.deleteSource(api, s.id),
     onSuccess: () => {
       toast.success('Source deleted.');
       setDeleting(null);
-      void client.invalidateQueries({ queryKey: ['sources'] });
+      void client.invalidateQueries({ queryKey: qk.sources.all });
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });

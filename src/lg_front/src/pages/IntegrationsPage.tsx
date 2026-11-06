@@ -3,6 +3,7 @@ import { History, Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import {
   INTEGRATION_EVENTS,
   INTEGRATION_KINDS,
@@ -298,7 +299,7 @@ function IntegrationForm({
       // Credentials leave component state as soon as they have been sent.
       setSecrets({});
       toast.success(`Integration ${saved.name} saved.`);
-      void client.invalidateQueries({ queryKey: ['integrations'] });
+      void client.invalidateQueries({ queryKey: qk.integrations.all });
       onClose();
     },
     onError: (err) => setError(err),
@@ -478,7 +479,7 @@ export function describeResult(d: DeliveryOut): string {
 function DeliveryLog({ integration }: { integration: IntegrationOut }) {
   const api = useApi();
   const q = useQuery({
-    queryKey: ['integrations', integration.id, 'deliveries'],
+    queryKey: qk.integrations.deliveries(integration.id),
     queryFn: ({ signal }) => endpoints.deliveries(api, integration.id, signal),
     refetchInterval: 15_000,
   });
@@ -548,7 +549,7 @@ export default function IntegrationsPage() {
   const [testing, setTesting] = useState<string | null>(null);
   const [logFor, setLogFor] = useState<string | null>(null);
   const [report, setReport] = useState<{ name: string; report: MicrosoftReport } | null>(null);
-  const q = useQuery({ queryKey: ['integrations'], queryFn: ({ signal }) => endpoints.integrations(api, signal) });
+  const q = useQuery({ queryKey: qk.integrations.all, queryFn: ({ signal }) => endpoints.integrations(api, signal) });
 
   const del = useMutation({
     mutationFn: (i: IntegrationOut) => endpoints.deleteIntegration(api, i.id),
@@ -556,7 +557,7 @@ export default function IntegrationsPage() {
       toast.success('Integration deleted.');
       setDeleting(null);
       if (logFor === i.id) setLogFor(null);
-      void client.invalidateQueries({ queryKey: ['integrations'] });
+      void client.invalidateQueries({ queryKey: qk.integrations.all });
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });
@@ -572,7 +573,7 @@ export default function IntegrationsPage() {
       toast.error(err, `${i.name}: test failed`);
     } finally {
       setTesting(null);
-      void client.invalidateQueries({ queryKey: ['integrations', i.id, 'deliveries'] });
+      void client.invalidateQueries({ queryKey: qk.integrations.deliveries(i.id) });
     }
   };
 

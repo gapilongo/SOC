@@ -3,6 +3,7 @@ import { KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../api/client';
+import { qk } from '../api/queryKeys';
 import { endpoints } from '../api/endpoints';
 import type { MfaEnrollOut, MfaStatusOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
@@ -13,7 +14,6 @@ import { useToast } from '../components/Toast';
 import { Button, Card, DefinitionList, ErrorMessage, LoadingState, PageHeader, TextField } from '../components/ui';
 import { formatDateTime } from '../lib/format';
 
-const STATUS_KEY = ['mfa-status'];
 
 function friendly(err: unknown): unknown {
   if (err instanceof ApiError && err.code === 'invalid_mfa_code') {
@@ -57,8 +57,8 @@ function EnrollCard({ onEnrolled }: { onEnrolled: (codes: string[]) => void }) {
     onSuccess: (out) => {
       setEnrollment(null);
       setCode('');
-      void client.invalidateQueries({ queryKey: STATUS_KEY });
-      void client.invalidateQueries({ queryKey: ['users'] });
+      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
+      void client.invalidateQueries({ queryKey: qk.users.all });
       onEnrolled(out.recovery_codes);
     },
     onError: () => setCode(''),
@@ -101,7 +101,7 @@ function RegenerateDialog({ onClose, onCodes }: { onClose: () => void; onCodes: 
   const m = useMutation({
     mutationFn: () => endpoints.mfaRegenerate(api, code.trim()),
     onSuccess: (out) => {
-      void client.invalidateQueries({ queryKey: STATUS_KEY });
+      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
       onCodes(out.recovery_codes);
     },
     onError: () => setCode(''),
@@ -146,8 +146,8 @@ function DisableDialog({ status, onClose }: { status: MfaStatusOut; onClose: () 
     mutationFn: () => endpoints.mfaDisable(api, password, code.trim()),
     onSuccess: () => {
       toast.success('Two-step verification is off.');
-      void client.invalidateQueries({ queryKey: STATUS_KEY });
-      void client.invalidateQueries({ queryKey: ['users'] });
+      void client.invalidateQueries({ queryKey: qk.mfaStatus.all });
+      void client.invalidateQueries({ queryKey: qk.users.all });
       onClose();
     },
     onError: () => {
@@ -195,7 +195,7 @@ export default function AccountSecurityPage() {
   const api = useApi();
   const { principal } = useAuth();
   const sso = principal?.method === 'oidc';
-  const status = useQuery({ queryKey: STATUS_KEY, queryFn: ({ signal }) => endpoints.mfaStatus(api, signal), enabled: !sso });
+  const status = useQuery({ queryKey: qk.mfaStatus.all, queryFn: ({ signal }) => endpoints.mfaStatus(api, signal), enabled: !sso });
   const [codes, setCodes] = useState<string[] | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [disabling, setDisabling] = useState(false);

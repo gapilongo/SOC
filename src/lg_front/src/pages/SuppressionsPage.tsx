@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import type { JsonObject, SuppressionOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
@@ -68,7 +69,7 @@ function CreateRule({ onClose }: { onClose: () => void }) {
     },
     onSuccess: (rule) => {
       toast.success(rule.enabled ? 'Suppression rule created and active.' : 'Suppression rule created; an admin must enable it before it takes effect.');
-      void client.invalidateQueries({ queryKey: ['suppressions'] });
+      void client.invalidateQueries({ queryKey: qk.suppressions.all });
       onClose();
     },
     onError: (err) => setError(err),
@@ -146,13 +147,13 @@ export default function SuppressionsPage() {
   const [tab, setTab] = useState<Tab>('active');
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<SuppressionOut | null>(null);
-  const q = useQuery({ queryKey: ['suppressions', 'all'], queryFn: ({ signal }) => endpoints.suppressions(api, true, signal) });
+  const q = useQuery({ queryKey: qk.suppressions.includingDisabled, queryFn: ({ signal }) => endpoints.suppressions(api, true, signal) });
 
   const toggle = useMutation({
     mutationFn: (r: SuppressionOut) => endpoints.updateSuppression(api, r.id, { enabled: !r.enabled }),
     onSuccess: (r) => {
       toast.success(`Rule ${r.name} ${r.enabled ? 'enabled' : 'disabled'}.`);
-      void client.invalidateQueries({ queryKey: ['suppressions'] });
+      void client.invalidateQueries({ queryKey: qk.suppressions.all });
     },
     onError: (err) => toast.error(err, 'Update failed'),
   });
@@ -161,7 +162,7 @@ export default function SuppressionsPage() {
     onSuccess: () => {
       setDeleting(null);
       toast.success('Rule deleted.');
-      void client.invalidateQueries({ queryKey: ['suppressions'] });
+      void client.invalidateQueries({ queryKey: qk.suppressions.all });
     },
     onError: (err) => toast.error(err, 'Delete failed'),
   });

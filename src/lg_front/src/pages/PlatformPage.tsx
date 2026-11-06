@@ -11,6 +11,7 @@ import { useMemo, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
 import {
   QUOTA_KEYS,
   TENANT_PROFILES,
@@ -27,7 +28,7 @@ import { Badge, SeverityBadge, StatusBadge } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../components/Dialog';
 import { ListNotice } from '../components/ListNotice';
 import { useToast } from '../components/Toast';
-import { PLATFORM_TENANTS_KEY, filterTenants, useSwitchTenant } from '../components/TenantSwitcher';
+import { filterTenants, usePlatformTenants, useSwitchTenant } from '../components/TenantSwitcher';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextField, cx } from '../components/ui';
 import { downloadCsv, toCsv, type CsvColumn } from '../lib/csv';
 import { formatCountdown, formatInt, formatRelative, formatUsd } from '../lib/format';
@@ -98,8 +99,8 @@ function useUpdateTenant(onDone?: () => void) {
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: Parameters<typeof endpoints.updateTenant>[2] }) => endpoints.updateTenant(api, id, body),
     onSuccess: (updated) => {
-      client.setQueryData<TenantSummaryOut[]>(PLATFORM_TENANTS_KEY, (rows) => rows?.map((r) => (r.id === updated.id ? updated : r)));
-      void client.invalidateQueries({ queryKey: PLATFORM_TENANTS_KEY });
+      client.setQueryData<TenantSummaryOut[]>(qk.platformTenants.all, (rows) => rows?.map((r) => (r.id === updated.id ? updated : r)));
+      void client.invalidateQueries({ queryKey: qk.platformTenants.all });
       toast.success(`Tenant ${updated.name} updated.`);
       onDone?.();
     },
@@ -159,12 +160,11 @@ function QuotaDialog({ tenant, onClose }: { tenant: TenantSummaryOut; onClose: (
 }
 
 function TenantsTab() {
-  const api = useApi();
   const { principal } = useAuth();
   const navigate = useNavigate();
   const switchTo = useSwitchTenant();
   const interval = usePollInterval(60_000);
-  const q = useQuery({ queryKey: PLATFORM_TENANTS_KEY, queryFn: ({ signal }) => endpoints.platformTenants(api, signal), refetchInterval: interval });
+  const q = usePlatformTenants({ refetchInterval: interval });
   const [search, setSearch] = useState('');
   const [quotaFor, setQuotaFor] = useState<TenantSummaryOut | null>(null);
   const [statusFor, setStatusFor] = useState<TenantSummaryOut | null>(null);
@@ -305,9 +305,9 @@ function EscalationsTab() {
   const now = useNow(1_000);
   const interval = usePollInterval(30_000);
   const [tenant, setTenant] = useState('');
-  const tenants = useQuery({ queryKey: PLATFORM_TENANTS_KEY, queryFn: ({ signal }) => endpoints.platformTenants(api, signal), staleTime: 60_000 });
+  const tenants = usePlatformTenants({ staleTime: 60_000 });
   const list = useKeysetList({
-    queryKey: ['platform-escalations', tenant],
+    queryKey: qk.platformEscalations.list(tenant),
     fetchPage: (cursor, signal) => endpoints.platformEscalations(api, tenant || undefined, cursor, signal),
     itemKey: (e: PlatformEscalationOut) => `${e.tenant_id}:${e.id}`,
     refetchInterval: interval,
@@ -422,7 +422,7 @@ function UsageTab() {
   const api = useApi();
   const [month, setMonth] = useState(currentMonth());
   const valid = /^\d{4}-(0[1-9]|1[0-2])$/.test(month);
-  const q = useQuery({ queryKey: ['platform-usage', month], queryFn: ({ signal }) => endpoints.platformUsage(api, month, signal), enabled: valid });
+  const q = useQuery({ queryKey: qk.platformUsage.month(month), queryFn: ({ signal }) => endpoints.platformUsage(api, month, signal), enabled: valid });
   const rows = q.data?.tenants ?? [];
   return (
     <Card
@@ -523,7 +523,7 @@ function CreateTenantTab() {
   const [adminPassword, setAdminPassword] = useState('');
   const [template, setTemplate] = useState('profile:balanced');
   const [created, setCreated] = useState<TenantCreatedOut | null>(null);
-  const tenants = useQuery({ queryKey: PLATFORM_TENANTS_KEY, queryFn: ({ signal }) => endpoints.platformTenants(api, signal), staleTime: 60_000 });
+  const tenants = usePlatformTenants({ staleTime: 60_000 });
   const m = useMutation({
     mutationFn: () =>
       endpoints.createTenant(api, {
@@ -539,7 +539,7 @@ function CreateTenantTab() {
       setName('');
       setAdminEmail('');
       setAdminPassword('');
-      void client.invalidateQueries({ queryKey: PLATFORM_TENANTS_KEY });
+      void client.invalidateQueries({ queryKey: qk.platformTenants.all });
     },
   });
   const submit = (e: FormEvent) => {

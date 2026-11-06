@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import { MICROSOFT_CLOUDS, type IntegrationOut, type JsonObject } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
@@ -78,7 +79,7 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
   const toast = useToast();
   const editing = integration !== null;
   const stored = integration?.config;
-  const catalog = useQuery({ queryKey: ['microsoft-catalog'], queryFn: ({ signal }) => endpoints.microsoftCatalog(api, signal) });
+  const catalog = useQuery({ queryKey: qk.microsoftCatalog.all, queryFn: ({ signal }) => endpoints.microsoftCatalog(api, signal) });
   const [name, setName] = useState(integration?.name ?? 'Microsoft 365');
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
   const [values, setValues] = useState<MicrosoftFormValues>({
@@ -121,7 +122,7 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
     onSuccess: (saved) => {
       setSecret('');
       toast.success(`Integration ${saved.name} saved.`);
-      void client.invalidateQueries({ queryKey: ['integrations'] });
+      void client.invalidateQueries({ queryKey: qk.integrations.all });
       onClose();
     },
     onError: (err) => setError(err),
