@@ -3,9 +3,6 @@
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
 api/auth/authenticate.py::_provision
-api/routers/alerts.py::add_note
-api/routers/alerts.py::alert_events
-api/routers/alerts.py::reprocess
 api/routers/compliance.py::incident_report
 api/routers/dashboard.py::_compute
 api/routers/identity.py::delete_user
