@@ -16,7 +16,7 @@ from lg_sotf.ingestion.errors import SourceAuthError, SourceConfigError
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.ingestion.sources import ConnectorDeps, FetchedPage, PullConnector, create_connector
 from lg_sotf.ingestion.sources.base import iso
-from lg_sotf.ingestion.sources.netpolicy import DestinationRefused
+from lg_sotf.net.egress import DestinationRefused
 from lg_sotf.settings import Settings
 from tests.unit.ingestion._email import build, wrap
 from tests.unit.ingestion._support import NOW, FakeClock, MapResolver, make_source, public_resolver

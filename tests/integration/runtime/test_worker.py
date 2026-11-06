@@ -5,9 +5,9 @@ import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional
 
-from lg_sotf.core.exceptions import InvalidResumePayload
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
+from lg_sotf.errors import InvalidResumePayload
 from lg_sotf.llm.usage import get_usage_recorder
 from lg_sotf.observability.metrics import RUNS
 from lg_sotf.queue.consumer import CONSUMER_GROUP, StreamConsumer

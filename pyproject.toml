@@ -190,6 +190,8 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "lg_sotf.errors",
+    "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
     "lg_sotf.security.*",
@@ -270,29 +272,9 @@ ignore_imports = [
     "lg_sotf.integrations.ticketing -> lg_sotf.services.connectors.base",
     # C6 action catalog to domain/actions.py
     "lg_sotf.integrations.microsoft.catalog -> lg_sotf.services.response",
-    # F1 kernel error module
-    "lg_sotf.agents.correlation.base -> lg_sotf.core.exceptions",
-    "lg_sotf.db.errors -> lg_sotf.core.exceptions",
-    # F3 extract lg_sotf.net (egress, TLS, Retry-After)
-    "lg_sotf.integrations.http -> lg_sotf.ingestion.errors",
+    # F4 one reader of allow_private_destinations (net.egress.egress_policy replaces IngestionOptions here)
     "lg_sotf.integrations.http -> lg_sotf.ingestion.options",
-    "lg_sotf.integrations.http -> lg_sotf.ingestion.sources.http",
-    "lg_sotf.integrations.http -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.integrations.microsoft.auth -> lg_sotf.ingestion.errors",
-    "lg_sotf.integrations.microsoft.auth -> lg_sotf.ingestion.sources.http",
-    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.errors",
-    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.sources.http",
-    "lg_sotf.integrations.microsoft.http -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.llm.endpoint -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.services.connectors.microsoft -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.errors",
     "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.options",
-    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.sources.http",
-    "lg_sotf.services.connectors.registry -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.errors",
-    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.sources.http",
-    "lg_sotf.services.connectors.webhook -> lg_sotf.ingestion.sources.netpolicy",
-    "lg_sotf.tools.enrichment.http -> lg_sotf.ingestion.sources.http",
     # F7 one owner-DSN helper / D2 atomic provisioning
     "lg_sotf.compliance.ops -> lg_sotf.runtime.ops",
     # ADR-0001 accepted: lazy import inside Settings.production_problems
@@ -306,6 +288,26 @@ type = "forbidden"
 allow_indirect_imports = true
 source_modules = ["lg_sotf.api"]
 forbidden_modules = ["lg_sotf.core.workflow", "lg_sotf.core.nodes", "lg_sotf.core.graph", "lg_sotf.agents", "langgraph"]
+
+[[tool.importlinter.contracts]]
+id = "errors-is-leaf"
+name = "The kernel error module imports no lg_sotf module"
+type = "forbidden"
+source_modules = ["lg_sotf.errors"]
+# The layers contract already keeps errors off every higher layer; this closes the kernel siblings.
+forbidden_modules = ["lg_sotf.observability", "lg_sotf.security", "lg_sotf.settings"]
+
+[[tool.importlinter.contracts]]
+id = "net-is-leaf"
+name = "The network kernel imports only the kernel and httpx"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = ["lg_sotf.net"]
+# The layers contract keeps net off every higher lg_sotf layer; this keeps I/O and framework libraries out.
+forbidden_modules = [
+    "asyncpg", "psycopg", "psycopg_pool", "redis", "langgraph", "langchain_core", "fastapi", "starlette",
+    "pydantic",
+]
 
 [[tool.importlinter.contracts]]
 id = "mcp-thin-client"

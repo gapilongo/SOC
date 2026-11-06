@@ -11,7 +11,7 @@ model is built and by :meth:`Settings.production_problems`:
   anything else would put alert data on the wire in clear text;
 * link-local, cloud metadata, multicast, unspecified and reserved addresses
   are refused whatever the scheme (the address classes
-  :class:`~lg_sotf.ingestion.sources.netpolicy.DestinationPolicy` refuses);
+  :class:`~lg_sotf.net.egress.DestinationPolicy` refuses);
 * credentials in the URL are refused (``llm.api_key`` is the secret's place).
 
 Names are classified by their spelling, not resolved: the check runs at
@@ -30,6 +30,7 @@ from typing import Optional
 import httpx
 
 from lg_sotf.llm.errors import LLMUnavailable
+from lg_sotf.net.egress import DestinationPolicy, ip_literal
 from lg_sotf.settings import SELF_HOSTED_PROVIDERS, Settings
 
 OLLAMA_DEFAULT_BASE_URL = "http://ollama:11434/v1"
@@ -53,8 +54,6 @@ def effective_base_url(settings: Settings) -> Optional[str]:
 
 def is_internal_host(host: str) -> bool:
     """Whether plain HTTP to ``host`` stays inside the installation (see the module docstring)."""
-    from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, ip_literal
-
     address = ip_literal(host)
     if address is not None:
         if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
@@ -72,8 +71,6 @@ def is_internal_host(host: str) -> bool:
 
 def _address_refused(host: str) -> bool:
     """Link-local, metadata, multicast, unspecified or reserved address literals (never loopback)."""
-    from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, ip_literal
-
     address = ip_literal(host)
     if address is None or address.is_loopback:
         return False

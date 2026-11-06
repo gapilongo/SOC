@@ -23,6 +23,12 @@ All notable changes to this project are documented here. The format follows
   A test now fails when the backend adds a guardrail reason that the web app
   cannot describe, or when the web app's source-type, integration-kind or
   ticketing-kind lists drift from the backend.
+- Notifications, ticketing requests and response-action webhooks no longer
+  build a new TLS context for every request. Each request used to load the CA
+  bundle again, synchronously on the event loop, blocking other work in the
+  API and the workers while it did. One context per process is now reused for
+  default verification, and one per distinct `ca_cert_pem` (up to 256), so an
+  integration with its own CA still trusts only that CA.
 - Sign-out could leave the session alive. The web app showed the sign-in
   page before `POST /auth/logout` had finished; reloading at that moment
   aborted the logout request, and the reload's `POST /auth/refresh` rotated

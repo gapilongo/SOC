@@ -24,7 +24,6 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core import routing
 from lg_sotf.core.events import EventPublisher, publish_event
-from lg_sotf.core.exceptions import NodeTimeout
 from lg_sotf.core.graph import WorkflowState
 from lg_sotf.core.phishing import message_context
 from lg_sotf.core.routing import BENIGN_DECISIONS, RoutingThresholds
@@ -32,6 +31,7 @@ from lg_sotf.core.suppression import alert_match_view, first_matching_rule
 from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import observe_node

@@ -5,7 +5,7 @@ One :class:`SourceHttpClient` (one ``httpx.AsyncClient``) per source instance.
 * TLS verification is on by default. A source may add a CA certificate
   (``ca_cert_pem`` PEM text; ``ca_bundle``, a server file path, only in
   development); ``tls_verify: false`` is refused in staging/production.
-* With a :class:`~lg_sotf.ingestion.sources.netpolicy.DestinationPolicy`
+* With a :class:`~lg_sotf.net.egress.DestinationPolicy`
   every request (token endpoints included) is checked and pinned to an
   allowed address; see that module.
 * Every request has a connect timeout and an overall deadline.
@@ -27,14 +27,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-import math
 import random
-import ssl
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Protocol, Union
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Protocol
 
 import httpx
 
@@ -48,71 +44,14 @@ from lg_sotf.ingestion.errors import (
     SourceUnavailable,
 )
 from lg_sotf.ingestion.metrics import record_http_retry
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.net.tls import Verify
 
 SleepFn = Callable[[float], Awaitable[None]]
-Verify = Union[bool, ssl.SSLContext]
 
 DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 USER_AGENT = "lg-sotf-ingestion/1"
-
-
-def build_verify(config: Mapping[str, Any], *, production: bool) -> Verify:
-    """TLS verification setting for a source config (see module docstring)."""
-    verify = config.get("tls_verify", True)
-    if verify is False:
-        if production:
-            raise SourceConfigError("tls_verify=false is not allowed in staging or production")
-        return False
-    if verify is not True:
-        raise SourceConfigError("tls_verify must be true or false")
-    ca_pem = config.get("ca_cert_pem")
-    ca_file = config.get("ca_bundle")
-    if ca_pem is None and ca_file is None:
-        return True
-    if ca_file is not None and production:
-        # A server path from tenant config would let a tenant probe the server's filesystem.
-        raise SourceConfigError("ca_bundle is not allowed in staging or production; use ca_cert_pem")
-    if ca_pem is not None and not isinstance(ca_pem, str):
-        raise SourceConfigError("ca_cert_pem must be PEM text")
-    if ca_file is not None and not isinstance(ca_file, str):
-        raise SourceConfigError("ca_bundle must be a file path")
-    try:
-        return ssl.create_default_context(cafile=ca_file, cadata=ca_pem)
-    except (ssl.SSLError, OSError, ValueError) as exc:
-        raise SourceConfigError("invalid CA certificate") from exc
-
-
-# Upper bound for any Retry-After hint: a server cannot park a caller (or a scheduled retry) for longer.
-MAX_RETRY_AFTER_S = 3_600.0
-
-
-def parse_retry_after(
-    value: Optional[str], *, now: Optional[datetime] = None, cap: float = MAX_RETRY_AFTER_S
-) -> Optional[float]:
-    """Seconds to wait from a ``Retry-After`` header (delta seconds or HTTP date), in ``[0, cap]``.
-
-    ``None`` for a missing or unreadable value, including ``nan`` and
-    ``inf``: those would otherwise reach sleeps and retry schedules.
-    """
-    if value is None:
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    try:
-        seconds = float(text)
-    except ValueError:
-        try:
-            when = parsedate_to_datetime(text)
-        except (TypeError, ValueError, IndexError):
-            return None
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=UTC)
-        seconds = (when - (now or datetime.now(UTC))).total_seconds()
-    if not math.isfinite(seconds):
-        return None
-    return min(max(0.0, seconds), cap)
 
 
 @dataclass(frozen=True)

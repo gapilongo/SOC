@@ -471,7 +471,7 @@ class IngestionService:
         Builds the connector (config and credential checks, https in
         production), then resolves every URL it will call and applies the
         destination policy. Raises :class:`SourceConfigError` (including
-        :class:`~lg_sotf.ingestion.sources.netpolicy.DestinationRefused`).
+        :class:`~lg_sotf.net.egress.DestinationRefused`).
         """
         if source.tenant_id != tenant_id:
             raise ValueError("source belongs to another tenant")

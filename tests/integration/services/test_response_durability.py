@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 import lg_sotf.services.response as response_module
-from lg_sotf.ingestion.sources.netpolicy import DestinationPolicy
+from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.services.connectors import WebhookConnector, WebhookTarget
 from lg_sotf.services.response import ResponseService
 from tests.integration.db._support import TENANT_A

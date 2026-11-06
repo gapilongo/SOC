@@ -13,7 +13,7 @@ from lg_sotf.ingestion.errors import SourceConfigError, SourceUnavailable
 from lg_sotf.ingestion.options import IngestionOptions
 from lg_sotf.ingestion.service import IngestionService, api_source_id, clean_text, is_reserved_source_id, strip_nul_deep
 from lg_sotf.ingestion.sources import ConnectorDeps, FetchedPage, PullConnector, SourceHealth, create_connector
-from lg_sotf.ingestion.sources.netpolicy import REFUSED_MESSAGE
+from lg_sotf.net.egress import REFUSED_MESSAGE
 from lg_sotf.settings import Settings
 from tests.unit.ingestion._support import MapResolver, make_source, public_resolver
 

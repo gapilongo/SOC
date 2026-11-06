@@ -12,7 +12,7 @@ from lg_sotf.tools.enrichment.base import (
     compact,
 )
 from lg_sotf.tools.enrichment.history import HistoryProvider, confirmed_outcome
-from lg_sotf.tools.enrichment.http import JsonHttpClient, parse_retry_after
+from lg_sotf.tools.enrichment.http import JsonHttpClient
 from lg_sotf.tools.enrichment.providers import (
     AbuseIPDBProvider,
     VirusTotalProvider,
@@ -52,7 +52,6 @@ __all__ = [
     "is_internal_domain",
     "limit_scope",
     "normal_hash",
-    "parse_retry_after",
     "public_domain",
     "public_ip",
     "public_url",

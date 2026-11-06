@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from lg_sotf.ingestion.sources.http import parse_retry_after
+from lg_sotf.net.retry import parse_retry_after
 
 USER_AGENT = "lg-sotf-enrichment/1"
 DEFAULT_TIMEOUT_S = 10.0

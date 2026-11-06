@@ -46,11 +46,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Set, Tuple, Type
 
-from lg_sotf.core.exceptions import InvalidResumePayload
 from lg_sotf.db.errors import InvalidTransition, LeaseLost, NotFound, RunNotClaimable
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories, WorkflowRun
 from lg_sotf.db.repos.runs import WAITING_RUN_STATUSES
+from lg_sotf.errors import InvalidResumePayload
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import record_run
