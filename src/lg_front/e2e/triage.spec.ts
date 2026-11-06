@@ -13,6 +13,10 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import {
   API,
   assertNoTokenInStorage,
+  decisionForm,
+  escalationQueue,
+  escalationRow,
+  findEscalation,
   getAlert,
   ingest,
   newSession,
@@ -25,6 +29,7 @@ import {
   waitForAlert,
   type AlertState,
   type Credentials,
+  verdictRadio,
 } from './support';
 
 test.describe.configure({ mode: 'serial' });
@@ -88,27 +93,6 @@ async function openAlertFromList(page: Page, title: string) {
   const drawer = page.getByRole('dialog', { name: title });
   await expect(drawer).toBeVisible();
   return drawer;
-}
-
-function escalationCard(page: Page, title: string) {
-  return page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').filter({ hasText: title });
-}
-
-/** The escalation card for `title` on the Escalations page, loading further pages of the queue as needed. */
-async function findEscalation(page: Page, title: string) {
-  await page.goto('/escalations');
-  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
-  const card = escalationCard(page, title);
-  await expect(page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').first()).toBeVisible();
-  for (let i = 0; i < 20 && (await card.count()) === 0; i += 1) {
-    const more = page.getByRole('button', { name: 'Load more' });
-    if ((await more.count()) === 0) break;
-    const before = await page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').count();
-    await more.click();
-    await expect.poll(() => page.getByRole('list', { name: 'Escalation queue' }).getByRole('listitem').count()).toBeGreaterThan(before);
-  }
-  await expect(card).toHaveCount(1);
-  return card;
 }
 
 function actionRows(page: Page, alertId: string) {
@@ -309,40 +293,63 @@ test('an analyst has no administration either', async ({ browser }) => {
   await context.close();
 });
 
-/** Viewer gating on an escalation card, then the analyst claims it and records `decision`. */
+/**
+ * Viewer gating in the queue and on the decision page, then the analyst
+ * claims the escalation from its queue row and records `decision` on its
+ * decision page (/escalations/:id).
+ */
 async function decideAsAnalyst(
   viewerPage: Page,
   analystPage: Page,
   title: string,
-  decision: 'True positive (malicious)' | 'False positive',
+  decision: 'True positive' | 'False positive',
   shots: boolean,
 ) {
   await test.step('viewer: the escalation is visible but cannot be claimed or decided', async () => {
-    const card = await findEscalation(viewerPage, title);
-    await expect(card.getByRole('button', { name: 'Claim', exact: true })).toHaveCount(0);
-    await expect(card.getByRole('button', { name: 'Decide', exact: true })).toBeDisabled();
-    await expect(card).toContainText('Requires the analyst role.');
+    const page = viewerPage;
+    const row = await findEscalation(page, title);
+    await expect(row.getByRole('button')).toHaveCount(0);
+    await expect(row.getByRole('checkbox')).toHaveCount(0);
+    await expect(page.getByRole('region', { name: 'Bulk actions' })).toHaveCount(0);
+    await row.getByRole('link', { name: title, exact: true }).click();
+    await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Claim', exact: true })).toHaveCount(0);
+    await expect(decisionForm(page).getByRole('button', { name: 'Record decision' })).toBeDisabled();
+    await expect(verdictRadio(page, decision)).toBeDisabled();
+    await expect(decisionForm(page)).toContainText('Requires the analyst role.');
   });
-  await test.step(`analyst: claim, then decide ${decision}`, async () => {
+  await test.step(`analyst: claim from the queue, then decide ${decision} on the decision page`, async () => {
     const page = analystPage;
-    const card = await findEscalation(page, title);
-    await expect(card).toContainText('Unassigned');
-    await card.getByRole('button', { name: 'Claim', exact: true }).click();
+    const row = await findEscalation(page, title);
+    await expect(row).toContainText('Unassigned');
+    await row.getByRole('button', { name: `Claim ${title}`, exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Escalation claimed.' })).toBeVisible();
-    await expect(card).toContainText('Assigned to you');
-    await card.scrollIntoViewIfNeeded();
+    await expect(row.getByRole('link', { name: `Decide ${title}`, exact: true })).toBeVisible();
+    await expect(row).toContainText('You');
+    await row.scrollIntoViewIfNeeded();
     if (shots) await screenshot(page, '05-escalations');
-    await card.getByRole('button', { name: 'Decide', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Record decision' });
-    await dialog.getByLabel(decision).check();
-    await dialog.getByLabel('Notes').fill(`e2e ${run}: ${decision}.`);
-    await dialog.getByLabel('Triage correct').selectOption('yes');
+    await row.getByRole('link', { name: `Decide ${title}`, exact: true }).click();
+    await expect(page).toHaveURL(/\/escalations\/[^/?]+/);
+    await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+    await expect(page.getByText(/^Claimed by you/)).toBeVisible();
+    await expect(page.getByRole('tablist', { name: 'Investigation sections' })).toBeVisible();
+    const form = decisionForm(page);
+    await expect(form.getByRole('button', { name: 'Record decision' })).toBeDisabled();
+    await verdictRadio(page, decision).check();
+    await form.getByLabel(/^Notes for the record/).fill(`e2e ${run}: ${decision}.`);
+    if (decision === 'True positive') await expect(form.getByText('Expected response plan')).toBeVisible();
+    await form.getByText('Rate the automated triage (optional)').click();
+    await form.getByLabel('Triage correct').selectOption('yes');
     if (shots) await screenshot(page, '06-decision');
-    await dialog.getByRole('button', { name: 'Submit decision' }).click();
-    await expect(dialog).toBeHidden();
+    await form.getByRole('button', { name: 'Record decision' }).click();
     await expect(page.getByRole('status').filter({ hasText: /Decision recorded; \d+ alert\(s\) resumed\./ })).toBeVisible();
+    await expect(page.getByText(`Decided: ${decision}`)).toBeVisible();
+    await expect(form).toHaveCount(0);
     // The decided escalation leaves the default (open, claimed, expired) queue.
-    await expect(card).toHaveCount(0);
+    await page.getByRole('link', { name: 'Escalations', exact: true }).first().click();
+    await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+    await expect(escalationQueue(page).or(page.getByText('Nothing in this view'))).toBeVisible();
+    await expect(escalationRow(page, title)).toHaveCount(0);
   });
 }
 
@@ -434,7 +441,7 @@ test('response approval: role gating, the admin approves, the alert closes as ma
   let state = await nextRequest(request, beaconId);
   expect(state.status, 'the C2 alert asks for approval of its planned response').toBe('waiting_approval');
   for (let round = 0; round < 6 && state.status !== 'closed'; round += 1) {
-    if (state.status === 'waiting_human') await decideAsAnalyst(v.page, a.page, BEACON_TITLE, 'True positive (malicious)', false);
+    if (state.status === 'waiting_human') await decideAsAnalyst(v.page, a.page, BEACON_TITLE, 'True positive', false);
     else await approve();
     state = await nextRequest(request, beaconId);
   }

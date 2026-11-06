@@ -131,7 +131,7 @@ describe('OverviewPage', () => {
     expect(rows[2]).toHaveTextContent('You');
     expect(rows[3]).toHaveTextContent('n.haddad@acme.example');
     expect(rows[3]).toHaveTextContent('medium');
-    expect(within(rows[1]).getByRole('link', { name: 'Unusual sign-in pattern' })).toHaveAttribute('href', '/alerts?alert=a-e-1');
+    expect(within(rows[1]).getByRole('link', { name: 'Unusual sign-in pattern' })).toHaveAttribute('href', '/escalations/e-1');
 
     // Analysts see no platform health and do not query the onboarding status.
     expect(screen.queryByRole('region', { name: /admins only/ })).not.toBeInTheDocument();
