@@ -247,8 +247,12 @@ def test_entrypoint_refuses_values_that_could_inject_config(tmp_path: Path, name
 def test_no_token_persistence_in_browser_storage() -> None:
     files = _source_files()
     assert files, "frontend sources not found"
-    offenders = [str(p.relative_to(FRONT)) for p in files if re.search(r"\blocalStorage\b", _code(p))]
-    assert offenders == [], f"localStorage must not be used: {offenders}"
+    # The one exception is src/lib/prefs.ts: display preferences (theme, row density) only.
+    prefs = SRC / "lib" / "prefs.ts"
+    offenders = [str(p.relative_to(FRONT)) for p in files if p != prefs and re.search(r"\blocalStorage\b", _code(p))]
+    assert offenders == [], f"localStorage must not be used outside src/lib/prefs.ts: {offenders}"
+    # Its keys are a closed type, so nothing else (a token, a session) can be stored through it.
+    assert re.search(r"export type PrefKey = 'theme' \| 'density';", prefs.read_text()), "prefs.ts keys changed"
     session_users = [p for p in files if "sessionStorage" in _code(p)]
     # Only the OIDC redirect keeps its transient PKCE material there.
     assert [p.name for p in session_users] == ["oidc.ts"]
