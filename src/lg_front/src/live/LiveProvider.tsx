@@ -22,7 +22,7 @@ export function keysForEvent(type: LiveEvent['type']): string[] {
       return [qk.alerts.all[0], qk.alert.all[0], qk.dashboard.all[0]];
     case 'escalation.created':
     case 'escalation.updated':
-      return [qk.escalations.all[0], qk.dashboard.all[0]];
+      return [qk.escalations.all[0], qk.escalation.all[0], qk.dashboard.all[0]];
     case 'action.updated':
       return [qk.actions.all[0], qk.dashboard.all[0]];
     default:

@@ -4,6 +4,7 @@ import type { ApiClient } from './client';
 import type {
   AccuracyReportOut,
   ActionOut,
+  AlertCountsOut,
   AlertDetailOut,
   AlertEventOut,
   AlertOut,
@@ -13,11 +14,17 @@ import type {
   ApprovalOut,
   AuditEntryOut,
   AuditVerifyOut,
+  BulkClaimIn,
+  BulkCloseIn,
+  BulkOut,
+  BulkProposeSuppressionIn,
   DashboardOut,
   DecisionIn,
   DeliveryOut,
   DecisionOut,
   DetectionsReportOut,
+  EscalationGroupsOut,
+  EscalationOrder,
   EscalationOut,
   IncidentReportOut,
   IncidentReportStage,
@@ -41,6 +48,7 @@ import type {
   MonthlyReportOut,
   ProposeSuppressionIn,
   ReprocessOut,
+  ResponsePreviewOut,
   SampleAlertsOut,
   SourceCreateIn,
   SourceOut,
@@ -48,6 +56,7 @@ import type {
   SourceUpdateIn,
   SuppressionCreateIn,
   SuppressionOut,
+  SuppressionProposalOut,
   SuppressionUpdateIn,
   TenantCreateIn,
   TenantCreatedOut,
@@ -78,13 +87,42 @@ export interface AlertFilters {
   q?: string;
   from?: string;
   to?: string;
+  /** Closing time window (ISO); only closed alerts match. */
+  closed_from?: string;
+  closed_to?: string;
+}
+
+/** `GET /alerts/counts` window for the `closed` count (default: from today 00:00 UTC, no end). */
+export interface AlertCountsWindow {
+  closed_from?: string;
+  closed_to?: string;
 }
 
 export interface EscalationFilters {
   status?: string[];
   level?: string[];
+  /** A user id, `me`, or `none` for unassigned. */
   assigned_to?: string;
+  /** A user id or `me`. */
+  decided_by?: string;
+  /** true: only active escalations past their deadline. */
+  overdue?: boolean;
   alert_id?: string;
+  /** One group of `GET /escalations/groups`: the alert's source id and rule. */
+  source_id?: string;
+  rule?: string;
+  /** `created_at` (default, newest first) or `sla_deadline` (soonest first, overdue first, no deadline last). */
+  order?: EscalationOrder;
+}
+
+/** `GET /escalations/groups` parameters. */
+export interface EscalationGroupFilters {
+  /** A user id, `me`, or `none`. */
+  assigned_to?: string;
+  /** Smallest group returned (API default 2). */
+  min_size?: number;
+  /** Most groups returned (API default 50, at most 100). */
+  limit?: number;
 }
 
 export interface ActionFilters {
@@ -120,14 +158,32 @@ export const endpoints = {
   addNote: (api: ApiClient, id: string, text: string) => api.post<AlertEventOut>(`/alerts/${enc(id)}/notes`, { text }),
   reprocess: (api: ApiClient, id: string) => api.post<ReprocessOut>(`/alerts/${enc(id)}/reprocess`),
 
-  escalations: (api: ApiClient, filters: EscalationFilters, cursor?: string, signal?: AbortSignal) =>
-    api.get<Page<EscalationOut>>('/escalations', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),
+  /** Status counts for the alert view tabs (cached 15 s per tenant and window). */
+  alertCounts: (api: ApiClient, window: AlertCountsWindow = {}, signal?: AbortSignal) =>
+    api.get<AlertCountsOut>('/alerts/counts', { query: { ...window }, signal }),
+
+  /** One page of escalations; `limit` defaults to PAGE_SIZE (the overview asks for a few rows). */
+  escalations: (api: ApiClient, filters: EscalationFilters, cursor?: string, signal?: AbortSignal, limit: number = PAGE_SIZE) =>
+    api.get<Page<EscalationOut>>('/escalations', { query: { ...filters, cursor, limit }, signal }),
   escalation: (api: ApiClient, id: string, signal?: AbortSignal) =>
     api.get<EscalationOut>(`/escalations/${enc(id)}`, { signal }),
+  /** Active escalations grouped by source and rule, largest group first. */
+  escalationGroups: (api: ApiClient, filters: EscalationGroupFilters = {}, signal?: AbortSignal) =>
+    api.get<EscalationGroupsOut>('/escalations/groups', { query: { ...filters }, signal }),
+  /** Dry run of the response plan a true-positive decision would produce (writes nothing). */
+  responsePreview: (api: ApiClient, id: string, signal?: AbortSignal) =>
+    api.get<ResponsePreviewOut>(`/escalations/${enc(id)}/response-preview`, { signal }),
   claim: (api: ApiClient, id: string, version: number) =>
     api.post<EscalationOut>(`/escalations/${enc(id)}/claim`, { version }),
   decide: (api: ApiClient, id: string, body: DecisionIn) =>
     api.post<DecisionOut>(`/escalations/${enc(id)}/decision`, body),
+  /** Claim up to 50 escalations; 200 with per-item results (an item's error is what the single claim would answer). */
+  bulkClaim: (api: ApiClient, body: BulkClaimIn) => api.post<BulkOut>('/escalations/bulk/claim', body),
+  /** Close up to 50 escalations as false or benign positive; 200 with per-item results. */
+  bulkClose: (api: ApiClient, body: BulkCloseIn) => api.post<BulkOut>('/escalations/bulk/close', body),
+  /** All or nothing: one disabled rule from escalations decided false or benign positive (422 `not_confirmed_benign` otherwise). */
+  bulkProposeSuppression: (api: ApiClient, body: BulkProposeSuppressionIn) =>
+    api.post<SuppressionProposalOut>('/escalations/bulk/propose-suppression', body),
 
   actions: (api: ApiClient, filters: ActionFilters, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<ActionOut>>('/actions', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),

@@ -8,12 +8,21 @@
  * live events and invalidation policies (`api/invalidate.ts`) rely on them.
  */
 
-import type { ActionFilters, AlertFilters, AuditFilters, EscalationFilters } from './endpoints';
+import type {
+  ActionFilters,
+  AlertCountsWindow,
+  AlertFilters,
+  AuditFilters,
+  EscalationFilters,
+  EscalationGroupFilters,
+} from './endpoints';
 
 export const qk = {
   alerts: {
     all: ['alerts'] as const,
     list: (filters: AlertFilters) => ['alerts', filters] as const,
+    /** Status counts of the view tabs (GET /alerts/counts); stale whenever an alert changes. */
+    counts: (window: AlertCountsWindow) => ['alerts', 'counts', window] as const,
   },
   /** One alert and what hangs off it (the drawer). */
   alert: {
@@ -24,6 +33,15 @@ export const qk = {
   escalations: {
     all: ['escalations'] as const,
     list: (filters: EscalationFilters) => ['escalations', filters] as const,
+    /** The first `limit` rows only (overview panels), not a paged list. */
+    top: (filters: EscalationFilters, limit: number) => ['escalations', 'top', filters, limit] as const,
+    groups: (filters: EscalationGroupFilters) => ['escalations', 'groups', filters] as const,
+  },
+  /** One escalation (the decision page) and what hangs off it. */
+  escalation: {
+    all: ['escalation'] as const,
+    detail: (id: string) => ['escalation', id] as const,
+    responsePreview: (id: string) => ['escalation', id, 'response-preview'] as const,
   },
   actions: {
     all: ['actions'] as const,

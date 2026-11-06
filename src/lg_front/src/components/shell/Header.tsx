@@ -1,11 +1,9 @@
-import { useQuery } from '@tanstack/react-query';
 import { Building2, Menu } from 'lucide-react';
 import { forwardRef } from 'react';
 import { useLocation } from 'react-router-dom';
 
-import { endpoints } from '../../api/endpoints';
-import { qk } from '../../api/queryKeys';
-import { useApi, useAuth } from '../../auth/AuthContext';
+import { useMe } from '../../api/hooks';
+import { useAuth } from '../../auth/AuthContext';
 import { isTenantOverride } from '../../auth/roles';
 import { useLive } from '../../live/LiveProvider';
 import { TenantSwitcher } from '../TenantSwitcher';
@@ -18,15 +16,9 @@ import { UserMenu } from './UserMenu';
  * API sends it, otherwise the tenant id.
  */
 export function useTenantLabel(): string {
-  const api = useApi();
   const { principal } = useAuth();
   const tenantId = principal?.tenantId ?? '';
-  const me = useQuery({
-    queryKey: qk.me.forTenant(tenantId),
-    queryFn: ({ signal }) => endpoints.me(api, signal),
-    enabled: Boolean(tenantId),
-    staleTime: 5 * 60_000,
-  });
+  const me = useMe();
   const name = me.data?.tenant_name;
   return typeof name === 'string' && name.trim() && me.data?.tenant_id === tenantId ? name.trim() : tenantId || '-';
 }

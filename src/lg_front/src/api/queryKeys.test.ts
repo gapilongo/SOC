@@ -60,4 +60,12 @@ describe('query keys', () => {
     expect(qk.platformEscalations.list('')).toEqual(['platform-escalations', '']);
     expect(qk.platformUsage.month('2026-10')).toEqual(['platform-usage', '2026-10']);
   });
+
+  it('keeps the console redesign keys under the groups their events invalidate', () => {
+    expect(qk.alerts.counts({})).toEqual(['alerts', 'counts', {}]);
+    expect(qk.escalations.top({ assigned_to: 'me' }, 3)).toEqual(['escalations', 'top', { assigned_to: 'me' }, 3]);
+    expect(qk.escalations.groups({ min_size: 2 })).toEqual(['escalations', 'groups', { min_size: 2 }]);
+    expect(qk.escalation.detail('e-1')).toEqual(['escalation', 'e-1']);
+    expect(qk.escalation.responsePreview('e-1')).toEqual(['escalation', 'e-1', 'response-preview']);
+  });
 });
