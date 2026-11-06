@@ -18,15 +18,14 @@ from lg_sotf.db.repos._base import (
     Repository,
     check_choice,
     check_choices,
+    fetch_one,
     require_aware,
     set_clauses,
     to_model,
     utcnow,
 )
+from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
 
-ALERT_STATUSES = ("new", "queued", "processing", "waiting_human", "waiting_approval", "closed", "failed")
-SEVERITIES = ("info", "low", "medium", "high", "critical")
-DISPOSITIONS = ("malicious", "benign", "inconclusive")
 MAX_INSERT_BATCH = 5_000
 
 # ILIKE is not leakproof, so under FORCE RLS PostgreSQL cannot use an index for
@@ -419,7 +418,8 @@ class AlertsRepo(Repository):
         """Mean time to acknowledge and to resolve over the window starting at ``since``."""
         require_aware(since, "since")
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 SELECT
                     (SELECT extract(epoch FROM avg(e.claimed_at - e.created_at))

@@ -24,8 +24,10 @@ from typing import Any, Dict, List, Optional
 
 import asyncpg
 
+from lg_sotf.db import Connection
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Tenant
+from lg_sotf.db.repos._base import fetch_one
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import NOTIFY_KINDS
 from lg_sotf.observability.logging import get_logger
@@ -84,7 +86,7 @@ class OnboardingStatus:
         return self.completed == len(self.counted)
 
 
-async def _notifications_configured(conn: asyncpg.Connection, tenant_id: str) -> Optional[bool]:
+async def _notifications_configured(conn: Connection, tenant_id: str) -> Optional[bool]:
     """Whether the tenant has an enabled notification integration (Slack, Teams, email, webhook).
 
     Ticketing integrations and disabled rows do not count: they notify nobody.
@@ -109,7 +111,7 @@ async def _notifications_configured(conn: asyncpg.Connection, tenant_id: str) ->
 
 async def onboarding_status(db: Database, tenant: Tenant) -> OnboardingStatus:
     async with db.tenant_tx(tenant.id, readonly=True) as conn:
-        facts = await conn.fetchrow(_FACTS_SQL, tenant.id, SAMPLE_SOURCE_ID)
+        facts = await fetch_one(conn, _FACTS_SQL, tenant.id, SAMPLE_SOURCE_ID)
         notifications = await _notifications_configured(conn, tenant.id)
     marks = dict(tenant.onboarding or {})
     steps = [

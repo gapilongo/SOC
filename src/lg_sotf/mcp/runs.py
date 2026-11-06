@@ -44,14 +44,13 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from lg_sotf.mcp.base import ToolError
 from lg_sotf.mcp.shaping import mapping
+from lg_sotf.models.vocabulary import DISPOSITIONS, ROUTES, SEVERITIES
 
 MAX_RUNS = 50
 MAX_TEST_ITEMS = 25
 TERMINAL_STATUSES = ("closed", "waiting_human", "waiting_approval", "failed")
 RETRIED_STATUSES = ("failed",)
 """Terminal for a wait, but not final: the worker retries the run, so the outcome is read again."""
-ROUTES = ("escalate", "plan_response", "close")
-DISPOSITIONS = ("malicious", "benign", "inconclusive")
 _CODE_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 UNKNOWN_HANDLE = (
     "unknown or expired run_handle: run handles live in this MCP server's memory and are lost when it restarts "
@@ -178,7 +177,7 @@ def outcome_of(alert: Mapping[str, Any], decide: Optional[Mapping[str, Any]] = N
     return Outcome(
         alert_id=str(alert.get("id") or ""),
         status=status,
-        severity=choice(alert.get("severity"), ("info", "low", "medium", "high", "critical")),
+        severity=choice(alert.get("severity"), SEVERITIES),
         disposition=disposition,
         confidence=number(alert.get("confidence")),
         route=route,

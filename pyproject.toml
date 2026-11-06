@@ -190,8 +190,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = [
+    "lg_sotf.db.types",
     "lg_sotf.errors",
     "lg_sotf.domain.*",
+    "lg_sotf.models.vocabulary",
     "lg_sotf.net.*",
     "lg_sotf.settings",
     "lg_sotf.llm.*",
@@ -255,6 +257,18 @@ source_modules = ["lg_sotf.errors"]
 forbidden_modules = ["lg_sotf.observability", "lg_sotf.security", "lg_sotf.settings"]
 
 [[tool.importlinter.contracts]]
+id = "vocabulary-is-leaf"
+name = "The domain vocabulary imports only the standard library"
+type = "forbidden"
+source_modules = ["lg_sotf.models.vocabulary"]
+# The layers contract keeps models off every higher layer; this keeps the vocabulary off its
+# siblings (models.alert loads pydantic) and the kernel (docs/adr/0004-domain-vocabulary.md).
+forbidden_modules = [
+    "lg_sotf.models.alert", "lg_sotf.net", "lg_sotf.errors", "lg_sotf.observability", "lg_sotf.security",
+    "lg_sotf.settings", "pydantic",
+]
+
+[[tool.importlinter.contracts]]
 id = "net-is-leaf"
 name = "The network kernel imports only the kernel and httpx"
 type = "forbidden"
@@ -315,7 +329,7 @@ source_modules = [
 ]
 forbidden_modules = ["asyncpg", "psycopg", "psycopg_pool", "langgraph"]
 ignore_imports = [
-    # F9 typed DB connection (driver types stay behind lg_sotf.db)
+    # D4 SQL into repositories: driver exception classes (F9 typed the connections; lg_sotf.db.Connection)
     "lg_sotf.compliance.tenant_data -> asyncpg",
     "lg_sotf.onboarding.service -> asyncpg",
 ]

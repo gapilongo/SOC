@@ -32,6 +32,7 @@ from __future__ import annotations
 import uuid
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from lg_sotf.db import Connection
 from lg_sotf.db.repos.integrations import ENQUEUE_SQL, NewOutboxEntry
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import MICROSOFT_KIND, NOTIFY_KINDS, TICKETING_KINDS
@@ -83,16 +84,16 @@ def operation_for(integration: Mapping[str, Any], event_type: str, severity: Opt
     return None
 
 
-async def _matching(conn: Any, tenant_id: str, event_type: str) -> List[Mapping[str, Any]]:
+async def _matching(conn: Connection, tenant_id: str, event_type: str) -> List[Mapping[str, Any]]:
     return [dict(r) for r in await conn.fetch(_INTEGRATIONS_SQL, tenant_id, event_type)]
 
 
-async def _alerts(conn: Any, tenant_id: str, alert_ids: Sequence[str]) -> Dict[str, Mapping[str, Any]]:
+async def _alerts(conn: Connection, tenant_id: str, alert_ids: Sequence[str]) -> Dict[str, Mapping[str, Any]]:
     rows = await conn.fetch(_ALERTS_SQL, tenant_id, list(alert_ids), SAMPLE_SOURCE_ID)
     return {str(r["id"]): dict(r) for r in rows}
 
 
-async def _insert(conn: Any, tenant_id: str, entries: List[NewOutboxEntry]) -> int:
+async def _insert(conn: Connection, tenant_id: str, entries: List[NewOutboxEntry]) -> int:
     if not entries:
         return 0
     status = await conn.execute(
@@ -104,7 +105,7 @@ async def _insert(conn: Any, tenant_id: str, entries: List[NewOutboxEntry]) -> i
 
 
 async def enqueue_event(
-    conn: Any,
+    conn: Connection,
     tenant_id: str,
     event_type: str,
     *,
@@ -163,7 +164,7 @@ async def enqueue_event(
     return queued
 
 
-async def enqueue_critical_alerts(conn: Any, tenant_id: str, alert_ids: Sequence[str]) -> int:
+async def enqueue_critical_alerts(conn: Connection, tenant_id: str, alert_ids: Sequence[str]) -> int:
     """``alert.critical_received`` for newly dispatched critical alerts (one message per alert, ever)."""
     if not alert_ids:
         return 0

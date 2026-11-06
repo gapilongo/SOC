@@ -16,17 +16,15 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     require_aware,
     set_clauses,
     to_model,
     to_models,
     truncate,
 )
+from lg_sotf.models.vocabulary import PUSH_SOURCE_TYPES, SOURCE_TYPES
 
-SOURCE_TYPES = (
-    "splunk", "qradar", "sentinel", "wazuh", "crowdstrike", "guardduty", "webhook", "file", "m365_mailbox", "imap"
-)
-PUSH_SOURCE_TYPES = ("webhook", "guardduty")
 SOURCE_HEALTH = ("unknown", "healthy", "degraded", "failing")
 
 FAILING_AFTER = 3
@@ -72,7 +70,8 @@ class SourcesRepo(Repository):
         check_choice(type, SOURCE_TYPES, "source type")
         async with self._tenant(tenant_id, conn) as c:
             try:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     """
                     INSERT INTO sources (id, tenant_id, type, name, enabled, config, secret_ciphertext, poll_interval_s)
                     VALUES (COALESCE($1, gen_random_uuid()::text), $2, $3, $4, $5, $6, $7, $8)

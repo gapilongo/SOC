@@ -20,6 +20,7 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     set_clauses,
     to_model,
     to_models,
@@ -74,7 +75,8 @@ class TenantsRepo(Repository):
         check_choice(status, TENANT_STATUSES, "tenant status")
         async with self._system() as c:
             try:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     "INSERT INTO tenants (id, name, status, settings) VALUES ($1, $2, $3, $4) RETURNING *",
                     tenant_id,
                     name,
@@ -117,7 +119,7 @@ class TenantsRepo(Repository):
             await c.execute(
                 "INSERT INTO tenants (id, name) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING", tenant_id, name
             )
-            row = await c.fetchrow("SELECT * FROM tenants WHERE id = $1", tenant_id)
+            row = await fetch_one(c, "SELECT * FROM tenants WHERE id = $1", tenant_id)
         return Tenant.model_validate(dict(row))
 
     async def update_settings(

@@ -16,7 +16,7 @@ re-checks a finished verification (:mod:`lg_sotf.services.verification`).
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -42,6 +42,10 @@ from lg_sotf.api.schemas import (
 )
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import ResponseAction
+from lg_sotf.models.vocabulary import ActionStatus, EscalationStatus
+from lg_sotf.models.vocabulary import EscalationLevel as Level
+from lg_sotf.models.vocabulary import RiskLevel as Risk
+from lg_sotf.models.vocabulary import VerificationState as Verification
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import ResumeRequest
@@ -53,13 +57,6 @@ log = get_logger(__name__)
 escalations = APIRouter(prefix="/escalations", tags=["escalations"])
 actions = APIRouter(prefix="/actions", tags=["actions"])
 
-EscalationStatus = Literal["open", "claimed", "decided", "expired", "cancelled"]
-Level = Literal["L1", "L2", "L3"]
-ActionStatus = Literal[
-    "proposed", "awaiting_approval", "approved", "rejected", "executing", "succeeded", "failed", "dry_run", "blocked"
-]
-Risk = Literal["low", "medium", "high", "critical"]
-Verification = Literal["pending", "verified", "failed", "inconclusive"]
 MAX_LIMIT = 200
 
 

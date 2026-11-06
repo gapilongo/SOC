@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from typing import Any, Dict, Literal, Mapping, Optional, Tuple
 
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.models.vocabulary import HIGH_SEVERITIES
+from lg_sotf.models.vocabulary import SEVERITIES as SEVERITIES
 
 MessageKind = Literal["process", "resume"]
 MESSAGE_KINDS: Tuple[str, ...] = ("process", "resume")
-HIGH_PRIORITY_SEVERITIES = frozenset({"critical", "high"})
-SEVERITIES = ("info", "low", "medium", "high", "critical")
 CONSUMER_GROUP = "workers"
 MAX_ALERT_ID_CHARS = 256
 MAX_PAYLOAD_BYTES = 64 * 1024
@@ -59,7 +59,7 @@ class QueueStreams:
         return (self.high, self.normal)
 
     def for_severity(self, severity: str) -> str:
-        return self.high if severity in HIGH_PRIORITY_SEVERITIES else self.normal
+        return self.high if severity in HIGH_SEVERITIES else self.normal
 
     def label(self, stream: str) -> str:
         """Short metric label (``high``/``normal``/``dlq``) for a stream key."""

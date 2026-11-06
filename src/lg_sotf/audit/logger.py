@@ -20,8 +20,8 @@ from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact
 
 if TYPE_CHECKING:
+    from lg_sotf.db import Connection
     from lg_sotf.db.repos import AuditEntry, Repositories
-    from lg_sotf.db.repos._base import Connection
 
 _log = get_logger("lg_sotf.audit")
 

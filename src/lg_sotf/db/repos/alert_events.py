@@ -8,7 +8,7 @@ from typing import Any, Dict, Mapping, Optional, Sequence
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lg_sotf.db.pagination import Page, check_limit, decode_cursor_bigint, paginate
-from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, require_aware, to_models
+from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, fetch_one, require_aware, to_models
 
 EVENT_ACTOR_TYPES = ("system", "user", "agent")
 
@@ -71,7 +71,8 @@ class AlertEventsRepo(Repository):
             ts=ts,
         )
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 INSERT INTO alert_events (tenant_id, alert_id, ts, node, event_type, actor_type, actor_id, data)
                 VALUES ($1, $2, COALESCE($3::timestamptz, clock_timestamp()), $4, $5, $6, $7, $8)

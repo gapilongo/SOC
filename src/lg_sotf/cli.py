@@ -11,6 +11,7 @@ from typing import Any, Coroutine, List, Optional, TypeVar
 import click
 
 from lg_sotf import __version__
+from lg_sotf.models.vocabulary import ROLES
 from lg_sotf.settings import Settings, get_settings
 
 T = TypeVar("T")
@@ -142,9 +143,7 @@ def _read_password(from_stdin: bool) -> str:
 @cli.command("create-admin")
 @click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
 @click.option("--email", required=True, help="Login email.")
-@click.option(
-    "--role", type=click.Choice(["admin", "analyst", "viewer"]), default="admin", show_default=True, help="Role."
-)
+@click.option("--role", type=click.Choice(ROLES), default="admin", show_default=True, help="Role.")
 @click.option("--password-stdin", is_flag=True, help="Read the password from the first line of stdin.")
 @click.option("--platform-admin", is_flag=True, help="Allow acting on other tenants.")
 def create_admin(tenant_id: str, email: str, role: str, password_stdin: bool, platform_admin: bool) -> None:

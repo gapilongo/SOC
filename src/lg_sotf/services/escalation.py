@@ -56,18 +56,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db import locks
+from lg_sotf.db import Connection, locks
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
 from lg_sotf.integrations.events import ESCALATION_CREATED, ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.models.vocabulary import SEVERITY_RANK
+from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -94,7 +96,6 @@ REASON_WEIGHTS: Dict[str, int] = {
     "false_positive_review": 0,
 }
 SEVERITY_WEIGHTS: Dict[str, int] = {"critical": 2, "high": 1, "medium": 0, "low": -1, "info": -2}
-SEVERITY_RANK: Dict[str, int] = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
 MAX_RELATED = 50
 MAX_CORRELATED = 20
 DEFAULT_KEY_INDICATOR_TYPES = ("ip", "domain", "url", "hash")
@@ -142,7 +143,6 @@ _ATTACH_SQL = """
     RETURNING *
 """
 
-Level = Literal["L1", "L2", "L3"]
 
 
 def compute_priority(
@@ -472,7 +472,7 @@ class EscalationService:
 
     async def _find_parent(
         self,
-        conn: Any,
+        conn: Connection,
         tenant_id: str,
         alert_id: str,
         fingerprint: Optional[str],
@@ -503,7 +503,7 @@ class EscalationService:
             return await self._related_by_indicators(conn, tenant_id, alert_id, since, grouping.indicator_types)
 
     async def _related_by_indicators(
-        self, conn: Any, tenant_id: str, alert_id: str, since: datetime, types: Sequence[str]
+        self, conn: Connection, tenant_id: str, alert_id: str, since: datetime, types: Sequence[str]
     ) -> List[str]:
         sightings = await self._repos.indicators.sightings_for_alert(tenant_id, alert_id, conn=conn)
         keys = [(s.indicator_type, s.value_hash) for s in sightings if s.indicator_type in types]

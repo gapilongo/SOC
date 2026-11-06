@@ -21,7 +21,7 @@ from typing import Any, Dict, Mapping, NamedTuple, Optional
 
 from lg_sotf.db import locks
 from lg_sotf.db.pagination import Page, Params, check_limit, decode_cursor_bigint, paginate
-from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, require_aware, to_models
+from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, fetch_one, require_aware, to_models
 
 AUDIT_ACTOR_TYPES = ("system", "user", "agent", "api_key")
 
@@ -69,7 +69,8 @@ class AuditRepo(Repository):
             raise ValueError("action and resource_type are required")
         async with self._tenant(tenant_id, conn) as c:
             await locks.tenant_xact_lock(c, locks.AUDIT_CHAIN, tenant_id)
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 WITH prev AS (
                     SELECT hash FROM audit_log WHERE tenant_id = $1 ORDER BY id DESC LIMIT 1

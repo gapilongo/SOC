@@ -44,9 +44,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.eval.dataset import DISPOSITIONS
 from lg_sotf.eval.results import ItemResult
+from lg_sotf.models.vocabulary import HIGH_SEVERITIES
 
 Pair = Tuple[str, str]
-HIGH_SEVERITIES = frozenset({"high", "critical"})
 
 
 def ratio(numerator: int, denominator: int) -> Optional[float]:

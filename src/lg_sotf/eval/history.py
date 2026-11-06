@@ -48,9 +48,9 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.graph import cap_alert
+from lg_sotf.db import Connection
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories
-from lg_sotf.db.repos._base import Connection
 from lg_sotf.db.repos.alerts import AlertsRepo
 from lg_sotf.db.repos.indicators import IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.reports import DecidedAlert
@@ -59,6 +59,7 @@ from lg_sotf.domain.routing import RoutingThresholds, refused_by
 from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary
+from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 
@@ -128,7 +129,7 @@ class PointInTimeIndicatorsRepo(IndicatorsRepo):
         self._cutoff = cutoff
         self._offset = offset
 
-    async def add_sightings(self, tenant_id: str, alert_id: str, sightings: Any, *, conn: Any = None) -> int:
+    async def add_sightings(self, tenant_id: str, alert_id: str, sightings: Any, *, conn: Optional[Connection] = None) -> int:
         return 0
 
     async def related_alerts(
@@ -258,7 +259,7 @@ def classify(result: ItemResult, replay: Replay) -> None:
         verdict = analysis.get("verdict")
         result.status = "waiting_human"
         result.escalated = True
-        result.predicted = verdict if verdict in ("malicious", "benign", "inconclusive") else "inconclusive"
+        result.predicted = verdict if verdict in DISPOSITIONS else "inconclusive"
     usage = replay.usage
     result.llm_calls = int(usage.get("calls") or 0)
     result.input_tokens = int(usage.get("input_tokens") or 0)

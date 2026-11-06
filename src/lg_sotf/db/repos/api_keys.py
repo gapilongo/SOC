@@ -16,12 +16,12 @@ from lg_sotf.db.repos._base import (
     Repository,
     check_choice,
     check_sha256_hex,
+    fetch_one,
     require_aware,
     to_model,
     to_models,
 )
-
-API_KEY_SCOPES = ("ingest", "read", "write")
+from lg_sotf.models.vocabulary import SCOPES as API_KEY_SCOPES
 
 
 class ApiKey(Record):
@@ -63,7 +63,8 @@ class ApiKeysRepo(Repository):
             check_choice(scope, API_KEY_SCOPES, "scope")
         async with self._tenant(tenant_id, conn) as c:
             try:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     """
                     INSERT INTO api_keys (id, tenant_id, name, prefix, key_hash, scopes, created_by)
                     VALUES (COALESCE($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7)

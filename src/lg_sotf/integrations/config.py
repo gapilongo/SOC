@@ -31,6 +31,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from lg_sotf.integrations.events import EVENT_TYPES, LEVELS, SEVERITIES, TICKETING_EVENTS
+from lg_sotf.models.vocabulary import EscalationLevel
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 
 Kind = Literal["slack", "teams", "email", "webhook", "jira", "servicenow", "microsoft"]
@@ -138,7 +139,7 @@ class JiraConfig(_Ticketing):
     project_key: str
     issue_type: str = Field(default="Task", min_length=1, max_length=100)
     labels: List[str] = Field(default_factory=lambda: ["lg-sotf"], max_length=10)
-    min_level: Optional[Literal["L1", "L2", "L3"]] = None
+    min_level: Optional[EscalationLevel] = None
     comment_on_decision: bool = True
     resolve_transition: Optional[str] = Field(default=None, max_length=100, description="Transition name or id applied on a final decision.")
     priority_map: Dict[str, str] = Field(default_factory=dict)
@@ -171,7 +172,7 @@ class ServiceNowConfig(_Ticketing):
     assignment_group: Optional[str] = Field(default=None, max_length=200)
     caller_id: Optional[str] = Field(default=None, max_length=200)
     category: Optional[str] = Field(default=None, max_length=100)
-    min_level: Optional[Literal["L1", "L2", "L3"]] = None
+    min_level: Optional[EscalationLevel] = None
     comment_on_decision: bool = True
     comment_field: Literal["work_notes", "comments"] = "work_notes"
     resolve_on_decision: bool = False

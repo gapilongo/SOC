@@ -17,14 +17,14 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     require_aware,
     set_clauses,
     to_model,
     to_models,
     utcnow,
 )
-
-ROLES = ("admin", "analyst", "viewer")
+from lg_sotf.models.vocabulary import ROLES
 
 
 class User(Record):
@@ -72,7 +72,8 @@ class UsersRepo(Repository):
         email = normalize_email(email)
         async with self._tenant(tenant_id, conn) as c:
             try:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     """
                     INSERT INTO users (tenant_id, email, password_hash, role, is_platform_admin, is_active, oidc_subject)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)

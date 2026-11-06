@@ -55,6 +55,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import DECISIONS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
@@ -62,6 +63,7 @@ from lg_sotf.domain.routing import BENIGN_DECISIONS
 from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINAL_RUN_STATUSES, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
@@ -79,8 +81,6 @@ if TYPE_CHECKING:
 
 log = get_logger(__name__)
 
-ROLES = ("viewer", "analyst", "admin")
-REVIEWER_ROLES = frozenset({"analyst", "admin"})
 MAX_NOTES_CHARS = 4_000
 MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
@@ -89,8 +89,6 @@ MAX_ACTION_IDS = 100
 _ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
-ENDED_RUN_STATUSES = frozenset({"completed", "dead_lettered"})
-WORKFLOW_OWNER = "workflow"
 # EscalationsRepo.decide accepts only open/claimed escalations; a late decision on an expired one.
 _DECIDE_EXPIRED_SQL = """
     UPDATE escalations
@@ -402,7 +400,7 @@ class ReviewService:
         notes: Optional[str],
         approved: Sequence[str],
         now: datetime,
-        conn: Any,
+        conn: Connection,
     ) -> Escalation:
         """Record a decision on an escalation the SLA sweep expired (same optimistic lock as an active one).
 
@@ -448,7 +446,7 @@ class ReviewService:
             raise ReviewError(f"at most {MAX_APPROVED_ACTIONS} approved actions after resolving targets")
         return resolved
 
-    async def _own_review(self, tenant_id: str, escalation: Escalation, decision: str, conn: Any) -> List[str]:
+    async def _own_review(self, tenant_id: str, escalation: Escalation, decision: str, conn: Connection) -> List[str]:
         """Attached alerts a benign ``decision`` will not close (predicts the workflow's decision scope)."""
         attached = [a for a in escalation.related_alert_ids if a != escalation.alert_id]
         if not attached or decision not in BENIGN_DECISIONS:
@@ -491,7 +489,7 @@ class ReviewService:
         return resolve_review_policy(tenant_settings, self._settings).suggest_suppressions
 
     async def _suggest_suppression(
-        self, tenant_id: str, escalation: Escalation, feedback_id: str, user_id: UUID, now: datetime, conn: Any
+        self, tenant_id: str, escalation: Escalation, feedback_id: str, user_id: UUID, now: datetime, conn: Connection
     ) -> Optional[str]:
         """A disabled rule matching the alert's fingerprint (and source), for an admin to review and enable."""
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
@@ -500,9 +498,8 @@ class ReviewService:
         # Bounded to the severity the analyst judged (and below): a benign medium detection says
         # nothing about a later critical one with the same fingerprint, which fingerprints do not
         # distinguish (no severity, command line or process in them).
-        order = ("info", "low", "medium", "high", "critical")
-        decided_rank = order.index(alert.severity) if alert.severity in order else 0
-        severities = list(order[: decided_rank + 1])
+        decided_rank = SEVERITIES.index(alert.severity) if alert.severity in SEVERITIES else 0
+        severities = list(SEVERITIES[: decided_rank + 1])
         match: Dict[str, Any] = {
             "fingerprint": alert.fingerprint,
             "source_id": alert.source_id,
@@ -539,7 +536,7 @@ class ReviewService:
         details: Optional[Mapping[str, Any]] = None,
         reuse_existing: bool = False,
         now: Optional[datetime] = None,
-        conn: Any = None,
+        conn: Optional[Connection] = None,
     ) -> Tuple[SuppressionRule, bool]:
         """Create a *disabled* suppression rule suggestion for an admin to review and enable.
 
@@ -677,11 +674,11 @@ class ReviewService:
             if approved.get(alert_id) or rejected.get(alert_id)
         ]
 
-    async def _run_ended(self, tenant_id: str, alert_id: str, conn: Any, cache: Dict[str, bool]) -> bool:
+    async def _run_ended(self, tenant_id: str, alert_id: str, conn: Connection, cache: Dict[str, bool]) -> bool:
         """Whether the alert's run has ended (or never existed); its row is locked ``FOR SHARE`` until commit."""
         if alert_id not in cache:
             status = await conn.fetchval(_RUN_FOR_SHARE_SQL, tenant_id, alert_id)
-            cache[alert_id] = status is None or status in ENDED_RUN_STATUSES
+            cache[alert_id] = status is None or status in TERMINAL_RUN_STATUSES
         return cache[alert_id]
 
     async def reject_actions(
@@ -737,7 +734,7 @@ class ReviewService:
         ]
 
     async def _reject(
-        self, tenant_id: str, action: ResponseAction, user_id: UUID, role: str, reason: str, conn: Any
+        self, tenant_id: str, action: ResponseAction, user_id: UUID, role: str, reason: str, conn: Connection
     ) -> ResponseAction:
         updated = await self._repos.actions.transition(
             tenant_id, action.id, "rejected", expected_from="awaiting_approval", blocked_reason=reason, conn=conn
@@ -748,7 +745,7 @@ class ReviewService:
         )
         return updated
 
-    async def _pending_for_alert(self, tenant_id: str, alert_id: str, conn: Any) -> List[ResponseAction]:
+    async def _pending_for_alert(self, tenant_id: str, alert_id: str, conn: Connection) -> List[ResponseAction]:
         """The alert's workflow actions awaiting approval (rollbacks and other scheduler rows are never included)."""
         page = await self._repos.actions.list(
             tenant_id, status="awaiting_approval", alert_id=alert_id, execution_owner=WORKFLOW_OWNER, limit=200,

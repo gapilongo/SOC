@@ -28,6 +28,7 @@ from lg_sotf.db.repos._base import (
     Repository,
     check_choice,
     check_choices,
+    fetch_one,
     set_clauses,
     to_model,
     to_models,
@@ -154,7 +155,8 @@ class IntegrationsRepo(Repository):
         check_choice(kind, INTEGRATION_KINDS, "integration kind")
         async with self._tenant(tenant_id, conn) as c:
             try:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     """
                     INSERT INTO integrations
                         (id, tenant_id, kind, name, enabled, config, secret_ciphertext, events, min_severity, created_by)
@@ -287,7 +289,8 @@ class IntegrationsRepo(Repository):
     ) -> OutboxEntry:
         """Log a synchronous test delivery in the outbox (already finished: ``sent`` or ``dead``)."""
         async with self._tenant(tenant_id, conn) as c:
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 INSERT INTO notification_outbox
                     (tenant_id, integration_id, event_id, event_type, operation, dedupe_key, payload,

@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import Counter
-from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import quote
 
 from pydantic import Field, field_validator, model_validator
@@ -70,19 +70,15 @@ from lg_sotf.mcp.runs import (
     score,
 )
 from lg_sotf.mcp.shaping import RESULT_BUDGET, Shaped, mapping
+from lg_sotf.models import vocabulary
+from lg_sotf.models.vocabulary import ActionStatus, VerificationState
+from lg_sotf.models.vocabulary import Disposition as DispositionLabel
+from lg_sotf.models.vocabulary import RiskLevel as Risk
+from lg_sotf.models.vocabulary import Route as RouteLabel
 
-ACTION_STATUSES = [
-    "proposed", "awaiting_approval", "approved", "rejected", "executing", "succeeded", "failed", "dry_run", "blocked"
-]
-RISKS = ["low", "medium", "high", "critical"]
-VERIFICATIONS = ["pending", "verified", "failed", "inconclusive"]
-ActionStatus = Literal[
-    "proposed", "awaiting_approval", "approved", "rejected", "executing", "succeeded", "failed", "dry_run", "blocked"
-]
-Risk = Literal["low", "medium", "high", "critical"]
-VerificationState = Literal["pending", "verified", "failed", "inconclusive"]
-DispositionLabel = Literal["malicious", "benign", "inconclusive"]
-RouteLabel = Literal["escalate", "plan_response", "close"]
+ACTION_STATUSES: List[str] = list(vocabulary.ACTION_STATUSES)
+RISKS: List[str] = list(vocabulary.RISK_LEVELS)
+VERIFICATIONS: List[str] = list(vocabulary.VERIFICATION_STATES)
 ACTION_TYPE_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
 LABEL_PATTERN = r"^[A-Za-z0-9_.:-]{1,32}$"
 SPLIT_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"

@@ -29,7 +29,7 @@ from lg_sotf.api.schemas import SuppressionCreateIn, SuppressionOut, Suppression
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
-from lg_sotf.queue.streams import SEVERITIES
+from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.services import suppressions as rule_changes
 
 router = APIRouter(prefix="/suppressions", tags=["suppressions"])

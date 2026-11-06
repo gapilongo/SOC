@@ -11,8 +11,9 @@ Rules:
 
 ``raw_sql_baseline.txt``
     ``.execute/.fetch/.fetchrow/.fetchval/.executemany`` outside ``db/`` whose first
-    argument is a string literal, an f-string or a name ending in ``_SQL``. SQL belongs
-    in ``db/`` repositories. ``await pipe.execute()`` (Redis) and
+    argument is a string literal, an f-string or a name ending in ``_SQL``, and the typed
+    helpers ``fetch_one/fetch_int/fetch_bool(conn, sql, ...)`` with such a second
+    argument. SQL belongs in ``db/`` repositories. ``await pipe.execute()`` (Redis) and
     ``handler.execute(action)`` are not SQL and are not flagged.
 ``router_tx_baseline.txt``
     ``.tenant_tx(``, ``.system_tx(`` and ``.connection(`` calls under ``api/``.
@@ -65,6 +66,8 @@ pytestmark = pytest.mark.unit
 Scanner = Callable[[str, ast.Module], list[str]]
 
 SQL_METHODS = frozenset({"execute", "fetch", "fetchrow", "fetchval", "executemany"})
+# lg_sotf.db.repos._base helpers that run their second argument: fetch_one(conn, sql, *args).
+SQL_HELPERS = frozenset({"fetch_one", "fetch_int", "fetch_bool"})
 TX_METHODS = frozenset({"tenant_tx", "system_tx", "connection"})
 SETTINGS_ROOTS = ("cli.py", "api/app.py", "settings.py", "__main__.py")
 SETTINGS_ROOT_DIRS = ("runtime",)
@@ -89,13 +92,16 @@ def _is_sql_argument(arg: ast.expr) -> bool:
     return False
 
 
+def _runs_sql(call: ast.Call) -> bool:
+    if attr_name(call) in SQL_METHODS:
+        return bool(call.args) and _is_sql_argument(call.args[0])
+    helper = call.func.id if isinstance(call.func, ast.Name) else attr_name(call)
+    return helper in SQL_HELPERS and len(call.args) > 1 and _is_sql_argument(call.args[1])
+
+
 def scan_raw_sql(rel: str, tree: ast.Module) -> list[str]:
-    """SQL-looking ``execute``/``fetch*`` calls; the caller filters out ``db/``."""
-    return [
-        _loc(rel, qual)
-        for call, qual in iter_calls(tree)
-        if attr_name(call) in SQL_METHODS and call.args and _is_sql_argument(call.args[0])
-    ]
+    """SQL-looking ``execute``/``fetch*`` calls and typed-helper calls; the caller filters out ``db/``."""
+    return [_loc(rel, qual) for call, qual in iter_calls(tree) if _runs_sql(call)]
 
 
 def scan_tx_calls(rel: str, tree: ast.Module) -> list[str]:
@@ -336,8 +342,11 @@ class Repo:
 
 async def top(conn):
     await conn.execute("SELECT 3")
+    await fetch_one(conn, LIST_SQL, 1)
+    await _base.fetch_bool(conn, "SELECT true")
+    await fetch_int(conn, query)
 """
-    assert _scan(scan_raw_sql, code) == ["m.py::Repo.run"] * 5 + ["m.py::top"]
+    assert _scan(scan_raw_sql, code) == ["m.py::Repo.run"] * 5 + ["m.py::top"] * 3
 
 
 def test_raw_sql_scanner_ignores_non_sql_calls() -> None:

@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
   and metered under the provider's own model name. OpenAI itself, with no
   `llm.base_url`, keeps tool calling.
 
+### Changed
+
+- Roles are now listed from least to most privileged (`viewer`, `analyst`,
+  `admin`) everywhere: in the choices of `lg-sotf create-admin --role` and
+  in the "expected one of" message when a user is created or updated with
+  an unknown role. Before, these two listed `admin, analyst, viewer`. The
+  roles themselves and the `admin` default are unchanged.
+
 ### Fixed
 
 - Web UI: the Actions page now explains the `internal_sender`,

@@ -11,24 +11,16 @@ from lg_sotf.db.repos._base import (
     Record,
     Repository,
     check_choice,
+    fetch_one,
     require_aware,
     to_model,
     to_models,
     truncate,
 )
 from lg_sotf.db.tenancy import thread_id_for
+from lg_sotf.models.vocabulary import RUN_STATUSES as RUN_STATUSES
+from lg_sotf.models.vocabulary import TERMINAL_RUN_STATUSES, WAITING_RUN_STATUSES
 
-RUN_STATUSES = (
-    "queued",
-    "running",
-    "waiting_human",
-    "waiting_approval",
-    "completed",
-    "failed",
-    "dead_lettered",
-)
-TERMINAL_RUN_STATUSES = ("completed", "dead_lettered")
-WAITING_RUN_STATUSES = ("waiting_human", "waiting_approval")
 MAX_ERROR_CHARS = 4_000
 
 ClaimKind = Literal["process", "resume"]
@@ -96,7 +88,8 @@ class RunsRepo(Repository):
                 requeue_terminal,
             )
             if row is None:
-                row = await c.fetchrow(
+                row = await fetch_one(
+                    c,
                     "SELECT * FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2", tenant_id, alert_id
                 )
         return WorkflowRun.model_validate(dict(row))
@@ -230,7 +223,8 @@ class RunsRepo(Repository):
             reason = self._refusal(kind, previous, current["live"])
             if reason is not None:
                 raise RunNotClaimable(tenant_id, alert_id, reason, WorkflowRun.model_validate(dict(current)))
-            row = await c.fetchrow(
+            row = await fetch_one(
+                c,
                 """
                 UPDATE workflow_runs SET
                     status = 'running',
@@ -240,11 +234,7 @@ class RunsRepo(Repository):
                 WHERE tenant_id = $1 AND alert_id = $2
                 RETURNING *
                 """,
-                tenant_id,
-                alert_id,
-                worker_id,
-                now,
-                float(lease_s),
+                tenant_id, alert_id, worker_id, now, float(lease_s),
             )
         return WorkflowRun.model_validate({**dict(row), "claimed_from": previous})
 

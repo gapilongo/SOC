@@ -29,6 +29,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, FrozenSet, List, Mapping, Optional
 
 from lg_sotf.db.errors import NotFound
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS
 from lg_sotf.security.hashing import hmac_indicator
 from lg_sotf.tools.enrichment.base import EnrichmentResult, LookupRequest, Verdict
 
@@ -51,7 +52,7 @@ def confirmed_outcome(disposition: Optional[str], summary: Any) -> Optional[str]
     if disposition == "malicious" and (decision == "true_positive" or reason == ANALYST_MALICIOUS_REASON):
         return "malicious"
     if disposition == "benign" and (
-        decision in ("false_positive", "benign_positive") or reason in ANALYST_BENIGN_REASONS
+        decision in BENIGN_DECISIONS or reason in ANALYST_BENIGN_REASONS
     ):
         return "benign"
     return None
