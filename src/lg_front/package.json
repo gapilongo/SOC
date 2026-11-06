@@ -14,7 +14,8 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc -b",
     "test": "vitest",
-    "test:ci": "vitest run",
+    "test:ci": "vitest run --coverage && node scripts/coverage-floors.mjs",
+    "coverage:floors": "node scripts/coverage-floors.mjs",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "e2e": "playwright test"
   },
@@ -37,6 +38,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "4.1.11",
     "autoprefixer": "^10.6.1",
     "eslint": "^9.39.5",
     "eslint-plugin-jsx-a11y": "^6.10.2",

@@ -3,6 +3,8 @@ import { RotateCcw } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../api/client';
+import { afterAlertChange, afterAlertTimelineChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
 import { endpoints } from '../../api/endpoints';
 import type { ActionOut, AlertDetailOut, AlertEventOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
@@ -173,7 +175,7 @@ function eventSummary(e: AlertEventOut): string {
 function Timeline({ alertId }: { alertId: string }) {
   const api = useApi();
   const q = useKeysetList({
-    queryKey: ['alert', alertId, 'events'],
+    queryKey: qk.alert.events(alertId),
     fetchPage: (cursor, signal) => endpoints.alertEvents(api, alertId, cursor, signal),
     itemKey: (e: AlertEventOut) => e.id,
   });
@@ -220,7 +222,7 @@ function NoteForm({ alertId }: { alertId: string }) {
     onSuccess: () => {
       setValue('');
       toast.success('Note added.');
-      void client.invalidateQueries({ queryKey: ['alert', alertId, 'events'] });
+      void afterAlertTimelineChange(client, alertId);
     },
   });
   const submit = (e: FormEvent) => {
@@ -243,7 +245,7 @@ export function ResponseActions({ alertId }: { alertId: string }) {
   const api = useApi();
   const [open, setOpen] = useState<string | null>(null);
   const q = useQuery({
-    queryKey: ['actions', { alert_id: alertId }],
+    queryKey: qk.actions.list({ alert_id: alertId }),
     queryFn: ({ signal }) => endpoints.actions(api, { alert_id: alertId }, undefined, signal),
   });
   if (q.isPending) return <LoadingState label="Loading response actions" />;
@@ -287,7 +289,7 @@ export function ResponseActions({ alertId }: { alertId: string }) {
 function Tickets({ alertId }: { alertId: string }) {
   const api = useApi();
   const q = useQuery({
-    queryKey: ['tickets', 'alert', alertId],
+    queryKey: qk.tickets.forAlert(alertId),
     queryFn: ({ signal }) => endpoints.tickets(api, { alert_id: alertId }, signal),
   });
   if (q.isPending) return <LoadingState label="Loading tickets" />;
@@ -379,7 +381,7 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
   const [confirm, setConfirm] = useState(false);
   const [nis2, setNis2] = useState(false);
   const q = useQuery({
-    queryKey: ['alert', alertId],
+    queryKey: qk.alert.detail(alertId),
     queryFn: ({ signal }) => endpoints.alert(api, alertId as string, signal),
     enabled: Boolean(alertId),
   });
@@ -388,8 +390,7 @@ export function AlertDrawer({ alertId, onClose }: { alertId: string | null; onCl
     onSuccess: () => {
       setConfirm(false);
       toast.success('Alert queued for reprocessing.');
-      void client.invalidateQueries({ queryKey: ['alert', alertId] });
-      void client.invalidateQueries({ queryKey: ['alerts'] });
+      void afterAlertChange(client, alertId);
     },
     onError: (err) => {
       setConfirm(false);

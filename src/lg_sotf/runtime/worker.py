@@ -241,9 +241,8 @@ class Worker:
         finally:
             self._running = False
             await self._drain()
-            flusher.cancel()
-            liveness.cancel()
-            await asyncio.gather(flusher, liveness, return_exceptions=True)
+            # Re-cancelled until done: a cancel can be swallowed inside a Redis command (cancel_and_wait).
+            await cancel_and_wait([flusher, liveness])
             # Scheduled resume retries: their entries stay pending and are recovered like any other.
             await cancel_and_wait(list(self._retries))
             await self.flush_usage()

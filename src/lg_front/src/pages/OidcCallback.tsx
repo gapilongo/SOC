@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useAuthStore } from '../auth/AuthContext';
+import { forgetCachedData } from '../auth/cacheBinding';
 import { completeLogin } from '../auth/oidc';
 import { ErrorMessage, LoadingState } from '../components/ui';
 import { getConfig } from '../config';
@@ -38,7 +39,7 @@ export default function OidcCallbackPage() {
     redeem(store, url).then(
       (returnTo) => {
         // Nothing cached for a previous session may render for this one.
-        queryClient.clear();
+        forgetCachedData(queryClient, true);
         navigate(returnTo, { replace: true });
       },
       (err: unknown) => {
