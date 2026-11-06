@@ -189,3 +189,59 @@ async def test_user_mfa_reset_entry(api: ApiHarness) -> None:
     }
     assert await _only(api, "auth.mfa_reset") == ("user", str(user.id), "user", str(admin.id), details)
 
+
+# ---------------------------------------------------------------------------- platform
+
+
+async def test_tenant_suspension_entries(api: ApiHarness) -> None:
+    operator = await api.user(TENANT_A, "admin", platform_admin=True)
+    response = await api.client.patch(
+        f"{API}/platform/tenants/{TENANT_B}", json={"status": "suspended", "name": "B2"}, headers=api.auth(operator)
+    )
+    assert response.status_code == 200, response.text
+    [entry] = (await api.repos.audit.list(TENANT_B, action="tenant.suspended")).items
+    changes = entry.details["changes"]
+    assert set(changes) == {"name", "status"} and changes["status"] == {"from": "active", "to": "suspended"}
+    assert changes["name"]["to"] == "B2"
+    details = {"home_tenant_id": TENANT_A, "changes": changes}
+    assert await _only(api, "tenant.suspended", TENANT_B) == ("tenant", TENANT_B, "user", str(operator.id), details)
+    home = ("tenant", TENANT_B, "user", str(operator.id), {**details, "tenant_action": "tenant.suspended"})
+    assert await _only(api, "platform.tenant_updated") == home
+
+
+async def test_tenant_reactivation_and_quota_entries(api: ApiHarness) -> None:
+    operator = await api.user(TENANT_A, "admin", platform_admin=True)
+    path = f"{API}/platform/tenants/{TENANT_B}"
+    await api.repos.tenants.set_status(TENANT_B, "suspended")
+    reactivated = await api.client.patch(path, json={"status": "active"}, headers=api.auth(operator))
+    assert reactivated.status_code == 200, reactivated.text
+    changes: Dict[str, Any] = {"status": {"from": "suspended", "to": "active"}}
+    details = {"home_tenant_id": TENANT_A, "changes": changes, "sla_deadlines_reset": 0}
+    assert await _only(api, "tenant.reactivated", TENANT_B) == ("tenant", TENANT_B, "user", str(operator.id), details)
+    quotas = await api.client.patch(path, json={"quotas": {"max_users": 7}}, headers=api.auth(operator))
+    assert quotas.status_code == 200, quotas.text
+    changes = {"max_users": {"from": None, "to": 7}}
+    details = {"home_tenant_id": TENANT_A, "changes": changes}
+    assert await _only(api, "tenant.updated", TENANT_B) == ("tenant", TENANT_B, "user", str(operator.id), details)
+    home = (await api.repos.audit.list(TENANT_A, action="platform.tenant_updated")).items
+    assert sorted(e.details["tenant_action"] for e in home) == ["tenant.reactivated", "tenant.updated"]
+
+
+async def test_platform_reads_are_audited_in_the_home_tenant(api: ApiHarness) -> None:
+    operator = await api.user(TENANT_A, "admin", platform_admin=True)
+    headers = api.auth(operator)
+    assert (await api.client.get(f"{API}/platform/tenants", headers=headers)).status_code == 200
+    escalations = await api.client.get(f"{API}/platform/escalations", params={"tenant_id": TENANT_B}, headers=headers)
+    assert escalations.status_code == 200, escalations.text
+    usage = await api.client.get(f"{API}/platform/usage", params={"month": "2026-01"}, headers=headers)
+    assert usage.status_code == 200, usage.text
+    actor = ("user", str(operator.id))
+    listed = await _only(api, "platform.tenants_listed")
+    assert listed[:4] == ("tenant", None, *actor)
+    assert {k: v for k, v in listed[4].items() if k != "count"} == {"home_tenant_id": TENANT_A, "status": None}
+    details = {"home_tenant_id": TENANT_A, "count": 0}
+    assert await _only(api, "platform.escalations_listed") == ("tenant", TENANT_B, *actor, details)
+    exported = await _only(api, "platform.usage_exported")
+    assert exported[:4] == ("tenant", None, *actor)
+    expected = {"home_tenant_id": TENANT_A, "month": "2026-01", "format": "json"}
+    assert {k: v for k, v in exported[4].items() if k != "tenants"} == expected

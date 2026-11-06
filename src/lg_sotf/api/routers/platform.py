@@ -51,15 +51,13 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.routers.identity import check_password
 from lg_sotf.api.schemas import In, Out, PageOut, UserOut
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import Tenant, TenantStats
-from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.repos.users import normalize_email
-from lg_sotf.db.tenancy import TENANT_ID_PATTERN, switch_tenant
+from lg_sotf.db.tenancy import TENANT_ID_PATTERN
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.hashing import ahash_password
-from lg_sotf.services.escalation import resolve_review_policy
+from lg_sotf.services import tenancy
 from lg_sotf.services.tenancy import (
     Profile,
     TenantRequest,
@@ -67,6 +65,7 @@ from lg_sotf.services.tenancy import (
     profile_settings,
     provision_tenant,
     quotas_of,
+    record_platform_access,
 )
 
 log = get_logger(__name__)
@@ -210,18 +209,6 @@ USAGE_CSV_COLUMNS = (
 )
 
 
-async def _audit_home(ctx: ApiContext, principal: Principal, action: str, resource_id: Optional[str], **details: Any) -> None:
-    await AuditLogger(ctx.repos).record_event(
-        principal.home_tenant_id,
-        action,
-        "tenant",
-        resource_id,
-        actor_type=principal.actor_type,
-        actor_id=principal.actor_id,
-        details={"home_tenant_id": principal.home_tenant_id, **details},
-    )
-
-
 # ------------------------------------------------------------------ tenants
 
 
@@ -330,7 +317,10 @@ async def list_tenants(
     ctx = get_ctx(request)
     tenants = await ctx.repos.tenants.list_all_tenants(status=status)
     stats = {s.tenant_id: s for s in await ctx.repos.platform.tenant_stats()}
-    await _audit_home(ctx, principal, "platform.tenants_listed", None, count=len(tenants), status=status)
+    await record_platform_access(
+        AuditLogger(ctx.repos), principal.actor, principal.home_tenant_id, "platform.tenants_listed",
+        None, count=len(tenants), status=status,
+    )
     return [_summary(t, stats.get(t.id)) for t in tenants]
 
 
@@ -340,21 +330,6 @@ async def _requeue_queued_runs(ctx: ApiContext, tenant_id: str) -> int:
     for start in range(0, len(queued), REQUEUE_CHUNK):
         await ctx.queue.enqueue_process_many(tenant_id, queued[start : start + REQUEUE_CHUNK])
     return len(queued)
-
-
-async def _reset_sla_deadlines(ctx: ApiContext, tenant: Tenant, conn: Connection) -> int:
-    """Restart the SLA clock of a reactivated tenant's open escalations (now + the level's SLA).
-
-    The sweep skips suspended tenants, so without this every escalation whose
-    deadline passed during the suspension would jump a level on the next
-    sweep. Deadlines are only ever pushed out, never shortened.
-    """
-    policy = resolve_review_policy(tenant.settings, ctx.settings)
-    now = datetime.now(UTC)
-    deadlines: Dict[str, datetime] = {
-        level: now + timedelta(minutes=policy.sla_minutes[level]) for level in ESCALATION_LEVELS
-    }
-    return await ctx.repos.escalations.extend_sla_deadlines(tenant.id, deadlines, conn=conn)
 
 
 @router.patch("/tenants/{tenant_id}", response_model=TenantSummaryOut, summary="Rename, suspend/reactivate or set quotas")
@@ -381,33 +356,16 @@ async def update_tenant(
     if body.quotas is not None:
         for quota in body.quotas.model_fields_set:
             changes[quota] = getattr(body.quotas, quota)
-    async with ctx.db.tenant_tx(tenant_id) as conn:
-        before = await ctx.repos.tenants.get(tenant_id, for_update=True, conn=conn)
-        updated = await ctx.repos.tenants.update_admin(tenant_id, **changes, conn=conn)
-        diff = {k: {"from": getattr(before, k), "to": v} for k, v in changes.items() if getattr(before, k) != v}
-        status_changed = before.status != updated.status
-        action = (
-            ("tenant.suspended" if updated.status == "suspended" else "tenant.reactivated")
-            if status_changed
-            else "tenant.updated"
-        )
-        extra: Dict[str, Any] = {}
-        if status_changed and updated.is_active:
-            extra["sla_deadlines_reset"] = await _reset_sla_deadlines(ctx, updated, conn)
-        audit = AuditLogger(ctx.repos)
-        actor = {"actor_type": principal.actor_type, "actor_id": principal.actor_id}
-        details = {"home_tenant_id": principal.home_tenant_id, "changes": diff}
-        await audit.record(tenant_id, action, "tenant", tenant_id, **actor, details={**details, **extra}, conn=conn)
-        await switch_tenant(conn, principal.home_tenant_id)
-        await audit.record(
-            principal.home_tenant_id,
-            "platform.tenant_updated",
-            "tenant",
-            tenant_id,
-            **actor,
-            details={**details, "tenant_action": action},
-            conn=conn,
-        )
+    change = await tenancy.update_tenant(
+        ctx.repos,
+        AuditLogger(ctx.repos),
+        ctx.settings,
+        tenant_id,
+        principal.actor,
+        home_tenant_id=principal.home_tenant_id,
+        changes=changes,
+    )
+    updated, status_changed = change.tenant, change.status_changed
     ctx.tenants.invalidate(tenant_id)
     if status_changed and updated.is_active:
         requeued = await _requeue_queued_runs(ctx, tenant_id)
@@ -436,7 +394,10 @@ async def list_escalations(
     ctx = get_ctx(request)
     page = await ctx.repos.platform.open_escalations(limit=limit, cursor=cursor, tenant_id=tenant_id)
     now = datetime.now(UTC)
-    await _audit_home(ctx, principal, "platform.escalations_listed", tenant_id, count=len(page.items))
+    await record_platform_access(
+        AuditLogger(ctx.repos), principal.actor, principal.home_tenant_id, "platform.escalations_listed",
+        tenant_id, count=len(page.items),
+    )
     return PageOut[PlatformEscalationOut](
         items=[
             PlatformEscalationOut.model_validate(
@@ -497,7 +458,10 @@ async def usage_report(
     month = month or now.strftime("%Y-%m")
     start, end = month_bounds(month)
     rows = [TenantUsageOut.model_validate(r) for r in await ctx.repos.platform.usage(start, end)]
-    await _audit_home(ctx, principal, "platform.usage_exported", None, month=month, format=format, tenants=len(rows))
+    await record_platform_access(
+        AuditLogger(ctx.repos), principal.actor, principal.home_tenant_id, "platform.usage_exported",
+        None, month=month, format=format, tenants=len(rows),
+    )
     if format == "csv":
         return Response(
             content=usage_csv(rows),
