@@ -3188,7 +3188,7 @@ export interface components {
             /** Alert Id */
             alert_id: string;
             /** Alert Severity */
-            alert_severity?: string | null;
+            alert_severity?: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Alert Title */
             alert_title?: string | null;
             /** Assigned To */
@@ -3200,8 +3200,11 @@ export interface components {
             created_at: string;
             /** Id */
             id: string;
-            /** Level */
-            level: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "L1" | "L2" | "L3";
             /**
              * Overdue
              * @default false
@@ -3213,14 +3216,20 @@ export interface components {
             reason: string;
             /** Sla Deadline */
             sla_deadline?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "claimed" | "decided" | "expired" | "cancelled";
             /** Tenant Id */
             tenant_id: string;
             /** Tenant Name */
             tenant_name: string;
-            /** Tenant Status */
-            tenant_status: string;
+            /**
+             * Tenant Status
+             * @enum {string}
+             */
+            tenant_status: "active" | "suspended";
         };
         /** PreviewActionOut */
         PreviewActionOut: {
@@ -3726,8 +3735,11 @@ export interface components {
             name: string;
             /** Settings Keys */
             settings_keys?: string[];
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
         };
         /** TenantEraseIn */
         TenantEraseIn: {
@@ -3849,8 +3861,11 @@ export interface components {
                 [key: string]: number | null;
             };
             stats: components["schemas"]["TenantStatsOut"];
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /**
              * Updated At
              * Format: date-time
@@ -3890,8 +3905,11 @@ export interface components {
             tenant_id: string;
             /** Tenant Name */
             tenant_name: string;
-            /** Tenant Status */
-            tenant_status: string;
+            /**
+             * Tenant Status
+             * @enum {string}
+             */
+            tenant_status: "active" | "suspended";
             /** Users */
             users: number;
         };

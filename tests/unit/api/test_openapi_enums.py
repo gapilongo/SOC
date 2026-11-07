@@ -73,6 +73,14 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("TicketOut", "system", TICKETING_KINDS),
     # tenant settings
     ("TenantSettingsOut", "status", TENANT_STATUSES),
+    # platform administration
+    ("TenantCreatedOut", "status", TENANT_STATUSES),
+    ("TenantSummaryOut", "status", TENANT_STATUSES),
+    ("TenantUsageOut", "tenant_status", TENANT_STATUSES),
+    ("PlatformEscalationOut", "tenant_status", TENANT_STATUSES),
+    ("PlatformEscalationOut", "alert_severity", v.SEVERITIES),
+    ("PlatformEscalationOut", "level", v.ESCALATION_LEVELS),
+    ("PlatformEscalationOut", "status", v.ESCALATION_STATUSES),
 ]
 
 

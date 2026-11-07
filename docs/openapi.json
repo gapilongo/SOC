@@ -4844,6 +4844,13 @@
           "alert_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -4885,6 +4892,11 @@
             "type": "string"
           },
           "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "L3"
+            ],
             "title": "Level",
             "type": "string"
           },
@@ -4914,6 +4926,13 @@
             "title": "Sla Deadline"
           },
           "status": {
+            "enum": [
+              "open",
+              "claimed",
+              "decided",
+              "expired",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -4926,6 +4945,10 @@
             "type": "string"
           },
           "tenant_status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Tenant Status",
             "type": "string"
           }
@@ -6289,6 +6312,10 @@
             "type": "array"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -6512,6 +6539,10 @@
             "$ref": "#/components/schemas/TenantStatsOut"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -6627,6 +6658,10 @@
             "type": "string"
           },
           "tenant_status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Tenant Status",
             "type": "string"
           },
