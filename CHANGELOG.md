@@ -18,7 +18,10 @@ published scorecard, and every reported rate now carries its sample size
 and a 95% interval. Each investigation step is traced into the evidence
 pack. Runs waiting for a human survive upgrades, and CI rehearses the
 upgrade from the previous release on every change. The API is split into
-stability tiers with a breaking-change gate. Also: threat model v2, a
+stability tiers with a breaking-change gate. Releases now ship on trains:
+a weekly signed partner candidate, promoted to stable and LTS, with
+published support windows and a dependency policy with patch SLAs
+(docs/releases.md, docs/dependency-policy.md). Also: threat model v2, a
 hardening guide, the evidence-fact schema v1, richer escalation and
 approval queues in the API, and web UI fixes.
 
@@ -216,6 +219,18 @@ approval queues in the API, and web UI fixes.
   refuses a change that is not matched by the right version bump. See
   docs/evidence-facts.md.
 
+- Release trains. Every Thursday, the head of `main` becomes a partner
+  release candidate `vX.Y.Z-rc.N`, and the `:partner` image tags move to it.
+  From Actions > *Release train*, a candidate is promoted to the stable
+  `vX.Y.Z` and, if chosen, to the LTS channel (git tag `lts-X.Y`, image tags
+  `:lts` and `:lts-X.Y`). A commit is tagged only when its CI passed,
+  including the N-1 upgrade rehearsal and the install rehearsal, and when
+  its images pass the same signature and provenance checks as a deploy.
+  Channel tags only ever move to verified digests. Releases with a Security
+  changelog entry say so in their GitHub release title. See
+  docs/releases.md for the channels, cadence, support windows and backports,
+  and for how to pin and verify a release.
+
 ### Changed
 
 - Building the web app from source (`src/lg_front`) now needs Node.js
@@ -268,6 +283,13 @@ approval queues in the API, and web UI fixes.
   editing `CHANGELOG.md`, so parallel pull requests no longer conflict.
   `python scripts/changelog.py fold` moves the fragments into the changelog at
   release time; `check` validates them.
+
+- CI now also rehearses the upgrade from the latest LTS release, when that
+  is not the previous release: `scripts/ci/upgrade_rehearsal.sh --from lts`.
+  The upgrade rehearsal's previous release is the latest `v*` tag, which can
+  now be a release candidate.
+- *Release images* and *Deploy* accept release-candidate tags
+  (`vX.Y.Z-rc.N`). Their GitHub releases are created as pre-releases.
 
 ### Deprecated
 
@@ -459,6 +481,19 @@ approval queues in the API, and web UI fixes.
   download and verify them and how to use the VEX document with Grype or
   Trivy. If the GitHub release does not exist when the tag is pushed, it is
   created with generated notes.
+
+- A dependency policy, `docs/dependency-policy.md`. A new Python, npm,
+  image or action dependency must pass an admission checklist: need,
+  licence allowlist, maintenance, size and transitive dependencies,
+  security history, and hash-locking with `make lock`. The pull request
+  template now has a "New dependency" checkbox for it. Vulnerable
+  dependencies are patched within these times: critical 7 days, high 14,
+  medium 30, low the next minor release. Advisories are triaged within 2
+  business days. Dependabot now runs every Monday for every ecosystem, so
+  merged updates ship on Thursday's partner train. It labels its pull
+  requests and groups minor and patch updates of Python and production npm
+  packages. The dependency files and the Dependabot configuration need the
+  code owner's review.
 
 ### Upgrade notes for 1.3
 
