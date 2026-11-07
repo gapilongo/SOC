@@ -95,7 +95,7 @@ export function RecentlyExecuted({
                           onClick={() => onOpenAlert(a.alert_id)}
                           aria-label={`Open alert ${a.alert_id}`}
                         >
-                          {shortId(a.alert_id)}
+                          <span className="inline-block max-w-[10ch] truncate align-bottom">{a.alert_id}</span>
                         </button>
                         {a.rollback_of && <> · rollback of {shortId(a.rollback_of)}</>}
                       </p>

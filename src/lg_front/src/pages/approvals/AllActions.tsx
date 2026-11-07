@@ -234,7 +234,7 @@ export function AllActions({
                       </td>
                       <td className="px-3 py-2">
                         <Button size="sm" variant="quiet" onClick={() => onOpenAlert(a.alert_id)} aria-label={`Open alert ${a.alert_id}`} title={a.alert_id}>
-                          {shortId(a.alert_id, 6)}
+                          <span className="inline-block max-w-[8ch] truncate align-bottom">{a.alert_id}</span>
                         </Button>
                       </td>
                       <td className="px-3 py-2 text-right">
