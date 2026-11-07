@@ -13,7 +13,7 @@
 #      overlay: two database roles, environment=staging, the fake LLM allowed
 #      for the demo, a bootstrap admin from the env file;
 #   3. runs the Playwright suite in src/lg_front/e2e against the UI origin
-#      (http://localhost:$E2E_UI_PORT): sign-in, live dashboard, alert filters
+#      (http://localhost:$E2E_UI_PORT): sign-in, live Overview, alert filters
 #      and pagination, timeline, escalation claim and decision, approval,
 #      role gating for an analyst and a viewer, sign-out, token storage, the
 #      Content-Security-Policy and screenshots of each main page.

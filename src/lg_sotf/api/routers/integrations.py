@@ -38,7 +38,16 @@ from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.payload_schemas import MicrosoftCatalogOut
 from lg_sotf.api.routers._slack import decide_from_slack, reply_text
+from lg_sotf.api.schemas import (
+    DeliveryOperationStr,
+    DeliveryStatusStr,
+    IntegrationEventStr,
+    IntegrationKindStr,
+    SeverityStr,
+    TicketingKindStr,
+)
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pagination import API_MAX_LIMIT
@@ -136,11 +145,11 @@ class IntegrationUpdateIn(_In):
 class IntegrationOut(BaseModel):
     id: UUID
     tenant_id: str
-    kind: str
+    kind: IntegrationKindStr
     name: str
     enabled: bool
-    events: List[str]
-    min_severity: str
+    events: List[IntegrationEventStr]
+    min_severity: SeverityStr
     config: Dict[str, Any]
     secrets: Dict[str, bool] = Field(description="Which credential fields are configured (values are never returned).")
     created_at: datetime
@@ -158,8 +167,8 @@ class DeliveryOut(BaseModel):
     id: UUID
     event_id: UUID
     event_type: str
-    operation: str
-    status: str
+    operation: DeliveryOperationStr
+    status: DeliveryStatusStr
     attempts: int
     next_attempt_at: datetime
     last_error: Optional[str] = None
@@ -176,7 +185,7 @@ class TicketOut(BaseModel):
 
     id: UUID
     integration_id: UUID
-    system: str
+    system: TicketingKindStr
     alert_id: str
     escalation_id: Optional[str] = None
     external_key: str
@@ -393,7 +402,12 @@ async def slack_interactions(
     return Response(status_code=200)
 
 
-@router.get("/microsoft/catalog", summary="Microsoft direct-response capabilities, clouds and Defender geos")
+@router.get(
+    "/microsoft/catalog",
+    summary="Microsoft direct-response capabilities, clouds and Defender geos",
+    response_model=None,
+    responses={200: {"model": MicrosoftCatalogOut}},
+)
 async def microsoft_catalog(principal: Principal = Depends(require(ADMIN))) -> Dict[str, Any]:
     """Every capability the Microsoft integration can enable: actions, permissions, options schema, clouds."""
     return catalog_out()

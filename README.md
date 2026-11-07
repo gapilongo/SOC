@@ -196,9 +196,11 @@ flowchart LR
 * Evaluation harness (`lg-sotf eval`) with a synthetic labelled dataset,
   adversarial prompt-injection cases, metrics and a CI regression gate.
 * Analyst web application (`src/lg_front`, React and TypeScript, a client
-  of the public API only): live dashboard, alert queue with filters and
-  timelines, escalation claim and decision, approvals, suppressions, and
-  tenant administration, served by a non-root nginx container under a
+  of the public API only): a live Overview that puts the analyst's own work
+  first, an alert queue with filters and a side panel per alert, an
+  escalation queue with a decision page per escalation, approvals,
+  suppressions, reports and tenant administration, in a dark (default),
+  light or system theme. Served by a non-root nginx container under a
   strict Content-Security-Policy. Access tokens are kept in memory only.
   Shipped in the compose stack (`PROFILES=frontend`) and the Helm chart
   (`frontend.enabled`).
@@ -214,14 +216,15 @@ accuracy report and `lg-sotf eval --from-history` measure it on yours.
 
 ## Product tour
 
-A 75-second walkthrough. Captions explain each step: sign-in, the live
-dashboard, sending sample alerts, an alert with its verdict and workflow
-timeline, escalations, response actions, integrations, tenant settings, the
-audit log and LLM usage.
+A 75-second walkthrough. Captions explain each step: sign-in, the Overview
+(your work first, then the window's figures), sending sample alerts, the
+Alerts queue and one alert in its side panel, the Escalations queue and a
+decision page, Approvals, integrations, tenant settings and the audit log. It
+ends on the Overview in the light theme.
 
-![Product tour: LG-SOTF from sign-in to audit log](docs/media/tour.gif)
+![Product tour: LG-SOTF from sign-in to the light theme](docs/media/tour.gif)
 
-[Download the full-quality video (MP4, 1.9 MB)](docs/media/tour.mp4?raw=true). GitHub
+[Download the full-quality video (MP4, 1.6 MB)](docs/media/tour.mp4?raw=true). GitHub
 plays the GIF above inline but only offers the MP4 as a download. The tour runs against the
 same demo stack as the screenshots below: synthetic alerts and the offline
 stand-in model. To record it again after a UI change, run
@@ -237,13 +240,16 @@ deterministic stand-in model, not from Claude.
 
 | | |
 |---|---|
-| ![Dashboard](docs/screenshots/02-dashboard.png) | ![Alert with its workflow timeline](docs/screenshots/04-alert-timeline.png) |
-| Dashboard, updated live over the WebSocket | An alert: verdict, entities and workflow timeline |
-| ![Escalation queue](docs/screenshots/05-escalations.png) | ![Actions awaiting approval](docs/screenshots/07-actions.png) |
-| Escalation queue, claimed by an analyst | Response actions awaiting approval |
+| ![Overview](docs/screenshots/02-overview.png) | ![Overview in the light theme](docs/screenshots/02-overview-light.png) |
+| Overview: what needs you now, then the last 24 hours; updated live over the WebSocket | The same page in the light theme (dark, light or system, switched in the header) |
+| ![Alert in the side panel](docs/screenshots/04-alert-timeline.png) | ![Escalation queue](docs/screenshots/05-escalations.png) |
+| Alerts queue with one alert open in the side panel: entities and workflow timeline | Escalation queue in SLA order, to claim one by one or in bulk |
+| ![Escalation decision page](docs/screenshots/06-decision.png) | ![Approvals](docs/screenshots/07-approvals.png) |
+| Decision page: the investigation next to the analyst's decision form | Approvals: response actions waiting for a human, with guardrails and blast radius |
 
-More pages (alerts, decision page, users, settings, usage, audit log) are
-in [docs/screenshots](docs/screenshots).
+More pages (sign-in, the alert queue, decided escalations, the actions
+ledger, suppressions, sources, users and API keys, tenant settings, LLM usage
+and the audit log) are in [docs/screenshots](docs/screenshots).
 
 ## Quickstart (Docker Compose)
 
@@ -311,10 +317,13 @@ make up PROFILES=frontend    # also builds and starts the web UI
 
 Open **http://localhost:3000** (use `localhost`, not `127.0.0.1`: live
 updates are accepted only from origins listed in `api.cors_origins`, and the
-development configuration lists `http://localhost:3000`). The UI shows the
-dashboard, the alert queue with filters and timelines, escalations to claim
-and decide, and the actions awaiting approval; admins also get users and API
-keys, sources, tenant settings, LLM usage and the audit log.
+development configuration lists `http://localhost:3000`). The UI opens on
+the Overview (your unassigned and overdue escalations, what you hold, the
+approvals you can act on, then the window's figures); the sidebar leads to
+the alert queue, escalations to claim and decide, approvals, suppressions
+and reports. Admins also see Getting started, Sources, Integrations, Users
+and API keys, Tenant settings, LLM usage and the Audit log. The header's
+theme switch picks dark, light or the system setting.
 
 Stop with `make down` (keeps data) or `make clean-volumes` (deletes it).
 If you started the UI, pass the profile again (`make down PROFILES=frontend`):
@@ -447,7 +456,7 @@ scripts/e2e_ui_stack.sh      # --no-build to reuse images, --keep to leave the s
 ```
 
 It signs in, provisions an analyst, a viewer and an ingest API key through
-the UI, checks that the dashboard updates live when alerts arrive, filters
+the UI, checks that the Overview updates live when alerts arrive, filters
 and pages the alert list, opens a timeline, claims and decides an escalation,
 approves a response until the alert closes, checks role gating, signs out,
 and asserts that no token is kept in browser storage or written to the

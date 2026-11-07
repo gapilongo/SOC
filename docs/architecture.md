@@ -373,6 +373,31 @@ everywhere. Every transition is written to `audit_log`.
   with overlap window), reuses one HTTP client per source, verifies TLS by
   default, refreshes OAuth tokens, backs off on errors, never drops a page.
 
+### Outbound HTTP (all stacks)
+
+Pull sources are one of seven outbound HTTP stacks. They share two pieces
+from `lg_sotf.net.http`: `read_capped` (every body is read up to a byte cap,
+`ResponseTooLarge` past it, a non-encoded `Content-Length` over the cap
+refused before any byte is read) and `guarded_client` (the client of the
+tenant-controlled stacks: `GuardedTransport` checks and pins every request to
+an address the egress policy allows, redirects are never followed, timeout
+and `User-Agent` always set). TLS contexts come from `lg_sotf.net.tls`
+(`PROCESS_TLS`: one default, one per distinct CA). `Retry-After` is read with
+`lg_sotf.net.retry.parse_retry_after` (seconds or HTTP date). Ruff (`TID251`)
+refuses `httpx.AsyncHTTPTransport` outside `lg_sotf/net/`.
+
+Everything else is per stack, on purpose:
+
+| Stack | Destination check | Retries | Idempotency | `Retry-After` | Connection lifetime | Body cap |
+|---|---|---|---|---|---|---|
+| Pull sources (`ingestion/sources/http.py`) | `guarded_client`, policy from `IngestionOptions` | `ingestion.http_max_retries` (4): network errors, 429, 5xx; backoff 0.5-30 s with jitter | no distinction: every request (queries, searches sent as POST, the OAuth token request, the M365 message move) is retried alike; a 401 refreshes the token once | waited up to `ingestion.http_max_retry_after_s` (120 s); longer ends the poll with `SourceRateLimited` | one pooled client per source instance | 64 MiB |
+| Integrations (`integrations/http.py`: Slack, Teams, email webhooks, Jira, ServiceNow) | `guarded_client`, `egress_policy` | per call (`retries`, default 0; the outbox schedules later attempts): network errors, 408, 425, 429, 500, 502, 503, 504; backoff 0.5-8 s | `idempotent=False` (ticket create, comment) retries only when the request never reached the server (connect or pool errors) or on 429 | waited when at most 15 s; longer is raised on `DeliveryError.retry_after` (capped at 3600 s) for the outbox | one client per `request()` call | 256 KiB |
+| Response webhooks (`services/connectors/webhook.py`) | `guarded_client`, `egress_policy` | 3: network errors, 429, 5xx; backoff 0.5-10 s; all within a deadline of a third of `worker.node_timeout_s` (at most 60 s) | every attempt carries the same `Idempotency-Key` (the action id); the receiver deduplicates | waited up to 15 s; longer fails the action | one client per `execute()` (all its attempts) | 64 KiB |
+| Microsoft Graph and Defender (`integrations/microsoft/http.py`) | `guarded_client`, `egress_policy(require_https=True)`, fixed cloud hosts | `response.microsoft_retries` (3); backoff 0.5-8 s | 429 and 503 always; network errors, 500, 502, 504 and Graph `Directory_ConcurrencyViolation` only when idempotent (GET, DELETE); otherwise `ambiguous=True` for the handler to reconcile | waited unless longer than the time left, then `throttled` with `retry_after_s` | one client per attempt (a fresh connection after a 503) | 1 MiB (4 MiB per page, 64 KiB for tokens) |
+| Enrichment providers (`tools/enrichment/http.py`) | none: fixed vendor base URLs, `https` in staging and production | none in the request | GET only | read on 429 and 503 and returned; the enrichment service backs off per tenant and provider (60 s when absent) | one pooled client per provider instance | 2 MiB |
+| MCP API client (`mcp/client.py`) | URL shape only: the operator's own API, `http` for loopback only; `trust_env=False` | `mcp.max_retries` (2) for GET: transport errors, 429, 502, 503, 504; backoff 0.5 s doubling | writes are never retried | waited, capped at 10 s | one pooled client per MCP server | `mcp.max_response_bytes` (4 MiB) |
+| OIDC discovery and JWKS (`api/auth/oidc.py`) | none: the configured issuer | none; an unknown `kid` refetches at most every 30 s | GET only | not read | one pooled client per verifier | 256 KiB |
+
 ## 13. Observability
 
 * Logs: JSON (structlog) with `request_id`, `tenant_id`, `alert_id`,

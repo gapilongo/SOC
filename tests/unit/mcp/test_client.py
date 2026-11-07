@@ -183,3 +183,78 @@ async def test_paths_must_be_api_paths() -> None:
     client = make_client(StubApi())
     with pytest.raises(ValueError):
         await client.get("https://evil.example.net/api/v1/alerts")
+
+
+# -- gap tests before the shared capped reader (roadmap X2.1) -----------------------------------------------------
+
+
+class _Sleeps:
+    def __init__(self) -> None:
+        self.calls: List[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+
+
+@pytest.mark.parametrize(("header", "slept"), [("3", 3.0), ("10", 10.0), ("60", 10.0)])
+async def test_an_integer_retry_after_is_honoured_up_to_10s(header: str, slept: float) -> None:
+    stub = StubApi()
+    answers = [httpx.Response(429, headers={"Retry-After": header}), httpx.Response(200, json={})]
+    stub.routes["GET /api/v1/alerts"] = lambda _r: answers.pop(0)
+    sleeps = _Sleeps()
+    client = LgSotfApiClient("https://soc.example.com", fake_key(), transport=stub.transport(), sleep=sleeps)
+    assert await client.get("/api/v1/alerts") == {}
+    assert sleeps.calls == [slept]
+
+
+async def test_without_retry_after_reads_back_off_exponentially() -> None:
+    stub = StubApi()
+    stub.routes["GET /api/v1/alerts"] = lambda _r: httpx.Response(503)
+    sleeps = _Sleeps()
+    client = LgSotfApiClient(
+        "https://soc.example.com", fake_key(), transport=stub.transport(), sleep=sleeps, max_retries=3
+    )
+    with pytest.raises(ApiCallError):
+        await client.get("/api/v1/alerts")
+    assert sleeps.calls == [0.5, 1.0, 2.0]
+
+
+async def test_a_declared_oversized_body_is_refused_before_it_is_read() -> None:
+    stub = StubApi()
+    stub.routes["GET /api/v1/alerts"] = lambda _r: httpx.Response(
+        200, headers={"Content-Length": "5000"}, stream=httpx.ByteStream(b"{}")
+    )
+    with pytest.raises(ApiCallError) as info:
+        await make_client(stub, max_response_bytes=1_024).get("/api/v1/alerts")
+    assert str(info.value) == "the API response is larger than the 1024-byte limit"
+
+
+async def test_a_body_at_the_cap_is_accepted() -> None:
+    body = b'{"x":"' + b"a" * 1_016 + b'"}'
+    stub = StubApi()
+    stub.routes["GET /api/v1/alerts"] = lambda _r: httpx.Response(200, content=body)
+    assert len(body) == 1_024
+    assert await make_client(stub, max_response_bytes=1_024).get("/api/v1/alerts") == {"x": "a" * 1_016}
+
+
+async def test_an_oversized_error_body_is_refused_too() -> None:
+    stub = StubApi()
+    stub.routes["GET /api/v1/alerts"] = lambda _r: httpx.Response(400, content=b"e" * 2_000)
+    with pytest.raises(ApiCallError) as info:
+        await make_client(stub, max_response_bytes=1_024).get("/api/v1/alerts")
+    assert info.value.status is None and "limit" in str(info.value)
+
+
+async def test_transport_errors_on_a_write_are_not_retried() -> None:
+    calls: List[httpx.Request] = []
+
+    def fail(request: httpx.Request) -> httpx.Response:
+        calls.append(request)
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = LgSotfApiClient(
+        "https://soc.example.com", fake_key(), transport=httpx.MockTransport(fail), max_retries=3, sleep=_no_sleep
+    )
+    with pytest.raises(ApiCallError) as info:
+        await client.post("/api/v1/alerts/a/notes", {"text": "n"})
+    assert len(calls) == 1 and "ReadTimeout" in str(info.value)

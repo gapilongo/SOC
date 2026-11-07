@@ -165,6 +165,7 @@ ignore = ["E501", "UP006", "UP007", "UP035", "UP045", "S101"]
 "os.environ".msg = "read configuration through lg_sotf.settings"
 "os.getenv".msg = "read configuration through lg_sotf.settings"
 "os.putenv".msg = "read configuration through lg_sotf.settings"
+"httpx.AsyncHTTPTransport".msg = "build outbound clients with lg_sotf.net.http.guarded_client (ADR-0007)"
 
 # Ratchet: today's offenders carry a per-function noqa (RUF100 fails a stale one); the target is 15.
 [tool.ruff.lint.mccabe]

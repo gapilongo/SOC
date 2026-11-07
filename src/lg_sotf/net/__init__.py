@@ -1,4 +1,4 @@
-"""Network kernel: SSRF egress policy, TLS verification and Retry-After parsing.
+"""Network kernel: SSRF egress policy, TLS verification, Retry-After parsing, the guarded client and capped read.
 
 Every outbound HTTP stack (pull connectors, integrations, webhooks, Microsoft
 Graph, enrichment, the LLM endpoint check and the MCP client) uses these.

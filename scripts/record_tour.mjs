@@ -5,10 +5,16 @@
 //   TOUR_ENV_FILE=<stack.env printed above> node scripts/record_tour.mjs [out-dir]
 //   scripts/make_tour_media.sh <out-dir>            # webm -> docs/media/tour.mp4 + tour.gif
 //
+// `scripts/e2e_ui_stack.sh --keep` works too and leaves the suite's synthetic
+// alerts in place, so the queues and the Overview have more to show.
+//
 // The tour signs in as the stack's bootstrap admin, sends the onboarding sample
-// alerts, and walks the main pages. A caption bar explains each step. All data is
-// synthetic, and the verdict texts come from the deterministic stand-in model, not
-// from a real LLM. The admin password is read from the env file and never printed.
+// alerts, and walks the main pages: the Overview, the Alerts queue and its side
+// panel, the Escalations queue and a decision page, Approvals, Integrations,
+// Tenant settings and the Audit log, and ends on the Overview in the light theme.
+// A caption bar explains each step. All data is synthetic, and the verdict texts
+// come from the deterministic stand-in model, not from a real LLM. The admin
+// password is read from the env file and never printed.
 import { createRequire } from 'node:module';
 import { mkdirSync, readFileSync, readdirSync, renameSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -72,7 +78,11 @@ async function clearCaption(page) {
 }
 
 async function nav(page, name) {
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name, exact: true }).click();
+  // A link's name can go on with its count badge ("Approvals 5 waiting ...").
+  const label = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`);
+  // The previous step's caption would otherwise sit on top of the next page.
+  await clearCaption(page);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: label }).click();
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await pause(700);
 }
@@ -104,86 +114,101 @@ async function main() {
   await page.getByLabel('Email').fill(EMAIL);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await page.getByRole('heading', { name: 'Dashboard', level: 1 }).waitFor();
+  await page.getByRole('heading', { name: 'Overview', level: 1 }).waitFor();
+  await page.waitForLoadState('networkidle').catch(() => undefined);
 
-  await caption(page, 'Live dashboard',
-    'Alerts, open escalations, queue depth, time to acknowledge and resolve, and LLM cost. '
-    + 'It updates live over a WebSocket.', 4600);
+  await caption(page, 'Overview: your work first',
+    'Unassigned and overdue escalations, what you hold, approvals you can act on and the next SLA deadlines. '
+    + 'It updates live over a WebSocket.', 5400);
+  await step('overview figures', async () => {
+    await page.mouse.move(900, 450);
+    await page.mouse.wheel(0, 650);
+    await pause(400);
+    await caption(page, 'Figures for the chosen window',
+      'Alerts handled, time to acknowledge and resolve, status and severity breakdowns, and LLM cost. '
+      + 'Each figure says what it counts.', 4400);
+    await page.mouse.wheel(0, -2000);
+  });
 
   await step('send sample alerts', async () => {
     await nav(page, 'Getting started');
-    await caption(page, 'Getting started',
-      'A checklist for a new tenant: connect a source, send alerts, set the autonomy policy, add analysts.', 3800);
     const send = page.getByRole('button', { name: /^Send sample alerts/ }).first();
     await send.scrollIntoViewIfNeeded();
+    await caption(page, 'Getting started',
+      'A checklist for a new tenant: connect a source, send alerts, set the autonomy policy, add analysts.', 3400);
     await send.click();
     await caption(page, 'Sample alerts sent',
       'Each alert goes through the workflow: ingest, triage, correlation, analysis, then a decision '
-      + '(close, escalate to a human, or plan a response).', 5200);
+      + '(close, escalate to a person, or plan a response).', 4600);
   });
 
   await step('alerts', async () => {
     await nav(page, 'Alerts');
-    await pause(2500);
-    await page.reload();
-    await page.waitForLoadState('networkidle').catch(() => undefined);
     await caption(page, 'Alerts',
-      'Every ingested alert with its severity, status and verdict. Filter by severity, status or text.', 4200);
+      'The queue opens on what needs an analyst; other views, filter chips and search are one click away.', 4000);
     // Row 0 is the header row.
     await page.getByRole('grid', { name: 'Alerts' }).getByRole('row').nth(1).click();
-    await page.getByRole('dialog').first().waitFor();
-    await pause(900);
-    await caption(page, 'One alert, end to end',
-      'The verdict, the entities found (hosts, users, IPs) and the workflow timeline: '
-      + 'what each agent did and why.', 5600);
-    await page.keyboard.press('Escape');
+    await page.getByRole('complementary').first().waitFor();
+    await page.waitForLoadState('networkidle').catch(() => undefined);
     await pause(500);
+    await caption(page, 'One alert, in a side panel',
+      'The verdict, the entities found (hosts, users, IPs) and the workflow timeline: '
+      + 'what each agent did and why. The queue stays in view.', 5400);
+    await page.keyboard.press('Escape');
+    await pause(400);
   });
 
   await step('escalations', async () => {
     await nav(page, 'Escalations');
     await caption(page, 'Escalations',
-      'What the AI cannot close safely goes to a person. Analysts claim an escalation, '
-      + 'review the evidence and decide. Every decision is audited.', 5200);
+      'What the AI cannot close safely goes to a person, in SLA order. Analysts claim from the queue, '
+      + 'alone or in bulk.', 4400);
+    const queue = page.getByRole('region', { name: 'Escalation queue' });
+    await queue.getByRole('row').nth(1).getByRole('link').first().click();
+    await page.getByRole('tablist', { name: 'Investigation sections' }).waitFor();
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await caption(page, 'The decision page',
+      'Summary, evidence, entities, timeline and raw data on one page, next to the decision form: '
+      + 'verdict, notes and feedback on the automated triage. Every decision is audited.', 5200);
+    await page.getByRole('tab', { name: 'Timeline' }).click();
+    await pause(1800);
   });
 
-  await step('actions', async () => {
-    await nav(page, 'Actions and approvals');
-    await caption(page, 'Actions and approvals',
-      'Proposed responses (block an IP, disable a user, isolate a host) wait for approval '
-      + 'according to the tenant autonomy policy. Executed actions are verified and can be rolled back.', 5600);
+  await step('approvals', async () => {
+    await nav(page, 'Approvals');
+    await caption(page, 'Approvals',
+      'Proposed responses (block an IP, disable a user, isolate a host) wait here per the tenant autonomy policy. '
+      + 'Executed actions are verified and can be rolled back.', 5200);
   });
 
   await step('integrations', async () => {
     await nav(page, 'Integrations');
     await caption(page, 'Integrations',
       'Notifications (Slack, Teams, email, webhooks), ticketing, and direct response '
-      + 'through Microsoft Defender and Entra.', 4200);
+      + 'through Microsoft Defender and Entra.', 3800);
   });
 
   await step('settings', async () => {
     await nav(page, 'Tenant settings');
     await caption(page, 'Tenant settings',
       'Per-tenant routing thresholds, autonomy policy and the LLM provider, '
-      + 'including self-hosted models for data that must stay on premises.', 4600);
+      + 'including self-hosted models for data that must stay on premises.', 4200);
   });
 
   await step('audit', async () => {
     await nav(page, 'Audit log');
     await caption(page, 'Audit log',
-      'A hash-chained, per-tenant record of who did what. Each change commits together with its entry.', 4600);
+      'A hash-chained, per-tenant record of who did what. Each change commits together with its entry.', 4000);
   });
 
-  await step('usage', async () => {
-    await nav(page, 'LLM usage');
-    await caption(page, 'LLM usage',
-      'Tokens and cost per agent and model, so spend is visible per tenant.', 3800);
-  });
-
-  await step('back to dashboard', async () => {
-    await nav(page, 'Dashboard');
-    await caption(page, 'LG-SOTF',
-      'Multi-tenant, self-hostable, human in the loop. See the README to run it with Docker Compose.', 5200);
+  await step('back to the overview, light theme', async () => {
+    await nav(page, 'Overview');
+    await page.mouse.wheel(0, -2000);
+    await pause(800);
+    await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
+    await caption(page, 'Dark, light or system theme',
+      'Switch in the header. LG-SOTF is multi-tenant, self-hostable, with people deciding. '
+      + 'See the README to run it with Docker Compose.', 5200);
   });
   await clearCaption(page);
   await pause(600);
