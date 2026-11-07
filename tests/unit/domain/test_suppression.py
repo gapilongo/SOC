@@ -11,7 +11,6 @@ import pytest
 from lg_sotf.domain.suppression import (
     MAX_SUBJECT_CHARS,
     InvalidRule,
-    WorkBudget,
     alert_match_view,
     compile_pattern,
     evaluate_predicate,
@@ -21,6 +20,7 @@ from lg_sotf.domain.suppression import (
     validate_regex,
     validate_rule_match,
 )
+from lg_sotf.security.safe_regex import WorkBudget
 
 VIEW = alert_match_view(
     title="Known scanner sweep",
