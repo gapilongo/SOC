@@ -416,6 +416,37 @@ def eval_command(
     sys.exit(code)
 
 
+@cli.command("eval-scorecard")
+@click.argument("reports", nargs=-1, required=True, type=click.Path(exists=True, dir_okay=False))
+@click.option("--output", required=True, type=click.Path(dir_okay=False), help="Markdown scorecard to write.")
+@click.option("--json", "json_output", default=None, type=click.Path(dir_okay=False), help="Also write it as JSON.")
+@click.option("--title", default=None, help="Title (default: 'Scorecard v1: <fast model>').")
+@click.option("--prompt-version", default=None, help="Prompt version or hashes, when the reports do not record them.")
+@click.option("--note", "notes", multiple=True, help="An extra limitation to list (repeatable), e.g. the hardware.")
+@click.option("--internal", is_flag=True, help="Mark the scorecard internal only (automatic for DeepSeek models).")
+def eval_scorecard(
+    reports: List[str],
+    output: str,
+    json_output: Optional[str],
+    title: Optional[str],
+    prompt_version: Optional[str],
+    notes: List[str],
+    internal: bool,
+) -> None:
+    """Summarise `lg-sotf eval` JSON reports (one per dataset, same model) as a scorecard (docs/scorecards/)."""
+    from lg_sotf.eval.scorecard import ScorecardError, ScorecardOptions, write_scorecard
+
+    options = ScorecardOptions(title=title, prompt_version=prompt_version, notes=tuple(notes), internal=internal)
+    try:
+        card = write_scorecard(list(reports), output, options, json_output=json_output)
+    except (ScorecardError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    for dataset in card["datasets"]:
+        fnr = dataset["malicious_false_negative"]
+        click.echo(f"{dataset['dataset']['path']}: malicious false negatives {fnr['k']} of {fnr['n']}")
+    click.echo(f"scorecard: {output}" + (" (INTERNAL ONLY)" if card["internal_only"] else ""))
+
+
 @cli.command("tenant-export")
 @click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
 @click.option(

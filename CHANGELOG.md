@@ -17,6 +17,33 @@ All notable changes to this project are documented here. The format follows
   and deleted with its alert, and is part of the tenant data export. Database
   migration 0011 adds the `investigation_steps` table.
 
+- `lg-sotf eval-scorecard` turns the JSON reports of `lg-sotf eval` (one per
+  dataset, same model) into a one-page scorecard in Markdown and JSON: the
+  malicious false-negative rate first, with counts and a 95% Wilson interval,
+  then auto-close precision, escalation rate, per-class precision and recall,
+  cost and latency per item, the model and prompt version, and the
+  limitations. DeepSeek scorecards are marked internal only. The first
+  baseline, a local `qwen2.5:7b` on Ollama over the synthetic and phishing
+  sets, is in `docs/scorecards/`.
+- A first-run setup wizard for the install's admin (the platform admin
+  `lg-sotf migrate` creates). Until setup is done the Overview invites them to
+  it; five steps confirm the account, name the organisation and the first
+  tenant, pick a language-model profile (an EU-hosted Mistral profile is
+  preselected, local Ollama or your own model server are offered; the wizard
+  shows the settings that select it and tests the model configured now), send
+  the sample alerts and wait for the first verdict. Finishing lands on the
+  Overview with a link to start a proof of value (a placeholder page until the
+  proof-of-value run ships). The wizard never changes the running model,
+  which stays install configuration. API: `GET` and `PUT /onboarding/setup`,
+  `POST /onboarding/setup/complete`, audited as `onboarding.setup_saved` and
+  `onboarding.setup_completed`.
+- `GET /onboarding/status` now returns `first_verdict`: an alert, samples
+  included, is closed or waits for an analyst or an approval (the moment
+  `make quickstart` measures).
+- An install rehearsal test drives the setup from an empty database to the
+  first triaged alert and records the time against a 30-minute budget
+  (`tests/integration/e2e/test_first_run.py`; the browser twin is
+  `src/lg_front/e2e/wizard.spec.ts`).
 - Every model call now records which prompt version it sent. Each prompt has
   a name (such as `triage.assess`) and a short hash of its text and output
   schema, so a changed hash means the model was asked something different.
@@ -30,6 +57,13 @@ All notable changes to this project are documented here. The format follows
   decided on the graph it started on. A run on a graph version the worker
   does not have fails with `UnknownGraphVersion` and is retried, then
   dead-lettered; it is never run on a different graph.
+- Every change is now tested against a real upgrade before it merges. A CI
+  job (`scripts/ci/upgrade_rehearsal.sh`) runs the previous release on a
+  fresh database until some alerts wait for an analyst and one waits for an
+  approval, migrates the database with the new release as the schema owner,
+  and decides every waiting alert through the new release's API. The build
+  fails if any of those runs fails, is dead-lettered or stays open, or if the
+  upgrade changes the runtime database role's privileges.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
@@ -183,6 +217,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- On a phone, the language-model test results under Tenant settings scroll
+  sideways and can now be reached with the keyboard too.
 - Backtests (`lg-sotf eval --from-history`) start each replay from the same
   initial state as the workflow. A tenant `llm_daily_token_budget` stored as
   `true` or `false` is now ignored by the backtest too (the install default

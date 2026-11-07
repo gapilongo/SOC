@@ -35,7 +35,7 @@ import-lint`). What each package owns is in the
 
 | Layer (top to bottom) | Packages (`src/lg_sotf/`) | Owns |
 |---|---|---|
-| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, tenant-export, tenant-erase, evidence-verify, mcp, version |
+| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, mcp, version |
 | Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
 | Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
 | Workflow engine | `core` | graph, nodes, `WorkflowEngine`, retry policy |
@@ -456,6 +456,9 @@ every guardrail has a test.
   report; exit code 1 means a violation, 2 that the run could not start.
 * `environment=production` is refused; point the settings at a dedicated
   evaluation database. See `docs/evaluation.md`.
+* `lg-sotf eval-scorecard <report.json>... --output <md>` turns the reports
+  of one model configuration into a scorecard (`lg_sotf.eval.scorecard`,
+  pure file processing: no database or model). See `docs/scorecards/`.
 * Clarifications (behaviour since the eval review): by default each split
   runs in its own fresh tenant (`<base>-<n>-<split>`, `--isolate splits`;
   `--isolate none` keeps one tenant). Database reachability, the migrated

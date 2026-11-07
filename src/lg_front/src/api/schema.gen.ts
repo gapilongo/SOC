@@ -929,6 +929,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/onboarding/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** First-run setup state (platform admin) */
+        get: operations["get_setup_api_v1_onboarding_setup_get"];
+        /** Save the organisation, tenant name and model profile */
+        put: operations["put_setup_api_v1_onboarding_setup_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/setup/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark the first-run setup done */
+        post: operations["post_setup_complete_api_v1_onboarding_setup_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/onboarding/status": {
         parameters: {
             query?: never;
@@ -2398,6 +2433,28 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** ConfiguredModelOut */
+        ConfiguredModelOut: {
+            /** Deep Model */
+            deep_model: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Fast Model */
+            fast_model: string;
+            /**
+             * Profile
+             * @description The offered profile the configuration matches.
+             */
+            profile?: string | null;
+            /** Provider */
+            provider: string;
+            /**
+             * Residency
+             * @description Where the configured model runs; cn is flagged in the UI.
+             * @enum {string}
+             */
+            residency: "eu" | "local" | "us" | "cn" | "offline" | "unknown";
+        };
         /** DashboardOut */
         DashboardOut: {
             /** Acknowledged */
@@ -2703,6 +2760,13 @@ export interface components {
              * @enum {string}
              */
             kind: "user" | "host" | "ip" | "email" | "domain" | "url" | "process" | "hash";
+            /** Value */
+            value: string;
+        };
+        /** EnvVarOut */
+        EnvVarOut: {
+            /** Name */
+            name: string;
             /** Value */
             value: string;
         };
@@ -3290,6 +3354,28 @@ export interface components {
              */
             tier: "fast" | "deep";
         };
+        /** LlmProfileOut */
+        LlmProfileOut: {
+            /** Deep Model */
+            deep_model: string;
+            /** Description */
+            description: string;
+            /** Env */
+            env: components["schemas"]["EnvVarOut"][];
+            /** Fast Model */
+            fast_model: string;
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Residency
+             * @enum {string}
+             */
+            residency: "eu" | "local" | "us" | "cn" | "offline" | "unknown";
+        };
         /** LoginIn */
         LoginIn: {
             /** Email */
@@ -3610,6 +3696,12 @@ export interface components {
             dismissed: boolean;
             /** Dismissed At */
             dismissed_at?: string | null;
+            /**
+             * First Verdict
+             * @description An alert (samples included) is closed or waits for an analyst or an approval.
+             * @default false
+             */
+            first_verdict?: boolean;
             /** Samples Sent */
             samples_sent: boolean;
             /** Steps */
@@ -4075,6 +4167,46 @@ export interface components {
             received: number;
             /** Source Id */
             source_id: string;
+        };
+        /** SetupCompleteIn */
+        SetupCompleteIn: {
+            /**
+             * Skipped
+             * @default false
+             */
+            skipped?: boolean;
+        };
+        /** SetupIn */
+        SetupIn: {
+            /** Llm Profile */
+            llm_profile?: ("mistral_eu" | "ollama_local" | "self_hosted" | "anthropic") | null;
+            /** Organisation */
+            organisation: string;
+            /** Tenant Name */
+            tenant_name: string;
+        };
+        /** SetupOut */
+        SetupOut: {
+            /** Completed */
+            completed: boolean;
+            /** Completed At */
+            completed_at?: string | null;
+            configured_llm: components["schemas"]["ConfiguredModelOut"];
+            /** Default Llm Profile */
+            default_llm_profile: string;
+            /**
+             * Llm Profile
+             * @description The profile picked in the wizard.
+             */
+            llm_profile?: string | null;
+            /** Llm Profiles */
+            llm_profiles: components["schemas"]["LlmProfileOut"][];
+            /** Organisation */
+            organisation?: string | null;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Tenant Name */
+            tenant_name: string;
         };
         /** SourceCreateIn */
         SourceCreateIn: {
@@ -6599,6 +6731,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SampleAlertsOut"];
+                };
+            };
+        };
+    };
+    get_setup_api_v1_onboarding_setup_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOut"];
+                };
+            };
+        };
+    };
+    put_setup_api_v1_onboarding_setup_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_setup_complete_api_v1_onboarding_setup_complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SetupCompleteIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
