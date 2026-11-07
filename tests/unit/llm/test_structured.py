@@ -11,12 +11,13 @@ from anthropic.types.beta import BetaMessage
 from langchain_core.exceptions import OutputParserException
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatResult
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from structlog.testing import capture_logs
 
 from lg_sotf.llm.budget import USE_DEFAULT, TokenBudget
-from lg_sotf.llm.client import SERVER_FALLBACK_BETA, get_chat_model
+from lg_sotf.llm.client import PROVIDER_KEY, SERVER_FALLBACK_BETA, STRUCTURED_KEY, get_chat_model
 from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.llm.prompting import build_messages
@@ -534,3 +535,186 @@ async def test_a_wrapped_gemini_503_is_retried(make_settings: Callable[..., Sett
     stub = FlakyStub(result=_ok_result(), error=error, failures=1)
     verdict = await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", settings=s)
     assert verdict.disposition == "malicious" and stub.calls == 2 and len(no_sleep) == 1
+
+
+# ------------------------------------------------------------------ log events (S5 characterization)
+
+
+def _llm_events(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The ``llm.*`` events, without the timing fields that vary between runs."""
+    varying = {"latency_ms", "delay_s", "timestamp"}
+    return [{k: v for k, v in e.items() if k not in varying} for e in logs if str(e.get("event", "")).startswith("llm.")]
+
+
+async def test_log_events_of_a_retried_then_failed_call(make_settings: Callable[..., Settings], no_sleep: List[float]) -> None:
+    from lg_sotf.llm.usage import UsageTally
+
+    s = make_settings()
+    tally = UsageTally()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=10)
+    with capture_logs() as logs, pytest.raises(_StatusError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s, tally=tally)
+    common = {"agent": "analysis", "tier": "deep", "model": "claude-opus-5-5", "error_type": "_StatusError", "attempt": 1}
+    assert _llm_events(logs) == [
+        {**common, "event": "llm.call_retrying", "retry": 1, "log_level": "warning"},
+        {**common, "event": "llm.call_retrying", "retry": 2, "log_level": "warning"},
+        {**common, "event": "llm.call_failed", "log_level": "warning"},
+    ]
+    assert all(e["delay_s"] > 0 for e in logs if e["event"] == "llm.call_retrying")
+    assert _rows()["analysis"]["errors"] == 3 and tally.by_agent["analysis"].errors == 3
+
+
+async def test_log_events_of_a_successful_call(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings()
+    stub = StubModel(result=_ok_result())
+    with capture_logs() as logs:
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s)
+    (event,) = _llm_events(logs)
+    assert event == {
+        "event": "llm.call",
+        "log_level": "info",
+        "agent": "triage",
+        "tier": "fast",
+        "model": "claude-opus-5-5",
+        "outcome": "success",
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost_usd": event["cost_usd"],
+        "served_by": "claude-opus-5-5",
+    }
+    assert event["cost_usd"] > 0
+
+
+async def test_cancellation_is_neither_metered_nor_logged(make_settings: Callable[..., Settings]) -> None:
+    import asyncio
+
+    s = make_settings()
+    stub = StubModel(error=asyncio.CancelledError())
+    with capture_logs() as logs, pytest.raises(asyncio.CancelledError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s)
+    assert _llm_events(logs) == []
+    assert "triage" not in _rows()
+
+
+# ------------------------------------------------------------------ reservation settlement (S5.3)
+
+
+class BrittleVerdict(Verdict):
+    """Fails validation with an error pydantic does not wrap, like a bug in a schema validator."""
+
+    @field_validator("reasoning")
+    @classmethod
+    def _boom(cls, value: str) -> str:
+        raise RuntimeError("validator bug")
+
+
+class _NoStructuredOutput(StubModel):
+    def with_structured_output(self, schema: Any, *, include_raw: bool = False, **kwargs: Any) -> Runnable:  # type: ignore[override]
+        raise NotImplementedError("no structured output for this model")
+
+
+@pytest.mark.parametrize(
+    ("breaks", "used"),
+    [
+        ("planning", 0),  # before any call: the whole estimate is handed back
+        ("usage_extraction", 0),  # the reply's usage is unknown
+        ("classification", 150),  # the reply's tokens are counted, the rest of the estimate handed back
+        ("metering", 150),
+    ],
+)
+async def test_an_exception_around_the_call_settles_the_reservation(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch, breaks: str, used: int
+) -> None:
+    s = make_settings(llm={"daily_token_budget_per_tenant": 1_000_000})
+    budget = TokenBudget(fakeredis.FakeAsyncRedis(), s)
+    reply = {"disposition": "benign", "confidence": 1, "reasoning": "r"}
+    stub = StubModel(result={"raw": _raw("{}"), "parsed": reply, "parsing_error": None})
+    schema: type[Verdict] = Verdict
+    expected: type[BaseException] = RuntimeError
+    if breaks == "planning":
+        stub, expected = _NoStructuredOutput(), NotImplementedError
+    elif breaks == "usage_extraction":
+        monkeypatch.setattr("lg_sotf.llm.structured.extract_usage", _raises)
+    elif breaks == "classification":
+        schema = BrittleVerdict
+    else:
+        monkeypatch.setattr(get_usage_recorder(), "record_samples", _raises)
+    with pytest.raises(expected):
+        await ainvoke_structured(stub, schema, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, budget=budget)
+    assert await budget.used("t1") == used
+
+
+def _raises(*args: Any, **kwargs: Any) -> Any:
+    raise RuntimeError("unexpected failure")
+
+
+class JsonTextStub(BaseChatModel):
+    """Answers in JSON text like a json_mode provider; a ``None`` reply hangs until the call is cancelled."""
+
+    replies: List[Optional[str]] = Field(default_factory=list)
+    model_name: str = "deepseek-flash"
+    calls: int = 0
+
+    @property
+    def _llm_type(self) -> str:
+        return "json-text-stub"
+
+    def _generate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
+        raise AssertionError("not used")
+
+    async def _agenerate(self, messages: List[BaseMessage], stop: Optional[List[str]] = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
+        import asyncio
+
+        self.calls += 1
+        reply = self.replies.pop(0)
+        if reply is None:
+            await asyncio.Event().wait()
+        message = AIMessage(
+            content=reply or "",
+            usage_metadata={"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
+            response_metadata={"model_name": "deepseek-flash", "finish_reason": "stop"},
+        )
+        return ChatResult(generations=[ChatGeneration(message=message)])
+
+
+async def test_cancellation_during_the_repair_attempt_settles_the_tokens_used_so_far(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """A node timeout cancels the call while the repair attempt waits for the provider."""
+    import asyncio
+
+    s = make_settings(llm={"daily_token_budget_per_tenant": 1_000_000})
+    budget = TokenBudget(fakeredis.FakeAsyncRedis(), s)
+    model = JsonTextStub(replies=['{"disposition": "benign",', None], metadata={PROVIDER_KEY: "openai", STRUCTURED_KEY: "json_mode"})
+    call = asyncio.create_task(
+        ainvoke_structured(model, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, budget=budget)
+    )
+    for _ in range(1_000):
+        if model.calls == 2:
+            break
+        await asyncio.sleep(0)
+    assert model.calls == 2, "the repair attempt never started"
+    call.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await call
+    assert await budget.used("t1") == 120  # the first attempt's tokens, not the estimate
+
+
+async def test_cancellation_while_waiting_to_retry_releases_the_reservation(
+    make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    async def cancelled_sleep(seconds: float) -> None:
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr("lg_sotf.llm.structured.asyncio.sleep", cancelled_sleep)
+    s = make_settings(llm={"daily_token_budget_per_tenant": 1_000_000})
+    budget = TokenBudget(fakeredis.FakeAsyncRedis(), s)
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=10)
+    with pytest.raises(asyncio.CancelledError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, budget=budget)
+    assert stub.calls == 1 and await budget.used("t1") == 0
+    assert _rows()["triage"]["errors"] == 1  # the failed try, not the cancellation

@@ -38,11 +38,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional, Tuple
 from uuid import UUID
 
+from lg_sotf.domain.actions import guardrail_result
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.response import (
     ACTION_CATALOG,
-    GUARDRAIL_REASONS,
     ActionRequestError,
+    Disposition,
+    GuardrailBlock,
     ResponseService,
     approval_allowed,
     check_guardrails,
@@ -79,6 +81,23 @@ class RollbackEligibility:
 
     def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+def dispose_rollback(
+    guard: Optional[GuardrailBlock], *, risk: str, role: str, autonomy: Optional[str], approve: bool, requester: str
+) -> Disposition:
+    """A rollback request's status: blocked by a guardrail, approved by the requester when their role may
+    approve ``risk`` (and ``approve`` is set), else awaiting an approval."""
+    if guard is not None:
+        return Disposition("blocked", f"blocked: {guard.explanation}")
+    if approve and approval_allowed(risk, role, autonomy):
+        return Disposition(
+            "approved", f"approved: rollback requested and approved by {requester} ({risk} risk)", requester
+        )
+    return Disposition(
+        "awaiting_approval", f"awaiting approval: rolling back needs an approval for {risk} risk",
+        approval_reason="admin_approval_required" if approve else "rollback_review",
+    )
 
 
 def _parse_time(value: Any) -> Optional[datetime]:
@@ -181,16 +200,13 @@ class RollbackService:
             for key in ("match", "scope"):
                 if key in original.params:
                     params[key] = original.params[key]
-            if guard is not None:
-                status = "blocked"
-                params["explanation"] = f"blocked: {guard.explanation}"
-            elif approve and approval_allowed(risk, role, autonomy):
-                status = "approved"
-                params["explanation"] = f"approved: rollback requested and approved by {requester} ({risk} risk)"
-            else:
-                status = "awaiting_approval"
-                params["approval_reason"] = "admin_approval_required" if approve else "rollback_review"
-                params["explanation"] = f"awaiting approval: rolling back needs an approval for {risk} risk"
+            disposition = dispose_rollback(
+                guard, risk=risk, role=role, autonomy=autonomy, approve=approve, requester=requester
+            )
+            status = disposition.status
+            if disposition.approval_reason is not None:
+                params["approval_reason"] = disposition.approval_reason
+            params["explanation"] = disposition.explanation
             generation = await self._repos.actions.rollback_generation(tenant_id, original.id, conn=conn)
             rollback, created = await self._repos.actions.propose(
                 tenant_id,
@@ -216,8 +232,7 @@ class RollbackService:
                 assert guard is not None
                 rollback = await self._repos.actions.transition(
                     tenant_id, rollback.id, "blocked", expected_from="proposed", blocked_reason=guard.code,
-                    result={"guardrail": guard.code, "explanation": GUARDRAIL_REASONS.get(guard.code, guard.code),
-                            "detail": guard.detail, "stage": "rollback"},
+                    result=guardrail_result(guard.code, detail=guard.detail, stage="rollback"),
                     conn=conn,
                 )
                 await responses.record_transition(
@@ -261,4 +276,4 @@ class RollbackService:
         return rollback, original, created
 
 
-__all__ = ["ROLLBACK_REASONS", "RollbackEligibility", "RollbackService"]
+__all__ = ["ROLLBACK_REASONS", "RollbackEligibility", "RollbackService", "dispose_rollback"]
