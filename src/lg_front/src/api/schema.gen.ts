@@ -2420,8 +2420,11 @@ export interface components {
             erased_at?: string | null;
             /** Name */
             name: string;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /** Tenant Id */
             tenant_id: string;
         };
@@ -2700,8 +2703,11 @@ export interface components {
             generated_at: string;
             /** Html */
             html: string;
-            /** Stage */
-            stage: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "early_warning" | "notification" | "final";
         };
         /** IngestItemOut */
         IngestItemOut: {

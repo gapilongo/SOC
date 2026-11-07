@@ -18,17 +18,17 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, WithJsonSchema
 
 from lg_sotf.api.auth.deps import ANALYST, PLATFORM_ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import In
+from lg_sotf.api.schemas import In, TenantStatusStr, vocabulary_schema
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.compliance import nis2
 from lg_sotf.compliance.evidence import build_evidence_pack, render_evidence_html
@@ -51,6 +51,9 @@ log = get_logger(__name__)
 
 alerts = APIRouter(prefix="/alerts", tags=["compliance"])
 platform = APIRouter(prefix="/platform", tags=["platform"])
+
+# The NIS2 report stages (ADR-0009): advertised as an enum, a plain string at runtime.
+IncidentReportStageStr = Annotated[str, WithJsonSchema(vocabulary_schema(nis2.STAGES))]
 
 _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
 
@@ -135,7 +138,7 @@ class AiNarrativeOut(BaseModel):
 
 class IncidentReportOut(BaseModel):
     alert_id: str
-    stage: str
+    stage: IncidentReportStageStr
     event_id: int
     generated_at: datetime
     disclaimer: str
@@ -241,7 +244,7 @@ TenantIdPath = Path(pattern=TENANT_ID_PATTERN, description="Tenant id.")
 class ErasureStatusOut(BaseModel):
     tenant_id: str
     name: str
-    status: str
+    status: TenantStatusStr
     erasable: bool
     blockers: List[str]
     erased_at: Optional[str] = None

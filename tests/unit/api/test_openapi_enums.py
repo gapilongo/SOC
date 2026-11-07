@@ -18,6 +18,7 @@ from uuid import uuid4
 import pytest
 
 from lg_sotf.api import schemas
+from lg_sotf.compliance import nis2
 from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
 from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
 from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
@@ -81,6 +82,9 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("PlatformEscalationOut", "alert_severity", v.SEVERITIES),
     ("PlatformEscalationOut", "level", v.ESCALATION_LEVELS),
     ("PlatformEscalationOut", "status", v.ESCALATION_STATUSES),
+    # compliance: NIS2 reports and tenant erasure
+    ("IncidentReportOut", "stage", nis2.STAGES),
+    ("ErasureStatusOut", "status", TENANT_STATUSES),
 ]
 
 

@@ -2677,6 +2677,10 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -3474,6 +3478,11 @@
             "type": "string"
           },
           "stage": {
+            "enum": [
+              "early_warning",
+              "notification",
+              "final"
+            ],
             "title": "Stage",
             "type": "string"
           }
