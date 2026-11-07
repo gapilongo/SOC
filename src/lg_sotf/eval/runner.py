@@ -51,7 +51,8 @@ from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.routing import refused_by
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
-from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, IngestResult, email_source_id
+from lg_sotf.ingestion.batch import IngestResult
+from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
 

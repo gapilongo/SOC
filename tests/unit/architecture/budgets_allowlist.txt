@@ -23,7 +23,6 @@ eval/history.py::run_history_backtest	85
 eval/report.py::render_markdown	111
 eval/runner.py::run_evaluation	119
 ingestion/email/parser.py::parse_email	93
-ingestion/service.py::IngestionService._ingest	114
 ingestion/service.py::IngestionService.poll_source	82
 integrations/microsoft/connection_test.py::run_connection_test	84
 integrations/microsoft/http.py::MicrosoftApi._send	118
