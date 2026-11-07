@@ -82,7 +82,7 @@ def guarded_client(
     accepts that, for its retry-loop unit tests; every runtime caller passes
     the install's policy.
     """
-    inner = transport if transport is not None else httpx.AsyncHTTPTransport(verify=verify)
+    inner = transport if transport is not None else httpx.AsyncHTTPTransport(verify=verify)  # noqa: TID251
     routed: httpx.AsyncBaseTransport = (
         inner if policy is None else GuardedTransport(inner, policy, resolver or system_resolve, pin=pin)
     )
