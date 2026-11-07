@@ -52,7 +52,9 @@ export function LlmTestCard() {
               Provider <span className="font-mono text-xs">{out.provider}</span>
               <Badge tone={out.ok ? 'good' : 'bad'}>{out.ok ? 'both tiers answered' : 'check failed'}</Badge>
             </p>
-            <div className="relative overflow-x-auto">
+            {/* Scrolls sideways on a phone: a keyboard must reach it too (WCAG 2.1.1). */}
+            {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+            <div role="region" aria-label="Model test results" tabIndex={0} className="relative overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-sm">
                 <caption className="sr-only">Model test results</caption>
                 <thead className="text-xs uppercase tracking-wide text-muted">

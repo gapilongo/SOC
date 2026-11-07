@@ -16,6 +16,7 @@ import type { DashboardOut } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { approvalRoleFor, can, roleAtLeast } from '../../auth/roles';
 import { OnboardingBanner } from '../onboarding/Onboarding';
+import { SetupCallout } from '../setup/SetupCallout';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, Segmented, buttonClass, cx } from '../../components/ui';
 import { formatInt, formatRelative, formatUsd } from '../../lib/format';
 import { alertsHref, escalationQueueHref, APPROVALS_HREF } from '../../lib/links';
@@ -274,6 +275,7 @@ export default function OverviewPage() {
           </>
         }
       />
+      {can.setup(principal) && <SetupCallout />}
       {isAdmin && <OnboardingBanner />}
       {q.isPending && <LoadingState label="Loading the overview" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}

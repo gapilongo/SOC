@@ -125,8 +125,9 @@ flowchart LR
   or any MCP client ([docs](docs/mcp.md)).
 * **Quick start**: `make quickstart` goes from clone to triaged demo alerts
   and prints the measured time to first verdict ([docs](docs/quickstart.md));
-  new tenants get a getting-started checklist and one-click sample alerts
-  ([docs](docs/onboarding.md)).
+  a first-run setup wizard takes a new install's admin to the first triaged
+  sample alert, and new tenants get a getting-started checklist and one-click
+  sample alerts ([docs](docs/onboarding.md)).
 
 ## Features
 
@@ -481,7 +482,7 @@ container logs and that no page violates the Content-Security-Policy.
 | [Integrations](docs/integrations.md) | Slack, Teams, email, webhooks, Jira, ServiceNow |
 | [Reporting](docs/reporting.md) | Value, accuracy and detection reports, backtest |
 | [MSSP operations](docs/mssp.md) | Console, suspension, quotas, usage metering |
-| [Onboarding](docs/onboarding.md) | Getting-started checklist, sample alerts |
+| [Onboarding](docs/onboarding.md) | First-run setup wizard, getting-started checklist, sample alerts |
 | [Identity](docs/identity.md) | MFA, OIDC role mapping and provisioning |
 | [Compliance](docs/compliance.md) | Evidence packs, NIS2 drafts, tenant export and erasure |
 | [Local LLMs](docs/local-llm.md) / [Air-gapped](docs/air-gapped.md) | Self-hosted models and offline installs |
