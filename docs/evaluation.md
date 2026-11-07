@@ -241,6 +241,11 @@ usage, cost and latency.
   gate result, headline table per split, per-class scores, confusion matrix,
   inter-annotator agreement and the item table with missed malicious items
   marked `MISSED`.
+* Scorecard: `lg-sotf eval-scorecard synthetic.json phishing.json --output
+  scorecard.md` summarises the reports of one model configuration on one
+  page, each rate with its counts and a 95% Wilson interval. See
+  [scorecards/README.md](scorecards/README.md) for the template and the
+  committed baselines.
 
 ## Regression gate
 

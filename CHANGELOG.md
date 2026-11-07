@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `lg-sotf eval-scorecard` turns the JSON reports of `lg-sotf eval` (one per
+  dataset, same model) into a one-page scorecard in Markdown and JSON: the
+  malicious false-negative rate first, with counts and a 95% Wilson interval,
+  then auto-close precision, escalation rate, per-class precision and recall,
+  cost and latency per item, the model and prompt version, and the
+  limitations. DeepSeek scorecards are marked internal only. The first
+  baseline, a local `qwen2.5:7b` on Ollama over the synthetic and phishing
+  sets, is in `docs/scorecards/`.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
