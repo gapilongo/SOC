@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # LG-SOTF application image: one image, four process roles
 # (lg-sotf api | worker | scheduler | migrate). See docs/deployment.md.
@@ -6,23 +6,27 @@
 #   docker build -f docker/Dockerfile -t lg-sotf:dev .
 #
 # Build arguments:
-#   BASE_IMAGE  Python runtime base. Override to use a registry mirror or a
-#               digest-pinned image, e.g.
-#               --build-arg BASE_IMAGE=mirror.gcr.io/library/python:3.11-slim
-#               --build-arg BASE_IMAGE=python:3.11-slim@sha256:<digest>
+#   BASE_IMAGE  Python runtime base. Empty (the default) builds from the
+#               digest-pinned python-base stage below; set it to use a registry
+#               mirror, ideally pinned by the same digest, e.g.
+#               --build-arg BASE_IMAGE=mirror.gcr.io/library/python:3.11-slim@sha256:<digest>
 #   VERSION, REVISION, CREATED   OCI label values (set by CI).
 #
 # Behind a TLS-intercepting proxy, pass its CA bundle as a build secret so pip
 # can verify PyPI; it is never written into an image layer:
 #   docker build --secret id=build_ca,src=/path/to/ca-bundle.crt ...
 
-ARG BASE_IMAGE=python:3.11-slim
+ARG BASE_IMAGE=
+
+# The base image, pinned by digest (tag kept for readability; Dependabot bumps
+# both). Only pulled when BASE_IMAGE is empty.
+FROM python:3.11-slim@sha256:65bd3d9f1d7fa268dd1909973ba7eb4bdf41f6dcf2cfbe76ba9528b170f3fd79 AS python-base
 
 # ---------------------------------------------------------------------------
-# Builder: resolve the pinned dependency set into a virtualenv and install the
-# application wheel into it. Nothing from this stage but /opt/venv is shipped.
+# Builder: install the hash-locked dependency set into a virtualenv and the
+# application wheel on top. Nothing from this stage but /opt/venv is shipped.
 # ---------------------------------------------------------------------------
-FROM ${BASE_IMAGE} AS builder
+FROM ${BASE_IMAGE:-python-base} AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -37,36 +41,35 @@ RUN python -m venv /opt/venv
 WORKDIR /build
 
 # Dependencies first so source edits do not invalidate this layer. Every
-# runtime dependency is pinned in requirements.txt; only binary wheels are
-# accepted, so the builder needs no compiler. dumb-init (static binary shipped
-# as a wheel) is PID 1: it forwards signals and reaps zombies.
-COPY requirements.txt ./
+# package is pinned with the SHA-256 of each of its files (--require-hashes:
+# a changed or substituted file on the index fails the build); only binary
+# wheels are accepted, so the builder needs no compiler.
+# docker/requirements-build.txt: pip and setuptools (to build the application
+# wheel, removed below) and dumb-init (static binary shipped as a wheel), PID 1:
+# it forwards signals and reaps zombies.
+COPY requirements.txt docker/requirements-build.txt ./
 RUN --mount=type=secret,id=build_ca,required=false \
     if [ -s /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; \
-    pip install --upgrade "pip==25.2" \
- && pip install -r requirements.txt "dumb-init==1.2.5.post1"
+    pip install --require-hashes -r requirements-build.txt \
+ && pip install --require-hashes -r requirements.txt
 
-# Build the application wheel with a pinned backend and install it without
+# Build the application wheel with the pinned backend and install it without
 # pulling any further dependency.
 COPY pyproject.toml setup.py README.md LICENSE ./
 COPY src/lg_sotf ./src/lg_sotf
-RUN --mount=type=secret,id=build_ca,required=false \
-    if [ -s /run/secrets/build_ca ]; then export PIP_CERT=/run/secrets/build_ca; fi; \
-    python -m venv /tmp/buildenv \
- && /tmp/buildenv/bin/pip install --disable-pip-version-check "setuptools==80.9.0" "wheel==0.45.1" \
- && /tmp/buildenv/bin/pip wheel --no-deps --no-build-isolation -w /dist . \
+RUN pip wheel --no-deps --no-build-isolation -w /dist . \
  && pip install --no-deps /dist/lg_sotf-*.whl \
  && pip check \
  && python -m compileall -q /opt/venv/lib \
  && lg-sotf version \
  && pip uninstall -y -q pip setuptools \
- && rm -rf /tmp/buildenv /dist
+ && rm -rf /dist
 
 # ---------------------------------------------------------------------------
 # Runtime: slim base, no build tools, no package manager use, non-root,
 # read-only-root friendly (only /tmp needs to be writable).
 # ---------------------------------------------------------------------------
-FROM ${BASE_IMAGE} AS runtime
+FROM ${BASE_IMAGE:-python-base} AS runtime
 
 ARG VERSION=0.2.0
 ARG REVISION=unknown

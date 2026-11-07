@@ -356,9 +356,13 @@ incident before retention removes it.
 
 ## 9. Supply chain and build
 
-* Pinned runtime and development dependencies (`requirements*.txt`),
-  `pip-audit` and Bandit in CI, Gitleaks on every change and a weekly
-  full-history scan, Dependabot for GitHub Actions and Python dependencies.
+* Every dependency is pinned and hash-locked, and every base image is
+  pinned by digest (see "Pinned inputs and the image CVE gate" below).
+  `pip-audit` and Bandit run in CI, Gitleaks on every change and in a weekly
+  full-history scan, and Dependabot keeps GitHub Actions, base-image digests,
+  and Python and npm dependencies current.
+* Both images are scanned with Trivy on every change: a fixable critical or
+  high CVE fails CI.
 * The container image runs as a non-root user (uid 10001) with a read-only
   root filesystem, no build tools, no pip/setuptools and no setuid binaries; `dumb-init` as PID 1. Kubernetes
   manifests drop all capabilities and use the `RuntimeDefault` seccomp
@@ -413,6 +417,40 @@ images. In Kubernetes, an admission controller (the Sigstore
 policy-controller or Kyverno `verifyImages`) can enforce the same identity
 and issuer. For air-gapped hosts, see
 [air-gapped.md](air-gapped.md#verify-the-published-images-before-you-bundle-them).
+
+### Pinned inputs and the image CVE gate
+
+* **Python packages.** `requirements.txt` (what the image installs),
+  `requirements-dev.txt` (CI and development: the same versions plus the
+  test tools), `docker/requirements-build.txt` (pip, setuptools and
+  dumb-init for the image build) and the CI tool locks in `scripts/ci/` pin
+  every package and carry the SHA-256 of each of its wheels and sdists, for
+  every platform (the amd64 and arm64 images, and macOS for development).
+  The Dockerfile, CI and `make dev` install them with
+  `pip install --require-hashes`, so a file that changed on the index, or a
+  package missing from the lock, fails the install. The files are generated:
+  re-lock with `make lock` (or `make lock ARGS="--upgrade-package fastapi"`)
+  and never edit them by hand. `pip-audit` checks all of them in CI.
+* **Base images.** Every `FROM` in `docker/Dockerfile` and
+  `src/lg_front/Dockerfile`, and the `# syntax=` frontend, is pinned as
+  `name:tag@sha256:digest`; Dependabot bumps the digest weekly. The
+  PostgreSQL, Redis and Caddy defaults in the compose files are pinned the
+  same way. To build from a registry mirror, set `PYTHON_BASE_IMAGE`,
+  `NODE_IMAGE` or `NGINX_IMAGE`, preferably with the same digest.
+* **Image CVE gate.** CI scans the backend and frontend images it builds
+  with Trivy (OS packages and language libraries) and fails on any critical
+  or high finding that has a fix. The fix is a base-image digest bump or a
+  re-lock. An exception goes in `.trivyignore`, reviewed in a pull request:
+  each entry names the reviewer's reasoning, expires within 90 days (Trivy
+  then reports it again), and, if the finding does not affect the product,
+  has a matching `not_affected` statement in `security/vex.json`.
+  `tests/deploy/test_supply_chain.py` enforces all three. Scan an image
+  locally the same way:
+
+  ```sh
+  trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+      --ignorefile .trivyignore --exit-code 1 lg-sotf:dev
+  ```
 
 ## 10. Known limitations
 

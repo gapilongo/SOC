@@ -1,0 +1,5 @@
+# The nightly random-order job (.github/workflows/nightly.yml), hash-locked into
+# scripts/ci/requirements-nightly.txt by scripts/lock_requirements.sh (--no-deps: pytest itself
+# comes from requirements-dev.txt). Deliberately not a dev dependency: installed, it shuffles
+# every local run.
+pytest-randomly==5.0.0

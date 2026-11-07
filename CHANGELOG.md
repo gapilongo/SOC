@@ -271,6 +271,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Builds now verify every input. Every Python requirements file is
+  hash-locked for all platforms and installed with `pip install
+  --require-hashes` in the image build, CI and `make dev`; re-lock with
+  `make lock`. Every base image is pinned by digest, including the
+  Dockerfiles' `# syntax=` line and the PostgreSQL, Redis and Caddy defaults
+  in the compose files. `PYTHON_BASE_IMAGE`, `NODE_IMAGE` and `NGINX_IMAGE`
+  now default to the pinned images; set them only to use a mirror. The
+  frontend runs on `nginx-unprivileged:1.30-alpine-slim`. The old
+  `1.28-alpine` tag no longer receives updates and carried fixable critical
+  CVEs.
+- CI now scans both images with Trivy and fails on any critical or high CVE
+  that has a fix. Reviewed exceptions live in `.trivyignore`, and each one
+  expires within 90 days. `pip-audit` now also checks the build and CI tool
+  locks. See `docs/security.md`, section 9.
 - Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
   `lg-sotf-frontend` digest now carries a keyless cosign signature and a SLSA
   build-provenance attestation, both from the `Release images` workflow on

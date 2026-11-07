@@ -41,10 +41,12 @@ make image IMAGE=registry.example.com/lg-sotf:1.0.0 \
      PYTHON_BASE_IMAGE=mirror.gcr.io/library/python:3.11-slim
 ```
 
-* Builder stage installs the **pinned** `requirements.txt` (binary wheels only,
-  no compiler) and the application wheel with `--no-deps`, then `pip check`.
-* Runtime stage is `python:3.11-slim` (override with `--build-arg BASE_IMAGE=`,
-  ideally digest-pinned), contains no build tools and no pip, and runs as uid/gid
+* Builder stage installs the **hash-locked** `requirements.txt` with
+  `pip install --require-hashes` (binary wheels only, no compiler) and the
+  application wheel with `--no-deps`, then `pip check`.
+* Runtime stage is `python:3.11-slim`, pinned by digest in `docker/Dockerfile`
+  (override with `--build-arg BASE_IMAGE=`, ideally with the same digest),
+  contains no build tools and no pip, and runs as uid/gid
   **10001**. Only `/tmp` must be writable, so it runs with a read-only root
   filesystem.
 * `dumb-init` is PID 1 (signal forwarding, zombie reaping); `SIGTERM` starts a

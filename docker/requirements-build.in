@@ -1,0 +1,7 @@
+# Build-time tools for docker/Dockerfile (the builder stage), hash-locked into
+# docker/requirements-build.txt by scripts/lock_requirements.sh. pip and setuptools build
+# the application wheel and are uninstalled before the virtualenv ships; dumb-init (a static
+# binary shipped as a wheel) is PID 1 of the runtime image.
+pip==26.2
+setuptools==84.1.0
+dumb-init==1.2.5.post1

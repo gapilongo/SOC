@@ -52,14 +52,18 @@ def _stages(text: str) -> List[str]:
 
 def test_dockerfile_is_multi_stage_with_overridable_base_images() -> None:
     text = DOCKERFILE.read_text()
-    assert re.search(r"^ARG NODE_IMAGE=node:22", text, re.MULTILINE)
-    assert re.search(r"^ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:", text, re.MULTILINE)
+    # Empty overrides by default: the digest-pinned base stages are used.
+    assert re.search(r"^ARG NODE_IMAGE=$", text, re.MULTILINE)
+    assert re.search(r"^ARG NGINX_IMAGE=$", text, re.MULTILINE)
     stages = _stages(text)
-    assert stages == ["${NODE_IMAGE}", "${NGINX_IMAGE}"]
+    assert re.fullmatch(r"node:22-alpine@sha256:[0-9a-f]{64}", stages[0]), stages[0]
+    assert re.fullmatch(r"nginxinc/nginx-unprivileged:[\d.]+-alpine(-slim)?@sha256:[0-9a-f]{64}", stages[1]), stages[1]
+    assert stages[2:] == ["${NODE_IMAGE:-node-base}", "${NGINX_IMAGE:-nginx-base}"]
     # Multi-arch builds: the static bundle is built natively on the build host;
     # only the nginx runtime stage is per target platform.
-    assert "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build" in text
-    assert re.search(r"^FROM \$\{NGINX_IMAGE\} AS runtime$", text, re.MULTILINE)
+    assert re.search(r"^FROM --platform=\$BUILDPLATFORM node:\S+ AS node-base$", text, re.MULTILINE)
+    assert "FROM --platform=$BUILDPLATFORM ${NODE_IMAGE:-node-base} AS build" in text
+    assert re.search(r"^FROM \$\{NGINX_IMAGE:-nginx-base\} AS runtime$", text, re.MULTILINE)
     assert "COPY --from=build /app/dist /usr/share/nginx/html" in text
     # Reproducible install from the lockfile, with no install scripts.
     assert "npm ci --ignore-scripts" in text
@@ -68,7 +72,7 @@ def test_dockerfile_is_multi_stage_with_overridable_base_images() -> None:
 
 def test_runtime_stage_runs_as_non_root() -> None:
     text = DOCKERFILE.read_text()
-    runtime = text[text.index("FROM ${NGINX_IMAGE}") :]
+    runtime = text[text.index("FROM ${NGINX_IMAGE:-nginx-base}") :]
     users = re.findall(r"^USER\s+(\S+)", runtime, re.MULTILINE)
     assert users, "the runtime stage must set USER"
     final = users[-1]

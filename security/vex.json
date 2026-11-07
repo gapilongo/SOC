@@ -1,0 +1,64 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/gapilongo/SOC/blob/main/security/vex.json",
+  "author": "LG-SOTF maintainers",
+  "role": "Document Creator",
+  "timestamp": "2026-11-07T00:00:00Z",
+  "last_updated": "2026-11-07T00:00:00Z",
+  "version": 1,
+  "tooling": "Written by hand and reviewed in pull requests; docs/security.md, section 9",
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-76844",
+        "description": "zlib: heap buffer overflow in gz_write() after a failed write()"
+      },
+      "timestamp": "2026-11-07T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/lg-sotf",
+          "subcomponents": [{ "@id": "pkg:deb/debian/zlib1g" }]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in zlib's gzip file API (gzwrite/gzprintf). The only zlib user in the image is CPython's zlib module, which calls the deflate/inflate stream API; Python's gzip module implements the file format in Python on top of it. No process in the image calls gzwrite or gzprintf. Fixed in Debian zlib 1:1.3.dfsg+really1.3.1-1+deb13u1, which the next python:3.11-slim digest bump brings in."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-85091",
+        "description": "zlib: heap buffer overflow in gz_vacate() on non-blocking gzwrite()"
+      },
+      "timestamp": "2026-11-07T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/lg-sotf",
+          "subcomponents": [{ "@id": "pkg:deb/debian/zlib1g" }]
+        },
+        {
+          "@id": "pkg:oci/lg-sotf-frontend",
+          "subcomponents": [{ "@id": "pkg:apk/alpine/zlib" }]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path",
+      "impact_statement": "The flaw is in zlib's gzip file API (gz_vacate, reached through gzwrite/gzprintf on a non-blocking descriptor). The backend uses zlib only through CPython's deflate/inflate stream bindings; the frontend's nginx gzip filter calls deflate() directly. Neither image calls gzwrite or gzprintf. Fixed in the next base-image digests (Debian deb13u1, Alpine zlib 1.3.2-r1)."
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-107891",
+        "description": "musl: integer overflows in regcomp() with an untrusted regular expression"
+      },
+      "timestamp": "2026-11-07T00:00:00Z",
+      "products": [
+        {
+          "@id": "pkg:oci/lg-sotf-frontend",
+          "subcomponents": [{ "@id": "pkg:apk/alpine/musl" }, { "@id": "pkg:apk/alpine/musl-utils" }]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "Only a regular expression supplied by an attacker reaches the overflow. In the frontend image nginx compiles its configuration's regexes with PCRE2, not musl regcomp, and the only musl regcomp callers are busybox grep and sed in the entrypoint, whose patterns are constants in docker/entrypoint.sh (environment values are matched as input, never compiled as patterns). Fixed in Alpine musl 1.2.6-r3, which the next nginx-unprivileged digest bump brings in."
+    }
+  ]
+}

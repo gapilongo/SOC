@@ -1,0 +1,8 @@
+# CI scanners and SBOM tooling (.github/workflows/ci.yml, release-images.yml), hash-locked
+# into scripts/ci/requirements-tools.txt by scripts/lock_requirements.sh.
+pip-audit==2.10.1
+bandit[toml]==1.8.6
+# CycloneDX SBOM of the Python lock (cyclonedx-py) and schema validation (scripts/ci/validate_sbom.py).
+cyclonedx-bom==8.0.1
+cyclonedx-python-lib[json-validation]
+jsonschema

@@ -27,6 +27,8 @@ env:
   KUBERNETES_VERSION: 1.29.0
   GITLEAKS_IMAGE: zricethezav/gitleaks:v8.24.3@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # Image CVE gate (docs/security.md, section 9). Same Trivy release in every workflow.
+  TRIVY_VERSION: v0.76.1
 
 jobs:
   lint:
@@ -44,7 +46,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Ruff
         run: ruff check --output-format=github src tests scripts docker examples
@@ -76,7 +78,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
@@ -124,7 +126,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Create the non-superuser test role
         env:
@@ -201,7 +203,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Create the non-superuser test role
         env:
@@ -259,7 +261,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Start and seed the Wazuh lab
         run: make test-wazuh-up PYTHON=python
@@ -293,11 +295,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install scanners
-        run: pip install "pip-audit==2.9.0" "bandit[toml]==1.8.6"
-      - name: pip-audit (pinned runtime and dev dependencies)
+        run: pip install --require-hashes -r scripts/ci/requirements-tools.txt
+      - name: pip-audit (every hash-locked requirements file)
         run: |
-          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements.txt
-          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements-dev.txt
+          for lock in requirements.txt requirements-dev.txt docker/requirements-build.txt \
+              scripts/ci/requirements-tools.txt scripts/ci/requirements-nightly.txt; do
+            pip-audit --strict --progress-spinner off --disable-pip --require-hashes -r "$lock"
+          done
       - name: Bandit (new medium+ findings against the reviewed baseline)
         run: bandit -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
       - name: Gitleaks (commits in this change)
@@ -368,6 +372,19 @@ jobs:
           docker run --rm --entrypoint python lg-sotf:ci /usr/local/lib/lg-sotf/healthcheck.py
           # No package manager and no setuid/setgid binaries in the runtime image.
           test -z "$(docker run --rm --entrypoint sh lg-sotf:ci -c 'command -v pip pip3; ls /usr/local/lib/python3*/site-packages | grep -E "^(pip|setuptools|wheel)"; find / -xdev -type f -perm /6000 2>/dev/null')"
+      - name: Image CVE gate (Trivy, fixable critical and high)
+        # Fails on any critical or high finding that has a fix, in OS packages or Python
+        # libraries. Exceptions: .trivyignore (reviewed, each with an expiry date).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
       - name: Validate compose files
         env:
           POSTGRES_SUPERUSER_PASSWORD: ci
@@ -476,6 +493,18 @@ jobs:
       - name: Build frontend image (no push)
         if: steps.detect.outputs.dockerfile == 'true'
         run: docker build -t lg-sotf-frontend:ci src/lg_front
+      - name: Image CVE gate (Trivy, fixable critical and high)
+        if: steps.detect.outputs.dockerfile == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf-frontend:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
 
   e2e-ui:
     name: Web UI end-to-end (Playwright, compose stack)

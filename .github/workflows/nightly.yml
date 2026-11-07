@@ -2,9 +2,9 @@ name: Nightly
 
 # Roadmap Q4: the whole suite in a random order, to catch tests that pass only after (or before)
 # another one. The seed is printed at the top of the log ("Using --randomly-seed=N"); reproduce a
-# failure locally with `pip install pytest-randomly==5.0.0` and `pytest -p randomly --randomly-seed=N`
-# (docs/testing.md). pytest-randomly is pinned here and deliberately not in requirements-dev.txt:
-# installed, it shuffles every local run.
+# failure locally with `pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt`
+# and `pytest -p randomly --randomly-seed=N` (docs/testing.md). pytest-randomly is hash-locked there
+# and deliberately not in requirements-dev.txt: installed, it shuffles every local run.
 
 on:
   schedule:
@@ -17,7 +17,6 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  PYTEST_RANDOMLY_VERSION: "5.0.0"
 
 jobs:
   random-order:
@@ -58,7 +57,8 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt "pytest-randomly==${PYTEST_RANDOMLY_VERSION}"
+          pip install --require-hashes -r requirements-dev.txt
+          pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt
           pip install --no-deps -e .
       - name: Create the non-superuser test role
         env:

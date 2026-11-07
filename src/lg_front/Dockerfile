@@ -1,12 +1,13 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 #
 # LG-SOTF analyst web app: static build served by unprivileged nginx.
 #
 #   docker build -t lg-sotf-frontend:dev src/lg_front
 #
-# Build arguments:
-#   NODE_IMAGE   Node.js build image (e.g. mirror.gcr.io/library/node:22-alpine
-#                or a digest-pinned reference).
+# Build arguments (empty, the default, builds from the digest-pinned node-base
+# and nginx-base stages below; set them to use a registry mirror, ideally
+# pinned by the same digests):
+#   NODE_IMAGE   Node.js build image (e.g. mirror.gcr.io/library/node:22-alpine@sha256:<digest>).
 #   NGINX_IMAGE  Runtime image; must be an nginx-unprivileged variant (runs as
 #                a non-root user and listens on 8080).
 #
@@ -19,15 +20,21 @@
 # docker/entrypoint.sh), so one image serves every environment. The build
 # embeds no URLs and no secrets.
 
-ARG NODE_IMAGE=node:22-alpine
-ARG NGINX_IMAGE=nginxinc/nginx-unprivileged:1.28-alpine
+ARG NODE_IMAGE=
+ARG NGINX_IMAGE=
+
+# Base images, pinned by digest (tags kept for readability; Dependabot bumps
+# both). Each is only pulled when its override above is empty. The runtime is
+# the -slim variant: nginx and busybox only, no curl, libxml2 or image libraries.
+FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS node-base
+FROM nginxinc/nginx-unprivileged:1.30-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6 AS nginx-base
 
 # ---------------------------------------------------------------------------
 # Build: install the locked dependency set, type-check and bundle. The output
 # is static files, so this stage runs on the build host's own platform even in
 # a multi-arch build (no emulated npm/vite for linux/arm64).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS build
+FROM --platform=$BUILDPLATFORM ${NODE_IMAGE:-node-base} AS build
 ENV CI=true \
     NPM_CONFIG_FUND=false \
     NPM_CONFIG_AUDIT=false \
@@ -47,7 +54,7 @@ RUN npm run build \
 # Runtime: static files only; nginx runs as a non-root user and writes
 # nothing outside /tmp, so the root filesystem can be mounted read-only.
 # ---------------------------------------------------------------------------
-FROM ${NGINX_IMAGE} AS runtime
+FROM ${NGINX_IMAGE:-nginx-base} AS runtime
 
 ARG VERSION=dev
 ARG REVISION=unknown
