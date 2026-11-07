@@ -630,7 +630,7 @@ async def ainvoke_structured(
     s = settings or get_settings()
     model_id = usage_model_id(model)
     meter = _CallMeter(
-        get_usage_recorder(), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
+        get_usage_recorder(s), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
     )
     log = logger.bind(agent=agent, tier=tier, model=model_id)
 

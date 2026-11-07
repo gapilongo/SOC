@@ -279,7 +279,7 @@ async def test_usage_is_flushed_to_daily_table(
 ) -> None:
     s = runtime_settings()
     worker = make_worker(s, repos.db, redis_client, FakeEngine(returns("completed")))
-    get_usage_recorder().record(
+    get_usage_recorder(s).record(
         model="fake-fast", agent="triage", outcome="success", tenant_id=TENANT_A, input_tokens=100, output_tokens=20
     )
     async with running(worker):
@@ -289,7 +289,7 @@ async def test_usage_is_flushed_to_daily_table(
             "SELECT calls, input_tokens, output_tokens FROM llm_usage_daily WHERE tenant_id = $1", TENANT_A
         )
     assert dict(row) == {"calls": 1, "input_tokens": 100, "output_tokens": 20}
-    assert get_usage_recorder().pending_rows() == []
+    assert get_usage_recorder(s).pending_rows() == []
 
 
 async def test_unknown_outcome_status_is_recorded_as_failure(

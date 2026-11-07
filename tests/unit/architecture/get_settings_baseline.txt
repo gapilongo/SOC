@@ -7,7 +7,6 @@ db/migrate.py::_ssl_params
 db/migrate.py::libpq_url
 ingestion/service.py::IngestionService.__init__
 llm/structured.py::ainvoke_structured
-llm/usage.py::get_usage_recorder
 mcp/command.py::mcp_command
 observability/logging.py::configure_logging
 observability/tracing.py::setup_tracing

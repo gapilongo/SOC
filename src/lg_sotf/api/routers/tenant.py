@@ -455,7 +455,7 @@ async def _flush_usage(ctx: ApiContext) -> None:
         await ctx.repos.llm_usage.upsert_daily([LLMUsageDelta(**row) for row in rows])
 
     try:
-        await get_usage_recorder().flush(sink)
+        await get_usage_recorder(ctx.settings).flush(sink)
     except Exception as exc:  # noqa: BLE001 - the rows stay buffered for the next flush
         log.warning("api.usage_flush_failed", error_type=type(exc).__name__)
 

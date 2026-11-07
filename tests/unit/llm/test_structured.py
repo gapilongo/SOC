@@ -70,7 +70,8 @@ def _msgs(settings: Settings, title: str = "Mimikatz and C2 beacon observed") ->
 
 
 def _rows() -> Dict[str, Any]:
-    return {r["agent"]: r for r in get_usage_recorder().pending_rows()}
+    # The process recorder, built by the call under test; these settings would only price a new one.
+    return {r["agent"]: r for r in get_usage_recorder(Settings(_env_file=None)).pending_rows()}
 
 
 async def test_happy_path_with_fake_model(make_settings: Callable[..., Settings]) -> None:
@@ -372,7 +373,7 @@ async def test_anthropic_server_fallback_is_metered_per_model(anthropic_deep: An
     _respond(model, payloads, message)
     verdict = await ainvoke_structured(model, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s)
     assert verdict.disposition == "inconclusive"
-    rows = {r["model"]: r for r in get_usage_recorder().pending_rows()}
+    rows = {r["model"]: r for r in get_usage_recorder(s).pending_rows()}
     assert rows["claude-opus-5-5"]["refusals"] == 1
     assert rows["claude-opus-4-8"]["output_tokens"] == 40 and rows["claude-opus-4-8"]["refusals"] == 0
 
@@ -640,7 +641,7 @@ async def test_an_exception_around_the_call_settles_the_reservation(
     elif breaks == "classification":
         schema = BrittleVerdict
     else:
-        monkeypatch.setattr(get_usage_recorder(), "record_samples", _raises)
+        monkeypatch.setattr(get_usage_recorder(s), "record_samples", _raises)
     with pytest.raises(expected):
         await ainvoke_structured(stub, schema, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, budget=budget)
     assert await budget.used("t1") == used

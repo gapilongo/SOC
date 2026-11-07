@@ -20,12 +20,13 @@ LEAKY_BODY = "Incorrect API key provided: sk-proj-" + "a" * 8 + "*** at https://
 
 
 async def test_fake_model_passes_both_tiers(make_settings: Callable[..., Settings]) -> None:
-    report = await check_llm(make_settings(), "t1")
+    s = make_settings()
+    report = await check_llm(s, "t1")
     assert report.ok and report.provider == "fake" and report.enabled
     assert [t.tier for t in report.tiers] == ["fast", "deep"]
     assert {t.model for t in report.tiers} == {"fake-fast", "fake-deep"}
     assert all(t.ok and t.latency_ms >= 0 and t.method == "json_schema" and t.error is None for t in report.tiers)
-    rows = [r for r in get_usage_recorder().pending_rows() if r["agent"] == AGENT]
+    rows = [r for r in get_usage_recorder(s).pending_rows() if r["agent"] == AGENT]
     assert {r["model"] for r in rows} == {"fake-fast", "fake-deep"} and all(r["tenant_id"] == "t1" for r in rows)
 
 
