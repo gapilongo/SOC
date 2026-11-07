@@ -1,8 +1,8 @@
 """Alembic environment for LG-SOTF.
 
 The database URL comes from (in order) ``config.attributes["sqlalchemy_url"]``
-(set by :mod:`lg_sotf.db.migrate`), ``sqlalchemy.url`` in the ini file, or
-``get_settings().database``. Migrations run on a synchronous psycopg engine in
+(set by :mod:`lg_sotf.db.migrate`), ``sqlalchemy.url`` in the ini file, or, when
+alembic is run by hand, ``Settings().database``. Migrations run on a synchronous psycopg engine in
 a single transaction, with RLS bypassed so data migrations see every tenant.
 """
 
@@ -14,7 +14,8 @@ from alembic import context
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 
-from lg_sotf.db.migrate import migration_transaction_setup
+from lg_sotf.db.migrate import migration_transaction_setup, sqlalchemy_url
+from lg_sotf.settings import Settings
 
 config = context.config
 
@@ -28,9 +29,9 @@ def _database_url() -> str:
     url = config.attributes.get("sqlalchemy_url") or config.get_main_option("sqlalchemy.url")
     if url:
         return url
-    from lg_sotf.db.migrate import sqlalchemy_url
-
-    return sqlalchemy_url()
+    # Hand-run alembic: this script is the process entrypoint, so it loads the configuration itself.
+    database = Settings().database
+    return sqlalchemy_url(database.url.get_secret_value(), database)
 
 
 def _prepare_transaction() -> None:

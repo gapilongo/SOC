@@ -30,7 +30,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.retention import purge_expired
 from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.db.urls import to_libpq_url
-from lg_sotf.settings import RetentionSettings
+from lg_sotf.settings import DatabaseSettings, RetentionSettings
 from tests.integration.db._support import TENANT_A, TENANT_B, TENANT_TABLES, db_settings, make_alert, seed_everything
 
 pytestmark = pytest.mark.asyncio
@@ -44,8 +44,8 @@ def _sha(value: str) -> str:
 
 @pytest_asyncio.fixture
 async def app_db(db: Database, repos: Repositories, migrated_database_url: str) -> AsyncIterator[Database]:
-    await setup_checkpointer(migrated_database_url)
-    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url, DatabaseSettings())
     runtime = Database(
         db_settings(migrated_database_url, pool_min=0, pool_max=4),
         application_name="lg-sotf-tests-runtime",
@@ -210,9 +210,9 @@ async def test_grants_are_least_privilege(app_db: Database, migrated_database_ur
         assert not await can("alembic_version", "UPDATE")
     owner = await asyncio.to_thread(_schema_owner, migrated_database_url)
     with pytest.raises(ValueError):
-        await asyncio.to_thread(grant_runtime_privileges, owner, migrated_database_url)
+        await asyncio.to_thread(grant_runtime_privileges, owner, migrated_database_url, DatabaseSettings())
     with pytest.raises(ValueError):
-        await asyncio.to_thread(grant_runtime_privileges, "no_such_role_xyz", migrated_database_url)
+        await asyncio.to_thread(grant_runtime_privileges, "no_such_role_xyz", migrated_database_url, DatabaseSettings())
 
 
 async def _provision_in_one_transaction(app: Repositories, tenant_id: str, *, fail: bool = False) -> None:

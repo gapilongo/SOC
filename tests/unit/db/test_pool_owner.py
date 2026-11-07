@@ -10,7 +10,7 @@ from lg_sotf.compliance import ops as compliance_ops
 from lg_sotf.db import pool
 from lg_sotf.db.pool import Database, owner_database, owner_dsn
 from lg_sotf.runtime import leader, ops, scheduler
-from lg_sotf.settings import Settings
+from lg_sotf.settings import DatabaseSettings, Settings
 
 pytestmark = pytest.mark.unit
 
@@ -53,9 +53,10 @@ async def test_scheduler_and_migrate_connect_as_the_owner(
         await scheduler.run_scheduler(s, metrics_host="127.0.0.1", metrics_port=0)
 
     urls: List[str] = []
-    monkeypatch.setattr(ops, "upgrade_head", lambda url: urls.append(url))
+    monkeypatch.setattr(ops, "upgrade_head", lambda url, database: urls.append(url))
 
-    async def checkpointer(url: str) -> None:
+    async def checkpointer(url: str, database: DatabaseSettings) -> None:
+        assert database is s.database
         urls.append(url)
         raise Stop
 

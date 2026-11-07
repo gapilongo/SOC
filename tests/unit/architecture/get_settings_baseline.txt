@@ -2,6 +2,4 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-db/migrate.py::_ssl_params
-db/migrate.py::libpq_url
 observability/tracing.py::setup_tracing

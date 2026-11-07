@@ -127,9 +127,10 @@ async def test_direct_partition_access_is_also_isolated(db: Database, repos: Rep
 async def test_checkpoint_tables_are_tenant_isolated(db: Database, repos: Repositories, migrated_database_url: str) -> None:
     """AUTHZ-5: LangGraph checkpoints (full alert state) are under the same RLS as tenant tables."""
     from lg_sotf.db.migrate import setup_checkpointer
+    from lg_sotf.settings import DatabaseSettings
 
-    await setup_checkpointer(migrated_database_url)
-    await setup_checkpointer(migrated_database_url)  # idempotent re-apply
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())  # idempotent re-apply
     thread_b = f"{TENANT_B}:alert-1"
     async with db.system_tx() as conn:
         for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):

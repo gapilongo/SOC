@@ -14,6 +14,7 @@ import pytest
 
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.repos import LLMUsageDelta
+from lg_sotf.settings import DatabaseSettings
 from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
@@ -457,8 +458,8 @@ async def test_platform_endpoints_need_a_platform_admin(api: ApiHarness) -> None
 
 async def test_console_works_as_the_runtime_role(make_api: Callable, migrated_database_url: str) -> None:
     """The runtime role cannot bypass RLS: the console must go through the lgsotf_platform_* functions."""
-    await setup_checkpointer(migrated_database_url)
-    await asyncio.to_thread(grant_runtime_privileges, "pg_database_owner", migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await asyncio.to_thread(grant_runtime_privileges, "pg_database_owner", migrated_database_url, DatabaseSettings())
     separator = "&" if "?" in migrated_database_url else "?"
     api: ApiHarness = await make_api(database={"url": f"{migrated_database_url}{separator}role=pg_database_owner"})
     headers = await _platform(api)

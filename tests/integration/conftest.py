@@ -35,7 +35,7 @@ from lg_sotf.integrations.config import encrypt_secret, validate_config
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.connectors.microsoft import MicrosoftClients
 from lg_sotf.services.response import ResponseService
-from lg_sotf.settings import Settings
+from lg_sotf.settings import DatabaseSettings, Settings
 from tests.fixtures.microsoft import FakeMicrosoft, fake_config
 from tests.integration._support import (
     ensure_database,
@@ -111,14 +111,14 @@ def database_url() -> str:
 def migrated_database_url(database_url: str) -> Iterator[str]:
     assert_rls_applies(database_url)
     reset_schema(database_url)
-    upgrade_head(database_url)
+    upgrade_head(database_url, DatabaseSettings())
     yield database_url
 
 
 @pytest.fixture(scope="session")
 def checkpointed_database_url(migrated_database_url: str) -> str:
     """The migrated test database plus LangGraph's checkpoint tables (``lg-sotf migrate`` does both)."""
-    asyncio.run(setup_checkpointer(migrated_database_url))
+    asyncio.run(setup_checkpointer(migrated_database_url, DatabaseSettings()))
     return migrated_database_url
 
 
