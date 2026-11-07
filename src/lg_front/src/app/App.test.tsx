@@ -53,8 +53,11 @@ describe('App', () => {
 
 const DENIED = 'You do not have access to this page';
 
-/** Every static page of the route table (parameterised routes and redirects are covered by their pages' tests). */
-const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && r.path !== '/actions');
+/**
+ * Every static page of the route table (parameterised routes and redirects are covered by their pages' tests;
+ * the setup wizard and the proof-of-value page are reached from in-page links, and pages/setup tests their gates).
+ */
+const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !['/actions', '/setup', '/pov'].includes(r.path));
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [

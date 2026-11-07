@@ -1,20 +1,34 @@
+import { Link } from 'react-router-dom';
+
 import { OnboardingChecklist, SampleAlertsButton, useDismissOnboarding, useOnboardingStatus } from './onboarding/Onboarding';
-import { Button, Card, ErrorMessage, LoadingState, PageHeader } from '../components/ui';
+import { useAuth } from '../auth/AuthContext';
+import { can } from '../auth/roles';
+import { Button, Card, ErrorMessage, LoadingState, PageHeader, buttonClass } from '../components/ui';
 
 export default function GettingStartedPage() {
   const q = useOnboardingStatus();
   const dismiss = useDismissOnboarding();
+  const { principal } = useAuth();
   const s = q.data;
   return (
     <>
       <PageHeader
         title="Getting started"
         description="The steps that take a new tenant from empty to triaging real alerts. Progress is worked out from your tenant's data."
-        actions={s && !s.dismissed ? (
-          <Button size="sm" variant="quiet" busy={dismiss.isPending} onClick={() => dismiss.mutate()}>
-            Hide the dashboard banner
-          </Button>
-        ) : undefined}
+        actions={
+          <>
+            {can.setup(principal) && (
+              <Link to="/setup" className={buttonClass('secondary', 'sm')}>
+                Setup wizard
+              </Link>
+            )}
+            {s && !s.dismissed && (
+              <Button size="sm" variant="quiet" busy={dismiss.isPending} onClick={() => dismiss.mutate()}>
+                Hide the dashboard banner
+              </Button>
+            )}
+          </>
+        }
       />
       {q.isPending && <LoadingState label="Loading checklist" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
