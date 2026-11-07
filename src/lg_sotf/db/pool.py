@@ -6,6 +6,10 @@ check. :meth:`Database.system_tx` sets ``app.bypass_rls`` instead and is
 reserved for the scheduler, retention and migrations; the policies honour it
 only for members of the schema owner role (``lgsotf_rls_bypass()``), so the
 API/worker runtime role cannot bypass isolation by setting the GUC.
+
+In a shadow run (:mod:`lg_sotf.security.shadow`) every transaction and bare
+connection is read only, whatever the caller asked for: a write that no
+egress boundary diverted fails instead of committing.
 """
 
 from __future__ import annotations
@@ -30,6 +34,7 @@ from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted,
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.types import Connection
 from lg_sotf.db.urls import redact_url, to_libpq_url
+from lg_sotf.security.shadow import in_shadow
 from lg_sotf.settings import DatabaseSettings, Settings
 
 log = structlog.get_logger(__name__)
@@ -213,11 +218,20 @@ class Database:
 
     @asynccontextmanager
     async def connection(self) -> AsyncIterator[Connection]:
-        """A pooled connection without a transaction or tenant scope.
+        """A pooled connection without a tenant scope (in a read-only transaction in a shadow run).
 
         Only for health checks and administrative statements; RLS makes
         tenant tables appear empty here.
         """
+        async with self._acquire() as conn:
+            if not in_shadow():
+                yield conn
+                return
+            async with conn.transaction(readonly=True):
+                yield conn
+
+    @asynccontextmanager
+    async def _acquire(self) -> AsyncIterator[Connection]:
         pool = self._require_pool()
         try:
             conn = await pool.acquire(timeout=self._acquire_timeout_s)
@@ -234,8 +248,8 @@ class Database:
     async def tenant_tx(self, tenant_id: str, *, readonly: bool = False) -> AsyncIterator[Connection]:
         """Transaction scoped to one tenant via ``app.tenant_id``."""
         validate_tenant_id(tenant_id)
-        async with self.connection() as conn:
-            async with conn.transaction(readonly=readonly):
+        async with self._acquire() as conn:
+            async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
                 yield conn
 
@@ -246,8 +260,8 @@ class Database:
         Raises :class:`SystemScopeDenied` when the connected role is not a
         member of the schema owner role, instead of silently seeing no rows.
         """
-        async with self.connection() as conn:
-            async with conn.transaction(readonly=readonly):
+        async with self._acquire() as conn:
+            async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.bypass_rls', 'on', true)")
                 if not self._system_scope_verified:
                     await self._verify_system_scope(conn)

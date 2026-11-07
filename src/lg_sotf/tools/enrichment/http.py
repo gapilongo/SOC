@@ -24,12 +24,17 @@ import httpx
 
 from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.security.shadow import allow, egress
 
 USER_AGENT = "lg-sotf-enrichment/1"
 DEFAULT_TIMEOUT_S = 10.0
 DEFAULT_CONNECT_TIMEOUT_S = 5.0
 DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 DEFAULT_RETRY_AFTER_S = 60.0
+ENRICHMENT_IS_READ_ONLY = (
+    "GET lookups of an indicator at a threat-intelligence provider, the lookup the production run makes; "
+    "they change nothing at the provider (shadow runs use the same cache and rate limits)"
+)
 
 
 class ProviderHTTPError(Exception):
@@ -76,6 +81,7 @@ class JsonHttpClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._lock = asyncio.Lock()
 
+    @egress("enrichment_lookup", allow(ENRICHMENT_IS_READ_ONLY))
     async def _get_client(self) -> httpx.AsyncClient:
         async with self._lock:
             if self._client is None:

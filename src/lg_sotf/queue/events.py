@@ -29,6 +29,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import egress, sink
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -120,6 +121,7 @@ class EventBus:
     def subscriber_count(self) -> int:
         return self._hub.count
 
+    @egress("ws_event", sink(detail=lambda a: {"event_type": a["event"].get("type")}))
     async def publish(self, tenant_id: str, event: Mapping[str, Any]) -> None:
         channel = self.channel(tenant_id)
         body = dict(event)

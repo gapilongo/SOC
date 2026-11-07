@@ -44,6 +44,7 @@ from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
+from lg_sotf.security.shadow import shadow_run_id
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.plan_context import plan_context
 from lg_sotf.services.response import ResponseService
@@ -180,6 +181,7 @@ class WorkflowNodes:
             budget=self.deps.budget,
             budget_limit=limit if isinstance(limit, int) else USE_DEFAULT,
             llm_budget_exceeded=bool(state.get("llm_budget_exceeded")),
+            run_id=shadow_run_id(),
         )
 
     async def gate(self, state: WorkflowState) -> Dict[str, Any]:

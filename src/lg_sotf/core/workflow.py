@@ -175,6 +175,7 @@ class WorkflowEngine:
         agents: AgentSet,
         escalations: EscalationService,
         events: Optional[EventPublisher],
+        node_deps: NodeDeps,
     ) -> None:
         self.settings = settings
         self.repos = repos
@@ -187,6 +188,8 @@ class WorkflowEngine:
         self._checkpointer = checkpointer
         self._escalations = escalations
         self._events = events
+        self.node_deps = node_deps
+        """The services the nodes run with (a :class:`~lg_sotf.core.shadow.ShadowRunner` reuses them)."""
 
     @classmethod
     async def create(
@@ -263,6 +266,7 @@ class WorkflowEngine:
             agents=agent_set,
             escalations=escalations,
             events=events,
+            node_deps=deps,
         )
 
     async def close(self) -> None:

@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.streams import SEVERITIES, QueueStreams, encode_work
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -42,6 +43,7 @@ class WorkQueue:
         log.debug("queue.enqueued", kind="process", stream=self._streams.label(stream), entry_id=entry_id)
         return entry_id
 
+    @egress("queue", REFUSE)
     async def enqueue_process_many(self, tenant_id: str, alerts: Sequence[Tuple[str, str]]) -> List[str]:
         """``enqueue_process`` for several ``(alert_id, severity)`` pairs in one pipelined round trip."""
         if not alerts:
@@ -66,6 +68,7 @@ class WorkQueue:
         log.debug("queue.enqueued", kind="resume", stream=self._streams.label(stream), entry_id=entry_id)
         return entry_id
 
+    @egress("queue", REFUSE)
     async def _add(self, stream: str, fields: Mapping[str, str]) -> str:
         entry_id = await self._redis.xadd(stream, dict(fields))  # type: ignore[arg-type]
         return _text(entry_id)

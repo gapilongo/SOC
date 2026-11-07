@@ -21,6 +21,7 @@ from typing import Any, Dict, Optional
 from redis.asyncio import Redis
 
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITY_RANK
+from lg_sotf.security.shadow import egress, sink
 
 VERDICT_TTL_S = 7 * 24 * 3600
 MAX_FINGERPRINT_CHARS = 256
@@ -62,6 +63,7 @@ class VerdictCache:
             return None
         return value
 
+    @egress("verdict_cache", sink(lambda a: False))
     async def put_analyst_benign(
         self,
         tenant_id: str,
@@ -86,6 +88,7 @@ class VerdictCache:
         await self._redis.set(self.key(tenant_id, fingerprint), json.dumps(value), ex=self._ttl_s)
         return True
 
+    @egress("verdict_cache", sink(lambda a: False))
     async def invalidate(self, tenant_id: str, fingerprint: str) -> bool:
         """Remove the cached verdict for ``fingerprint``; True when one existed."""
         if not fingerprint:

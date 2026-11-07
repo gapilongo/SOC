@@ -28,6 +28,7 @@ BOUNDED_LISTS = {
     "InvestigationStepsRepo.list_for_alert": "its limit (check_limit, MAX_STEPS_LISTED): the trace of one alert",
     "LLMUsageRepo.list_range": "one row per day and model in a date range the callers cap (MAX_USAGE_DAYS)",
     "RunsRepo.list_queued": "its limit (check_limit, MAX_QUEUED_LISTED)",
+    "ShadowEffectsRepo.list_for_run": "one shadow run's effects, at most MAX_EFFECTS (the sink keeps no more)",
     "SourcesRepo.list": "a tenant's configured sources (max_sources quota)",
     "SourcesRepo.list_due_sources_all_tenants": "its limit",
     "SuppressionsRepo.list": "a tenant's rules and suggestions; suggestions expire and are reused (find_reusable)",

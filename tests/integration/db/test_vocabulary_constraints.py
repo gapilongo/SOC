@@ -25,6 +25,7 @@ from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.db.urls import to_libpq_url
 from lg_sotf.models import vocabulary as v
 from lg_sotf.models.trace import STEP_KINDS, STEP_OUTCOMES
+from lg_sotf.security.shadow import EFFECT_OUTCOMES
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,6 +57,7 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("audit_log", "actor_type"): AUDIT_ACTOR_TYPES,
     ("investigation_steps", "kind"): STEP_KINDS,
     ("investigation_steps", "outcome"): STEP_OUTCOMES,
+    ("shadow_effects", "outcome"): EFFECT_OUTCOMES,
     # Suppression rules only ever close alerts as benign.
     ("suppression_rules", "disposition"): ("benign",),
 }

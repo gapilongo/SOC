@@ -26,6 +26,7 @@ from lg_sotf.db.repos._base import (
     utcnow,
 )
 from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
+from lg_sotf.security.shadow import egress, sink
 
 if TYPE_CHECKING:
     from lg_sotf.core.state import AlertSummary
@@ -347,6 +348,7 @@ class AlertsRepo(Repository):
         items = [AlertListItem.model_validate(dict(r)) for r in rows]
         return paginate(items, limit, lambda a: (a.ingested_at, a.id))
 
+    @egress("alert", sink(detail=lambda a: {"to_status": a["to_status"]}))
     async def update_status(
         self,
         tenant_id: str,
@@ -387,6 +389,7 @@ class AlertsRepo(Repository):
                     raise InvalidTransition("alert", alert_id, row["status"], to_status)
         return Alert.model_validate(dict(row))
 
+    @egress("alert", sink())
     async def update(
         self,
         tenant_id: str,

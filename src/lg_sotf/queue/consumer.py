@@ -21,6 +21,7 @@ from lg_sotf.queue.streams import (
     parse_message,
     utc_now_iso,
 )
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -177,6 +178,7 @@ class StreamConsumer:
         """Drop the liveness key (clean shutdown): entries this consumer still holds are claimable at once."""
         await self._redis.delete(self._streams.consumer_alive(self._name))
 
+    @egress("queue", REFUSE)
     async def requeue_own_pending(self) -> int:
         """Send entries still pending under this consumer name back to the tail of their stream.
 
@@ -388,6 +390,7 @@ class StreamConsumer:
         """Copy the entry to the DLQ with ``reason`` and ``failed_at``, then ack it. Returns the DLQ entry id."""
         return await self._move_to_dlq(msg.stream, msg.entry_id, msg.raw_fields, reason, msg.deliveries)
 
+    @egress("queue", REFUSE)
     async def requeue(self, msg: Message, *, count_attempt: bool = False) -> str:
         """Put a copy of the entry at the tail of its stream and ack the original.
 
@@ -405,6 +408,7 @@ class StreamConsumer:
         new_id, _acked, _deleted = await pipe.execute()
         return _text(new_id)
 
+    @egress("queue", REFUSE)
     async def _move_to_dlq(
         self, stream: str, entry_id: str, fields: Mapping[str, str], reason: str, deliveries: int
     ) -> str:

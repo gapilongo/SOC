@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.integrations.events import EVENT_LABELS, with_links
 from lg_sotf.integrations.http import DeliveryError, HttpResult, IntegrationHttp, tls_verify
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.security.signing import (
     DELIVERY_HEADER,
     EVENT_HEADER,
@@ -287,6 +288,7 @@ def email_message(
 SmtpFactory = Callable[..., Any]
 
 
+@egress("mail", REFUSE)
 def _smtp_send(settings: Settings, message: EmailMessage, smtp_factory: Optional[SmtpFactory]) -> None:
     cfg = settings.integrations
     context = ssl.create_default_context()
