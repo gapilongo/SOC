@@ -241,7 +241,7 @@ Environment > **Add environment secret** / **Add environment variable**. Use
 | `LG_SOTF_SECURITY__ENCRYPTION_KEYS` | yes | Generated. Fernet key(s) encrypting stored credentials |
 | `LG_SOTF_SECURITY__INDICATOR_HMAC_KEY` | yes | Generated. Keys indicator correlation |
 | `LG_SOTF_API__METRICS_TOKEN` | yes | Generated. Bearer token for `/metrics` (not exposed publicly by Caddy) |
-| `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | yes | Generated. Password of the first admin (at least 12 characters) |
+| `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | yes | Generated. Password of the first admin (at least 12 characters, at least 4 of them different) |
 | `ANTHROPIC_API_KEY` | no | Real triage with Claude. Without it the deterministic `fake` model is used |
 | `GOOGLE_API_KEY` | no | Real triage with Gemini (free tier: synthetic alerts only, prompts may be used for training) |
 | `OPENAI_API_KEY` | no | Real triage with OpenAI or an OpenAI-compatible endpoint (`LLM_BASE_URL`) |

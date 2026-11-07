@@ -61,6 +61,7 @@ from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary
 from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -435,12 +436,14 @@ async def run_history_backtest(
     db: Optional[Database] = None,
     now: Optional[datetime] = None,
     before_replay: Optional[Callable[[Dataset], None]] = None,
+    secret_box: Optional[SecretBox] = None,
 ) -> HistoryRun:
     """Replay the tenant's decided alerts of the last ``days`` days (at most ``limit``, oldest first).
 
     Opens its own database pool (used read-only) unless ``db`` is given.
     ``before_replay`` sees the selected items before any model call and may
-    raise to stop the run (baseline checks). Raises
+    raise to stop the run (baseline checks). ``secret_box`` (built by the
+    CLI) lets enrichment read the tenant's encrypted tool keys. Raises
     :class:`HistoryBacktestError` when the tenant does not exist or has no
     decided alerts in the window.
     """
@@ -452,7 +455,7 @@ async def run_history_backtest(
     now = now or datetime.now(UTC)
     owned_db = db is None
     database = db or Database(settings.database, application_name="lg-sotf-backtest")
-    agent_set = agents or AgentSet.build(settings)
+    agent_set = agents or AgentSet.build(settings, secret_box=secret_box)
     if owned_db:
         try:
             await database.open()
@@ -492,8 +495,16 @@ async def run_history_backtest(
     finally:
         if owned_db:
             await database.close()
+    info = _history_info(settings, tenant_id, days, limit, now, concurrency, started)
+    return HistoryRun(dataset=dataset, results=results, info=info)
+
+
+def _history_info(
+    settings: Settings, tenant_id: str, days: int, limit: int, now: datetime, concurrency: int, started: float
+) -> Dict[str, Any]:
+    """``report.run`` of a history backtest: what was replayed, with which models, and how long it took."""
     fake = settings.llm.provider == "fake"
-    info: Dict[str, Any] = {
+    return {
         "mode": "history",
         "tenant_id": tenant_id,
         "days": days,
@@ -507,4 +518,3 @@ async def run_history_backtest(
         "concurrency": concurrency,
         "duration_s": round(time.perf_counter() - started, 3),
     }
-    return HistoryRun(dataset=dataset, results=results, info=info)

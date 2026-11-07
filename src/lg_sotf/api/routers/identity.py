@@ -26,7 +26,8 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from lg_sotf.api.auth.deps import ADMIN, ADMIN_USER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.context import ApiContext, get_ctx
+from lg_sotf.api.common import check_password
+from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.schemas import ApiKeyCreatedOut, ApiKeyCreateIn, ApiKeyOut, UserCreateIn, UserOut, UserUpdateIn
@@ -40,19 +41,6 @@ from lg_sotf.services.tenancy import QuotaExceeded
 
 users = APIRouter(prefix="/users", tags=["users"])
 api_keys = APIRouter(prefix="/api-keys", tags=["api-keys"])
-
-MAX_PASSWORD_CHARS = 1_024
-
-
-def check_password(ctx: ApiContext, password: str) -> None:
-    minimum = ctx.settings.auth.password_min_length
-    if len(password) < minimum:
-        raise ApiError(422, "weak_password", f"password must be at least {minimum} characters")
-    if len(password) > MAX_PASSWORD_CHARS:
-        raise ApiError(422, "weak_password", f"password must be at most {MAX_PASSWORD_CHARS} characters")
-    if len(set(password)) < 4:
-        raise ApiError(422, "weak_password", "password is too repetitive")
-
 
 _REFUSALS: Dict[str, Tuple[int, str, str]] = {
     "platform_admin_target": (403, "forbidden", "only a platform admin can modify a platform-admin account"),

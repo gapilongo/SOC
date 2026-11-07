@@ -373,7 +373,8 @@ severities, a `.*` regex, a `/0` network) is refused with 422
 
 ### Users and API keys
 
-Passwords must have at least `auth.password_min_length` characters. Admins
+Passwords must have at least `auth.password_min_length` characters, at most
+1,024, and at least 4 different characters (the CLI applies the same rules). Admins
 cannot change their own role or active status, delete themselves, or remove
 the tenant's last active admin; only platform admins grant the platform-admin
 flag. Password changes and deactivation revoke the user's refresh tokens.
