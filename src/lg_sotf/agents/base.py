@@ -48,7 +48,7 @@ from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Repositories
@@ -115,11 +115,11 @@ class BaseAgent:
         self,
         config: Optional[Mapping[str, Any]] = None,
         *,
-        settings: Optional[Settings] = None,
+        settings: Settings,
         name: Optional[str] = None,
         model_factory: Optional[ModelFactory] = None,
     ) -> None:
-        self.settings = settings or get_settings()
+        self.settings = settings
         if name is not None:
             self.name = name
         elif type(self).name == BaseAgent.name:

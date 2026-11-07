@@ -2,7 +2,6 @@
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
 
-agents/base.py::BaseAgent.__init__
 db/migrate.py::_ssl_params
 db/migrate.py::libpq_url
 ingestion/service.py::IngestionService.__init__
