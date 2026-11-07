@@ -587,7 +587,7 @@ class SuppressionOut(Out):
     tenant_id: str
     name: str
     match: Dict[str, Any]
-    disposition: str
+    disposition: DispositionStr
     created_by: Optional[UUID] = None
     source_feedback_id: Optional[str] = None
     expires_at: Optional[datetime] = None

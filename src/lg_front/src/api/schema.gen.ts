@@ -3621,8 +3621,11 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by?: string | null;
-            /** Disposition */
-            disposition: string;
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "malicious" | "benign" | "inconclusive";
             /** Enabled */
             enabled: boolean;
             /** Expires At */

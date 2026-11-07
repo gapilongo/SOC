@@ -5971,6 +5971,11 @@
             "title": "Created By"
           },
           "disposition": {
+            "enum": [
+              "malicious",
+              "benign",
+              "inconclusive"
+            ],
             "title": "Disposition",
             "type": "string"
           },

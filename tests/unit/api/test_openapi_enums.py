@@ -58,6 +58,8 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     # sources
     ("SourceOut", "type", v.SOURCE_TYPES),
     ("SourceOut", "health", SOURCE_HEALTH),
+    # suppressions
+    ("SuppressionOut", "disposition", v.DISPOSITIONS),
 ]
 
 
