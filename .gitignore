@@ -36,5 +36,7 @@ junit.xml
 
 # scripts/quickstart.sh state (secrets, admin credentials, logs)
 .quickstart/
+# scripts/pov.sh state (secrets, admin credentials, backtest reports)
+.pov/
 # scripts/airgap/bundle.sh output
 lg-sotf-airgap-*/

@@ -22,6 +22,7 @@ function status(overrides: Partial<OnboardingStatusOut> = {}): OnboardingStatusO
     complete: false,
     dismissed: false,
     samples_sent: false,
+    first_verdict: false,
     ...overrides,
   };
 }

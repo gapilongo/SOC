@@ -1,0 +1,79 @@
+# Evaluation scorecards
+
+A scorecard is the one-page summary of how one model configuration handled
+the evaluation sets: what it missed, what it closed on its own, how often it
+asked an analyst, and what it cost. It is generated from the JSON reports of
+`lg-sotf eval` (docs/evaluation.md), so every number traces back to a
+per-item report committed next to it.
+
+| Scorecard | Model | Data | Status |
+|---|---|---|---|
+| [v1, qwen2.5 7B on Ollama](v1/qwen2.5-7b/scorecard.md) | `qwen2.5:7b` (local, Ollama) | synthetic and phishing sets | baseline |
+
+## Generating one
+
+Run the evaluation once per dataset with the same settings, then:
+
+```sh
+lg-sotf eval-scorecard synthetic.json phishing.json \
+    --output scorecard.md --json scorecard.json \
+    --prompt-version "lg-sotf <commit>" \
+    --note "Hardware: ..."
+```
+
+* All reports must come from the same provider and models; the command
+  refuses to mix them.
+* `--prompt-version` names the prompts when the reports do not record them.
+  Once reports carry prompt hashes (AI-E1.2), the scorecard shows those.
+* `--note` adds a limitation line (repeatable): the hardware, a subset, a
+  known problem in the run.
+* `--internal` marks the scorecard **internal only**. It is automatic for
+  DeepSeek models: DeepSeek may be run on the synthetic sets for internal
+  comparison, and its results are never published.
+
+The command reads files only; it needs no database or model.
+
+## The template
+
+Every scorecard has the same sections, in this order.
+
+1. **Header.** Provider, fast and deep model IDs, prompt version (or "not
+   recorded"), lg-sotf version, when the reports were generated.
+2. **Malicious false-negative rate (the headline).** Expected-malicious items
+   automation closed as benign without a human, for each dataset and each
+   split, as `k` missed of `n` with the rate and a 95% Wilson score interval,
+   followed by the IDs of the missed items. An escalated malicious item is not
+   a miss: a human sees it.
+3. **Automation.**
+   * *Auto-close precision*: of the items automation closed on its own, the
+     share whose closing disposition matches the expected one.
+   * *Auto-close rate*, *escalation rate* (analyst review requested),
+     *approval requests* (response actions waiting for approval) and *errors*.
+   Each with counts and a 95% Wilson interval.
+4. **Per class.** Precision, recall, F1, support and predicted count for
+   `malicious`, `benign` and `inconclusive`, plus macro F1. The predicted
+   disposition of an escalated item is the analysis verdict (`inconclusive`
+   without one), as in the eval report.
+5. **Cost and latency per item.** Mean cost, total cost, tokens and LLM calls
+   per item; latency mean, p50, p95 and max from ingestion to the run's stop.
+   Local models are metered at $0: their cost is the hardware.
+6. **Datasets.** Path, sha256 prefix, items, scored items, synthetic flag,
+   splits.
+7. **Limitations.** Generated from the reports (synthetic data, small
+   samples, unreviewed escalations, subsets, errors, missing prompt versions)
+   plus the `--note` lines.
+
+## Reading the intervals
+
+The shipped sets are small (35 and 24 expected-malicious items). With 0
+misses out of 35, the 95% interval still reaches 9.9%: the data cannot show
+that the true miss rate is below 1 in 10. Treat two scorecards as different
+only when their intervals do not overlap, and gate releases on the per-item
+results (`--thresholds`, `--baseline`), not on a scorecard.
+
+## Reproducing v1
+
+`v1/<model>/` holds the two eval reports, the scorecard and its JSON form.
+`tests/unit/eval/test_scorecard_v1.py` regenerates the scorecard from the
+committed reports and fails if they disagree. The run itself is described in
+the scorecard's limitations and in [v1/qwen2.5-7b/RUN.md](v1/qwen2.5-7b/RUN.md).

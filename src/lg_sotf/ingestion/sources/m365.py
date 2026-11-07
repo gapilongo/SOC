@@ -67,6 +67,7 @@ def _graph_id(value: Any) -> Optional[str]:
 
 class M365MailboxConnector(PullConnector):
     source_type = "m365_mailbox"
+    writes_back = True
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)

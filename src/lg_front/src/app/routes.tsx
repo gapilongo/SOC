@@ -49,6 +49,8 @@ const ReportsPage = lazy(() => import('../pages/ReportsPage'));
 const PlatformPage = lazy(() => import('../pages/platform/PlatformPage'));
 const GettingStartedPage = lazy(() => import('../pages/GettingStartedPage'));
 const AccountSecurityPage = lazy(() => import('../pages/AccountSecurityPage'));
+const SetupWizardPage = lazy(() => import('../pages/setup/SetupWizardPage'));
+const PovPage = lazy(() => import('../pages/PovPage'));
 
 export type NavGroupId = 'operate' | 'report' | 'configure' | 'platform';
 
@@ -114,6 +116,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: '/audit', Page: AuditPage, allowed: can.admin, nav: { group: 'report', label: 'Audit log', icon: FileClock } },
   // Configure
   { path: '/getting-started', Page: GettingStartedPage, allowed: can.admin, nav: { group: 'configure', label: 'Getting started', icon: Rocket } },
+  // First-run setup (reached from the Overview and Getting started) and where it ends.
+  { path: '/setup', Page: SetupWizardPage, allowed: can.setup, label: 'Setup' },
+  { path: '/pov', Page: PovPage, allowed: can.admin, label: 'Proof of value' },
   { path: '/sources', Page: SourcesPage, allowed: can.admin, nav: { group: 'configure', label: 'Sources', icon: Plug } },
   { path: '/integrations', Page: IntegrationsPage, allowed: can.admin, nav: { group: 'configure', label: 'Integrations', icon: Send } },
   { path: '/users', Page: UsersPage, allowed: can.admin, nav: { group: 'configure', label: 'Users and API keys', icon: KeyRound } },
