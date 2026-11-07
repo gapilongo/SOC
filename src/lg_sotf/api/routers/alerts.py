@@ -15,7 +15,7 @@ from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import alert_detail_out, alert_out
+from lg_sotf.api.common import alert_detail_out, alert_out, aware
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertCountsOut, AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
@@ -34,13 +34,6 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 COUNTS_CACHE_TTL_S = 15
 
-
-
-def aware(value: Optional[datetime]) -> Optional[datetime]:
-    """Query timestamps without an offset are taken as UTC."""
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
 
 
 @router.get("", response_model=PageOut[AlertOut], summary="List alerts (newest first, keyset pagination)")
