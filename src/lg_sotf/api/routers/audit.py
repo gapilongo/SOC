@@ -20,7 +20,7 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import aware
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import Out, PageOut
+from lg_sotf.api.schemas import AuditActorTypeStr, Out, PageOut
 from lg_sotf.db.pagination import API_MAX_LIMIT
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -30,7 +30,7 @@ class AuditEntryOut(Out):
     id: int
     tenant_id: str
     ts: datetime
-    actor_type: str
+    actor_type: AuditActorTypeStr
     actor_id: Optional[str] = None
     action: str
     resource_type: str

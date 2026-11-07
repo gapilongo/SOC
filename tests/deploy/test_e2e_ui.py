@@ -75,7 +75,7 @@ def test_suite_covers_the_analyst_workflow_and_the_security_checks() -> None:
     spec = SPEC.read_text()
     support = SUPPORT.read_text()
     for flow in (
-        "the dashboard updates live",
+        "the Overview updates live",
         "filters, pagination and the alert timeline",
         "claims and decides an escalation",
         "the admin approves, the alert closes as malicious",

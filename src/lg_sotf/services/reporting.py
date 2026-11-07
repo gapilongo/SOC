@@ -59,17 +59,16 @@ import math
 from dataclasses import dataclass, fields
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, Type, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, Type, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, WithJsonSchema
 from redis.exceptions import RedisError
 
-from lg_sotf.db.repos.alerts import SEVERITIES
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.pricing import LOCAL_PREFIX
-from lg_sotf.models.vocabulary import BENIGN_DECISIONS
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
 from lg_sotf.models.vocabulary import DISPOSITIONS as AI_CLASSES
 from lg_sotf.models.vocabulary import Disposition as AiClass
 from lg_sotf.observability.logging import get_logger
@@ -97,6 +96,7 @@ Z_95 = 1.959963984540054
 AnalystClass = Literal["malicious", "benign"]
 ANALYST_CLASSES: Tuple[str, ...] = ("malicious", "benign")
 Suggestion = Literal["tune_rule", "candidate_suppression"]
+SeverityStr = Annotated[str, WithJsonSchema({"type": "string", "enum": list(SEVERITIES)})]  # ADR-0009
 
 
 class ReportWindowError(ValueError):
@@ -593,9 +593,9 @@ class Detection(BaseModel):
     analyst_false_positive: int
     analyst_benign_positive: int
     analyst_true_positive: int
-    median_severity: Optional[str]
-    max_severity: Optional[str]
-    max_confirmed_benign_severity: Optional[str]
+    median_severity: Optional[SeverityStr]
+    max_severity: Optional[SeverityStr]
+    max_confirmed_benign_severity: Optional[SeverityStr]
     suggestion: Optional[Suggestion]
     reason: str
     can_propose_suppression: bool
