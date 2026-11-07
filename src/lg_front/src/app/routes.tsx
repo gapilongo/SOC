@@ -27,28 +27,28 @@ import {
 } from 'lucide-react';
 import { lazy, type ComponentType } from 'react';
 
-import { can } from './auth/roles';
-import type { Principal } from './auth/store';
-import type { NavCount, NavGroup, NavItem } from './components/shell/nav';
-import { LegacyActionsRedirect } from './pages/approvals/redirect';
+import { can } from '../auth/roles';
+import type { Principal } from '../auth/store';
+import { LegacyActionsRedirect } from '../pages/approvals/redirect';
+import type { NavCount, NavGroup, NavItem } from './shell/nav';
 
 // One chunk per route.
-const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
-const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
-const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
-const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
-const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
-const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
-const SourcesPage = lazy(() => import('./pages/SourcesPage'));
-const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
-const UsersPage = lazy(() => import('./pages/UsersPage'));
-const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
-const UsagePage = lazy(() => import('./pages/UsagePage'));
-const AuditPage = lazy(() => import('./pages/AuditPage'));
-const ReportsPage = lazy(() => import('./pages/ReportsPage'));
-const PlatformPage = lazy(() => import('./pages/PlatformPage'));
-const GettingStartedPage = lazy(() => import('./pages/GettingStartedPage'));
-const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage'));
+const OverviewPage = lazy(() => import('../pages/overview/OverviewPage'));
+const AlertsPage = lazy(() => import('../pages/alerts/AlertsPage'));
+const EscalationsPage = lazy(() => import('../pages/escalations/EscalationsPage'));
+const DecisionPage = lazy(() => import('../pages/escalations/DecisionPage'));
+const ApprovalsPage = lazy(() => import('../pages/approvals/ApprovalsPage'));
+const SuppressionsPage = lazy(() => import('../pages/SuppressionsPage'));
+const SourcesPage = lazy(() => import('../pages/SourcesPage'));
+const IntegrationsPage = lazy(() => import('../pages/IntegrationsPage'));
+const UsersPage = lazy(() => import('../pages/UsersPage'));
+const TenantSettingsPage = lazy(() => import('../pages/TenantSettingsPage'));
+const UsagePage = lazy(() => import('../pages/UsagePage'));
+const AuditPage = lazy(() => import('../pages/AuditPage'));
+const ReportsPage = lazy(() => import('../pages/ReportsPage'));
+const PlatformPage = lazy(() => import('../pages/PlatformPage'));
+const GettingStartedPage = lazy(() => import('../pages/GettingStartedPage'));
+const AccountSecurityPage = lazy(() => import('../pages/AccountSecurityPage'));
 
 export type NavGroupId = 'operate' | 'report' | 'configure' | 'platform';
 

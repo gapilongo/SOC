@@ -1,7 +1,7 @@
 /**
  * The sidebar's navigation model: groups (Operate / Report / Configure /
  * Platform) of items filtered by role. The groups themselves come from the
- * route table (src/routes.tsx), so every item is gated exactly like its route.
+ * route table (app/routes.tsx), so every item is gated exactly like its route.
  */
 
 import type { LucideIcon } from 'lucide-react';

@@ -3,11 +3,11 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { UserOut } from '../api/types';
+import { AuthStore } from '../auth/store';
+import { fakeApi, fakeTransport, renderWithSession, signedInSession, token } from '../test/helpers';
 import { App, AppRoutes } from './App';
-import { AuthStore } from './auth/store';
-import type { UserOut } from './api/types';
 import { APP_ROUTES } from './routes';
-import { fakeApi, fakeTransport, renderWithSession, signedInSession, token } from './test/helpers';
 
 /** No live socket in these tests. */
 function stubWebSocket() {

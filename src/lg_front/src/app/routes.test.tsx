@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { can } from './auth/roles';
+import { can } from '../auth/roles';
 import { APP_ROUTES, NAV_GROUPS, pageLabel } from './routes';
 
 describe('route table', () => {

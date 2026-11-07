@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActionOut, Page } from '../api/types';
 import { RequireRole } from '../components/Guards';
 import ApprovalsPage from '../pages/approvals/ApprovalsPage';
-import { NAV_GROUPS } from '../routes';
+import { NAV_GROUPS } from '../app/routes';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import { approvalRoleFor, can, decisionBlockedReason, escalationDecisionBlockedReason, roleAtLeast } from './roles';
 import type { Principal } from './store';

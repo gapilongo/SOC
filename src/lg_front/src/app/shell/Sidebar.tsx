@@ -4,8 +4,8 @@ import { Link, NavLink } from 'react-router-dom';
 
 import { useDashboardSummary } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
+import { CountChip, cx } from '../../components/ui';
 import { usePollInterval } from '../../lib/visibility';
-import { CountChip, cx } from '../ui';
 import { navCounts, navFor, roleNote, type NavGroup } from './nav';
 
 /** The dashboard window the counts come from (the overview page's default, so the query is shared). */
@@ -19,7 +19,7 @@ export function useNavCounts() {
 
 /**
  * The sidebar: brand, role-filtered groups of links (`groups` is the route
- * table's nav, NAV_GROUPS in src/routes.tsx) (the current page has
+ * table's nav, NAV_GROUPS in app/routes.tsx) (the current page has
  * aria-current="page", set by NavLink), counts with their meaning for screen
  * readers, and a note on the role that explains hidden pages.
  */

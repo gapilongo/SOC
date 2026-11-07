@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import { ErrorBoundary, isChunkLoadError, PageFallback } from './ErrorBoundary';
-import { Layout } from './Layout';
+import { Layout } from '../app/Layout';
 
 let failure: Error | null = null;
 

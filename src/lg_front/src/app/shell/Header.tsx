@@ -1,25 +1,13 @@
 import { Building2, Menu } from 'lucide-react';
 import { forwardRef } from 'react';
 
-import { useMe } from '../../api/hooks';
+import { useTenantLabel } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { isTenantOverride } from '../../auth/roles';
+import { TenantSwitcher } from '../../components/TenantSwitcher';
+import { Button, ThemeSwitch, cx } from '../../components/ui';
 import { useLive } from '../../live/LiveProvider';
-import { TenantSwitcher } from '../TenantSwitcher';
-import { Button, ThemeSwitch, cx } from '../ui';
 import { UserMenu } from './UserMenu';
-
-/**
- * The current tenant's display name: `tenant_name` from GET /auth/me when the
- * API sends it, otherwise the tenant id.
- */
-export function useTenantLabel(): string {
-  const { principal } = useAuth();
-  const tenantId = principal?.tenantId ?? '';
-  const me = useMe();
-  const name = me.data?.tenant_name;
-  return typeof name === 'string' && name.trim() && me.data?.tenant_id === tenantId ? name.trim() : tenantId || '-';
-}
 
 export function LiveIndicator() {
   const { status } = useLive();

@@ -1,6 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 
-import { ApiError } from './api/client';
+import { ApiError } from '../api/client';
 
 /** Retry only transient failures (network, 5xx, 429); never 4xx answers. */
 export function shouldRetry(failureCount: number, error: unknown): boolean {

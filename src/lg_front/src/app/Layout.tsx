@@ -4,13 +4,13 @@ import { Outlet, useLocation } from 'react-router-dom';
 
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
+import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
+import { ActingTenantBanner } from '../components/TenantSwitcher';
+import { Button, LoadingState } from '../components/ui';
 import { getConfig } from '../config';
-import { NAV_GROUPS, pageLabel } from '../routes';
-import { ErrorBoundary, PageFallback } from './ErrorBoundary';
+import { NAV_GROUPS, pageLabel } from './routes';
 import { Header } from './shell/Header';
 import { Sidebar } from './shell/Sidebar';
-import { ActingTenantBanner } from './TenantSwitcher';
-import { Button, LoadingState } from './ui';
 
 /**
  * The app shell: sidebar (a drawer on phones, below 768 px), one header on

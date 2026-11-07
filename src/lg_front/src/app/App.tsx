@@ -2,25 +2,25 @@ import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 
-import { SessionProvider, useAuth, useAuthStore } from './auth/AuthContext';
-import { bindQueryCacheToSession } from './auth/cacheBinding';
-import { CALLBACK_PATH } from './auth/oidc';
-import type { Session } from './auth/session';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { RequireAuth, RequireRole } from './components/Guards';
-import { Layout } from './components/Layout';
-import { ToastProvider } from './components/Toast';
-import { LoadingState } from './components/ui';
-import { LiveProvider } from './live/LiveProvider';
+import { SessionProvider, useAuth, useAuthStore } from '../auth/AuthContext';
+import { bindQueryCacheToSession } from '../auth/cacheBinding';
+import { CALLBACK_PATH } from '../auth/oidc';
+import type { Session } from '../auth/session';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { RequireAuth, RequireRole } from '../components/Guards';
+import { ToastProvider } from '../components/Toast';
+import { LoadingState } from '../components/ui';
+import { LiveProvider } from '../live/LiveProvider';
+import { DensityProvider } from '../theme/density';
+import { ThemeProvider } from '../theme/theme';
+import { Layout } from './Layout';
 import { APP_ROUTES } from './routes';
-import { DensityProvider } from './theme/density';
-import { ThemeProvider } from './theme/theme';
 
 // One chunk per route; the signed-in pages are in the route table (routes.tsx).
-const LoginPage = lazy(() => import('./pages/Login'));
-const OidcCallbackPage = lazy(() => import('./pages/OidcCallback'));
-const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
-const NotFoundPage = lazy(() => import('./pages/NotFound'));
+const LoginPage = lazy(() => import('../pages/Login'));
+const OidcCallbackPage = lazy(() => import('../pages/OidcCallback'));
+const MonthlyReportPage = lazy(() => import('../pages/MonthlyReportPage'));
+const NotFoundPage = lazy(() => import('../pages/NotFound'));
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
 function SessionLifecycle() {

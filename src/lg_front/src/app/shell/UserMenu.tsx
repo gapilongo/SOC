@@ -4,9 +4,9 @@ import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
+import { cx } from '../../components/ui';
 import { useDensity } from '../../theme/density';
 import { useTheme, type ThemePreference } from '../../theme/theme';
-import { cx } from '../ui';
 
 /** Two letters for the avatar: initials of the e-mail's local part ("m.roux" -> "MR"). */
 export function initials(email: string | null | undefined): string {
