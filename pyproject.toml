@@ -329,7 +329,7 @@ name = "services/response: submodules import down only, the target library at th
 type = "layers"
 # Derived from the imports (S2). The package __init__ (ResponseService) sits above every layer.
 containers = ["lg_sotf.services.response"]
-layers = ["planner | ledger", "guardrails", "policy", "protected", "targets"]
+layers = ["execution", "planner | ledger", "guardrails", "policy", "protected", "targets"]
 
 [[tool.importlinter.contracts]]
 id = "mcp-thin-client"

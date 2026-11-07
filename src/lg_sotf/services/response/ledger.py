@@ -8,15 +8,19 @@ commit. :meth:`ActionLedger.record_transition` and
 caller's transaction (the review and rollback services use them through
 :class:`~lg_sotf.services.response.ResponseService`), and
 :meth:`ActionLedger.record_verification_outcome` the audit, timeline entry
-and outbox event of a final verification.
+and outbox event of a final verification. :meth:`ActionLedger.hand_off`
+gives workflow rows to the scheduler and :meth:`ActionLedger.block_approved`
+blocks an approval that expired or was superseded.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence
+from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
-from lg_sotf.db import Connection
+from lg_sotf.db import AlreadyInState, Connection, InvalidTransition
+from lg_sotf.domain.actions import guardrail_result
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.integrations.events import (
     ACTION_AWAITING_APPROVAL,
@@ -25,10 +29,13 @@ from lg_sotf.integrations.events import (
     ACTION_VERIFICATION_FAILED,
 )
 from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Repositories, ResponseAction
+
+log = get_logger(__name__)
 
 
 # Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
@@ -206,3 +213,35 @@ class ActionLedger:
             action.alert_id,
             {"action_id": str(action.id), "action_type": action.action_type, "status": action.status},
         )
+
+    async def hand_off(
+        self, tenant_id: str, action_ids: Sequence[UUID], *, reason: str, conn: Optional[Connection] = None
+    ) -> List[UUID]:
+        """Give workflow rows to the scheduler (audited ``response_action.handed_off``); returns the ids handed off."""
+        if conn is None:
+            async with self._repos.db.tenant_tx(tenant_id) as tx:
+                handed = await self.hand_off(tenant_id, action_ids, reason=reason, conn=tx)
+            for action in await self._repos.actions.get_many(tenant_id, handed):
+                await self.publish_action(tenant_id, action)
+            return handed
+        handed = await self._repos.actions.hand_off(tenant_id, action_ids, reason=reason, conn=conn)
+        for action in await self._repos.actions.get_many(tenant_id, handed, conn=conn):
+            await self.audit_action(
+                tenant_id, action, "response_action.handed_off", {"reason": reason}, actor_type="system",
+                actor_id=SCHEDULER_ACTOR, conn=conn,
+            )
+        if handed:
+            log.info("response.handed_off", count=len(handed), reason=reason)
+        return handed
+
+    async def block_approved(
+        self, tenant_id: str, action_id: UUID, code: str, detail: Mapping[str, Any]
+    ) -> Optional[ResponseAction]:
+        """``approved -> blocked`` with a guardrail-style reason (expiry, superseded), audited; ``None`` if it moved on."""
+        try:
+            return await self.transition_audited(
+                tenant_id, action_id, "blocked", details={"reason": code}, actor_type="system", actor_id=SCHEDULER_ACTOR,
+                expected_from="approved", blocked_reason=code, result=guardrail_result(code, **detail),
+            )
+        except (AlreadyInState, InvalidTransition):
+            return None
