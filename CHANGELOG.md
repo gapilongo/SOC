@@ -15,6 +15,13 @@ All notable changes to this project are documented here. The format follows
   decided on the graph it started on. A run on a graph version the worker
   does not have fails with `UnknownGraphVersion` and is retried, then
   dead-lettered; it is never run on a different graph.
+- Every change is now tested against a real upgrade before it merges. A CI
+  job (`scripts/ci/upgrade_rehearsal.sh`) runs the previous release on a
+  fresh database until some alerts wait for an analyst and one waits for an
+  approval, migrates the database with the new release as the schema owner,
+  and decides every waiting alert through the new release's API. The build
+  fails if any of those runs fails, is dead-lettered or stays open, or if the
+  upgrade changes the runtime database role's privileges.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

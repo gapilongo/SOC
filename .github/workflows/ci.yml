@@ -57,7 +57,7 @@ jobs:
         run: |
           shopt -s nullglob
           shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh scripts/make_tour_media.sh \
-            src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
+            scripts/ci/upgrade_rehearsal.sh src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
 
   fast:
     name: Unit and deploy tests (no services)
@@ -357,6 +357,28 @@ jobs:
         env:
           APP_IMAGE: lg-sotf:ci
         run: scripts/smoke_stack.sh --no-build
+
+  upgrade:
+    name: Upgrade rehearsal (N-1 runs waiting for an analyst, migrate, decide on N)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # scripts/ci/upgrade_rehearsal.sh: the previous release (latest v* tag) migrates a fresh database and
+    # leaves runs waiting for an analyst; this checkout migrates it as the schema owner and must resume and
+    # close every one of them through its API. Any run that fails, dead-letters or stays open fails the build.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the previous release's tag and tree
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install
+        run: pip install -r requirements.txt
+      - name: Rehearse the upgrade from the previous release
+        run: scripts/ci/upgrade_rehearsal.sh
 
   helm:
     name: Helm chart

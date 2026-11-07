@@ -51,6 +51,17 @@ tests with the same outcomes; both are non-blocking until about ten green
 runs. `.github/workflows/nightly.yml` runs the suite in a random order
 (pinned `pytest-randomly`).
 
+`upgrade` runs `scripts/ci/upgrade_rehearsal.sh`: the previous release (the
+latest `v*` tag) runs in a git worktree on its own venv, migrates a fresh
+database and leaves alerts waiting for an analyst and an approval; this
+checkout then migrates the same database as the schema owner and must resume
+and close every waiting run through its API (no failed or dead-lettered run,
+no `UnknownGraphVersion`), with the runtime role's privileges unchanged. It
+starts its own PostgreSQL and Redis from `docker/docker-compose.test.yml`
+(project `lgsotf-upgrade`, ports 55491 and 56391) and removes them afterwards.
+Locally: `UPGRADE_NEW_PYTHON=.venv/bin/python scripts/ci/upgrade_rehearsal.sh`
+(`--from <ref>` picks another N-1).
+
 ## The test services
 
 The integration tier needs a **plain** PostgreSQL role: superusers and roles
