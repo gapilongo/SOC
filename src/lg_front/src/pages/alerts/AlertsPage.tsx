@@ -108,11 +108,11 @@ export function formatAge(value: string, now: number = Date.now()): string {
   return `${Math.floor(s / 86400)} d ago`;
 }
 
-export function alertColumns(density: Density): Column<AlertOut>[] {
-  return [
+export function alertColumns(density: Density, besidePanel = false): Column<AlertOut>[] {
+  const columns: Column<AlertOut>[] = [
     { key: 'severity', header: 'Severity', width: '6rem', render: (a) => <SeverityTag value={a.severity} /> },
     { key: 'alert', header: 'Alert', width: 'minmax(10rem, 1fr)', render: (a) => <AlertCell alert={a} density={density} /> },
-    { key: 'source', header: 'Source', width: '7rem', className: 'text-secondary', render: (a) => a.source_name ?? a.source_id },
+    { key: 'source', header: 'Source', width: '7rem', className: 'text-secondary', render: (a) => <span title={a.source_name ?? a.source_id}>{a.source_name ?? a.source_id}</span> },
     { key: 'verdict', header: 'AI verdict', width: '8.5rem', render: (a) => <VerdictCell alert={a} /> },
     {
       key: 'status',
@@ -136,6 +136,7 @@ export function alertColumns(density: Density): Column<AlertOut>[] {
       ),
     },
   ];
+  return besidePanel ? columns.filter((c) => c.key !== 'source' && c.key !== 'age') : columns;
 }
 
 export const ALERT_CSV: CsvColumn<AlertOut>[] = [
@@ -308,7 +309,8 @@ export default function AlertsPage() {
   const exportCsv = () => downloadCsv(csvFilename('alerts'), toCsv(ALERT_CSV, list.items));
   const { fetchNextPage } = list;
   const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
-  const columns = useMemo(() => alertColumns(density), [density]);
+  // With the alert panel beside the list, the source and the age move to the panel's header: the list keeps the title readable.
+  const columns = useMemo(() => alertColumns(density, Boolean(selected)), [density, selected]);
 
   return (
     <div className="xl:flex xl:items-start xl:gap-4">
@@ -390,7 +392,7 @@ export default function AlertsPage() {
             loadingMore={list.isFetchingNextPage}
             onLoadMore={loadMore}
             autoLoad={!list.isFetchNextPageError}
-            minWidth="46rem"
+            minWidth={selected ? '30rem' : '46rem'}
             maxHeight="calc(100vh - 17rem)"
           />
         )}
