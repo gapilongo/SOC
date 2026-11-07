@@ -336,11 +336,17 @@ class MCPSettings(BaseModel):
     launching shell's environment, ``LG_SOTF_MCP__API_KEY_FILE`` (a file only its
     owner can read or write); never a command-line argument. An API key with the
     ``read`` scope, plus ``write`` for ``add_note`` or ``ingest`` for test alerts.
+
+    ``tenant_id`` pins every call to one customer tenant (``X-Tenant-ID``):
+    an MSSP organisation's key acting under that customer's grant. It is
+    configuration, never a tool argument, so nothing the model reads can
+    point the server at another tenant.
     """
 
     api_url: str = "http://127.0.0.1:8000"
     api_key: Optional[SecretStr] = None
     api_key_file: Optional[str] = None
+    tenant_id: Optional[str] = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]{1,62}$")
     timeout_s: float = Field(default=30.0, gt=0, le=300)
     max_retries: int = Field(default=2, ge=0, le=5)
     max_response_bytes: int = Field(default=4_194_304, ge=1_024)

@@ -292,6 +292,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "mcp.api_url": "Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only.",
     "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes; `ingest` and `read` for test alerts). Environment only, never a command-line argument.",
     "mcp.api_key_file": "File holding the API key instead of `mcp.api_key` (setting both is refused), so no credential sits in the launching shell's environment. Refused when its group or other users can read or write it (`chmod 600`).",
+    "mcp.tenant_id": "Pin every call to one customer tenant (`X-Tenant-ID`): an MSSP organisation's API key acting under that customer's grant (docs/mssp.md). Configuration only; no tool can choose another tenant.",
     "mcp.timeout_s": "Timeout of one API request.",
     "mcp.max_retries": "Retries of a read request on 429/502/503/504 or a connection error (writes are never retried).",
     "mcp.max_response_bytes": "Largest API response the MCP server reads.",

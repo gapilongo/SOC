@@ -183,22 +183,26 @@ class GrantsRepo(Repository):
         return to_models(TenantGrant, rows)
 
     async def active_for(
-        self, organisation_id: str, tenant_id: str, user_id: UUID, *, conn: Optional[Connection] = None
+        self, organisation_id: str, tenant_id: str, user_id: Optional[UUID], *, conn: Optional[Connection] = None
     ) -> Optional[TenantGrant]:
         """The strongest live grant letting member ``user_id`` of the organisation act in ``tenant_id``.
 
         Read in the organisation's home tenant; ``None`` unless the user is a
         member and a grant to the organisation (or to that user) is neither
-        revoked nor expired at this transaction's ``now()``.
+        revoked nor expired at this transaction's ``now()``. Without
+        ``user_id`` (an API key of the organisation) only grants to the
+        whole organisation count.
         """
         async with self._tenant(organisation_id, conn) as c:
             rows = await c.fetch(
                 """
                 SELECT g.* FROM tenant_grants g
-                JOIN organisation_members m ON m.tenant_id = g.organisation_id AND m.user_id = $3
                 WHERE g.organisation_id = $1 AND g.tenant_id = $2
                   AND g.revoked_at IS NULL AND g.expires_at > now()
                   AND (g.user_id IS NULL OR g.user_id = $3)
+                  AND ($3::uuid IS NULL OR EXISTS (
+                      SELECT 1 FROM organisation_members m WHERE m.tenant_id = g.organisation_id AND m.user_id = $3
+                  ))
                 """,
                 organisation_id,
                 tenant_id,

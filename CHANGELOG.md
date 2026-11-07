@@ -106,6 +106,13 @@ All notable changes to this project are documented here. The format follows
   entry's id and hash. Claiming an escalation and creating or changing
   users, MFA, API keys and grants stay refused under a grant. A platform
   admin's tenant switch still cannot claim or decide.
+- MSSP organisation model, part 4 (live updates, automation and MCP under
+  grants): `/ws?tenant=<customer>` streams a granted customer's events and
+  closes when the grant is revoked or expires; an organisation's API key
+  acts under a grant to the whole organisation with its scopes capped by the
+  grant's role (never `ingest`); `LG_SOTF_MCP__TENANT_ID` pins the MCP server
+  to one customer tenant. A generated cross-tenant leak suite covers every
+  API operation, MCP tool and the WebSocket channel.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

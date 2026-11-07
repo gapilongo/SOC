@@ -137,7 +137,10 @@ recorded in that tenant's audit log:
   access"); `GET /auth/me` returns the `grant_id`. They may decide
   escalations and approve actions, but not claim, and not create or change
   users, API keys or grants. Every audit entry they cause is also recorded
-  in their organisation's chain (`delegated.<action>`);
+  in their organisation's chain (`delegated.<action>`). An API key of the
+  organisation acts under a grant to the whole organisation, with `read`
+  (viewer grant) or `read` and `write` (analyst or admin grant) at most. On
+  the WebSocket the customer is named with `?tenant=<id>`;
 * otherwise a platform admin (`users.is_platform_admin`), with their own
   role (`platform_admin.tenant_access`).
 
@@ -502,6 +505,8 @@ browser connections must come from an allowed CORS origin). After a
 `{"type": "hello"}` message the socket receives the tenant's events
 (`alert.created`, `alert.updated`, `escalation.created`,
 `escalation.updated`, `action.updated`) and periodic `{"type": "ping"}`.
+Add `&tenant=<id>` to stream a customer tenant under an MSSP grant; a
+revoked or expired grant closes the socket with 1008.
 Delivery is at-most-once: after a reconnect, re-read state from the REST
 API. The server closes the socket with code 4401 when the token expires or
 is revoked by a logout (reconnect with a fresh token), 1013 when the client

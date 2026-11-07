@@ -105,6 +105,10 @@ class Principal:
     def acting_on(self, tenant_id: str) -> Principal:
         return replace(self, tenant_id=tenant_id)
 
-    def under_grant(self, tenant_id: str, grant_id: UUID, role: Role) -> Principal:
-        """This principal acting in ``tenant_id`` through a grant: ``role`` and nothing more."""
-        return replace(self, tenant_id=tenant_id, grant_id=grant_id, role=role, is_platform_admin=False)
+    def under_grant(
+        self, tenant_id: str, grant_id: UUID, role: Optional[Role], scopes: FrozenSet[Scope]
+    ) -> Principal:
+        """This principal acting in ``tenant_id`` through a grant: ``role`` and ``scopes``, nothing more."""
+        return replace(
+            self, tenant_id=tenant_id, grant_id=grant_id, role=role, scopes=scopes, is_platform_admin=False
+        )

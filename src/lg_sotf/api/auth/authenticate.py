@@ -26,7 +26,10 @@ such request is written to that tenant's audit log:
   (``grant.tenant_access``). The grant is read on every request, so a
   revoked or expired grant stops working at once. The caller gets the
   grant's role, capped at their own role in the organisation, and no
-  platform-admin powers;
+  platform-admin powers. An API key of the organisation acts under a grant
+  to the whole organisation (never one given to a single member), with its
+  scopes capped by the grant's role (:data:`GRANT_SCOPES`; never
+  ``ingest``);
 * otherwise a platform admin (``platform_admin.tenant_access``), with their
   own role, unchanged from before grants existed.
 """
@@ -70,6 +73,12 @@ MAX_CREDENTIAL_CHARS = 8_192
 MAX_OIDC_SUBJECT_CHARS = 255
 # A provisioned account's last_login_at is refreshed by accepted OIDC tokens at most this often.
 OIDC_SIGN_IN_RECORD_S = 300
+# The scopes an organisation's API key keeps under a grant of each role.
+GRANT_SCOPES: Dict[str, FrozenSet[Scope]] = {
+    "viewer": frozenset({"read"}),
+    "analyst": frozenset({"read", "write"}),
+    "admin": frozenset({"read", "write"}),
+}
 
 
 def unauthorized(message: str = "authentication required") -> ApiError:
@@ -409,9 +418,9 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
         return principal
     if not is_valid_tenant_id(requested):
         raise ApiError(400, "invalid_tenant", "X-Tenant-ID is not a valid tenant id")
-    delegated = await _under_grant(ctx, principal, requested)
+    delegated = await under_grant(ctx, principal, requested)
     if delegated is not None:
-        await _record_access(
+        await record_access(
             ctx, conn, delegated, "grant.tenant_access",
             organisation_id=principal.home_tenant_id, grant_id=str(delegated.grant_id), role=delegated.role,
         )
@@ -423,24 +432,29 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
     if tenant is None:
         raise ApiError(404, "not_found", "tenant not found")
     overridden = principal.acting_on(requested)
-    await _record_access(ctx, conn, overridden, "platform_admin.tenant_access")
+    await record_access(ctx, conn, overridden, "platform_admin.tenant_access")
     log.info("auth.tenant_override", home_tenant_id=principal.home_tenant_id, tenant_id=requested)
     return overridden
 
 
-async def _under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
+async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
     """``principal`` acting in ``tenant_id`` under its organisation's strongest live grant, else ``None``."""
-    if principal.user_id is None or principal.role is None:
+    if principal.is_api_key:
+        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, None)
+    elif principal.user_id is not None and principal.role is not None:
+        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, principal.user_id)
+    else:
         return None
-    grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, principal.user_id)
     if grant is None:
         return None
     await _require_active_tenant(ctx, tenant_id)
+    if principal.role is None:
+        return principal.under_grant(tenant_id, grant.id, None, principal.scopes & GRANT_SCOPES[grant.role])
     role = min(grant.role, principal.role, key=lambda r: ROLE_RANK[r])
-    return principal.under_grant(tenant_id, grant.id, cast(Role, role))
+    return principal.under_grant(tenant_id, grant.id, cast(Role, role), principal.scopes)
 
 
-async def _record_access(
+async def record_access(
     ctx: ApiContext, conn: HTTPConnection, principal: Principal, action: str, **details: object
 ) -> None:
     """Audit a request acting on another tenant, in that tenant's chain."""

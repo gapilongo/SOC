@@ -85,6 +85,29 @@ organisation). Giving and revoking a grant is recorded in both chains: the
 customer's (`grant.created`, `grant.revoked`) and the organisation's
 (`grant.received`, `grant.revoked`).
 
+Live updates, automation and MCP work under grants too:
+
+* **WebSocket**: `GET /ws?token=...&tenant=<customer>` streams the customer
+  tenant's events to a member holding a grant (browsers cannot set
+  `X-Tenant-ID` on a socket). The grant is re-checked every
+  `api.ws_revalidate_s`; a revoked or expired grant closes the socket with
+  1008. Nobody else may name another tenant, platform admins included.
+* **API keys**: an API key of the organisation's home tenant acts under a
+  grant to the whole organisation (never one given to a single member) with
+  `X-Tenant-ID`. Its scopes are capped by the grant's role: `read` for a
+  viewer grant, `read` and `write` for analyst and admin grants, never
+  `ingest`. Keys still never decide, approve or administer.
+* **MCP**: `LG_SOTF_MCP__TENANT_ID` pins `lg-sotf mcp` to one customer: every
+  call carries `X-Tenant-ID`. It is configuration, not a tool argument, so
+  nothing the model reads (an alert, a note) can point the server at another
+  tenant. Run one MCP server per customer.
+
+`tests/integration/api/test_cross_tenant_leak.py` checks the boundary on
+every release: every operation of the API contract, every MCP tool and the
+WebSocket channel, called by organisation members and keys with and without
+a grant and by another customer, never return a victim tenant's data or
+change its rows.
+
 Grants belong to the customer. Only the customer's own admin accounts give,
 list and revoke them: never someone acting under a grant, and a platform
 admin's `X-Tenant-ID` may list them but not give or revoke one. Row-level

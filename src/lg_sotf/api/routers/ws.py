@@ -1,17 +1,21 @@
-"""``WS /ws?token=<access token>``: the tenant's live event stream.
+"""``WS /ws?token=<access token>[&tenant=<id>]``: the tenant's live event stream.
 
 * The token is an access JWT (or OIDC token); API keys are not accepted in
   URLs. Invalid tokens are refused during the handshake (HTTP 403). Browser
   connections must come from an allowed CORS origin.
 * After ``{"type": "hello", ...}`` the socket receives every event published
   for the principal's tenant (contract section 7), and ``{"type": "ping"}``
-  heartbeats. Delivery is at-most-once: clients re-read state after a
-  reconnect.
+  heartbeats. ``tenant`` (browsers cannot set ``X-Tenant-ID`` on a socket)
+  streams a customer tenant to a member of an MSSP organisation holding a
+  live grant to it; the access is audited there (``grant.tenant_access``).
+  Nobody else may name another tenant, platform admins included.
+  Delivery is at-most-once: clients re-read state after a reconnect.
 * While the socket is open the principal is re-checked every
   ``api.ws_revalidate_s``: a logged-out (revoked) or expired token closes
-  it with 4401; a disabled or deleted account, or a suspended tenant, with
-  1008. REST refuses the same token at once; the socket follows within one
-  interval (plus the tenant cache's 15 s).
+  it with 4401; a disabled or deleted account, a suspended tenant, or a
+  grant that was revoked or expired, with 1008. REST refuses the same
+  token at once; the socket follows within one interval (plus the tenant
+  cache's 15 s).
 * Concurrent sockets are capped per principal (``api.ws_max_per_principal``)
   and per tenant (``api.ws_max_per_tenant``) before the process-wide limit,
   so one tenant cannot take every slot; over-quota connections get 1013.
@@ -30,11 +34,19 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
-from lg_sotf.api.auth.authenticate import bearer_principal, client_ip, failure_blocked, record_failure
+from lg_sotf.api.auth.authenticate import (
+    bearer_principal,
+    client_ip,
+    failure_blocked,
+    record_access,
+    record_failure,
+    under_grant,
+)
 from lg_sotf.api.auth.principal import Principal, role_at_least
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
+from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger, log_failure
 from lg_sotf.queue.events import SubscriberLimitReached, SubscriberQuotaReached
 
@@ -59,6 +71,8 @@ async def _still_authorized(ctx: ApiContext, token: str, principal: Principal) -
     """``None`` while the socket may stay open, else the close code."""
     try:
         current = await bearer_principal(ctx, token)
+        if principal.delegated:
+            current = await under_grant(ctx, current, principal.tenant_id) or current
     except ApiError as exc:
         if exc.status_code >= 500:
             return None  # the identity provider is unreachable: keep serving until the token expires
@@ -80,11 +94,21 @@ async def _authenticate(ctx: ApiContext, websocket: WebSocket) -> Optional[Princ
     ip = client_ip(websocket)
     if await failure_blocked(ctx, ip, token) is not None:
         return None
+    requested = websocket.query_params.get("tenant")
     try:
         principal = await bearer_principal(ctx, token)
         tenant = await ctx.tenants.get(principal.tenant_id)
         if tenant is None or tenant.status != "active":
             return None
+        if requested is not None and requested != principal.home_tenant_id:
+            delegated = await under_grant(ctx, principal, requested) if is_valid_tenant_id(requested) else None
+            if delegated is None:
+                return None
+            principal = delegated
+            await record_access(
+                ctx, websocket, principal, "grant.tenant_access",
+                organisation_id=principal.home_tenant_id, grant_id=str(principal.grant_id), role=principal.role,
+            )
     except ApiError as exc:
         if exc.status_code == 401:
             await record_failure(ctx, ip, token)

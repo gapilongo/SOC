@@ -48,6 +48,8 @@ class Access:
     bucket: str = API_BUCKET
 
     def check(self, principal: Principal) -> None:
+        if self.no_grant and principal.delegated:
+            raise forbidden("this action is not available under a grant")
         if principal.is_api_key:
             if self.any_api_key:
                 return
@@ -66,8 +68,6 @@ class Access:
             raise forbidden("requires a platform admin")
         if self.home_tenant_only and principal.overridden:
             raise forbidden("this action cannot be performed with an X-Tenant-ID override")
-        if self.no_grant and principal.delegated:
-            raise forbidden("this action is not available under a grant")
         if self.no_platform_override and principal.overridden and not principal.delegated:
             raise forbidden("this action cannot be performed with an X-Tenant-ID override")
 

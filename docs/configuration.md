@@ -321,6 +321,7 @@ Response automation defaults and the install-wide SOAR webhook.
 | `mcp.api_url` | `LG_SOTF_MCP__API_URL` | string | `http://127.0.0.1:8000` | Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only. |
 | `mcp.api_key` | `LG_SOTF_MCP__API_KEY` | secret (optional) | unset | API key the MCP server uses (`read` scope; `write` for notes; `ingest` and `read` for test alerts). Environment only, never a command-line argument. |
 | `mcp.api_key_file` | `LG_SOTF_MCP__API_KEY_FILE` | string (optional) | unset | File holding the API key instead of `mcp.api_key` (setting both is refused), so no credential sits in the launching shell's environment. Refused when its group or other users can read or write it (`chmod 600`). |
+| `mcp.tenant_id` | `LG_SOTF_MCP__TENANT_ID` | string (optional) | unset | Pin every call to one customer tenant (`X-Tenant-ID`): an MSSP organisation's API key acting under that customer's grant (docs/mssp.md). Configuration only; no tool can choose another tenant. |
 | `mcp.timeout_s` | `LG_SOTF_MCP__TIMEOUT_S` | number | `30.0` | Timeout of one API request. |
 | `mcp.max_retries` | `LG_SOTF_MCP__MAX_RETRIES` | integer | `2` | Retries of a read request on 429/502/503/504 or a connection error (writes are never retried). |
 | `mcp.max_response_bytes` | `LG_SOTF_MCP__MAX_RESPONSE_BYTES` | integer | `4194304` | Largest API response the MCP server reads. |
