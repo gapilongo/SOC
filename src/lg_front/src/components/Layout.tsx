@@ -6,6 +6,7 @@ import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
 import { getConfig } from '../config';
 import { NAV_GROUPS, pageLabel } from '../routes';
+import { ErrorBoundary, PageFallback } from './ErrorBoundary';
 import { Header } from './shell/Header';
 import { Sidebar } from './shell/Sidebar';
 import { ActingTenantBanner } from './TenantSwitcher';
@@ -13,7 +14,9 @@ import { Button, LoadingState } from './ui';
 
 /**
  * The app shell: sidebar (a drawer on phones, below 768 px), one header on
- * every page, the acting-tenant banner and the page itself.
+ * every page, the acting-tenant banner and the page itself. The page has its
+ * own error boundary, reset on navigation, so a crash leaves the shell (and
+ * sign-out) working.
  */
 export function Layout() {
   const { principal } = useAuth();
@@ -102,9 +105,11 @@ export function Layout() {
         <Header ref={menuButtonRef} page={pageLabel(location.pathname)} menuOpen={menuOpen} onOpenMenu={() => setMenuOpen(true)} onSignOut={() => void signOut()} />
         <ActingTenantBanner />
         <main id="main" ref={mainRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 focus:outline-none md:px-6">
-          <Suspense fallback={<LoadingState />}>
-            <Outlet />
-          </Suspense>
+          <ErrorBoundary resetKey={location.pathname} fallback={PageFallback}>
+            <Suspense fallback={<LoadingState />}>
+              <Outlet />
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     </div>
