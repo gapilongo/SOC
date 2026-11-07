@@ -541,7 +541,8 @@
    "gate": "M3",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "A run interrupted on graph N-1 resumes and is decided after upgrade to N, in an automated test"
+   "acceptance": "A run interrupted on graph N-1 resumes and is decided after upgrade to N, in an automated test",
+   "status": "done"
   },
   {
    "id": "ARCH-E1.2",
@@ -559,7 +560,8 @@
    "depends_on": [
     "ARCH-E1.1"
    ],
-   "acceptance": "CI job fails the build if any waiting run from N-1 cannot be resumed and decided after migration"
+   "acceptance": "CI job fails the build if any waiting run from N-1 cannot be resumed and decided after migration",
+   "status": "done"
   },
   {
    "id": "ARCH-E1.3",
@@ -612,7 +614,8 @@
     "ARCH-E1.2",
     "SEC1.1"
    ],
-   "acceptance": "release-train workflow cuts a signed tag only when the N-1 upgrade test and install rehearsal pass"
+   "acceptance": "release-train workflow cuts a signed tag only when the N-1 upgrade test and install rehearsal pass",
+   "status": "done"
   },
   {
    "id": "ARCH-E2.1",
@@ -647,7 +650,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "oasdiff blocks a breaking change to a stable operation; header behaviour covered by tests"
+   "acceptance": "oasdiff blocks a breaking change to a stable operation; header behaviour covered by tests",
+   "status": "done"
   },
   {
    "id": "ARCH-E2.3",
@@ -1229,7 +1233,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Scorecard v1 committed from an EU or local model run on synthetic and phishing sets"
+   "acceptance": "Scorecard v1 committed from an EU or local model run on synthetic and phishing sets",
+   "status": "done"
   },
   {
    "id": "AI-E1.2",
@@ -1245,7 +1250,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Every LLM call records prompt hash and model ID; reports show both"
+   "acceptance": "Every LLM call records prompt hash and model ID; reports show both",
+   "status": "done"
   },
   {
    "id": "AI-E1.3",
@@ -1263,7 +1269,8 @@
    "depends_on": [
     "AI-E1.2"
    ],
-   "acceptance": "Every LLM and tool step of a run is in the trace store and in its evidence pack"
+   "acceptance": "Every LLM and tool step of a run is in the trace store and in its evidence pack",
+   "status": "done"
   },
   {
    "id": "AI-E1.4",
@@ -1353,7 +1360,8 @@
    "depends_on": [
     "AI-E1.1"
    ],
-   "acceptance": "test_report_cis: every rate in eval and PoV reports renders n and a 95% Wilson interval"
+   "acceptance": "test_report_cis: every rate in eval and PoV reports renders n and a 95% Wilson interval",
+   "status": "done"
   },
   {
    "id": "AI-E1.8",
@@ -2872,7 +2880,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Fresh install triages in <=30 min in rehearsal"
+   "acceptance": "Fresh install triages in <=30 min in rehearsal",
+   "status": "done"
   },
   {
    "id": "PRD-13.2a",
@@ -3287,7 +3296,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "cosign verify passes in deploy.yml and docs for every release image"
+   "acceptance": "cosign verify passes in deploy.yml and docs for every release image",
+   "status": "done"
   },
   {
    "id": "SEC1.2",
@@ -3303,7 +3313,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "Release page carries SBOMs and VEX; schema-validated in CI"
+   "acceptance": "Release page carries SBOMs and VEX; schema-validated in CI",
+   "status": "done"
   },
   {
    "id": "SEC1.3",
@@ -3319,7 +3330,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "Fixable critical/high CVE fails CI; Dockerfile FROM lines use digests"
+   "acceptance": "Fixable critical/high CVE fails CI; Dockerfile FROM lines use digests",
+   "status": "done"
   },
   {
    "id": "SEC1.4",
@@ -3387,7 +3399,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Policy merged; Dependabot and triage SLAs match patch SLAs"
+   "acceptance": "Policy merged; Dependabot and triage SLAs match patch SLAs",
+   "status": "done"
   },
   {
    "id": "SEC3.1",
@@ -3403,7 +3416,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "docs/threat-model.md covers MCP, MSSP delegation, evidence tools, CI/CD"
+   "acceptance": "docs/threat-model.md covers MCP, MSSP delegation, evidence tools, CI/CD",
+   "status": "done"
   },
   {
    "id": "SEC3.3",
@@ -3437,7 +3451,8 @@
    "gate": "M7",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "Guide covers compose, Helm, Postgres, Redis and proxy with numbered controls"
+   "acceptance": "Guide covers compose, Helm, Postgres, Redis and proxy with numbered controls",
+   "status": "done"
   },
   {
    "id": "SEC4.2",
@@ -3873,7 +3888,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "security.md describes the existing export and erasure features"
+   "acceptance": "security.md describes the existing export and erasure features",
+   "status": "done"
   },
   {
    "id": "INT1.2",
@@ -4089,7 +4105,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Live contract tests pass against Wazuh 4.14 in CI"
+   "acceptance": "Live contract tests pass against Wazuh 4.14 in CI",
+   "status": "done"
   },
   {
    "id": "INT3.2",
@@ -4673,7 +4690,8 @@
    "gate": "M5",
    "needed_by": "2026-11-27",
    "depends_on": [],
-   "acceptance": "Schema published with SemVer and CI breaking-change check"
+   "acceptance": "Schema published with SemVer and CI breaking-change check",
+   "status": "done"
   },
   {
    "id": "GTM1.4",
@@ -4744,7 +4762,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "One command installs pov profile; response execution blocked (test)"
+   "acceptance": "One command installs pov profile; response execution blocked (test)",
+   "status": "done"
   },
   {
    "id": "GTM3.7",
