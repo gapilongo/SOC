@@ -28,7 +28,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from lg_sotf.llm.endpoint import is_self_hosted, resolve_base_url
 from lg_sotf.llm.errors import LLMUnavailable
 from lg_sotf.observability.metrics import record_llm_slot_wait
-from lg_sotf.settings import LLMTierSettings, Settings, get_settings
+from lg_sotf.settings import LLMTierSettings, Settings
 
 Tier = Literal["fast", "deep"]
 TIERS: Tuple[Tier, ...] = ("fast", "deep")
@@ -124,20 +124,19 @@ _model_cache: Dict[Tuple[str, str], Tuple[Tuple[Any, ...], BaseChatModel]] = {}
 _model_cache_lock = threading.Lock()
 
 
-def get_chat_model(tier: Tier, settings: Optional[Settings] = None) -> BaseChatModel:
+def get_chat_model(tier: Tier, settings: Settings) -> BaseChatModel:
     """Configured chat model for ``tier``. Raises :class:`LLMUnavailable` when disabled or misconfigured."""
     if tier not in TIERS:
         raise ValueError(f"unknown LLM tier {tier!r}")
-    s = settings or get_settings()
-    if not s.llm.enabled:
+    if not settings.llm.enabled:
         raise LLMUnavailable("LLM use is disabled (llm.enabled=false)")
-    fingerprint = _fingerprint(s, tier)
-    cache_key = (s.llm.provider, tier)
+    fingerprint = _fingerprint(settings, tier)
+    cache_key = (settings.llm.provider, tier)
     with _model_cache_lock:
         cached = _model_cache.get(cache_key)
         if cached is not None and cached[0] == fingerprint:
             return cached[1]
-    model = _build_model(s, tier)
+    model = _build_model(settings, tier)
     with _model_cache_lock:
         _model_cache[cache_key] = (fingerprint, model)
     return model
@@ -366,7 +365,7 @@ def _semaphore(tier: Tier, size: int) -> asyncio.Semaphore:
 
 
 @asynccontextmanager
-async def llm_slot(tier: Tier, settings: Optional[Settings] = None) -> AsyncIterator[None]:
+async def llm_slot(tier: Tier, settings: Settings) -> AsyncIterator[None]:
     """Hold one of ``llm.<tier>.max_concurrency`` slots for the duration of a call.
 
     Unset, the tier gets ``worker.concurrency`` slots (one per run in flight), so
@@ -376,9 +375,8 @@ async def llm_slot(tier: Tier, settings: Optional[Settings] = None) -> AsyncIter
     """
     if tier not in TIERS:
         raise ValueError(f"unknown LLM tier {tier!r}")
-    s = settings or get_settings()
-    configured = getattr(s.llm, tier).max_concurrency
-    size = s.worker.concurrency if configured is None else configured
+    configured = getattr(settings.llm, tier).max_concurrency
+    size = settings.worker.concurrency if configured is None else configured
     if size < 1:
         raise LLMUnavailable(f"llm.{tier}.max_concurrency must be >= 1")
     started = time.monotonic()
