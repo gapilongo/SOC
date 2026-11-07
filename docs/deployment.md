@@ -621,7 +621,9 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
    CI rehearses this upgrade on every change (`scripts/ci/upgrade_rehearsal.sh`):
    the previous release leaves runs waiting, the new release migrates the
    database while the old one still runs, runs this check, and must resume and
-   close every waiting run.
+   close every waiting run. It does the same from the latest LTS release, so
+   upgrading from the LTS line straight to the new release is tested too
+   ([releases.md](releases.md)).
 
 Migrations must be expand/contract (additive first, removals in a later
 release) so the previous release keeps working against the new schema during

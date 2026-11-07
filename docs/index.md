@@ -7,6 +7,7 @@
 | [API](api.md) | Integrators | Authentication, roles, endpoints, ingestion, WebSocket events, limits |
 | [Configuration](configuration.md) | Operators | Every setting with its environment variable and default (generated from the code) |
 | [Deployment](deployment.md) | Operators | Image, Docker Compose, Helm, two-role PostgreSQL, TLS, sizing, upgrades, backups |
+| [Releases](releases.md) | Operators, customers | Release channels (weekly partner candidate, stable, LTS, security), cadence, support windows, backports, pinning and verifying a release |
 | [CI/CD](cicd.md) | Operators | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM (Caddy HTTPS), promotion, rollback, backups |
 | [Operations](operations.md) | Operators | Health, scaling, dead letters, stuck runs, retention, key rotation, incidents, dashboards and alerts |
 | [Identity](identity.md) | Tenant admins, operators, security reviewers | TOTP MFA, OIDC role mapping and just-in-time provisioning, SAML via a broker, recovery |

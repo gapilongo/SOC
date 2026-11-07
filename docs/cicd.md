@@ -22,6 +22,10 @@ for the first environment and 15 minutes for the second.
                                          │ no rebuild: re-tag the sha-1a2b3c4 manifests as :v1.2.3 (same digest)
                                          ├──> SBOMs + VEX ── attest ── attach to the GitHub release v1.2.3
                                          └──> Deploy ── environment "uat" (waits for a reviewer) ──> uat VM
+
+ Release train (Thursdays, or by hand) ── gates: CI green incl. upgrade + install rehearsals,
+                                          images verified like a deploy
+   └──> tag v1.3.0-rc.N (or promote to v1.3.0) ──> Release images (as above) ; move :partner / :lts
 ```
 
 * `.github/workflows/release-images.yml` builds and publishes the images once
@@ -40,6 +44,12 @@ for the first environment and 15 minutes for the second.
   against their schemas, attested, and attached to the GitHub release; the
   release is created from the tag with generated notes if it does not exist
   yet, so edit its notes afterwards rather than running `gh release create`.
+* `.github/workflows/release-train.yml` cuts the weekly partner release
+  candidate `vX.Y.Z-rc.N` and, by hand, promotes a candidate to the stable
+  `vX.Y.Z` and the LTS channel. It tags only commits whose CI (including the
+  upgrade and install rehearsals) passed and whose images verify, then hands
+  the tag to *Release images*. Channels, cadence and support windows:
+  [releases.md](releases.md).
 * `.github/workflows/deploy.yml` deploys one image tag to one environment. It
   resolves the tag to digests, copies a small bundle (compose files, Caddy
   templates, scripts from `deploy/vm/`, taken from the commit that built the
@@ -235,7 +245,10 @@ In the repository: **Settings > Environments > New environment**.
     then waits in the Actions run until one of them approves ("Review
     deployments"). Tick *Prevent self-review* if you want a second person.
   * Deployment branches and tags: *Selected branches and tags* > add branch
-    `main` and tag pattern `v*.*.*`.
+    `main` and tag pattern `v*.*.*` (release candidates `vX.Y.Z-rc.N` match it too).
+* **release** (used by the release train, [releases.md](releases.md))
+  * Deployment branches and tags: *Selected branches and tags* > add branch
+    `main` only.
 
 ## 7. Secrets and variables of each environment
 
@@ -357,7 +370,9 @@ OIDC single sign-on later if you want it.
 
 ## 10. Promote dev to uat
 
-When a commit that is on dev looks good, tag it:
+The release train ([releases.md](releases.md)) does this every Thursday,
+after checking the gates, and promotes candidates on request. To tag a
+commit by hand instead:
 
 ```sh
 git fetch origin
@@ -368,7 +383,7 @@ git push origin v0.3.0
 *Release images* then re-tags that commit's images as `v0.3.0` (no rebuild:
 the digest dev ran is the digest uat gets) and starts *Deploy uat*, which
 waits for a required reviewer's approval. Tags must be `vMAJOR.MINOR.PATCH`
-and point at a commit on `main`; otherwise the run stops with an explanation.
+(or a candidate, `vMAJOR.MINOR.PATCH-rc.N`) and point at a commit on `main`; otherwise the run stops with an explanation.
 If you tag right after merging, the promotion waits until that commit's
 images exist.
 

@@ -412,7 +412,10 @@ incident before retention removes it.
   `Release images` workflow on `main`, and both are recorded in the public
   Rekor transparency log. The signature covers the multi-arch image digest,
   not a tag. A release tag `vX.Y.Z` points at the same digest that `main`
-  built and signed, so it is covered too.
+  built and signed, so it is covered too. So do the release channels
+  (`:partner`, `:lts`, `:lts-X.Y`). The release train moves them only to
+  digests that first pass the same verification as a deploy
+  ([releases.md](releases.md)).
 * Signing runs in its own job. That job checks out no code and runs no build
   step; it only signs the digests that the build job pushed. It is the only
   job in the release path that can request an OIDC token. The images are
