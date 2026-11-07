@@ -258,6 +258,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
+  `lg-sotf-frontend` digest now carries a keyless cosign signature and a SLSA
+  build-provenance attestation, both from the `Release images` workflow on
+  `main`. The deploy workflow verifies both before it deploys, and stops if
+  either check fails. This means the workflow can no longer deploy images
+  built before this change; roll back to those on the VM instead. To verify
+  an image yourself, including on an air-gapped host, see `docs/security.md`
+  (section 9) and `docs/air-gapped.md`.
 - Failure logs never carry the exception message (ADR-0005). An unhandled
   API error (`api.unhandled_error`) is no longer logged with a traceback,
   which quoted the message of the exception and of every exception chained
