@@ -272,6 +272,7 @@ def test_only_useful_scripts_remain() -> None:
         "generate_secrets.py",
         "load_test.py",
         "make_tour_media.sh",
+        "pov.sh",
         "quickstart.sh",
         "record_tour.mjs",
         "smoke_stack.py",

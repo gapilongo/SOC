@@ -49,11 +49,13 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    Union,
 )
 from urllib.parse import urlsplit
 
 import httpx
 
+from lg_sotf.net.egress import allowed_hosts, host_on_list
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_enrichment_lookup
 from lg_sotf.security.crypto import DecryptionError, SecretBox
@@ -389,11 +391,16 @@ class EnrichmentService:
             return value if isinstance(value, Mapping) else {}
 
         production = settings.is_production
-        providers: List[EnrichmentProvider] = [
+        external: List[Union[VirusTotalProvider, AbuseIPDBProvider]] = [
             VirusTotalProvider(section("virustotal"), production=production, transport=transport),
             AbuseIPDBProvider(section("abuseipdb"), production=production, transport=transport),
-            HistoryProvider(section("history")),
         ]
+        # The egress allow-list (ingestion.allowed_destination_hosts) leaves out providers whose host is not on it.
+        hosts = allowed_hosts(settings)
+        providers: List[EnrichmentProvider] = [
+            p for p in external if hosts is None or host_on_list(urlsplit(p.base_url).hostname or "", hosts)
+        ]
+        providers.append(HistoryProvider(section("history")))
         return cls(providers, settings, credentials=CredentialResolver(settings, box=secret_box))
 
     def provider(self, name: str) -> EnrichmentProvider:
