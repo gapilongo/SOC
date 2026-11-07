@@ -13,73 +13,24 @@ too: it would close every alert as benign.
 
 from __future__ import annotations
 
-import ipaddress
-import re
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
 from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal, role_at_least
+from lg_sotf.api.common import aware, reject_catch_all
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.routers.alerts import aware
 from lg_sotf.api.schemas import SuppressionCreateIn, SuppressionOut, SuppressionUpdateIn
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound
-from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
-from lg_sotf.models.vocabulary import SEVERITIES
+from lg_sotf.domain.suppression import validate_rule_match
 from lg_sotf.services import suppressions as rule_changes
 
 router = APIRouter(prefix="/suppressions", tags=["suppressions"])
 
-_SEVERITY_PATHS = frozenset({"severity", "normalized.severity"})
-_FLAGS = re.compile(r"^\(\?[a-zA-Z]+\)")
-_UNIVERSAL_PATTERNS = frozenset({"", ".*", ".+", "(.*)", "(.+)", ".*?", "[\\s\\S]*", "[\\s\\S]+"})
-
-
-def _values(predicate: Any) -> List[Any]:
-    if isinstance(predicate, Mapping):
-        if "in" in predicate and isinstance(predicate["in"], (list, tuple)):
-            return list(predicate["in"])
-        if "eq" in predicate:
-            return [predicate["eq"]]
-        return []
-    if isinstance(predicate, (list, tuple)):
-        return list(predicate)
-    return [predicate]
-
-
-def _universal(path: str, predicate: Any) -> bool:
-    """Whether ``predicate`` matches (practically) every alert."""
-    if path in _SEVERITY_PATHS:
-        values = {v.lower() for v in _values(predicate) if isinstance(v, str)}
-        if set(SEVERITIES) <= values:
-            return True
-    if isinstance(predicate, Mapping):
-        pattern = predicate.get("regex")
-        if isinstance(pattern, str):
-            body = _FLAGS.sub("", pattern.strip())
-            body = body.removeprefix("^").removesuffix("$")
-            if body in _UNIVERSAL_PATTERNS:
-                return True
-        networks = predicate.get("cidr")
-        if networks is not None:
-            items = networks if isinstance(networks, (list, tuple)) else [networks]
-            for item in items:
-                try:
-                    if isinstance(item, str) and ipaddress.ip_network(item, strict=False).prefixlen == 0:
-                        return True
-                except ValueError:
-                    continue
-    return False
-
-
-def reject_catch_all(match: Mapping[str, Any]) -> None:
-    """Refuse a rule whose every predicate matches any alert."""
-    if match and all(_universal(str(path), predicate) for path, predicate in match.items()):
-        raise InvalidRule("the rule matches every alert; add a narrower predicate")
 
 
 def _may_enable(principal: Principal) -> bool:

@@ -369,7 +369,11 @@ def eval_command(
     against the analysts' decisions. Point the settings at the tenant's
     database; nothing is written to it.
     """
+    from dataclasses import replace
+
     from lg_sotf.eval.command import EXIT_CANNOT_RUN, EvalCommandError, EvalOptions, execute
+    from lg_sotf.security.crypto import load_secret_box
+    from lg_sotf.security.hashing import SecurityConfigError
 
     if not from_history and not dataset:
         raise click.UsageError("Missing option '--dataset' (or pass --from-history --tenant T).")
@@ -402,8 +406,10 @@ def eval_command(
         )
         configure_logging(quiet, stream=sys.stderr)
     try:
+        # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
+        options = replace(options, secret_box=None if validate_only else load_secret_box(settings))
         code = execute(settings, options, echo=click.echo)
-    except EvalCommandError as exc:
+    except (EvalCommandError, SecurityConfigError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(EXIT_CANNOT_RUN)
     except OSError as exc:
