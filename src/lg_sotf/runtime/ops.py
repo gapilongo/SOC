@@ -105,11 +105,11 @@ async def migrate(settings: Settings) -> MigrateReport:
     """Schema upgrade, checkpointer tables, runtime grants and bootstrap tenant/admin. Idempotent."""
     url = owner_dsn(settings)
     report = MigrateReport(tenant_id=settings.auth.bootstrap_tenant_id)
-    await asyncio.to_thread(upgrade_head, url)
-    await setup_checkpointer(url)
+    await asyncio.to_thread(upgrade_head, url, settings.database)
+    await setup_checkpointer(url, settings.database)
     role = settings.database.runtime_role
     if role:
-        await asyncio.to_thread(grant_runtime_privileges, role, url)
+        await asyncio.to_thread(grant_runtime_privileges, role, url, settings.database)
         report.runtime_role_granted = role
 
     db = owner_database(settings, "lg-sotf-migrate")

@@ -29,7 +29,7 @@ from lg_sotf.db import locks
 from lg_sotf.db.partitions import drop_expired_partitions, ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_query_params
-from lg_sotf.settings import get_settings
+from lg_sotf.settings import DatabaseSettings
 
 __all__ = [
     "ERASURE_FUNCTIONS",
@@ -122,24 +122,22 @@ def migration_transaction_setup() -> Tuple[str, ...]:
     )
 
 
-def _ssl_params() -> dict[str, Optional[str]]:
-    db = get_settings().database
-    return {"sslmode": db.ssl_mode, "sslrootcert": db.ssl_root_cert}
+def _ssl_params(database: DatabaseSettings) -> dict[str, Optional[str]]:
+    return {"sslmode": database.ssl_mode, "sslrootcert": database.ssl_root_cert}
 
 
-def libpq_url(database_url: Optional[str] = None) -> str:
-    """Configured (or given) URL as ``postgresql://`` with SSL settings applied.
+def libpq_url(database_url: str, database: DatabaseSettings) -> str:
+    """``database_url`` as ``postgresql://`` with the SSL settings of ``database`` applied.
 
     Configured ``ssl_mode``/``ssl_root_cert`` override the URL's own
     ``sslmode``/``sslrootcert`` so psycopg (migrations, checkpointer) uses the
     same TLS policy as the asyncpg pool.
     """
-    url = database_url or get_settings().database.url.get_secret_value()
-    return with_query_params(to_libpq_url(url), _ssl_params(), override=True)
+    return with_query_params(to_libpq_url(database_url), _ssl_params(database), override=True)
 
 
-def sqlalchemy_url(database_url: Optional[str] = None) -> str:
-    return to_sqlalchemy_url(libpq_url(database_url))
+def sqlalchemy_url(database_url: str, database: DatabaseSettings) -> str:
+    return to_sqlalchemy_url(libpq_url(database_url, database))
 
 
 def _script_config() -> Config:
@@ -149,22 +147,22 @@ def _script_config() -> Config:
     return cfg
 
 
-def alembic_config(database_url: Optional[str] = None) -> Config:
+def alembic_config(database_url: str, database: DatabaseSettings) -> Config:
     """Alembic configuration built in code; no ini file required."""
     cfg = _script_config()
-    cfg.attributes["sqlalchemy_url"] = sqlalchemy_url(database_url)
+    cfg.attributes["sqlalchemy_url"] = sqlalchemy_url(database_url, database)
     return cfg
 
 
-def upgrade_head(database_url: Optional[str] = None) -> None:
-    cfg = alembic_config(database_url)
+def upgrade_head(database_url: str, database: DatabaseSettings) -> None:
+    cfg = alembic_config(database_url, database)
     log.info("db.migrate.upgrade", target="head", url=redact_url(cfg.attributes["sqlalchemy_url"]))
     command.upgrade(cfg, "head")
 
 
-def downgrade_base(database_url: Optional[str] = None) -> None:
+def downgrade_base(database_url: str, database: DatabaseSettings) -> None:
     """Drop the whole application schema. Intended for tests and teardown."""
-    cfg = alembic_config(database_url)
+    cfg = alembic_config(database_url, database)
     log.warning("db.migrate.downgrade", target="base", url=redact_url(cfg.attributes["sqlalchemy_url"]))
     command.downgrade(cfg, "base")
 
@@ -177,8 +175,8 @@ def head_revision() -> str:
     return head
 
 
-def current_revision(database_url: Optional[str] = None) -> Optional[str]:
-    engine = create_engine(sqlalchemy_url(database_url), poolclass=pool.NullPool)
+def current_revision(database_url: str, database: DatabaseSettings) -> Optional[str]:
+    engine = create_engine(sqlalchemy_url(database_url, database), poolclass=pool.NullPool)
     try:
         with engine.connect() as conn:
             exists = conn.execute(text("SELECT to_regclass('public.alembic_version')")).scalar()
@@ -225,7 +223,7 @@ def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tabl
     return stmts
 
 
-def grant_runtime_privileges(role: str, database_url: Optional[str] = None) -> None:
+def grant_runtime_privileges(role: str, database_url: str, database: DatabaseSettings) -> None:
     """Give the API/worker login role exactly the privileges it needs (idempotent).
 
     Run after :func:`upgrade_head` and :func:`setup_checkpointer`, as the
@@ -233,7 +231,7 @@ def grant_runtime_privileges(role: str, database_url: Optional[str] = None) -> N
     BYPASSRLS, or a member of the owner role), because granting it would
     defeat the separation.
     """
-    with psycopg.connect(libpq_url(database_url)) as conn:
+    with psycopg.connect(libpq_url(database_url, database)) as conn:
         found = conn.execute(
             """
             SELECT r.rolsuper, r.rolbypassrls,
@@ -269,7 +267,7 @@ def grant_runtime_privileges(role: str, database_url: Optional[str] = None) -> N
     log.info("db.migrate.runtime_grants", role=role, checkpoint_tables=len(checkpoint_tables))
 
 
-async def setup_checkpointer(database_url: Optional[str] = None) -> None:
+async def setup_checkpointer(database_url: str, database: DatabaseSettings) -> None:
     """Create or upgrade LangGraph's checkpoint tables and put them under tenant RLS (idempotent).
 
     The tables hold every alert's workflow state, so they get the same
@@ -283,7 +281,7 @@ async def setup_checkpointer(database_url: Optional[str] = None) -> None:
 
     from lg_sotf.db.checkpointer import secure_checkpoint_tables
 
-    url = libpq_url(database_url)
+    url = libpq_url(database_url, database)
     async with await AsyncConnection.connect(url, autocommit=True, prepare_threshold=0, row_factory=dict_row) as conn:
         await AsyncPostgresSaver(conn).setup()
         async with conn.transaction():

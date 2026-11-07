@@ -31,8 +31,8 @@ Rules:
     tenant of ``migrate`` uses ``tenants.ensure``.
 ``get_settings_baseline.txt``
     ``get_settings()`` calls outside the composition roots (``cli.py``,
-    ``api/app.py``, ``runtime/``, ``settings.py``, ``__main__.py``). Everything else
-    takes its settings as a parameter.
+    ``api/app.py``, the ``runtime/*.py`` entrypoints and ``settings.py``). Everything
+    else takes its settings as a parameter, passed down from a root.
 ``locks_baseline.txt``
     Advisory-lock class numbers declared outside ``db/locks.py``: module constants
     named ``*_LOCK`` or valued in the ``710_000`` namespace, and integer literals
@@ -69,8 +69,8 @@ SQL_METHODS = frozenset({"execute", "fetch", "fetchrow", "fetchval", "executeman
 # lg_sotf.db.repos._base helpers that run their second argument: fetch_one(conn, sql, *args).
 SQL_HELPERS = frozenset({"fetch_one", "fetch_int", "fetch_bool"})
 TX_METHODS = frozenset({"tenant_tx", "system_tx", "connection"})
-SETTINGS_ROOTS = ("cli.py", "api/app.py", "settings.py", "__main__.py")
-SETTINGS_ROOT_DIRS = ("runtime",)
+SETTINGS_ROOTS = ("cli.py", "api/app.py", "settings.py")
+SETTINGS_ROOT_DIR = "runtime"
 LOCKS_MODULE = "db/locks.py"
 LOCK_NAMESPACE = range(710_000, 711_000)
 _ADVISORY_LITERAL = re.compile(r"pg_(?:try_)?advisory\w*\(\s*\d")
@@ -253,7 +253,8 @@ def _outside_db(rel: str) -> bool:
 
 
 def _is_settings_root(rel: str) -> bool:
-    return rel in SETTINGS_ROOTS or rel.endswith("/__main__.py") or in_dir(rel, *SETTINGS_ROOT_DIRS)
+    """The composition roots: ``SETTINGS_ROOTS`` and the entrypoint modules directly in ``runtime/``."""
+    return rel in SETTINGS_ROOTS or (in_dir(rel, SETTINGS_ROOT_DIR) and rel.count("/") == 1)
 
 
 # --------------------------------------------------------------------------- ratchets
@@ -470,7 +471,9 @@ def test_settings_roots_are_exempt() -> None:
     assert _is_settings_root("cli.py")
     assert _is_settings_root("api/app.py")
     assert _is_settings_root("runtime/worker.py")
-    assert _is_settings_root("mcp/__main__.py")
+    assert _is_settings_root("settings.py")
+    assert not _is_settings_root("__main__.py") and not _is_settings_root("mcp/__main__.py")
+    assert not _is_settings_root("runtime/sub/helper.py")
     assert not _is_settings_root("api/routers/alerts.py")
     assert not _is_settings_root("runtimes.py")
 

@@ -15,7 +15,7 @@ from cryptography.fernet import Fernet, InvalidToken, MultiFernet
 
 from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.security.insecure import is_insecure_secret
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 _ENVELOPE_VERSION = 1
 
@@ -49,14 +49,13 @@ class SecretBox:
         self._key_count = len(fernets)
 
     @classmethod
-    def from_settings(cls, settings: Optional[Settings] = None) -> SecretBox:
-        s = settings or get_settings()
-        if s.security.encryption_keys is None:
+    def from_settings(cls, settings: Settings) -> SecretBox:
+        if settings.security.encryption_keys is None:
             raise SecurityConfigError("security.encryption_keys is not configured")
-        keys = parse_keys(s.security.encryption_keys.get_secret_value())
+        keys = parse_keys(settings.security.encryption_keys.get_secret_value())
         if not keys:
             raise SecurityConfigError("security.encryption_keys is empty")
-        if s.is_production and any(is_insecure_secret(k) for k in keys):
+        if settings.is_production and any(is_insecure_secret(k) for k in keys):
             raise SecurityConfigError(
                 "security.encryption_keys contains a published development/test key; generate a new one"
             )

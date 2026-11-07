@@ -33,7 +33,7 @@ import structlog
 from structlog.types import EventDict, Processor, WrappedLogger
 
 from lg_sotf.security.redaction import REDACTED, is_secret_key, redact, redact_text
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 _HANDLER_MARKER = "_lg_sotf_handler"
 _NOISY_LOGGERS = ("httpx", "httpx2", "httpcore", "anthropic", "openai", "urllib3", "asyncio", "hpack", "aiokafka")
@@ -167,10 +167,9 @@ def _parse_level(level: str) -> int:
     return value
 
 
-def configure_logging(settings: Optional[Settings] = None, *, stream: Optional[TextIO] = None) -> None:
+def configure_logging(settings: Settings, *, stream: Optional[TextIO] = None) -> None:
     """Configure structlog and the stdlib root logger. Safe to call repeatedly."""
-    s = settings or get_settings()
-    obs = s.observability
+    obs = settings.observability
     level = _parse_level(obs.log_level)
     out = stream or sys.stdout
 
@@ -180,7 +179,7 @@ def configure_logging(settings: Optional[Settings] = None, *, stream: Optional[T
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True, key="timestamp"),
-        _static_fields(obs.service_name, s.environment),
+        _static_fields(obs.service_name, settings.environment),
         structlog.processors.StackInfoRenderer(),
         # Redact before any handler sees the record, not only in our formatter.
         _redact_event,

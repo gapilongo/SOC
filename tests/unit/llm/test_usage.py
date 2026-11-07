@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from typing import List
+from typing import Callable, List
 
 import pytest
 from langchain_core.messages import AIMessage
@@ -13,6 +13,7 @@ from langchain_core.messages import AIMessage
 from lg_sotf.llm.pricing import DEFAULT_PRICES, ModelPrice, compute_cost, lookup_price, price_table
 from lg_sotf.llm.usage import LLMUsageRow, UsageRecorder, UsageSample, extract_usage, get_usage_recorder
 from lg_sotf.observability.metrics import REGISTRY
+from lg_sotf.settings import Settings
 
 DAY = date(2026, 9, 1)
 
@@ -180,8 +181,10 @@ def test_extract_usage_without_metadata() -> None:
     assert sample == UsageSample(model="m")
 
 
-def test_singleton() -> None:
-    assert get_usage_recorder() is get_usage_recorder()
+def test_singleton(make_settings: Callable[..., Settings]) -> None:
+    first = get_usage_recorder(make_settings(llm={"prices": {"house-model": {"input": 1, "output": 2}}}))
+    assert get_usage_recorder(make_settings()) is first
+    assert "house-model" in first._prices  # priced by the first caller's settings
 
 
 # ------------------------------------------------------------------ per-alert totals

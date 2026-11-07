@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from redis.asyncio import Redis
 
 from lg_sotf.queue.streams import FIELD_RETRIES, WORK_FIELDS, QueueStreams, decode_fields
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 
 def _text(value: Any) -> str:
@@ -44,9 +44,9 @@ def _to_dead_letter(entry_id: Any, fields: Any) -> DeadLetter:
 
 
 class DeadLetterQueue:
-    def __init__(self, redis: Redis, settings: Optional[Settings] = None) -> None:
+    def __init__(self, redis: Redis, settings: Settings) -> None:
         self._redis = redis
-        self._streams = QueueStreams((settings or get_settings()).redis.key_prefix)
+        self._streams = QueueStreams(settings.redis.key_prefix)
 
     async def list(self, *, limit: int = 50, start: str = "-") -> List[DeadLetter]:
         """Oldest first, starting at entry id ``start`` (inclusive)."""

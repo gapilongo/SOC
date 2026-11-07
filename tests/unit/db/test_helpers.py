@@ -141,15 +141,12 @@ class TestUrlsAndSsl:
         assert "password=***" in redacted and "sslmode=require" in redacted
         assert "s3cret" not in redact_url("postgresql://u:s3cret@h/db?password=s3cret")
 
-    def test_migration_url_follows_configured_tls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_migration_url_follows_configured_tls(self) -> None:
         from lg_sotf.db import migrate
         from lg_sotf.settings import DatabaseSettings
 
-        class _Settings:
-            database = DatabaseSettings(ssl_mode="verify-full", ssl_root_cert="/etc/ca.pem")
-
-        monkeypatch.setattr(migrate, "get_settings", lambda: _Settings())
-        url = migrate.libpq_url("postgresql://u:p@h/db?sslmode=require&sslrootcert=/other")
+        database = DatabaseSettings(ssl_mode="verify-full", ssl_root_cert="/etc/ca.pem")
+        url = migrate.libpq_url("postgresql://u:p@h/db?sslmode=require&sslrootcert=/other", database)
         assert "sslmode=verify-full" in url and "sslrootcert=%2Fetc%2Fca.pem" in url
         assert "require" not in url and "other" not in url
 

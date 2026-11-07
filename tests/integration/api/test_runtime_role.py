@@ -14,6 +14,7 @@ from typing import Callable
 import pytest
 
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
+from lg_sotf.settings import DatabaseSettings
 from tests.integration.api._support import PASSWORD, TENANT_A, ApiHarness
 from tests.integration.db._support import make_alert
 
@@ -23,8 +24,8 @@ RUNTIME_ROLE = "pg_database_owner"
 
 
 async def test_api_end_to_end_as_runtime_role(make_api: Callable, migrated_database_url: str) -> None:
-    await setup_checkpointer(migrated_database_url)
-    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url, DatabaseSettings())
     separator = "&" if "?" in migrated_database_url else "?"
     api: ApiHarness = await make_api(database={"url": f"{migrated_database_url}{separator}role={RUNTIME_ROLE}"})
     async with api.ctx.db.connection() as conn:
@@ -79,8 +80,8 @@ async def test_api_end_to_end_as_runtime_role(make_api: Callable, migrated_datab
 
 async def test_platform_admin_provisions_a_tenant_as_runtime_role(make_api: Callable, migrated_database_url: str) -> None:
     """The runtime role has no INSERT on tenants: provisioning goes through lgsotf_create_tenant only."""
-    await setup_checkpointer(migrated_database_url)
-    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url, DatabaseSettings())
     separator = "&" if "?" in migrated_database_url else "?"
     api: ApiHarness = await make_api(database={"url": f"{migrated_database_url}{separator}role={RUNTIME_ROLE}"})
     async with api.ctx.db.connection() as conn:

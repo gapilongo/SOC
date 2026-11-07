@@ -76,7 +76,8 @@ def _msgs(settings: Settings, title: str = "Encoded PowerShell spawned by winwor
 
 
 def _rows() -> Dict[str, Any]:
-    return {r["model"]: r for r in get_usage_recorder().pending_rows()}
+    # The process recorder, built by the call under test; these settings would only price a new one.
+    return {r["model"]: r for r in get_usage_recorder(Settings(_env_file=None)).pending_rows()}
 
 
 # --------------------------------------------------------------------------
@@ -371,7 +372,7 @@ async def test_ollama_end_to_end_over_http(make_settings: Callable[..., Settings
     assert row["calls"] == 2 and row["input_tokens"] == 1700 and row["cost_usd"] == 0
     # Local models are priced (at zero): no llm.price_unknown warning.
     assert recorder.cost_of(UsageSample(model="local/qwen3:8b", input_tokens=5)) == 0
-    assert "local/qwen3:8b" not in get_usage_recorder()._unpriced
+    assert "local/qwen3:8b" not in get_usage_recorder(s)._unpriced
 
 
 # --------------------------------------------------------------------------

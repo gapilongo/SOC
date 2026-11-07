@@ -709,7 +709,7 @@ class Worker:
             await self._repos.llm_usage.upsert_daily([LLMUsageDelta(**row) for row in rows])
 
         try:
-            return await get_usage_recorder().flush(sink)
+            return await get_usage_recorder(self._settings).flush(sink)
         except Exception as exc:  # noqa: BLE001 - retried on the next flush
             log_failure(log, "worker.usage_flush_failed", exc, level="warning")
             return 0

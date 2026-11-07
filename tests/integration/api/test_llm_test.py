@@ -16,7 +16,7 @@ URL = "/api/v1/tenant/llm/test"
 
 
 async def test_admin_tests_the_fake_model(api: ApiHarness) -> None:
-    get_usage_recorder().reset()
+    get_usage_recorder(api.ctx.settings).reset()
     analyst = await api.login_headers(TENANT_A, "analyst")
     assert (await api.client.post(URL, headers=analyst)).status_code == 403
     assert (await api.client.post(URL)).status_code == 401

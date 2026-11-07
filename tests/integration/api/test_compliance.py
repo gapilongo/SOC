@@ -19,6 +19,7 @@ from lg_sotf.db.repos import User
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.integrations.events import TEST_EVENT
 from lg_sotf.queue.streams import QueueStreams, encode_work
+from lg_sotf.settings import DatabaseSettings
 from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 from tests.integration.services._support import sight
@@ -536,7 +537,7 @@ async def _seed_redis(api: ApiHarness, tenant_id: str, alert_id: str) -> None:
 
 
 async def _prepare_two_tenants(api: ApiHarness, migrated_database_url: str) -> Dict[str, Any]:
-    await setup_checkpointer(migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
     seeded: Dict[str, Any] = {}
     for tenant_id in (TENANT_A, TENANT_B):
         await _seed_tenant_with_secrets(api, tenant_id)
@@ -673,8 +674,8 @@ RUNTIME_ROLE = "pg_database_owner"
 async def test_erasure_and_export_work_as_the_runtime_role(
     make_api: Callable[..., Any], migrated_database_url: str
 ) -> None:
-    await setup_checkpointer(migrated_database_url)
-    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url)
+    await setup_checkpointer(migrated_database_url, DatabaseSettings())
+    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url, DatabaseSettings())
     separator = "&" if "?" in migrated_database_url else "?"
     api: ApiHarness = await make_api(database={"url": f"{migrated_database_url}{separator}role={RUNTIME_ROLE}"})
     owner: ApiHarness = await make_api()

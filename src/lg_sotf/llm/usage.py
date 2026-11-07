@@ -469,13 +469,12 @@ _recorder: Optional[UsageRecorder] = None
 _recorder_lock = threading.Lock()
 
 
-def get_usage_recorder() -> UsageRecorder:
+def get_usage_recorder(settings: Settings) -> UsageRecorder:
+    """The process-wide recorder; the first call prices it from ``settings``."""
     global _recorder
     with _recorder_lock:
         if _recorder is None:
-            from lg_sotf.settings import get_settings
-
-            _recorder = UsageRecorder(get_settings())
+            _recorder = UsageRecorder(settings)
         return _recorder
 
 

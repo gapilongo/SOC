@@ -19,7 +19,7 @@ from lg_sotf.db.partitions import add_months, list_partitions, month_start, part
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
 from lg_sotf.db.retention import purge_expired
-from lg_sotf.settings import RetentionSettings
+from lg_sotf.settings import DatabaseSettings, RetentionSettings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
 
 pytestmark = pytest.mark.asyncio
@@ -322,7 +322,7 @@ class TestRetention:
     async def test_checkpoints_of_finished_runs_are_purged(
         self, db: Database, repos: Repositories, migrated_database_url: str
     ) -> None:
-        await setup_checkpointer(migrated_database_url)
+        await setup_checkpointer(migrated_database_url, DatabaseSettings())
         old = await make_alert(repos, TENANT_A)
         recent = await make_alert(repos, TENANT_A)
         running = await make_alert(repos, TENANT_A)

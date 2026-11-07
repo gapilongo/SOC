@@ -25,9 +25,13 @@ from lg_sotf.db.migrate import (
 from lg_sotf.db.partitions import add_months, month_start, partition_name
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.settings import DatabaseSettings
 from tests.integration.db._support import TENANT_TABLES, db_settings
 
 pytestmark = pytest.mark.asyncio
+
+# No ssl_mode/ssl_root_cert: the migrate helpers keep each test URL's own TLS parameters.
+URL_TLS = DatabaseSettings()
 
 # Tenant-owned tables are discovered from the catalog, so a new table is checked without editing a list.
 TENANT_TABLES_SQL = """
@@ -45,14 +49,14 @@ def _query(url: str, sql: str) -> list:
 
 async def test_upgrade_downgrade_upgrade_round_trip(migrated_database_url: str) -> None:
     url = migrated_database_url
-    assert current_revision(url) == head_revision()
+    assert current_revision(url, URL_TLS) == head_revision()
     # Microsoft integrations block the 0009 downgrade on purpose; tests that ran earlier may have left some.
     with _owner(url) as conn:
         conn.execute("DELETE FROM integrations WHERE kind = 'microsoft'")
         conn.commit()
 
-    downgrade_base(url)
-    assert current_revision(url) is None
+    downgrade_base(url, URL_TLS)
+    assert current_revision(url, URL_TLS) is None
     leftovers = _query(
         url,
         "SELECT tablename FROM pg_tables WHERE schemaname = 'public' "
@@ -60,8 +64,8 @@ async def test_upgrade_downgrade_upgrade_round_trip(migrated_database_url: str) 
     )
     assert leftovers == []
 
-    upgrade_head(url)
-    assert current_revision(url) == head_revision()
+    upgrade_head(url, URL_TLS)
+    assert current_revision(url, URL_TLS) == head_revision()
     with psycopg.connect(to_libpq_url(url)) as conn:
         conn.execute("SELECT set_config('app.bypass_rls', 'on', false)")
         assert conn.execute("SELECT id, status FROM tenants").fetchall() == [("default", "active")]
@@ -172,8 +176,8 @@ async def test_schema_is_current(migrated_database_url: str) -> None:
 
 
 async def test_setup_checkpointer_is_idempotent(migrated_database_url: str) -> None:
-    await setup_checkpointer(migrated_database_url)
-    await setup_checkpointer(migrated_database_url)
+    await setup_checkpointer(migrated_database_url, URL_TLS)
+    await setup_checkpointer(migrated_database_url, URL_TLS)
     names = {r[0] for r in _query(migrated_database_url, "SELECT tablename FROM pg_tables WHERE schemaname='public'")}
     assert {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"} <= names
 
@@ -296,7 +300,7 @@ async def test_0009_one_microsoft_integration_and_set_null_pin(migrated_database
 
 async def test_0009_downgrade_refuses_while_microsoft_integrations_exist(migrated_database_url: str) -> None:
     url = migrated_database_url
-    cfg = alembic_config(url)
+    cfg = alembic_config(url, URL_TLS)
     tenant = f"m9-{uuid.uuid4().hex[:8]}"
     with _owner(url) as conn:
         _seed(conn, tenant)
@@ -305,12 +309,12 @@ async def test_0009_downgrade_refuses_while_microsoft_integrations_exist(migrate
     try:
         with pytest.raises(Exception, match="Microsoft integrations exist"):
             command.downgrade(cfg, "0008")
-        assert current_revision(url) == head_revision()
+        assert current_revision(url, URL_TLS) == head_revision()
         with _owner(url) as conn:
             conn.execute("DELETE FROM integrations WHERE kind = 'microsoft'")
             conn.commit()
         command.downgrade(cfg, "0008")
-        assert current_revision(url) == "0008"
+        assert current_revision(url, URL_TLS) == "0008"
         columns = {
             r[0] for r in _query(url, "SELECT column_name FROM information_schema.columns WHERE table_name = 'response_actions'")
         }
@@ -321,7 +325,7 @@ async def test_0009_downgrade_refuses_while_microsoft_integrations_exist(migrate
         assert "microsoft" not in kind_check
     finally:
         command.upgrade(cfg, "head")
-    assert current_revision(url) == head_revision()
+    assert current_revision(url, URL_TLS) == head_revision()
 
 
 async def test_legacy_idempotency_keys_are_byte_identical() -> None:
@@ -351,7 +355,7 @@ async def test_0009_indexes_exist(migrated_database_url: str) -> None:
 
 def _render(url: str, revisions: str, *, downgrade: bool = False) -> str:
     """The SQL alembic runs for ``revisions`` (offline rendering: nothing is executed)."""
-    cfg = alembic_config(url)
+    cfg = alembic_config(url, URL_TLS)
     cfg.output_buffer = io.StringIO()
     (command.downgrade if downgrade else command.upgrade)(cfg, revisions, sql=True)
     return str(cfg.output_buffer.getvalue())
@@ -417,7 +421,7 @@ async def test_0009_constraints_and_indexes_are_valid_after_upgrade(migrated_dat
 
 async def test_0009_moves_existing_rollbacks_to_the_scheduler(migrated_database_url: str) -> None:
     url = migrated_database_url
-    cfg = alembic_config(url)
+    cfg = alembic_config(url, URL_TLS)
     with _owner(url) as conn:
         conn.execute("DELETE FROM integrations WHERE kind = 'microsoft'")
         conn.commit()
@@ -456,7 +460,7 @@ NEW_COLUMNS = {"execution_owner", "integration_id", "verification", "verify_atte
 async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migrated_database_url: str) -> None:
     """A failure after the catalog change committed leaves 0008 stamped over the new columns; retries must work."""
     url = migrated_database_url
-    cfg = alembic_config(url)
+    cfg = alembic_config(url, URL_TLS)
     with _owner(url) as conn:
         conn.execute("DELETE FROM integrations WHERE kind = 'microsoft'")
         conn.commit()
@@ -475,13 +479,13 @@ async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migra
         # Two live rollbacks of one original: the unique index build fails after the catalog change committed.
         with pytest.raises(IntegrityError, match="ux_response_actions_live_rollback"):
             command.upgrade(cfg, "head")
-        assert current_revision(url) == "0008" and NEW_COLUMNS <= _columns(url)
+        assert current_revision(url, URL_TLS) == "0008" and NEW_COLUMNS <= _columns(url)
         assert _index_validity(url, "ux_response_actions_live_rollback") == [(False,)]
 
         # The way back from the half-applied state: stamp 0009, then downgrade.
         command.stamp(cfg, "0009")
         command.downgrade(cfg, "0008")
-        assert current_revision(url) == "0008" and not NEW_COLUMNS & _columns(url)
+        assert current_revision(url, URL_TLS) == "0008" and not NEW_COLUMNS & _columns(url)
         assert _index_validity(url, "ux_response_actions_live_rollback") == []
 
         # The way forward: fail again, fix the data, re-run.
@@ -491,7 +495,7 @@ async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migra
             conn.execute("UPDATE response_actions SET status = 'failed' WHERE id = %s", (duplicates[1],))
             conn.commit()
         command.upgrade(cfg, "head")
-        assert current_revision(url) == head_revision()
+        assert current_revision(url, URL_TLS) == head_revision()
         await test_0009_constraints_and_indexes_are_valid_after_upgrade(url)
         with _owner(url) as conn:
             owners = conn.execute(
@@ -500,13 +504,13 @@ async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migra
         assert sorted(owners) == [("scheduler", 2), ("workflow", 1)]
 
         command.downgrade(cfg, "0008")
-        assert current_revision(url) == "0008" and not NEW_COLUMNS & _columns(url)
+        assert current_revision(url, URL_TLS) == "0008" and not NEW_COLUMNS & _columns(url)
     finally:
         if duplicates:
             with _owner(url) as conn:
                 conn.execute("UPDATE response_actions SET status = 'failed' WHERE id = %s", (duplicates[1],))
                 conn.commit()
         command.upgrade(cfg, "head")
-    assert current_revision(url) == head_revision()
+    assert current_revision(url, URL_TLS) == head_revision()
     await test_0009_constraints_and_indexes_are_valid_after_upgrade(url)
     await test_0009_indexes_exist(url)

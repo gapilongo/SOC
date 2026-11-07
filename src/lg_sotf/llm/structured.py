@@ -74,7 +74,7 @@ from lg_sotf.llm.pricing import local_model_id
 from lg_sotf.llm.prompting import serialize_untrusted
 from lg_sotf.llm.usage import Outcome, UsageRecorder, UsageSample, UsageTally, extract_usage, get_usage_recorder
 from lg_sotf.observability.logging import get_logger, log_failure
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -604,7 +604,7 @@ async def ainvoke_structured(
     agent: str,
     tier: Tier,
     tenant_id: Optional[str] = None,
-    settings: Optional[Settings] = None,
+    settings: Settings,
     budget: Optional[TokenBudget] = None,
     budget_limit: BudgetLimit = USE_DEFAULT,
     tally: Optional[UsageTally] = None,
@@ -622,19 +622,18 @@ async def ainvoke_structured(
     Self-hosted models answering in JSON text get one repair attempt (see the
     module docstring).
     """
-    s = settings or get_settings()
     model_id = usage_model_id(model)
     meter = _CallMeter(
-        get_usage_recorder(), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
+        get_usage_recorder(settings), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
     )
     log = logger.bind(agent=agent, tier=tier, model=model_id)
 
     reservation = await _reserve(
-        budget, tenant_id, messages, getattr(s.llm, tier).max_tokens, budget_limit, meter=meter, log=log
+        budget, tenant_id, messages, getattr(settings.llm, tier).max_tokens, budget_limit, meter=meter, log=log
     )
     async with _reserved(budget, reservation) as spent:
         plan = _plan_invoke(model, schema, messages)
-        return await _run_attempts(plan, schema, tier=tier, settings=s, meter=meter, log=log, spent=spent)
+        return await _run_attempts(plan, schema, tier=tier, settings=settings, meter=meter, log=log, spent=spent)
 
 
 async def _settle(budget: TokenBudget, reservation: Reservation, actual: int) -> None:

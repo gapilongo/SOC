@@ -41,7 +41,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 
 from lg_sotf.security.redaction import redact, redact_text
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 DATA_TAG = "alert_data"
 CONTEXT_TAG = "tool_data"
@@ -373,13 +373,12 @@ def serialize_untrusted(data: Any) -> str:
 
 
 def render_untrusted(
-    data: Any, settings: Optional[Settings] = None, *, limit: Optional[int] = None
+    data: Any, settings: Settings, *, limit: Optional[int] = None
 ) -> tuple[str, int, bool]:
     """Redact, cap and serialise untrusted data. Returns (json, redactions, truncated)."""
-    s = settings or get_settings()
-    field_chars = max(s.llm.max_field_chars, 1)
-    list_items = max(s.llm.max_list_items, 1)
-    limit = max(limit if limit is not None else s.llm.max_input_chars, 256)
+    field_chars = max(settings.llm.max_field_chars, 1)
+    list_items = max(settings.llm.max_list_items, 1)
+    limit = max(limit if limit is not None else settings.llm.max_input_chars, 256)
 
     stats = _Stats()
     redacted, redactions = redact(_prepare(data, 0, field_chars, list_items, stats))
@@ -434,7 +433,7 @@ def build_prompt(
     *,
     context: Optional[Mapping[str, Any]] = None,
     cache_untrusted: bool = False,
-    settings: Optional[Settings] = None,
+    settings: Settings,
 ) -> PromptBundle:
     """Like :func:`build_messages` but also reports redaction and truncation.
 
@@ -443,16 +442,17 @@ def build_prompt(
     breakpoint on the alert block (Anthropic with ``llm.prompt_caching``
     only); use it when the same alert block is sent on several calls.
     """
-    s = settings or get_settings()
-    data, redactions, truncated = render_untrusted(untrusted, s)
+    data, redactions, truncated = render_untrusted(untrusted, settings)
     messages: List[BaseMessage] = [
-        _system_message(system, task, s),
-        _data_message(UNTRUSTED_PREAMBLE, DATA_TAG, data, truncated, cache=cache_untrusted and caching_enabled(s)),
+        _system_message(system, task, settings),
+        _data_message(
+            UNTRUSTED_PREAMBLE, DATA_TAG, data, truncated, cache=cache_untrusted and caching_enabled(settings)
+        ),
     ]
     data_chars = len(data)
     if context is not None:
-        limit = max(s.llm.max_input_chars // CONTEXT_SHARE, 256)
-        ctx_data, ctx_redactions, ctx_truncated = render_untrusted(context, s, limit=limit)
+        limit = max(settings.llm.max_input_chars // CONTEXT_SHARE, 256)
+        ctx_data, ctx_redactions, ctx_truncated = render_untrusted(context, settings, limit=limit)
         messages.append(_data_message(CONTEXT_PREAMBLE, CONTEXT_TAG, ctx_data, ctx_truncated, cache=False))
         redactions += ctx_redactions
         truncated = truncated or ctx_truncated
@@ -467,7 +467,7 @@ def build_messages(
     *,
     context: Optional[Mapping[str, Any]] = None,
     cache_untrusted: bool = False,
-    settings: Optional[Settings] = None,
+    settings: Settings,
 ) -> List[BaseMessage]:
     """``[SystemMessage(system + task), HumanMessage(<alert_data>...</alert_data>)]``.
 

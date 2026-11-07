@@ -12,9 +12,11 @@ import structlog
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from lg_sotf.api import errors as api_errors
+from lg_sotf.api import middleware as api_middleware
 from lg_sotf.api.errors import install_error_handlers
 from lg_sotf.api.middleware import RequestContextMiddleware
-from lg_sotf.observability.logging import clear_context, configure_logging
+from lg_sotf.observability.logging import clear_context, configure_logging, get_logger
 from lg_sotf.settings import Settings
 
 # Built at runtime so no committed string looks like a credential.
@@ -36,9 +38,13 @@ def restore_logging() -> Iterator[None]:
 
 
 @pytest.fixture
-def stream(make_settings: Callable[..., Settings]) -> io.StringIO:
+def stream(make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch) -> io.StringIO:
     out = io.StringIO()
     configure_logging(make_settings(observability={"log_format": "json", "log_level": "INFO"}), stream=out)
+    # structlog caches a module logger on first use (cache_logger_on_first_use): if an earlier test in
+    # this process used these loggers under another configuration, they would not write to `out`.
+    monkeypatch.setattr(api_errors, "log", get_logger(api_errors.__name__))
+    monkeypatch.setattr(api_middleware, "log", get_logger("lg_sotf.api.access"))
     return out
 
 

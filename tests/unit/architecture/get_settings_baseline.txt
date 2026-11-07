@@ -1,24 +1,3 @@
-# get_settings() calls outside the composition roots (cli.py, api/app.py, runtime/, settings.py, __main__.py).
+# get_settings() calls outside the composition roots (cli.py, api/app.py, runtime/*.py, settings.py).
 # Shrink-only baseline: one path::qualname per occurrence, paths relative to src/lg_sotf.
 # Delete lines as the code is fixed; never add one. See test_data_access.py.
-
-agents/base.py::BaseAgent.__init__
-db/migrate.py::_ssl_params
-db/migrate.py::libpq_url
-ingestion/service.py::IngestionService.__init__
-llm/budget.py::TokenBudget.__init__
-llm/client.py::get_chat_model
-llm/client.py::llm_slot
-llm/prompting.py::build_prompt
-llm/prompting.py::render_untrusted
-llm/structured.py::ainvoke_structured
-llm/usage.py::get_usage_recorder
-mcp/command.py::mcp_command
-observability/logging.py::configure_logging
-queue/consumer.py::StreamConsumer.__init__
-queue/dlq.py::DeadLetterQueue.__init__
-queue/events.py::EventBus.__init__
-queue/producer.py::WorkQueue.__init__
-queue/redis.py::create_redis
-security/crypto.py::SecretBox.from_settings
-security/hashing.py::indicator_hmac_key
