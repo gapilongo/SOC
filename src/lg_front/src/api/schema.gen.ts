@@ -1835,7 +1835,7 @@ export interface components {
             /** Revoked At */
             revoked_at?: string | null;
             /** Scopes */
-            scopes: string[];
+            scopes: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
         };
@@ -1862,7 +1862,7 @@ export interface components {
             /** Revoked At */
             revoked_at?: string | null;
             /** Scopes */
-            scopes: string[];
+            scopes: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
         };
@@ -2873,9 +2873,9 @@ export interface components {
              */
             kind: "user" | "api_key";
             /** Role */
-            role?: string | null;
+            role?: ("viewer" | "analyst" | "admin") | null;
             /** Scopes */
-            scopes?: string[];
+            scopes?: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
             /** Tenant Name */
@@ -4044,8 +4044,11 @@ export interface components {
              * @default false
              */
             oidc_provisioned?: boolean;
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
             /** Tenant Id */
             tenant_id: string;
             /**

@@ -4,14 +4,79 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
+from typing import Annotated, Any, Dict, Generic, Iterable, List, Literal, Optional, TypeVar
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator
 
-from lg_sotf.models.vocabulary import Decision, Role, Scope, SourceType, VerificationState
+from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
+from lg_sotf.db.repos.audit import AUDIT_ACTOR_TYPES
+from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
+from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
+from lg_sotf.db.repos.sources import SOURCE_HEALTH
+from lg_sotf.db.repos.tenants import TENANT_STATUSES
+from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
+from lg_sotf.models.vocabulary import (
+    ACTION_STATUSES,
+    ALERT_STATUSES,
+    AUTONOMY_MODES,
+    DECISIONS,
+    DISPOSITIONS,
+    ESCALATION_LEVELS,
+    ESCALATION_STATUSES,
+    EXECUTION_OWNERS,
+    RISK_LEVELS,
+    ROLES,
+    SCOPES,
+    SEVERITIES,
+    SOURCE_TYPES,
+    VERIFICATION_STATES,
+    Decision,
+    Role,
+    Scope,
+    SourceType,
+    VerificationState,
+)
 
 T = TypeVar("T")
+
+
+# ------------------------------------------------------------- vocabulary
+# Response fields drawn from a vocabulary (ADR-0009, tolerant reader). The OpenAPI schema advertises
+# the values as an enum, but the field stays ``str`` at runtime: a value that a newer release added
+# still serializes during a rolling deploy, and clients must tolerate values they do not know.
+# Request models use the vocabulary ``Literal`` itself and validate strictly.
+
+
+def vocabulary_schema(values: Iterable[str]) -> Dict[str, Any]:
+    """The JSON schema of a response field drawn from ``values`` (canonical order kept)."""
+    return {"type": "string", "enum": list(values)}
+
+
+RoleStr = Annotated[str, WithJsonSchema(vocabulary_schema(ROLES))]
+ScopeStr = Annotated[str, WithJsonSchema(vocabulary_schema(SCOPES))]
+SeverityStr = Annotated[str, WithJsonSchema(vocabulary_schema(SEVERITIES))]
+AlertStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(ALERT_STATUSES))]
+DispositionStr = Annotated[str, WithJsonSchema(vocabulary_schema(DISPOSITIONS))]
+DecisionStr = Annotated[str, WithJsonSchema(vocabulary_schema(DECISIONS))]
+EscalationStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(ESCALATION_STATUSES))]
+EscalationLevelStr = Annotated[str, WithJsonSchema(vocabulary_schema(ESCALATION_LEVELS))]
+ActionStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(ACTION_STATUSES))]
+RiskLevelStr = Annotated[str, WithJsonSchema(vocabulary_schema(RISK_LEVELS))]
+AutonomyModeStr = Annotated[str, WithJsonSchema(vocabulary_schema(AUTONOMY_MODES))]
+VerificationStateStr = Annotated[str, WithJsonSchema(vocabulary_schema(VERIFICATION_STATES))]
+ExecutionOwnerStr = Annotated[str, WithJsonSchema(vocabulary_schema(EXECUTION_OWNERS))]
+SourceTypeStr = Annotated[str, WithJsonSchema(vocabulary_schema(SOURCE_TYPES))]
+# Value sets owned by one repository or adapter (each checked against its database CHECK constraint).
+SourceHealthStr = Annotated[str, WithJsonSchema(vocabulary_schema(SOURCE_HEALTH))]
+TenantStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(TENANT_STATUSES))]
+AuditActorTypeStr = Annotated[str, WithJsonSchema(vocabulary_schema(AUDIT_ACTOR_TYPES))]
+EventActorTypeStr = Annotated[str, WithJsonSchema(vocabulary_schema(EVENT_ACTOR_TYPES))]
+IntegrationKindStr = Annotated[str, WithJsonSchema(vocabulary_schema(INTEGRATION_KINDS))]
+TicketingKindStr = Annotated[str, WithJsonSchema(vocabulary_schema(TICKETING_KINDS))]
+IntegrationEventStr = Annotated[str, WithJsonSchema(vocabulary_schema(INTEGRATION_EVENT_TYPES))]
+DeliveryStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(OUTBOX_STATUSES))]
+DeliveryOperationStr = Annotated[str, WithJsonSchema(vocabulary_schema(OUTBOX_OPERATIONS))]
 
 
 
@@ -43,7 +108,7 @@ class UserOut(Out):
     id: UUID
     tenant_id: str
     email: str
-    role: str
+    role: RoleStr
     is_platform_admin: bool
     is_active: bool
     locked_until: Optional[datetime] = None
@@ -135,8 +200,8 @@ class MeOut(BaseModel):
     tenant_name: Optional[str] = None
     home_tenant_id: str
     auth_method: str
-    role: Optional[str] = None
-    scopes: List[str] = Field(default_factory=list)
+    role: Optional[RoleStr] = None
+    scopes: List[ScopeStr] = Field(default_factory=list)
     user_id: Optional[UUID] = None
     api_key_id: Optional[UUID] = None
     email: Optional[str] = None
@@ -567,7 +632,7 @@ class ApiKeyOut(Out):
     tenant_id: str
     name: str
     prefix: str
-    scopes: List[str]
+    scopes: List[ScopeStr]
     created_by: Optional[UUID] = None
     last_used_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None

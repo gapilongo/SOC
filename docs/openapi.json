@@ -1128,6 +1128,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -1208,6 +1213,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -3960,6 +3970,11 @@
           "role": {
             "anyOf": [
               {
+                "enum": [
+                  "viewer",
+                  "analyst",
+                  "admin"
+                ],
                 "type": "string"
               },
               {
@@ -3970,6 +3985,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -6926,6 +6946,11 @@
             "type": "boolean"
           },
           "role": {
+            "enum": [
+              "viewer",
+              "analyst",
+              "admin"
+            ],
             "title": "Role",
             "type": "string"
           },
