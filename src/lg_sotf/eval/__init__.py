@@ -7,6 +7,8 @@ See ``docs/evaluation.md``. Submodules:
 * :mod:`lg_sotf.eval.metrics` - pure metric functions
 * :mod:`lg_sotf.eval.report` - JSON and Markdown reports
 * :mod:`lg_sotf.eval.gate` - thresholds file and regression gate
+* :mod:`lg_sotf.eval.adversarial` - the injection-followed signal and the per-family report section
+* :mod:`lg_sotf.eval.tool_fixtures` - canned threat-intelligence and history answers for dataset items
 * :mod:`lg_sotf.eval.command` - the ``lg-sotf eval`` command
 """
 

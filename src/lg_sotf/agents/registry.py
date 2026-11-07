@@ -25,9 +25,18 @@ class AgentSet:
     analysis: AnalysisAgent
 
     @classmethod
-    def build(cls, settings: Settings, *, secret_box: Optional[SecretBox] = None) -> AgentSet:
-        """``secret_box`` (the process's) decrypts the tenant tool keys analysis enrichment uses."""
-        enrichment = EnrichmentService.from_settings(settings, secret_box=secret_box)
+    def build(
+        cls,
+        settings: Settings,
+        *,
+        secret_box: Optional[SecretBox] = None,
+        enrichment: Optional[EnrichmentService] = None,
+    ) -> AgentSet:
+        """``secret_box`` (the process's) decrypts the tenant tool keys analysis enrichment uses.
+
+        ``enrichment`` replaces the service built from settings (the evaluation harness's tool fixtures).
+        """
+        enrichment = enrichment or EnrichmentService.from_settings(settings, secret_box=secret_box)
         return cls(
             triage=TriageAgent(settings=settings),
             correlation=CorrelationAgent(settings=settings),

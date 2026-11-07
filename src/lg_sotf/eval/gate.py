@@ -16,7 +16,8 @@ Thresholds file (YAML or JSON)::
       benign_auto_close_rate: {max_decrease: 0.05}
 
 Metric paths are dotted paths into the report's ``metrics`` object;
-``splits.<name>.<path>`` reads that split's metrics. A metric that is missing
+``splits.<name>.<path>`` reads that split's metrics and
+``families.<name>.<path>`` that adversarial family's. A metric that is missing
 or undefined (``null``, e.g. a rate with no items in its denominator) fails
 its bound unless the bound sets ``allow_missing: true``, so a dataset change
 cannot silently turn a gate off.
@@ -128,10 +129,10 @@ def resolve_metric(report: Mapping[str, Any], path: str) -> Any:
     """Look a dotted metric path up in a report; ``KeyError`` when absent."""
     parts = path.split(".")
     node: Any
-    if parts[0] == "splits":
+    if parts[0] in ("splits", "families"):
         if len(parts) < 3:
             raise KeyError(path)
-        node = report["splits"][parts[1]]["metrics"]
+        node = report[parts[0]][parts[1]]["metrics"]
         parts = parts[2:]
     else:
         node = report["metrics"]

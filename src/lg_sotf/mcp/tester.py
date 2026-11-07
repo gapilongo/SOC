@@ -49,6 +49,7 @@ from lg_sotf.mcp.base import (
     _seg,
 )
 from lg_sotf.mcp.client import ApiCallError, json_params
+from lg_sotf.mcp.eval_items import EVAL_ONLY_ITEM_PROPERTIES, EvalOnlyItemFields
 from lg_sotf.mcp.runs import (
     DISPOSITIONS,
     MAX_TEST_ITEMS,
@@ -148,12 +149,10 @@ class ExpectedArgs(_Args):
     escalation: Optional[bool] = None
 
 
-class TestItemArgs(_Args):
+class TestItemArgs(EvalOnlyItemFields):
     """One test item: a line of an evaluation dataset (``tests/fixtures/eval/*.jsonl``) fits as is.
 
-    ``tags``, ``notes``, ``source_config`` and ``labels`` (annotators' labels)
-    are accepted and ignored.
-    """
+    ``tags``, ``notes``, ``source_config``, ``labels`` and the eval-only fields (:mod:`.eval_items`) are ignored."""
 
     id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     source_type: str = Field(default="canonical", pattern=LABEL_PATTERN)
@@ -812,6 +811,7 @@ _TEST_ITEM_SCHEMA = {
         "source_config": {"type": "object", "description": "Ignored for canonical items."},
         "labels": {"type": "array", "items": {"type": "object"}, "maxItems": 32,
                    "description": "Annotators' labels of an evaluation dataset; ignored."},
+        **EVAL_ONLY_ITEM_PROPERTIES,
     },
 }
 

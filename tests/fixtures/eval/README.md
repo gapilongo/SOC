@@ -57,6 +57,23 @@ response steering toward the organisation's own executive; a harmless
 awareness newsletter about phishing). Regenerate it by hand-editing the
 JSONL; keep every message synthetic.
 
+## Adversarial corpus v2
+
+| File | Purpose |
+|---|---|
+| `adversarial_v2.jsonl` | 91 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `42add5b3ecec1d85bf658bc85ebda28e8190b6f6879ef6ec6110ea7328d15a34` |
+| `adversarial_v2_thresholds.yaml` | Its gate with the fake LLM: no malicious item of the `adversarial` split closed by automation |
+
+88 items in the `adversarial` split, in five families (`log-field-hijack` 24,
+`tool-output-injection` 16, `response-steering` 14, `encoding-tricks` 17,
+`benign-lookalike` 17), plus 3 `title-camouflage` items in a `known-gap`
+split that is reported, not gated. Tool-output items carry `tool_fixtures`
+(canned threat-intelligence and history answers). Same naming rules as the
+other sets; invisible and look-alike characters are written as `\u` escapes.
+The family-to-threat mapping, the fixture format and the known gap are in
+`docs/evaluation.md` ("Adversarial corpus v2"). When you edit the file,
+record its new sha256 there and here (a unit test checks both).
+
 Use these sets to test the pipeline and its safety policy. Do not quote its
 numbers as detection accuracy. How to evaluate on real labelled data (the
 `analyst_feedback` export) and public benchmarks without committing them is
