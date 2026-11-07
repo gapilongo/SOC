@@ -47,7 +47,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Mapping, Optional, 
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.graph import cap_alert
+from lg_sotf.core.graph import WorkflowState, initial_state
 from lg_sotf.db import Connection
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories
@@ -186,48 +186,11 @@ def replay_repositories(db: Database, *, cutoff: datetime, offset: timedelta) ->
     )
 
 
-def initial_state(tenant_id: str, alert: Alert, llm_budget_limit: Any = None) -> Dict[str, Any]:
-    """The workflow's initial state for ``alert`` (as :meth:`WorkflowEngine._initial_state` builds it)."""
-    canonical: Dict[str, Any] = dict(alert.normalized)
-    canonical.update(
-        {
-            "id": alert.id,
-            "title": alert.title,
-            "severity": alert.severity,
-            "category": alert.category if alert.category is not None else canonical.get("category"),
-            "source_id": alert.source_id,
-            "source_alert_id": alert.source_alert_id,
-            "fingerprint": alert.fingerprint,
-            "occurred_at": alert.occurred_at.isoformat(),
-        }
-    )
-    if "raw" not in canonical:
-        canonical["raw"] = alert.raw
-    return {
-        "tenant_id": tenant_id,
-        "alert_id": alert.id,
-        "severity": alert.severity,
-        "fingerprint": alert.fingerprint,
-        "alert": cap_alert(canonical),
-        "confidence": 50,
-        "gate": {"suppressed": False},
-        "triage": {},
-        "correlation": {},
-        "analysis": {},
-        "analysis_runs": 0,
-        "more_info_loops": 0,
-        "decision": {},
-        "analyst": None,
-        "llm_budget_exceeded": False,
-        "llm_budget_limit": llm_budget_limit if isinstance(llm_budget_limit, int) else None,
-    }
-
-
 @dataclass
 class Replay:
     """What the pipeline concluded for one alert: final state, route and LLM usage."""
 
-    state: Dict[str, Any]
+    state: WorkflowState
     route: str
     usage: Dict[str, Any] = field(default_factory=dict)
 
@@ -338,7 +301,9 @@ class HistoryReplayer:
         cutoff = alert.ingested_at
         offset = max(self.clock() - cutoff, timedelta(0))
         repos = replay_repositories(self.db, cutoff=cutoff, offset=offset)
-        state = initial_state(self.tenant_id, alert, self.tenant_settings.get("llm_daily_token_budget"))
+        state = initial_state(
+            self.tenant_id, alert, llm_budget_limit=self.tenant_settings.get("llm_daily_token_budget")
+        )
         tallies: List[UsageTally] = []
 
         def context() -> AgentContext:
@@ -362,7 +327,9 @@ class HistoryReplayer:
 
         ctx = context()
         triage = await self.agents.triage.run(ctx, state["alert"])
-        state.update(triage=triage.digest(), confidence=triage.confidence, llm_budget_exceeded=ctx.llm_budget_exceeded)
+        state.update(
+            {"triage": triage.digest(), "confidence": triage.confidence, "llm_budget_exceeded": ctx.llm_budget_exceeded}
+        )
         if routing.route_after_triage(state, self.thresholds) == "close":
             return Replay(state=state, route="close", usage=usage())
 
@@ -371,16 +338,20 @@ class HistoryReplayer:
             ctx, state["alert"], base_confidence=float(state.get("confidence", 50))
         )
         state.update(
-            correlation=correlation.digest(),
-            confidence=correlation.confidence,
-            llm_budget_exceeded=ctx.llm_budget_exceeded,
+            {
+                "correlation": correlation.digest(),
+                "confidence": correlation.confidence,
+                "llm_budget_exceeded": ctx.llm_budget_exceeded,
+            }
         )
         if routing.route_after_correlation(state, self.thresholds) == "analysis":
             ctx = context()
             analysis = await self.agents.analysis.run(
                 ctx, state["alert"], triage=state["triage"], correlation=state["correlation"]
             )
-            state.update(analysis=analysis.digest(), analysis_runs=1, llm_budget_exceeded=ctx.llm_budget_exceeded)
+            state.update(
+                {"analysis": analysis.digest(), "analysis_runs": 1, "llm_budget_exceeded": ctx.llm_budget_exceeded}
+            )
         decision = routing.decide(state, self.thresholds)
         state["decision"] = decision.as_dict()
         return Replay(state=state, route=decision.route, usage=usage())

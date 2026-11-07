@@ -113,6 +113,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Backtests (`lg-sotf eval --from-history`) start each replay from the same
+  initial state as the workflow. A tenant `llm_daily_token_budget` stored as
+  `true` or `false` is now ignored by the backtest too (the install default
+  applies), as the workflow already did; the backtest used to carry the bool
+  into the replayed state.
 - An LLM call that failed unexpectedly no longer leaves its token estimate
   counted against the tenant's daily LLM budget. Each call reserves an
   estimate first and settles it with the tokens actually used, but an

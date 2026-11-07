@@ -23,7 +23,19 @@ digests. Tool outputs and full reasoning live in ``alerts.summary`` and
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Protocol, TypedDict
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    TypedDict,
+)
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
@@ -40,6 +52,9 @@ from lg_sotf.core.state import (
 )
 from lg_sotf.domain import routing
 from lg_sotf.domain.routing import RoutingThresholds
+
+if TYPE_CHECKING:
+    from lg_sotf.db.repos import Alert
 
 MAX_NOTES = 50
 MAX_NOTE_CHARS = 300
@@ -190,6 +205,59 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     if omitted:
         capped["_omitted_keys"] = [k[:MAX_OMITTED_KEY_CHARS] for k in omitted[:MAX_OMITTED_KEYS]]
     return capped
+
+
+def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Any = None) -> WorkflowState:
+    """The state a fresh run of ``alert`` starts from: in the engine, and in the backtest's replay.
+
+    The alert is its normalized form with the row's own columns (and ``raw``
+    unless the normalized form has one), size-capped by :func:`cap_alert`.
+    ``llm_budget_limit`` is the tenant's ``llm_daily_token_budget`` as stored:
+    an ``int`` (never a ``bool``) is the run's daily token budget, anything
+    else means the install default (``None``).
+    """
+    canonical: Dict[str, Any] = dict(alert.normalized)
+    canonical.update(
+        {
+            "id": alert.id,
+            "title": alert.title,
+            "severity": alert.severity,
+            "category": alert.category if alert.category is not None else canonical.get("category"),
+            "source_id": alert.source_id,
+            "source_alert_id": alert.source_alert_id,
+            "fingerprint": alert.fingerprint,
+            "occurred_at": alert.occurred_at.isoformat(),
+        }
+    )
+    if "raw" not in canonical:
+        canonical["raw"] = alert.raw
+    limit = llm_budget_limit if isinstance(llm_budget_limit, int) and not isinstance(llm_budget_limit, bool) else None
+    return {
+        "tenant_id": tenant_id,
+        "alert_id": alert.id,
+        "severity": alert.severity,
+        "fingerprint": alert.fingerprint,
+        "alert": cap_alert(canonical),
+        "confidence": 50,
+        "gate": {},
+        "triage": {},
+        "correlation": {},
+        "analysis": {},
+        "analysis_runs": 0,
+        "more_info_loops": 0,
+        "decision": {},
+        "escalation_id": None,
+        "analyst": None,
+        "plan": {},
+        "awaiting_actions": [],
+        "approval": None,
+        "executed": {},
+        "disposition": None,
+        "close_reason": None,
+        "llm_budget_exceeded": False,
+        "llm_budget_limit": limit,
+        "notes": [],
+    }
 
 
 NodeFn = Callable[[WorkflowState], Awaitable[Dict[str, Any]]]

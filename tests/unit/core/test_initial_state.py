@@ -1,7 +1,8 @@
-"""Characterization (roadmap T4): the engine's and the backtest's initial workflow state, on the same alerts.
+"""Roadmap T4: the engine and the backtest start a run from the same initial workflow state.
 
-``eval/history.py`` hand-copies how ``WorkflowEngine`` builds a run's initial
-state. This pins how the two copies compare today.
+``eval/history.py`` used to hand-copy how ``WorkflowEngine`` builds it, and had
+drifted (the gate, the keys of the later steps, a bool token budget). Both now
+call :func:`lg_sotf.core.graph.initial_state`.
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ from typing import Any, Dict, List, Mapping
 
 import pytest
 
+from lg_sotf.core import graph
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import Alert
-from lg_sotf.eval.history import initial_state
+from lg_sotf.eval import history
 
 pytestmark = pytest.mark.unit
 
@@ -57,28 +59,27 @@ def engine_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, A
 
 
 def backtest_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
-    return dict(initial_state(TENANT, item, tenant_settings.get("llm_daily_token_budget")))
+    """What ``HistoryReplayer.replay`` starts from."""
+    return dict(history.initial_state(TENANT, item, llm_budget_limit=tenant_settings.get("llm_daily_token_budget")))
 
 
-# Keys only the engine sets today: the backtest stops at ``decide``.
-ENGINE_ONLY = {"escalation_id", "plan", "awaiting_actions", "approval", "executed", "disposition", "close_reason", "notes"}
+def test_the_backtest_uses_the_engine_factory() -> None:
+    assert history.initial_state is graph.initial_state
 
 
 @pytest.mark.parametrize("item", FIXTURES, ids=lambda a: a.id)
 @pytest.mark.parametrize("budget", [None, 0, 250_000, "250000", 2.5])
-def test_backtest_initial_state_matches_the_engine_except_known_drift(item: Alert, budget: Any) -> None:
+def test_backtest_initial_state_equals_the_engine(item: Alert, budget: Any) -> None:
     settings = {"llm_daily_token_budget": budget}
-    engine, backtest = engine_state(item, settings), backtest_state(item, settings)
-    assert set(engine) - set(backtest) == ENGINE_ONLY and set(backtest) <= set(engine)
-    # Known drift: the gate starts empty in the engine, "not suppressed" in the backtest.
-    assert (engine["gate"], backtest["gate"]) == ({}, {"suppressed": False})
-    shared = set(backtest) - {"gate"}
-    assert {k: engine[k] for k in shared} == {k: backtest[k] for k in shared}
+    engine = engine_state(item, settings)
+    assert engine == backtest_state(item, settings)
+    assert engine["gate"] == {} and engine["notes"] == [] and engine["alert"]["id"] == item.id
     assert engine["llm_budget_limit"] == (budget if isinstance(budget, int) else None)
 
 
 @pytest.mark.parametrize("budget", [True, False])
-def test_a_bool_token_budget_is_rejected_by_the_engine_but_not_the_backtest(budget: bool) -> None:
+def test_a_bool_token_budget_is_rejected_by_the_engine_and_the_backtest(budget: bool) -> None:
+    """Behaviour change (backtest only): the backtest used to keep a bool budget."""
     settings = {"llm_daily_token_budget": budget}
     assert engine_state(FIXTURES[0], settings)["llm_budget_limit"] is None
-    assert backtest_state(FIXTURES[0], settings)["llm_budget_limit"] is budget
+    assert backtest_state(FIXTURES[0], settings)["llm_budget_limit"] is None
