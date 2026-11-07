@@ -85,7 +85,6 @@ observability:
   log_level: ${LOG_LEVEL:-INFO}
   log_format: json
   metrics_enabled: true
-  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
   service_name: lg-sotf
 
 response:
