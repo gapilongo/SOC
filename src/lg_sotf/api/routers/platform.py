@@ -46,9 +46,9 @@ from pydantic import BaseModel, Field
 
 from lg_sotf.api.auth.deps import PLATFORM_ADMIN, require
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import check_password
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.routers.identity import check_password
 from lg_sotf.api.schemas import In, Out, PageOut, UserOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
