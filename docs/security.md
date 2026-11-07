@@ -8,7 +8,17 @@ guardrails, data handling and audit. The system contract is
 checklist) are in `docs/operations.md`. To report a vulnerability, see
 `SECURITY.md` in the repository root.
 
+A companion document:
+
+* [threat-model.md](threat-model.md) is the full threat model. It has STRIDE
+  per component (including MCP, MSSP delegation, evidence tools and CI/CD),
+  the OWASP Top 10 for Agentic Applications and MITRE ATLAS mappings, with
+  each control linked to the code that enforces it.
+
 ## 1. Threat model
+
+This section summarises the threat model. The full version is in
+[threat-model.md](threat-model.md).
 
 ### What we protect
 
