@@ -44,6 +44,7 @@
   "lg_sotf.eval.history.HistoryBacktestError": [500, "internal_error"],
   "lg_sotf.eval.history.ReplayWriteBlocked": [500, "internal_error"],
   "lg_sotf.eval.runner.EvalSetupError": [500, "internal_error"],
+  "lg_sotf.eval.scorecard.ScorecardError": [400, "invalid_request"],
   "lg_sotf.ingestion.email.parser.EmailParseError": [400, "invalid_request"],
   "lg_sotf.ingestion.email.parser.EmailTooLarge": [400, "invalid_request"],
   "lg_sotf.ingestion.errors.DecryptedSecretError": [422, "invalid_source"],
