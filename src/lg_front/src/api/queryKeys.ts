@@ -84,6 +84,10 @@ export const qk = {
   onboarding: {
     all: ['onboarding-status'] as const,
   },
+  /** First-run setup wizard state (GET /onboarding/setup). */
+  setup: {
+    all: ['onboarding-setup'] as const,
+  },
   tenantSettings: {
     all: ['tenant-settings'] as const,
   },

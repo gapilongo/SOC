@@ -234,3 +234,92 @@ async def test_retention_bounds_are_install_settings(make_api: Any) -> None:
     other = await api.client.patch("/api/v1/tenant/settings", json={"retention": {"indicators_days": 5}}, headers=admin)
     assert other.status_code == 200, other.text
     assert other.json()["settings"]["retention"] == {"alerts_days": 500, "indicators_days": 5}
+
+
+# ------------------------------------------------------------------ first-run setup wizard
+
+SETUP = "/api/v1/onboarding/setup"
+
+
+async def test_setup_is_for_the_platform_admin_in_their_home_tenant(api: ApiHarness) -> None:
+    platform = await api.login_headers(TENANT_A, "admin", platform_admin=True)
+    for headers in (
+        await api.login_headers(TENANT_A, "admin"),
+        await api.login_headers(TENANT_A, "analyst"),
+        {**platform, "X-Tenant-ID": TENANT_B},
+        await api.key_headers(TENANT_A, ["read", "write"]),
+    ):
+        assert (await api.client.get(SETUP, headers=headers)).status_code == 403
+        assert (await api.client.post(f"{SETUP}/complete", headers=headers)).status_code == 403
+    assert (await api.client.get(SETUP)).status_code == 401
+
+    fresh = await api.client.get(SETUP, headers=platform)
+    assert fresh.status_code == 200, fresh.text
+    body = fresh.json()
+    assert (body["completed"], body["tenant_id"], body["tenant_name"]) == (False, TENANT_A, "Tenant A")
+    assert body["organisation"] is None and body["llm_profile"] is None
+    default = next(p for p in body["llm_profiles"] if p["id"] == body["default_llm_profile"])
+    assert default["residency"] in ("eu", "local")
+    assert body["configured_llm"] == {
+        "provider": "fake",
+        "enabled": True,
+        "fast_model": "fake-fast",
+        "deep_model": "fake-deep",
+        "residency": "offline",
+        "profile": None,
+    }
+    assert "deepseek" not in fresh.text.lower(), "a China-hosted model is never offered"
+
+
+async def test_setup_saves_names_and_profile_audited_then_completes(api: ApiHarness) -> None:
+    platform = await api.login_headers(TENANT_A, "admin", platform_admin=True)
+    for bad in (
+        {"organisation": "  ", "tenant_name": "SOC"},
+        {"organisation": "Org", "tenant_name": "SOC", "llm_profile": "unknown"},
+        {"organisation": "Org", "tenant_name": "SOC", "extra": 1},
+        {"organisation": "Org"},
+    ):
+        assert (await api.client.put(SETUP, json=bad, headers=platform)).status_code == 422, bad
+
+    saved = await api.client.put(
+        SETUP,
+        json={"organisation": " Example\n Org ", "tenant_name": "Example SOC", "llm_profile": "ollama_local"},
+        headers=platform,
+    )
+    assert saved.status_code == 200, saved.text
+    assert (saved.json()["organisation"], saved.json()["tenant_name"], saved.json()["llm_profile"]) == (
+        "Example Org",
+        "Example SOC",
+        "ollama_local",
+    )
+    tenant = await api.repos.tenants.get(TENANT_A)
+    assert tenant.name == "Example SOC"
+    assert (tenant.onboarding["organisation"], tenant.onboarding["llm_profile"]) == ("Example Org", "ollama_local")
+    again = await api.client.put(
+        SETUP, json={"organisation": "Example Org", "tenant_name": "Example SOC"}, headers=platform
+    )
+    assert again.json()["llm_profile"] is None, "no profile clears the pick"
+
+    entries = sorted((await api.repos.audit.list(TENANT_A, action="onboarding.setup_saved")).items, key=lambda e: e.id)
+    assert len(entries) == 2
+    assert entries[0].details["changes"]["tenant_name"] == {"from": "Tenant A", "to": "Example SOC"}
+    assert entries[0].details["changes"]["organisation"] == {"from": None, "to": "Example Org"}
+    assert entries[1].details["changes"] == {"llm_profile": {"from": "ollama_local", "to": None}}
+
+    done = await api.client.post(f"{SETUP}/complete", json={"skipped": True}, headers=platform)
+    assert done.status_code == 200 and done.json()["completed"] is True
+    completed_at = done.json()["completed_at"]
+    assert (await api.client.post(f"{SETUP}/complete", headers=platform)).json()["completed_at"] == completed_at
+    audit = sorted((await api.repos.audit.list(TENANT_A, action="onboarding.setup_completed")).items, key=lambda e: e.id)
+    assert [e.details["skipped"] for e in audit] == [True, False]
+    assert (await api.repos.tenants.get(TENANT_B)).onboarding == {}, "another tenant is untouched"
+
+
+async def test_status_reports_the_first_verdict(api: ApiHarness) -> None:
+    admin = await api.login_headers(TENANT_B, "admin")
+    samples = (await api.client.post("/api/v1/onboarding/sample-alerts", headers=admin)).json()
+    assert (await _status(api, admin))["first_verdict"] is False
+    for status in ("processing", "waiting_human"):
+        await api.repos.alerts.update_status(TENANT_B, samples["alert_ids"][0], status)
+    assert (await _status(api, admin))["first_verdict"] is True
+    assert (await _status(api, await api.login_headers(TENANT_A, "admin")))["first_verdict"] is False

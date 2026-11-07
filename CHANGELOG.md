@@ -21,6 +21,25 @@ All notable changes to this project are documented here. The format follows
   enrichment providers and the LLM endpoint (unset by default, so nothing
   changes for existing installs), and `ingestion.read_only_sources`, which
   refuses the `m365_mailbox` and `imap` sources.
+- A first-run setup wizard for the install's admin (the platform admin
+  `lg-sotf migrate` creates). Until setup is done the Overview invites them to
+  it; five steps confirm the account, name the organisation and the first
+  tenant, pick a language-model profile (an EU-hosted Mistral profile is
+  preselected, local Ollama or your own model server are offered; the wizard
+  shows the settings that select it and tests the model configured now), send
+  the sample alerts and wait for the first verdict. Finishing lands on the
+  Overview with a link to start a proof of value (a placeholder page until the
+  proof-of-value run ships). The wizard never changes the running model,
+  which stays install configuration. API: `GET` and `PUT /onboarding/setup`,
+  `POST /onboarding/setup/complete`, audited as `onboarding.setup_saved` and
+  `onboarding.setup_completed`.
+- `GET /onboarding/status` now returns `first_verdict`: an alert, samples
+  included, is closed or waits for an analyst or an approval (the moment
+  `make quickstart` measures).
+- An install rehearsal test drives the setup from an empty database to the
+  first triaged alert and records the time against a 30-minute budget
+  (`tests/integration/e2e/test_first_run.py`; the browser twin is
+  `src/lg_front/e2e/wizard.spec.ts`).
 - Every model call now records which prompt version it sent. Each prompt has
   a name (such as `triage.assess`) and a short hash of its text and output
   schema, so a changed hash means the model was asked something different.
@@ -187,6 +206,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- On a phone, the language-model test results under Tenant settings scroll
+  sideways and can now be reached with the keyboard too.
 - Backtests (`lg-sotf eval --from-history`) start each replay from the same
   initial state as the workflow. A tenant `llm_daily_token_budget` stored as
   `true` or `false` is now ignored by the backtest too (the install default

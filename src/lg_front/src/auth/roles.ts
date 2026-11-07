@@ -80,6 +80,8 @@ export const can = {
   admin: (p: Principal | null) => roleAtLeast(p?.role, 'admin'),
   grantPlatformAdmin: (p: Principal | null) => Boolean(p?.isPlatformAdmin),
   platform: (p: Principal | null) => Boolean(p?.isPlatformAdmin) && !isTenantOverride(p),
+  /** The install's first-run setup: a platform admin's own account, in their home tenant. */
+  setup: (p: Principal | null) => can.platform(p) && roleAtLeast(p?.role, 'admin') && Boolean(p?.userId),
   /** Account security (password, MFA) is about the signed-in person: not while acting on another tenant. */
   account: (p: Principal | null) => can.view(p) && !isTenantOverride(p),
 };
