@@ -609,6 +609,13 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
    inspect `kubectl logs job/lg-sotf-migrate`.
 3. Pods roll with `maxUnavailable: 0`; workers drain in-flight runs (they resume
    from their LangGraph checkpoints on another worker if interrupted).
+   Runs waiting for an analyst or an approval resume on the workflow graph they
+   started on: a release keeps the previous graph (N-1) next to the current one.
+   Before an upgrade that skips a release, check that no run still waits on a
+   graph the new release no longer has
+   (`SELECT graph_version, count(*) FROM workflow_runs WHERE status IN
+   ('waiting_human', 'waiting_approval', 'failed') GROUP BY 1`; NULL is graph 1).
+   Such a run fails with `UnknownGraphVersion` and is never run on another graph.
 
 Migrations must be expand/contract (additive first, removals in a later
 release) so the previous release keeps working against the new schema during
