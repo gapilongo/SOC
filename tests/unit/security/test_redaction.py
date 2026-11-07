@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import time
+from typing import Callable
 
 import pytest
 
 from lg_sotf.security.redaction import REDACTED, is_secret_key, looks_high_entropy, redact, redact_text
+from lg_sotf.settings import Settings
 
 
 @pytest.mark.parametrize(
@@ -462,13 +464,14 @@ def test_tool_rules_keep_benign_command_lines(text: str) -> None:
     assert redact_text(text) == (text, 0)
 
 
-def test_tool_passwords_never_reach_the_prompt() -> None:
+def test_tool_passwords_never_reach_the_prompt(make_settings: Callable[..., Settings]) -> None:
     from lg_sotf.llm.prompting import build_prompt
 
     bundle = build_prompt(
         "system",
         "task",
         {"command_lines": LATERAL_MOVEMENT_CREDENTIALS, "raw": {"process": LATERAL_MOVEMENT_CREDENTIALS[0]}},
+        settings=make_settings(),
     )
     text = "".join(str(m.content) for m in bundle.messages)
     assert "Winter2026" not in text
