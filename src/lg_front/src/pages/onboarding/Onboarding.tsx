@@ -132,16 +132,17 @@ export function OnboardingChecklist({ status }: { status: OnboardingStatusOut })
       {visibleSteps(status).map((step) => {
         const text = STEP_TEXT[step.id];
         return (
-          <li key={step.id} className="flex items-start gap-3 rounded-control border border-subtle bg-canvas/50 p-3">
+          <li key={step.id} className="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-control border border-subtle bg-canvas/50 p-3">
             <StepIcon done={step.done} />
-            <div className="min-w-0 flex-1">
+            {/* At least 12rem of text: on a phone the links move under it instead of squeezing it. */}
+            <div className="min-w-[min(12rem,100%)] flex-1">
               <p className={cx('text-sm font-medium', step.done ? 'text-secondary' : 'text-fg')}>
                 {text.title}
                 <span className="sr-only">{step.done ? ' (done)' : ' (to do)'}</span>
               </p>
               <p className="mt-0.5 text-sm text-muted">{text.description}</p>
             </div>
-            <div className="flex flex-none flex-wrap items-center gap-2">
+            <div className="ml-auto flex flex-none flex-wrap items-center gap-2">
               {step.id === 'autonomy_reviewed' && !step.done && (
                 <Button size="sm" variant="quiet" busy={reviewed.isPending} onClick={() => reviewed.mutate()}>
                   Mark reviewed
