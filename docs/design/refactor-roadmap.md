@@ -405,7 +405,7 @@ Legend:
 - **Verify:** mypy flags any missed caller.
 - **Risk / Effort / Deps:** low · S · G5.
 
-- **Left over:** `db/migrate.py::_ssl_params` and `libpq_url` still fall back to `get_settings()` (two G5 baseline lines). They also serve hand-run `alembic` with `db/alembic.ini`; removing them means threading `DatabaseSettings` through every migrate helper and `env.py`, so it is its own step.
+- **Left over (done in #153, with X4):** `db/migrate.py::_ssl_params` and `libpq_url` still fall back to `get_settings()` (two G5 baseline lines). They also serve hand-run `alembic` with `db/alembic.ini`; removing them means threading `DatabaseSettings` through every migrate helper and `env.py`, so it is its own step.
 
 #### F9 · Typed DB connection (done in #91)
 - **Why:** `Connection` aliases untyped `asyncpg.Connection`, so it resolves to `Any` (`db/repos/_base.py:30`, `db/pool.py:36`). There are 15 explicit `conn: Any` parameters: `services/review.py` ×7, `services/escalation.py` ×2, `integrations/outbox.py` ×5 and `eval/history.py` ×1.
@@ -590,7 +590,7 @@ Legend:
   - **D6.4:** add a unit test: every public `list*` repository method returns `Page[...]` or appears in a documented `BOUNDED_LISTS` set (sources, users, integrations, api_keys, `list_all_tenants`).
 - **Risk / Effort / Deps:** low · S · none.
 
-#### D7 · SecretBox injected everywhere; fail fast in every role
+#### D7 · SecretBox injected everywhere; fail fast in every role (done in #126)
 - **Change:**
   - **D7.1:** thread `secret_box` through `WorkflowEngine.create` → `ResponseService`/`ReviewService`, `scheduler.py:382,586` and `EnrichmentService`. The worker root wraps `load_secret_box` in `try/except SecurityConfigError`, logs `worker.secret_box_unavailable` and passes None, which preserves today's behaviour. The lazy loaders log `security.secret_box_lazy_load` at warning level.
   - **D7.2 (behaviour change, ADR-0006):** remove the worker-root catch, so worker and scheduler refuse to start on invalid keys, as the API already does. CHANGELOG entry.
@@ -607,7 +607,7 @@ Legend:
 
 ### Phase 4 — Split the large modules
 
-#### S1 · Pure approval disposition
+#### S1 · Pure approval disposition (done in #124)
 - **Why:** `ResponseService.plan` (`response.py:1706-1808`, CC ≈ 30) decides when containment runs without a human. Right now that rule is reachable only through Postgres.
 - **Change:**
   - **S1.1:** add a frozen `Disposition(status, explanation, approved_by=None, approval_reason=None)`, `AutoBudget(total, per_type)` with `can_auto`/`consume`, and a pure `dispose(cand, spec, ctx, policy, block, budget)` in `response.py`. Add a table-driven test of every branch:
@@ -626,7 +626,7 @@ Legend:
   - **S1.4 (optional):** add a pure `dispose_rollback(...)` for `rollback.request`. The three in-transaction branches stay explicit.
 - **Risk / Effort / Deps:** medium · M · C6.
 
-#### S2 · `services/response` package
+#### S2 · `services/response` package (done in #125)
 - **Why:** one 2,707-line file has at least seven reasons to change.
 - **Change:**
   - **S2.1:** `git mv services/response.py services/response/__init__.py` with no content change. Add `tests/unit/services/test_response_api.py`, asserting that every pre-split `__all__` name and every name src or tests import still resolves.
@@ -641,21 +641,21 @@ Legend:
 - **Verify:** each PR lands alone and is gated by the integration suites. Each submodule is ≤ 600 lines.
 - **Risk / Effort / Deps:** medium · L · S1, D4.2, F6.
 
-#### S3 · `ReviewService.decide` as named phases
+#### S3 · `ReviewService.decide` as named phases (done in #130, #132)
 - **Change:**
   - Add pure `_parse_decision`, `_authorise_approvals` and `_resume_requests`, with unit tests.
   - Add `_record_decision(conn, ...)` inside the same single `tenant_tx`.
   - `decide` (164 lines, CC ≈ 29) drops to about 45 lines and leaves the allowlist.
 - **Risk / Effort / Deps:** medium · M · D4.1.
 
-#### S4 · Escalation placement
+#### S4 · Escalation placement (done in #131)
 - **Change:**
   - Add a pure `_place(policy, severity, threat_score, confidence, n_correlations, reason_code, now) -> _Placement`.
   - Add `_announce_created(conn, escalation, audit_action, details, alert_overrides)`.
   - The two `open_*` methods keep their own idempotency lookups and audit payloads, which differ on purpose.
 - **Risk / Effort / Deps:** medium · S · D4.5.
 
-#### S5 · LLM call pipeline
+#### S5 · LLM call pipeline (done in #120)
 - **Change:**
   - **S5.1:** add `_CallMeter`, which replaces the four duplicated recorder and tally pairs in `ainvoke_structured` (`llm/structured.py:360-502`, CC ≈ 39). It records to the recorder first, then the tally. The `CancelledError` path still skips the error metric and the `llm.call_failed` log.
   - **S5.2:** extract `_plan_invoke` and `_invoke_with_transient_retry`, with the same jitter and the same log events.
@@ -664,13 +664,13 @@ Legend:
 - **Verify:** `tests/unit/llm/test_structured.py`, including the `asyncio.sleep` patch.
 - **Risk / Effort / Deps:** low · M · F10.
 
-#### S6 · Evidence pack
+#### S6 · Evidence pack (done in #122)
 - **Change:**
   - **S6.1:** add a golden HTML test and a `bundle_sha256` golden for a fixed pack. Move `render_evidence_html` and `_step_rows` to `compliance/evidence_html.py` and re-export them from `evidence.py`. Add a contract: `evidence_html` must not import `lg_sotf.db`.
   - **S6.2:** split `human_oversight` (CC ≈ 39) into `_audit_steps`, `_event_steps`, `_escalation_steps`, `_action_steps` and `_feedback_overrides`. Keep the pre-sort append order and the stable sort key, so the digest golden stays identical.
 - **Risk / Effort / Deps:** low · S · F2.4.
 
-#### S7 · Safe regex engine to `security/safe_regex.py`
+#### S7 · Safe regex engine to `security/safe_regex.py` (done in #121)
 - **Why:** `domain/suppression.py` (787 lines) holds a Thompson-NFA ReDoS-safe engine that depends on CPython-private `re._parser` and `re._constants`, next to the rule language.
 - **Change:**
   - Move the engine (limits, `WorkBudget`, `validate_regex`, `SafePattern`, `compile_pattern`) verbatim, raising `InvalidPattern(ValueError)`.
@@ -680,13 +680,13 @@ Legend:
   - Contract: `safe_regex` imports only the stdlib and `observability`.
 - **Risk / Effort / Deps:** low · S · C2.
 
-#### S8 · Ingestion batch helpers
+#### S8 · Ingestion batch helpers (done in #123)
 - **Change:**
   - Extract a pure `_dedupe_batch` and `_assemble_result` from `IngestionService._ingest` (`ingestion/service.py:668-781`), with unit tests.
   - Optionally extract `_persist` by moving the whole single `tenant_tx` block (insert, usage, duplicate lookup, `queue_alerts`, `set_cursor`).
 - **Risk / Effort / Deps:** low · S · G5.
 
-#### S9 · Thin routers
+#### S9 · Thin routers (done in #132)
 - **Why:** there are six cross-router imports, and the API identity check and `runtime/ops.check_password` are two divergent password policies.
 - **Change:**
   - Move the pure helpers into `api/common.py`: `reject_catch_all`, `aware`, and the mfa→auth rate-limit helpers.
@@ -700,7 +700,7 @@ Legend:
 
 ### Phase 5 — Cross-cutting consolidation
 
-#### X1 · Failure logging and safe error text
+#### X1 · Failure logging and safe error text (done in #151)
 - **Why:** there are 80 broad handlers. 58 of them log, and only 1 of those includes a traceback (`scheduler.py:240` logs `error=KeyError`). Error text is sanitised four ways, and two of them truncate before redacting, which can hide JWTs and API keys from the redaction patterns.
 - **Change:**
   - **X1.1:** add `security.redaction.safe_text(text, limit)` (redact, collapse whitespace, then truncate) and `safe_error_text(exc, limit=300)`. Add `observability.logging.log_failure(logger, event, exc, *, level="error", **fields)`. It emits:
@@ -716,7 +716,7 @@ Legend:
   - **X1.5 (behaviour change, ADR-0005):** `api/errors.py:161` and `api/middleware.py:120` switch from `exc_info=exc` to `log_failure`.
 - **Risk / Effort / Deps:** low · M · G4.
 
-#### X2 · Shared guarded-HTTP building blocks
+#### X2 · Shared guarded-HTTP building blocks (done in #147)
 - **Why:** seven outbound stacks each copy the client builder and the capped streaming read. `api/auth/oidc.py:186-193` reads the whole body before checking `MAX_JWKS_BYTES`. `IntegrationHttp` has no unit tests.
 - **Change:**
   - **X2.1:** characterization tests with `httpx.MockTransport` in `tests/unit/integrations/test_http.py`:
@@ -734,18 +734,18 @@ Legend:
   - **X2.4:** document the per-stack table of retry, idempotency, Retry-After and connection lifetime in `docs/architecture.md` §12. Add a ruff `TID251` ban on `httpx.AsyncHTTPTransport` outside `lg_sotf/net/**`.
 - **Risk / Effort / Deps:** medium · M · F3, D3.
 
-#### X3 · MCP Retry-After parsing (behaviour fix)
+#### X3 · MCP Retry-After parsing (behaviour fix) (done in #148)
 - **Change:** `mcp/client.py:260` uses `net.retry.parse_retry_after(value, cap=10.0)`. It now accepts HTTP-dates and fractional values, and the 10 s ceiling stays. CHANGELOG entry.
 - **Risk / Effort / Deps:** low · S · F3.
 
-#### X4 · No settings service locator
+#### X4 · No settings service locator (done in #153)
 - **Why:** there are 21 `settings or get_settings()` fallbacks, for example `security/crypto.py:53`, `queue/producer.py:30`, `llm/budget.py:63`, `llm/prompting.py:379,446`, `observability/tracing.py:44` and `queue/{consumer,dlq,events}.py`.
 - **Change:**
   - One module per PR: make `settings` a required parameter and pass it from the roots.
   - The G5 allowlist shrinks to `cli.py`, `api/app.py`, the `runtime/*` entrypoints and `settings.py`.
 - **Risk / Effort / Deps:** low · M · F8.
 
-#### X5 · Tracing decision (ADR-0008)
+#### X5 · Tracing decision (ADR-0008) (done in #149)
 - **Why:** `observability/tracing.py` builds an OTLP provider, but `get_tracer` has zero callers. An operator who sets `observability.otlp_endpoint` gets nothing.
 - **Change:** decide with the operator who would consume traces.
   - **Default if nobody commits to consuming them:** delete `tracing.py`, its four call sites and the three OTel dependencies. Keep accepting `otlp_endpoint` with a deprecation warning (Settings uses `extra="ignore"`).
@@ -762,14 +762,14 @@ Legend:
 
 ### Phase 6 — Types and the API contract
 
-#### T1 · Typed security edge
+#### T1 · Typed security edge (done in #144)
 - **Change:**
   - Type `role_at_least(role: Optional[str], minimum: Role)`, `Access.role: Optional[Role]`, `Access.scope: Optional[Scope]`, `Principal.role: Optional[Role]` and `Principal.scopes: FrozenSet[Scope]`.
   - At the 4 construction sites in `authenticate.py` (205, 268, 303, 400), narrow with `cast`. No new runtime rejection.
 - **Verify:** mypy now checks `deps.py:86-93`, `mfa.py:51`, `suppressions.py:85` and `ws.py:68,92`.
 - **Risk / Effort / Deps:** low · S · F2.3, F10.
 
-#### T2 · Vocabulary enums in OpenAPI (tolerant reader)
+#### T2 · Vocabulary enums in OpenAPI (tolerant reader) (done in #143)
 - **Change:**
   - In `api/schemas.py`, define module-level aliases, e.g. `AlertStatusStr = Annotated[str, WithJsonSchema({"type": "string", "enum": list(ALERT_STATUSES)})]`. Use aliases, not a function call inside the annotation.
   - Apply them to the 30 Out fields, one router group per commit, with tests that assert the enums.
@@ -777,7 +777,7 @@ Legend:
   - Regenerate `docs/openapi.json`; the diff is the review artifact. Add ADR-0009.
 - **Risk / Effort / Deps:** low · M · G6, F2.3.
 
-#### T3 · Typed workflow state
+#### T3 · Typed workflow state (done in #152)
 - **Change:**
   - **T3.1:** add `core/state.py`, which imports only `typing` and `models.vocabulary`. It holds `total=False` TypedDicts: `GateDigest`, `TriageDigest`, `CorrelationDigest`, `AnalysisDigest`, `DecisionDigest`, `PlanDigest`, `AnalystInput` and `ApprovalInput`. Annotate the 4 `digest()` methods via `cast`. Unit tests assert `set(result.digest()) <= Digest.__annotations__`.
   - **T3.2:** the `WorkflowState` fields in `core/graph.py` use them, imported at runtime because LangGraph resolves the state schema with `get_type_hints`. Add a test that builds the compiled graph. Fix mypy findings in `domain/routing.py` and `core/nodes.py`. Any real key mismatch changes a verdict, so it is a separate behaviour-fix commit with a regression test and a CHANGELOG entry.
@@ -786,7 +786,7 @@ Legend:
 - **Verify:** TypedDicts are erased at runtime, so checkpoints and JSONB are unchanged.
 - **Risk / Effort / Deps:** low · M · F10, F2.
 
-#### T4 · One initial-state factory
+#### T4 · One initial-state factory (done in #152)
 - **Why:** `eval/history.py:187 initial_state()` hand-copies how `WorkflowEngine` builds the initial state, and it has already drifted: `eval/history.py:220` accepts bools for the token budget, while `core/workflow.py:399` rejects them. Backtests can disagree with production.
 - **Change:**
   - First, a characterization test that compares both outputs on fixture alerts.
@@ -794,7 +794,7 @@ Legend:
 - **Behaviour change (backtest only):** the bool budget is now rejected in backtests too. CHANGELOG entry.
 - **Risk / Effort / Deps:** low · S · T3.2.
 
-#### T5 · Typed tenant-settings document
+#### T5 · Typed tenant-settings document (done in #152)
 - **Why:** the allowed-key lists are declared twice (`tenant.py:83`, `tenancy.py:61`). `llm_daily_token_budget` is coerced in four readers (`core/workflow.py:375,399`, `compliance.py:157`, `ingestion/service.py:637`, `eval/history.py:220`), and the PATCH validator at `tenant.py:359-363` is a fifth copy of the rule.
 - **Change:**
   - Add `models/tenant_settings.py` with `TenantSettingsDoc` (TypedDict, `total=False`), the key constants, and typed accessors such as `token_budget(doc) -> Optional[int]`, used by every reader and by the validator.
@@ -857,7 +857,7 @@ Legend:
 - **Behaviour change:** ticket links appear on full pages. CHANGELOG entry.
 - **Risk / Effort / Deps:** low · S · FE4.1.
 
-#### FE7 · Shared helpers
+#### FE7 · Shared helpers (done in #118)
 - **Change:**
   - Add `lib/json.ts` with `isJsonObject`, `asObject` (returns `{}`), `asObjectOrNull` and `parseJsonObject(text, what)`, which raises the exact `"<what> must be a JSON object."`. Add table tests. Replace the 7 `obj()` copies and the 3 textarea parses (`SourcesPage.tsx:162,206`, `IntegrationsPage.tsx:213`). Single-use siblings stay.
   - `downloadCsv`, `reports.downloadText` and `Mfa.downloadText` become wrappers over the existing `downloadBlob` (same BOM and MIME rules). Add a `download.test.ts`. Ban `URL.createObjectURL` outside `lib/download.ts`.
@@ -865,7 +865,7 @@ Legend:
   - **Behaviour change (own PR):** `UsagePage` calls `rangeError`, so the 366-day limit is reported before the request.
 - **Risk / Effort / Deps:** low · S · FE1.
 
-#### FE8 · Route registry and per-route error boundary
+#### FE8 · Route registry and per-route error boundary (done in #118)
 - **Why:** `NAV_ITEMS` (`Layout.tsx:42-59`) and the routes (`App.tsx:74-90`) have diverged: `/account` has no route gate. The only `ErrorBoundary` wraps the whole app.
 - **Change:**
   - **FE8.1:** add `can.account` to `auth/roles.ts` and use it in `NAV_ITEMS`.
@@ -874,7 +874,7 @@ Legend:
   - **FE8.4:** `ErrorBoundary` gains `resetKey`/`fallback` props and wraps the `Outlet` in `Layout.tsx:232-236`, so the shell and sign-out survive a page crash. Chunk-load errors show "A new version is available, reload". Detection covers the Chrome, Firefox and Safari messages and `vite:preloadError`.
 - **Risk / Effort / Deps:** low · S · FE1.
 
-#### FE9 · Frontend structure and boundaries
+#### FE9 · Frontend structure and boundaries (done in #118)
 - **Change:**
   - **FE9.1:** add a frontend section to `docs/architecture.md` and ADR-0010. Add ESLint `no-restricted-imports`: `src/{api,auth,live,lib,components}/**` may not import `pages/**` or `app/**`, and `src/{api,auth,live,lib}/**` may not import `components/**`. Both pass today.
   - **FE9.2:** `git mv` `App.tsx`, `routes.tsx`, `Layout.tsx` and `queryClient.ts` to `src/app/`. `main.tsx`, `auth/store.ts` and `auth/oidc.ts` stay, because Python tests pin them. Update `README.md:145-155`.
@@ -882,7 +882,7 @@ Legend:
   - **FE9.4–6:** pure-move splits of `TenantSettingsPage` (633 lines) into `pages/settings/` sections, `PlatformPage` (650) into tabs, and `IntegrationsPage` (684) into `specs.ts`, `IntegrationForm.tsx`, `DeliveryLog.tsx` and the page. Split `pages/helpers.test.ts` into tests next to the modules they cover.
 - **Risk / Effort / Deps:** low · M · FE4, FE8.
 
-#### FE10 · Contract-checked API types
+#### FE10 · Contract-checked API types (done in #118)
 - **Change:**
   - Add a pinned `openapi-typescript` devDependency. `npm run gen:api` turns `docs/openapi.json` into `src/api/schema.gen.ts`. The CI frontend job runs `gen:api && git diff --exit-code`.
   - Add `src/api/contract.check.ts`, compiled by `tsc -b`. For responses, `Schemas['X']` must be assignable to the hand-written `X`. For requests, the hand-written `XIn` must be assignable to `Schemas['XIn']`. Fix the mismatches it finds.
@@ -891,7 +891,7 @@ Legend:
 - **Verify:** types are erased, so there is no runtime change.
 - **Risk / Effort / Deps:** low · M · G6, T2.
 
-#### FE11 · Accessibility
+#### FE11 · Accessibility (done in #118)
 - **Change:**
   - Extract `useFocusTrap(panelRef, open, {restoreFocus})` from `Dialog.tsx`'s `Modal`. `Dialog.test.tsx` passes unchanged.
   - Use the hook in the mobile nav (`Layout.tsx:100-114,180-185`), keeping Layout's own focus-to-`<main>` rule. Test that Tab and Shift+Tab stay inside the open menu.
