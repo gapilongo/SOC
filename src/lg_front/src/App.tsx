@@ -13,6 +13,7 @@ import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { LoadingState } from './components/ui';
 import { LiveProvider } from './live/LiveProvider';
+import { LegacyActionsRedirect } from './pages/approvals/redirect';
 import { DensityProvider } from './theme/density';
 import { ThemeProvider } from './theme/theme';
 
@@ -22,7 +23,8 @@ const OidcCallbackPage = lazy(() => import('./pages/OidcCallback'));
 const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
 const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
 const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
-const ActionsPage = lazy(() => import('./pages/ActionsPage'));
+const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
+const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
 const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
@@ -76,7 +78,9 @@ export function AppRoutes() {
           <Route index element={<OverviewPage />} />
           <Route path="alerts" element={<AlertsPage />} />
           <Route path="escalations" element={<EscalationsPage />} />
-          <Route path="actions" element={<ActionsPage />} />
+          <Route path="escalations/:id" element={<DecisionPage />} />
+          <Route path="approvals" element={<ApprovalsPage />} />
+          <Route path="actions" element={<LegacyActionsRedirect />} />
           <Route path="suppressions" element={<SuppressionsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="sources" element={<RequireRole allowed={can.admin}><SourcesPage /></RequireRole>} />

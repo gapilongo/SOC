@@ -26,12 +26,9 @@ export function escalationQueueHref(filters: EscalationFilters = {}): string {
   return withQuery('/escalations', params);
 }
 
-/**
- * Where one escalation opens: its alert in the alert drawer (the decision
- * view of the escalation is reached from there).
- */
-export function escalationHref(e: Pick<EscalationOut, 'alert_id'>): string {
-  return withQuery('/alerts', new URLSearchParams({ alert: e.alert_id }));
+/** Where one escalation opens: its decision page. */
+export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
+  return `/escalations/${encodeURIComponent(e.id)}`;
 }
 
 /** Alerts with these filters (`severity`, `status`, `from` ...). */
@@ -41,5 +38,5 @@ export function alertsHref(filters: Record<string, string | undefined>): string 
   return withQuery('/alerts', params);
 }
 
-/** Actions waiting for an approval. */
-export const APPROVALS_HREF = '/actions?status=awaiting_approval';
+/** The Approvals page: actions waiting for an approval first (`/actions` redirects there). */
+export const APPROVALS_HREF = '/approvals';

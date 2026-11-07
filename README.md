@@ -242,7 +242,7 @@ deterministic stand-in model, not from Claude.
 | ![Escalation queue](docs/screenshots/05-escalations.png) | ![Actions awaiting approval](docs/screenshots/07-actions.png) |
 | Escalation queue, claimed by an analyst | Response actions awaiting approval |
 
-More pages (alerts, decision dialog, users, settings, usage, audit log) are
+More pages (alerts, decision page, users, settings, usage, audit log) are
 in [docs/screenshots](docs/screenshots).
 
 ## Quickstart (Docker Compose)
