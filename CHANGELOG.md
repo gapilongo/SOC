@@ -105,6 +105,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- An LLM call that failed unexpectedly no longer leaves its token estimate
+  counted against the tenant's daily LLM budget. Each call reserves an
+  estimate first and settles it with the tokens actually used, but an
+  error while preparing the call or while reading or recording the
+  model's answer skipped that step, so the whole estimate stayed counted
+  until the end of the UTC day. Every outcome now settles the
+  reservation, including a call cancelled by a node timeout, which counts
+  the tokens of the attempts already answered.
 - Web UI: `/account` (account security) is no longer reachable by typing
   the URL while a platform admin acts on another tenant. The account menu
   already hid it in that case.

@@ -34,14 +34,30 @@ import math
 import random
 import re
 import time
-from dataclasses import replace
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Type, TypeVar
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
 from redis.exceptions import RedisError
+from structlog.stdlib import BoundLogger
 
 from lg_sotf.llm.budget import USE_DEFAULT, BudgetLimit, Reservation, TokenBudget
 from lg_sotf.llm.client import (
@@ -56,7 +72,7 @@ from lg_sotf.llm.client import (
 from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.pricing import local_model_id
 from lg_sotf.llm.prompting import serialize_untrusted
-from lg_sotf.llm.usage import Outcome, UsageSample, UsageTally, extract_usage, get_usage_recorder
+from lg_sotf.llm.usage import Outcome, UsageRecorder, UsageSample, UsageTally, extract_usage, get_usage_recorder
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings, get_settings
 
@@ -360,9 +376,15 @@ def _classify(
         )
 
 
-def _invocation(
-    model: BaseChatModel, schema: Type[BaseModel], messages: Sequence[BaseMessage]
-) -> Tuple[Callable[[List[BaseMessage]], Awaitable[Any]], List[BaseMessage], int]:
+class _InvokePlan(NamedTuple):
+    """How one structured call is made: the call, its first messages and the attempt limit."""
+
+    invoke: Callable[[List[BaseMessage]], Awaitable[Any]]
+    messages: List[BaseMessage]
+    max_attempts: int
+
+
+def _plan_invoke(model: BaseChatModel, schema: Type[BaseModel], messages: Sequence[BaseMessage]) -> _InvokePlan:
     """The call, its first messages and the attempt limit for ``model``'s structured-output method.
 
     JSON text whenever the factory chose a JSON method (self-hosted providers, or ``openai``
@@ -371,11 +393,215 @@ def _invocation(
     """
     method = structured_method(model)
     if method in JSON_TEXT_METHODS and model_structured_method(model) is not None:
-        return _json_text_invoker(model, schema, method), with_schema_instructions(messages, schema), 2
-    return model.with_structured_output(schema, method=method, include_raw=True).ainvoke, list(messages), 1
+        return _InvokePlan(_json_text_invoker(model, schema, method), with_schema_instructions(messages, schema), 2)
+    return _InvokePlan(model.with_structured_output(schema, method=method, include_raw=True).ainvoke, list(messages), 1)
 
 
-async def ainvoke_structured(  # noqa: C901
+@dataclass(frozen=True)
+class _CallMeter:
+    """Meters one structured call: the usage recorder first, then the per-alert tally (when given)."""
+
+    recorder: UsageRecorder
+    tally: Optional[UsageTally]
+    agent: str
+    model_id: str
+    provider: str
+    tenant_id: Optional[str]
+    self_hosted: bool
+
+    def budget_exceeded(self) -> None:
+        self.recorder.record(model=self.model_id, agent=self.agent, outcome="budget_exceeded", tenant_id=self.tenant_id)
+        if self.tally is not None:
+            self.tally.add_budget_exceeded(self.agent)
+
+    def no_usage(self, outcome: Outcome) -> None:
+        """An attempt that reported no usage: a provider error, or a result that is not a mapping."""
+        self.recorder.record(model=self.model_id, agent=self.agent, outcome=outcome, tenant_id=self.tenant_id)
+        if self.tally is not None:
+            self.tally.add_call(self.agent, [], outcome, Decimal(0), model=self.model_id, provider=self.provider)
+
+    def samples(self, raw: Any) -> List[UsageSample]:
+        """The usage a reply reports, under ``local/<model>`` ids for self-hosted providers."""
+        samples: List[UsageSample] = extract_usage(raw, default_model=self.model_id)
+        if self.self_hosted:
+            samples = [replace(sample, model=local_model_id(sample.model)) for sample in samples]
+        return samples
+
+    def call(self, samples: List[UsageSample], outcome: Outcome) -> Decimal:
+        """Record an attempt that reported usage; returns its cost."""
+        cost = self.recorder.record_samples(samples, agent=self.agent, outcome=outcome, tenant_id=self.tenant_id)
+        if self.tally is not None:
+            self.tally.add_call(self.agent, samples, outcome, cost, model=self.model_id, provider=self.provider)
+        return cost
+
+
+async def _invoke_with_transient_retry(
+    plan: _InvokePlan,
+    messages: List[BaseMessage],
+    *,
+    tier: Tier,
+    settings: Settings,
+    meter: _CallMeter,
+    log: BoundLogger,
+    attempt: int,
+) -> Any:
+    """One attempt, tried again after a jittered delay while it fails fast with a transient provider error.
+
+    Each failed try is metered as an error; the last failure propagates unchanged.
+    """
+    for retry, delay_s in enumerate(TRANSIENT_RETRY_DELAYS_S):
+        try:
+            async with llm_slot(tier, settings):
+                return await plan.invoke(messages)
+        except Exception as exc:
+            if not _fails_fast_and_transient(exc):
+                raise
+            meter.no_usage("error")
+            wait_s = delay_s * random.uniform(0.8, 1.2)  # noqa: S311 - jitter, not security
+            log.warning(
+                "llm.call_retrying",
+                error_type=type(exc).__name__,
+                attempt=attempt,
+                retry=retry + 1,
+                delay_s=round(wait_s, 1),
+            )
+            await asyncio.sleep(wait_s)
+    async with llm_slot(tier, settings):
+        return await plan.invoke(messages)
+
+
+async def _reserve(
+    budget: Optional[TokenBudget],
+    tenant_id: Optional[str],
+    messages: Sequence[BaseMessage],
+    max_tokens: int,
+    limit: BudgetLimit,
+    *,
+    meter: _CallMeter,
+    log: BoundLogger,
+) -> Optional[Reservation]:
+    """Reserve the call's estimate (prompt plus ``max_tokens``) when a budget and a tenant are given.
+
+    A rejection is metered and logged as ``llm.budget_exceeded`` before it propagates.
+    """
+    if budget is None or tenant_id is None:
+        return None
+    estimate = estimate_input_tokens(messages) + max_tokens
+    try:
+        return await budget.check_and_reserve(tenant_id, estimate, limit=limit)
+    except LLMBudgetExceeded:
+        meter.budget_exceeded()
+        log.warning("llm.budget_exceeded")
+        raise
+
+
+def _call_failed(exc: BaseException, start: float, attempt: int, *, meter: _CallMeter, log: BoundLogger) -> None:
+    """Meter and log an attempt that raised (cancellation is neither)."""
+    meter.no_usage("error")
+    log.warning(
+        "llm.call_failed",
+        error_type=type(exc).__name__,
+        latency_ms=round((time.perf_counter() - start) * 1000),
+        attempt=attempt,
+    )
+
+
+def _call_event(
+    outcome: Outcome, latency_ms: int, samples: Sequence[UsageSample], cost: Decimal, model_id: str
+) -> Dict[str, Any]:
+    """The ``llm.call`` log fields of one attempt."""
+    return {
+        "outcome": outcome,
+        "latency_ms": latency_ms,
+        "input_tokens": sum(x.input_tokens for x in samples),
+        "output_tokens": sum(x.output_tokens for x in samples),
+        "cache_read_tokens": sum(x.cache_read_tokens for x in samples),
+        "cache_write_tokens": sum(x.cache_write_tokens for x in samples),
+        "cost_usd": float(cost),
+        "served_by": samples[-1].model if samples else model_id,
+    }
+
+
+@dataclass
+class _Spent:
+    """The tokens a call has used so far: what its reservation is settled with."""
+
+    tokens: int = 0
+
+
+@asynccontextmanager
+async def _reserved(budget: Optional[TokenBudget], reservation: Optional[Reservation]) -> AsyncIterator[_Spent]:
+    """Settle ``reservation`` with the tokens spent, however the call ends.
+
+    Settling in ``finally`` covers a result, a refusal, a provider error, cancellation (a node
+    timeout: the tokens used so far) and an exception raised after the model answered, so no
+    outcome leaves the estimate counted against the tenant's daily budget.
+    """
+    spent = _Spent()
+    try:
+        yield spent
+    finally:
+        if budget is not None and reservation is not None:
+            await _settle(budget, reservation, spent.tokens)
+
+
+async def _run_attempts(
+    plan: _InvokePlan,
+    schema: Type[T],
+    *,
+    tier: Tier,
+    settings: Settings,
+    meter: _CallMeter,
+    log: BoundLogger,
+    spent: _Spent,
+) -> T:
+    """The attempts of one call (a repair attempt only on the JSON text path), each metered and logged.
+
+    ``spent`` counts each reply's tokens as soon as they are known, before the reply is classified.
+    """
+    agent, model_id = meter.agent, meter.model_id
+    attempt_messages = plan.messages
+    attempt = 0
+    while True:
+        attempt += 1
+        start = time.perf_counter()
+        try:
+            result = await _invoke_with_transient_retry(
+                plan, attempt_messages, tier=tier, settings=settings, meter=meter, log=log, attempt=attempt
+            )
+        except BaseException as exc:
+            # Cancellation (node timeouts) is neither metered nor logged; _reserved settles it.
+            if not isinstance(exc, asyncio.CancelledError):
+                _call_failed(exc, start, attempt, meter=meter, log=log)
+            raise
+        latency_ms = round((time.perf_counter() - start) * 1000)
+
+        if not isinstance(result, Mapping):
+            meter.no_usage("invalid_output")
+            raise LLMOutputError(
+                f"{agent}: structured runnable returned {type(result).__name__}, expected a mapping", model=model_id
+            )
+        samples = meter.samples(result.get("raw"))
+        spent.tokens += sum(sample.total_tokens for sample in samples)
+        outcome, value, error = _classify(result, schema, model_id, agent)
+        cost = meter.call(samples, outcome)
+
+        event = _call_event(outcome, latency_ms, samples, cost, model_id)
+        if plan.max_attempts > 1:
+            event["attempt"] = attempt
+        if error is None and value is not None:
+            log.info("llm.call", **event)
+            return value
+        if isinstance(error, LLMRefusal):
+            event["refusal_category"] = error.category
+        log.warning("llm.call", **event)
+        if attempt < plan.max_attempts and isinstance(error, LLMOutputError) and _repairable(error):
+            attempt_messages = [*attempt_messages, repair_message(error, reply_text(result.get("raw")))]
+            continue
+        raise error or LLMOutputError(f"{agent}: no structured output", model=model_id)
+
+
+async def ainvoke_structured(
     model: BaseChatModel,
     schema: Type[T],
     messages: Sequence[BaseMessage],
@@ -402,113 +628,18 @@ async def ainvoke_structured(  # noqa: C901
     module docstring).
     """
     s = settings or get_settings()
-    self_hosted = model_is_self_hosted(model)
     model_id = usage_model_id(model)
-    provider = provider_of(model)
-    recorder = get_usage_recorder()
+    meter = _CallMeter(
+        get_usage_recorder(), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
+    )
     log = logger.bind(agent=agent, tier=tier, model=model_id)
 
-    reservation: Optional[Reservation] = None
-    if budget is not None and tenant_id is not None:
-        estimate = estimate_input_tokens(messages) + getattr(s.llm, tier).max_tokens
-        try:
-            reservation = await budget.check_and_reserve(tenant_id, estimate, limit=budget_limit)
-        except LLMBudgetExceeded:
-            recorder.record(model=model_id, agent=agent, outcome="budget_exceeded", tenant_id=tenant_id)
-            if tally is not None:
-                tally.add_budget_exceeded(agent)
-            log.warning("llm.budget_exceeded")
-            raise
-
-    invoke, attempt_messages, max_attempts = _invocation(model, schema, messages)
-
-    async def settle(tokens: int) -> None:
-        if reservation is not None and budget is not None:
-            await _settle(budget, reservation, tokens)
-
-    used_tokens = 0
-    attempt = 0
-    while True:
-        attempt += 1
-        start = time.perf_counter()
-        try:
-            for retry, delay_s in enumerate((*TRANSIENT_RETRY_DELAYS_S, None)):
-                try:
-                    async with llm_slot(tier, s):
-                        result = await invoke(attempt_messages)
-                    break
-                except Exception as exc:
-                    if delay_s is None or not _fails_fast_and_transient(exc):
-                        raise
-                    recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)
-                    if tally is not None:
-                        tally.add_call(agent, [], "error", Decimal(0), model=model_id, provider=provider)
-                    wait_s = delay_s * random.uniform(0.8, 1.2)  # noqa: S311 - jitter, not security
-                    log.warning(
-                        "llm.call_retrying",
-                        error_type=type(exc).__name__,
-                        attempt=attempt,
-                        retry=retry + 1,
-                        delay_s=round(wait_s, 1),
-                    )
-                    await asyncio.sleep(wait_s)
-        except BaseException as exc:
-            # Cancellation (node timeouts) must also hand the reservation back.
-            if not isinstance(exc, asyncio.CancelledError):
-                recorder.record(model=model_id, agent=agent, outcome="error", tenant_id=tenant_id)
-                if tally is not None:
-                    tally.add_call(agent, [], "error", Decimal(0), model=model_id, provider=provider)
-                log.warning(
-                    "llm.call_failed",
-                    error_type=type(exc).__name__,
-                    latency_ms=round((time.perf_counter() - start) * 1000),
-                    attempt=attempt,
-                )
-            await settle(used_tokens)
-            raise
-        latency_ms = round((time.perf_counter() - start) * 1000)
-
-        if not isinstance(result, Mapping):
-            recorder.record(model=model_id, agent=agent, outcome="invalid_output", tenant_id=tenant_id)
-            if tally is not None:
-                tally.add_call(agent, [], "invalid_output", Decimal(0), model=model_id, provider=provider)
-            await settle(used_tokens)
-            raise LLMOutputError(
-                f"{agent}: structured runnable returned {type(result).__name__}, expected a mapping", model=model_id
-            )
-        outcome, value, error = _classify(result, schema, model_id, agent)
-        samples: List[UsageSample] = extract_usage(result.get("raw"), default_model=model_id)
-        if self_hosted:
-            samples = [replace(sample, model=local_model_id(sample.model)) for sample in samples]
-        cost = recorder.record_samples(samples, agent=agent, outcome=outcome, tenant_id=tenant_id)
-        if tally is not None:
-            tally.add_call(agent, samples, outcome, cost, model=model_id, provider=provider)
-        used_tokens += sum(sample.total_tokens for sample in samples)
-
-        event: Dict[str, Any] = {
-            "outcome": outcome,
-            "latency_ms": latency_ms,
-            "input_tokens": sum(x.input_tokens for x in samples),
-            "output_tokens": sum(x.output_tokens for x in samples),
-            "cache_read_tokens": sum(x.cache_read_tokens for x in samples),
-            "cache_write_tokens": sum(x.cache_write_tokens for x in samples),
-            "cost_usd": float(cost),
-            "served_by": samples[-1].model if samples else model_id,
-        }
-        if max_attempts > 1:
-            event["attempt"] = attempt
-        if error is None and value is not None:
-            log.info("llm.call", **event)
-            await settle(used_tokens)
-            return value
-        if isinstance(error, LLMRefusal):
-            event["refusal_category"] = error.category
-        log.warning("llm.call", **event)
-        if attempt < max_attempts and isinstance(error, LLMOutputError) and _repairable(error):
-            attempt_messages = [*attempt_messages, repair_message(error, reply_text(result.get("raw")))]
-            continue
-        await settle(used_tokens)
-        raise error or LLMOutputError(f"{agent}: no structured output", model=model_id)
+    reservation = await _reserve(
+        budget, tenant_id, messages, getattr(s.llm, tier).max_tokens, budget_limit, meter=meter, log=log
+    )
+    async with _reserved(budget, reservation) as spent:
+        plan = _plan_invoke(model, schema, messages)
+        return await _run_attempts(plan, schema, tier=tier, settings=s, meter=meter, log=log, spent=spent)
 
 
 async def _settle(budget: TokenBudget, reservation: Reservation, actual: int) -> None:

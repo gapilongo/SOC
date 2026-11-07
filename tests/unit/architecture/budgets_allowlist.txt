@@ -8,7 +8,6 @@ services/reporting.py	852
 services/response.py	2530
 
 # Functions
-agents/analysis/base.py::AnalysisAgent._run	134
 agents/correlation/base.py::CorrelationAgent._run	88
 api/app.py::create_app	82
 api/routers/integrations.py::slack_interactions	97
@@ -26,7 +25,6 @@ ingestion/email/parser.py::parse_email	93
 ingestion/service.py::IngestionService.poll_source	82
 integrations/microsoft/connection_test.py::run_connection_test	84
 integrations/microsoft/http.py::MicrosoftApi._send	118
-llm/structured.py::ainvoke_structured	134
 mcp/server.py::serve	98
 mcp/tester.py::_get_test_run	82
 mcp/tester.py::_ingest_test_alerts	94

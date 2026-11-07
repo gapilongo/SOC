@@ -444,6 +444,95 @@ def evidence_indicators(history: Sequence[Tuple[Indicator, EnrichmentResult]], o
     return out
 
 
+def _prompt_block(
+    alert: Mapping[str, Any],
+    triage: Mapping[str, Any],
+    correlation: Mapping[str, Any],
+    *,
+    rule_indicators: List[str],
+    rule_score: int,
+    history: List[Dict[str, Any]],
+    candidates: Mapping[str, Candidate],
+    analyst_notes: Optional[str],
+) -> Dict[str, Any]:
+    """The untrusted block of every analysis call, identical on each ReAct step (only tool data grows)."""
+    background: Dict[str, Any] = {
+        "triage": _present(triage, ("confidence", "rule_fp", "rule_tp", "threat_assessment")),
+        "correlation": _present(
+            correlation, ("score", "related_count", "burst", "frequency_level", "related_dispositions")
+        ),
+        "rule_threat_indicators": rule_indicators,
+        "rule_threat_score": rule_score,
+    }
+    block: Dict[str, Any] = {
+        "alert": dict(alert),
+        "background": background,
+        "history": history,
+        "candidates": {cid: c.prompt_view() for cid, c in candidates.items()},
+    }
+    if analyst_notes:
+        block["analyst_request"] = analyst_notes[:1_000]
+    return block
+
+
+def _assemble_result(
+    final: Optional[Union[InvestigationStep, AnalysisVerdict]],
+    refusal: Optional[LLMResult[Any]],
+    upstream: Optional[Dict[str, Optional[str]]],
+    rule_score: int,
+    common: Mapping[str, Any],
+    *,
+    agent: str,
+) -> AnalysisResult:
+    """The analysis result: the model's assessment, else a refusal (this agent's or an earlier one's), else the rules.
+
+    ``common`` holds the fields every branch shares (rule assessment, evidence, run counters, notes);
+    it is not modified.
+    """
+    if final is not None:
+        actions = list(
+            dict.fromkeys(list(final.recommended_actions) + rule_actions(max(rule_score, final.threat_score)))
+        )
+        fields = dict(common)
+        verdict, conclusion = final.verdict, final.conclusion
+        if upstream is not None:
+            # Another agent's model declined this alert: keep the assessment, but a human decides.
+            verdict = "inconclusive"
+            conclusion = f"{UPSTREAM_REFUSAL_CONCLUSION} {conclusion}"
+            fields["notes"] = [*common["notes"], "analysis: an earlier model call was refused; verdict left to an analyst"]
+        return AnalysisResult(
+            threat_score=final.threat_score,
+            certainty=final.certainty,
+            verdict=verdict,
+            conclusion=conclusion,
+            recommended_actions=actions[:MAX_ACTIONS],
+            llm_used=True,
+            llm_refusal=upstream,
+            **fields,
+        )
+    refused = agent_refusal(refusal, agent) if refusal is not None else upstream
+    if refused is not None:
+        return AnalysisResult(
+            threat_score=rule_score,
+            certainty=0,
+            verdict="inconclusive",
+            conclusion=f"{REFUSAL_CONCLUSION} {rule_conclusion(rule_score)}",
+            recommended_actions=rule_actions(rule_score),
+            llm_used=False,
+            llm_refusal=refused,
+            **common,
+        )
+    return AnalysisResult(
+        threat_score=rule_score,
+        certainty=50,
+        verdict=rule_verdict(rule_score),
+        conclusion=rule_conclusion(rule_score),
+        recommended_actions=rule_actions(rule_score),
+        llm_used=False,
+        **common,
+    )
+
+
 class AnalysisAgent(BaseAgent):
     name = "analysis"
 
@@ -529,49 +618,18 @@ class AnalysisAgent(BaseAgent):
         llm_on = self.enable_llm and ctx.settings.llm.enabled and not ctx.llm_budget_exceeded
         candidates = await self.candidates(ctx, alert) if llm_on else {}
 
-        background: Dict[str, Any] = {
-            "triage": _present(triage, ("confidence", "rule_fp", "rule_tp", "threat_assessment")),
-            "correlation": _present(
-                correlation, ("score", "related_count", "burst", "frequency_level", "related_dispositions")
-            ),
-            "rule_threat_indicators": base_indicators,
-            "rule_threat_score": base_rule_score,
-        }
-        alert_block: Dict[str, Any] = {
-            "alert": dict(alert),
-            "background": background,
-            "history": history_digest,
-            "candidates": {cid: c.prompt_view() for cid, c in candidates.items()},
-        }
-        if analyst_notes:
-            alert_block["analyst_request"] = analyst_notes[:1_000]
+        alert_block = _prompt_block(
+            alert,
+            triage,
+            correlation,
+            rule_indicators=base_indicators,
+            rule_score=base_rule_score,
+            history=history_digest,
+            candidates=candidates,
+            analyst_notes=analyst_notes,
+        )
         run = AnalysisRunContext(agent_ctx=ctx, alert=alert, candidates=candidates, alert_block=alert_block)
-
-        final: Optional[Union[InvestigationStep, AnalysisVerdict]] = None
-        refusal: Optional[LLMResult[Any]] = None
-        if candidates:
-            await self.reasoner.reason(self, run)
-            final, refusal = run.final, run.refusal
-        else:
-            llm: LLMResult[AnalysisVerdict] = await self.call_llm(
-                ctx,
-                tier="deep",
-                schema=AnalysisVerdict,
-                system=SYSTEM_PROMPT,
-                task=VERDICT_TASK,
-                untrusted=alert_block,
-                enabled=self.enable_llm,
-            )
-            run.notes.extend(llm.notes)
-            run.stop_reason = "no_candidates"
-            if llm.value is not None:
-                run.llm_calls += 1
-                final = llm.value
-            elif llm.refused:
-                refusal = llm
-                run.stop_reason = "refusal"
-            else:
-                run.stop_reason = "llm_unavailable"
+        final, refusal = await self._reason(ctx, run)
 
         indicators = rule_threat_indicators(
             alert, correlation, evidence_indicators(history, run.observations) + email_evidence
@@ -598,51 +656,40 @@ class AnalysisAgent(BaseAgent):
             "reasoning": run.thoughts,
             "notes": run.notes,
         }
-        upstream = upstream_refusal(triage, correlation)
-        if final is not None:
-            assessment = final
-            actions = list(
-                dict.fromkeys(
-                    list(assessment.recommended_actions) + rule_actions(max(rule_score, assessment.threat_score))
-                )
-            )
-            verdict, conclusion = assessment.verdict, assessment.conclusion
-            if upstream is not None:
-                # Another agent's model declined this alert: keep the assessment, but a human decides.
-                verdict = "inconclusive"
-                conclusion = f"{UPSTREAM_REFUSAL_CONCLUSION} {conclusion}"
-                run.notes.append("analysis: an earlier model call was refused; verdict left to an analyst")
-            return AnalysisResult(
-                threat_score=assessment.threat_score,
-                certainty=assessment.certainty,
-                verdict=verdict,
-                conclusion=conclusion,
-                recommended_actions=actions[:MAX_ACTIONS],
-                llm_used=True,
-                llm_refusal=upstream,
-                **common,
-            )
-        refused = agent_refusal(refusal, self.name) if refusal is not None else upstream
-        if refused is not None:
-            return AnalysisResult(
-                threat_score=rule_score,
-                certainty=0,
-                verdict="inconclusive",
-                conclusion=f"{REFUSAL_CONCLUSION} {rule_conclusion(rule_score)}",
-                recommended_actions=rule_actions(rule_score),
-                llm_used=False,
-                llm_refusal=refused,
-                **common,
-            )
-        return AnalysisResult(
-            threat_score=rule_score,
-            certainty=50,
-            verdict=rule_verdict(rule_score),
-            conclusion=rule_conclusion(rule_score),
-            recommended_actions=rule_actions(rule_score),
-            llm_used=False,
-            **common,
+        return _assemble_result(
+            final, refusal, upstream_refusal(triage, correlation), rule_score, common, agent=self.name
         )
+
+    async def _reason(
+        self, ctx: AgentContext, run: AnalysisRunContext
+    ) -> Tuple[Optional[Union[InvestigationStep, AnalysisVerdict]], Optional[LLMResult[Any]]]:
+        """The model's final assessment and its refusal, if any.
+
+        A ReAct investigation when there are lookup candidates, otherwise a single verdict call.
+        Records ``stop_reason``, the call count and the notes on ``run``.
+        """
+        if run.candidates:
+            await self.reasoner.reason(self, run)
+            return run.final, run.refusal
+        llm: LLMResult[AnalysisVerdict] = await self.call_llm(
+            ctx,
+            tier="deep",
+            schema=AnalysisVerdict,
+            system=SYSTEM_PROMPT,
+            task=VERDICT_TASK,
+            untrusted=run.alert_block,
+            enabled=self.enable_llm,
+        )
+        run.notes.extend(llm.notes)
+        run.stop_reason = "no_candidates"
+        if llm.value is not None:
+            run.llm_calls += 1
+            return llm.value, None
+        if llm.refused:
+            run.stop_reason = "refusal"
+            return None, llm
+        run.stop_reason = "llm_unavailable"
+        return None, None
 
     async def cleanup(self) -> None:
         await self.enrichment.aclose()
