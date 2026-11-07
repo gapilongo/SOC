@@ -75,8 +75,9 @@ flowchart LR
 
 ## What's new in 1.3
 
-On `main` now; the 1.3.0 release follows. Full list in the
-[changelog](CHANGELOG.md).
+On `main` now. It ships first as 1.3.0 release candidates on the weekly
+partner train, then as the stable 1.3.0 ([releases](docs/releases.md)).
+Full list in the [changelog](CHANGELOG.md).
 
 * **Proof-of-value install**: `scripts/pov.sh --siem-host HOST` starts a
   stack that can only read. Every response action is blocked or recorded as
@@ -95,6 +96,12 @@ On `main` now; the 1.3.0 release follows. Full list in the
   SBOMs, an OpenVEX document and `SHA256SUMS`
   ([verify an image](docs/security.md#verify-an-image-yourself),
   [SBOMs and VEX](docs/security.md#sboms-and-vex)).
+* **Release trains**: every Thursday the head of `main` becomes a signed
+  partner release candidate; a candidate is promoted to stable and LTS.
+  A commit is tagged only when its CI, upgrade and install rehearsals
+  passed and its images verify. Support windows, backports and patch SLAs
+  are published ([releases](docs/releases.md),
+  [dependency policy](docs/dependency-policy.md)).
 * **Pinned builds and a CVE gate**: every Python requirement is hash-locked
   and installed with `--require-hashes`, every base image is pinned by
   digest, and Trivy fails CI on any fixable critical or high CVE in either
@@ -595,6 +602,8 @@ container logs and that no page violates the Content-Security-Policy.
 | [Security](docs/security.md) | Controls, data handling, supply chain and how to verify images |
 | [Threat model](docs/threat-model.md) | STRIDE per component, OWASP Agentic Top 10, MITRE ATLAS |
 | [Hardening guide](docs/hardening.md) | Numbered L1/L2 deployment controls with checks |
+| [Releases](docs/releases.md) | Release channels (partner, stable, LTS), support windows, backports |
+| [Dependency policy](docs/dependency-policy.md) | Admission checklist for dependencies, patch SLAs |
 | [Evaluation](docs/evaluation.md) | The evaluation harness |
 | [Scorecards](docs/scorecards/README.md) | Accuracy scorecards per model configuration |
 | [Evidence facts](docs/evidence-facts.md) | The evidence-fact schema v1 |
