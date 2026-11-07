@@ -286,6 +286,8 @@ DESCRIPTIONS: Dict[str, str] = {
     "ingestion.http_backoff_max_s": "Pull connectors: maximum retry delay.",
     "ingestion.http_max_retry_after_s": "Pull connectors: a longer `Retry-After` ends the poll instead of sleeping.",
     "ingestion.allow_private_destinations": "Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source.",
+    "ingestion.allowed_destination_hosts": "Install-level egress allow-list (unset: no list). When set, sources, integrations, response webhooks, Microsoft Graph, enrichment providers and the LLM endpoint reach only these hosts; `*.example.com` allows subdomains; an empty or invalid list refuses everything. In an environment variable, separate hosts with commas. Used by the PoV profile (docs/pov.md).",
+    "ingestion.read_only_sources": "Install-level: refuse pull sources that change the source after reading (the `m365_mailbox` and `imap` sources mark or move messages). Used by the PoV profile.",
     # mcp (lg-sotf mcp)
     "mcp.api_url": "Base URL of the LG-SOTF API the MCP server calls; https, or http for a loopback address only.",
     "mcp.api_key": "API key the MCP server uses (`read` scope; `write` for notes; `ingest` and `read` for test alerts). Environment only, never a command-line argument.",

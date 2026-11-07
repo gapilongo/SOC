@@ -402,5 +402,7 @@ Ingestion limits and pull-connector behaviour (`lg_sotf.ingestion.options.Ingest
 | `ingestion.http_backoff_max_s` | `LG_SOTF_INGESTION__HTTP_BACKOFF_MAX_S` | number | `30.0` | Pull connectors: maximum retry delay. |
 | `ingestion.http_max_retry_after_s` | `LG_SOTF_INGESTION__HTTP_MAX_RETRY_AFTER_S` | number | `120.0` | Pull connectors: a longer `Retry-After` ends the poll instead of sleeping. |
 | `ingestion.allow_private_destinations` | `LG_SOTF_INGESTION__ALLOW_PRIVATE_DESTINATIONS` | boolean | `false` | Install-level: allow sources to reach private (RFC 1918 / ULA) addresses. Not overridable per source. |
+| `ingestion.allowed_destination_hosts` | `LG_SOTF_INGESTION__ALLOWED_DESTINATION_HOSTS` | list[string] (optional) | unset | Install-level egress allow-list (unset: no list). When set, sources, integrations, response webhooks, Microsoft Graph, enrichment providers and the LLM endpoint reach only these hosts; `*.example.com` allows subdomains; an empty or invalid list refuses everything. In an environment variable, separate hosts with commas. Used by the PoV profile (docs/pov.md). |
+| `ingestion.read_only_sources` | `LG_SOTF_INGESTION__READ_ONLY_SOURCES` | boolean | `false` | Install-level: refuse pull sources that change the source after reading (the `m365_mailbox` and `imap` sources mark or move messages). Used by the PoV profile. |
 
 <!-- END GENERATED SETTINGS REFERENCE -->

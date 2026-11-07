@@ -30,6 +30,9 @@ LLMProvider = Literal["anthropic", "openai", "gemini", "ollama", "openai_compati
 SELF_HOSTED_PROVIDERS = frozenset({"ollama", "openai_compatible"})
 StructuredOutput = Literal["auto", "json_schema", "json_mode", "function_calling"]
 
+MAX_ALLOWED_HOSTS = 256
+# A host name, an IPv4/IPv6 literal, or "*." followed by a domain (ingestion.allowed_destination_hosts).
+_ALLOWED_HOST = re.compile(r"(?:\*\.)?[a-z0-9_](?:[a-z0-9_.-]{0,251}[a-z0-9])?|[0-9a-f:.]{2,45}")
 _ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
@@ -408,6 +411,28 @@ class IngestionSection(BaseModel):
     http_max_retry_after_s: float = Field(default=120.0, ge=0)
     # Install-level: let sources, integrations and webhooks reach RFC 1918 / ULA addresses.
     allow_private_destinations: bool = False
+    # Install-level egress allow-list (None: no list). When set, sources, integrations, webhooks,
+    # Microsoft Graph and the LLM endpoint reach only these hosts; "*.example.com" allows subdomains.
+    allowed_destination_hosts: Optional[List[str]] = Field(default=None, max_length=MAX_ALLOWED_HOSTS)
+    # Install-level: refuse pull sources that write back (the mailbox sources mark or move messages).
+    read_only_sources: bool = False
+
+    @field_validator("allowed_destination_hosts", mode="before")
+    @classmethod
+    def _split_hosts(cls, value: Any) -> Any:
+        # An environment variable arrives as one string: "a.example.com, b.example.com".
+        return [v for v in re.split(r"[\s,]+", value) if v] if isinstance(value, str) else value
+
+    @field_validator("allowed_destination_hosts")
+    @classmethod
+    def _hosts(cls, value: Optional[List[str]]) -> Optional[List[str]]:
+        if value is None:
+            return None
+        hosts = list(dict.fromkeys(v.strip().strip("[]").lower().rstrip(".") for v in value))
+        bad = [h for h in hosts if not _ALLOWED_HOST.fullmatch(h)]
+        if bad:
+            raise ValueError("allowed_destination_hosts entries must be host names, IP addresses or *.domain")
+        return hosts
 
 
 class Settings(BaseSettings):

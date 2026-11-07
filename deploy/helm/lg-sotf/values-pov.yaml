@@ -1,0 +1,30 @@
+# Proof-of-value (PoV) profile for the Helm chart (docs/pov.md). Layer it on your values:
+#
+#   helm upgrade --install lg-sotf deploy/helm/lg-sotf -f my-values.yaml -f deploy/helm/lg-sotf/values-pov.yaml
+#
+# The same settings as docker/docker-compose.pov.yml: response execution is dry-run only
+# (install kill switch) with autonomy disabled for every risk, no response connector,
+# notifications and ticketing off, read-only sources, and an egress allow-list.
+#
+# Fill in, in a values file layered after this one (lists replace, they do not merge):
+#   settings.ingestion.allowed_destination_hosts   the SIEM host(s) and the model endpoint's host.
+#     Left empty, every outbound destination is refused (fail closed).
+#   settings.llm                                   a local or EU-hosted model; never DeepSeek.
+# To have the cluster enforce the allow-list as well, enable networkPolicy.egress and list
+# the same destinations as CIDRs in networkPolicy.egress.httpsTo (its default allows any).
+
+settings:
+  response:
+    dry_run: true
+    default_autonomy:
+      low: disabled
+      medium: disabled
+      high: disabled
+      critical: disabled
+  integrations:
+    enabled: false
+  ingestion:
+    read_only_sources: true
+    allowed_destination_hosts: []
+  llm:
+    allow_fake: false

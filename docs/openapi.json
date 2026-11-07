@@ -4703,6 +4703,12 @@
           "integrity": {
             "$ref": "#/components/schemas/EvidenceIntegrityOut"
           },
+          "investigation": {
+            "additionalProperties": true,
+            "description": "The investigation trace: every LLM and tool step (prompt and model or tool, tokens, latency, input and output SHA-256, redacted result digest) and totals.",
+            "title": "Investigation",
+            "type": "object"
+          },
           "lg_sotf_version": {
             "title": "Lg Sotf Version",
             "type": "string"
@@ -4742,6 +4748,7 @@
           "alert",
           "timeline",
           "agents",
+          "investigation",
           "enrichment",
           "correlation",
           "escalations",

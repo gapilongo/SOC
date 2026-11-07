@@ -30,6 +30,7 @@ Open HTML**.
 | `alert` | The alert row: normalised form, the raw event redacted once more for credentials (`raw_redacted`, with the count of redactions), and the stored `summary` |
 | `timeline` | Every timeline event (up to 5,000), oldest first |
 | `agents` | Per step (`triage`, `correlation`, `analysis`): whether it ran and when, verdict, confidence, threat score, reasoning and conclusion, token usage, and the **provider, model and prompt version** it called; plus the routing decision, the response plan, model refusals and whether the LLM budget ran out |
+| `investigation` | The investigation trace: every LLM call and tool call of the alert's runs, in order (see *Investigation trace*), with totals |
 | `enrichment` | Threat-intelligence and history observations, threat indicators, indicator sightings (display value and keyed hash) |
 | `correlation` | The correlation digest and the alerts grouped with this one |
 | `escalations` | Level, reason, SLA, who claimed it and when, the decision, who decided and when, notes, pre-approved actions |
@@ -86,6 +87,42 @@ and the output schema. The same hash means the model received the same
 instructions; any wording or schema change gives a new hash. Every model
 call also logs `prompt_name` and `prompt_hash` with the model in its
 `llm.call` event.
+
+### Investigation trace
+
+Every model call and every tool call an investigation makes (the
+threat-intelligence and history lookups of the analysis) is stored as one
+row of the tenant's `investigation_steps` table, in the order it happened.
+A step records:
+
+* the run (`run_id`, the workflow's thread id) and the alert, and its
+  position in the run (`step_index`);
+* the agent and the kind of step: `llm` with the prompt name and hash, the
+  provider and the model that answered, or `tool` with the tool name
+  (`reputation`, `history`);
+* the SHA-256 of its input (`input_hash`: the messages as sent, or the tool
+  name with the indicator kind, value and providers) and of its output
+  (`output_hash`); the input itself is not stored;
+* `result_digest`: the output redacted for credentials and cut to a few
+  kilobytes (a refused or unusable model reply has none, only its hash);
+* the outcome (`success`, `refusal`, `invalid_output`, `error`) and, for a
+  failed step, the error type; tokens in, out and cached; latency and start
+  time.
+
+Each attempt is a step: a provider error that was retried, and the repair
+attempt of a model answering in JSON text, appear as their own rows. A call
+the token budget refused never reached the model and is not a step. The
+evidence pack lists the steps under `investigation` (JSON) and in the
+**Investigation trace** section (HTML: kind, prompt and model or tool,
+tokens, latency, outcome and the SHA-256 of the result). Alerts processed
+before the trace store have no steps.
+
+The trace is written when each agent finishes, best effort: if the write
+fails, the run goes on and `agent.trace_write_failed` is logged. A node
+stopped by its timeout writes no trace (like its LLM accounting). Steps are
+kept with their alert: they are deleted with it by `retention.alerts_days`
+(or the tenant's override) and by tenant erasure, and the tenant export
+includes them (`investigation_steps.jsonl`).
 
 ### Verifying a pack
 
@@ -197,6 +234,7 @@ The archive holds JSON Lines files, one object per row: `users.jsonl`,
 `escalations.jsonl`, `feedback.jsonl`, `actions.jsonl`, `suppressions.jsonl`,
 `integrations.jsonl`, `notification_outbox.jsonl` (delivery summaries),
 `external_tickets.jsonl`, `usage_daily.jsonl`, `llm_usage_daily.jsonl`,
+`investigation_steps.jsonl` (the investigation trace),
 `audit_log.jsonl` and `indicator_sightings.jsonl` (the indicator values seen on
 each alert, as displayed: IP addresses, email addresses, user and host names),
 plus `tenant.json` (name, status, settings) and `manifest.json` (row count and

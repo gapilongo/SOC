@@ -185,6 +185,15 @@ quickstart: ## Demo stack + seeded alerts, timed to the first verdict (OLLAMA=qw
 quickstart-down: ## Stop the quickstart stack and delete its data and secrets
 	scripts/quickstart.sh --down
 
+.PHONY: pov
+pov: ## Proof-of-value profile: SIEM=host[,host] [OLLAMA=model | LLM_URL=https://... LLM_MODEL=model] (docs/pov.md)
+	scripts/pov.sh $(if $(SIEM),--siem-host $(SIEM),) $(if $(OLLAMA),--ollama $(OLLAMA),) \
+		$(if $(LLM_URL),--llm-url $(LLM_URL) --llm-model $(LLM_MODEL),)
+
+.PHONY: pov-down
+pov-down: ## Stop the PoV stack and delete its data and secrets
+	scripts/pov.sh --down
+
 .PHONY: migrate
 migrate: ## Run `lg-sotf migrate` in the stack (idempotent)
 	$(COMPOSE) run --rm migrate

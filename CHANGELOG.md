@@ -8,6 +8,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- An investigation trace. Every model call and every threat-intelligence or
+  history lookup of an alert's investigation is now stored, in order, with
+  the prompt and model (or tool), token counts, latency, outcome and the
+  SHA-256 of what went in and came out, plus a redacted, size-capped digest
+  of the result. Evidence packs show the steps in a new **Investigation
+  trace** section (HTML) and under `investigation` (JSON). The trace is kept
+  and deleted with its alert, and is part of the tenant data export. Database
+  migration 0011 adds the `investigation_steps` table.
+
+- A proof-of-value install profile: `scripts/pov.sh --siem-host HOST` (or
+  `make pov SIEM=HOST`) starts a stack that can only read. Every response
+  action is blocked or recorded as dry run, whatever a tenant admin sets; pull
+  sources that mark or move mailbox messages are refused; and outbound
+  connections go only to the SIEM host(s) and the model endpoint (local Ollama
+  by default, or an EU-hosted endpoint; DeepSeek is refused). It ends with the
+  next steps: connect a source, then `scripts/pov.sh --backtest 90`. Helm
+  users layer `deploy/helm/lg-sotf/values-pov.yaml`. See docs/pov.md.
+- Two install-level settings: `ingestion.allowed_destination_hosts`, an egress
+  allow-list for sources, integrations, response webhooks, Microsoft Graph,
+  enrichment providers and the LLM endpoint (unset by default, so nothing
+  changes for existing installs), and `ingestion.read_only_sources`, which
+  refuses the `m365_mailbox` and `imap` sources.
 - `lg-sotf eval-scorecard` turns the JSON reports of `lg-sotf eval` (one per
   dataset, same model) into a one-page scorecard in Markdown and JSON: the
   malicious false-negative rate first, with counts and a 95% Wilson interval,
