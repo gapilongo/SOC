@@ -57,10 +57,10 @@ from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret, 
 from lg_sotf.integrations.events import ui_base_url
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp
 from lg_sotf.integrations.ticketing import DeliveryDeferred, TicketService
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import REGISTRY
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.security.redaction import redact_text
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -94,8 +94,8 @@ def backoff_s(attempts: int, *, base_s: float, max_s: float, rand: Callable[[], 
 
 
 def safe_error(exc: BaseException) -> str:
-    text, _ = redact_text(" ".join(str(exc).split()))
-    return (f"{type(exc).__name__}: {text}" if text else type(exc).__name__)[:1_000]
+    """``Type: message`` for an outbox row or a ticket sync: redacted, one line, at most 1,000 chars."""
+    return safe_error_text(exc, 1_000)
 
 
 class RateLimiter:
@@ -203,7 +203,9 @@ class OutboxDelivery:
             try:
                 outcome = await self.deliver(entry, integration, suspended=suspended)
             except Exception as exc:  # noqa: BLE001 - an unexpected failure is retried like a transient one
-                log.warning("integrations.delivery_crashed", kind=kind, error_type=type(exc).__name__)
+                log_failure(
+                    log, "integrations.delivery_crashed", exc, level="warning", kind=kind, error_type=type(exc).__name__
+                )
                 outcome = self._failure(entry, safe_error(exc), retryable=True)
             try:
                 recorded = await self._repos.outbox.record_outcome(
@@ -217,7 +219,7 @@ class OutboxDelivery:
                     refund_attempt=outcome.refund,
                 )
             except Exception as exc:  # noqa: BLE001 - the claim lease expires and the row is retried
-                log.error("integrations.outcome_not_recorded", kind=kind, error_type=type(exc).__name__)
+                log_failure(log, "integrations.outcome_not_recorded", exc, kind=kind, error_type=type(exc).__name__)
                 return
             DELIVERIES.labels(kind=kind, outcome=outcome.metric).inc()
             if not recorded:
@@ -331,7 +333,7 @@ async def sync_tickets(
                 continue
             except Exception as exc:  # noqa: BLE001 - one ticket must not stop the pass
                 TICKET_SYNCS.labels(system=ticket.system, outcome="error").inc()
-                log.warning("integrations.ticket_sync_failed", error_type=type(exc).__name__)
+                log_failure(log, "integrations.ticket_sync_failed", exc, level="warning", error_type=type(exc).__name__)
                 continue
             newly_resolved = state.resolved and not ticket.resolved
             async with repos.db.tenant_tx(ticket.tenant_id) as conn:
@@ -372,5 +374,7 @@ async def sync_tickets(
                                    {"ticket": ticket.external_key, "ticket_status": state.status}),
                     )
                 except Exception as exc:  # noqa: BLE001 - live UI events are best effort
-                    log.warning("integrations.ticket_event_failed", error_type=type(exc).__name__)
+                    log_failure(
+                        log, "integrations.ticket_event_failed", exc, level="warning", error_type=type(exc).__name__
+                    )
     return len(due)

@@ -87,7 +87,7 @@ from lg_sotf.integrations.microsoft.connection_test import MicrosoftTestReport, 
 from lg_sotf.integrations.microsoft.http import MicrosoftApi, MicrosoftApiError, MicrosoftHttpFactory, ReadOnlyViolation
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
 from lg_sotf.net.egress import Resolver
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ActionsRepo, Integration, Repositories, ResponseAction
@@ -455,7 +455,10 @@ class MicrosoftConnector:
         except InvalidTarget as exc:
             return self._failed(spec, exc.code, f"{spec.title}: {exc}")
         except Exception as exc:  # noqa: BLE001 - any handler failure is recorded on the ledger
-            log.warning("microsoft.handler_failed", capability=spec.key, error_type=type(exc).__name__)
+            log_failure(
+                log, "microsoft.handler_failed", exc, level="warning", capability=spec.key,
+                error_type=type(exc).__name__,
+            )
             return self._failed(spec, "connector_exception", f"{spec.title} failed ({type(exc).__name__})",
                                 error_type=type(exc).__name__)
         return self._finalize(spec, action, result, tracked)
@@ -494,7 +497,10 @@ class MicrosoftConnector:
                 "rehearsal_error": exc.code,
             })
         except Exception as exc:  # noqa: BLE001 - a rehearsal never fails the ledger row
-            log.warning("microsoft.rehearsal_failed", capability=spec.key, error_type=type(exc).__name__)
+            log_failure(
+                log, "microsoft.rehearsal_failed", exc, level="warning", capability=spec.key,
+                error_type=type(exc).__name__,
+            )
             return ConnectorResult("dry_run", {
                 **base, "summary": f"rehearsal of {spec.title} failed ({type(exc).__name__})"[:200],
                 "resolved": None, "rehearsal_error": "connector_exception",

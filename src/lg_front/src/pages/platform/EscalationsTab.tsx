@@ -55,7 +55,7 @@ export function EscalationsTab() {
       {list.isError && <ErrorMessage error={list.error} onRetry={() => void list.refetch()} />}
       {!list.isPending && list.items.length === 0 && !list.isError && <EmptyState title="No open escalations in any tenant." />}
       {list.items.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <caption className="sr-only">Open and claimed escalations of every tenant</caption>
             <thead className="text-left text-xs uppercase tracking-wide text-muted">

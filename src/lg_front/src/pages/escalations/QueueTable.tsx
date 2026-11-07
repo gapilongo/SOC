@@ -137,11 +137,15 @@ export function QueueRow({ e, now, selection, nested = false }: { e: EscalationO
       <td className="px-2 py-2">
         <SeverityTag value={escalationSeverity(e)} />
       </td>
-      <td className="min-w-[200px] px-2 py-2">
+      <td className="min-w-[224px] px-2 py-2">
         <Link to={escalationHref(e)} state={{ from: `${location.pathname}${location.search}` }} className="font-medium text-fg hover:underline">
           {title}
         </Link>
-        {entities && <span className="block break-words text-xs text-muted">{entities}</span>}
+        {entities && (
+          <span className="line-clamp-2 break-words text-xs text-muted" title={entities}>
+            {entities}
+          </span>
+        )}
       </td>
       <td className="w-[26%] max-w-0 px-2 py-2 text-xs text-body">
         <span className="block truncate" title={reason ? `${reason.text}${reason.source ? ` (written by the ${reason.source === 'model' ? 'model' : 'rules'})` : ''}` : e.reason}>

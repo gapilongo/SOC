@@ -26,7 +26,7 @@ from lg_sotf.llm import LLMError, LLMOutputError, LLMRefusal, LLMUnavailable, ai
 from lg_sotf.llm.client import TIERS, Tier, get_chat_model
 from lg_sotf.llm.schema import clipped_str
 from lg_sotf.llm.structured import structured_method, usage_model_id
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -129,7 +129,10 @@ async def _check_tier(
     except Exception as exc:  # noqa: BLE001 - every failure becomes a sanitized report line
         code, message = describe_error(exc, timeout_s)
         latency = round((time.perf_counter() - started) * 1000)
-        log.warning("llm.check_failed", tier=tier, model=model_id, error_code=code, error_type=type(exc).__name__)
+        log_failure(
+            log, "llm.check_failed", exc, level="warning", tier=tier, model=model_id, error_code=code,
+            error_type=type(exc).__name__,
+        )
         return TierCheck(tier, model_id, False, latency, method, code, message)
     latency = round((time.perf_counter() - started) * 1000)
     log.info("llm.check_ok", tier=tier, model=model_id, latency_ms=latency)

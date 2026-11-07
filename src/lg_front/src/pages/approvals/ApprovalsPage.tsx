@@ -201,10 +201,17 @@ export default function ApprovalsPage() {
       <PageHeader
         title="Approvals"
         description={
-          <>
-            Response actions waiting for a human, newest first. {roleLine(principal)} Guardrails are checked again now for each pending action, and
-            once more when it executes.
-          </>
+          view === 'approvals' ? (
+            <>
+              Response actions waiting for a human, newest first. {roleLine(principal)} Guardrails are checked again now for each pending action,
+              and once more when it executes.
+            </>
+          ) : (
+            <>
+              Every response action, newest first: what ran, what was blocked and what still waits. {roleLine(principal)} Open a row for its full
+              target, outcome and rollback.
+            </>
+          )
         }
         actions={<Segmented label="View" options={VIEWS} value={view} onChange={setView} />}
       />

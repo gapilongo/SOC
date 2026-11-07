@@ -19,7 +19,7 @@ export default function GettingStartedPage() {
       {q.isPending && <LoadingState label="Loading checklist" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {s && (
-        <div className="grid gap-5 xl:grid-cols-[2fr_1fr]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <Card title={`Checklist: ${s.completed} of ${s.total} done`}>
             <OnboardingChecklist status={s} />
           </Card>

@@ -50,7 +50,7 @@ from lg_sotf.integrations.microsoft.catalog import capabilities, is_enabled, is_
 from lg_sotf.integrations.microsoft.clouds import Api
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, ReadOnlyViolation
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -241,6 +241,20 @@ def _status(
     return "ok" if evidence else "unverified"
 
 
+async def _probe(target: ProbeTarget, spec: CapabilitySpec, deadline: float, probe_timeout_s: float) -> List[ProbeCheck]:
+    """One capability's read-only probe, bounded by the test deadline; a failure becomes a check."""
+    loop = asyncio.get_running_loop()
+    try:
+        handler = spec.handler(target.context_for(spec, min(deadline, loop.time() + probe_timeout_s)))
+        async with asyncio.timeout(max(0.1, min(probe_timeout_s, deadline - loop.time()))):
+            return list(await handler.probe())
+    except Exception as exc:  # noqa: BLE001 - a failing probe is a test result, not an API error
+        log_failure(
+            log, "microsoft.probe_failed", exc, level="warning", capability=spec.key, error_type=type(exc).__name__
+        )
+        return [_probe_failure(exc)]
+
+
 async def run_connection_test(
     target: ProbeTarget,
     tokens: TokenProvider,
@@ -297,13 +311,7 @@ async def run_connection_test(
         checks: List[ProbeCheck] = []
         api_token = token_checks.get(spec.api) or TokenCheck(status="not_needed")
         if api_token.status == "ok":
-            try:
-                handler = spec.handler(target.context_for(spec, min(deadline, loop.time() + probe_timeout_s)))
-                async with asyncio.timeout(max(0.1, min(probe_timeout_s, deadline - loop.time()))):
-                    checks = list(await handler.probe())
-            except Exception as exc:  # noqa: BLE001 - a failing probe is a test result, not an API error
-                log.warning("microsoft.probe_failed", capability=spec.key, error_type=type(exc).__name__)
-                checks = [_probe_failure(exc)]
+            checks = await _probe(target, spec, deadline, probe_timeout_s)
         status = _status(spec, permissions, checks, api_token)
         detail = ""
         if api_token.status == "failed":

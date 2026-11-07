@@ -99,7 +99,7 @@ from lg_sotf.ingestion.sources import (
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget
 from lg_sotf.llm.errors import LLMBudgetExceeded
 from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, cap_mapping, json_size
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import redact, redact_text
 from lg_sotf.settings import Settings
@@ -361,13 +361,9 @@ class IngestionService:
             result.error = describe_error(exc)
             if isinstance(exc, SourceConfigError):
                 await self._retire((tenant_id, source.id))
-            log.warning(
-                "ingestion.poll_failed",
-                tenant_id=tenant_id,
-                source_id=source.id,
-                source_type=source.type,
-                error_type=type(exc).__name__,
-                pages=result.pages,
+            log_failure(
+                log, "ingestion.poll_failed", exc, level="warning", tenant_id=tenant_id, source_id=source.id,
+                source_type=source.type, error_type=type(exc).__name__, pages=result.pages,
                 inserted=len(result.inserted),
             )
             record_poll(source.type, False, time.monotonic() - started)
@@ -416,7 +412,10 @@ class IngestionService:
         except (SourceError, SourceConfigError) as exc:
             return SourceHealth(False, describe_error(exc))
         except Exception as exc:  # noqa: BLE001 - a malformed vendor response is a health result, not a 500
-            log.warning("ingestion.source_test_failed", source_type=source.type, error_type=type(exc).__name__)
+            log_failure(
+                log, "ingestion.source_test_failed", exc, level="warning", source_type=source.type,
+                error_type=type(exc).__name__,
+            )
             return SourceHealth(False, f"unexpected response ({type(exc).__name__})")
         finally:
             if connector is not None:
@@ -514,7 +513,10 @@ class IngestionService:
                 return await asyncio.to_thread(self._normalize_event, index, cleaned, ctx, normalizer)
             return self._normalize_event(index, cleaned, ctx, normalizer)
         except Exception as exc:  # noqa: BLE001 - one malformed event must not fail the batch or wedge a cursor
-            log.warning("ingestion.event_failed", normalizer=normalizer.name, error_type=type(exc).__name__)
+            log_failure(
+                log, "ingestion.event_failed", exc, level="warning", normalizer=normalizer.name,
+                error_type=type(exc).__name__,
+            )
             return _Outcome(reason=f"event could not be processed ({type(exc).__name__})")
 
     def _normalize_event(
@@ -576,11 +578,11 @@ class IngestionService:
             return _Outcome(reason="unrecognized event format (LLM budget exceeded)")
         except NormalizationError as exc:
             record_llm_normalization("error")
-            log.warning("ingestion.llm_normalization_failed", error_type=type(exc).__name__)
+            log_failure(log, "ingestion.llm_normalization_failed", exc, level="warning", error_type=type(exc).__name__)
             return _Outcome(reason="unrecognized event format (LLM normalization failed)")
         except Exception as exc:  # noqa: BLE001 - provider errors (timeouts, 429, 5xx) reject this event only
             record_llm_normalization("error")
-            log.warning("ingestion.llm_normalization_failed", error_type=type(exc).__name__)
+            log_failure(log, "ingestion.llm_normalization_failed", exc, level="warning", error_type=type(exc).__name__)
             return _Outcome(reason="unrecognized event format (LLM normalization unavailable)")
         record_llm_normalization("success")
         return _Outcome(prepared=prepared)

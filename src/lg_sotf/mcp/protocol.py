@@ -33,7 +33,7 @@ from lg_sotf.mcp.base import CATALOG_VERSION, PROTOCOL_VERSION, SUPPORTED_PROTOC
 from lg_sotf.mcp.client import LgSotfApiClient
 from lg_sotf.mcp.runs import RunStore
 from lg_sotf.mcp.tools import TOOLS, ToolArgumentError, call_tool, parse_arguments, tool_definitions
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -144,7 +144,7 @@ class McpServer:
         except _RpcError as exc:
             return error_response(request_id, exc.code, exc.message)
         except Exception as exc:  # noqa: BLE001 - one failing request must not end the session
-            log.error("mcp.request_failed", method=method, error_type=type(exc).__name__)
+            log_failure(log, "mcp.request_failed", exc, method=method, error_type=type(exc).__name__)
             return error_response(request_id, INTERNAL_ERROR, "internal error")
         return _result(request_id, result)
 

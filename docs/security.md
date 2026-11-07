@@ -179,9 +179,12 @@ Details and the endpoint/role matrix: `docs/api.md`.
 * **Response webhooks**: HMAC-SHA256 signed (`X-LGSOTF-Signature` over
   timestamp and body), with an idempotency key per action; receivers must
   verify the signature and reject stale timestamps.
-* **Logs**: structured JSON with a redaction pass over every record and
-  traceback; no request bodies, query strings or credentials in access logs;
-  no raw alert bodies at INFO.
+* **Logs**: structured JSON with a redaction pass over every record; a
+  caught failure is logged with its error type, a frames-only stack and its
+  cause types, never the exception message or a traceback (ADR-0005); no
+  request bodies, query strings or credentials in access logs; no raw alert
+  bodies at INFO. Error text that is stored or shown is redacted before it
+  is truncated.
 
 ## 5. Prompt-injection defences
 

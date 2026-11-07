@@ -69,7 +69,7 @@ export function UsageTab() {
       {q.isPending && valid && <LoadingState label="Loading usage" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {q.data && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
             <caption className="sr-only">Usage per tenant for {q.data.month}</caption>
             <thead className="text-left text-xs uppercase tracking-wide text-muted">

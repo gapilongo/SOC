@@ -121,7 +121,7 @@ function Summary({ escalation, alert, digest, findings, onShowEvidence }: { esca
           <ol className="flex flex-col gap-2.5">
             {findings.slice(0, 4).map((f, i) => (
               <li key={`${f.source}-${f.target}-${i}`} className="flex flex-col gap-0.5 border-b border-subtle pb-2.5 last:border-b-0 last:pb-0">
-                <span className="text-sm text-fg">{findingText(f)}</span>
+                <span className="text-sm text-fg [overflow-wrap:anywhere]">{findingText(f)}</span>
                 <FindingMeta f={f} />
               </li>
             ))}

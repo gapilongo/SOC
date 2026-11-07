@@ -20,7 +20,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.payload_schemas import ReadinessOut
 from lg_sotf.db.errors import DatabaseUnavailable
 from lg_sotf.ingestion.metrics import REGISTRY as INGESTION_REGISTRY
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import render_latest
 
 log = get_logger(__name__)
@@ -49,13 +49,13 @@ async def readyz(request: Request) -> JSONResponse:
         # None: every pooled connection is busy serving requests, so the database is answering.
         checks["database"] = "ok" if latency is not None else "busy"
     except (DatabaseUnavailable, TimeoutError) as exc:
-        log.warning("health.not_ready", dependency="database", error_type=type(exc).__name__)
+        log_failure(log, "health.not_ready", exc, level="warning", dependency="database", error_type=type(exc).__name__)
         checks["database"] = "error"
     try:
         await asyncio.wait_for(ctx.redis.ping(), timeout=PING_TIMEOUT_S)
         checks["redis"] = "ok"
     except Exception as exc:  # noqa: BLE001 - any Redis failure means not ready
-        log.warning("health.not_ready", dependency="redis", error_type=type(exc).__name__)
+        log_failure(log, "health.not_ready", exc, level="warning", dependency="redis", error_type=type(exc).__name__)
         checks["redis"] = "error"
     ready = "error" not in checks.values()
     return JSONResponse(

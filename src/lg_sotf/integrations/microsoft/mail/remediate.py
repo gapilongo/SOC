@@ -82,7 +82,7 @@ from lg_sotf.integrations.microsoft.mail.mailboxes import (
     probe_get,
     traced_recipients,
 )
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import ResponseAction
@@ -432,7 +432,7 @@ class RemediateHandler:
         try:
             return await self._prove(steps, check, tolerant=True)
         except Exception as exc:  # noqa: BLE001 - the change is made and recorded; only the proof is postponed
-            log.warning("microsoft.mail.inline_proof_failed", error_type=type(exc).__name__)
+            log_failure(log, "microsoft.mail.inline_proof_failed", exc, level="warning", error_type=type(exc).__name__)
             return {}
 
     async def _purge_proof(self, book: StepBook, message_id: str, mode: str) -> VerifyPlan:

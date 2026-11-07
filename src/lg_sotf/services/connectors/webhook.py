@@ -107,7 +107,7 @@ from lg_sotf.net.egress import DestinationPolicy, Resolver, system_resolve
 from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.redaction import redact
 from lg_sotf.security.signing import (  # the scheme; receivers and examples/soar may import it from here
     DEFAULT_TOLERANCE_S,  # noqa: F401 - re-export
@@ -305,9 +305,9 @@ class WebhookConnector:
                     return ConnectorResult("failed", {**base, "error": "response_too_large", "attempts": attempt + 1})
                 except (httpx.TransportError, TimeoutError) as exc:
                     if attempt >= self._max_retries:
-                        log.warning(
-                            "response.webhook_unreachable", action_type=action.action_type, attempts=attempt + 1,
-                            error_type=type(exc).__name__,
+                        log_failure(
+                            log, "response.webhook_unreachable", exc, level="warning", action_type=action.action_type,
+                            attempts=attempt + 1, error_type=type(exc).__name__,
                         )
                         return ConnectorResult(
                             "failed", {**base, "error": "network_error", "error_type": type(exc).__name__,

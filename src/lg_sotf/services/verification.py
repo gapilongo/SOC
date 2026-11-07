@@ -56,7 +56,7 @@ from lg_sotf.domain.connectors import VerificationResult
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, ReadOnlyViolation
 from lg_sotf.integrations.microsoft.odata import InvalidTarget
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.services.connectors.routing import RoutingSnapshot
 from lg_sotf.services.response import ActionRequestError, ResponseService, bounded_detail
 
@@ -127,7 +127,9 @@ class VerificationService:
                     try:
                         await self.check(tenant_id, action_id, snapshot=await snapshot(tenant_id))
                     except Exception as exc:  # noqa: BLE001 - the claim lease brings it back later
-                        log.warning("verification.check_failed", error_type=type(exc).__name__)
+                        log_failure(
+                            log, "verification.check_failed", exc, level="warning", error_type=type(exc).__name__
+                        )
 
         await asyncio.gather(*(run(t, a) for t, a in due))
         return len(due)

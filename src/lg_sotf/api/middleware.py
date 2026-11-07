@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, List, MutableMapping, Optiona
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from lg_sotf.api.errors import BodyTooLarge, error_body
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_http_request
 
 log = get_logger("lg_sotf.api.access")
@@ -116,8 +116,8 @@ class RequestContextMiddleware:
         with bound_context(request_id=rid):
             try:
                 await self.app(scope, receive, send_wrapper)
-            except Exception as exc:
-                log.error("api.unhandled_error", error_type=type(exc).__name__, exc_info=exc)
+            except Exception as exc:  # noqa: BLE001 - last resort: any failure becomes a logged 500
+                log_failure(log, "api.unhandled_error", exc, error_type=type(exc).__name__)
                 if scope["type"] == "http" and not status_holder["started"]:
                     await send_error(send_wrapper, 500, "internal_error", "internal server error")
                 elif scope["type"] == "http":

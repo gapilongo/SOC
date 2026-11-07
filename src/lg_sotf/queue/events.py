@@ -28,7 +28,7 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from lg_sotf.db.tenancy import validate_tenant_id
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -323,7 +323,7 @@ class _Hub:
             raise
         except Exception as exc:
             # Unexpected: end every subscription so no consumer waits forever; the next subscribe restarts.
-            log.error("events.reader_failed", error=type(exc).__name__)
+            log_failure(log, "events.reader_failed", exc)
             for subs in list(self._subs.values()):
                 for sub in list(subs):
                     self._detach(sub)
@@ -337,7 +337,7 @@ class _Hub:
                 try:
                     self._pubsub = await self._open()
                 except _REDIS_ERRORS as exc:
-                    log.warning("events.reconnect_failed", error=type(exc).__name__, retry_in_s=delay)
+                    log_failure(log, "events.reconnect_failed", exc, level="warning", retry_in_s=delay)
                     await asyncio.sleep(delay)
                     delay = min(delay * 2, _RECONNECT_MAX_S)
                     continue
@@ -346,7 +346,7 @@ class _Hub:
             try:
                 message = await self._pubsub.get_message(ignore_subscribe_messages=True, timeout=_POLL_TIMEOUT_S)
             except _REDIS_ERRORS as exc:
-                log.warning("events.connection_lost", error=type(exc).__name__)
+                log_failure(log, "events.connection_lost", exc, level="warning")
                 broken, self._pubsub = self._pubsub, None
                 try:
                     await broken.aclose()

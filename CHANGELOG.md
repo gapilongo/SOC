@@ -246,6 +246,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Failure logs never carry the exception message (ADR-0005). An unhandled
+  API error (`api.unhandled_error`) is no longer logged with a traceback,
+  which quoted the message of the exception and of every exception chained
+  to it, and the source line of every frame. The record keeps `error_type`
+  and now carries `error` (the same type name), `stack` (the innermost 15
+  frames as `module:lineno in func`, one per line, without source text)
+  and `cause_types`. The workflow, worker, scheduler, services, integrations, MCP,
+  eval, ingestion, queue, LLM and other API failure logs, which already
+  logged only the type, gain the same three fields; their event names and
+  existing fields are unchanged. To find where a 500 came from, search
+  `event=api.unhandled_error` and read `stack` instead of a `Traceback`.
+- Error text that is stored or shown is now redacted before it is cut to
+  length: a run's and a source's `last_error`, an outbox delivery's and a
+  ticket sync's error, a ticketing receiver's error body, the ticket
+  connector's `detail`, eval and backtest item errors, and the MCP server's
+  messages for errors the LG-SOTF API returned. Before, run errors and
+  receiver error bodies were cut first, so a token straddling the cut could
+  slip past the redaction patterns; eval and backtest errors and ticket
+  details were cut and never redacted; and the MCP client did not redact the
+  API's error messages at all. Each limit now covers the whole text,
+  including the error type name (300 characters for runs, sources, eval and
+  MCP, 1,000 for deliveries and ticket syncs).
 - OIDC sign-in now reads the identity provider's discovery and key (JWKS)
   documents up to their 256 KiB limit and stops there. Before, the API
   downloaded the whole response into memory and only then checked its size,

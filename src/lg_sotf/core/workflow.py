@@ -43,7 +43,7 @@ from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import InvalidResumePayload, WorkflowError
 from lg_sotf.llm import TokenBudget
 from lg_sotf.models.vocabulary import Decision
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.services.escalation import EscalationService
@@ -409,7 +409,7 @@ class WorkflowEngine:
         try:
             await self.graph.ainvoke(graph_input, config, durability="sync")
         except Exception as exc:
-            log.error("workflow.run_failed", error_type=type(exc).__name__)
+            log_failure(log, "workflow.run_failed", exc, error_type=type(exc).__name__)
             await self._mark_failed(tenant_id, alert_id)
             raise
         snapshot = await self.graph.aget_state(config)
@@ -433,7 +433,7 @@ class WorkflowEngine:
         try:
             removed = await self._checkpointer.aprune_thread(config["configurable"]["thread_id"])
         except Exception as exc:  # noqa: BLE001 - storage housekeeping must never fail a finished run
-            log.warning("workflow.checkpoint_prune_failed", error_type=type(exc).__name__)
+            log_failure(log, "workflow.checkpoint_prune_failed", exc, level="warning", error_type=type(exc).__name__)
             return
         log.debug("workflow.checkpoints_pruned", removed=removed)
 
@@ -473,6 +473,6 @@ class WorkflowEngine:
             await self.repos.alerts.update_status(tenant_id, alert_id, "failed")
         except (DatabaseError, OSError) as exc:
             # The original node error is what the worker must see; this write is secondary.
-            log.error("workflow.mark_failed_error", error_type=type(exc).__name__)
+            log_failure(log, "workflow.mark_failed_error", exc, error_type=type(exc).__name__)
             return
         await publish_event(self._events, "alert.updated", tenant_id, alert_id, {"status": "failed"})

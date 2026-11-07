@@ -35,7 +35,7 @@ from lg_sotf.api.auth.principal import Principal, role_at_least
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
-from lg_sotf.observability.logging import bind_context, get_logger
+from lg_sotf.observability.logging import bind_context, get_logger, log_failure
 from lg_sotf.queue.events import SubscriberLimitReached, SubscriberQuotaReached
 
 log = get_logger(__name__)
@@ -187,7 +187,7 @@ async def _serve(
             try:
                 code = await _still_authorized(ctx, token, principal)
             except Exception as exc:  # noqa: BLE001 - a database/Redis blip must not drop every socket
-                log.warning("ws.revalidate_failed", error_type=type(exc).__name__)
+                log_failure(log, "ws.revalidate_failed", exc, level="warning", error_type=type(exc).__name__)
                 continue
             if code is not None:
                 log.info("ws.principal_revoked", code=code)
@@ -208,6 +208,6 @@ async def _serve(
             return CLOSE_POLICY
         if isinstance(exc, (WebSocketDisconnect, RuntimeError, OSError)):
             return None
-        log.warning("ws.failed", error_type=type(exc).__name__)
+        log_failure(log, "ws.failed", exc, level="warning", error_type=type(exc).__name__)
         return 1011
     return finished.result()

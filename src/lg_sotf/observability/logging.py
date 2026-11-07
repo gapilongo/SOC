@@ -9,6 +9,9 @@ credentials from it; formatted tracebacks are redacted as well. Numeric values
 under plural credential names (``refresh_tokens=12`` in a retention report)
 are counts, not secrets, and are kept; a singular name (``token``,
 ``password``) still hides any value.
+
+A caught exception is logged with :func:`log_failure`: the error type, a
+frames-only stack and the cause types, never the message (ADR-0005).
 """
 
 from __future__ import annotations
@@ -16,12 +19,14 @@ from __future__ import annotations
 import logging
 import re
 import sys
+import traceback
+from collections import deque
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
 from enum import Enum
 from pathlib import PurePath
-from typing import Any, Iterator, Mapping, MutableMapping, Optional, TextIO
+from typing import Any, Iterator, Literal, Mapping, MutableMapping, Optional, Protocol, TextIO
 from uuid import UUID
 
 import structlog
@@ -235,6 +240,75 @@ def is_configured() -> bool:
 def get_logger(name: Optional[str] = None, **initial: Any) -> structlog.stdlib.BoundLogger:
     logger: structlog.stdlib.BoundLogger = structlog.stdlib.get_logger(name)
     return logger.bind(**initial) if initial else logger
+
+
+STACK_FRAMES = 15
+_MAX_CAUSES = 8
+FailureLevel = Literal["debug", "info", "warning", "error", "critical"]
+# Written by log_failure; a caller field of the same name is ignored so the message can never ride along.
+FAILURE_FIELDS = ("error", "stack", "cause_types")
+
+
+class _FailureLogger(Protocol):
+    def debug(self, event: str, **kw: Any) -> Any: ...
+    def info(self, event: str, **kw: Any) -> Any: ...
+    def warning(self, event: str, **kw: Any) -> Any: ...
+    def error(self, event: str, **kw: Any) -> Any: ...
+    def critical(self, event: str, **kw: Any) -> Any: ...
+
+
+def stack_summary(exc: BaseException, limit: int = STACK_FRAMES) -> list[str]:
+    """The innermost ``limit`` frames of ``exc``'s traceback as ``module:lineno in func``.
+
+    Built from code objects only: no source line is read, so nothing the
+    failing line quoted (a literal, a formatted message) reaches the log.
+    """
+    frames: deque[str] = deque(maxlen=limit)
+    for frame, lineno in traceback.walk_tb(exc.__traceback__):
+        code = frame.f_code
+        module = frame.f_globals.get("__name__", "?")
+        frames.append(f"{module}:{lineno} in {getattr(code, 'co_qualname', code.co_name)}")
+    return list(frames)
+
+
+def cause_types(exc: BaseException) -> list[str]:
+    """Type names along the chain Python prints: ``__cause__``, else ``__context__`` unless suppressed."""
+    out: list[str] = []
+    seen = {id(exc)}
+    current: Optional[BaseException] = exc
+    while current is not None and len(out) < _MAX_CAUSES:
+        nxt = current.__cause__ if current.__cause__ is not None else (
+            None if current.__suppress_context__ else current.__context__
+        )
+        if nxt is None or id(nxt) in seen:
+            break
+        seen.add(id(nxt))
+        out.append(type(nxt).__name__)
+        current = nxt
+    return out
+
+
+def failure_fields(exc: BaseException) -> dict[str, Any]:
+    """The fields :func:`log_failure` adds: the error type, a frames-only stack and the cause types.
+
+    ``stack`` is one string, outermost frame first, one frame per line: the
+    console renderer prints a ``stack`` field as a block and requires text.
+    """
+    return {"error": type(exc).__name__, "stack": "\n".join(stack_summary(exc)), "cause_types": cause_types(exc)}
+
+
+def log_failure(
+    logger: _FailureLogger, event: str, exc: BaseException, *, level: FailureLevel = "error", **fields: Any
+) -> None:
+    """Log a caught failure without its message (ADR-0005).
+
+    Exception messages can quote JWTs, API keys and alert text, so the record
+    carries ``error`` (the type name), ``stack`` (:func:`stack_summary`) and
+    ``cause_types``, never ``str(exc)`` or a formatted traceback. Pass the
+    event's other fields as keywords; ``error``, ``stack`` and
+    ``cause_types`` are always the ones computed here.
+    """
+    getattr(logger, level)(event, **{**fields, **failure_fields(exc)})
 
 
 def bind_context(**values: Any) -> None:

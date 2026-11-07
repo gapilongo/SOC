@@ -69,7 +69,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services import tenancy
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
@@ -457,7 +457,7 @@ async def _flush_usage(ctx: ApiContext) -> None:
     try:
         await get_usage_recorder(ctx.settings).flush(sink)
     except Exception as exc:  # noqa: BLE001 - the rows stay buffered for the next flush
-        log.warning("api.usage_flush_failed", error_type=type(exc).__name__)
+        log_failure(log, "api.usage_flush_failed", exc, level="warning", error_type=type(exc).__name__)
 
 
 @router.post("/llm/test", response_model=LLMTestOut, summary="Send a tiny probe to the fast and deep model tiers")

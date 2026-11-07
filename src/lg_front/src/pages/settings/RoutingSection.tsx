@@ -62,7 +62,7 @@ export function RoutingSection({ data }: { data: TenantSettingsOut }) {
       {q.isPending && <LoadingState label="Loading routes" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />}
       {routes.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Response routes</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
@@ -75,7 +75,7 @@ export function RoutingSection({ data }: { data: TenantSettingsOut }) {
             <tbody>
               {routes.map(([type, route]) => (
                 <tr key={type} className="border-b border-subtle align-top">
-                  <th scope="row" className="px-2 py-1 text-left font-normal text-fg">
+                  <th scope="row" className="whitespace-nowrap px-2 py-1 text-left font-normal text-fg">
                     {humanize(type)}
                   </th>
                   <td className="px-2 py-1 text-xs text-secondary">
@@ -87,6 +87,7 @@ export function RoutingSection({ data }: { data: TenantSettingsOut }) {
                       label={<span className="sr-only">Route for {humanize(type)}</span>}
                       value={choice[type] ?? ''}
                       onChange={(e) => setChoice({ ...choice, [type]: e.target.value })}
+                      className="min-w-[8.5rem]"
                     >
                       <option value="">auto</option>
                       {ROUTE_NAMES.map((name) => (

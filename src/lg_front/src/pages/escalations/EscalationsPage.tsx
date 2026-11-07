@@ -80,7 +80,7 @@ function useSelection(scope: string, enabled: boolean) {
 function Views({ params, breaching }: { params: URLSearchParams; breaching: number | null }) {
   const current = currentView(params);
   return (
-    <nav aria-label="Escalation views" className="overflow-x-auto border-b border-subtle">
+    <nav aria-label="Escalation views" className="relative overflow-x-auto border-b border-subtle">
       <ul className="flex gap-1">
         {VIEWS.map((v) => {
           const on = current?.id === v.id;
