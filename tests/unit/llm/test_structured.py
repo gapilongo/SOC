@@ -541,8 +541,8 @@ async def test_a_wrapped_gemini_503_is_retried(make_settings: Callable[..., Sett
 
 
 def _llm_events(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The ``llm.*`` events, without the timing fields that vary between runs."""
-    varying = {"latency_ms", "delay_s", "timestamp"}
+    """The ``llm.*`` events, without the timing fields and the stack, which vary between runs."""
+    varying = {"latency_ms", "delay_s", "timestamp", "stack"}
     return [{k: v for k, v in e.items() if k not in varying} for e in logs if str(e.get("event", "")).startswith("llm.")]
 
 
@@ -554,13 +554,15 @@ async def test_log_events_of_a_retried_then_failed_call(make_settings: Callable[
     stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=10)
     with capture_logs() as logs, pytest.raises(_StatusError):
         await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s, tally=tally)
-    common = {"agent": "analysis", "tier": "deep", "model": "claude-opus-5-5", "error_type": "_StatusError", "attempt": 1}
+    common = {"agent": "analysis", "tier": "deep", "model": "claude-opus-5-5", "error_type": "_StatusError", "attempt": 1,
+              "error": "_StatusError", "cause_types": []}
     assert _llm_events(logs) == [
         {**common, "event": "llm.call_retrying", "retry": 1, "log_level": "warning"},
         {**common, "event": "llm.call_retrying", "retry": 2, "log_level": "warning"},
         {**common, "event": "llm.call_failed", "log_level": "warning"},
     ]
     assert all(e["delay_s"] > 0 for e in logs if e["event"] == "llm.call_retrying")
+    assert all(" in " in e["stack"] for e in logs if e["event"].startswith("llm.call_"))
     assert _rows()["analysis"]["errors"] == 3 and tally.by_agent["analysis"].errors == 3
 
 

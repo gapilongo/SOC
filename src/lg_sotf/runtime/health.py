@@ -22,7 +22,7 @@ from starlette.routing import Route
 
 from lg_sotf.db.pool import Database
 from lg_sotf.ingestion.metrics import REGISTRY as INGESTION_REGISTRY
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import render_latest
 
 log = get_logger(__name__)
@@ -60,7 +60,7 @@ def build_health_app(checks: Dict[str, ReadinessCheck], live: Optional[LivenessC
                 results[name] = "ok"
             except Exception as exc:  # noqa: BLE001 - any failure means not ready; reported, not raised
                 results[name] = "error"
-                log.warning("health.not_ready", dependency=name, error=type(exc).__name__)
+                log_failure(log, "health.not_ready", exc, level="warning", dependency=name)
         ok = all(v == "ok" for v in results.values())
         return JSONResponse(
             {"status": "ok" if ok else "unavailable", "checks": results}, status_code=200 if ok else 503

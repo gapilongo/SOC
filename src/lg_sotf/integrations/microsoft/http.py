@@ -88,7 +88,7 @@ from lg_sotf.net.egress import Resolver, egress_policy, system_resolve
 from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 if TYPE_CHECKING:
     from lg_sotf.integrations.microsoft.auth import AppCredentials, TokenProvider
@@ -582,9 +582,9 @@ class MicrosoftApi:
             except (httpx.TransportError, TimeoutError) as exc:
                 late = loop.time() >= deadline - 0.05
                 kind: ErrorKind = "deadline" if late else "network"
-                log.warning(
-                    "microsoft.request_error", api=self.api, method=method, error_type=type(exc).__name__,
-                    attempt=attempt + 1, request_id=client_request_id,
+                log_failure(
+                    log, "microsoft.request_error", exc, level="warning", api=self.api, method=method,
+                    error_type=type(exc).__name__, attempt=attempt + 1, request_id=client_request_id,
                 )
                 if not idem:
                     raise MicrosoftApiError(

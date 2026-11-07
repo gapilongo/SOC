@@ -54,7 +54,7 @@ from lg_sotf.models.vocabulary import ActionStatus, EscalationStatus
 from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.models.vocabulary import RiskLevel as Risk
 from lg_sotf.models.vocabulary import VerificationState as Verification
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services.action_views import ActionView, action_views
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import enqueue_resumes
@@ -122,7 +122,10 @@ async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequen
             if alert.fingerprint:
                 await cache.invalidate(tenant_id, alert.fingerprint)
         except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
-            log.warning("api.verdict_invalidate_failed", alert_id=alert_id, error_type=type(exc).__name__)
+            log_failure(
+                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
+                error_type=type(exc).__name__,
+            )
 
 
 @escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first, or by SLA)")

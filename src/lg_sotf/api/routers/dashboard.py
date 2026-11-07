@@ -16,7 +16,7 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import DashboardOut, UsageDayOut, UsageOut
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services import dashboard as dashboard_figures
 
 log = get_logger(__name__)
@@ -62,7 +62,7 @@ async def _tenant_summary(ctx: ApiContext, tenant_id: str, window_hours: int) ->
         if cached is not None:
             return DashboardOut.model_validate_json(cached)
     except (RedisError, OSError, TimeoutError, ValueError) as exc:
-        log.warning("dashboard.cache_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "dashboard.cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
     figures = await dashboard_figures.summary(
         ctx.repos, tenant_id, window_hours, model=dashboard_figures.llm_model(ctx.settings)
     )
@@ -70,7 +70,7 @@ async def _tenant_summary(ctx: ApiContext, tenant_id: str, window_hours: int) ->
     try:
         await ctx.redis.set(key, result.model_dump_json().encode(), ex=CACHE_TTL_S)
     except (RedisError, OSError, TimeoutError) as exc:
-        log.warning("dashboard.cache_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "dashboard.cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
     return result
 
 

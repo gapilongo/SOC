@@ -25,7 +25,7 @@ from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services import alerts as alert_changes
 
 log = get_logger(__name__)
@@ -113,13 +113,13 @@ async def alert_counts(
         if cached is not None:
             return AlertCountsOut.model_validate_json(cached)
     except (RedisError, OSError, TimeoutError, ValueError) as exc:
-        log.warning("alerts.counts_cache_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "alerts.counts_cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
     counts = await ctx.repos.views.alert_view_counts(principal.tenant_id, start, end)
     result = AlertCountsOut(by_status=counts, closed_from=start, closed_to=end, generated_at=now)
     try:
         await ctx.redis.set(key, result.model_dump_json().encode(), ex=COUNTS_CACHE_TTL_S)
     except (RedisError, OSError, TimeoutError) as exc:
-        log.warning("alerts.counts_cache_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "alerts.counts_cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
     return result
 
 

@@ -41,7 +41,7 @@ from lg_sotf.mcp.protocol import (
     valid_id,
 )
 from lg_sotf.mcp.tools import text_result
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -105,11 +105,11 @@ async def serve(server: McpServer, reader: Reader, write: Writer) -> None:  # no
             await write(data)
 
     async def internal_error(exc: Exception, request_id: Optional[RequestId]) -> None:
-        log.error("mcp.message_failed", error_type=type(exc).__name__)
+        log_failure(log, "mcp.message_failed", exc, error_type=type(exc).__name__)
         try:
             await send(error_response(request_id, INTERNAL_ERROR, "internal error"))
         except Exception as send_exc:  # noqa: BLE001 - best effort: the session goes on
-            log.error("mcp.response_failed", error_type=type(send_exc).__name__)
+            log_failure(log, "mcp.response_failed", send_exc, error_type=type(send_exc).__name__)
 
     async def run_call(request_id: RequestId, message: Dict[str, Any]) -> None:
         try:

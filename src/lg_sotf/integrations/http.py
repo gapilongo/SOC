@@ -32,7 +32,7 @@ from lg_sotf.net.egress import DestinationPolicy, Resolver, egress_policy, syste
 from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify, build_verify
-from lg_sotf.security.redaction import redact_text
+from lg_sotf.security.redaction import safe_text
 from lg_sotf.settings import Settings
 
 USER_AGENT = "lg-sotf-integrations/1"
@@ -81,10 +81,8 @@ class HttpResult:
 
 
 def error_snippet(body: bytes) -> str:
-    """A receiver's error body, redacted and truncated, for ``last_error``."""
-    text = body[:4_096].decode("utf-8", "replace")
-    text, _ = redact_text(" ".join(text.split()))
-    return text[:MAX_ERROR_BODY_CHARS]
+    """A receiver's error body for ``last_error``: redacted as a whole (the body is capped), then truncated."""
+    return safe_text(body.decode("utf-8", "replace"), MAX_ERROR_BODY_CHARS)
 
 
 def tls_verify(config: Mapping[str, Any], *, contexts: TlsContexts = PROCESS_TLS) -> Verify:

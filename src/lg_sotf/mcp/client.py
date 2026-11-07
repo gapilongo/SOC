@@ -39,7 +39,8 @@ from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.net.retry import parse_retry_after
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.redaction import safe_text
 
 log = get_logger(__name__)
 
@@ -97,9 +98,7 @@ def validate_api_url(url: str) -> str:
 
 
 def _safe_text(value: Any, limit: int = MAX_ERROR_MESSAGE_CHARS) -> str:
-    text = value if isinstance(value, str) else str(value)
-    text = " ".join(text.split())
-    return text if len(text) <= limit else text[: limit - 3] + "..."
+    return safe_text(value if isinstance(value, str) else str(value), limit)
 
 
 def _error_from(response_status: int, body: bytes) -> ApiCallError:
@@ -191,7 +190,10 @@ class LgSotfApiClient:
             try:
                 status, headers, content = await self._send(method, path, query, body)
             except httpx.TransportError as exc:
-                log.warning("mcp.api_transport_error", method=method, error_type=type(exc).__name__, attempt=attempt)
+                log_failure(
+                    log, "mcp.api_transport_error", exc, level="warning", method=method, error_type=type(exc).__name__,
+                    attempt=attempt,
+                )
                 if last:
                     raise ApiCallError(
                         f"the LG-SOTF API could not be reached ({type(exc).__name__}); check LG_SOTF_MCP__API_URL"

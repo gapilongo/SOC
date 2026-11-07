@@ -32,7 +32,7 @@ from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.plan_context import plan_context
@@ -148,7 +148,7 @@ class WorkflowNodes:
                         data=digest,
                     )
                 except Exception as exc:
-                    log.warning("workflow.node_failed", error_type=type(exc).__name__)
+                    log_failure(log, "workflow.node_failed", exc, level="warning", error_type=type(exc).__name__)
                     raise
                 finally:
                     observe_node(name, time.perf_counter() - started)

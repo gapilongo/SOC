@@ -46,7 +46,7 @@ from lg_sotf.llm import (
 )
 from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
 from lg_sotf.settings import Settings, get_settings
 
@@ -198,7 +198,7 @@ class BaseAgent:
             log.warning("agent.llm_refused", agent=agent, category=category)
             return LLMResult(skipped="refusal", notes=[f"{agent}: {REFUSAL_NOTE}"], refusal_category=category)
         except LLMError as exc:
-            log.warning("agent.llm_unusable", agent=agent, error_type=type(exc).__name__)
+            log_failure(log, "agent.llm_unusable", exc, level="warning", agent=agent, error_type=type(exc).__name__)
             return LLMResult(skipped=type(exc).__name__, notes=[f"{agent}: LLM output unusable, rules only"])
         return LLMResult(value=value)
 
@@ -262,4 +262,7 @@ class AccountedRun:
             try:
                 await persist_llm_accounting(self.ctx, budget_was_exceeded=self._budget_was_exceeded)
             except Exception as persist_exc:  # noqa: BLE001 - never mask the run's own error
-                log.warning("agent.llm_accounting_failed", error_type=type(persist_exc).__name__)
+                log_failure(
+                    log, "agent.llm_accounting_failed", persist_exc, level="warning",
+                    error_type=type(persist_exc).__name__,
+                )

@@ -60,8 +60,9 @@ from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary
 from lg_sotf.models.vocabulary import DISPOSITIONS
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -328,8 +329,10 @@ class HistoryReplayer:
             result.error = f"replay timed out after {self.run_timeout_s:.0f} s"
         except Exception as exc:  # noqa: BLE001 - one failing alert must not stop the backtest
             result.status = "error"
-            result.error = f"{type(exc).__name__}: {str(exc)[:200]}"[:MAX_ERROR_CHARS]
-            log.warning("backtest.item_failed", alert_id=alert.id, error_type=type(exc).__name__)
+            result.error = safe_error_text(exc, MAX_ERROR_CHARS)
+            log_failure(
+                log, "backtest.item_failed", exc, level="warning", alert_id=alert.id, error_type=type(exc).__name__
+            )
         result.latency_s = time.perf_counter() - started
         return result
 

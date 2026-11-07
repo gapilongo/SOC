@@ -18,7 +18,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from lg_sotf.api.errors import ApiError
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -65,7 +65,9 @@ class RateLimiter:
                 pipe.expire(key, window_s + 1, nx=True)
                 count, _ = await pipe.execute()
         except (RedisError, OSError, TimeoutError) as exc:
-            log.warning("ratelimit.unavailable", bucket=bucket, error_type=type(exc).__name__)
+            log_failure(
+                log, "ratelimit.unavailable", exc, level="warning", bucket=bucket, error_type=type(exc).__name__
+            )
             return RateDecision(True, limit, limit, retry_after)
         count = int(count)
         return RateDecision(count <= limit, limit, max(0, limit - count), retry_after)

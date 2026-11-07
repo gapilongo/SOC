@@ -12,7 +12,7 @@ edited afterwards except to mark it superseded by a newer one.
 | 0002 | Module boundaries, size and complexity budgets; move PRs separate from behaviour PRs | Reserved (roadmap G5) |
 | [0003](0003-data-access-and-audit.md) | Data access: SQL only in repositories, services own transactions, audit in the same transaction | Accepted |
 | [0004](0004-domain-vocabulary.md) | Domain vocabulary: `Literal` over `StrEnum`, frozen migrations | Accepted |
-| 0005 | Exception text is never logged | Reserved (X1) |
+| [0005](0005-exception-text-never-logged.md) | Exception text is never logged | Accepted |
 | [0006](0006-encryption-keys-validated-at-startup.md) | Encryption keys are validated at startup in every role | Accepted |
 | [0007](0007-egress-policy-in-net.md) | Egress policy lives in `lg_sotf.net`, with one strict and one lenient reader of the ingestion section | Accepted |
 | [0008](0008-remove-tracing.md) | Remove tracing until someone consumes traces | Accepted |

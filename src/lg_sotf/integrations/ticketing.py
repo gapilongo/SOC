@@ -40,6 +40,7 @@ from lg_sotf.integrations.events import alert_summary, build_event, clean_text, 
 from lg_sotf.integrations.http import DeliveryError, HttpResult, IntegrationHttp, tls_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.security.redaction import safe_text
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -563,7 +564,7 @@ class TicketConnector:
         except (DeliveryError, IntegrationConfigError) as exc:
             code = getattr(exc, "code", "integration_misconfigured")
             log.warning("integrations.create_ticket_failed", error=code)
-            return ConnectorResult("failed", {**base, "error": code, "detail": str(exc)[:300]})
+            return ConnectorResult("failed", {**base, "error": code, "detail": safe_text(str(exc), 300)})
         return ConnectorResult(
             "succeeded", {**base, "ticket": ticket.external_key, "url": ticket.external_url, "created": created}
         )

@@ -21,7 +21,7 @@ import asyncpg
 
 from lg_sotf.db import locks
 from lg_sotf.db.pool import build_ssl_arg, owner_dsn
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -136,7 +136,7 @@ class LeaderLease:
                 "SELECT pg_try_advisory_lock($1::int, $2::int)", *LEADER_KEY, timeout=self._check_timeout_s
             )
         except (OSError, TimeoutError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-            log.warning("leader.acquire_failed", error=type(exc).__name__)
+            log_failure(log, "leader.acquire_failed", exc, level="warning")
             await self._drop_connection()
             return False
         if acquired:
@@ -151,7 +151,7 @@ class LeaderLease:
         try:
             return bool(await self._conn.fetchval(_HOLDS_LOCK_SQL, *LEADER_KEY, timeout=self._check_timeout_s))
         except (OSError, TimeoutError, asyncpg.PostgresError, asyncpg.InterfaceError) as exc:
-            log.warning("leader.check_failed", error=type(exc).__name__)
+            log_failure(log, "leader.check_failed", exc, level="warning")
             return False
 
     async def _step_down(self, reason: str) -> None:

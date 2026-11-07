@@ -55,7 +55,7 @@ from lg_sotf.llm import (
 from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import model_provenance
 from lg_sotf.llm.schema import clipped_str
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -468,10 +468,10 @@ async def draft_narrative(
     except LLMRefusal:
         return NarrativeResult(None, "the model declined to write a narrative")
     except LLMError as exc:
-        log.warning("nis2.narrative_unusable", error_type=type(exc).__name__)
+        log_failure(log, "nis2.narrative_unusable", exc, level="warning", error_type=type(exc).__name__)
         return NarrativeResult(None, "the model's answer could not be used")
     except Exception as exc:  # noqa: BLE001 - provider/transport errors must not fail the deterministic draft
-        log.warning("nis2.narrative_failed", error_type=type(exc).__name__)
+        log_failure(log, "nis2.narrative_failed", exc, level="warning", error_type=type(exc).__name__)
         return NarrativeResult(None, "the model could not be reached")
     provenance = model_provenance(model, tier)
     return NarrativeResult(

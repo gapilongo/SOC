@@ -52,13 +52,13 @@ from lg_sotf.db.repos import LLMUsageDelta, Repositories, WorkflowRun
 from lg_sotf.db.repos.runs import WAITING_RUN_STATUSES
 from lg_sotf.errors import InvalidResumePayload
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import record_run
 from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.queue.events import make_event
 from lg_sotf.queue.streams import Message
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
-from lg_sotf.security.redaction import redact_text
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -112,16 +112,12 @@ def default_worker_id() -> str:
 
 
 def sanitize_error(exc: BaseException) -> str:
-    """``Type: message`` short enough for ``workflow_runs.last_error``, with credentials redacted.
+    """``Type: message`` for ``workflow_runs.last_error``: redacted, one line, at most 300 chars.
 
-    Exception messages can quote input, so they are cut short; never log or
-    store the full text.
+    Exception messages can quote input, so they are cut short; never log the
+    text (ADR-0005).
     """
-    message = str(exc).replace("\n", " ").strip()
-    if len(message) > MAX_ERROR_MESSAGE_CHARS:
-        message = message[: MAX_ERROR_MESSAGE_CHARS - 3] + "..."
-    message = redact_text(message)[0] if message else ""
-    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+    return safe_error_text(exc, MAX_ERROR_MESSAGE_CHARS)
 
 
 def waiting_status_to_restore(claimed_from: Optional[str], alert_status: Optional[str]) -> Optional[str]:
@@ -250,7 +246,7 @@ class Worker:
                 await self._consumer.remove_if_idle()
                 await self._consumer.withdraw()
             except Exception as exc:  # noqa: BLE001 - best-effort cleanup on shutdown
-                log.warning("worker.consumer_cleanup_failed", error=type(exc).__name__)
+                log_failure(log, "worker.consumer_cleanup_failed", exc, level="warning")
             log.info("worker.stopped", worker_id=self.worker_id)
 
     async def _announce_liveness(self) -> None:
@@ -259,7 +255,7 @@ class Worker:
             try:
                 await self._consumer.announce_alive(self._lease_s)
             except Exception as exc:  # noqa: BLE001 - a lapse only lets others claim entries; the run lease guards
-                log.warning("worker.liveness_announce_failed", error=type(exc).__name__)
+                log_failure(log, "worker.liveness_announce_failed", exc, level="warning")
 
     async def _consume(self) -> None:
         errors = 0
@@ -276,7 +272,7 @@ class Worker:
             except Exception as exc:  # noqa: BLE001 - Redis outages must not kill the worker
                 delay = _READ_ERROR_BACKOFF_S[min(errors, len(_READ_ERROR_BACKOFF_S) - 1)]
                 errors += 1
-                log.warning("worker.read_failed", error=type(exc).__name__, retry_in_s=delay)
+                log_failure(log, "worker.read_failed", exc, level="warning", retry_in_s=delay)
                 await self._sleep_unless_stopped(delay)
                 continue
             errors = 0
@@ -365,7 +361,7 @@ class Worker:
         try:
             await self._consumer.requeue(msg)
         except Exception as exc:  # noqa: BLE001 - the entry stays pending and is reclaimed later
-            log.warning("worker.defer_failed", error=type(exc).__name__)
+            log_failure(log, "worker.defer_failed", exc, level="warning")
             return
         self.stats.deferred += 1
 
@@ -387,7 +383,7 @@ class Worker:
             log.warning("worker.run_cancelled", entry_id=msg.entry_id)
             raise
         except Exception as exc:  # noqa: BLE001 - unexpected bookkeeping failure; the entry is retried
-            log.error("worker.message_failed", entry_id=msg.entry_id, error=type(exc).__name__)
+            log_failure(log, "worker.message_failed", exc, entry_id=msg.entry_id)
         finally:
             self._release_tenant(msg.tenant_id)
 
@@ -402,7 +398,7 @@ class Worker:
         except NotFound:
             active = True  # runs.start finds no run and handles the message
         except Exception as exc:  # noqa: BLE001 - runs.start surfaces a real database outage
-            log.warning("worker.tenant_status_unavailable", error=type(exc).__name__)
+            log_failure(log, "worker.tenant_status_unavailable", exc, level="warning")
             return True
         if len(self._tenant_status) > 10_000:
             self._tenant_status.clear()
@@ -527,7 +523,7 @@ class Worker:
             try:
                 await self._consumer.requeue(msg, count_attempt=True)
             except Exception as exc:  # noqa: BLE001 - the pending entry is reclaimed after the visibility timeout
-                log.warning("worker.resume_retry_failed", error=type(exc).__name__)
+                log_failure(log, "worker.resume_retry_failed", exc, level="warning")
 
         task = asyncio.create_task(retry(), name=f"resume-retry:{msg.entry_id}")
         self._retries.add(task)
@@ -551,7 +547,7 @@ class Worker:
         try:
             await self._repos.runs.mark_waiting(msg.tenant_id, msg.alert_id, status, worker_id=self.worker_id)
         except (LeaseLost, InvalidTransition) as exc:
-            log.warning("worker.restore_waiting_skipped", error=type(exc).__name__)
+            log_failure(log, "worker.restore_waiting_skipped", exc, level="warning")
             return False
         return True
 
@@ -568,11 +564,11 @@ class Worker:
                     msg.tenant_id, msg.alert_id, claimed.last_error or error, worker_id=self.worker_id
                 )
             except (LeaseLost, InvalidTransition) as err:
-                log.warning("worker.fail_not_recorded", error=type(err).__name__)
+                log_failure(log, "worker.fail_not_recorded", err, level="warning")
         await self._consumer.dead_letter(msg, f"rejected: {error}")
         self.stats.dead_lettered += 1
         record_run("rejected")
-        log.warning("worker.message_rejected", kind=msg.kind, error=type(exc).__name__, run_status=restore or "failed")
+        log_failure(log, "worker.message_rejected", exc, level="warning", kind=msg.kind, run_status=restore or "failed")
 
     async def _handle_exhausted(self, msg: Message, claimed: WorkflowRun) -> None:
         """The run used up its attempts: dead-letter it (or put it back to waiting) and the message."""
@@ -595,7 +591,7 @@ class Worker:
                     ),
                 )
             except Exception as exc:  # noqa: BLE001 - events are best-effort notifications
-                log.warning("worker.event_publish_failed", error=type(exc).__name__)
+                log_failure(log, "worker.event_publish_failed", exc, level="warning")
         await self._consumer.dead_letter(msg, reason)
         self.stats.dead_lettered += 1
         record_run("dead_lettered")
@@ -657,7 +653,7 @@ class Worker:
                     msg.tenant_id, msg.alert_id, self.worker_id, lease_s=self._lease_s
                 )
             except Exception as exc:  # noqa: BLE001 - transient DB errors; give up only once the lease has run out
-                log.warning("worker.heartbeat_failed", error=type(exc).__name__)
+                log_failure(log, "worker.heartbeat_failed", exc, level="warning")
                 held = self._clock() - last_ok < self._lease_s
             else:
                 if held:
@@ -671,7 +667,7 @@ class Worker:
             try:
                 await self._consumer.touch(msg)
             except Exception as exc:  # noqa: BLE001 - worst case the entry is reclaimed as a duplicate
-                log.warning("worker.touch_failed", error=type(exc).__name__)
+                log_failure(log, "worker.touch_failed", exc, level="warning")
 
     async def _record_failure(self, msg: Message, exc: BaseException) -> None:
         outcome = "timeout" if isinstance(exc, TimeoutError) else "failed"
@@ -680,8 +676,8 @@ class Worker:
             error = f"TimeoutError: run exceeded {self._cfg.run_timeout_s:g}s"
         self.stats.failed += 1
         record_run(outcome)
-        log.warning(
-            "worker.run_failed", outcome=outcome, error=type(exc).__name__, kind=msg.kind, deliveries=msg.deliveries
+        log_failure(
+            log, "worker.run_failed", exc, level="warning", outcome=outcome, kind=msg.kind, deliveries=msg.deliveries
         )
         try:
             await self._repos.runs.fail(msg.tenant_id, msg.alert_id, error, worker_id=self.worker_id)
@@ -715,7 +711,7 @@ class Worker:
         try:
             return await get_usage_recorder().flush(sink)
         except Exception as exc:  # noqa: BLE001 - retried on the next flush
-            log.warning("worker.usage_flush_failed", error=type(exc).__name__)
+            log_failure(log, "worker.usage_flush_failed", exc, level="warning")
             return 0
 
     async def _flush_usage_periodically(self) -> None:

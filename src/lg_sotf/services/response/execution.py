@@ -40,7 +40,7 @@ from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.domain.actions import ACTION_CATALOG, BLAST_RADIUS_REASON, HOURLY_CAP_REASON, guardrail_result
 from lg_sotf.domain.connectors import call_deadline
 from lg_sotf.models.vocabulary import SCHEDULER_OWNER, WORKFLOW_OWNER
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services.connectors import (
     STATEFUL_CONNECTORS,
     Connector,
@@ -473,7 +473,10 @@ class ActionExecutor:
                 result = await connector.execute(executing)
         except TimeoutError as exc:
             if not scope.expired():
-                log.warning("response.connector_failed", connector=connector.name, error_type=type(exc).__name__)
+                log_failure(
+                    log, "response.connector_failed", exc, level="warning", connector=connector.name,
+                    error_type=type(exc).__name__,
+                )
                 result = ConnectorResult("failed", {"error": "connector_exception", "error_type": type(exc).__name__})
             elif connector.name in STATEFUL_CONNECTORS:
                 # A write may be in flight: the scheduler re-runs the action, and the handler reconciles.
@@ -498,7 +501,10 @@ class ActionExecutor:
             # A ledger error mid-call is not the action's outcome: the row stays executing and is run again.
             raise
         except Exception as exc:  # noqa: BLE001 - any connector failure is recorded on the ledger as 'failed'
-            log.warning("response.connector_failed", connector=connector.name, error_type=type(exc).__name__)
+            log_failure(
+                log, "response.connector_failed", exc, level="warning", connector=connector.name,
+                error_type=type(exc).__name__,
+            )
             result = ConnectorResult("failed", {"error": "connector_exception", "error_type": type(exc).__name__})
         finally:
             call_deadline.reset(token)

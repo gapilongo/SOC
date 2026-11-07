@@ -29,7 +29,7 @@ from lg_sotf.db.repos import Tenant
 from lg_sotf.db.repos._base import fetch_one
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
 from lg_sotf.integrations.config import NOTIFY_KINDS
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -104,7 +104,7 @@ async def _notifications_configured(conn: Connection, tenant_id: str) -> Optiona
                 )
             )
     except STATEMENT_ERRORS as exc:
-        log.info("onboarding.integrations_unreadable", error_type=type(exc).__name__)
+        log_failure(log, "onboarding.integrations_unreadable", exc, level="info", error_type=type(exc).__name__)
         return None
 
 
