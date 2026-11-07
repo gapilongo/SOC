@@ -60,8 +60,12 @@ import type {
   MfaConfirmOut,
   MfaEnrollOut,
   MfaStatusOut,
+  MicrosoftActionSupportOut,
   MicrosoftCapabilityCheck,
+  MicrosoftCapabilityOut,
+  MicrosoftCatalogOut,
   MicrosoftPermissionCheck,
+  MicrosoftPermissionOut,
   MicrosoftProbeCheck,
   MicrosoftTestReport,
   MicrosoftTokenCheck,
@@ -78,10 +82,12 @@ import type {
   RecoveryCodesOut,
   ReprocessOut,
   ResponsePreviewOut,
+  ResponseRoutesOut,
   RetentionLimits,
   ReviewBandOut,
   RollbackEligibility,
   RollbackOut,
+  RouteOut,
   RoutingOut,
   SampleAlertsOut,
   SourceCreateIn,
@@ -168,8 +174,12 @@ export interface ResponseContract {
   MfaConfirmOut: Response<Wire<Schemas['MfaConfirmOut']>, MfaConfirmOut>;
   MfaEnrollOut: Response<Wire<Schemas['MfaEnrollOut']>, MfaEnrollOut>;
   MfaStatusOut: Response<Wire<Schemas['MfaStatusOut']>, MfaStatusOut>;
+  MicrosoftActionSupportOut: Response<Wire<Schemas['MicrosoftActionSupportOut']>, MicrosoftActionSupportOut>;
   MicrosoftCapabilityCheck: Response<Wire<Schemas['CapabilityCheck']>, MicrosoftCapabilityCheck>;
+  MicrosoftCapabilityOut: Response<Wire<Schemas['MicrosoftCapabilityOut']>, MicrosoftCapabilityOut>;
+  MicrosoftCatalogOut: Response<Wire<Schemas['MicrosoftCatalogOut']>, MicrosoftCatalogOut>;
   MicrosoftPermissionCheck: Response<Wire<Schemas['PermissionCheck']>, MicrosoftPermissionCheck>;
+  MicrosoftPermissionOut: Response<Wire<Schemas['MicrosoftPermissionOut']>, MicrosoftPermissionOut>;
   MicrosoftProbeCheck: Response<Wire<Schemas['ProbeCheck']>, MicrosoftProbeCheck>;
   MicrosoftTestReport: Response<Wire<Schemas['MicrosoftTestReport']>, MicrosoftTestReport>;
   MicrosoftTokenCheck: Response<Wire<Schemas['TokenCheck']>, MicrosoftTokenCheck>;
@@ -183,10 +193,12 @@ export interface ResponseContract {
   RecoveryCodesOut: Response<Wire<Schemas['RecoveryCodesOut']>, RecoveryCodesOut>;
   ReprocessOut: Response<Wire<Schemas['ReprocessOut']>, ReprocessOut>;
   ResponsePreviewOut: Response<Wire<Schemas['ResponsePreviewOut']>, ResponsePreviewOut>;
+  ResponseRoutesOut: Response<Wire<Schemas['ResponseRoutesOut']>, ResponseRoutesOut>;
   RetentionLimits: Response<Wire<Schemas['RetentionLimitsOut']>, RetentionLimits>;
   ReviewBandOut: Response<Wire<Schemas['ReviewBandOut']>, ReviewBandOut>;
   RollbackEligibility: Response<Wire<Schemas['RollbackEligibilityOut']>, RollbackEligibility>;
   RollbackOut: Response<Wire<Schemas['RollbackOut']>, RollbackOut>;
+  RouteOut: Response<Wire<Schemas['RouteOut']>, RouteOut>;
   RoutingOut: Response<Wire<Schemas['RoutingOut']>, RoutingOut>;
   SampleAlertsOut: Response<Wire<Schemas['SampleAlertsOut']>, SampleAlertsOut>;
   SourceOut: Response<Wire<Schemas['SourceOut']>, SourceOut>;

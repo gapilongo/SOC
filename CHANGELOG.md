@@ -100,6 +100,17 @@ All notable changes to this project are documented here. The format follows
   fails with "password is too repetitive" or "password must be at most
   1024 characters". Before, the CLI checked only the minimum length.
   Generated bootstrap passwords already comply.
+- The OpenAPI document (`/api/v1/openapi.json`, `docs/openapi.json`) now
+  lists the allowed values of every response field drawn from a vocabulary,
+  such as alert `status` and `severity`, escalation `level`, action
+  `status`, `risk_level` and `action_type`, user `role` and API key
+  `scopes`, as an `enum`. Responses are unchanged, and clients must still
+  accept values they do not know: a newer release can add one (ADR-0009).
+  The evidence pack, `GET /readyz`, `GET /tenant/response/routes` and
+  `GET /integrations/microsoft/catalog` now publish the shape of their JSON
+  body, and the tenant export is documented as a ZIP only.
+- An action whose stored `verification` state the API process does not
+  know is now returned as is, instead of failing the request with a 500.
 - The worker and the scheduler now refuse to start when
   `security.encryption_keys` is set but holds a key that is not a valid
   Fernet key, as the API already did: `lg-sotf worker` and

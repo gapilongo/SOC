@@ -186,7 +186,9 @@ deploy does not break the UI). They are held to the API contract:
 * `npm run gen:api` turns the committed `docs/openapi.json` into
   `src/api/schema.gen.ts` (openapi-typescript, pinned). CI regenerates it and
   fails when the committed file differs, so a backend change to the OpenAPI
-  document comes with the regenerated file.
+  document comes with the regenerated file. The API advertises each response
+  vocabulary as an enum, so generated fields are string unions; the
+  hand-written `Open<T>` types stay open anyway (ADR-0009, tolerant reader).
 * `src/api/contract.check.ts`, compiled by `tsc -b`, requires every response
   schema to be assignable to its hand-written type (as sent: FastAPI includes
   every field) and every hand-written request type to be assignable to its
