@@ -173,6 +173,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- On a phone, the language-model test results under Tenant settings scroll
+  sideways and can now be reached with the keyboard too.
 - Backtests (`lg-sotf eval --from-history`) start each replay from the same
   initial state as the workflow. A tenant `llm_daily_token_budget` stored as
   `true` or `false` is now ignored by the backtest too (the install default
