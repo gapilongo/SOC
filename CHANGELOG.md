@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- An investigation trace. Every model call and every threat-intelligence or
+  history lookup of an alert's investigation is now stored, in order, with
+  the prompt and model (or tool), token counts, latency, outcome and the
+  SHA-256 of what went in and came out, plus a redacted, size-capped digest
+  of the result. Evidence packs show the steps in a new **Investigation
+  trace** section (HTML) and under `investigation` (JSON). The trace is kept
+  and deleted with its alert, and is part of the tenant data export. Database
+  migration 0010 adds the `investigation_steps` table.
+
 - Every model call now records which prompt version it sent. Each prompt has
   a name (such as `triage.assess`) and a short hash of its text and output
   schema, so a changed hash means the model was asked something different.

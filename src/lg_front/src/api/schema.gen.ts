@@ -2941,6 +2941,13 @@ export interface components {
                 [key: string]: unknown;
             };
             integrity: components["schemas"]["EvidenceIntegrityOut"];
+            /**
+             * Investigation
+             * @description The investigation trace: every LLM and tool step (prompt and model or tool, tokens, latency, input and output SHA-256, redacted result digest) and totals.
+             */
+            investigation: {
+                [key: string]: unknown;
+            };
             /** Lg Sotf Version */
             lg_sotf_version: string;
             /**

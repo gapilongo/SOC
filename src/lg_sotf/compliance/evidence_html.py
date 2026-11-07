@@ -37,11 +37,71 @@ def _model_rows(model: Mapping[str, Any]) -> List[Tuple[str, Any]]:
     ]
 
 
+def _trace_rows(steps: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for s in steps:
+        llm = s.get("kind") == "llm"
+        rows.append({
+            **s,
+            "what": f"{s.get('prompt_name')} (version {s.get('prompt_hash')})" if llm else s.get("tool"),
+            "by": f"{s.get('provider')} / {s.get('model')}" if llm else None,
+            "tokens": f"{s.get('input_tokens')} / {s.get('output_tokens')}" if llm else None,
+            "result": f"{s.get('outcome')}: {s.get('error_type')}" if s.get("error_type") else s.get("outcome"),
+        })
+    return rows
+
+
+def _trace_section(trace: Mapping[str, Any]) -> str:
+    """Every LLM and tool step of the alert's runs: prompt and model or tool, tokens, latency, output hash."""
+    totals = _obj(trace.get("totals"))
+    return h.section(
+        "Investigation trace",
+        h.kv_table(
+            [
+                ("Runs", ", ".join(str(r) for r in trace.get("runs") or []) or None),
+                ("LLM calls / tool calls", f"{totals.get('llm_steps', 0)} / {totals.get('tool_steps', 0)}"),
+                ("Tokens in / out", f"{totals.get('input_tokens', 0)} / {totals.get('output_tokens', 0)}"),
+                ("Total latency (ms)", totals.get("latency_ms", 0)),
+            ]
+        ),
+        h.table(
+            [("step_index", "Step"), ("started_at", "Started"), ("agent", "Agent"), ("kind", "Kind"),
+             ("what", "Prompt (version) / tool"), ("by", "Provider / model"), ("tokens", "Tokens in / out"),
+             ("latency_ms", "Latency (ms)"), ("result", "Outcome"), ("output_hash", "Result SHA-256")],
+            _trace_rows(trace.get("steps") or []),
+            empty="No LLM or tool step was recorded (alerts processed before the trace store record none).",
+        ),
+        h.paragraph(
+            "Inputs are not stored, only their SHA-256 (input_hash in the JSON bundle); the JSON bundle also has "
+            "each step's redacted, size-capped result digest."
+        ),
+        anchor="trace",
+    )
+
+
+def _integrity_section(integrity: Mapping[str, Any], limits: Mapping[str, Any]) -> str:
+    signature = _obj(integrity.get("signature"))
+    return h.section(
+        "Integrity",
+        h.kv_table(
+            [
+                ("bundle_sha256", integrity.get("bundle_sha256")),
+                ("Canonicalisation", integrity.get("canonicalization")),
+                ("Signature", f"{signature.get('alg')} key {signature.get('key_id')}" if signature else "unsigned"),
+                ("Truncated lists", ", ".join(k for k, v in limits.items() if v) or "none"),
+            ]
+        ),
+        h.paragraph(
+            "The digest and signature cover the JSON bundle, not this HTML rendering. Verify the JSON with "
+            "`lg-sotf evidence-verify <file>` (see docs/compliance.md)."
+        ),
+    )
+
+
 def render_evidence_html(pack: Mapping[str, Any]) -> str:
     """The pack as a standalone, print-friendly HTML document (every value escaped)."""
     alert = _obj(pack.get("alert"))
     integrity = _obj(pack.get("integrity"))
-    signature = _obj(integrity.get("signature"))
     oversight = _obj(pack.get("human_oversight"))
     osum = _obj(oversight.get("summary"))
     agents = _obj(pack.get("agents"))
@@ -113,6 +173,7 @@ def render_evidence_html(pack: Mapping[str, Any]) -> str:
         )
     agent_parts.append("<h3>Routing decision</h3>" + h.pre(agents.get("decision") or {}))
     body.append(h.section("Agent reasoning and verdicts", *agent_parts, anchor="agents"))
+    body.append(_trace_section(_obj(pack.get("investigation"))))
     enrichment = _obj(pack.get("enrichment"))
     body.append(
         h.section(
@@ -202,23 +263,7 @@ def render_evidence_html(pack: Mapping[str, Any]) -> str:
             h.pre(alert.get("raw_redacted") or {}),
         )
     )
-    body.append(
-        h.section(
-            "Integrity",
-            h.kv_table(
-                [
-                    ("bundle_sha256", integrity.get("bundle_sha256")),
-                    ("Canonicalisation", integrity.get("canonicalization")),
-                    ("Signature", f"{signature.get('alg')} key {signature.get('key_id')}" if signature else "unsigned"),
-                    ("Truncated lists", ", ".join(k for k, v in limits.items() if v) or "none"),
-                ]
-            ),
-            h.paragraph(
-                "The digest and signature cover the JSON bundle, not this HTML rendering. Verify the JSON with "
-                "`lg-sotf evidence-verify <file>` (see docs/compliance.md)."
-            ),
-        )
-    )
+    body.append(_integrity_section(integrity, limits))
     return h.document(
         f"Case evidence pack: alert {alert.get('id')}",
         body,
