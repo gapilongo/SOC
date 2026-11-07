@@ -1452,10 +1452,12 @@ export interface components {
             ] | null;
             /** Agreement Rate */
             agreement_rate: number | null;
+            agreement_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** Ai Inconclusive */
             ai_inconclusive: number;
             /** Ai Inconclusive Rate */
             ai_inconclusive_rate: number | null;
+            ai_inconclusive_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** Analyst Benign */
             analyst_benign: number;
             /** Analyst Malicious */
@@ -1473,10 +1475,12 @@ export interface components {
             ] | null;
             /** False Negative Rate */
             false_negative_rate: number | null;
+            false_negative_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** False Negatives */
             false_negatives: number;
             /** False Positive Rate */
             false_positive_rate: number | null;
+            false_positive_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** False Positives */
             false_positives: number;
             /** Samples */
@@ -2611,6 +2615,7 @@ export interface components {
             benign: number;
             /** Benign Rate */
             benign_rate: number | null;
+            benign_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** Can Propose Suppression */
             can_propose_suppression: boolean;
             /** Decided */
@@ -2972,6 +2977,12 @@ export interface components {
         };
         /** FeedbackRate */
         FeedbackRate: {
+            /** Ci High */
+            ci_high?: number | null;
+            /** Ci Low */
+            ci_low?: number | null;
+            /** N */
+            n?: number | null;
             /** Rate */
             rate: number | null;
             /** Samples */
@@ -3885,6 +3896,20 @@ export interface components {
             max_users?: number | null;
         };
         /**
+         * RateInterval
+         * @description A rate with its sample size and 95% Wilson interval; ``rate`` and the bounds are ``None`` when ``n`` is 0.
+         */
+        RateInterval: {
+            /** Ci High */
+            ci_high: number | null;
+            /** Ci Low */
+            ci_low: number | null;
+            /** N */
+            n: number;
+            /** Rate */
+            rate: number | null;
+        };
+        /**
          * ReadinessOut
          * @description ``GET /readyz``: 200 when every dependency answers, else 503 with the same body.
          */
@@ -4760,6 +4785,7 @@ export interface components {
             handled_without_human: number;
             /** Handled Without Human Rate */
             handled_without_human_rate: number | null;
+            handled_without_human_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** Human Decided */
             human_decided: number;
             /** In Progress */
@@ -4815,6 +4841,7 @@ export interface components {
             handled_without_human: number;
             /** Handled Without Human Rate */
             handled_without_human_rate: number | null;
+            handled_without_human_rate_ci?: components["schemas"]["RateInterval"] | null;
             /** Human Decided */
             human_decided: number;
             /** In Progress */

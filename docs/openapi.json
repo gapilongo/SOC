@@ -39,6 +39,16 @@
             ],
             "title": "Agreement Rate"
           },
+          "agreement_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ai_inconclusive": {
             "title": "Ai Inconclusive",
             "type": "integer"
@@ -53,6 +63,16 @@
               }
             ],
             "title": "Ai Inconclusive Rate"
+          },
+          "ai_inconclusive_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "analyst_benign": {
             "title": "Analyst Benign",
@@ -104,6 +124,16 @@
             ],
             "title": "False Negative Rate"
           },
+          "false_negative_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "false_negatives": {
             "title": "False Negatives",
             "type": "integer"
@@ -118,6 +148,16 @@
               }
             ],
             "title": "False Positive Rate"
+          },
+          "false_positive_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "false_positives": {
             "title": "False Positives",
@@ -3703,6 +3743,16 @@
             ],
             "title": "Benign Rate"
           },
+          "benign_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "can_propose_suppression": {
             "title": "Can Propose Suppression",
             "type": "boolean"
@@ -4688,6 +4738,39 @@
       },
       "FeedbackRate": {
         "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N"
+          },
           "rate": {
             "anyOf": [
               {
@@ -7199,6 +7282,56 @@
         "title": "QuotasIn",
         "type": "object"
       },
+      "RateInterval": {
+        "description": "A rate with its sample size and 95% Wilson interval; ``rate`` and the bounds are ``None`` when ``n`` is 0.",
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "required": [
+          "rate",
+          "n",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "RateInterval",
+        "type": "object"
+      },
       "ReadinessOut": {
         "description": "``GET /readyz``: 200 when every dependency answers, else 503 with the same body.",
         "properties": {
@@ -9366,6 +9499,16 @@
             ],
             "title": "Handled Without Human Rate"
           },
+          "handled_without_human_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "human_decided": {
             "title": "Human Decided",
             "type": "integer"
@@ -9553,6 +9696,16 @@
               }
             ],
             "title": "Handled Without Human Rate"
+          },
+          "handled_without_human_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "human_decided": {
             "title": "Human Decided",

@@ -11,7 +11,7 @@ import { useToast } from '../components/Toast';
 import { Button, ErrorMessage, LoadingState } from '../components/ui';
 import { downloadText } from '../lib/download';
 import { formatDateTime, formatDuration, formatInt, formatUsd } from '../lib/format';
-import { SUGGESTION_LABEL, formatHours, formatPct, formatRange } from '../lib/reports';
+import { SUGGESTION_LABEL, formatHours, formatInterval, formatPct, formatRate, notEnoughData } from '../lib/reports';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const TOP_DETECTIONS = 25;
@@ -49,7 +49,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
           1. Value
         </h2>
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4 print:grid-cols-4">
-          <PaperTile label="Handled without a human" value={formatPct(t.handled_without_human_rate)} hint={`${formatInt(t.handled_without_human)} of ${formatInt(t.handled_without_human + t.needed_human)} finished alerts`} />
+          <PaperTile label="Handled without a human" value={formatPct(t.handled_without_human_rate)} hint={`${formatInt(t.handled_without_human)} of ${formatInt(t.handled_without_human + t.needed_human)} finished alerts. ${formatInterval(t.handled_without_human_rate_ci)}`} />
           <PaperTile label="Analyst hours saved (estimate)" value={formatHours(t.analyst_hours_saved)} hint={`${r.value.minutes_per_alert} min per handled alert`} />
           <PaperTile label="Alerts ingested" value={formatInt(t.alerts_ingested)} hint={`${formatInt(t.in_progress)} still in progress`} />
           <PaperTile label="Auto-closed benign" value={formatInt(t.auto_closed_benign)} />
@@ -68,16 +68,16 @@ function Report({ r }: { r: MonthlyReportOut }) {
         </h2>
         {o.status === 'insufficient_data' && (
           <p className="mb-2 rounded-control border border-warn/60 bg-tint-warn px-3 py-2 text-sm text-warn-fg">
-            Insufficient data: {formatInt(o.samples)} analyst-decided alerts; at least {formatInt(r.accuracy.min_samples)} are needed before these rates mean much.
+            {notEnoughData(o.samples, r.accuracy.min_samples)}: too few analyst-decided alerts for these rates to mean much.
           </p>
         )}
         <p className="text-sm">
           <span className="text-2xl font-bold">{formatPct(o.false_negative_rate)}</span> false-negative rate: the AI said benign on {formatInt(o.false_negatives)} of{' '}
-          {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. <span className="text-secondary">{formatRange(o.false_negative_ci95)}</span>
+          {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. <span className="text-secondary">{formatInterval(o.false_negative_rate_ci)}</span>
         </p>
         <p className="text-sm">
-          Agreement {formatPct(o.agreement_rate)} ({formatInt(o.agreement)} of {formatInt(o.samples)}); false-positive rate {formatPct(o.false_positive_rate)}; AI inconclusive{' '}
-          {formatPct(o.ai_inconclusive_rate)}.
+          Agreement {formatRate(o.agreement_rate_ci, o.agreement_rate)}; false-positive rate (of benign) {formatRate(o.false_positive_rate_ci, o.false_positive_rate)}; AI
+          inconclusive {formatRate(o.ai_inconclusive_rate_ci, o.ai_inconclusive_rate)}.
         </p>
         {r.accuracy.by_model.length > 0 && (
           // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
@@ -98,8 +98,8 @@ function Report({ r }: { r: MonthlyReportOut }) {
                   <tr key={m.model} className="border-t border-subtle tabular-nums">
                     <td className="break-all py-1 pr-2">{m.model}</td>
                     <td className="py-1 pr-2 text-right">{formatInt(m.accuracy.samples)}</td>
-                    <td className="py-1 pr-2 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
-                    <td className="py-1 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
+                    <td className="py-1 pr-2 text-right">{formatRate(m.accuracy.agreement_rate_ci, m.accuracy.agreement_rate)}</td>
+                    <td className="py-1 text-right">{formatRate(m.accuracy.false_negative_rate_ci, m.accuracy.false_negative_rate)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -132,7 +132,7 @@ function Report({ r }: { r: MonthlyReportOut }) {
                   <td className="py-1 pr-2">{d.source_id}</td>
                   <td className="break-words py-1 pr-2">{d.rule}</td>
                   <td className="py-1 pr-2 text-right">{formatInt(d.volume)}</td>
-                  <td className="py-1 pr-2 text-right">{formatPct(d.benign_rate, 0)}</td>
+                  <td className="py-1 pr-2 text-right">{formatRate(d.benign_rate_ci, d.benign_rate, 0)}</td>
                   <td className="py-1 pr-2 text-right">{formatInt(d.analyst_false_positive)}</td>
                   <td className="py-1">
                     <strong>{d.suggestion ? SUGGESTION_LABEL[d.suggestion] : 'None'}</strong>

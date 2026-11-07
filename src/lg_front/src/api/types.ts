@@ -1157,6 +1157,17 @@ export interface LiveEvent {
 
 // ------------------------------------------------------------------ reports
 
+/**
+ * A rate with its sample size and 95% Wilson interval (`<rate>_ci` fields; the shape the eval and PoV
+ * reports share). `rate` and the bounds are null when `n` is 0.
+ */
+export interface RateInterval {
+  rate: number | null;
+  n: number;
+  ci_low: number | null;
+  ci_high: number | null;
+}
+
 /** One day (or the window's totals) of the value report; rates are fractions, null when undefined. */
 export interface ValueMetrics {
   alerts_ingested: number;
@@ -1164,6 +1175,7 @@ export interface ValueMetrics {
   needed_human: number;
   in_progress: number;
   handled_without_human_rate: number | null;
+  handled_without_human_rate_ci?: RateInterval | null;
   analyst_hours_saved: number;
   auto_closed_benign: number;
   auto_contained: number;
@@ -1223,12 +1235,20 @@ export interface AccuracyBlock {
   false_positive_rate: number | null;
   ai_inconclusive: number;
   ai_inconclusive_rate: number | null;
+  agreement_rate_ci?: RateInterval | null;
+  false_negative_rate_ci?: RateInterval | null;
+  false_positive_rate_ci?: RateInterval | null;
+  ai_inconclusive_rate_ci?: RateInterval | null;
 }
 
+/** A feedback answer rate; `n`, `ci_low` and `ci_high` make it a RateInterval (absent from older APIs). */
 export interface FeedbackRate {
   rate: number | null;
   samples: number;
   status: DataStatus;
+  n?: number | null;
+  ci_low?: number | null;
+  ci_high?: number | null;
 }
 
 export interface AccuracyReportOut {
@@ -1261,6 +1281,7 @@ export interface DetectionOut {
   decided: number;
   benign: number;
   benign_rate: number | null;
+  benign_rate_ci?: RateInterval | null;
   malicious: number;
   auto_closed: number;
   analyst_false_positive: number;

@@ -1,13 +1,19 @@
-"""Evaluation reports: one JSON document (machine-readable, gated) and a Markdown rendering."""
+"""Evaluation reports: one JSON document (machine-readable, gated) and a Markdown rendering.
+
+Every rate is rendered with its sample size and 95% Wilson interval from
+``metrics.intervals`` (``lg_sotf.domain.rates``); a report written before
+the intervals existed falls back to the bare percentage.
+"""
 
 from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf import __version__
+from lg_sotf.domain.rates import RateInterval, format_rate
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset
 from lg_sotf.eval.metrics import compute_metrics, metrics_by_split
 from lg_sotf.eval.results import PROVENANCE_FIELDS, ItemResult
@@ -131,6 +137,15 @@ def _escape(text: Any) -> str:
     return str(text).replace("|", "\\|").replace("\n", " ")
 
 
+def _rate_cell(interval: Optional[Mapping[str, Any]], value: Any, fmt: Callable[[Any], str] = _pct) -> str:
+    """``93.3% (14 of 15; 95% CI 70.2% to 98.8%)`` when the report carries the interval, else ``fmt(value)``."""
+    return fmt(value) if interval is None else format_rate(RateInterval.model_validate(interval))
+
+
+def _metric_cell(metrics: Mapping[str, Any], key: str, fmt: Callable[[Any], str]) -> str:
+    return _rate_cell((metrics.get("intervals") or {}).get(key), metrics.get(key), fmt)
+
+
 HEADLINE_ROWS = (
     ("Malicious false-negative rate (auto-closed as benign)", "malicious_false_negative_rate", _pct),
     ("Benign auto-close rate", "benign_auto_close_rate", _pct),
@@ -138,6 +153,7 @@ HEADLINE_ROWS = (
     ("High/critical closed by automation as not malicious", "high_severity_auto_closed_benign", lambda v: _num(v, 0)),
     ("High/critical closed as malicious after a policy response", "high_severity_auto_closed_malicious",
      lambda v: _num(v, 0)),
+    ("Auto-close rate (closed without a human)", "auto_close_rate", _pct),
     ("Escalation rate (analyst review requested)", "escalation_rate", _pct),
     ("Approval request rate", "approval_request_rate", _pct),
     ("Inconclusive rate", "inconclusive_rate", _pct),
@@ -154,17 +170,39 @@ HEADLINE_ROWS = (
 )
 
 
-def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]] = None) -> str:
+def _headline_lines(report: Mapping[str, Any]) -> List[str]:
+    """The headline table: every metric for all items and per split; rates carry n and a 95% Wilson interval."""
     m = report["metrics"]
+    split_names = list((report.get("splits") or {}).keys())
+    lines = ["## Headline metrics", "", "Rates: value (k of n; 95% Wilson interval).", ""]
+    lines.append("| Metric | All | " + " | ".join(split_names) + " |")
+    lines.append("|---|---|" + "---|" * len(split_names))
+    for label, key, fmt in HEADLINE_ROWS:
+        cells = [_metric_cell(m, key, fmt)]
+        cells += [_metric_cell(report["splits"][name]["metrics"], key, fmt) for name in split_names]
+        lines.append(f"| {label} | " + " | ".join(cells) + " |")
+    latency_cells = [_latency(m)] + [_latency(report["splits"][n]["metrics"]) for n in split_names]
+    lines.append("| Latency mean / p50 / p95 / max (s) | " + " | ".join(latency_cells) + " |")
+    return [*lines, ""]
+
+
+def _per_class_lines(m: Mapping[str, Any]) -> List[str]:
+    """Precision and recall per class with n and a 95% Wilson interval; F1 is not a proportion and has none."""
+    lines = ["## Per class", "", "| Class | Precision | Recall | F1 | Support | Predicted |", "|---|---|---|---|---|---|"]
+    intervals = m.get("per_class_intervals") or {}
+    for cls, s in m["per_class"].items():
+        ci = intervals.get(cls) or {}
+        precision = _rate_cell(ci.get("precision"), s["precision"], _num)
+        recall = _rate_cell(ci.get("recall"), s["recall"], _num)
+        lines.append(f"| {cls} | {precision} | {recall} | {_num(s['f1'])} | {s['support']} | {s['predicted']} |")
+    return [*lines, ""]
+
+
+def _run_lines(report: Mapping[str, Any]) -> List[str]:
+    """The "Run" table: dataset, model and selection."""
     ds = report["dataset"]
     run = report.get("run") or {}
-    lines: List[str] = ["# LG-SOTF evaluation report", ""]
-    lines.append(f"Generated {report['generated_at']} by lg-sotf {report['lg_sotf_version']}.")
-    lines.append("")
-    for note in report.get("notes") or []:
-        lines.append(f"> {note}")
-        lines.append("")
-    lines.extend(["## Run", "", "| Field | Value |", "|---|---|"])
+    lines = ["## Run", "", "| Field | Value |", "|---|---|"]
     lines.append(f"| Dataset | `{_escape(ds.get('path'))}` ({ds['items']} items, sha256 `{str(ds.get('sha256'))[:12]}`) |")
     lines.append(f"| Synthetic | {'yes' if ds.get('synthetic') else 'no'} |")
     lines.append(f"| Splits | {', '.join(f'{k}: {v}' for k, v in (ds.get('splits') or {}).items())} |")
@@ -180,7 +218,18 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
             f"| selection | splits {_escape(sel.get('splits') or 'all')}, tags {_escape(sel.get('tags') or 'none')}, "
             f"limit {_escape(sel.get('limit') or 'none')} |"
         )
+    return [*lines, ""]
+
+
+def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]] = None) -> str:
+    m = report["metrics"]
+    lines: List[str] = ["# LG-SOTF evaluation report", ""]
+    lines.append(f"Generated {report['generated_at']} by lg-sotf {report['lg_sotf_version']}.")
     lines.append("")
+    for note in report.get("notes") or []:
+        lines.append(f"> {note}")
+        lines.append("")
+    lines.extend(_run_lines(report))
     lines.extend(_provenance_lines(report))
     if gate is not None:
         lines.append("## Gate")
@@ -191,20 +240,7 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
             lines.append(f"- {_escape(v['message'])}")
         if gate["violations"]:
             lines.append("")
-    lines.append("## Headline metrics")
-    lines.append("")
-    split_names = list((report.get("splits") or {}).keys())
-    header = "| Metric | All | " + " | ".join(split_names) + " |"
-    lines.append(header)
-    lines.append("|---|---|" + "---|" * len(split_names))
-    for label, key, fmt in HEADLINE_ROWS:
-        cells = [fmt(m.get(key))]
-        for name in split_names:
-            cells.append(fmt(report["splits"][name]["metrics"].get(key)))
-        lines.append(f"| {label} | " + " | ".join(cells) + " |")
-    latency_cells = [_latency(m)] + [_latency(report["splits"][n]["metrics"]) for n in split_names]
-    lines.append("| Latency mean / p50 / p95 / max (s) | " + " | ".join(latency_cells) + " |")
-    lines.append("")
+    lines.extend(_headline_lines(report))
     lines.append(
         f"Items: {m['items']} ({m['scored']} scored, {m['errors']} errors); "
         f"expected malicious {m['malicious_items']}, benign {m['benign_items']}. "
@@ -215,15 +251,7 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
     if m.get("missed_malicious_ids"):
         lines.append("Missed malicious items: " + ", ".join(f"`{i}`" for i in m["missed_malicious_ids"]) + ".")
         lines.append("")
-    lines.append("## Per class")
-    lines.append("")
-    lines.append("| Class | Precision | Recall | F1 | Support | Predicted |")
-    lines.append("|---|---|---|---|---|---|")
-    for cls, s in m["per_class"].items():
-        lines.append(
-            f"| {cls} | {_num(s['precision'])} | {_num(s['recall'])} | {_num(s['f1'])} | {s['support']} | {s['predicted']} |"
-        )
-    lines.append("")
+    lines.extend(_per_class_lines(m))
     lines.append("## Confusion matrix (rows: expected, columns: predicted)")
     lines.append("")
     matrix = m["confusion_matrix"]
@@ -270,8 +298,7 @@ def summary_lines(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]] =
     m = report["metrics"]
     out = [
         f"items {m['items']} (scored {m['scored']}, errors {m['errors']})",
-        f"malicious false-negative rate {_pct(m['malicious_false_negative_rate'])}"
-        f" ({m['malicious_false_negatives']} of {m['malicious_items']})",
+        f"malicious false-negative rate {_metric_cell(m, 'malicious_false_negative_rate', _pct)}",
         f"benign auto-close rate {_pct(m['benign_auto_close_rate'])}; escalation rate {_pct(m['escalation_rate'])};"
         f" inconclusive rate {_pct(m['inconclusive_rate'])}",
         f"macro F1 {_num(m['macro_f1'])}; kappa vs expected {_num(m['kappa_vs_expected'])}",

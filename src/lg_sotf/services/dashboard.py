@@ -21,8 +21,9 @@ from typing import Any, Dict, Mapping, Optional
 from uuid import UUID
 
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.rates import ratio
 from lg_sotf.models.vocabulary import RISK_LEVELS
-from lg_sotf.services.reporting import hours_saved, ratio, resolve_reporting_policy
+from lg_sotf.services.reporting import hours_saved, resolve_reporting_policy
 from lg_sotf.services.response import approval_allowed, resolve_autonomy
 from lg_sotf.settings import Settings
 
