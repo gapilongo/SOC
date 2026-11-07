@@ -189,7 +189,8 @@ def _gate_steps() -> Dict[str, Dict[str, Any]]:
     out = {}
     for job_name in ("docker", "frontend"):
         steps = jobs[job_name]["steps"]
-        [i] = [n for n, s in enumerate(steps) if TRIVY_ACTION.match(s.get("uses", ""))]
+        [i] = [n for n, s in enumerate(steps) if s.get("name", "").startswith("Image CVE gate")]
+        assert TRIVY_ACTION.match(steps[i]["uses"])
         build = next(n for n, s in enumerate(steps) if s.get("name", "").startswith("Build"))
         assert build < i, f"{job_name}: scan after the image is built"
         out[job_name] = steps[i]
@@ -237,3 +238,122 @@ def test_trivyignore_entries_are_reviewed_and_expire() -> None:
         assert dt.timedelta(0) < age <= dt.timedelta(days=90), f"{vuln}: expire within 90 days of the review"
         if comment.startswith("not affected"):
             assert vuln in not_affected, f"{vuln}: publish the not_affected statement in security/vex.json"
+
+
+# --------------------------------------------------------------------------- SEC1.2: SBOMs and VEX
+
+RELEASE = WORKFLOWS / "release-images.yml"
+VEX = REPO_ROOT / "security" / "vex.json"
+ASSETS_SCRIPT = REPO_ROOT / "scripts" / "ci" / "release_assets.sh"
+JUSTIFICATIONS = {
+    "component_not_present", "vulnerable_code_not_present", "vulnerable_code_not_in_execute_path",
+    "vulnerable_code_cannot_be_controlled_by_adversary", "inline_mitigations_already_exist",
+}
+
+
+def _step(steps: List[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
+    return next(s for s in steps if s.get("name", "").startswith(prefix))
+
+
+def test_ci_validates_the_sboms_and_vex_against_their_schemas() -> None:
+    """Acceptance (SEC1.2): every change builds the release SBOMs and VEX and validates them."""
+    jobs = _load(CI)["jobs"]
+    for job_name, image in (("docker", "lg-sotf"), ("frontend", "lg-sotf-frontend")):
+        sbom = _step(jobs[job_name]["steps"], "Image SBOM (CycloneDX)")
+        assert TRIVY_ACTION.match(sbom["uses"]) and sbom["with"]["format"] == "cyclonedx"
+        assert sbom["with"]["image-ref"] == f"{image}:ci" and sbom["with"]["output"] == f"{image}-ci-image.cdx.json"
+        upload = _step(jobs[job_name]["steps"], "Upload the image SBOM")
+        assert upload["with"]["path"] == f"{image}-ci-image.cdx.json"
+    job = jobs["sbom"]
+    assert job["needs"] == ["docker", "frontend"] and "continue-on-error" not in job
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert "pip install --require-hashes -r scripts/ci/requirements-tools.txt" in runs
+    assert "scripts/ci/release_assets.sh release-assets ci" in runs
+    assert ("python scripts/ci/validate_sbom.py image-sbom/lg-sotf-ci-image.cdx.json "
+            "image-sbom/lg-sotf-frontend-ci-image.cdx.json") in runs
+    # The script validates every file it writes before it hashes them.
+    script = ASSETS_SCRIPT.read_text()
+    assert 'python3 scripts/ci/validate_sbom.py "$out"/*.json' in script
+    assert script.index("validate_sbom.py \"$out\"") < script.index("sha256sum")
+    for produced in ("cyclonedx-py requirements", "npm sbom --sbom-format cyclonedx --omit dev",
+                     "trivy image --quiet --format cyclonedx", 'cp security/vex.json "$out/lg-sotf-$version.openvex.json"'):
+        assert produced in script, produced
+
+
+def test_release_tags_get_attested_sboms_and_vex_as_assets() -> None:
+    """Acceptance (SEC1.2): a vX.Y.Z release carries the SBOMs and the VEX document."""
+    wf = _load(RELEASE)
+    jobs = wf["jobs"]
+    assert wf["env"]["TRIVY_VERSION"] == _load(CI)["env"]["TRIVY_VERSION"], "one Trivy release for gate and SBOMs"
+    build = jobs["release-assets"]
+    assert build["needs"] == "promote" and build["permissions"] == {"contents": "read", "packages": "read"}
+    checkout = next(s for s in build["steps"] if s.get("uses", "").startswith("actions/checkout@"))
+    assert checkout["with"]["ref"] == "${{ needs.promote.outputs.commit }}", "the tagged commit's lock files"
+    setup = next(s for s in build["steps"] if s.get("uses", "").startswith("aquasecurity/setup-trivy@"))
+    assert setup["with"]["version"] == "${{ env.TRIVY_VERSION }}"
+    run = _step(build["steps"], "SBOMs")
+    assert run["env"]["APP_DIGEST"] == "${{ needs.promote.outputs.app_digest }}"
+    assert run["env"]["FRONTEND_DIGEST"] == "${{ needs.promote.outputs.frontend_digest }}"
+    assert 'scripts/ci/release_assets.sh release-assets "$TAG"' in run["run"]
+    assert '"lg-sotf=$APP_REPO@$APP_DIGEST" "lg-sotf-frontend=$FRONTEND_REPO@$FRONTEND_DIGEST"' in run["run"]
+    assert 'PLATFORMS="${PLATFORMS//,/ }"' in run["run"], "an SBOM per platform of the multi-arch images"
+    attest = jobs["attest-release-assets"]
+    assert attest["needs"] == "release-assets"
+    assert _step(attest["steps"], "Build provenance")["with"] == {"subject-path": "release-assets/*.json"}
+    publish = jobs["publish-release-assets"]
+    assert publish["needs"] == ["promote", "attest-release-assets"], "nothing is published before it is attested"
+    assert publish["permissions"] == {"contents": "write"}
+    assert not any(s.get("uses", "").startswith("actions/checkout@") for s in publish["steps"])
+    upload = _step(publish["steps"], "Upload to the release")["run"]
+    assert 'gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber' in upload
+    assert "--verify-tag" in upload
+
+
+def test_vex_statements_are_justified() -> None:
+    doc = json.loads(VEX.read_text())
+    assert doc["@context"] == "https://openvex.dev/ns/v0.2.0"
+    assert doc["statements"]
+    for st in doc["statements"]:
+        name = st["vulnerability"]["name"]
+        assert re.fullmatch(r"CVE-\d{4}-\d+|GHSA-[\w-]+", name), name
+        for product in st["products"]:
+            assert product["@id"] in {"pkg:oci/lg-sotf", "pkg:oci/lg-sotf-frontend"}, name
+            assert product.get("subcomponents"), f"{name}: scope the statement to the affected package"
+        if st["status"] == "not_affected":
+            assert st["justification"] in JUSTIFICATIONS, name
+            assert len(st.get("impact_statement", "")) > 80, f"{name}: say why, for the customer's analyst"
+    assert (REPO_ROOT / "security" / "schemas" / "openvex-0.2.0.schema.json").is_file()
+
+
+def _validator() -> Any:
+    pytest.importorskip("jsonschema")
+    pytest.importorskip("cyclonedx.validation.json")
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("validate_sbom", REPO_ROOT / "scripts" / "ci" / "validate_sbom.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_validator_accepts_the_published_documents_and_rejects_broken_ones(tmp_path: Path) -> None:
+    validate = _validator().validate
+    assert validate(VEX) == []
+    broken = json.loads(VEX.read_text())
+    broken["statements"][0]["status"] = "probably_fine"
+    del broken["timestamp"]
+    (tmp_path / "vex.json").write_text(json.dumps(broken))
+    errors = validate(tmp_path / "vex.json")
+    assert any("probably_fine" in e for e in errors) and any("timestamp" in e for e in errors)
+    bom = {"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1,
+           "components": [{"type": "library", "name": "fastapi", "version": "0.162.0", "purl": "pkg:pypi/fastapi@0.162.0"}]}
+    (tmp_path / "ok.cdx.json").write_text(json.dumps(bom))
+    assert validate(tmp_path / "ok.cdx.json") == []
+    bom["components"][0]["type"] = "not-a-type"
+    (tmp_path / "bad.cdx.json").write_text(json.dumps(bom))
+    assert validate(tmp_path / "bad.cdx.json")
+    (tmp_path / "empty.cdx.json").write_text(json.dumps({**bom, "components": []}))
+    assert any("no components" in e for e in validate(tmp_path / "empty.cdx.json"))
+    (tmp_path / "other.json").write_text("{}")
+    assert validate(tmp_path / "other.json") == ["neither a CycloneDX SBOM nor an OpenVEX 0.2.0 document"]

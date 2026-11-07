@@ -285,6 +285,16 @@ All notable changes to this project are documented here. The format follows
   that has a fix. Reviewed exceptions live in `.trivyignore`, and each one
   expires within 90 days. `pip-audit` now also checks the build and CI tool
   locks. See `docs/security.md`, section 9.
+- Every release now carries CycloneDX SBOMs as assets: the Python lock, the
+  frontend's production npm packages, and both images for amd64 and arm64,
+  made from the release digests. It also carries an OpenVEX document
+  (`security/vex.json`) that lists the CVEs scanners report in the images
+  but that do not affect LG-SOTF, with the reason for each. Every asset is
+  validated against its schema (here and on every change in CI) and has a
+  build-provenance attestation; `docs/security.md` (section 9) shows how to
+  download and verify them and how to use the VEX document with Grype or
+  Trivy. If the GitHub release does not exist when the tag is pushed, it is
+  created with generated notes.
 - Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
   `lg-sotf-frontend` digest now carries a keyless cosign signature and a SLSA
   build-provenance attestation, both from the `Release images` workflow on

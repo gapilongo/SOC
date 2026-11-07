@@ -20,6 +20,7 @@ for the first environment and 15 minutes for the second.
 
  git tag v1.2.3 (a commit on main) ──> Release images
                                          │ no rebuild: re-tag the sha-1a2b3c4 manifests as :v1.2.3 (same digest)
+                                         ├──> SBOMs + VEX ── attest ── attach to the GitHub release v1.2.3
                                          └──> Deploy ── environment "uat" (waits for a reviewer) ──> uat VM
 ```
 
@@ -33,6 +34,12 @@ for the first environment and 15 minutes for the second.
   the signature and the provenance of both digests against this repository's
   release workflow on `main`. If either check fails, nothing is deployed
   (docs/security.md, section 9).
+* A release tag also gets its supply-chain assets: CycloneDX SBOMs of the
+  Python lock, the npm production dependencies and both images (amd64 and
+  arm64), and the OpenVEX document `security/vex.json`. They are validated
+  against their schemas, attested, and attached to the GitHub release; the
+  release is created from the tag with generated notes if it does not exist
+  yet, so edit its notes afterwards rather than running `gh release create`.
 * `.github/workflows/deploy.yml` deploys one image tag to one environment. It
   resolves the tag to digests, copies a small bundle (compose files, Caddy
   templates, scripts from `deploy/vm/`, taken from the commit that built the

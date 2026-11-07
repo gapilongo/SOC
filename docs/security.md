@@ -363,6 +363,8 @@ incident before retention removes it.
   and Python and npm dependencies current.
 * Both images are scanned with Trivy on every change: a fixable critical or
   high CVE fails CI.
+* Every release carries CycloneDX SBOMs and an OpenVEX document, each with
+  a build-provenance attestation (see "SBOMs and VEX" below).
 * The container image runs as a non-root user (uid 10001) with a read-only
   root filesystem, no build tools, no pip/setuptools and no setuid binaries; `dumb-init` as PID 1. Kubernetes
   manifests drop all capabilities and use the `RuntimeDefault` seccomp
@@ -451,6 +453,58 @@ and issuer. For air-gapped hosts, see
   trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
       --ignorefile .trivyignore --exit-code 1 lg-sotf:dev
   ```
+
+### SBOMs and VEX
+
+Each GitHub release `vX.Y.Z` has these assets:
+
+| Asset | What it lists |
+|---|---|
+| `lg-sotf-vX.Y.Z-python.cdx.json` | Every Python package of `requirements.txt` (the backend image's lock), with versions, package URLs and the SHA-256 hashes the build verifies. Packages behind a platform marker (Windows-only, for example) are listed too. |
+| `lg-sotf-vX.Y.Z-frontend-npm.cdx.json` | The web app's production npm packages, from `package-lock.json`. |
+| `lg-sotf-vX.Y.Z-image-linux-amd64.cdx.json`, `...-linux-arm64.cdx.json` | Everything installed in the backend image at the release digest: Debian packages and Python packages. |
+| `lg-sotf-frontend-vX.Y.Z-image-linux-amd64.cdx.json`, `...-linux-arm64.cdx.json` | The same for the frontend image (Alpine packages). |
+| `lg-sotf-vX.Y.Z.openvex.json` | OpenVEX 0.2.0: CVEs that scanners report in these images but that do not affect LG-SOTF, each with its justification (`security/vex.json` at the tagged commit). |
+| `SHA256SUMS` | SHA-256 of every file above. |
+
+The SBOMs are CycloneDX JSON (1.6 for Python, 1.5 for npm, 1.7 for the
+images). The release workflow validates every file against its schema
+before it publishes it (CycloneDX's strict JSON schemas and the OpenVEX
+JSON schema in `security/schemas/`), and CI does the same on every change.
+The image SBOMs are made from the exact digests the release tag points at.
+
+Fetch and verify them:
+
+```sh
+TAG=v1.3.0
+gh release download "$TAG" --repo gapilongo/SOC --dir lg-sotf-$TAG \
+    --pattern '*.cdx.json' --pattern '*.openvex.json' --pattern SHA256SUMS
+cd lg-sotf-$TAG && sha256sum --check SHA256SUMS
+
+# Provenance: built by the release workflow for this tag, from this repository.
+for f in *.json; do
+  gh attestation verify "$f" --repo gapilongo/SOC --deny-self-hosted-runners \
+      --cert-identity "https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/tags/$TAG" \
+      --cert-oidc-issuer https://token.actions.githubusercontent.com
+done
+```
+
+Then use the VEX document with your scanner, scanning the release digest:
+
+```sh
+grype "ghcr.io/gapilongo/lg-sotf@sha256:<digest>" --vex "lg-sotf-$TAG.openvex.json"
+trivy image --vex "lg-sotf-$TAG.openvex.json" "ghcr.io/gapilongo/lg-sotf@sha256:<digest>"
+```
+
+A VEX statement names the image (`pkg:oci/lg-sotf` or
+`pkg:oci/lg-sotf-frontend`) and the package inside it, and says why the CVE
+does not apply (for example, `vulnerable_code_not_in_execute_path`, with
+an impact statement naming the code that is never called). Trivy 0.76
+applies these image-scoped statements to Alpine packages (the frontend)
+but not to Debian packages (the backend); compare the backend's findings
+with the document by CVE ID. Statements are added in a reviewed pull
+request, together with the matching `.trivyignore` entry, and removed once
+a base-image update ships the fix.
 
 ## 10. Known limitations
 

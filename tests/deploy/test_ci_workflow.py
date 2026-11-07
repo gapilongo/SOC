@@ -325,10 +325,17 @@ def test_id_token_write_is_scoped_to_the_signing_job_only() -> None:
         wf = _load(path)
         assert "id-token" not in (wf.get("permissions") or {}), path.name
         holders += [f"{path.name}:{n}" for n, j in wf["jobs"].items() if (j.get("permissions") or {}).get("id-token")]
-    assert holders == ["release-images.yml:sign"]
-    assert _load(RELEASE)["jobs"]["sign"]["permissions"] == {
+    assert holders == ["release-images.yml:sign", "release-images.yml:attest-release-assets"]
+    jobs = _load(RELEASE)["jobs"]
+    assert jobs["sign"]["permissions"] == {
         "contents": "read", "packages": "write", "id-token": "write", "attestations": "write",
     }
+    # SEC1.2: the release SBOMs and VEX are attested by a job that, like `sign`, runs only pinned
+    # actions on files another job produced: no checkout, no shell step.
+    attest = jobs["attest-release-assets"]
+    assert attest["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}
+    assert all("run" not in s for s in attest["steps"])
+    assert [s["uses"].split("@")[0] for s in attest["steps"]] == ["actions/download-artifact", "actions/attest"]
 
 
 def test_deploy_verifies_signature_and_provenance_before_touching_the_host() -> None:
