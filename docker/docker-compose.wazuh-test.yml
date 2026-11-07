@@ -1,0 +1,38 @@
+# Wazuh 4.14 lab for the live ingestion contract tests only (`make test-wazuh-up`, docs/testing.md).
+#
+# One Wazuh indexer (the OpenSearch build every Wazuh 4.14 deployment stores its alerts in), as the
+# image ships it: TLS on HTTP and transport with the image's demo certificates (CN=demo.indexer) and
+# the security plugin with its demo users, initialised on first start. No manager, no dashboard: the
+# connector only talks to the indexer. `python -m tests.fixtures.wazuh_lab seed` then installs the
+# wazuh-alerts template Wazuh publishes and loads the sample alerts. Data on tmpfs, so every start is
+# clean. Its own project name and port, so it runs beside the dev stack and `make test-services`.
+#
+#   make test-wazuh-up       # start, wait until healthy, seed
+#   make test-wazuh          # tests/live/wazuh against it
+#   make test-wazuh-down
+name: ${LG_SOTF_WAZUH_LAB_PROJECT:-lg-sotf-test-wazuh}
+
+services:
+  indexer:
+    image: wazuh/wazuh-indexer:4.14.8@sha256:6a9c1e3827da627a70859213b3e9cfe43193a492e358953de332b94de33b07de
+    # The image's entrypoint only adds keystore handling; start OpenSearch directly so the security
+    # index is created from the bundled demo configuration (no securityadmin run needed).
+    entrypoint: ["/usr/share/wazuh-indexer/bin/opensearch"]
+    command:
+      - "-Eplugins.security.allow_default_init_securityindex=true"
+      - "-Ecluster.routing.allocation.disk.threshold_enabled=false"
+    environment:
+      OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+      OPENSEARCH_PATH_CONF: /usr/share/wazuh-indexer/config
+    tmpfs:
+      - /var/lib/wazuh-indexer:uid=1000,gid=1000
+      - /var/log/wazuh-indexer:uid=1000,gid=1000
+    ports:
+      - "127.0.0.1:${LG_SOTF_WAZUH_LAB_PORT:-59200}:9200"
+    healthcheck:
+      # Healthy once the security index exists and the demo admin can read the cluster health.
+      test: ["CMD-SHELL", "curl -fsk -u admin:admin 'https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=2s'"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s

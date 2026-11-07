@@ -102,6 +102,34 @@ test-integration: ## Integration tier against `make test-services` (PYTEST_ARGS=
 test-services-down: ## Stop and remove the test services (their data was on tmpfs)
 	$(TEST_COMPOSE) down -v
 
+# Wazuh 4.14 lab for the live ingestion contract tests (docker/docker-compose.wazuh-test.yml, docs/testing.md).
+# The connector refuses loopback, so the tests reach the indexer on its Docker bridge address; the published
+# port is for seeding and loading alerts only.
+WAZUH_LAB_PROJECT ?= lg-sotf-test-wazuh
+WAZUH_LAB_PORT ?= 59200
+WAZUH_LAB_CA := build/wazuh-lab/root-ca.pem
+WAZUH_COMPOSE = LG_SOTF_WAZUH_LAB_PROJECT=$(WAZUH_LAB_PROJECT) LG_SOTF_WAZUH_LAB_PORT=$(WAZUH_LAB_PORT) \
+	docker compose -f docker/docker-compose.wazuh-test.yml
+WAZUH_LAB_ADDRESS = $$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' \
+	"$$($(WAZUH_COMPOSE) ps -q indexer)")
+
+.PHONY: test-wazuh-up
+test-wazuh-up: ## Start the Wazuh 4.14 indexer lab (:59200), copy its CA to build/wazuh-lab and seed it
+	$(WAZUH_COMPOSE) up -d --wait
+	mkdir -p $(dir $(WAZUH_LAB_CA))
+	rm -f $(WAZUH_LAB_CA)
+	$(WAZUH_COMPOSE) cp indexer:/usr/share/wazuh-indexer/config/certs/root-ca.pem $(WAZUH_LAB_CA)
+	$(PYTHON) -m tests.fixtures.wazuh_lab --url https://127.0.0.1:$(WAZUH_LAB_PORT) --ca $(WAZUH_LAB_CA) seed
+
+.PHONY: test-wazuh
+test-wazuh: ## Live Wazuh contract tests (tests/live/wazuh) against `make test-wazuh-up`
+	LG_SOTF_TEST_WAZUH_ADDRESS=$(WAZUH_LAB_ADDRESS) LG_SOTF_TEST_WAZUH_CA=$(WAZUH_LAB_CA) \
+		$(PYTHON) -m pytest tests/live/wazuh -m live $(PYTEST_ARGS)
+
+.PHONY: test-wazuh-down
+test-wazuh-down: ## Stop and remove the Wazuh lab (its data was on tmpfs)
+	$(WAZUH_COMPOSE) down -v
+
 .PHONY: test-deploy
 test-deploy: ## Deployment packaging tests only (Dockerfile, compose, Helm)
 	$(PYTHON) -m pytest tests/deploy
