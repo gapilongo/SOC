@@ -614,7 +614,8 @@
     "ARCH-E1.2",
     "SEC1.1"
    ],
-   "acceptance": "release-train workflow cuts a signed tag only when the N-1 upgrade test and install rehearsal pass"
+   "acceptance": "release-train workflow cuts a signed tag only when the N-1 upgrade test and install rehearsal pass",
+   "status": "done"
   },
   {
    "id": "ARCH-E2.1",
@@ -3398,7 +3399,8 @@
    "gate": "M3",
    "needed_by": "2027-01-22",
    "depends_on": [],
-   "acceptance": "Policy merged; Dependabot and triage SLAs match patch SLAs"
+   "acceptance": "Policy merged; Dependabot and triage SLAs match patch SLAs",
+   "status": "done"
   },
   {
    "id": "SEC3.1",

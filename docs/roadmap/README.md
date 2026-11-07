@@ -38,10 +38,10 @@ the project board.
 
 ## Scheduled work: 108 stories, 419 points
 
-Done: 17 stories, 59 points. A story is done when its GitHub issue is
+Done: 19 stories, 65 points. A story is done when its GitHub issue is
 closed by the merged pull request.
 
-### Week of 2026-11-09: 45 stories, 175 points, 17 done
+### Week of 2026-11-09: 45 stories, 175 points, 19 done
 
 | Story | Title | Pts | Priority | Tier | Day | Status |
 |---|---|---|---|---|---|---|
@@ -57,12 +57,12 @@ closed by the merged pull request.
 | `ARCH-E1.1` | graph_version on workflow_runs; worker keeps the N-1 graph to drain waiting runs | 5 | Must | T3 | 2026-11-10 | Done |
 | `AI-E1.5b` | Shadow mode (b): agreement report current vs candidate | 3 | Must | T2 | 2026-11-10 |  |
 | `AI-E1.8` | Attack-emulation ground-truth corpus: Wazuh 4.14 lab, Atomic Red Team/Caldera scenarios plus replayed benign noise (CR2) | 8 | Must | T2 | 2026-11-10 |  |
-| `SEC2.3` | Dependency policy and admission checklist | 1 | Must | T1 | 2026-11-10 |  |
+| `SEC2.3` | Dependency policy and admission checklist | 1 | Must | T1 | 2026-11-10 | Done |
 | `GTM3.2` | pov install profile: read-only sources, response disabled by policy, egress allow-list, one command | 5 | Must | T2 | 2026-11-10 | Done |
 | `ARCH-E1.2` | CI upgrade test: N-1 database with waiting runs, migrate, resume and decide | 5 | Must | T3 | 2026-11-10 | Done |
 | `PRD-11.1` | PoV run object and wizard: window, backtest plus shadow period | 3 | Must | T2 | 2026-11-10 |  |
 | `PRD-11.3` | PoV report content: FN first with CI, agreement, auto-handling, hours, cost, noisy detections, cited samples | 5 | Must | T2 | 2026-11-10 |  |
-| `ARCH-E1.5` | Release trains: weekly signed partner train, monthly LTS candidate, security-relevant changelog, N-1 upgrade test and install rehearsal on every train (CR5, delivery #8) | 5 | Must | T3 | 2026-11-11 |  |
+| `ARCH-E1.5` | Release trains: weekly signed partner train, monthly LTS candidate, security-relevant changelog, N-1 upgrade test and install rehearsal on every train (CR5, delivery #8) | 5 | Must | T3 | 2026-11-11 | Done |
 | `ARCH-E2.2` | OpenAPI stability tags, oasdiff breaking-change gate, Deprecation and Sunset headers | 3 | Must | T2 | 2026-11-11 | Done |
 | `ARCH-E4.1a` | Organisation model (a): schema, grants table, RLS policies (delivery split; risk:authz) | 5 | Must | T3 | 2026-11-11 |  |
 | `PRD-11.4` | PoV signing, branding, methodology and limits appendix (absorbs GTM3.3 report generator) | 3 | Must | T2 | 2026-11-11 |  |
