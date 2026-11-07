@@ -4,6 +4,5 @@
 
 db/migrate.py::_ssl_params
 db/migrate.py::libpq_url
-ingestion/service.py::IngestionService.__init__
 mcp/command.py::mcp_command
 observability/tracing.py::setup_tracing

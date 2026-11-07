@@ -102,7 +102,7 @@ from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, cap_mapping, 
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import redact, redact_text
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
 
@@ -216,7 +216,7 @@ class IngestionService:
     def __init__(
         self,
         db: Database,
-        settings: Optional[Settings] = None,
+        settings: Settings,
         secret_box: Optional[SecretBox] = None,
         *,
         repos: Optional[Repositories] = None,
@@ -226,7 +226,7 @@ class IngestionService:
     ):
         self._db = db
         self._repos = repos or Repositories.create(db)
-        self._settings = settings or get_settings()
+        self._settings = settings
         self._options = IngestionOptions.from_settings(self._settings)
         try:
             self._email_limits = EmailLimits.from_settings(self._settings.ingestion)
