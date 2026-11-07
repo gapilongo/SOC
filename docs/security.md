@@ -8,7 +8,20 @@ guardrails, data handling and audit. The system contract is
 checklist) are in `docs/operations.md`. To report a vulnerability, see
 `SECURITY.md` in the repository root.
 
+Two companion documents:
+
+* [threat-model.md](threat-model.md) is the full threat model. It has STRIDE
+  per component (including MCP, MSSP delegation, evidence tools and CI/CD),
+  the OWASP Top 10 for Agentic Applications and MITRE ATLAS mappings, with
+  each control linked to the code that enforces it.
+* [hardening.md](hardening.md) is the deployment hardening benchmark: numbered
+  L1 and L2 controls for Docker Compose, Helm, PostgreSQL, Redis and the
+  reverse proxy.
+
 ## 1. Threat model
+
+This section summarises the threat model. The full version is in
+[threat-model.md](threat-model.md).
 
 ### What we protect
 
@@ -330,11 +343,34 @@ docs/microsoft.md). It calls no other vendor API directly.
   `/tenant/settings` does not edit them); the partitioned timeline and audit
   tables follow the install setting. Expired monthly
   partitions are dropped whole.
-* **Deletion on request**: there is no self-service tenant data export or
-  erasure endpoint in this release; operators handle such requests in the
-  database (see the gaps list in the README).
+* **Export and erasure on request** (GDPR access, portability and erasure;
+  customer offboarding). Platform admins can do both from the API
+  (`POST /api/v1/platform/tenants/{id}/export`,
+  `DELETE /api/v1/platform/tenants/{id}`), from the UI (**Platform → Tenant
+  data**) or from the CLI (`lg-sotf tenant-export`, `lg-sotf tenant-erase`).
+  The code is in `lg_sotf.compliance.tenant_data`.
+  * The **export** is a streamed ZIP of JSON Lines files, one per table,
+    with a manifest of row counts and SHA-256 digests. Password hashes, MFA
+    secrets, API-key hashes, refresh tokens and encrypted credentials are
+    never exported.
+  * **Erasure** runs only for a suspended tenant, after the operator types
+    the tenant id to confirm, and while none of its workflow runs is
+    running. It deletes every row of the tenant in every tenant-scoped
+    table, its LangGraph checkpoints, and its Redis keys and stream
+    entries.
+  * The tenant's **audit log** is kept, because it is append-only by
+    design. The `tenants` row is kept as a tombstone.
+  * Both are recorded in the tenant's audit chain and in the admin's home
+    tenant.
+
+  Details and the legal basis for keeping the audit log:
+  [compliance.md](compliance.md#tenant-data-export-gdpr-access-and-portability).
+  There is no per-data-subject search or export yet (planned, SEC7.5a).
 * **Backups** contain everything above; the encryption and HMAC keys are
   part of the backup set but must be stored separately (docs/deployment.md).
+  Erasure does not reach backups taken before it: an erased tenant's data
+  is gone from the install only once those backups expire.
+  Crypto-shredding with per-tenant keys is planned (ARCH-E4.4, SEC5.1).
 
 ## 8. Audit
 
