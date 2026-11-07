@@ -22,7 +22,7 @@ from typing import Awaitable, Callable, Final, Literal, Optional, Union
 from redis.asyncio import Redis
 
 from lg_sotf.llm.errors import LLMBudgetExceeded
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 _KEY_TTL_S = 2 * 24 * 3600
 
@@ -55,15 +55,14 @@ class TokenBudget:
     def __init__(
         self,
         redis: Redis,
-        settings: Optional[Settings] = None,
+        settings: Settings,
         *,
         key_prefix: Optional[str] = None,
         usage_seed: Optional[UsageSeed] = None,
     ):
-        s = settings or get_settings()
         self._redis = redis
-        self._default_limit = s.llm.daily_token_budget_per_tenant
-        self._prefix = key_prefix or s.redis.key_prefix
+        self._default_limit = settings.llm.daily_token_budget_per_tenant
+        self._prefix = key_prefix or settings.redis.key_prefix
         self._usage_seed = usage_seed
 
     def key(self, tenant_id: str, day: Optional[date] = None) -> str:
