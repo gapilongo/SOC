@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 import type { IntegrationCreateIn, IntegrationOut, IntegrationUpdateIn } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
 import { ISOLATION } from '../../test/microsoft';
-import IntegrationsPage, { missingCredentials } from '../IntegrationsPage';
+import IntegrationsPage from './IntegrationsPage';
 import { bindingChanged, buildMicrosoftConfig, type MicrosoftFormValues } from './MicrosoftIntegrationForm';
+import { missingCredentials } from './specs';
 
 // Identifiers and credentials are generated at runtime (no credential-shaped literals in fixtures).
 const DIRECTORY = crypto.randomUUID();

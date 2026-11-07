@@ -2,10 +2,12 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { DeliveryOut, IntegrationCreateIn, IntegrationOut } from '../api/types';
-import { safeHref } from '../components/TicketLinks';
-import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
-import IntegrationsPage, { buildIntegrationConfig, describeResult, eventsFor, splitIntegrationConfig } from './IntegrationsPage';
+import type { DeliveryOut, IntegrationCreateIn, IntegrationOut } from '../../api/types';
+import { safeHref } from '../../components/TicketLinks';
+import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
+import { describeResult } from './DeliveryLog';
+import IntegrationsPage from './IntegrationsPage';
+import { buildIntegrationConfig, eventsFor, splitIntegrationConfig } from './specs';
 
 function integration(overrides: Partial<IntegrationOut> = {}): IntegrationOut {
   return {
