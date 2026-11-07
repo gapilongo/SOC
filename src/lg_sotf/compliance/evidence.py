@@ -27,7 +27,7 @@ Lists are capped; ``limits`` records whether anything was left out.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, cast
 
 from lg_sotf import __version__
 from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
@@ -37,6 +37,9 @@ from lg_sotf.db.repos import AlertEvent, Escalation, Feedback, Repositories, Res
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary
 
 EVIDENCE_FORMAT = "lg-sotf.evidence-pack"
 EVIDENCE_VERSION = 1
@@ -128,7 +131,7 @@ async def _audit_entries(
     return entries[:MAX_AUDIT_ENTRIES], len(entries) > MAX_AUDIT_ENTRIES
 
 
-def _agents(summary: Mapping[str, Any], events: Sequence[AlertEvent]) -> Dict[str, Any]:
+def _agents(summary: AlertSummary, events: Sequence[AlertEvent]) -> Dict[str, Any]:
     """Per-step reasoning, verdict and confidence, with the provider/model that step called."""
     models = _obj(summary.get("llm_models"))
     usage_by_agent = _obj(_obj(summary.get("llm_usage")).get("by_agent"))
@@ -365,7 +368,7 @@ def _feedback_overrides(feedback: Sequence[Feedback]) -> List[Step]:
 
 
 def human_oversight(
-    summary: Mapping[str, Any],
+    summary: AlertSummary,
     events: Sequence[AlertEvent],
     escalations: Sequence[Escalation],
     actions: Sequence[ResponseAction],
@@ -428,7 +431,7 @@ async def build_evidence_pack(
         )
     chain_since = audit[0]["ts"] if audit else None
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
-    summary = _obj(alert.summary)
+    summary = cast("AlertSummary", _obj(alert.summary))
     rollbacks = _rollback_links(actions)
     raw_redacted, raw_redactions = redact(alert.raw)
     analysis = _obj(summary.get("analysis"))

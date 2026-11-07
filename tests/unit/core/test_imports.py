@@ -41,7 +41,6 @@ def test_module_imports(module: str) -> None:
 
 def test_engine_modules_do_not_import_removed_packages() -> None:
     for removed in (
-        "lg_sotf.core.state",
         "lg_sotf.audit.metrics",
         "lg_sotf.audit.tracer",
         "lg_sotf.config",

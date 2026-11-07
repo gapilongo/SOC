@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, FrozenSet, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from lg_sotf.domain.actions import ACTION_CATALOG, BLAST_RADIUS_REASON, HOURLY_CAP_REASON, ActionSpec
 from lg_sotf.domain.indicators import extract_indicators
@@ -26,6 +26,9 @@ from lg_sotf.models.vocabulary import POLICY_APPROVER
 from lg_sotf.services.response.guardrails import GuardrailBlock
 from lg_sotf.services.response.policy import ResponsePolicy, preapproval_allowed
 from lg_sotf.services.response.targets import clean, process_base, target_corroborated, target_key
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import PlanDigest
 
 Evidence = Literal["rules", "llm_only", "analyst"]
 MAX_TARGETS_PER_TYPE = 3
@@ -138,7 +141,7 @@ class PlanResult:
     blocked: List[str] = field(default_factory=list)
     done: List[str] = field(default_factory=list)
 
-    def as_dict(self) -> Dict[str, Any]:
+    def as_dict(self) -> PlanDigest:
         return {
             "threat_type": self.threat_type,
             "auto": self.auto,

@@ -46,6 +46,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
 from lg_sotf.domain.events import publish_event
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, LLMUsageRow, TokenBudget, get_usage_recorder
+from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
@@ -155,8 +156,8 @@ async def _budget_limit(ctx: Any, tenant_id: str) -> BudgetLimit:
         tenant = await ctx.repos.tenants.get(tenant_id)
     except NotFound:
         return USE_DEFAULT
-    limit = tenant.settings.get("llm_daily_token_budget")
-    return limit if isinstance(limit, int) and not isinstance(limit, bool) else USE_DEFAULT
+    limit = token_budget(tenant.settings)
+    return USE_DEFAULT if limit is None else limit
 
 
 async def _flush_llm_usage(ctx: Any) -> None:

@@ -69,6 +69,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
+from lg_sotf.models.tenant_settings import EDITABLE_KEYS, LLM_BUDGET_SETTING, token_budget_problem
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services import tenancy
@@ -82,21 +83,6 @@ from lg_sotf.tools.enrichment.service import encrypt_tool_secret
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 log = get_logger(__name__)
 
-EDITABLE_KEYS = frozenset(
-    {
-        "response",
-        "protected_assets",
-        "protected_cidrs",
-        "autonomy",
-        "llm_daily_token_budget",
-        "review",
-        "tools",
-        "retention",
-        "security",
-        "reporting",
-        "phishing",
-    }
-)
 RETENTION_KEYS = ("alerts_days", "indicators_days")
 RESPONSE_KEYS = frozenset(
     {
@@ -117,7 +103,6 @@ RESPONSE_KEYS = frozenset(
 TOOL_KEYS = frozenset({"enabled", "api_key"})
 SECURITY_KEYS = frozenset({"require_mfa"})
 CIPHERTEXT_SUFFIX = "_ciphertext"
-MAX_TOKEN_BUDGET = 10_000_000_000
 MAX_TOOL_PROVIDERS = 32
 MAX_INTERNAL_DOMAINS = 256
 LLM_TEST_BUCKET = "llm_test"
@@ -356,11 +341,10 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _reporting_section(current.get("reporting"), value, problems)
         elif key == "phishing":
             patch[key] = _phishing_section(value, problems)
-        elif key == "llm_daily_token_budget":
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= MAX_TOKEN_BUDGET
-            ):
-                problems.append(f"llm_daily_token_budget: must be an integer 0..{MAX_TOKEN_BUDGET} or null")
+        elif key == LLM_BUDGET_SETTING:
+            problem = token_budget_problem(value)
+            if problem is not None:
+                problems.append(problem)
             patch[key] = value
         elif key == "review":
             if value is not None:

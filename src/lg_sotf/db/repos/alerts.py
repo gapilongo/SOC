@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, List, Optional, Sequence, Union
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -26,6 +26,9 @@ from lg_sotf.db.repos._base import (
     utcnow,
 )
 from lg_sotf.models.vocabulary import ALERT_STATUSES, DISPOSITIONS, SEVERITIES
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary
 
 MAX_INSERT_BATCH = 5_000
 
@@ -397,7 +400,7 @@ class AlertsRepo(Repository):
         assigned_to: Optional[UUID] = UNSET,
         case_key: Optional[str] = UNSET,
         closed_at: Optional[datetime] = UNSET,
-        summary: Mapping[str, Any] = UNSET,
+        summary: AlertSummary = UNSET,
         conn: Optional[Connection] = None,
     ) -> Alert:
         """Update scores and verdict fields. ``summary`` is shallow-merged into the stored summary.
