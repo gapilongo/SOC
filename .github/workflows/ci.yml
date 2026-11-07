@@ -25,6 +25,8 @@ env:
   KUBECONFORM_VERSION: v0.6.7
   KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
   KUBERNETES_VERSION: 1.29.0
+  OASDIFF_VERSION: 1.34.1
+  OASDIFF_SHA256: 75775f65b0adebd26a8e013af51a799342dfdc6262d89efa9e3b7bdf89657d90
   GITLEAKS_IMAGE: zricethezav/gitleaks:v8.24.3@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
   # Image CVE gate (docs/security.md, section 9). Same Trivy release in every workflow.
@@ -86,6 +88,44 @@ jobs:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest (unit and deploy)
         run: pytest tests/unit tests/deploy
+
+  api-compat:
+    name: API compatibility (oasdiff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # scripts/ci/check_api_compat.py: a breaking change to a stable operation of docs/openapi.json fails;
+    # beta and internal operations are reported only (docs/api.md, "Stability and deprecation").
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base branch's docs/openapi.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install oasdiff
+        run: |
+          curl -fsSL -o /tmp/oasdiff.tgz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -
+          tar -xzf /tmp/oasdiff.tgz -C /tmp oasdiff
+          sudo install -m 0755 /tmp/oasdiff /usr/local/bin/oasdiff
+      - name: Self-test (breaking a stable operation fails, breaking a beta one does not)
+        run: python scripts/ci/check_api_compat.py --self-test docs/openapi.json
+      - name: Breaking changes against the base
+        # Pull request: the merge base with the target branch. Push: the previous commit of the branch.
+        run: |
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            BASE="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
+          else
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          if ! git cat-file -e "${BASE}:docs/openapi.json" 2>/dev/null; then
+            echo "No docs/openapi.json at ${BASE}; nothing to compare."
+            exit 0
+          fi
+          git show "${BASE}:docs/openapi.json" > /tmp/openapi-base.json
+          python scripts/ci/check_api_compat.py /tmp/openapi-base.json docs/openapi.json
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
