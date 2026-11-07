@@ -424,7 +424,8 @@ Everything else is per stack, on purpose:
   `lgsotf_llm_tokens_total{model,kind}`, `lgsotf_llm_cost_usd_total{model}`,
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier}`,
-  `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`.
+  `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
+  `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed
   ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing
   back). `observability.otlp_endpoint` is ignored and logs a warning. The
