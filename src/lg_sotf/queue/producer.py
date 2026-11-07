@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, List, Mapping, Sequence, Tuple
 
 from redis.asyncio import Redis
 
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.streams import SEVERITIES, QueueStreams, encode_work
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
 
@@ -25,9 +25,9 @@ class WorkQueue:
     consumer instead.
     """
 
-    def __init__(self, redis: Redis, settings: Optional[Settings] = None) -> None:
+    def __init__(self, redis: Redis, settings: Settings) -> None:
         self._redis = redis
-        self._streams = QueueStreams((settings or get_settings()).redis.key_prefix)
+        self._streams = QueueStreams(settings.redis.key_prefix)
 
     @property
     def streams(self) -> QueueStreams:

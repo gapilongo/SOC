@@ -29,7 +29,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
 
@@ -88,14 +88,13 @@ class EventBus:
     def __init__(
         self,
         redis: Redis,
-        settings: Optional[Settings] = None,
+        settings: Settings,
         *,
         max_subscribers: Optional[int] = None,
         subscriber_buffer: Optional[int] = None,
         max_per_tenant: Optional[int] = None,
         max_per_owner: Optional[int] = None,
     ) -> None:
-        settings = settings or get_settings()
         api = settings.api
         max_subscribers = api.ws_max_subscribers if max_subscribers is None else max_subscribers
         subscriber_buffer = api.ws_subscriber_buffer if subscriber_buffer is None else subscriber_buffer

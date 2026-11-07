@@ -21,7 +21,7 @@ from lg_sotf.queue.streams import (
     parse_message,
     utc_now_iso,
 )
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
 
@@ -103,18 +103,17 @@ class StreamConsumer:
     on ``workflow_runs`` (a live lease) decides who executes the run.
     """
 
-    def __init__(self, redis: Redis, settings: Optional[Settings], consumer_name: str) -> None:
+    def __init__(self, redis: Redis, settings: Settings, consumer_name: str) -> None:
         if not consumer_name:
             raise ValueError("consumer_name must be non-empty")
-        s = settings or get_settings()
         self._redis = redis
-        self._streams = QueueStreams(s.redis.key_prefix)
+        self._streams = QueueStreams(settings.redis.key_prefix)
         self._name = consumer_name
-        self._min_idle_ms = int(s.worker.visibility_timeout_s * 1000)
-        max_block_ms = int(s.redis.socket_timeout_s * 1000) - _BLOCK_MARGIN_MS
-        self._block_ms = max(1, min(s.worker.block_ms, max_block_ms)) if max_block_ms > 0 else 1
-        if self._block_ms < s.worker.block_ms:
-            log.warning("queue.block_ms_clamped", block_ms=self._block_ms, configured=s.worker.block_ms)
+        self._min_idle_ms = int(settings.worker.visibility_timeout_s * 1000)
+        max_block_ms = int(settings.redis.socket_timeout_s * 1000) - _BLOCK_MARGIN_MS
+        self._block_ms = max(1, min(settings.worker.block_ms, max_block_ms)) if max_block_ms > 0 else 1
+        if self._block_ms < settings.worker.block_ms:
+            log.warning("queue.block_ms_clamped", block_ms=self._block_ms, configured=settings.worker.block_ms)
         self._claim_cursor: Dict[str, str] = {stream: _START for stream in self._streams.work}
         self._alive_ttl_ms: Optional[int] = None
         self._dead_scan_interval_s = _MAX_DEAD_SCAN_INTERVAL_S

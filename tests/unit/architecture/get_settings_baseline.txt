@@ -16,8 +16,3 @@ llm/usage.py::get_usage_recorder
 mcp/command.py::mcp_command
 observability/logging.py::configure_logging
 observability/tracing.py::setup_tracing
-queue/consumer.py::StreamConsumer.__init__
-queue/dlq.py::DeadLetterQueue.__init__
-queue/events.py::EventBus.__init__
-queue/producer.py::WorkQueue.__init__
-queue/redis.py::create_redis
