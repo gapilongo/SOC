@@ -330,6 +330,21 @@ source_modules = ["lg_sotf.integrations"]
 forbidden_modules = ["lg_sotf.services", "lg_sotf.core", "lg_sotf.agents"]
 
 [[tool.importlinter.contracts]]
+id = "response-is-not-a-dependency-of-its-adapters"
+name = "The connectors and integrations the response service drives never import it"
+type = "forbidden"
+source_modules = ["lg_sotf.integrations", "lg_sotf.services.connectors"]
+forbidden_modules = ["lg_sotf.services.response"]
+
+[[tool.importlinter.contracts]]
+id = "response-layers"
+name = "services/response: submodules import down only, the target library at the bottom"
+type = "layers"
+# Derived from the imports (S2). The package __init__ (ResponseService) sits above every layer.
+containers = ["lg_sotf.services.response"]
+layers = ["execution", "planner | ledger", "guardrails", "policy", "protected", "targets"]
+
+[[tool.importlinter.contracts]]
 id = "mcp-thin-client"
 name = "MCP is a thin REST client of the API"
 type = "forbidden"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import pytest
 
@@ -13,9 +13,8 @@ from lg_sotf.db.repos.actions import VerificationWrite
 from lg_sotf.domain.connectors import VerificationResult, VerifyPlan
 from lg_sotf.integrations.microsoft.auth import MicrosoftAuthError
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError
-from lg_sotf.services.response import ResponseService
+from lg_sotf.services.response.execution import verification_write
 from lg_sotf.services.verification import VerificationService, classify_error
-from lg_sotf.settings import Settings
 from tests.fixtures.microsoft import make_action, ms_settings
 
 
@@ -237,18 +236,16 @@ async def test_settled_verifications_are_left_alone() -> None:
     assert responses.repos.actions.writes == []  # type: ignore[attr-defined]
 
 
-def test_the_window_starts_when_the_change_succeeds_not_at_the_first_claim(
-    make_settings: Callable[..., Settings],
-) -> None:
-    service = ResponseService.__new__(ResponseService)
-    service._settings = make_settings(response={"verify_max_s": 7200})
-    # Claimed an hour ago, deferred by throttling, accepted by Microsoft only now.
-    executing = make_action("revoke_sessions", "alice@contoso.example", status="executing",
-                            executed_at=datetime.now(UTC) - timedelta(hours=1))
-    before = datetime.now(UTC)
-    write = service._verification_write(executing, VerifyPlan("pending", first_check_s=60, max_duration_s=600))
-    assert write.verify_deadline is not None and write.verify_after is not None
-    assert write.verify_deadline - before >= timedelta(seconds=599)  # the whole window, not already past
-    assert timedelta(seconds=59) <= write.verify_after - before <= timedelta(seconds=61)
-    capped = service._verification_write(executing, VerifyPlan("pending", max_duration_s=86_400))
-    assert capped.verify_deadline is not None and capped.verify_deadline - before <= timedelta(seconds=7201)
+def test_the_window_starts_when_the_change_succeeds_not_at_the_first_claim() -> None:
+    # Claimed an hour ago, deferred by throttling, accepted by Microsoft only now: the row's executed_at
+    # is not an input, the window starts at ``now`` (the moment _finish writes the outcome).
+    now = datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
+    write = verification_write(VerifyPlan("pending", first_check_s=60, max_duration_s=600), now=now, ceiling_s=7200)
+    assert (write.state, write.verify_after, write.verify_deadline) == (
+        "pending", now + timedelta(seconds=60), now + timedelta(seconds=600)
+    )
+    assert write.detail["first_check_s"] == 60.0
+    capped = verification_write(VerifyPlan("pending", max_duration_s=86_400), now=now, ceiling_s=7200)
+    assert capped.verify_deadline == now + timedelta(seconds=7200)
+    proven = verification_write(VerifyPlan("verified", detail={"seen": True}), now=now, ceiling_s=7200)
+    assert (proven.state, proven.verify_after, proven.verify_deadline) == ("verified", None, None)
