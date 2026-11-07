@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "id": "fact-rep-203.0.113.7",
+  "kind": "reputation",
+  "subject": {"type": "ip", "value": "203.0.113.7"},
+  "observed_at": "2026-11-07T09:14:03Z",
+  "source": {"name": "abuseipdb", "version": "v2"},
+  "confidence": 0.9,
+  "ttl_seconds": 86400,
+  "provenance": {
+    "source_step_id": "771a843c-c6f6-494a-a077-0c523f3eb84f",
+    "input_hash": "ea44360ef96b6efaa3f6181c8e8d25e899a64f241004cec2d08cc078856b6d53",
+    "output_hash": "eb21f3b1529010bc825769129c2cc6e0e0a619f21e38a915b7e191c0911e4ea3"
+  },
+  "value": {"verdict": "malicious", "score": 97, "categories": ["brute-force", "ssh"]}
+}

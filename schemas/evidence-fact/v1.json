@@ -1,0 +1,892 @@
+{
+  "$defs": {
+    "ProcessLineageFact": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "process_lineage",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/ProcessLineageValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "ProcessLineageFact",
+      "type": "object"
+    },
+    "ProcessLineageValue": {
+      "additionalProperties": false,
+      "description": "The subject process's ancestry, oldest ancestor first, the subject process last.",
+      "properties": {
+        "chain": {
+          "items": {
+            "$ref": "#/$defs/ProcessNode"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Chain",
+          "type": "array"
+        }
+      },
+      "required": [
+        "chain"
+      ],
+      "title": "ProcessLineageValue",
+      "type": "object"
+    },
+    "ProcessNode": {
+      "additionalProperties": false,
+      "properties": {
+        "command_line": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Line"
+        },
+        "name": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "pid": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pid"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "description": "Lowercase hex SHA-256.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Started At"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ProcessNode",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "description": "Where the fact came from in the investigation trace (all hashes lowercase hex SHA-256).",
+      "properties": {
+        "input_hash": {
+          "anyOf": [
+            {
+              "description": "Lowercase hex SHA-256.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Hash"
+        },
+        "output_hash": {
+          "anyOf": [
+            {
+              "description": "Lowercase hex SHA-256.",
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Hash"
+        },
+        "source_step_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The trace step that produced the fact.",
+          "title": "Source Step Id"
+        }
+      },
+      "title": "Provenance",
+      "type": "object"
+    },
+    "Redaction": {
+      "additionalProperties": false,
+      "description": "A part of ``value`` removed or cut before the fact was stored, as a JSON Pointer into the fact.",
+      "properties": {
+        "path": {
+          "examples": [
+            "/value/chain/0/command_line"
+          ],
+          "maxLength": 256,
+          "pattern": "^(/[^/]*)+$",
+          "title": "Path",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "secret",
+            "pii",
+            "truncated"
+          ],
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "reason"
+      ],
+      "title": "Redaction",
+      "type": "object"
+    },
+    "RelatedAlertFact": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "related_alert",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/RelatedAlertValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "RelatedAlertFact",
+      "type": "object"
+    },
+    "RelatedAlertValue": {
+      "additionalProperties": false,
+      "description": "Another alert on the same subject.",
+      "properties": {
+        "alert_id": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "disposition": {
+          "anyOf": [
+            {
+              "enum": [
+                "malicious",
+                "benign",
+                "inconclusive"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disposition"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alert_id",
+        "title",
+        "severity",
+        "created_at"
+      ],
+      "title": "RelatedAlertValue",
+      "type": "object"
+    },
+    "ReputationFact": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "reputation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/ReputationValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "ReputationFact",
+      "type": "object"
+    },
+    "ReputationValue": {
+      "additionalProperties": false,
+      "description": "A reputation lookup on an IP address, domain, URL or file hash.",
+      "properties": {
+        "categories": {
+          "items": {
+            "maxLength": 64,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Categories",
+          "type": "array"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Provider risk score scaled to 0-100, higher is worse.",
+          "title": "Score"
+        },
+        "verdict": {
+          "enum": [
+            "malicious",
+            "suspicious",
+            "benign",
+            "unknown"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verdict"
+      ],
+      "title": "ReputationValue",
+      "type": "object"
+    },
+    "SignIn": {
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "App"
+        },
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "country": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{2}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 3166-1 alpha-2.",
+          "title": "Country"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ip"
+        },
+        "result": {
+          "enum": [
+            "success",
+            "failure",
+            "interrupted"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "risk": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "low",
+                "medium",
+                "high"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Risk"
+        }
+      },
+      "required": [
+        "at",
+        "result"
+      ],
+      "title": "SignIn",
+      "type": "object"
+    },
+    "SignInHistoryFact": {
+      "additionalProperties": false,
+      "properties": {
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "sign_in_history",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.0.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/SignInHistoryValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "SignInHistoryFact",
+      "type": "object"
+    },
+    "SignInHistoryValue": {
+      "additionalProperties": false,
+      "description": "A user's sign-ins over a window: counts, and up to 50 sign-ins, newest first.",
+      "properties": {
+        "failed": {
+          "minimum": 0,
+          "title": "Failed",
+          "type": "integer"
+        },
+        "sign_ins": {
+          "items": {
+            "$ref": "#/$defs/SignIn"
+          },
+          "maxItems": 50,
+          "title": "Sign Ins",
+          "type": "array"
+        },
+        "total": {
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "window_end": {
+          "format": "date-time",
+          "title": "Window End",
+          "type": "string"
+        },
+        "window_start": {
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_start",
+        "window_end",
+        "total",
+        "failed"
+      ],
+      "title": "SignInHistoryValue",
+      "type": "object"
+    },
+    "Source": {
+      "additionalProperties": false,
+      "description": "The connector or tool that observed the fact.",
+      "properties": {
+        "name": {
+          "examples": [
+            "virustotal",
+            "defender.ah"
+          ],
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "Source",
+      "type": "object"
+    },
+    "Subject": {
+      "additionalProperties": false,
+      "description": "The entity the fact is about: an IP address, a user principal name, a file's SHA-256...",
+      "properties": {
+        "type": {
+          "enum": [
+            "ip",
+            "domain",
+            "url",
+            "user",
+            "host",
+            "process",
+            "file",
+            "alert"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "value": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "value"
+      ],
+      "title": "Subject",
+      "type": "object"
+    }
+  },
+  "$id": "urn:lg-sotf:schema:evidence-fact:1.0.0",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One typed observation an investigation tool returned; verdicts cite facts by id. See docs/evidence-facts.md.",
+  "discriminator": {
+    "mapping": {
+      "process_lineage": "#/$defs/ProcessLineageFact",
+      "related_alert": "#/$defs/RelatedAlertFact",
+      "reputation": "#/$defs/ReputationFact",
+      "sign_in_history": "#/$defs/SignInHistoryFact"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ReputationFact"
+    },
+    {
+      "$ref": "#/$defs/ProcessLineageFact"
+    },
+    {
+      "$ref": "#/$defs/SignInHistoryFact"
+    },
+    {
+      "$ref": "#/$defs/RelatedAlertFact"
+    }
+  ],
+  "title": "LG-SOTF evidence fact"
+}

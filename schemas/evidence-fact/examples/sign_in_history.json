@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "id": "fact-signins-a.analyst",
+  "kind": "sign_in_history",
+  "subject": {"type": "user", "value": "a.analyst@contoso.example"},
+  "observed_at": "2026-11-07T09:20:00Z",
+  "source": {"name": "entra.sign_ins", "version": "beta"},
+  "ttl_seconds": 3600,
+  "value": {
+    "window_start": "2026-11-06T09:20:00Z",
+    "window_end": "2026-11-07T09:20:00Z",
+    "total": 14,
+    "failed": 11,
+    "sign_ins": [
+      {"at": "2026-11-07T09:02:11Z", "result": "success", "ip": "198.51.100.23", "country": "NL", "app": "Office 365 Exchange Online", "risk": "high"},
+      {"at": "2026-11-07T09:01:47Z", "result": "failure", "ip": "198.51.100.23", "country": "NL", "app": "Office 365 Exchange Online", "risk": "medium"},
+      {"at": "2026-11-06T17:45:30Z", "result": "success", "ip": "192.0.2.10", "country": "FR", "app": "Microsoft Teams", "risk": "none"}
+    ]
+  }
+}

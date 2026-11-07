@@ -22,6 +22,7 @@
 | [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
 | [SOAR playbooks](soar-playbooks.md) | Tenant admins, SOAR engineers | Running approved actions in your own SOAR: the signed webhook contract, idempotency, the reference receiver, the n8n workflow, Tines, Shuffle and Tracecat recipes, example vendor calls per action type |
 | [Proof of value](pov.md) | Operators, prospects | The `pov` install profile: read-only sources, response execution disabled by policy, an egress allow-list, one command, then the backtest |
+| [Evidence facts](evidence-facts.md) | Integrators, engineers | The evidence-fact schema v1: the typed observations verdicts cite, its kinds, SemVer rules and the CI breaking-change check |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
 | [Phishing triage](phishing.md) | Tenant admins, integrators | User-reported email: M365 and IMAP reporting mailboxes, the push API, phishing signals, response actions |
 | [Microsoft direct response](microsoft.md) | Tenant admins, security reviewers | Executing approved actions in Microsoft 365, Entra ID and Defender for Endpoint; routing, rehearsal, verification, rollback, background execution |
