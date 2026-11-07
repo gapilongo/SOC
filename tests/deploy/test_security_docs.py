@@ -18,12 +18,16 @@ from tests.deploy._support import REPO_ROOT
 
 DOCS = REPO_ROOT / "docs"
 THREAT_MODEL = DOCS / "threat-model.md"
+HARDENING = DOCS / "hardening.md"
 SECURITY = DOCS / "security.md"
 INDEX = DOCS / "index.md"
 
 # `path/to/file.ext:12` or `path/to/file:12-34`, alone in its backticks. A path has at least one "/".
 REF_RE = re.compile(r"`((?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+):(\d+)(?:-(\d+))?`")
+CONTROL_HEADING_RE = re.compile(r"^### (HG-[A-Z0-9]+-\d+) ", re.MULTILINE)
+SUMMARY_ROW_RE = re.compile(r"^\| (HG-[A-Z0-9]+-\d+) \|", re.MULTILINE)
 THREAT_ROW_RE = re.compile(r"^\| (TM-[A-Z]+-\d+) \|", re.MULTILINE)
+LEVEL_RE = re.compile(r"\*\*Level:\*\* (L[12])\.")
 
 Ref = Tuple[str, int, int]
 
@@ -36,7 +40,12 @@ def refs(doc: Path) -> List[Ref]:
     return found
 
 
-@pytest.mark.parametrize("doc", [THREAT_MODEL], ids=lambda p: p.name)
+def control_sections(text: str) -> List[Tuple[str, str]]:
+    parts = CONTROL_HEADING_RE.split(text)
+    return [(parts[i], parts[i + 1]) for i in range(1, len(parts), 2)]
+
+
+@pytest.mark.parametrize("doc", [THREAT_MODEL, HARDENING], ids=lambda p: p.name)
 def test_code_references_point_to_existing_files_and_lines(doc: Path) -> None:
     found = refs(doc)
     assert len(found) >= 20, f"{doc.name}: expected code references, found {len(found)}"
@@ -69,7 +78,34 @@ def test_threat_ids_are_unique() -> None:
     assert not duplicates, f"duplicate threat ids: {duplicates}"
 
 
+def test_hardening_control_ids_are_unique_and_summarised() -> None:
+    text = HARDENING.read_text(encoding="utf-8")
+    headings = CONTROL_HEADING_RE.findall(text)
+    duplicates = [i for i, n in Counter(headings).items() if n > 1]
+    assert not duplicates, f"duplicate control ids: {duplicates}"
+    summary = SUMMARY_ROW_RE.findall(text)
+    assert [i for i, n in Counter(summary).items() if n > 1] == []
+    assert summary == headings, "the summary table must list every control once, in document order"
+
+
+def test_hardening_covers_every_layer_with_complete_controls() -> None:
+    sections = control_sections(HARDENING.read_text(encoding="utf-8"))
+    prefixes = {cid.rsplit("-", 1)[0] for cid, _ in sections}
+    # Compose, Helm, PostgreSQL, Redis and the reverse proxy, plus settings and supply chain.
+    assert {"HG-CMP", "HG-K8S", "HG-PG", "HG-RD", "HG-PX"} <= prefixes
+    levels: dict[str, set[str]] = {}
+    for cid, body in sections:
+        level = LEVEL_RE.search(body)
+        assert level, f"{cid}: no L1/L2 level"
+        levels.setdefault(cid.rsplit("-", 1)[0], set()).add(level.group(1))
+        for part in ("**Rationale.**", "**Check.**", "**Set.**"):
+            assert part in body, f"{cid}: missing {part}"
+    for prefix in ("HG-CMP", "HG-K8S", "HG-PG", "HG-RD", "HG-PX"):
+        assert levels[prefix] == {"L1", "L2"}, f"{prefix}: needs both L1 and L2 controls"
+
+
 @pytest.mark.parametrize("doc", [SECURITY, INDEX], ids=lambda p: p.name)
 def test_new_security_docs_are_linked(doc: Path) -> None:
     text = doc.read_text(encoding="utf-8")
     assert "(threat-model.md)" in text
+    assert "(hardening.md)" in text

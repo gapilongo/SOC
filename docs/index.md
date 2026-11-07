@@ -12,6 +12,7 @@
 | [Identity](identity.md) | Tenant admins, operators, security reviewers | TOTP MFA, OIDC role mapping and just-in-time provisioning, SAML via a broker, recovery |
 | [Security](security.md) | Security reviewers, customers | Threat model, tenant isolation, authentication, secrets, prompt-injection defences, guardrails, data handling, audit |
 | [Threat model](threat-model.md) | Security reviewers, pen testers, engineers | STRIDE per component (API, worker, MCP, MSSP delegation, evidence tools, CI/CD), OWASP Top 10 for Agentic Applications, MITRE ATLAS, the threat-model gate per epic |
+| [Hardening guide](hardening.md) | Operators, security reviewers | Numbered L1/L2 controls with checks for Docker Compose, Helm, PostgreSQL, Redis, the reverse proxy and image verification |
 | [MSSP operations](mssp.md) | Platform admins | MSSP console, tenant switcher, suspension, quotas, usage metering and invoicing, tenant templates |
 | [Onboarding](onboarding.md) | Tenant admins | Getting-started checklist, sample alerts, per-tenant retention |
 | [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |
