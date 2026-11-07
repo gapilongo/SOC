@@ -4,7 +4,17 @@ One engine per worker process. ``run`` starts a fresh run from the alert row
 or continues an unfinished checkpoint; ``resume`` feeds an analyst decision
 or an approval into the pending interrupt. The engine owns alert status and
 summary writes, alert events, event publishing, escalations and the action
-ledger; it never touches ``workflow_runs`` or the queue (the worker does).
+ledger; it never touches the queue, and of ``workflow_runs`` (the worker's)
+only ``graph_version``.
+
+Graph versions: the engine compiles every graph in
+:data:`~lg_sotf.core.graph.GRAPH_BUILDERS` (the current one and N-1). A
+fresh thread starts on the current graph, after its version is stamped on
+``workflow_runs.graph_version``; a run with a checkpoint continues or resumes
+on the graph of its stamped version. A version this worker does not have
+raises :class:`UnknownGraphVersion` before anything is written: the run is
+marked failed with that error and retried (a worker of another release may
+have the version), then dead-lettered like any failing run.
 
 Alert status transitions (contract section 6): ``new``/``queued``/``failed``
 -> ``processing`` when a run or resume starts; ``waiting_human`` or
@@ -28,12 +38,18 @@ from pydantic import ValidationError as PydanticValidationError
 from redis.asyncio import Redis
 
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.graph import WorkflowState, build_graph, initial_state
+from lg_sotf.core.graph import (
+    GRAPH_BUILDERS,
+    UNVERSIONED_GRAPH,
+    GraphBuilder,
+    WorkflowState,
+    initial_state,
+)
 from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.checkpointer import TenantScopedPostgresSaver
-from lg_sotf.db.errors import DatabaseError, InvalidTransition
+from lg_sotf.db.errors import DatabaseError, InvalidTransition, NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Alert, Repositories
 from lg_sotf.db.tenancy import thread_id_for
@@ -56,6 +72,7 @@ __all__ = [
     "ApprovalPayload",
     "EventPublisher",
     "RunOutcome",
+    "UnknownGraphVersion",
     "WorkflowEngine",
     "validate_resume_payload",
 ]
@@ -64,6 +81,10 @@ log = get_logger(__name__)
 
 RECURSION_LIMIT = 60
 WAITING_STATUS = {"analyst_decision": "waiting_human", "approval": "waiting_approval"}
+
+
+class UnknownGraphVersion(WorkflowError):
+    """The run's checkpoint is on a graph version this worker cannot run."""
 
 
 @dataclass(frozen=True)
@@ -131,13 +152,24 @@ def checkpointer_conninfo(settings: Settings) -> str:
     )
 
 
+def _retry_policies(settings: Settings) -> Dict[str, Any]:
+    """``build_graph``'s retry arguments: node retries fit in the run timeout; analysis has its own timeout."""
+    worker = settings.worker
+    return {
+        "retry_policy": build_retry_policy(attempts_within_budget(worker.node_timeout_s, worker.run_timeout_s)),
+        "node_retry_policies": {
+            "analysis": build_retry_policy(attempts_within_budget(worker.analysis_timeout_s, worker.run_timeout_s))
+        },
+    }
+
+
 class WorkflowEngine:
     def __init__(
         self,
         *,
         settings: Settings,
         repos: Repositories,
-        graph: CompiledStateGraph,
+        graphs: Mapping[int, CompiledStateGraph],
         pool: AsyncConnectionPool,
         checkpointer: TenantScopedPostgresSaver,
         agents: AgentSet,
@@ -146,7 +178,10 @@ class WorkflowEngine:
     ) -> None:
         self.settings = settings
         self.repos = repos
-        self.graph = graph
+        self.graphs = dict(graphs)
+        self.graph_version = max(self.graphs)
+        self.graph = self.graphs[self.graph_version]
+        """The current graph: every fresh thread starts on it."""
         self.agents = agents
         self._pool = pool
         self._checkpointer = checkpointer
@@ -165,8 +200,9 @@ class WorkflowEngine:
         connectors: Optional[Mapping[str, Connector]] = None,
         checkpoint_pool_size: Optional[int] = None,
         secret_box: Optional[SecretBox] = None,
+        graph_builders: Mapping[int, GraphBuilder] = GRAPH_BUILDERS,
     ) -> WorkflowEngine:
-        """Build agents and services, open the checkpointer pool and compile the graph.
+        """Build agents and services, open the checkpointer pool and compile the graphs.
 
         The checkpoint tables must exist (``lg-sotf migrate`` runs
         ``AsyncPostgresSaver.setup()``). Raises
@@ -176,6 +212,8 @@ class WorkflowEngine:
         must not start and fail each run instead. ``secret_box`` is the
         process's (built once by its composition root): the response service
         and analysis enrichment decrypt tenant credentials with it.
+        ``graph_builders`` maps each graph version to its builder; the highest
+        version is the current graph.
         """
         indicator_hmac_key(settings)
         repos = Repositories.create(db)
@@ -211,22 +249,15 @@ class WorkflowEngine:
         )
         await pool.open(wait=True, timeout=settings.database.command_timeout_s)
         checkpointer = TenantScopedPostgresSaver(pool)  # type: ignore[arg-type]
-        graph = build_graph(
-            WorkflowNodes(deps),
-            deps.thresholds,
-            retry_policy=build_retry_policy(
-                attempts_within_budget(settings.worker.node_timeout_s, settings.worker.run_timeout_s)
-            ),
-            node_retry_policies={
-                "analysis": build_retry_policy(
-                    attempts_within_budget(settings.worker.analysis_timeout_s, settings.worker.run_timeout_s)
-                )
-            },
-        ).compile(checkpointer=checkpointer)
+        nodes = WorkflowNodes(deps)
+        graphs = {
+            version: build(nodes, deps.thresholds, **_retry_policies(settings)).compile(checkpointer=checkpointer)
+            for version, build in graph_builders.items()
+        }
         return cls(
             settings=settings,
             repos=repos,
-            graph=graph,
+            graphs=graphs,
             pool=pool,
             checkpointer=checkpointer,
             agents=agent_set,
@@ -278,31 +309,35 @@ class WorkflowEngine:
         config = self._config(tenant_id, alert_id)
         with bound_context(tenant_id=tenant_id, alert_id=alert_id, thread_id=config["configurable"]["thread_id"]):
             alert = await self.repos.alerts.get(tenant_id, alert_id)
-            snapshot = await self.graph.aget_state(config)
+            graph = await self._thread_graph(tenant_id, alert_id, config)
+            snapshot = await graph.aget_state(config)
             pending = self._pending_interrupt(snapshot)
             if pending is not None:
                 return await self._waiting(tenant_id, alert_id, pending)
             if self._unfinished(snapshot):
-                return await self._continue(tenant_id, alert_id, snapshot, config)
+                return await self._continue(graph, tenant_id, alert_id, snapshot, config)
             if snapshot.values:
                 if alert.status not in ("new", "queued"):
                     return RunOutcome("completed", alert.status, None)
                 await self._checkpointer.adelete_thread(config["configurable"]["thread_id"])
             await self._mark_processing(tenant_id, alert_id)
             initial = await self._initial_state(tenant_id, alert)
-            log.info("workflow.started")
-            return await self._invoke(tenant_id, alert_id, initial, config)
+            # Stamped before the thread's first checkpoint: no checkpoint is ever on an unrecorded graph.
+            await self.repos.runs.set_graph_version(tenant_id, alert_id, self.graph_version)
+            log.info("workflow.started", graph_version=self.graph_version)
+            return await self._invoke(self.graph, tenant_id, alert_id, initial, config)
 
     async def resume(self, tenant_id: str, alert_id: str, payload: Mapping[str, Any]) -> RunOutcome:
         """Deliver an analyst decision or approval to the run's pending interrupt."""
         data = validate_resume_payload(payload)
         config = self._config(tenant_id, alert_id)
         with bound_context(tenant_id=tenant_id, alert_id=alert_id, thread_id=config["configurable"]["thread_id"]):
-            snapshot = await self.graph.aget_state(config)
+            graph = await self._thread_graph(tenant_id, alert_id, config)
+            snapshot = await graph.aget_state(config)
             pending = self._pending_interrupt(snapshot)
             if pending is None:
                 if self._unfinished(snapshot):
-                    return await self._continue(tenant_id, alert_id, snapshot, config)
+                    return await self._continue(graph, tenant_id, alert_id, snapshot, config)
                 if snapshot.values:
                     alert = await self.repos.alerts.get(tenant_id, alert_id)
                     return RunOutcome("completed", alert.status, None)
@@ -343,11 +378,34 @@ class WorkflowEngine:
                 )
             await self._mark_processing(tenant_id, alert_id)
             log.info("workflow.resumed", resume_type=data["type"])
-            return await self._invoke(tenant_id, alert_id, Command(resume=data), config)
+            return await self._invoke(graph, tenant_id, alert_id, Command(resume=data), config)
 
     # ------------------------------------------------------------ internals
 
-    async def _continue(self, tenant_id: str, alert_id: str, snapshot: Any, config: RunnableConfig) -> RunOutcome:
+    async def _thread_graph(self, tenant_id: str, alert_id: str, config: RunnableConfig) -> CompiledStateGraph:
+        """The graph of the version the alert's thread started on (the current graph when it has none yet).
+
+        Raises :class:`UnknownGraphVersion` when a checkpoint exists on a
+        version this worker does not have: such a run never runs on another graph.
+        """
+        try:
+            version = (await self.repos.runs.get(tenant_id, alert_id)).graph_version
+        except NotFound:  # an engine call without a run row (eval)
+            version = None
+        version = UNVERSIONED_GRAPH if version is None else version
+        graph = self.graphs.get(version)
+        if graph is not None:
+            return graph
+        if await self._checkpointer.aget_tuple(config) is None:
+            return self.graph  # nothing ran on that version: a fresh thread starts on the current graph
+        log.error("workflow.unknown_graph_version", graph_version=version, known=sorted(self.graphs))
+        raise UnknownGraphVersion(
+            f"run is checkpointed on graph version {version}; this worker runs versions {sorted(self.graphs)}"
+        )
+
+    async def _continue(
+        self, graph: CompiledStateGraph, tenant_id: str, alert_id: str, snapshot: Any, config: RunnableConfig
+    ) -> RunOutcome:
         """Continue an unfinished checkpoint.
 
         When only ``close`` is left, the alert may already be ``closed`` (the
@@ -359,20 +417,22 @@ class WorkflowEngine:
         alert = await self.repos.alerts.get(tenant_id, alert_id)
         if not (alert.status == "closed" and set(remaining) <= {"close"}):
             await self._mark_processing(tenant_id, alert_id)
-        return await self._invoke(tenant_id, alert_id, None, config)
+        return await self._invoke(graph, tenant_id, alert_id, None, config)
 
     async def _initial_state(self, tenant_id: str, alert: Alert) -> WorkflowState:
         tenant = await self.repos.tenants.get(tenant_id)
         return initial_state(tenant_id, alert, llm_budget_limit=token_budget(tenant.settings))
 
-    async def _invoke(self, tenant_id: str, alert_id: str, graph_input: Any, config: RunnableConfig) -> RunOutcome:
+    async def _invoke(
+        self, graph: CompiledStateGraph, tenant_id: str, alert_id: str, graph_input: Any, config: RunnableConfig
+    ) -> RunOutcome:
         try:
-            await self.graph.ainvoke(graph_input, config, durability="sync")
+            await graph.ainvoke(graph_input, config, durability="sync")
         except Exception as exc:
             log_failure(log, "workflow.run_failed", exc, error_type=type(exc).__name__)
             await self._mark_failed(tenant_id, alert_id)
             raise
-        snapshot = await self.graph.aget_state(config)
+        snapshot = await graph.aget_state(config)
         pending = self._pending_interrupt(snapshot)
         if pending is not None:
             return await self._waiting(tenant_id, alert_id, pending)
