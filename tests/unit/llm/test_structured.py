@@ -14,6 +14,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langchain_core.outputs import ChatResult
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, Field
+from structlog.testing import capture_logs
 
 from lg_sotf.llm.budget import USE_DEFAULT, TokenBudget
 from lg_sotf.llm.client import SERVER_FALLBACK_BETA, get_chat_model
@@ -534,3 +535,64 @@ async def test_a_wrapped_gemini_503_is_retried(make_settings: Callable[..., Sett
     stub = FlakyStub(result=_ok_result(), error=error, failures=1)
     verdict = await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", settings=s)
     assert verdict.disposition == "malicious" and stub.calls == 2 and len(no_sleep) == 1
+
+
+# ------------------------------------------------------------------ log events (S5 characterization)
+
+
+def _llm_events(logs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The ``llm.*`` events, without the timing fields that vary between runs."""
+    varying = {"latency_ms", "delay_s", "timestamp"}
+    return [{k: v for k, v in e.items() if k not in varying} for e in logs if str(e.get("event", "")).startswith("llm.")]
+
+
+async def test_log_events_of_a_retried_then_failed_call(make_settings: Callable[..., Settings], no_sleep: List[float]) -> None:
+    from lg_sotf.llm.usage import UsageTally
+
+    s = make_settings()
+    tally = UsageTally()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=10)
+    with capture_logs() as logs, pytest.raises(_StatusError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s, tally=tally)
+    common = {"agent": "analysis", "tier": "deep", "model": "claude-opus-5-5", "error_type": "_StatusError", "attempt": 1}
+    assert _llm_events(logs) == [
+        {**common, "event": "llm.call_retrying", "retry": 1, "log_level": "warning"},
+        {**common, "event": "llm.call_retrying", "retry": 2, "log_level": "warning"},
+        {**common, "event": "llm.call_failed", "log_level": "warning"},
+    ]
+    assert all(e["delay_s"] > 0 for e in logs if e["event"] == "llm.call_retrying")
+    assert _rows()["analysis"]["errors"] == 3 and tally.by_agent["analysis"].errors == 3
+
+
+async def test_log_events_of_a_successful_call(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings()
+    stub = StubModel(result=_ok_result())
+    with capture_logs() as logs:
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s)
+    (event,) = _llm_events(logs)
+    assert event == {
+        "event": "llm.call",
+        "log_level": "info",
+        "agent": "triage",
+        "tier": "fast",
+        "model": "claude-opus-5-5",
+        "outcome": "success",
+        "input_tokens": 120,
+        "output_tokens": 30,
+        "cache_read_tokens": 0,
+        "cache_write_tokens": 0,
+        "cost_usd": event["cost_usd"],
+        "served_by": "claude-opus-5-5",
+    }
+    assert event["cost_usd"] > 0
+
+
+async def test_cancellation_is_neither_metered_nor_logged(make_settings: Callable[..., Settings]) -> None:
+    import asyncio
+
+    s = make_settings()
+    stub = StubModel(error=asyncio.CancelledError())
+    with capture_logs() as logs, pytest.raises(asyncio.CancelledError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s)
+    assert _llm_events(logs) == []
+    assert "triage" not in _rows()

@@ -27,7 +27,6 @@ ingestion/service.py::IngestionService._ingest	114
 ingestion/service.py::IngestionService.poll_source	82
 integrations/microsoft/connection_test.py::run_connection_test	84
 integrations/microsoft/http.py::MicrosoftApi._send	118
-llm/structured.py::ainvoke_structured	134
 mcp/server.py::serve	98
 mcp/tester.py::_get_test_run	82
 mcp/tester.py::_ingest_test_alerts	94
