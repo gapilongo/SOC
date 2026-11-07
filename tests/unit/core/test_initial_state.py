@@ -18,6 +18,7 @@ from lg_sotf.core import graph
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import Alert
 from lg_sotf.eval import history
+from lg_sotf.models.tenant_settings import token_budget
 
 pytestmark = pytest.mark.unit
 
@@ -60,7 +61,7 @@ def engine_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, A
 
 def backtest_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
     """What ``HistoryReplayer.replay`` starts from."""
-    return dict(history.initial_state(TENANT, item, llm_budget_limit=tenant_settings.get("llm_daily_token_budget")))
+    return dict(history.initial_state(TENANT, item, llm_budget_limit=token_budget(tenant_settings)))
 
 
 def test_the_backtest_uses_the_engine_factory() -> None:

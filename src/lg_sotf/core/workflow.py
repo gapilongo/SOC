@@ -42,6 +42,7 @@ from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import InvalidResumePayload, WorkflowError
 from lg_sotf.llm import TokenBudget
+from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.security.crypto import SecretBox
@@ -362,7 +363,7 @@ class WorkflowEngine:
 
     async def _initial_state(self, tenant_id: str, alert: Alert) -> WorkflowState:
         tenant = await self.repos.tenants.get(tenant_id)
-        return initial_state(tenant_id, alert, llm_budget_limit=tenant.settings.get("llm_daily_token_budget"))
+        return initial_state(tenant_id, alert, llm_budget_limit=token_budget(tenant.settings))
 
     async def _invoke(self, tenant_id: str, alert_id: str, graph_input: Any, config: RunnableConfig) -> RunOutcome:
         try:

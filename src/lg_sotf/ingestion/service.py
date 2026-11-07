@@ -98,6 +98,7 @@ from lg_sotf.ingestion.sources import (
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget
 from lg_sotf.llm.errors import LLMBudgetExceeded
 from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, IngestedAlert, cap_mapping, json_size
+from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import redact, redact_text
@@ -634,8 +635,8 @@ class IngestionService:
             tenant = await self._repos.tenants.get(tenant_id)
         except NotFound:
             return USE_DEFAULT
-        limit = tenant.settings.get("llm_daily_token_budget")
-        return limit if isinstance(limit, int) and not isinstance(limit, bool) else USE_DEFAULT
+        limit = token_budget(tenant.settings)
+        return USE_DEFAULT if limit is None else limit
 
     async def _llm_phase(
         self, tenant_id: str, pending: List[Tuple[int, Dict[str, Any], int]], ctx: NormalizeContext

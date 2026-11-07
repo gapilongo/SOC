@@ -207,14 +207,14 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     return capped
 
 
-def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Any = None) -> WorkflowState:
+def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[int] = None) -> WorkflowState:
     """The state a fresh run of ``alert`` starts from: in the engine, and in the backtest's replay.
 
     The alert is its normalized form with the row's own columns (and ``raw``
     unless the normalized form has one), size-capped by :func:`cap_alert`.
-    ``llm_budget_limit`` is the tenant's ``llm_daily_token_budget`` as stored:
-    an ``int`` (never a ``bool``) is the run's daily token budget, anything
-    else means the install default (``None``).
+    ``llm_budget_limit`` is the tenant's daily LLM token budget
+    (:func:`lg_sotf.models.tenant_settings.token_budget`); ``None`` means the
+    install default.
     """
     canonical: Dict[str, Any] = dict(alert.normalized)
     canonical.update(
@@ -231,7 +231,6 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Any = None)
     )
     if "raw" not in canonical:
         canonical["raw"] = alert.raw
-    limit = llm_budget_limit if isinstance(llm_budget_limit, int) and not isinstance(llm_budget_limit, bool) else None
     return {
         "tenant_id": tenant_id,
         "alert_id": alert.id,
@@ -255,7 +254,7 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Any = None)
         "disposition": None,
         "close_reason": None,
         "llm_budget_exceeded": False,
-        "llm_budget_limit": limit,
+        "llm_budget_limit": llm_budget_limit,
         "notes": [],
     }
 

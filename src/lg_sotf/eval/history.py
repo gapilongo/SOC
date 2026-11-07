@@ -59,6 +59,7 @@ from lg_sotf.domain.routing import RoutingThresholds, refused_by
 from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm import UsageTally, merge_usage_summary
+from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
@@ -301,9 +302,7 @@ class HistoryReplayer:
         cutoff = alert.ingested_at
         offset = max(self.clock() - cutoff, timedelta(0))
         repos = replay_repositories(self.db, cutoff=cutoff, offset=offset)
-        state = initial_state(
-            self.tenant_id, alert, llm_budget_limit=self.tenant_settings.get("llm_daily_token_budget")
-        )
+        state = initial_state(self.tenant_id, alert, llm_budget_limit=token_budget(self.tenant_settings))
         tallies: List[UsageTally] = []
 
         def context() -> AgentContext:
