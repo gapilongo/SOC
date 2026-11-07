@@ -127,6 +127,26 @@ jobs:
           git show "${BASE}:docs/openapi.json" > /tmp/openapi-base.json
           python scripts/ci/check_api_compat.py /tmp/openapi-base.json docs/openapi.json
 
+  schemas:
+    name: Published schemas (SemVer breaking-change check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # schemas/<name>/v<major>.json against the base revision: a change needs the version bump it
+    # implies, and a breaking one a new major file (docs/evidence-facts.md). The unit tier checks
+    # that each file matches its Pydantic model (scripts/export_schemas.py --check).
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base revision's schemas
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Compare with the base revision
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/ci/schema_compat.py --base "${BASE_REF}"
+
   test:
     name: Tests (PostgreSQL 16, Redis 7)
     runs-on: ubuntu-latest

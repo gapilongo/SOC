@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "id": "fact-rep-file-1",
+  "kind": "reputation",
+  "subject": {"type": "file", "value": "10cf297b8f33f25630e5849e7efbe0f537b2fed990fa03934754aefd7ef550cd"},
+  "observed_at": "2026-11-07T09:15:40Z",
+  "source": {"name": "virustotal", "version": "v3"},
+  "ttl_seconds": 604800,
+  "value": {"verdict": "unknown", "categories": []}
+}
