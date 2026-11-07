@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { UsageOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
-import UsagePage from './UsagePage';
+import UsagePage, { dailyTotals } from './UsagePage';
 
 const USAGE: UsageOut = {
   start: '2026-09-01',
@@ -63,5 +63,17 @@ describe('UsagePage', () => {
     fireEvent.change(screen.getByLabelText('To'), { target: { value: '2020-01-01' } });
     expect(await screen.findByText('The end date must not be before the start date.')).toHaveAttribute('role', 'alert');
     expect(fake.calls.filter((c) => c.path === '/usage/llm')).toHaveLength(1);
+  });
+});
+
+describe('dailyTotals', () => {
+  it('sums daily LLM cost across models and fills empty days', () => {
+    const row = (day: string, cost: string, calls: number) => ({ day, model: 'm', agent: 'a', calls, input_tokens: 10, output_tokens: 5, cache_read_tokens: 0, cache_write_tokens: 0, cost_usd: cost, refusals: 0, errors: 0 });
+    const days = dailyTotals([row('2026-09-01', '0.10', 2), row('2026-09-01', '0.05', 1), row('2026-09-03', '1.00', 4)], '2026-09-01', '2026-09-03');
+    expect(days.map((d) => [d.day, Number(d.cost.toFixed(2)), d.calls])).toEqual([
+      ['2026-09-01', 0.15, 3],
+      ['2026-09-02', 0, 0],
+      ['2026-09-03', 1, 4],
+    ]);
   });
 });
