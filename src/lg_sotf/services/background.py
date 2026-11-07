@@ -42,7 +42,7 @@ from collections import defaultdict
 from typing import Dict, List, Tuple
 from uuid import UUID
 
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.services.response import APPROVAL_EXPIRED_REASON, APPROVAL_SUPERSEDED_REASON, ResponseService
 
 log = get_logger(__name__)
@@ -106,7 +106,7 @@ class BackgroundExecutor:
                     try:
                         status = await self._responses.execute_background(tenant_id, action_id, deadline_s=deadline_s)
                     except Exception as exc:  # noqa: BLE001 - the lease brings the row back after it ends
-                        log.error("response.background_failed", error_type=type(exc).__name__)
+                        log_failure(log, "response.background_failed", exc, error_type=type(exc).__name__)
                         return
                     log.info("response.background_executed", status=status)
 

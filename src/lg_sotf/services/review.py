@@ -64,7 +64,7 @@ from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINAL_RUN_STATUSES, WORKFLOW_OWNER
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
 from lg_sotf.services.response import (
@@ -793,5 +793,5 @@ async def enqueue_resumes(queue: WorkQueue, tenant_id: str, requests: Sequence[R
             ok += 1
         except Exception as exc:  # noqa: BLE001 - the decision is committed; report instead of failing it
             failed += 1
-            log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
+            log_failure(log, "api.resume_enqueue_failed", exc, alert_id=request.alert_id, error_type=type(exc).__name__)
     return ok, failed

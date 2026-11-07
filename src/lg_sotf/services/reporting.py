@@ -71,7 +71,7 @@ from lg_sotf.llm.pricing import LOCAL_PREFIX
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
 from lg_sotf.models.vocabulary import DISPOSITIONS as AI_CLASSES
 from lg_sotf.models.vocabulary import Disposition as AiClass
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Repositories
@@ -769,14 +769,14 @@ class ReportService:
             raw = await self._redis.get(key)
             return None if raw is None else model.model_validate_json(raw)
         except (RedisError, OSError, TimeoutError, ValueError) as exc:
-            log.warning("reports.cache_unavailable", error_type=type(exc).__name__)
+            log_failure(log, "reports.cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
             return None
 
     async def _store(self, key: str, value: BaseModel) -> None:
         try:
             await self._redis.set(key, value.model_dump_json().encode(), ex=self._ttl)
         except (RedisError, OSError, TimeoutError) as exc:
-            log.warning("reports.cache_unavailable", error_type=type(exc).__name__)
+            log_failure(log, "reports.cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
 
     async def value(self, tenant_id: str, window: ReportWindow, *, minutes_per_alert: int) -> ValueReport:
         key = self.cache_key(tenant_id, "value", window, f"m{minutes_per_alert}")
