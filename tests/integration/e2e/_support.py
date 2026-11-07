@@ -15,7 +15,8 @@ from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
-from lg_sotf.ingestion.service import IngestionService, IngestResult
+from lg_sotf.ingestion.batch import IngestResult
+from lg_sotf.ingestion.service import IngestionService
 from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.queue.events import EventBus
 from lg_sotf.queue.producer import WorkQueue
