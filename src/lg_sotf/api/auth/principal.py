@@ -8,7 +8,7 @@ from typing import FrozenSet, Literal, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor
-from lg_sotf.models.vocabulary import ROLE_RANK
+from lg_sotf.models.vocabulary import ROLE_RANK, Role, Scope
 from lg_sotf.models.vocabulary import ROLES as ROLES
 from lg_sotf.models.vocabulary import SCOPES as SCOPES
 
@@ -16,7 +16,8 @@ PrincipalKind = Literal["user", "api_key"]
 AuthMethod = Literal["password", "oidc", "api_key"]
 
 
-def role_at_least(role: Optional[str], minimum: str) -> bool:
+def role_at_least(role: Optional[str], minimum: Role) -> bool:
+    """Whether ``role`` ranks at least ``minimum``; an unknown or missing role never does."""
     return role is not None and ROLE_RANK.get(role, -1) >= ROLE_RANK[minimum]
 
 
@@ -34,8 +35,8 @@ class Principal:
     tenant_id: str
     home_tenant_id: str
     auth_method: AuthMethod
-    role: Optional[str] = None
-    scopes: FrozenSet[str] = field(default_factory=frozenset)
+    role: Optional[Role] = None
+    scopes: FrozenSet[Scope] = field(default_factory=frozenset)
     user_id: Optional[UUID] = None
     api_key_id: Optional[UUID] = None
     email: Optional[str] = None

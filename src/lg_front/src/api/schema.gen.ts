@@ -1519,8 +1519,11 @@ export interface components {
         };
         /** ActionOut */
         ActionOut: {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
             /** Alert Id */
             alert_id: string;
             /** Approved At */
@@ -1547,8 +1550,9 @@ export interface components {
             /**
              * Execution Owner
              * @default workflow
+             * @enum {string}
              */
-            execution_owner?: string;
+            execution_owner?: "workflow" | "scheduler";
             /** External Ref */
             external_ref?: {
                 [key: string]: unknown;
@@ -1578,8 +1582,11 @@ export interface components {
              * @description The action type has an inverse (rollback).
              */
             reversible?: boolean | null;
-            /** Risk Level */
-            risk_level: string;
+            /**
+             * Risk Level
+             * @enum {string}
+             */
+            risk_level: "low" | "medium" | "high" | "critical";
             rollback?: components["schemas"]["RollbackEligibilityOut"];
             /** Rollback Of */
             rollback_of?: string | null;
@@ -1588,8 +1595,11 @@ export interface components {
              * @description The live rollback of this action, if any.
              */
             rolled_back_by?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "awaiting_approval" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "dry_run" | "blocked";
             /** Target */
             target: string;
             /** Tenant Id */
@@ -1659,7 +1669,7 @@ export interface components {
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
-            disposition?: string | null;
+            disposition?: ("malicious" | "benign" | "inconclusive") | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Findings */
             findings?: components["schemas"]["FindingOut"][];
@@ -1687,8 +1697,11 @@ export interface components {
             raw?: {
                 [key: string]: unknown;
             };
-            /** Severity */
-            severity: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
             /** Source Alert Id */
             source_alert_id: string;
             /** Source Id */
@@ -1698,8 +1711,11 @@ export interface components {
              * @description The source's name; null once it is deleted.
              */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -1720,8 +1736,11 @@ export interface components {
         AlertEventOut: {
             /** Actor Id */
             actor_id?: string | null;
-            /** Actor Type */
-            actor_type: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "system" | "user" | "agent";
             /** Alert Id */
             alert_id: string;
             /** Data */
@@ -1753,7 +1772,7 @@ export interface components {
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
-            disposition?: string | null;
+            disposition?: ("malicious" | "benign" | "inconclusive") | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Fingerprint */
             fingerprint: string;
@@ -1771,8 +1790,11 @@ export interface components {
             occurred_at: string;
             /** Priority */
             priority?: number | null;
-            /** Severity */
-            severity: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
             /** Source Alert Id */
             source_alert_id: string;
             /** Source Id */
@@ -1782,8 +1804,11 @@ export interface components {
              * @description The source's name; null once it is deleted.
              */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -1835,7 +1860,7 @@ export interface components {
             /** Revoked At */
             revoked_at?: string | null;
             /** Scopes */
-            scopes: string[];
+            scopes: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
         };
@@ -1862,7 +1887,7 @@ export interface components {
             /** Revoked At */
             revoked_at?: string | null;
             /** Scopes */
-            scopes: string[];
+            scopes: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
         };
@@ -1890,8 +1915,11 @@ export interface components {
             action: string;
             /** Actor Id */
             actor_id?: string | null;
-            /** Actor Type */
-            actor_type: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "system" | "user" | "agent" | "api_key";
             /** Details */
             details?: {
                 [key: string]: unknown;
@@ -1938,7 +1966,7 @@ export interface components {
             /** Scope Hosts */
             scope_hosts?: string[];
             /** Target Kind */
-            target_kind?: string | null;
+            target_kind?: ("ip" | "domain" | "url" | "hash" | "user" | "host" | "process" | "alert" | "email" | "message") | null;
             /** Tenant Executed Last Hour */
             tenant_executed_last_hour?: number | null;
             /** Tenant Hourly Cap */
@@ -2260,16 +2288,22 @@ export interface components {
              * Format: date-time
              */
             next_attempt_at: string;
-            /** Operation */
-            operation: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "notify" | "ticket_create" | "ticket_update" | "test";
             /** Result */
             result?: {
                 [key: string]: unknown;
             } | null;
             /** Sent At */
             sent_at?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "sent" | "failed" | "dead";
             /** Title */
             title?: string | null;
         };
@@ -2294,11 +2328,11 @@ export interface components {
             /** Malicious */
             malicious: number;
             /** Max Confirmed Benign Severity */
-            max_confirmed_benign_severity: string | null;
+            max_confirmed_benign_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Max Severity */
-            max_severity: string | null;
+            max_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Median Severity */
-            median_severity: string | null;
+            median_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Reason */
             reason: string;
             /** Rule */
@@ -2392,8 +2426,11 @@ export interface components {
             erased_at?: string | null;
             /** Name */
             name: string;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /** Tenant Id */
             tenant_id: string;
         };
@@ -2463,7 +2500,7 @@ export interface components {
             /** Alert Id */
             alert_id: string;
             /** Alert Severity */
-            alert_severity?: string | null;
+            alert_severity?: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Approved Actions */
             approved_actions?: string[];
             /** Assigned To */
@@ -2484,14 +2521,17 @@ export interface components {
             /** Decided By Email */
             decided_by_email?: string | null;
             /** Decision */
-            decision?: string | null;
+            decision?: ("true_positive" | "false_positive" | "benign_positive" | "needs_more_info") | null;
             /** Decision Notes */
             decision_notes?: string | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Id */
             id: string;
-            /** Level */
-            level: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "L1" | "L2" | "L3";
             /** Priority */
             priority: number;
             /** Reason */
@@ -2510,8 +2550,11 @@ export interface components {
             source_id?: string | null;
             /** Source Name */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "claimed" | "decided" | "expired" | "cancelled";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -2523,6 +2566,106 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Version */
+            version: number;
+        };
+        /** EvidenceIntegrityOut */
+        EvidenceIntegrityOut: {
+            /**
+             * Bundle Sha256
+             * @description SHA-256 of the canonical bundle without this block (X-Evidence-Bundle-SHA256).
+             */
+            bundle_sha256: string;
+            /** Canonicalization */
+            canonicalization: string;
+            /**
+             * Signature
+             * @description alg, key_id and value when a key is set.
+             */
+            signature?: {
+                [key: string]: string;
+            } | null;
+        };
+        /**
+         * EvidencePackOut
+         * @description ``GET /alerts/{alert_id}/evidence``: the sealed case bundle (docs/compliance.md).
+         */
+        EvidencePackOut: {
+            /** Actions */
+            actions: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Agents
+             * @description Per workflow step: whether it ran, its model, verdict and reasoning.
+             */
+            agents: {
+                [key: string]: unknown;
+            };
+            /**
+             * Alert
+             * @description The alert record, raw payload redacted (raw_redacted, raw_redactions).
+             */
+            alert: {
+                [key: string]: unknown;
+            };
+            /**
+             * Audit
+             * @description The audit entries of the case and the chain verification.
+             */
+            audit: {
+                [key: string]: unknown;
+            };
+            /** Correlation */
+            correlation: {
+                [key: string]: unknown;
+            };
+            /** Enrichment */
+            enrichment: {
+                [key: string]: unknown;
+            };
+            /** Escalations */
+            escalations: {
+                [key: string]: unknown;
+            }[];
+            /** Feedback */
+            feedback: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Format
+             * @description lg-sotf.evidence-pack
+             */
+            format: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Generated By */
+            generated_by: {
+                [key: string]: unknown;
+            };
+            /** Human Oversight */
+            human_oversight: {
+                [key: string]: unknown;
+            };
+            integrity: components["schemas"]["EvidenceIntegrityOut"];
+            /** Lg Sotf Version */
+            lg_sotf_version: string;
+            /**
+             * Limits
+             * @description Which lists were truncated.
+             */
+            limits: {
+                [key: string]: boolean;
+            };
+            /** Tenant Id */
+            tenant_id: string;
+            /** Timeline */
+            timeline: {
+                [key: string]: unknown;
+            }[];
             /** Version */
             version: number;
         };
@@ -2666,8 +2809,11 @@ export interface components {
             generated_at: string;
             /** Html */
             html: string;
-            /** Stage */
-            stage: string;
+            /**
+             * Stage
+             * @enum {string}
+             */
+            stage: "early_warning" | "notification" | "final";
         };
         /** IngestItemOut */
         IngestItemOut: {
@@ -2748,16 +2894,22 @@ export interface components {
             /** Enabled */
             enabled: boolean;
             /** Events */
-            events: string[];
+            events: ("escalation.created" | "escalation.sla_breached" | "escalation.decided" | "action.awaiting_approval" | "action.executed" | "action.failed" | "action.verification_failed" | "alert.critical_received")[];
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
-            /** Min Severity */
-            min_severity: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "slack" | "teams" | "email" | "webhook" | "jira" | "servicenow" | "microsoft";
+            /**
+             * Min Severity
+             * @enum {string}
+             */
+            min_severity: "info" | "low" | "medium" | "high" | "critical";
             /** Name */
             name: string;
             /**
@@ -2873,9 +3025,9 @@ export interface components {
              */
             kind: "user" | "api_key";
             /** Role */
-            role?: string | null;
+            role?: ("viewer" | "analyst" | "admin") | null;
             /** Scopes */
-            scopes?: string[];
+            scopes?: ("ingest" | "read" | "write")[];
             /** Tenant Id */
             tenant_id: string;
             /** Tenant Name */
@@ -2992,6 +3144,116 @@ export interface components {
             code: string;
             /** Mfa Token */
             mfa_token: string;
+        };
+        /** MicrosoftActionSupportOut */
+        MicrosoftActionSupportOut: {
+            /** Inverse */
+            inverse?: ("block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk") | null;
+            /** Irreversible Note */
+            irreversible_note: string;
+            /** Note */
+            note: string;
+            /** Restorative */
+            restorative: boolean;
+            /** Reversible */
+            reversible: boolean;
+            /** Risk */
+            risk?: ("low" | "medium" | "high" | "critical") | null;
+            /** Rollback Window S */
+            rollback_window_s?: number | null;
+        };
+        /** MicrosoftCapabilityOut */
+        MicrosoftCapabilityOut: {
+            /**
+             * Actions
+             * @description Keyed by action type.
+             */
+            actions: {
+                [key: string]: components["schemas"]["MicrosoftActionSupportOut"];
+            };
+            /**
+             * Api
+             * @enum {string}
+             */
+            api: "graph" | "defender";
+            /** Clouds */
+            clouds: ("global" | "usgov_gcc_high" | "usgov_dod")[];
+            /** Description */
+            description: string;
+            /** Excludes */
+            excludes: string[];
+            /** Key */
+            key: string;
+            /** Licence */
+            licence: string;
+            /** Live Confirmation */
+            live_confirmation: string;
+            /** Options Defaults */
+            options_defaults: {
+                [key: string]: unknown;
+            };
+            /**
+             * Options Schema
+             * @description JSON schema of the capability's options.
+             */
+            options_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Package
+             * @enum {string}
+             */
+            package: "mail" | "entra" | "defender";
+            /** Permissions */
+            permissions: components["schemas"]["MicrosoftPermissionOut"][];
+            /** Title */
+            title: string;
+        };
+        /**
+         * MicrosoftCatalogOut
+         * @description ``GET /integrations/microsoft/catalog``: the capabilities, the clouds and the Defender geos.
+         */
+        MicrosoftCatalogOut: {
+            /** Capabilities */
+            capabilities: components["schemas"]["MicrosoftCapabilityOut"][];
+            /** Clouds */
+            clouds: components["schemas"]["MicrosoftCloudOut"][];
+            /** Defender Geos */
+            defender_geos: string[];
+        };
+        /** MicrosoftCloudOut */
+        MicrosoftCloudOut: {
+            /** Defender Supported */
+            defender_supported: boolean;
+            /** Graph Host */
+            graph_host: string;
+            /** Login Host */
+            login_host: string;
+            /**
+             * Name
+             * @enum {string}
+             */
+            name: "global" | "usgov_gcc_high" | "usgov_dod";
+        };
+        /** MicrosoftPermissionOut */
+        MicrosoftPermissionOut: {
+            /**
+             * Api
+             * @enum {string}
+             */
+            api: "graph" | "defender";
+            /** Directory Role */
+            directory_role?: string | null;
+            /** Exchange Rbac */
+            exchange_rbac?: string | null;
+            /** Purpose */
+            purpose: string;
+            /** Required */
+            required: boolean;
+            /** Role */
+            role: string;
+            /** When */
+            when: string;
         };
         /**
          * MicrosoftTestReport
@@ -3148,7 +3410,7 @@ export interface components {
             /** Alert Id */
             alert_id: string;
             /** Alert Severity */
-            alert_severity?: string | null;
+            alert_severity?: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Alert Title */
             alert_title?: string | null;
             /** Assigned To */
@@ -3160,8 +3422,11 @@ export interface components {
             created_at: string;
             /** Id */
             id: string;
-            /** Level */
-            level: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "L1" | "L2" | "L3";
             /**
              * Overdue
              * @default false
@@ -3173,19 +3438,28 @@ export interface components {
             reason: string;
             /** Sla Deadline */
             sla_deadline?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "claimed" | "decided" | "expired" | "cancelled";
             /** Tenant Id */
             tenant_id: string;
             /** Tenant Name */
             tenant_name: string;
-            /** Tenant Status */
-            tenant_status: string;
+            /**
+             * Tenant Status
+             * @enum {string}
+             */
+            tenant_status: "active" | "suspended";
         };
         /** PreviewActionOut */
         PreviewActionOut: {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
             /**
              * Approval Entry
              * @description The approved_actions entry naming exactly this action.
@@ -3193,9 +3467,10 @@ export interface components {
             approval_entry: string;
             /**
              * Autonomy
-             * @description The tenant's autonomy mode for this risk: auto, approval or disabled.
+             * @description The tenant's autonomy mode for this risk.
+             * @enum {string}
              */
-            autonomy: string;
+            autonomy: "auto" | "approval" | "disabled";
             /**
              * Can Preapprove
              * @description Your role may pre-approve it with a true_positive decision.
@@ -3211,8 +3486,11 @@ export interface components {
             irreversible_note?: string | null;
             /** Reversible */
             reversible: boolean;
-            /** Risk */
-            risk: string;
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "low" | "medium" | "high" | "critical";
             /**
              * Role Lock
              * @description admin: high and critical risk need an admin; disabled: nobody may approve it.
@@ -3316,6 +3594,24 @@ export interface components {
             /** Max Users */
             max_users?: number | null;
         };
+        /**
+         * ReadinessOut
+         * @description ``GET /readyz``: 200 when every dependency answers, else 503 with the same body.
+         */
+        ReadinessOut: {
+            /**
+             * Checks
+             * @description Per dependency (database, redis): busy means every pooled connection is serving requests.
+             */
+            checks: {
+                [key: string]: "ok" | "busy" | "error";
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "unavailable";
+        };
         /** RecoveryCodesOut */
         RecoveryCodesOut: {
             /** Recovery Codes */
@@ -3327,8 +3623,11 @@ export interface components {
             alert_id: string;
             /** Entry Id */
             entry_id: string;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
         };
         /** ResponsePreviewOut */
         ResponsePreviewOut: {
@@ -3352,6 +3651,21 @@ export interface components {
             generated_at: string;
             /** Threat Type */
             threat_type: string;
+        };
+        /**
+         * ResponseRoutesOut
+         * @description ``GET /tenant/response/routes``: which connector executes each catalog action type, and why.
+         */
+        ResponseRoutesOut: {
+            /** Dry Run Forced */
+            dry_run_forced: boolean;
+            /**
+             * Routes
+             * @description Keyed by action type.
+             */
+            routes: {
+                [key: string]: components["schemas"]["RouteOut"];
+            };
         };
         /**
          * RetentionLimitsOut
@@ -3385,7 +3699,7 @@ export interface components {
          */
         RollbackEligibilityOut: {
             /** Action Type */
-            action_type?: string | null;
+            action_type?: ("block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk") | null;
             /**
              * Available
              * @default false
@@ -3394,7 +3708,7 @@ export interface components {
             /** Reason */
             reason?: string | null;
             /** Risk */
-            risk?: string | null;
+            risk?: ("low" | "medium" | "high" | "critical") | null;
             /** Until */
             until?: string | null;
         };
@@ -3415,6 +3729,25 @@ export interface components {
             created: boolean;
             original: components["schemas"]["ActionOut"];
             rollback: components["schemas"]["ActionOut"];
+        };
+        /** RouteOut */
+        RouteOut: {
+            /** Capability */
+            capability?: string | null;
+            /**
+             * Connector
+             * @description microsoft, ticketing, webhook or dry_run.
+             */
+            connector: string;
+            /** Live */
+            live?: boolean | null;
+            /** Problem */
+            problem?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "kill_switch" | "tenant_dry_run" | "sample" | "pinned" | "explicit" | "ticketing" | "capability" | "default";
         };
         /**
          * RoutingOut
@@ -3504,8 +3837,11 @@ export interface components {
              * @default false
              */
             has_secret?: boolean;
-            /** Health */
-            health: string;
+            /**
+             * Health
+             * @enum {string}
+             */
+            health: "unknown" | "healthy" | "degraded" | "failing";
             /** Id */
             id: string;
             /** Last Error */
@@ -3520,8 +3856,11 @@ export interface components {
             poll_interval_s: number;
             /** Tenant Id */
             tenant_id: string;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "splunk" | "qradar" | "sentinel" | "wazuh" | "crowdstrike" | "guardduty" | "webhook" | "file" | "m365_mailbox" | "imap";
             /**
              * Updated At
              * Format: date-time
@@ -3580,8 +3919,11 @@ export interface components {
             created_at: string;
             /** Created By */
             created_by?: string | null;
-            /** Disposition */
-            disposition: string;
+            /**
+             * Disposition
+             * @enum {string}
+             */
+            disposition: "malicious" | "benign" | "inconclusive";
             /** Enabled */
             enabled: boolean;
             /** Expires At */
@@ -3670,8 +4012,11 @@ export interface components {
             name: string;
             /** Settings Keys */
             settings_keys?: string[];
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
         };
         /** TenantEraseIn */
         TenantEraseIn: {
@@ -3710,8 +4055,11 @@ export interface components {
             settings: {
                 [key: string]: unknown;
             };
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /** Tenant Id */
             tenant_id: string;
             /**
@@ -3790,8 +4138,11 @@ export interface components {
                 [key: string]: number | null;
             };
             stats: components["schemas"]["TenantStatsOut"];
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /**
              * Updated At
              * Format: date-time
@@ -3831,8 +4182,11 @@ export interface components {
             tenant_id: string;
             /** Tenant Name */
             tenant_name: string;
-            /** Tenant Status */
-            tenant_status: string;
+            /**
+             * Tenant Status
+             * @enum {string}
+             */
+            tenant_status: "active" | "suspended";
             /** Users */
             users: number;
         };
@@ -3869,8 +4223,11 @@ export interface components {
             resolved: boolean;
             /** Resolved By */
             resolved_by?: string | null;
-            /** System */
-            system: string;
+            /**
+             * System
+             * @enum {string}
+             */
+            system: "jira" | "servicenow";
         };
         /** TokenCheck */
         TokenCheck: {
@@ -4044,8 +4401,11 @@ export interface components {
              * @default false
              */
             oidc_provisioned?: boolean;
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
             /** Tenant Id */
             tenant_id: string;
             /**
@@ -4644,8 +5004,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
-                    "text/html": unknown;
+                    "application/json": components["schemas"]["EvidencePackOut"];
+                    "text/html": string;
                 };
             };
             /** @description Validation Error */
@@ -5691,9 +6051,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MicrosoftCatalogOut"];
                 };
             };
         };
@@ -6186,8 +6544,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
-                    "application/zip": unknown;
+                    "application/zip": string;
                 };
             };
             /** @description Validation Error */
@@ -6775,9 +7132,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ResponseRoutesOut"];
                 };
             };
         };
@@ -7164,7 +7519,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ReadinessOut"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessOut"];
                 };
             };
         };
