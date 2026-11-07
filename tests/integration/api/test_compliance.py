@@ -392,7 +392,7 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
     expected = {"tenant.json", "manifest.json", "users.jsonl", "api_keys.jsonl", "sources.jsonl", "alerts.jsonl",
                 "alert_events.jsonl", "escalations.jsonl", "feedback.jsonl", "actions.jsonl", "suppressions.jsonl",
                 "integrations.jsonl", "notification_outbox.jsonl", "external_tickets.jsonl", "usage_daily.jsonl",
-                "llm_usage_daily.jsonl",
+                "llm_usage_daily.jsonl", "investigation_steps.jsonl",
                 "audit_log.jsonl", "indicator_sightings.jsonl"}
     assert set(files) == expected
     blob = b"".join(files.values())

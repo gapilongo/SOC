@@ -7,6 +7,10 @@ A pack bundles, for one alert of one tenant:
 * each agent's reasoning, verdict and confidence, with the provider and
   model it called and the name and hash of the prompt it sent
   (``summary.llm_models``; alerts processed before that was recorded say so);
+* the investigation trace: every LLM call and tool call of the alert's runs
+  in order, with the prompt and model or tool, token counts, latency,
+  outcome and the SHA-256 of each step's input and output (no inputs, and
+  only a redacted, size-capped digest of each result);
 * enrichment observations, indicator sightings and correlation;
 * escalations (who claimed and decided, when), analyst feedback and the
   response-action ledger (requested by, approved by, executed, blocked
@@ -33,7 +37,7 @@ from lg_sotf import __version__
 from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
 from lg_sotf.compliance.evidence_html import AGENT_STEPS, render_evidence_html
 from lg_sotf.db import Connection
-from lg_sotf.db.repos import AlertEvent, Escalation, Feedback, Repositories, ResponseAction
+from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Feedback, Repositories, ResponseAction, TraceStep
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
@@ -48,6 +52,7 @@ MAX_ESCALATIONS = 200
 MAX_ACTIONS = 500
 MAX_AUDIT_ENTRIES = 2_000
 MAX_SIGHTINGS = 1_000
+MAX_TRACE_STEPS = 1_000
 PAGE_SIZE = 200
 
 AUTOMATED_NODES = ("gate", "triage", "correlation", "analysis", "decide", "escalate", "plan_response",
@@ -166,6 +171,59 @@ def _agents(summary: AlertSummary, events: Sequence[AlertEvent]) -> Dict[str, An
     out["refusals"] = summary.get("llm_refusals") or []
     out["llm_budget_exceeded"] = bool(summary.get("llm_budget_exceeded"))
     return out
+
+
+def _investigation(steps: Sequence[TraceStep]) -> Dict[str, Any]:
+    """The investigation trace: each LLM and tool step of the alert's runs, with totals."""
+    kept = steps[:MAX_TRACE_STEPS]
+    return {
+        "runs": list(dict.fromkeys(s.run_id for s in kept)),
+        "totals": {
+            "llm_steps": sum(1 for s in kept if s.kind == "llm"),
+            "tool_steps": sum(1 for s in kept if s.kind == "tool"),
+            "input_tokens": sum(s.input_tokens for s in kept),
+            "output_tokens": sum(s.output_tokens for s in kept),
+            "latency_ms": sum(s.latency_ms for s in kept),
+        },
+        "steps": [
+            {"run_id": s.run_id, "step_index": s.step_index, "started_at": s.started_at, "agent": s.agent,
+             "kind": s.kind, "prompt_name": s.prompt_name, "prompt_hash": s.prompt_hash, "provider": s.provider,
+             "model": s.model, "tool": s.tool, "input_hash": s.input_hash, "output_hash": s.output_hash,
+             "result_digest": s.result_digest, "outcome": s.outcome, "error_type": s.error_type,
+             "input_tokens": s.input_tokens, "output_tokens": s.output_tokens,
+             "cache_read_tokens": s.cache_read_tokens, "cache_write_tokens": s.cache_write_tokens,
+             "latency_ms": s.latency_ms}
+            for s in kept
+        ],
+    }
+
+
+def _alert_view(alert: Alert, summary: AlertSummary) -> Dict[str, Any]:
+    raw_redacted, raw_redactions = redact(alert.raw)
+    return {
+        "id": alert.id,
+        "source_id": alert.source_id,
+        "source_alert_id": alert.source_alert_id,
+        "fingerprint": alert.fingerprint,
+        "case_key": alert.case_key,
+        "title": alert.title,
+        "severity": alert.severity,
+        "category": alert.category,
+        "status": alert.status,
+        "disposition": alert.disposition,
+        "confidence": alert.confidence,
+        "threat_score": alert.threat_score,
+        "priority": alert.priority,
+        "assigned_to": alert.assigned_to,
+        "occurred_at": alert.occurred_at,
+        "ingested_at": alert.ingested_at,
+        "updated_at": alert.updated_at,
+        "closed_at": alert.closed_at,
+        "normalized": alert.normalized,
+        "raw_redacted": raw_redacted,
+        "raw_redactions": raw_redactions,
+        "summary": summary,
+    }
 
 
 def _escalation_view(e: Escalation) -> Dict[str, Any]:
@@ -426,6 +484,7 @@ async def build_evidence_pack(
         actions, actions_truncated = await _actions(repos, tenant_id, alert_id, conn)
         feedback = await repos.feedback.list_for_alert(tenant_id, alert_id, conn=conn)
         sightings = await repos.indicators.sightings_for_alert(tenant_id, alert_id, conn=conn)
+        trace = await repos.investigation_steps.list_for_alert(tenant_id, alert_id, limit=MAX_TRACE_STEPS + 1, conn=conn)
         audit, audit_truncated = await _audit_entries(
             conn, tenant_id, alert_id, [e.id for e in escalations], [str(a.id) for a in actions]
         )
@@ -433,7 +492,6 @@ async def build_evidence_pack(
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
     summary = cast("AlertSummary", _obj(alert.summary))
     rollbacks = _rollback_links(actions)
-    raw_redacted, raw_redactions = redact(alert.raw)
     analysis = _obj(summary.get("analysis"))
     pack: Dict[str, Any] = {
         "format": EVIDENCE_FORMAT,
@@ -442,36 +500,14 @@ async def build_evidence_pack(
         "generated_by": dict(generated_by),
         "lg_sotf_version": __version__,
         "tenant_id": tenant_id,
-        "alert": {
-            "id": alert.id,
-            "source_id": alert.source_id,
-            "source_alert_id": alert.source_alert_id,
-            "fingerprint": alert.fingerprint,
-            "case_key": alert.case_key,
-            "title": alert.title,
-            "severity": alert.severity,
-            "category": alert.category,
-            "status": alert.status,
-            "disposition": alert.disposition,
-            "confidence": alert.confidence,
-            "threat_score": alert.threat_score,
-            "priority": alert.priority,
-            "assigned_to": alert.assigned_to,
-            "occurred_at": alert.occurred_at,
-            "ingested_at": alert.ingested_at,
-            "updated_at": alert.updated_at,
-            "closed_at": alert.closed_at,
-            "normalized": alert.normalized,
-            "raw_redacted": raw_redacted,
-            "raw_redactions": raw_redactions,
-            "summary": summary,
-        },
+        "alert": _alert_view(alert, summary),
         "timeline": [
             {"id": e.id, "ts": e.ts, "node": e.node, "event_type": e.event_type, "actor_type": e.actor_type,
              "actor_id": e.actor_id, "data": e.data}
             for e in events
         ],
         "agents": _agents(summary, events),
+        "investigation": _investigation(trace),
         "enrichment": {
             "observations": analysis.get("tools") or [],
             "threat_indicators": analysis.get("threat_indicators") or [],
@@ -506,6 +542,7 @@ async def build_evidence_pack(
             "actions_truncated": actions_truncated,
             "audit_truncated": audit_truncated,
             "sightings_truncated": len(sightings) > MAX_SIGHTINGS,
+            "investigation_truncated": len(trace) > MAX_TRACE_STEPS,
         },
     }
     document = jsonable(pack)

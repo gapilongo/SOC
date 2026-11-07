@@ -84,7 +84,8 @@ its README.
    and the security and operational impact.
 3. CI must pass: lint and types, unit and integration tests (including the
    smoke evaluation), security scans, image build and Helm validation.
-4. Update `CHANGELOG.md` under "Unreleased" for user-visible changes, and the
+4. For user-visible changes, add a changelog fragment in `changelog.d/` (see
+   `changelog.d/README.md`; don't edit `CHANGELOG.md` directly), and update the
    relevant document in `docs/`.
 
 ## Reporting bugs and requesting features
