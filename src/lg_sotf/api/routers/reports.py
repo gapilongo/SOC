@@ -22,9 +22,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from lg_sotf import __version__
 from lg_sotf.api.auth.deps import ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import reject_catch_all
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.routers.suppressions import reject_catch_all
 from lg_sotf.api.schemas import SuppressionOut
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain.routing import RoutingThresholds

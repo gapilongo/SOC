@@ -25,10 +25,10 @@ from lg_sotf.api.auth.deps import Access, require
 from lg_sotf.api.auth.mfa import PENDING_TTL_S, MfaService, invalid_code
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.auth.service import AuthService, Session
+from lg_sotf.api.common import LOGIN_IP_BUCKET, count_failed_login, login_ip_limit, set_refresh_cookie
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
-from lg_sotf.api.routers.auth import LOGIN_IP_BUCKET, count_failed_login, login_ip_limit, set_refresh_cookie
 from lg_sotf.api.schemas import (
     MfaCodeIn,
     MfaConfirmIn,
