@@ -167,7 +167,7 @@ export default function UsagePage() {
               </div>
             ))}
           </div>
-          <Card title="Daily cost (USD)">{days.length ? <CostChart days={days} /> : <EmptyState title="No days in range" />}</Card>
+          <Card title="Daily cost (USD)">{days.some((d) => d.cost > 0) ? <CostChart days={days} /> : <EmptyState title={days.length ? 'No LLM cost in this range' : 'No days in range'} />}</Card>
           <Card title="Usage by day, model and agent">
             {q.data.days.length === 0 ? (
               <EmptyState title="No LLM usage in this range" />

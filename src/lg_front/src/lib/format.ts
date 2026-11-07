@@ -71,10 +71,12 @@ export function formatUsd(value: number | string | null | undefined): string {
 }
 
 const usdAxis = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const usdAxisCents = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 4 });
 
-/** A chart axis label in dollars: at most two decimals ("$370.37", "$0"). */
+/** A chart axis label in dollars: two decimals from a dollar up ("$370.37", "$0"), up to four below ("$0.0042"). */
 export function formatUsdAxis(value: number): string {
-  return Number.isFinite(value) ? usdAxis.format(value) : '-';
+  if (!Number.isFinite(value)) return '-';
+  return (Math.abs(value) < 1 ? usdAxisCents : usdAxis).format(value);
 }
 
 export function humanize(value: string | null | undefined): string {

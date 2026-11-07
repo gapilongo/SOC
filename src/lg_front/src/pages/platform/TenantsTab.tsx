@@ -164,7 +164,7 @@ export function TenantsTab() {
     >
       {q.isPending && <LoadingState label="Loading tenants" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
-      {q.data && rows.length === 0 && <EmptyState title="No tenant matches the filter." />}
+      {q.data && rows.length === 0 && <EmptyState title={search.trim() ? 'No tenant matches the filter.' : 'No tenants yet.'} />}
       {rows.length > 0 && (
         <div className="relative overflow-x-auto">
           <table className="w-full min-w-[960px] text-sm">
