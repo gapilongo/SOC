@@ -42,21 +42,6 @@ export function formatRange(ci: [number, number] | null | undefined): string {
   return ci ? `95% range ${formatPct(ci[0])} to ${formatPct(ci[1])}` : '';
 }
 
-/** Trigger a download of `text` as a file (CSV exports carry a BOM for spreadsheet apps). */
-export function downloadText(filename: string, text: string, type: string): void {
-  const parts = type.startsWith('text/csv') ? ['﻿', text] : [text];
-  const blob = new Blob(parts, { type });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename.replace(/[^A-Za-z0-9._-]/g, '_');
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
-
 export const SUGGESTION_LABEL: Record<string, string> = {
   tune_rule: 'Tune rule',
   candidate_suppression: 'Candidate suppression',

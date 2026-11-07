@@ -32,6 +32,18 @@ const INVALIDATE = [
   },
 ];
 
+// Property bans, grouped the same way (ESLint replaces the whole `no-restricted-properties` list per file).
+const STORAGE_PROPS = [
+  { object: 'window', property: 'localStorage', message: 'Credentials must never be persisted.' },
+];
+const OBJECT_URL = [
+  {
+    object: 'URL',
+    property: 'createObjectURL',
+    message: 'Download or open files through lib/download.ts (safe filename, URL revoked afterwards).',
+  },
+];
+
 // The palette is the design tokens (src/theme/tokens.css, tailwind.config.js): Tailwind's default
 // greys and hues are not generated, so a class such as `bg-slate-900` would silently do nothing.
 const PALETTE_RE =
@@ -67,10 +79,7 @@ export default tseslint.config(
         'error',
         { name: 'localStorage', message: 'Credentials must never be persisted; keep tokens in memory.' },
       ],
-      'no-restricted-properties': [
-        'error',
-        { object: 'window', property: 'localStorage', message: 'Credentials must never be persisted.' },
-      ],
+      'no-restricted-properties': ['error', ...STORAGE_PROPS, ...OBJECT_URL],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
@@ -94,7 +103,14 @@ export default tseslint.config(
     // The one owner of browser storage: display preferences only (theme, row density), never credentials.
     files: ['src/lib/prefs.ts'],
     rules: {
-      'no-restricted-properties': 'off',
+      'no-restricted-properties': ['error', ...OBJECT_URL],
+    },
+  },
+  {
+    // The one owner of object URLs.
+    files: ['src/lib/download.ts'],
+    rules: {
+      'no-restricted-properties': ['error', ...STORAGE_PROPS],
     },
   },
   {

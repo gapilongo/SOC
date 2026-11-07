@@ -13,6 +13,7 @@ import { Button, DefinitionList, JsonBlock } from '../ui';
 import { RetryDialog } from './RetryDialog';
 import { RollbackDialog } from './RollbackDialog';
 import { VerificationBadge } from './VerificationBadge';
+import { asObjectOrNull } from '../../lib/json';
 
 const FINAL_VERIFICATION = new Set(['verified', 'failed', 'inconclusive']);
 
@@ -27,10 +28,6 @@ export const ROLLBACK_REASONS: Record<string, string> = {
   connector_unsupported: 'The connector that executed this action cannot roll it back.',
   integration_gone: 'The Microsoft integration that executed this action was deleted: undo it in Microsoft.',
 };
-
-function obj(value: unknown): JsonObject | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
-}
 
 /** A failed Microsoft action whose failure is worth another attempt (and that no rollback undoes). */
 export function canRetry(action: ActionOut): boolean {
@@ -83,7 +80,7 @@ function Steps({ steps }: { steps: JsonObject[] }) {
 export function ActionDetails({ action, onSelectAction }: { action: ActionOut; onSelectAction?: (id: string) => void }) {
   const result = action.result ?? null;
   const ref = action.external_ref ?? null;
-  const steps = Array.isArray(ref?.steps) ? (ref?.steps as unknown[]).map(obj).filter((s): s is JsonObject => s !== null) : [];
+  const steps = Array.isArray(ref?.steps) ? (ref?.steps as unknown[]).map(asObjectOrNull).filter((s): s is JsonObject => s !== null) : [];
   const summary = typeof result?.summary === 'string' ? result.summary : null;
   const hint = typeof result?.hint === 'string' ? result.hint : null;
   const link = (id: string | null | undefined, label: string) =>
