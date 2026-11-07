@@ -1,4 +1,4 @@
-"""Logging, metrics and tracing."""
+"""Logging and metrics (tracing was removed: ADR-0008)."""
 
 from lg_sotf.observability.logging import (
     bind_context,
@@ -9,7 +9,6 @@ from lg_sotf.observability.logging import (
     is_configured,
     unbind_context,
 )
-from lg_sotf.observability.tracing import get_tracer, setup_tracing, shutdown_tracing
 
 __all__ = [
     "bind_context",
@@ -17,9 +16,6 @@ __all__ = [
     "clear_context",
     "configure_logging",
     "get_logger",
-    "get_tracer",
     "is_configured",
-    "setup_tracing",
-    "shutdown_tracing",
     "unbind_context",
 ]

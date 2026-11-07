@@ -62,7 +62,6 @@ security:
 observability:
   log_level: ${LOG_LEVEL:-DEBUG}
   log_format: json
-  otlp_endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
   service_name: lg-sotf-staging
 
 response:
