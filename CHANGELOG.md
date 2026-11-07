@@ -221,6 +221,15 @@ All notable changes to this project are documented here. The format follows
   sends the logout with `keepalive` so a navigation cannot abort it. Logout
   also revokes every token the presented one was rotated into.
 
+### Security
+
+- OIDC sign-in now reads the identity provider's discovery and key (JWKS)
+  documents up to their 256 KiB limit and stops there. Before, the API
+  downloaded the whole response into memory and only then checked its size,
+  so a broken or hostile identity provider could make it hold an arbitrarily
+  large body. A document over the limit is refused as before, now without
+  being downloaded.
+
 ## [1.2.3] - 2026-11-05
 
 ### Fixed
