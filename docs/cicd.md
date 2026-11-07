@@ -15,7 +15,8 @@ for the first environment and 15 minutes for the second.
  push to main ──> CI (tests, scans, image build) ──green──> Release images
                                                               │ build once for linux/amd64 + linux/arm64
                                                               │ push ghcr.io/gapilongo/lg-sotf[-frontend]:sha-1a2b3c4 and :main
-                                                              └──> Deploy ── environment "dev" ──> dev VM
+                                                              │ sign the digests (cosign) + attest build provenance
+                                                              └──> Deploy ── verify ── environment "dev" ──> dev VM
 
  git tag v1.2.3 (a commit on main) ──> Release images
                                          │ no rebuild: re-tag the sha-1a2b3c4 manifests as :v1.2.3 (same digest)
@@ -26,6 +27,12 @@ for the first environment and 15 minutes for the second.
   per green commit on main, then calls the deploy workflow for **dev**. A
   release tag `vX.Y.Z` promotes the images of that commit to **uat**: the same
   bytes (same digest) that ran on dev, never rebuilt.
+* A separate job signs both image digests with cosign and attests their
+  build provenance. Signing is keyless, with GitHub OIDC; nothing needs to be
+  set up and no key is stored. Before it deploys, the deploy workflow checks
+  the signature and the provenance of both digests against this repository's
+  release workflow on `main`. If either check fails, nothing is deployed
+  (docs/security.md, section 9).
 * `.github/workflows/deploy.yml` deploys one image tag to one environment. It
   resolves the tag to digests, copies a small bundle (compose files, Caddy
   templates, scripts from `deploy/vm/`, taken from the commit that built the
@@ -366,6 +373,9 @@ images exist.
 * **By hand from GitHub**: Actions > Deploy > Run workflow, pick the
   environment, enter the previous good tag (`sha-...` or `vX.Y.Z`; the deploy
   run summaries and `/opt/lg-sotf/env/<env>/state/history.log` list them).
+  The deploy workflow refuses images built before signing was introduced,
+  because they have no signature. Roll back to one of those on the VM
+  instead (below).
 * **On the VM** (for example while GitHub is down):
 
   ```sh
@@ -515,8 +525,9 @@ reviewers on a `prod` environment) and change the platform:
 * **Monitoring and alerting**: scrape `/metrics` with the metrics token,
   alert on readiness, queue lag, DLQ and error rates (docs/operations.md);
   uptime checks on the public URL.
-* **Supply chain**: sign images (cosign) and verify signatures or provenance
-  at deploy time; keep deploying by digest.
+* **Supply chain**: images are already signed and verified at deploy time;
+  keep deploying by digest, and enforce the same signer identity with an
+  admission controller on Kubernetes (docs/security.md, section 9).
 * **Off-site, encrypted backups** as a requirement (not optional), with a
   scheduled restore drill.
 * Zero-downtime updates (more than one api/worker instance behind the
