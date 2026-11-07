@@ -172,39 +172,42 @@ function ValueTab({ from, to }: { from: string; to: string }) {
         <Tile label="LLM cost per alert" value={formatUsd(t.llm_cost_per_alert_usd)} hint={`${formatUsd(t.llm_cost_usd)} in total`} />
       </div>
       <Card title="Daily outcomes">{r.days.length ? <DailyChart days={r.days} /> : <EmptyState title="No days in range" />}</Card>
-      <Card title="Daily figures">
-        <div className="relative max-h-[28rem] overflow-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <caption className="sr-only">Value report by day</caption>
-            <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
-              <tr>
-                <th scope="col" className="py-2 pr-3">Day</th>
-                <th scope="col" className="py-2 pr-3 text-right">Ingested</th>
-                <th scope="col" className="py-2 pr-3 text-right">Handled w/o human</th>
-                <th scope="col" className="py-2 pr-3 text-right">Needed human</th>
-                <th scope="col" className="py-2 pr-3 text-right">Hours saved</th>
-                <th scope="col" className="py-2 pr-3 text-right">MTTR</th>
-                <th scope="col" className="py-2 pr-3 text-right">SLA breaches</th>
-                <th scope="col" className="py-2 text-right">LLM cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.days.map((d) => (
-                <tr key={d.day} className="border-t border-subtle tabular-nums">
-                  <td className="py-1.5 pr-3 text-body">{d.day}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatInt(d.alerts_ingested)}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatInt(d.handled_without_human)}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatInt(d.needed_human)}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatHours(d.analyst_hours_saved)}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatDuration(d.mttr_s)}</td>
-                  <td className="py-1.5 pr-3 text-right">{formatInt(d.sla_breaches)}</td>
-                  <td className="py-1.5 text-right">{formatUsd(d.llm_cost_usd)}</td>
+      {/* With no day there is no table: the chart card above already says so. */}
+      {r.days.length > 0 && (
+        <Card title="Daily figures">
+          <div className="relative max-h-[28rem] overflow-auto">
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <caption className="sr-only">Value report by day</caption>
+              <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
+                <tr>
+                  <th scope="col" className="py-2 pr-3">Day</th>
+                  <th scope="col" className="py-2 pr-3 text-right">Ingested</th>
+                  <th scope="col" className="py-2 pr-3 text-right">Handled w/o human</th>
+                  <th scope="col" className="py-2 pr-3 text-right">Needed human</th>
+                  <th scope="col" className="py-2 pr-3 text-right">Hours saved</th>
+                  <th scope="col" className="py-2 pr-3 text-right">MTTR</th>
+                  <th scope="col" className="py-2 pr-3 text-right">SLA breaches</th>
+                  <th scope="col" className="py-2 text-right">LLM cost</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+              </thead>
+              <tbody>
+                {r.days.map((d) => (
+                  <tr key={d.day} className="border-t border-subtle tabular-nums">
+                    <td className="py-1.5 pr-3 text-body">{d.day}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatInt(d.alerts_ingested)}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatInt(d.handled_without_human)}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatInt(d.needed_human)}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatHours(d.analyst_hours_saved)}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatDuration(d.mttr_s)}</td>
+                    <td className="py-1.5 pr-3 text-right">{formatInt(d.sla_breaches)}</td>
+                    <td className="py-1.5 text-right">{formatUsd(d.llm_cost_usd)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
       <Notes notes={r.notes} />
     </div>
   );
