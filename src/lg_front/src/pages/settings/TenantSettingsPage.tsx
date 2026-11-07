@@ -33,20 +33,20 @@ export default function TenantSettingsPage() {
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {d && (
         // Re-mount the sections when the stored settings change so the forms show saved values.
-        <div key={d.updated_at} className="grid gap-5 xl:grid-cols-2">
+        // Two balanced columns on wide screens: each card keeps its own height (no card is
+        // stretched to its neighbour's) and the reading order stays the order below.
+        <div key={d.updated_at} className="gap-5 xl:columns-2 [&>*]:mb-5 [&>*]:break-inside-avoid">
           <AutonomySection data={d} />
           <ResponseSection data={d} />
           <RoutingSection data={d} />
           <ProtectedSection data={d} />
           <PhishingSection data={d} />
-          <div className="space-y-5">
-            <SecuritySection data={d} />
-            <BudgetSection data={d} />
-            <LlmTestCard />
-            <ReviewSection data={d} />
-            <RetentionSection data={d} />
-            <ReportingSection data={d} />
-          </div>
+          <SecuritySection data={d} />
+          <BudgetSection data={d} />
+          <LlmTestCard />
+          <ReviewSection data={d} />
+          <RetentionSection data={d} />
+          <ReportingSection data={d} />
         </div>
       )}
     </>
