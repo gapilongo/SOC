@@ -5729,6 +5729,12 @@
             "type": "boolean"
           },
           "health": {
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "failing"
+            ],
             "title": "Health",
             "type": "string"
           },
@@ -5784,6 +5790,18 @@
             "type": "string"
           },
           "type": {
+            "enum": [
+              "splunk",
+              "qradar",
+              "sentinel",
+              "wazuh",
+              "crowdstrike",
+              "guardduty",
+              "webhook",
+              "file",
+              "m365_mailbox",
+              "imap"
+            ],
             "title": "Type",
             "type": "string"
           },

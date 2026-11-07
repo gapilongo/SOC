@@ -19,6 +19,7 @@ import pytest
 
 from lg_sotf.api import schemas
 from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
+from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.models import vocabulary as v
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -54,6 +55,9 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("ActionOut", "execution_owner", v.EXECUTION_OWNERS),
     ("ActionOut", "verification", v.VERIFICATION_STATES),
     ("RollbackEligibilityOut", "risk", v.RISK_LEVELS),
+    # sources
+    ("SourceOut", "type", v.SOURCE_TYPES),
+    ("SourceOut", "health", SOURCE_HEALTH),
 ]
 
 

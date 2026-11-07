@@ -544,7 +544,7 @@ class SourceUpdateIn(In):
 class SourceOut(Out):
     id: str
     tenant_id: str
-    type: str
+    type: SourceTypeStr
     name: str
     enabled: bool
     config: Dict[str, Any] = Field(default_factory=dict)
@@ -555,7 +555,7 @@ class SourceOut(Out):
     next_poll_at: Optional[datetime] = None
     consecutive_failures: int = 0
     last_error: Optional[str] = None
-    health: str
+    health: SourceHealthStr
     created_at: datetime
     updated_at: datetime
 

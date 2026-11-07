@@ -3539,8 +3539,11 @@ export interface components {
              * @default false
              */
             has_secret?: boolean;
-            /** Health */
-            health: string;
+            /**
+             * Health
+             * @enum {string}
+             */
+            health: "unknown" | "healthy" | "degraded" | "failing";
             /** Id */
             id: string;
             /** Last Error */
@@ -3555,8 +3558,11 @@ export interface components {
             poll_interval_s: number;
             /** Tenant Id */
             tenant_id: string;
-            /** Type */
-            type: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "splunk" | "qradar" | "sentinel" | "wazuh" | "crowdstrike" | "guardduty" | "webhook" | "file" | "m365_mailbox" | "imap";
             /**
              * Updated At
              * Format: date-time
