@@ -44,10 +44,10 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import IngestItemOut, IngestOut
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.pagination import MAX_PAGE_SIZE
+from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.entities import normalize_email
 from lg_sotf.ingestion.service import (
     SOURCE_ID_PATTERN,
-    IngestResult,
     api_source_id,
     email_source_id,
     is_reserved_source_id,

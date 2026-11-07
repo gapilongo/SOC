@@ -743,7 +743,10 @@ async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int
     from lg_sotf.queue.redis import create_redis
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
     from lg_sotf.runtime.shutdown import GracefulShutdown, cancel_current_task
+    from lg_sotf.security.crypto import load_secret_box
 
+    # Invalid encryption keys stop the worker here, as they stop the API (ADR-0006).
+    box = load_secret_box(settings)
     worker_id = default_worker_id()
     db = Database(settings.database, application_name="lg-sotf-worker", max_size=worker_pool_size(settings))
     redis = create_redis(settings)
@@ -751,7 +754,7 @@ async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int
     try:
         await db.open()
         events = EventBus(redis, settings)
-        engine = await WorkflowEngine.create(settings=settings, db=db, redis=redis, events=events)
+        engine = await WorkflowEngine.create(settings=settings, db=db, redis=redis, events=events, secret_box=box)
         consumer = StreamConsumer(redis, settings, worker_id)
         worker = Worker(settings, db, redis, engine, consumer, events, worker_id=worker_id)
         shutdown = GracefulShutdown(worker.request_stop, on_force=cancel_current_task())
