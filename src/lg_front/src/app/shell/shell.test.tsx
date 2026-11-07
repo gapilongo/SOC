@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Principal } from '../../auth/store';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
+import { LiveContext } from '../../live/LiveProvider';
+import type { LiveStatus } from '../../live/socket';
 import { tenant } from '../../test/tenants';
 import { Layout } from '../Layout';
 import { NAV_GROUPS } from '../routes';
-import { Header } from './Header';
+import { Header, LiveIndicator } from './Header';
 import { navCounts, navFor, roleNote } from './nav';
 import { Sidebar } from './Sidebar';
 import { initials, roleLabel, UserMenu } from './UserMenu';
@@ -311,5 +313,46 @@ describe('Layout', () => {
     await user.click(screen.getByRole('button', { name: /^Account: / }));
     await user.click(screen.getByRole('menuitem', { name: 'Sign out' }));
     await waitFor(() => expect(session.auth.getState().status).toBe('anonymous'));
+  });
+});
+
+describe('LiveIndicator', () => {
+  const renderStatus = async (status: LiveStatus, acting: string | null = null) => {
+    const { api } = shellApi();
+    const session = await signedInSession(api, { role: 'admin', is_platform_admin: true });
+    if (acting) act(() => session.auth.setActingTenant(acting));
+    renderWithSession(
+      <LiveContext.Provider value={{ status, subscribe: () => () => undefined }}>
+        <div data-testid="live">
+          <LiveIndicator />
+        </div>
+      </LiveContext.Provider>,
+      session,
+    );
+    return within(screen.getByTestId('live')).getByRole('status');
+  };
+
+  it.each<[LiveStatus, string]>([
+    ['open', 'Live'],
+    ['reconnecting', 'Reconnecting'],
+    ['connecting', 'Connecting'],
+    ['idle', 'Offline'],
+    ['closed', 'Offline'],
+  ])('shows %s as %s', async (status, label) => {
+    const indicator = await renderStatus(status);
+    expect(indicator).toHaveTextContent(label);
+    expect(indicator).not.toHaveAttribute('title');
+  });
+
+  it('explains an unavailable stream', async () => {
+    const indicator = await renderStatus('unavailable');
+    expect(indicator).toHaveTextContent('Live updates unavailable');
+    expect(indicator).toHaveAttribute('title', expect.stringMatching(/api\.cors_origins/));
+  });
+
+  it('says live updates are off while acting on another tenant', async () => {
+    const indicator = await renderStatus('unavailable', 'globex');
+    expect(indicator).toHaveTextContent('Live updates off (acting on another tenant)');
+    expect(indicator).not.toHaveAttribute('title');
   });
 });

@@ -1,11 +1,11 @@
 {
   "$comment": "Coverage floors (%) checked by scripts/coverage-floors.mjs in `npm run test:ci`. Floors only go up: about one point below the measured value, raised in the PR that adds coverage. Lowering one needs code-owner review.",
-  "all": { "statements": 81.0, "branches": 78.5, "functions": 72.8, "lines": 82.0 },
-  "src/api/": { "statements": 91.9, "branches": 87.8, "functions": 87.8, "lines": 91.2 },
+  "all": { "statements": 82.1, "branches": 79.3, "functions": 74.8, "lines": 82.8 },
+  "src/api/": { "statements": 92.5, "branches": 87.8, "functions": 89.3, "lines": 92.1 },
   "src/auth/": { "statements": 78.4, "branches": 73.3, "functions": 77.5, "lines": 82.1 },
   "src/live/": { "statements": 84.1, "branches": 79.2, "functions": 81.4, "lines": 87.9 },
-  "src/lib/": { "statements": 94.0, "branches": 90.0, "functions": 95.0, "lines": 97.5 },
+  "src/lib/": { "statements": 94.0, "branches": 90.0, "functions": 95.9, "lines": 97.5 },
   "src/theme/": { "statements": 97.0, "branches": 99.0, "functions": 94.4, "lines": 99.0 },
   "src/components/ui/": { "statements": 98.3, "branches": 93.0, "functions": 97.2, "lines": 98.2 },
-  "src/app/shell/": { "statements": 99.0, "branches": 86.0, "functions": 99.0, "lines": 99.0 }
+  "src/app/shell/": { "statements": 99.0, "branches": 92.2, "functions": 99.0, "lines": 99.0 }
 }

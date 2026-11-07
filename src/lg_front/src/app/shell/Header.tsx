@@ -54,8 +54,9 @@ function TenantLabel({ label }: { label: string }) {
 
 /**
  * The one header of every page: tenant (switcher for platform admins),
- * breadcrumb (`page`, the current page's name), live status, theme switch and the account menu. On phones a top
- * bar with the menu button and the page name comes first.
+ * breadcrumb (`page`, the current page's name), live status, theme switch and
+ * the account menu. On phones a top bar with the menu button and the page
+ * name comes first.
  */
 export const Header = forwardRef<
   HTMLButtonElement,
