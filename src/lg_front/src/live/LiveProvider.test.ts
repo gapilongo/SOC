@@ -68,3 +68,11 @@ describe('createInvalidator', () => {
     expect(invalidatedPrefixes(spy)).toEqual(['actions']);
   });
 });
+
+describe('keysForEvent', () => {
+  it('maps live events to the queries they make stale', () => {
+    expect(keysForEvent('alert.updated')).toEqual(['alerts', 'alert', 'dashboard']);
+    expect(keysForEvent('escalation.created')).toContain('escalations');
+    expect(keysForEvent('action.updated')).toContain('actions');
+  });
+});

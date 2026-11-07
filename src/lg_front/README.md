@@ -142,14 +142,54 @@ attempts the header shows "Live updates unavailable" instead of
   `-`, `@`, tab or carriage return with `'` so spreadsheets do not execute
   them.
 
-## Layout
+## Structure
+
+Layers, from the top (each may import only the layers below it):
 
 ```
-src/api/        HTTP client (error envelope, request ids, refresh on 401), types, endpoints
-src/auth/       auth store, OIDC (PKCE), role checks, session wiring
-src/live/       WebSocket client (backoff with jitter, resync) and query invalidation
-src/lib/        CSV, formatting, keyset pagination, visibility-aware polling
-src/components/ layout, dialogs (focus trap), virtualized table, form controls
-src/pages/      one lazily loaded chunk per route
-docker/         nginx.conf and the start-up entrypoint
+src/main.tsx      entry point: reads /config.js, builds the session and the query client
+src/app/          the app shell: App (providers, public routes), routes.tsx (the route
+                  table: path, page, role gate, nav entry), Layout and shell/ (sidebar,
+                  header, account menu), queryClient
+src/pages/        one folder or file per feature; each route is one lazily loaded chunk.
+                  Data-fetching widgets live with their feature (pages/platform/TenantSwitcher,
+                  pages/onboarding/, pages/settings/LlmTestCard, pages/actions/)
+src/components/   presentational building blocks: ui/ primitives, dialogs (focus trap),
+                  badges, virtualized table, error boundary, route guards
+src/api/          shared kernel: HTTP client (error envelope, request ids, refresh on 401),
+src/auth/         types, endpoints, query keys and hooks; auth store, OIDC (PKCE), role
+src/live/         checks; WebSocket client (backoff with jitter, resync); CSV, JSON and
+src/lib/          download helpers, formatting, keyset pagination, visibility-aware
+src/theme/        polling; design tokens, theme and row density
+docker/           nginx.conf and the start-up entrypoint
 ```
+
+ESLint enforces the boundaries (`no-restricted-imports` in `eslint.config.js`):
+
+* the shared kernel (`api`, `auth`, `live`, `lib`, `theme`) and `components`
+  never import `pages` or `app`;
+* the shared kernel never imports `components`;
+* `components` never imports `api/endpoints` or `@tanstack/react-query`: a
+  widget that fetches data belongs to its feature under `pages`.
+
+Tests may cross the boundaries (a page rendered inside the shell, for
+example). `src/main.tsx`, `src/auth/store.ts` and `src/auth/oidc.ts` must not
+move: the deployment tests pin them.
+
+## API types
+
+`src/api/types.ts` holds the API types the app uses, written by hand: names
+and vocabularies stay readable, and response vocabularies are open
+(`Open<T>`: the known values or any other string, so a newer API in a rolling
+deploy does not break the UI). They are held to the API contract:
+
+* `npm run gen:api` turns the committed `docs/openapi.json` into
+  `src/api/schema.gen.ts` (openapi-typescript, pinned). CI regenerates it and
+  fails when the committed file differs, so a backend change to the OpenAPI
+  document comes with the regenerated file.
+* `src/api/contract.check.ts`, compiled by `tsc -b`, requires every response
+  schema to be assignable to its hand-written type (as sent: FastAPI includes
+  every field) and every hand-written request type to be assignable to its
+  schema. A drift fails the type check and names the field. Give a new type
+  a line there.
+* Only `src/api` may import `schema.gen` (ESLint).

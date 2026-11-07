@@ -36,7 +36,8 @@ function FieldRow({ field }: { field: IncidentReportField }) {
       <dd className="mt-0.5 whitespace-pre-wrap break-words text-sm text-fg">
         {field.value ?? <span className="italic text-muted">{TO_COMPLETE}</span>}
       </dd>
-      {field.help && <p className="mt-0.5 text-xs text-muted">{field.help}</p>}
+      {/* A <div> inside <dl> may hold only <dt> and <dd>: the hint is a second <dd>. */}
+      {field.help && <dd className="mt-0.5 text-xs text-muted">{field.help}</dd>}
     </div>
   );
 }

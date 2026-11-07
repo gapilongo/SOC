@@ -8,6 +8,7 @@ import { Copy, Download } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 
 import type { MfaEnrollOut } from '../api/types';
+import { downloadText } from '../lib/download';
 import { useToast } from './Toast';
 import { Button, TextField } from './ui';
 
@@ -106,19 +107,6 @@ export const CodeField = forwardRef<HTMLInputElement, CodeFieldProps>(function C
     />
   );
 });
-
-export function downloadText(filename: string, text: string): void {
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1_000);
-}
 
 /** Recovery codes shown once, with copy and download. */
 export function RecoveryCodes({ codes, account }: { codes: string[]; account?: string | null }) {
