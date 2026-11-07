@@ -5,7 +5,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
 import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
-import { ActingTenantBanner } from '../components/TenantSwitcher';
+import { ActingTenantBanner } from '../pages/platform/TenantSwitcher';
 import { Button, LoadingState } from '../components/ui';
 import { getConfig } from '../config';
 import { NAV_GROUPS, pageLabel } from './routes';

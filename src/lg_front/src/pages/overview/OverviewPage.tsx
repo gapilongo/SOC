@@ -15,7 +15,7 @@ import { useDashboardSummary, useLivePollInterval } from '../../api/hooks';
 import type { DashboardOut } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { approvalRoleFor, can, roleAtLeast } from '../../auth/roles';
-import { OnboardingBanner } from '../../components/Onboarding';
+import { OnboardingBanner } from '../onboarding/Onboarding';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, Segmented, buttonClass, cx } from '../../components/ui';
 import { formatInt, formatRelative, formatUsd } from '../../lib/format';
 import { alertsHref, escalationQueueHref, APPROVALS_HREF } from '../../lib/links';

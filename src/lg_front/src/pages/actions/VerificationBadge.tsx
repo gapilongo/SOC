@@ -1,6 +1,6 @@
 import type { JsonObject, VerificationState } from '../../api/types';
+import { Badge, type Tone } from '../../components/Badge';
 import { humanize } from '../../lib/format';
-import { Badge, type Tone } from '../Badge';
 
 const TONE: Record<VerificationState, Tone> = { pending: 'info', verified: 'good', failed: 'critical', inconclusive: 'warn' };
 

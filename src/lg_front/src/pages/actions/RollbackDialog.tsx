@@ -6,11 +6,11 @@ import { afterActionChange } from '../../api/invalidate';
 import type { ActionOut } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
+import { RiskBadge } from '../../components/Badge';
+import { Modal } from '../../components/Dialog';
+import { useToast } from '../../components/Toast';
+import { Button, ErrorMessage, TextAreaField } from '../../components/ui';
 import { humanize } from '../../lib/format';
-import { RiskBadge } from '../Badge';
-import { Modal } from '../Dialog';
-import { useToast } from '../Toast';
-import { Button, ErrorMessage, TextAreaField } from '../ui';
 
 /**
  * Request the rollback of an executed action: a new action of the inverse

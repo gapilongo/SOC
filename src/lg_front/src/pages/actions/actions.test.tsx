@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import type { ActionOut } from '../../api/types';
-import { ResponseActions } from '../../pages/alerts/AlertDrawer';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
+import { ResponseActions } from '../alerts/AlertDrawer';
 import { ActionControls, ActionDetails, canRecheck, canRetry } from './ActionDetails';
 import { VerificationBadge } from './VerificationBadge';
 

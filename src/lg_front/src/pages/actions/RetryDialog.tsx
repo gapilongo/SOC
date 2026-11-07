@@ -5,10 +5,10 @@ import { endpoints } from '../../api/endpoints';
 import { afterActionChange } from '../../api/invalidate';
 import type { ActionOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
+import { Modal } from '../../components/Dialog';
+import { useToast } from '../../components/Toast';
+import { Button, ErrorMessage, TextAreaField } from '../../components/ui';
 import { humanize } from '../../lib/format';
-import { Modal } from '../Dialog';
-import { useToast } from '../Toast';
-import { Button, ErrorMessage, TextAreaField } from '../ui';
 
 /** Run a failed Microsoft action again (guardrails and caps are checked again by the server). */
 export function RetryDialog({ action, onClose }: { action: ActionOut; onClose: () => void }) {

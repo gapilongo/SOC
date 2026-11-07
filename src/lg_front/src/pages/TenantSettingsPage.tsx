@@ -7,7 +7,7 @@ import { qk } from '../api/queryKeys';
 import { AUTONOMY_MODES, RISK_LEVELS, ROUTE_NAMES, type JsonObject, type RouteOut, type TenantSettingsOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Badge } from '../components/Badge';
-import { LlmTestCard } from '../components/LlmTestCard';
+import { LlmTestCard } from './settings/LlmTestCard';
 import { useToast } from '../components/Toast';
 import { Button, Card, Checkbox, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
 import { formatDateTime, humanize } from '../lib/format';

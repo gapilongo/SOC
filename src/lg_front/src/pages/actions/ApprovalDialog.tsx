@@ -6,12 +6,12 @@ import { readGuardrail } from '../../api/fields';
 import { afterActionChange, afterActionDecision } from '../../api/invalidate';
 import type { ActionOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
+import { RiskBadge } from '../../components/Badge';
+import { Modal } from '../../components/Dialog';
+import { useToast } from '../../components/Toast';
+import { Banner, Button, Checkbox, ErrorMessage } from '../../components/ui';
 import { humanize, shortId } from '../../lib/format';
 import { describeBlockedReason } from '../../lib/guardrails';
-import { RiskBadge } from '../Badge';
-import { Modal } from '../Dialog';
-import { useToast } from '../Toast';
-import { Banner, Button, Checkbox, ErrorMessage } from '../ui';
 
 export type ApprovalVerb = 'approve' | 'reject';
 

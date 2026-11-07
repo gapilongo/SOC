@@ -1,10 +1,10 @@
 import { useMutation } from '@tanstack/react-query';
 
-import { endpoints } from '../api/endpoints';
-import type { LlmTierCheckOut } from '../api/types';
-import { useApi } from '../auth/AuthContext';
-import { Badge } from './Badge';
-import { Button, Card, ErrorMessage } from './ui';
+import { endpoints } from '../../api/endpoints';
+import type { LlmTierCheckOut } from '../../api/types';
+import { useApi } from '../../auth/AuthContext';
+import { Badge } from '../../components/Badge';
+import { Button, Card, ErrorMessage } from '../../components/ui';
 
 /** "1.2 s" / "340 ms": latency as an admin reads it. */
 export function formatLatency(ms: number): string {

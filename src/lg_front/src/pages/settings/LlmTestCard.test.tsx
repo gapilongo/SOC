@@ -2,8 +2,8 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { LlmTestOut } from '../api/types';
-import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
+import type { LlmTestOut } from '../../api/types';
+import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
 import { formatLatency, LlmTestCard } from './LlmTestCard';
 
 const RESULT: LlmTestOut = {

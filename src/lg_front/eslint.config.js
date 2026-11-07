@@ -61,6 +61,14 @@ const UP_TO_PAGES_OR_APP = {
   regex: '^(\\.\\./)+(pages|app)(/|$)',
   message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
 };
+const DATA_IN_COMPONENTS = {
+  regex: '^(\\.\\./)+api/endpoints$',
+  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+};
+const REACT_QUERY_IN_COMPONENTS = {
+  name: '@tanstack/react-query',
+  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+};
 const UP_TO_COMPONENTS = {
   regex: '^(\\.\\./)+components(/|$)',
   message: 'Layer boundary: the shared kernel (api, auth, live, lib, theme) must not import components.',
@@ -105,7 +113,7 @@ export default tseslint.config(
   {
     files: ['src/components/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP] }],
+      'no-restricted-imports': ['error', { paths: [REACT_QUERY_IN_COMPONENTS], patterns: [UP_TO_PAGES_OR_APP, DATA_IN_COMPONENTS] }],
     },
   },
   {

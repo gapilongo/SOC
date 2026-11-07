@@ -13,14 +13,14 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Building2, Check, ChevronDown, LogOut } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-import { endpoints } from '../api/endpoints';
-import { qk } from '../api/queryKeys';
-import type { TenantSummaryOut } from '../api/types';
-import { useApi, useAuth, useAuthStore } from '../auth/AuthContext';
-import { isTenantOverride } from '../auth/roles';
-import { Badge } from './Badge';
-import { useToast } from './Toast';
-import { Button, cx } from './ui';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { TenantSummaryOut } from '../../api/types';
+import { useApi, useAuth, useAuthStore } from '../../auth/AuthContext';
+import { isTenantOverride } from '../../auth/roles';
+import { Badge } from '../../components/Badge';
+import { useToast } from '../../components/Toast';
+import { Button, cx } from '../../components/ui';
 
 const TENANT_ID = /^[a-z0-9][a-z0-9_-]{1,62}$/;
 const MAX_OPTIONS = 50;

@@ -29,7 +29,7 @@ import { Badge, SeverityBadge, StatusBadge } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../components/Dialog';
 import { ListNotice } from '../components/ListNotice';
 import { useToast } from '../components/Toast';
-import { filterTenants, usePlatformTenants, useSwitchTenant } from '../components/TenantSwitcher';
+import { filterTenants, usePlatformTenants, useSwitchTenant } from './platform/TenantSwitcher';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextField, cx } from '../components/ui';
 import { downloadCsv, toCsv, type CsvColumn } from '../lib/csv';
 import { formatCountdown, formatInt, formatRelative, formatUsd } from '../lib/format';

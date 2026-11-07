@@ -8,13 +8,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Circle, Send, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import { endpoints } from '../api/endpoints';
-import { afterAlertsAdded, afterOnboardingChange } from '../api/invalidate';
-import { qk } from '../api/queryKeys';
-import type { OnboardingStatusOut, OnboardingStepOut } from '../api/types';
-import { useApi } from '../auth/AuthContext';
-import { useToast } from './Toast';
-import { Button, cx } from './ui';
+import { endpoints } from '../../api/endpoints';
+import { afterAlertsAdded, afterOnboardingChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import type { OnboardingStatusOut, OnboardingStepOut } from '../../api/types';
+import { useApi } from '../../auth/AuthContext';
+import { useToast } from '../../components/Toast';
+import { Button, cx } from '../../components/ui';
 
 export interface StepText {
   title: string;

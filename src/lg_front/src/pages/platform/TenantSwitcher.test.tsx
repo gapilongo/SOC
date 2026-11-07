@@ -3,9 +3,9 @@ import { fireEvent, renderHook, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
-import { SessionProvider } from '../auth/AuthContext';
-import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
-import { tenant } from '../test/tenants';
+import { SessionProvider } from '../../auth/AuthContext';
+import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
+import { tenant } from '../../test/tenants';
 import { ActingTenantBanner, TenantSwitcher, filterTenants, usePlatformTenants, type PlatformTenantsOptions } from './TenantSwitcher';
 
 const TENANTS = [tenant('acme', 'Acme (MSSP)'), tenant('globex', 'Globex Corp'), tenant('initech', 'Initech', { status: 'suspended' })];
