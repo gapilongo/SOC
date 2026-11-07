@@ -147,6 +147,36 @@ def max_level(*levels: str) -> str:
     return max(levels, key=ESCALATION_LEVELS.index)
 
 
+@dataclass(frozen=True)
+class _Placement:
+    """Where a new escalation goes in the queue: its priority, level and SLA deadline."""
+
+    priority: int
+    level: str
+    sla_deadline: datetime
+
+
+def _place(
+    policy: ReviewPolicy,
+    severity: str,
+    threat_score: float,
+    confidence: float,
+    n_correlations: int,
+    reason_code: str,
+    now: datetime,
+) -> _Placement:
+    """Priority from the alert's signals, level from the tenant's thresholds, deadline from the level's SLA."""
+    priority = compute_priority(
+        severity=severity,
+        threat_score=threat_score,
+        confidence=confidence,
+        correlations_count=n_correlations,
+        reason_code=reason_code,
+    )
+    level = policy.level_for(priority=priority, threat_score=threat_score, severity=severity, reason_code=reason_code)
+    return _Placement(priority, level, now + timedelta(minutes=policy.sla_minutes[level]))
+
+
 class GroupingPolicy(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
@@ -327,19 +357,11 @@ class EscalationService:
         """
         now = now or datetime.now(UTC)
         policy = await self.policy(tenant_id)
-        priority = compute_priority(
-            severity=severity,
-            threat_score=threat_score,
-            confidence=confidence,
-            correlations_count=len(correlated_alert_ids),
-            reason_code=reason_code,
-        )
-        level = policy.level_for(priority=priority, threat_score=threat_score, severity=severity, reason_code=reason_code)
-        deadline = now + timedelta(minutes=policy.sla_minutes[level])
+        place = _place(policy, severity, threat_score, confidence, len(correlated_alert_ids), reason_code, now)
+        priority, level, deadline = place.priority, place.level, place.sla_deadline
         body = dict(summary or {})
         body["correlated_alert_ids"] = [str(a) for a in correlated_alert_ids][:MAX_CORRELATED]
 
-        attached_from: Optional[Escalation] = None
         # Related alerts are only candidates (the parent lookup re-checks them under the
         # lock), so the indicator lookups run before the per-tenant grouping lock is taken:
         # the lock is held for the parent lookup and the attach/create step only.
@@ -353,31 +375,8 @@ class EscalationService:
             if attached_to is not None:
                 return _ticket(attached_to, created=False, attached=True)
             parent = await self._find_parent(conn, tenant_id, alert_id, fingerprint, policy, now, related)
-            if parent is not None:
-                new_level = max_level(parent.level, level)
-                attached = await self._repos.escalations.attach(
-                    tenant_id, parent.id, alert_id, priority=priority, level=new_level, sla_deadline=deadline, conn=conn
-                )
-                if attached is not None:
-                    attached_from = parent
-                    escalation = attached
-                    await self._audit.record(
-                        tenant_id,
-                        "escalation.alert_attached",
-                        "escalation",
-                        escalation.id,
-                        actor_type="agent",
-                        actor_id="workflow",
-                        details={
-                            "alert_id": alert_id,
-                            "parent_alert_id": escalation.alert_id,
-                            "attached_count": len(escalation.related_alert_ids),
-                            "level": escalation.level,
-                            "priority": escalation.priority,
-                        },
-                        conn=conn,
-                    )
-            if attached_from is None:
+            attached = await self._attach(conn, tenant_id, alert_id, parent, place) if parent is not None else None
+            if attached is None:
                 escalation, created = await self._repos.escalations.create_or_attach(
                     tenant_id,
                     alert_id,
@@ -390,47 +389,68 @@ class EscalationService:
                     conn=conn,
                 )
                 if created:
-                    await self._audit.record(
-                        tenant_id,
-                        "escalation.created",
-                        "escalation",
-                        escalation.id,
-                        actor_type="agent",
-                        actor_id="workflow",
-                        details={"alert_id": alert_id, "level": level, "priority": priority, "reason_code": reason_code},
-                        conn=conn,
-                    )
-                    await enqueue_event(
+                    await self._announce_created(
                         conn,
-                        tenant_id,
-                        ESCALATION_CREATED,
-                        alert_id=alert_id,
-                        dedupe_key=f"{ESCALATION_CREATED}:{escalation.id}",
-                        escalation=escalation,
-                        alert_overrides={
-                            "confidence": confidence,
-                            "threat_score": threat_score,
-                            "verdict": body.get("verdict"),
-                        },
+                        escalation,
+                        "escalation.created",
+                        {"alert_id": alert_id, "level": level, "priority": priority, "reason_code": reason_code},
+                        {"confidence": confidence, "threat_score": threat_score, "verdict": body.get("verdict")},
                     )
-        if attached_from is not None:
-            data = {
-                "escalation_id": escalation.id,
-                "status": escalation.status,
-                "attached_alert_id": alert_id,
-                "attached_count": len(escalation.related_alert_ids),
-                "level": escalation.level,
-                "priority": escalation.priority,
-            }
-            await self._publish(tenant_id, "escalation.updated", escalation.alert_id, data)
-            await self._publish(tenant_id, "escalation.updated", alert_id, data)
-            log.info("escalation.alert_attached", attached_count=len(escalation.related_alert_ids))
-            return _ticket(escalation, created=False, attached=True)
+        if attached is not None:
+            await self._announce_attached(tenant_id, alert_id, attached)
+            return _ticket(attached, created=False, attached=True)
         if created:
             await self._publish(
                 tenant_id, "escalation.created", alert_id, {"escalation_id": escalation.id, "level": level, "priority": priority}
             )
         return _ticket(escalation, created=created)
+
+    async def _attach(
+        self, conn: Connection, tenant_id: str, alert_id: str, parent: Escalation, place: _Placement
+    ) -> Optional[Escalation]:
+        """Attach the alert to ``parent`` (raising its level and priority, moving its deadline earlier if needed)
+        and audit it; ``None`` when ``parent`` can take no more alerts."""
+        attached = await self._repos.escalations.attach(
+            tenant_id,
+            parent.id,
+            alert_id,
+            priority=place.priority,
+            level=max_level(parent.level, place.level),
+            sla_deadline=place.sla_deadline,
+            conn=conn,
+        )
+        if attached is not None:
+            await self._audit.record(
+                tenant_id,
+                "escalation.alert_attached",
+                "escalation",
+                attached.id,
+                actor_type="agent",
+                actor_id="workflow",
+                details={
+                    "alert_id": alert_id,
+                    "parent_alert_id": attached.alert_id,
+                    "attached_count": len(attached.related_alert_ids),
+                    "level": attached.level,
+                    "priority": attached.priority,
+                },
+                conn=conn,
+            )
+        return attached
+
+    async def _announce_attached(self, tenant_id: str, alert_id: str, escalation: Escalation) -> None:
+        """After commit: the grown escalation, to the parent alert's and the attached alert's viewers."""
+        data = {
+            "escalation_id": escalation.id,
+            "status": escalation.status,
+            "attached_alert_id": alert_id,
+            "attached_count": len(escalation.related_alert_ids),
+            "level": escalation.level,
+            "priority": escalation.priority,
+        }
+        await self._publish(tenant_id, "escalation.updated", escalation.alert_id, data)
+        await self._publish(tenant_id, "escalation.updated", alert_id, data)
+        log.info("escalation.alert_attached", attached_count=len(escalation.related_alert_ids))
 
     async def _find_parent(
         self,
@@ -531,15 +551,8 @@ class EscalationService:
         """
         now = now or datetime.now(UTC)
         policy = await self.policy(tenant_id)
-        priority = compute_priority(
-            severity=severity,
-            threat_score=threat_score,
-            confidence=confidence,
-            correlations_count=0,
-            reason_code="group_review",
-        )
-        level = policy.level_for(priority=priority, threat_score=threat_score, severity=severity, reason_code="group_review")
-        deadline = now + timedelta(minutes=policy.sla_minutes[level])
+        place = _place(policy, severity, threat_score, confidence, 0, "group_review", now)
+        priority, level, deadline = place.priority, place.level, place.sla_deadline
         explanation = OWN_REVIEW_REASONS.get(reason_code, "needs its own review")
         reason = (
             f"The grouped escalation this alert was attached to was decided {decision}, "
@@ -570,14 +583,11 @@ class EscalationService:
                 conn=conn,
             )
             if created:
-                await self._audit.record(
-                    tenant_id,
+                await self._announce_created(
+                    conn,
+                    escalation,
                     "escalation.detached",
-                    "escalation",
-                    escalation.id,
-                    actor_type="agent",
-                    actor_id="workflow",
-                    details={
+                    {
                         "alert_id": alert_id,
                         "parent_escalation_id": parent.id,
                         "parent_alert_id": parent.alert_id,
@@ -586,16 +596,7 @@ class EscalationService:
                         "level": level,
                         "priority": priority,
                     },
-                    conn=conn,
-                )
-                await enqueue_event(
-                    conn,
-                    tenant_id,
-                    ESCALATION_CREATED,
-                    alert_id=alert_id,
-                    dedupe_key=f"{ESCALATION_CREATED}:{escalation.id}",
-                    escalation=escalation,
-                    alert_overrides={"confidence": confidence, "threat_score": threat_score},
+                    {"confidence": confidence, "threat_score": threat_score},
                 )
         if created:
             log.info("escalation.alert_detached", reason=reason_code, escalation_level=level)
@@ -670,6 +671,35 @@ class EscalationService:
                 )
         await self._publish(tenant_id, "escalation.updated", esc.alert_id, {"escalation_id": escalation_id, "status": updated.status})
         return updated
+
+    async def _announce_created(
+        self,
+        conn: Connection,
+        escalation: Escalation,
+        audit_action: str,
+        details: Mapping[str, Any],
+        alert_overrides: Mapping[str, Any],
+    ) -> None:
+        """In the creating transaction: the agent's audit entry and the outbound ``escalation.created`` event."""
+        await self._audit.record(
+            escalation.tenant_id,
+            audit_action,
+            "escalation",
+            escalation.id,
+            actor_type="agent",
+            actor_id="workflow",
+            details=details,
+            conn=conn,
+        )
+        await enqueue_event(
+            conn,
+            escalation.tenant_id,
+            ESCALATION_CREATED,
+            alert_id=escalation.alert_id,
+            dedupe_key=f"{ESCALATION_CREATED}:{escalation.id}",
+            escalation=escalation,
+            alert_overrides=alert_overrides,
+        )
 
     async def _publish(self, tenant_id: str, event_type: str, alert_id: str, data: Dict[str, Any]) -> None:
         await publish_event(self._events, event_type, tenant_id, alert_id, data)

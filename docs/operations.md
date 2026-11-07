@@ -196,6 +196,9 @@ Update the Secret, then roll the pods:
 ### Fernet encryption keys (`LG_SOTF_SECURITY__ENCRYPTION_KEYS`)
 
 Comma-separated list: the **first** key encrypts, **all** keys decrypt.
+The API, the worker and the scheduler check every key at startup and refuse
+to start if one is not a valid Fernet key, so a bad value stops the rollout
+at the first pod (ADR-0006).
 
 1. Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 2. Prepend it: `NEW,OLD`. Roll all pods. New writes use the new key; old

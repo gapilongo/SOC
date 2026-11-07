@@ -58,6 +58,7 @@ from lg_sotf.runtime.orphans import (
 from lg_sotf.runtime.resumes import recover_lost_resumes
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.runtime.worker import EventPublisherLike, sanitize_error
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.background import BackgroundExecutor
 from lg_sotf.services.dispatch import DispatchableAlert, dispatch_new_alerts
 from lg_sotf.services.response import ResponseService
@@ -127,6 +128,7 @@ class Scheduler:
         stop_grace_s: float = DEFAULT_STOP_GRACE_S,
         delivery: Optional[OutboxDelivery] = None,
         responses: Optional[ResponseService] = None,
+        secret_box: Optional[SecretBox] = None,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
@@ -155,6 +157,7 @@ class Scheduler:
         self._running = False
         self._delivery = delivery
         self._responses = responses
+        self._box = secret_box  # the process's (run_scheduler); decrypts integration credentials
         self._background: Optional[BackgroundExecutor] = None
         self._verification: Optional[VerificationService] = None
         cfg = settings.scheduler
@@ -385,7 +388,7 @@ class Scheduler:
     def responses(self) -> ResponseService:
         """The scheduler's response service (one per process: it holds the Microsoft token cache)."""
         if self._responses is None:
-            self._responses = ResponseService(self._repos, self._settings, self._events)
+            self._responses = ResponseService(self._repos, self._settings, self._events, secret_box=self._box)
         return self._responses
 
     async def _settle_orphaned_actions(self) -> None:
@@ -589,7 +592,7 @@ class Scheduler:
 
     def delivery(self) -> OutboxDelivery:
         if self._delivery is None:
-            self._delivery = OutboxDelivery(self._repos, self._settings)
+            self._delivery = OutboxDelivery(self._repos, self._settings, secret_box=self._box)
         return self._delivery
 
     async def deliver_notifications(self) -> None:
@@ -650,7 +653,10 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
     from lg_sotf.queue.redis import create_redis
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
     from lg_sotf.runtime.shutdown import GracefulShutdown, cancel_current_task
+    from lg_sotf.security.crypto import load_secret_box
 
+    # Invalid encryption keys stop the scheduler here, as they stop the API (ADR-0006).
+    box = load_secret_box(settings)
     db = Database(settings.database, dsn=owner_dsn(settings), application_name="lg-sotf-scheduler")
     redis = create_redis(settings)
     try:
@@ -661,15 +667,13 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
         def ingestion_factory() -> IngestionLike:
             from lg_sotf.ingestion.service import IngestionService
             from lg_sotf.llm import TokenBudget
-            from lg_sotf.security.crypto import load_secret_box
 
-            box = load_secret_box(settings)
             # LLM normalization fallback during polls is charged to the tenant's daily budget.
             budget = TokenBudget(redis, settings, usage_seed=Repositories.create(db).llm_usage.day_tokens)
             service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=budget)
             return service
 
-        scheduler = Scheduler(settings, db, redis, ingestion_factory, queue, events)
+        scheduler = Scheduler(settings, db, redis, ingestion_factory, queue, events, secret_box=box)
         shutdown = GracefulShutdown(scheduler.request_stop, on_force=cancel_current_task())
         shutdown.install()
         health = HealthServer(
