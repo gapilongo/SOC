@@ -2325,11 +2325,11 @@ export interface components {
             /** Malicious */
             malicious: number;
             /** Max Confirmed Benign Severity */
-            max_confirmed_benign_severity: string | null;
+            max_confirmed_benign_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Max Severity */
-            max_severity: string | null;
+            max_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Median Severity */
-            median_severity: string | null;
+            median_severity: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Reason */
             reason: string;
             /** Rule */

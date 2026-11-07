@@ -88,6 +88,10 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("ErasureStatusOut", "status", TENANT_STATUSES),
     # audit log
     ("AuditEntryOut", "actor_type", AUDIT_ACTOR_TYPES),
+    # reports
+    ("Detection", "median_severity", v.SEVERITIES),
+    ("Detection", "max_severity", v.SEVERITIES),
+    ("Detection", "max_confirmed_benign_severity", v.SEVERITIES),
 ]
 
 
