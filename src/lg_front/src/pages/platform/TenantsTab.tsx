@@ -181,7 +181,7 @@ export function TenantsTab() {
                 <th scope="col" className="py-2 pr-3 text-right">LLM cost (month)</th>
                 <th scope="col" className="py-2 pr-3 text-right">Users</th>
                 <th scope="col" className="py-2 pr-3 text-right">Sources</th>
-                <th scope="col" className="py-2"><span className="sr-only">Actions</span></th>
+                <th scope="col" className="sticky right-0 border-l border-subtle bg-raised py-2 pl-3"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-subtle">
@@ -210,7 +210,8 @@ export function TenantsTab() {
                     <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">{formatUsd(s.llm_cost_mtd_usd)}</td>
                     <QuotaCell usage={u.max_users} />
                     <QuotaCell usage={u.max_sources} />
-                    <td className="py-2">
+                    {/* Pinned to the right edge: the actions stay in view when the table scrolls. */}
+                    <td className="sticky right-0 border-l border-subtle bg-raised py-2 pl-3">
                       <div className="flex flex-col items-end gap-1">
                         <Button size="sm" variant="quiet" onClick={() => open(t)} icon={<LogIn className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Open tenant ${t.name}`}>
                           Open
