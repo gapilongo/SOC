@@ -37,6 +37,7 @@ import {
   TextField,
 } from '../components/ui';
 import { formatDateTime, formatRelative, humanize } from '../lib/format';
+import { parseJsonObject } from '../lib/json';
 import { MicrosoftIntegrationForm, secretField } from './integrations/MicrosoftIntegrationForm';
 import { MicrosoftTestReport } from './integrations/MicrosoftTestReport';
 
@@ -211,9 +212,7 @@ export function splitIntegrationConfig(kind: IntegrationKind, config: JsonObject
 export function buildIntegrationConfig(kind: IntegrationKind, values: Record<string, string>, flags: Record<string, boolean>, extra: string): JsonObject {
   let out: JsonObject = {};
   if (extra.trim()) {
-    const parsed = JSON.parse(extra) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Additional configuration must be a JSON object.');
-    out = { ...(parsed as JsonObject) };
+    out = { ...parseJsonObject(extra, 'Additional configuration') };
   }
   for (const f of KIND_SPECS[kind].config) {
     if (f.kind === 'bool') {

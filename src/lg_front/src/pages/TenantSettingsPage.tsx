@@ -11,10 +11,7 @@ import { LlmTestCard } from '../components/LlmTestCard';
 import { useToast } from '../components/Toast';
 import { Button, Card, Checkbox, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
 import { formatDateTime, humanize } from '../lib/format';
-
-function obj(value: unknown): JsonObject {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
-}
+import { asObject } from '../lib/json';
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
@@ -29,7 +26,7 @@ function lines(text: string): string[] {
 
 /** Effective per-risk autonomy stored for the tenant (response.autonomy overrides the top-level map). */
 export function storedAutonomy(settings: JsonObject): Record<string, string> {
-  return { ...obj(settings.autonomy), ...obj(obj(settings.response).autonomy) } as Record<string, string>;
+  return { ...asObject(settings.autonomy), ...asObject(asObject(settings.response).autonomy) } as Record<string, string>;
 }
 
 /** Merge patch for the autonomy section: one top-level map, the legacy response.autonomy removed. */
@@ -37,7 +34,7 @@ export function autonomyPatch(settings: JsonObject, choice: Record<string, strin
   const map: Record<string, string> = {};
   for (const risk of RISK_LEVELS) if (choice[risk]) map[risk] = choice[risk];
   const patch: JsonObject = { autonomy: Object.keys(map).length ? map : null };
-  if (obj(settings.response).autonomy !== undefined) patch.response = { autonomy: null };
+  if (asObject(settings.response).autonomy !== undefined) patch.response = { autonomy: null };
   return patch;
 }
 
@@ -112,7 +109,7 @@ function AutonomySection({ data }: { data: TenantSettingsOut }) {
 }
 
 function ResponseSection({ data }: { data: TenantSettingsOut }) {
-  const r = obj(data.settings.response);
+  const r = asObject(data.settings.response);
   const [connector, setConnector] = useState(typeof r.connector === 'string' ? r.connector : '');
   const [dryRun, setDryRun] = useState(r.dry_run !== false);
   const [webhookUrl, setWebhookUrl] = useState(typeof r.webhook_url === 'string' ? r.webhook_url : '');
@@ -188,7 +185,7 @@ function ResponseSection({ data }: { data: TenantSettingsOut }) {
 
 function ProtectedSection({ data }: { data: TenantSettingsOut }) {
   const raw = data.settings.protected_assets;
-  const pa = Array.isArray(raw) ? { hosts: raw } : obj(raw);
+  const pa = Array.isArray(raw) ? { hosts: raw } : asObject(raw);
   const legacyCidrs = strings(data.settings.protected_cidrs);
   const [hosts, setHosts] = useState(strings(pa.hosts).join('\n'));
   const [users, setUsers] = useState(strings(pa.users).join('\n'));
@@ -264,7 +261,7 @@ function BudgetSection({ data }: { data: TenantSettingsOut }) {
 }
 
 function ReportingSection({ data }: { data: TenantSettingsOut }) {
-  const current = obj(data.settings.reporting).minutes_per_alert;
+  const current = asObject(data.settings.reporting).minutes_per_alert;
   const [minutes, setMinutes] = useState(typeof current === 'number' ? String(current) : '');
   const [localError, setLocalError] = useState<Error | null>(null);
   const save = useSave();
@@ -296,8 +293,8 @@ function ReportingSection({ data }: { data: TenantSettingsOut }) {
 }
 
 function ReviewSection({ data }: { data: TenantSettingsOut }) {
-  const review = obj(data.settings.review);
-  const sla = obj(review.sla_minutes);
+  const review = asObject(data.settings.review);
+  const sla = asObject(review.sla_minutes);
   const [l1, setL1] = useState(typeof sla.L1 === 'number' ? String(sla.L1) : '');
   const [l2, setL2] = useState(typeof sla.L2 === 'number' ? String(sla.L2) : '');
   const [l3, setL3] = useState(typeof sla.L3 === 'number' ? String(sla.L3) : '');
@@ -354,7 +351,7 @@ export function retentionPatch(alerts: string, indicators: string, limits: { min
 }
 
 function RetentionSection({ data }: { data: TenantSettingsOut }) {
-  const retention = obj(data.settings.retention);
+  const retention = asObject(data.settings.retention);
   const limits = data.retention_limits ?? { min_days: 1, max_days: 99_999, alerts_days: 90, indicators_days: 30 };
   const [alerts, setAlerts] = useState(typeof retention.alerts_days === 'number' ? String(retention.alerts_days) : '');
   const [indicators, setIndicators] = useState(typeof retention.indicators_days === 'number' ? String(retention.indicators_days) : '');
@@ -436,7 +433,7 @@ const PHISHING_PLACEHOLDERS: Record<PhishingKey, string> = {
 };
 
 function PhishingSection({ data }: { data: TenantSettingsOut }) {
-  const stored = obj(data.settings.phishing);
+  const stored = asObject(data.settings.phishing);
   const [text, setText] = useState<Record<PhishingKey, string>>({
     protected_brands: strings(stored.protected_brands).join('\n'),
     executives: strings(stored.executives).join('\n'),
@@ -506,10 +503,10 @@ export function describeRoute(route: RouteOut): string {
 function RoutingSection({ data }: { data: TenantSettingsOut }) {
   const api = useApi();
   const q = useQuery({ queryKey: qk.responseRoutes.forSettings(data.updated_at), queryFn: ({ signal }) => endpoints.responseRoutes(api, signal) });
-  const stored = obj(obj(data.settings.response).routes) as Record<string, string>;
+  const stored = asObject(asObject(data.settings.response).routes) as Record<string, string>;
   const [choice, setChoice] = useState<Record<string, string>>(stored);
   const save = useSave();
-  const routes = Object.entries(obj(q.data?.routes)) as Array<[string, RouteOut]>;
+  const routes = Object.entries(asObject(q.data?.routes)) as Array<[string, RouteOut]>;
   return (
     <Section
       title="Response routing"
@@ -572,7 +569,7 @@ function RoutingSection({ data }: { data: TenantSettingsOut }) {
 }
 
 function SecuritySection({ data }: { data: TenantSettingsOut }) {
-  const current = obj(data.settings.security).require_mfa === true;
+  const current = asObject(data.settings.security).require_mfa === true;
   const [requireMfa, setRequireMfa] = useState(current);
   const save = useSave();
   return (

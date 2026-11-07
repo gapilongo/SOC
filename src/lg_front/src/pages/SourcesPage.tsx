@@ -12,6 +12,7 @@ import { ConfirmDialog, Modal } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
 import { formatDateTime, formatRelative } from '../lib/format';
+import { parseJsonObject } from '../lib/json';
 
 interface FieldSpec {
   key: string;
@@ -160,9 +161,7 @@ export function splitConfig(type: SourceType, config: JsonObject | undefined): {
 export function buildConfig(type: SourceType, known: Record<string, string>, extra: string): JsonObject {
   let out: JsonObject = {};
   if (extra.trim()) {
-    const parsed = JSON.parse(extra) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Additional configuration must be a JSON object.');
-    out = { ...(parsed as JsonObject) };
+    out = { ...parseJsonObject(extra, 'Additional configuration') };
   }
   for (const f of SOURCE_SPECS[type].config) {
     const raw = (known[f.key] ?? '').trim();
@@ -204,9 +203,7 @@ function SourceForm({ source, onClose }: { source: SourceOut | null; onClose: ()
       const secret: Record<string, string> = {};
       for (const [k, v] of Object.entries(secrets)) if (v) secret[k] = v;
       if (extraSecret.trim()) {
-        const parsed = JSON.parse(extraSecret) as unknown;
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Additional credentials must be a JSON object.');
-        for (const [k, v] of Object.entries(parsed as JsonObject)) secret[k] = String(v);
+        for (const [k, v] of Object.entries(parseJsonObject(extraSecret, 'Additional credentials'))) secret[k] = String(v);
       }
       const pollInterval = Number(poll);
       if (!Number.isInteger(pollInterval) || pollInterval < 1) throw new Error('Poll interval must be a whole number of seconds.');
