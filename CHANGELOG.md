@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A proof-of-value install profile: `scripts/pov.sh --siem-host HOST` (or
+  `make pov SIEM=HOST`) starts a stack that can only read. Every response
+  action is blocked or recorded as dry run, whatever a tenant admin sets; pull
+  sources that mark or move mailbox messages are refused; and outbound
+  connections go only to the SIEM host(s) and the model endpoint (local Ollama
+  by default, or an EU-hosted endpoint; DeepSeek is refused). It ends with the
+  next steps: connect a source, then `scripts/pov.sh --backtest 90`. Helm
+  users layer `deploy/helm/lg-sotf/values-pov.yaml`. See docs/pov.md.
+- Two install-level settings: `ingestion.allowed_destination_hosts`, an egress
+  allow-list for sources, integrations, response webhooks, Microsoft Graph,
+  enrichment providers and the LLM endpoint (unset by default, so nothing
+  changes for existing installs), and `ingestion.read_only_sources`, which
+  refuses the `m365_mailbox` and `imap` sources.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

@@ -12,6 +12,10 @@ before it is sent:
   (RFC 1918, CGNAT, unique-local IPv6) are refused unless the install sets
   ``ingestion.allow_private_destinations`` (on-prem installs whose SIEM sits
   on a private network);
+* when the install sets ``ingestion.allowed_destination_hosts`` (an egress
+  allow-list, used by the PoV profile), the host must be on it: an exact
+  name or address, or ``*.example.com`` for its subdomains. An unreadable
+  list refuses every destination;
 * the connection is made to the address that was checked (the request is
   pinned to it, with the original name kept for the ``Host`` header, SNI
   and certificate verification), so a DNS answer that changes between the
@@ -27,7 +31,7 @@ import asyncio
 import ipaddress
 import socket
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional, Sequence, Tuple, Union
+from typing import AbstractSet, Awaitable, Callable, FrozenSet, List, Optional, Sequence, Tuple, Union
 
 import httpx
 
@@ -65,6 +69,12 @@ async def system_resolve(host: str, port: int) -> List[str]:
 class DestinationPolicy:
     require_https: bool
     allow_private: bool = False
+    # The install's egress allow-list (None: no list; empty: nothing is allowed).
+    allowed_hosts: Optional[FrozenSet[str]] = None
+
+    def host_allowed(self, host: str) -> bool:
+        """Whether ``host`` is on the allow-list (always, when there is none)."""
+        return self.allowed_hosts is None or host_on_list(host, self.allowed_hosts)
 
     def check_url(self, url: Union[str, httpx.URL]) -> Tuple[str, int]:
         """Scheme and shape checks; returns (host, port)."""
@@ -82,6 +92,8 @@ class DestinationPolicy:
         host = parsed.host
         if not host:
             raise SourceConfigError("source URL has no host")
+        if not self.host_allowed(host):
+            raise DestinationRefused()
         return host, parsed.port or _DEFAULT_PORTS[scheme]
 
     def address_allowed(self, address: IPAddress) -> bool:
@@ -103,6 +115,8 @@ class DestinationPolicy:
 
     async def resolve_allowed(self, host: str, port: int, resolver: Resolver) -> str:
         """The address to connect to; raises :class:`DestinationRefused` if any resolved address is refused."""
+        if not self.host_allowed(host):
+            raise DestinationRefused()
         literal = _ip_literal(host)
         candidates = [str(literal)] if literal is not None else list(await resolver(host, port))
         if not candidates:
@@ -139,8 +153,29 @@ def egress_policy(settings: Settings, *, require_https: Optional[bool] = None) -
     return DestinationPolicy(
         require_https=settings.is_production if require_https is None else require_https,
         allow_private=allow_private,
+        allowed_hosts=allowed_hosts(settings),
     )
 
+
+def allowed_hosts(settings: Settings) -> Optional[FrozenSet[str]]:
+    """``ingestion.allowed_destination_hosts``, read on its own: None when unset, empty (refuse all) when invalid."""
+    raw = (settings.ingestion or {}).get("allowed_destination_hosts")
+    if raw is None:
+        return None
+    try:
+        hosts = IngestionSection.model_validate({"allowed_destination_hosts": raw}).allowed_destination_hosts
+    except ValueError:
+        return frozenset()
+    return frozenset(hosts or ())
+
+
+def host_on_list(host: str, hosts: AbstractSet[str]) -> bool:
+    """``host`` is listed, or a subdomain of a listed ``*.domain`` (names compared case-insensitively)."""
+    name = host.strip("[]").lower().rstrip(".")
+    if name in hosts:
+        return True
+    parts = name.split(".")
+    return any(f"*.{'.'.join(parts[i:])}" in hosts for i in range(1, len(parts)))
 
 def ip_literal(value: str) -> Optional[IPAddress]:
     """The address ``value`` spells (``[::1]`` and zone ids accepted), or None when it is a name."""
