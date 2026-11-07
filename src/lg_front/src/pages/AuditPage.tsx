@@ -5,7 +5,7 @@ import { endpoints, type AuditFilters } from '../api/endpoints';
 import { qk } from '../api/queryKeys';
 import type { AuditEntryOut, AuditVerifyOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
-import { Button, EmptyState, ErrorMessage, JsonBlock, LoadingState, PageHeader, TextField } from '../components/ui';
+import { Button, EmptyState, ErrorMessage, JsonBlock, LoadingState, PageHeader, TextField, Truncated } from '../components/ui';
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../lib/csv';
 import { formatDateTime, localInputToIso } from '../lib/format';
 import { useKeysetList } from '../lib/pagination';
@@ -112,7 +112,7 @@ export default function AuditPage() {
       {list.isError && <ErrorMessage error={list.error} onRetry={() => void list.refetch()} />}
       {list.isSuccess && list.items.length === 0 && <EmptyState title="No audit entries match" />}
       {list.items.length > 0 && (
-        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
+        <div className="relative overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Audit entries</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
@@ -156,18 +156,18 @@ function FragmentRow({ e, open, onToggle }: { e: AuditEntryOut; open: boolean; o
         <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDateTime(e.ts)}</td>
         <td className="px-3 py-2 text-body">
           {e.actor_type}
-          {e.actor_id && <div className="font-mono text-xs text-muted">{e.actor_id}</div>}
+          {e.actor_id && <Truncated value={e.actor_id} mono className="max-w-[16rem] text-xs text-muted" />}
         </td>
         <td className="px-3 py-2 font-mono text-xs text-fg">{e.action}</td>
         <td className="px-3 py-2 text-body">
           {e.resource_type}
-          {e.resource_id && <div className="break-all font-mono text-xs text-muted">{e.resource_id}</div>}
+          {e.resource_id && <Truncated value={e.resource_id} mono className="max-w-[16rem] text-xs text-muted" />}
         </td>
-        <td className="px-3 py-2 font-mono text-xs text-muted" title={e.hash}>
+        <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted" title={e.hash}>
           {e.hash.slice(0, 12)}
         </td>
         <td className="px-3 py-2 text-right">
-          <Button size="sm" variant="quiet" aria-expanded={open} onClick={onToggle}>
+          <Button size="sm" variant="quiet" aria-expanded={open} aria-label={`${open ? 'Hide' : 'Show'} details of entry ${e.id}`} onClick={onToggle}>
             {open ? 'Hide' : 'Show'}
           </Button>
         </td>
