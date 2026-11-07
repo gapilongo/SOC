@@ -50,8 +50,9 @@ Every scorecard has the same sections, in this order.
    * *Auto-close rate*, *escalation rate* (analyst review requested),
      *approval requests* (response actions waiting for approval) and *errors*.
    Each with counts and a 95% Wilson interval.
-4. **Per class.** Precision, recall, F1, support and predicted count for
-   `malicious`, `benign` and `inconclusive`, plus macro F1. The predicted
+4. **Per class.** Precision and recall (each with counts and a 95% Wilson
+   interval), F1, support and predicted count for `malicious`, `benign` and
+   `inconclusive`, plus macro F1. The predicted
    disposition of an escalated item is the analysis verdict (`inconclusive`
    without one), as in the eval report.
 5. **Cost and latency per item.** Mean cost, total cost, tokens and LLM calls

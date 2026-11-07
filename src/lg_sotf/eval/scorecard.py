@@ -6,23 +6,23 @@ and writes the scorecard as Markdown and, optionally, JSON. See
 ``docs/scorecards/README.md`` for the template and the meaning of each row.
 
 Every rate is shown with its counts (``k of n``) and a 95% Wilson score
-interval: with the small synthetic sets an interval is wider than most
+interval (``lg_sotf.domain.rates``): with the small synthetic sets an interval is wider than most
 differences between models, and the scorecard says so instead of hiding it.
 """
 
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from lg_sotf.domain.rates import RateInterval, format_rate, wilson_interval
 from lg_sotf.eval.dataset import DISPOSITIONS
+from lg_sotf.eval.metrics import per_class_intervals
 from lg_sotf.eval.results import ItemResult
 
 SCORECARD_VERSION = 1
-Z_95 = 1.959963984540054
 # report.run keys that may carry prompt identities (AI-E1.2 adds prompt hashes to reports).
 PROMPT_KEYS = ("prompt_hashes", "prompts", "prompt_versions")
 # Models whose results are for internal comparison only (lead decision: synthetic data, never published).
@@ -32,19 +32,6 @@ NOT_RECORDED = "not recorded in the report"
 
 class ScorecardError(ValueError):
     """The reports cannot make one scorecard; the message is safe to print."""
-
-
-def wilson_interval(successes: int, n: int, z: float = Z_95) -> Optional[Tuple[float, float]]:
-    """The Wilson score interval of ``successes`` out of ``n`` (``None`` when ``n`` is 0)."""
-    if n == 0:
-        return None
-    if not 0 <= successes <= n:
-        raise ValueError("successes must be between 0 and n")
-    p = successes / n
-    z2 = z * z
-    centre = (p + z2 / (2 * n)) / (1 + z2 / n)
-    half = (z / (1 + z2 / n)) * math.sqrt(p * (1 - p) / n + z2 / (4 * n * n))
-    return max(0.0, centre - half), min(1.0, centre + half)
 
 
 def proportion(k: int, n: int) -> Dict[str, Any]:
@@ -109,6 +96,7 @@ def dataset_card(report: Mapping[str, Any]) -> Dict[str, Any]:
         "approval_request": proportion(sum(1 for r in scored if r.approval_requested), len(scored)),
         "error": proportion(len(items) - len(scored), len(items)),
         "per_class": {cls: (metrics.get("per_class") or {}).get(cls) for cls in DISPOSITIONS},
+        "per_class_intervals": per_class_intervals([(r.expected, r.predicted or "inconclusive") for r in scored]),
         "macro_f1": metrics.get("macro_f1"),
         "cost_per_item_usd": metrics.get("cost_per_alert_usd"),
         "total_cost_usd": metrics.get("total_cost_usd"),
@@ -235,11 +223,14 @@ def _ci(prop: Mapping[str, Any]) -> str:
     return "n/a" if not ci else f"{_pct(ci[0])} to {_pct(ci[1])}"
 
 
+def _interval(prop: Mapping[str, Any]) -> RateInterval:
+    ci = prop.get("ci95") or (None, None)
+    return RateInterval(rate=prop["rate"], n=prop["n"], ci_low=ci[0], ci_high=ci[1])
+
+
 def _rate(prop: Mapping[str, Any]) -> str:
-    """``93.3% (14 of 15; 95% CI 70.2% to 98.8%)``."""
-    if not prop["n"]:
-        return "n/a (0 items)"
-    return f"{_pct(prop['rate'])} ({prop['k']} of {prop['n']}; 95% CI {_ci(prop)})"
+    """``93.3% (14 of 15; 95% CI 70.2% to 98.8%)``, or ``Not enough data (n=0)``."""
+    return format_rate(_interval(prop))
 
 
 def _label(card: Mapping[str, Any]) -> str:
@@ -313,7 +304,8 @@ def _per_class(cards: Sequence[Mapping[str, Any]]) -> List[str]:
         "## Per class",
         "",
         "Predicted disposition against the expected one (an escalated item counts as the analysis verdict, "
-        "`inconclusive` without one).",
+        "`inconclusive` without one). Precision and recall carry k of n and a 95% Wilson interval; F1 is not a "
+        "proportion and has none.",
         "",
         "| Dataset | Class | Precision | Recall | F1 | Support | Predicted |",
         "|---|---|---|---|---|---|---|",
@@ -322,9 +314,11 @@ def _per_class(cards: Sequence[Mapping[str, Any]]) -> List[str]:
         for cls, s in card["per_class"].items():
             if not s:
                 continue
+            ci = card["per_class_intervals"][cls]
+            precision, recall = (format_rate(RateInterval.model_validate(ci[k])) for k in ("precision", "recall"))
             lines.append(
-                f"| {_label(card)} | {cls} | {_num(s['precision'])} | {_num(s['recall'])} | {_num(s['f1'])} | "
-                f"{s['support']} | {s['predicted']} |"
+                f"| {_label(card)} | {cls} | {precision} | {recall} | {_num(s['f1'])} | {s['support']} | "
+                f"{s['predicted']} |"
             )
         lines.append(f"| {_label(card)} | macro F1 | | | {_num(card['macro_f1'])} | | |")
     lines.append("")

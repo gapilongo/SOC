@@ -138,6 +138,21 @@ def test_upgrade_job_rehearses_the_previous_release_and_blocks_the_build() -> No
     assert " ".join(documented.group(1).split()) == rehearsed.group(1)
 
 
+def test_api_compat_job_runs_a_pinned_oasdiff_and_blocks_the_build() -> None:
+    """ARCH-E2.2: a breaking change to a stable operation of docs/openapi.json fails CI."""
+    wf = workflow()
+    job = wf["jobs"]["api-compat"]
+    assert "continue-on-error" not in job
+    assert job["steps"][0]["with"]["fetch-depth"] == 0  # the base branch's document
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wf["env"]["OASDIFF_VERSION"])
+    assert re.fullmatch(r"[0-9a-f]{64}", wf["env"]["OASDIFF_SHA256"])
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any('"${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -' in r for r in runs)
+    assert "python scripts/ci/check_api_compat.py --self-test docs/openapi.json" in runs
+    assert any("check_api_compat.py /tmp/openapi-base.json docs/openapi.json" in r for r in runs)
+    assert os.access(REPO_ROOT / "scripts" / "ci" / "check_api_compat.py", os.X_OK)
+
+
 WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))
 
 

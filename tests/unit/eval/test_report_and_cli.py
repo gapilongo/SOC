@@ -69,7 +69,7 @@ def test_markdown_marks_missed_items_escapes_cells_and_shows_the_gate() -> None:
     md = render_markdown(rep, gate)
     assert md.startswith("# LG-SOTF evaluation report")
     assert "**FAILED** (2 checks)" in md and "- malicious_false_negative_rate = 1 > max 0" in md
-    assert "| Malicious false-negative rate (auto-closed as benign) | 100.0% |" in md
+    assert "| Malicious false-negative rate (auto-closed as benign) | 100.0% (1 of 1; 95% CI 20.7% to 100.0%) |" in md
     row = next(line for line in md.splitlines() if line.startswith("| `m1`"))
     assert row.rstrip().endswith("| MISSED |")
     error_row = next(line for line in md.splitlines() if line.startswith("| `e1`"))

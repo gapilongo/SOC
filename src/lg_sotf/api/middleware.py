@@ -2,7 +2,7 @@
 
 Order (outermost first, see :func:`lg_sotf.api.app.create_app`):
 ``RequestContextMiddleware`` -> ``SecurityHeadersMiddleware`` -> CORS ->
-``BodyLimitMiddleware`` -> routes.
+``BodyLimitMiddleware`` -> ``DeprecationHeadersMiddleware`` (lg_sotf.api.stability) -> routes.
 """
 
 from __future__ import annotations

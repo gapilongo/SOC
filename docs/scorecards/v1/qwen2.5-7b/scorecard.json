@@ -113,6 +113,50 @@
           "predicted": 18
         }
       },
+      "per_class_intervals": {
+        "malicious": {
+          "precision": {
+            "rate": 1.0,
+            "n": 20,
+            "ci_low": 0.838875,
+            "ci_high": 1.0
+          },
+          "recall": {
+            "rate": 0.5714285714285714,
+            "n": 35,
+            "ci_low": 0.408574,
+            "ci_high": 0.720154
+          }
+        },
+        "benign": {
+          "precision": {
+            "rate": 0.8076923076923077,
+            "n": 26,
+            "ci_low": 0.621237,
+            "ci_high": 0.914929
+          },
+          "recall": {
+            "rate": 1.0,
+            "n": 21,
+            "ci_low": 0.845361,
+            "ci_high": 1.0
+          }
+        },
+        "inconclusive": {
+          "precision": {
+            "rate": 0.3888888888888889,
+            "n": 18,
+            "ci_low": 0.203052,
+            "ci_high": 0.61381
+          },
+          "recall": {
+            "rate": 0.875,
+            "n": 8,
+            "ci_low": 0.529112,
+            "ci_high": 0.977583
+          }
+        }
+      },
       "macro_f1": 0.7197837623369537,
       "cost_per_item_usd": 0.0,
       "total_cost_usd": 0.0,
@@ -264,6 +308,50 @@
           "f1": 0.36363636363636365,
           "support": 4,
           "predicted": 7
+        }
+      },
+      "per_class_intervals": {
+        "malicious": {
+          "precision": {
+            "rate": 1.0,
+            "n": 20,
+            "ci_low": 0.838875,
+            "ci_high": 1.0
+          },
+          "recall": {
+            "rate": 0.8333333333333334,
+            "n": 24,
+            "ci_low": 0.641469,
+            "ci_high": 0.933213
+          }
+        },
+        "benign": {
+          "precision": {
+            "rate": 0.5,
+            "n": 12,
+            "ci_low": 0.253782,
+            "ci_high": 0.746218
+          },
+          "recall": {
+            "rate": 0.5454545454545454,
+            "n": 11,
+            "ci_low": 0.280092,
+            "ci_high": 0.787287
+          }
+        },
+        "inconclusive": {
+          "precision": {
+            "rate": 0.2857142857142857,
+            "n": 7,
+            "ci_low": 0.082219,
+            "ci_high": 0.641066
+          },
+          "recall": {
+            "rate": 0.5,
+            "n": 4,
+            "ci_low": 0.150039,
+            "ci_high": 0.849961
+          }
         }
       },
       "macro_f1": 0.5981554677206851,

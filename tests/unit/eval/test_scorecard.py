@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from lg_sotf.cli import cli
+from lg_sotf.domain.rates import wilson_interval
 from lg_sotf.eval.dataset import parse_dataset
 from lg_sotf.eval.report import build_report
 from lg_sotf.eval.scorecard import (
@@ -19,7 +20,6 @@ from lg_sotf.eval.scorecard import (
     load_reports,
     proportion,
     render_scorecard,
-    wilson_interval,
 )
 from tests.unit.eval._support import result
 
