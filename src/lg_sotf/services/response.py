@@ -166,6 +166,7 @@ from lg_sotf.domain.actions import (
     PROTECTED_INVALID_REASON,
     ActionSpec,
     TargetKind,
+    guardrail_result,
 )
 from lg_sotf.domain.connectors import call_deadline
 from lg_sotf.domain.events import EventPublisher, publish_event
@@ -218,10 +219,12 @@ __all__ = [
     "APPROVAL_SUPERSEDED_REASON",
     "ActionRequestError",
     "ActionSpec",
+    "AutoBudget",
     "BLAST_RADIUS_REASON",
     "Connector",
     "ConnectorResult",
     "DEFAULT_BLAST_RADIUS",
+    "Disposition",
     "DryRunConnector",
     "FORWARD_OF",
     "GUARDRAIL_REASONS",
@@ -242,6 +245,7 @@ __all__ = [
     "bounded_detail",
     "candidate_targets",
     "check_guardrails",
+    "dispose",
     "plan_entities",
     "preapproval_allowed",
     "protected_lookup",
@@ -1377,6 +1381,80 @@ def _is_preapproved(candidate: Candidate, approved: Sequence[str]) -> bool:
     return candidate.action_type in approved or f"{candidate.action_type}:{candidate.target}" in approved
 
 
+# --------------------------------------------------------------------------- disposition
+
+
+@dataclass(frozen=True)
+class Disposition:
+    """What the planner decides for one candidate: the ledger status, why, and who approved it."""
+
+    status: Literal["blocked", "approved", "awaiting_approval"]
+    explanation: str
+    approved_by: Optional[str] = None
+    approval_reason: Optional[str] = None
+
+
+def _awaiting(explanation: str, approval_reason: Optional[str] = None) -> Disposition:
+    return Disposition("awaiting_approval", f"awaiting approval: {explanation}", None, approval_reason)
+
+
+@dataclass
+class AutoBudget:
+    """Automatic approvals left this hour: in total (hourly cap) and per action type (blast radius)."""
+
+    total: int
+    per_type: Dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def remaining(cls, policy: ResponsePolicy, used_total: int, used_by_type: Mapping[str, int]) -> AutoBudget:
+        per_type = {t: max(0, limit - used_by_type.get(t, 0)) for t, limit in policy.blast_radius.items()}
+        return cls(max(0, policy.max_actions_per_hour - used_total), per_type)
+
+    def can_auto(self, action_type: str) -> bool:
+        return self.total > 0 and self.per_type.get(action_type, 1) > 0
+
+    def consume(self, action_type: str) -> None:
+        self.total -= 1
+        if action_type in self.per_type:
+            self.per_type[action_type] -= 1
+
+
+def dispose(
+    cand: Candidate, spec: ActionSpec, ctx: PlanContext, policy: ResponsePolicy, block: Optional[GuardrailBlock],
+    budget: AutoBudget,
+) -> Disposition:
+    """Blocked, approved (by the analyst or the policy) or awaiting approval; only ``auto`` consumes ``budget``.
+
+    ``auto`` still needs an approval for containment on LLM-only evidence, for
+    a target the rule evidence does not concern, and over the hourly cap or
+    the type's blast radius.
+    """
+    if block is not None:
+        return Disposition("blocked", f"blocked: {block.explanation}")
+    if _is_preapproved(cand, ctx.approved_actions) and ctx.approved_by:
+        if preapproval_allowed(spec.risk, ctx.approver_role):
+            explanation = f"approved: pre-approved by the analyst decision ({spec.risk} risk)"
+            return Disposition("approved", explanation, ctx.approved_by)
+        return _awaiting(f"{spec.risk} risk needs an admin approval", "admin_approval_required")
+    if policy.autonomy[spec.risk] != "auto":
+        return _awaiting(f"tenant autonomy for {spec.risk} risk is 'approval'")
+    if spec.containment and ctx.evidence == "llm_only":
+        return _awaiting("containment on LLM-only evidence is never automatic", "llm_only_evidence")
+    corroborated = ctx.corroborated_targets
+    if spec.containment and ctx.evidence == "rules" and corroborated is not None and not target_corroborated(
+        spec.target_kind, cand.target, corroborated
+    ):
+        explanation = "the rule evidence does not concern this target, so containing it is not automatic"
+        return _awaiting(explanation, "target_not_corroborated")
+    if budget.total <= 0:
+        return _awaiting(f"hourly cap of {policy.max_actions_per_hour} reached", HOURLY_CAP_REASON)
+    if not budget.can_auto(cand.action_type):
+        limit = policy.blast_radius[cand.action_type]
+        return _awaiting(f"at most {limit} {cand.action_type} per hour", BLAST_RADIUS_REASON)
+    budget.consume(cand.action_type)
+    return Disposition("approved", f"approved: tenant autonomy for {spec.risk} risk is 'auto'", POLICY_APPROVER)
+
+
 # --------------------------------------------------------------------------- service
 
 
@@ -1537,89 +1615,35 @@ class ResponseService:
         threat_type, candidates = build_candidates(ctx, alert_id)
         result = PlanResult(threat_type=threat_type)
         used_total, used_by_type = await self._repos.actions.executed_counts(tenant_id, window_start)
-        auto_budget = max(0, policy.max_actions_per_hour - used_total)
-        type_budget = {t: max(0, limit - used_by_type.get(t, 0)) for t, limit in policy.blast_radius.items()}
+        budget = AutoBudget.remaining(policy, used_total, used_by_type)
 
         for cand in candidates:
             spec = ACTION_CATALOG[cand.action_type]
             params: Dict[str, Any] = {
-                **cand.params,
-                "alert": {"severity": ctx.severity, "title": ctx.title[:200]},
-                "evidence": ctx.evidence,
+                **cand.params, "alert": {"severity": ctx.severity, "title": ctx.title[:200]}, "evidence": ctx.evidence,
             }
             if cand.action_type in HOST_SCOPED_ACTIONS:
                 params["scope"] = {"hosts": list(dict.fromkeys(str(h) for h in ctx.hosts))[:MAX_SCOPE_HOSTS]}
-            uncorroborated = (
-                spec.containment
-                and ctx.evidence == "rules"
-                and ctx.corroborated_targets is not None
-                and not target_corroborated(spec.target_kind, cand.target, ctx.corroborated_targets)
-            )
             autonomy = policy.autonomy[spec.risk]
             block = check_guardrails(cand.action_type, cand.target, policy)
             reason = block.code if block else None
-
-            approved_by: Optional[str] = None
-            preapproved = _is_preapproved(cand, ctx.approved_actions) and bool(ctx.approved_by)
-            if block is not None:
-                status = "blocked"
-                params["explanation"] = f"blocked: {block.explanation}"
-            elif preapproved and preapproval_allowed(spec.risk, ctx.approver_role):
-                status, approved_by = "approved", ctx.approved_by
-                params["explanation"] = f"approved: pre-approved by the analyst decision ({spec.risk} risk)"
-            elif preapproved:
-                status, params["approval_reason"] = "awaiting_approval", "admin_approval_required"
-                params["explanation"] = f"awaiting approval: {spec.risk} risk needs an admin approval"
-            elif autonomy == "auto":
-                if spec.containment and ctx.evidence == "llm_only":
-                    status, params["approval_reason"] = "awaiting_approval", "llm_only_evidence"
-                    params["explanation"] = "awaiting approval: containment on LLM-only evidence is never automatic"
-                elif uncorroborated:
-                    status, params["approval_reason"] = "awaiting_approval", "target_not_corroborated"
-                    params["explanation"] = (
-                        "awaiting approval: the rule evidence does not concern this target, so containing it "
-                        "is not automatic"
-                    )
-                elif auto_budget <= 0:
-                    status, params["approval_reason"] = "awaiting_approval", HOURLY_CAP_REASON
-                    params["explanation"] = f"awaiting approval: hourly cap of {policy.max_actions_per_hour} reached"
-                elif cand.action_type in type_budget and type_budget[cand.action_type] <= 0:
-                    status, params["approval_reason"] = "awaiting_approval", BLAST_RADIUS_REASON
-                    params["explanation"] = (
-                        f"awaiting approval: at most {policy.blast_radius[cand.action_type]} "
-                        f"{cand.action_type} per hour"
-                    )
-                else:
-                    status, approved_by = "approved", POLICY_APPROVER
-                    params["explanation"] = f"approved: tenant autonomy for {spec.risk} risk is 'auto'"
-                    auto_budget -= 1
-                    if cand.action_type in type_budget:
-                        type_budget[cand.action_type] -= 1
-            else:
-                status = "awaiting_approval"
-                params["explanation"] = f"awaiting approval: tenant autonomy for {spec.risk} risk is 'approval'"
+            disposition = dispose(cand, spec, ctx, policy, block, budget)
+            status, approved_by = disposition.status, disposition.approved_by
+            if disposition.approval_reason is not None:
+                params["approval_reason"] = disposition.approval_reason
+            params["explanation"] = disposition.explanation
 
             # Approved rows are written as 'proposed' first so approved_by lands in the
             # ledger column; a re-run finds the row still 'proposed' and finishes it.
             async with self._repos.db.tenant_tx(tenant_id) as conn:
                 action, created = await self._repos.actions.propose(
-                    tenant_id,
-                    alert_id,
-                    cand.action_type,
-                    cand.target,
-                    spec.risk,
-                    params=params,
-                    requested_by=vocabulary.REQUESTED_BY,
-                    status="proposed" if status == "approved" else status,
-                    blocked_reason=reason,
-                    conn=conn,
+                    tenant_id, alert_id, cand.action_type, cand.target, spec.risk, params=params,
+                    requested_by=vocabulary.REQUESTED_BY, status="proposed" if status == "approved" else status,
+                    blocked_reason=reason, conn=conn,
                 )
                 if created:
                     await self._record_transition(
-                        tenant_id,
-                        action,
-                        "response_action.proposed",
-                        {"approved_by": approved_by, "autonomy": autonomy},
+                        tenant_id, action, "response_action.proposed", {"approved_by": approved_by, "autonomy": autonomy},
                         conn=conn,
                     )
             if created:
@@ -1647,13 +1671,8 @@ class ResponseService:
         policy = approved_by == POLICY_APPROVER
         try:
             return await self._transition_audited(
-                tenant_id,
-                action.id,
-                "approved",
-                details={"approved_by": approved_by[:128], "preapproved": not policy},
-                actor_type="agent" if policy else "user",
-                actor_id=approved_by,
-                expected_from="proposed",
+                tenant_id, action.id, "approved", details={"approved_by": approved_by[:128], "preapproved": not policy},
+                actor_type="agent" if policy else "user", actor_id=approved_by, expected_from="proposed",
                 approved_by=approved_by[:128],
             )
         except (AlreadyInState, InvalidTransition):
@@ -1719,17 +1738,9 @@ class ResponseService:
                 continue
             try:
                 updated = await self._transition_audited(
-                    tenant_id,
-                    action.id,
-                    target,
-                    details={
-                        "decided_by": decided_by[:128],
-                        "reject_remaining": reject_remaining and action_id not in rejected,
-                    },
-                    actor_type="user",
-                    actor_id=decided_by,
-                    expected_from="awaiting_approval",
-                    **extra,
+                    tenant_id, action.id, target,
+                    details={"decided_by": decided_by[:128], "reject_remaining": reject_remaining and action_id not in rejected},
+                    actor_type="user", actor_id=decided_by, expected_from="awaiting_approval", **extra,
                 )
             except (AlreadyInState, InvalidTransition):
                 current = await self._repos.actions.get(tenant_id, action.id)
@@ -2013,15 +2024,8 @@ class ResponseService:
         """``approved -> blocked`` with a guardrail-style reason (expiry, superseded), audited; ``None`` if it moved on."""
         try:
             return await self._transition_audited(
-                tenant_id,
-                action_id,
-                "blocked",
-                details={"reason": code},
-                actor_type="system",
-                actor_id=SCHEDULER_ACTOR,
-                expected_from="approved",
-                blocked_reason=code,
-                result={"guardrail": code, "explanation": GUARDRAIL_REASONS.get(code, code), **dict(detail)},
+                tenant_id, action_id, "blocked", details={"reason": code}, actor_type="system", actor_id=SCHEDULER_ACTOR,
+                expected_from="approved", blocked_reason=code, result=guardrail_result(code, **detail),
             )
         except (AlreadyInState, InvalidTransition):
             return None
@@ -2035,7 +2039,7 @@ class ResponseService:
             "blocked",
             expected_from="approved",
             blocked_reason=code,
-            result={"guardrail": code, "explanation": GUARDRAIL_REASONS.get(code, code), **detail},
+            result=guardrail_result(code, **detail),
             conn=conn,
         )
 
@@ -2396,13 +2400,8 @@ class ResponseService:
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             updated = await self._repos.actions.transition(tenant_id, action_id, to_status, conn=conn, **changes)
             await self._record_transition(
-                tenant_id,
-                updated,
-                audit_action or f"response_action.{to_status}",
-                details or {},
-                actor_type=actor_type,
-                actor_id=actor_id,
-                conn=conn,
+                tenant_id, updated, audit_action or f"response_action.{to_status}", details or {},
+                actor_type=actor_type, actor_id=actor_id, conn=conn,
             )
         await self.publish_action(tenant_id, updated)
         return updated
@@ -2499,10 +2498,8 @@ class ResponseService:
                 dedupe_key=f"{event_type}:{action.id}",
                 action=action,
             )
+        # Inside a caller's transaction the caller publishes after commit (publish_action).
         record_action(action.action_type, action.status)
-        if conn is None:
-            # Inside a caller's transaction the caller publishes after commit (publish_action).
-            await self.publish_action(tenant_id, action)
 
     async def record_transition(
         self,
