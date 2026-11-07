@@ -282,6 +282,14 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "evidence-html-no-db"
+name = "The evidence-pack HTML renderer reads only the pack, never the database"
+type = "forbidden"
+source_modules = ["lg_sotf.compliance.evidence_html"]
+# S6: rendering is a pure function of the sealed pack; the builder (compliance.evidence) does the I/O.
+forbidden_modules = ["lg_sotf.db", "asyncpg", "lg_sotf.compliance.evidence"]
+
+[[tool.importlinter.contracts]]
 id = "net-is-leaf"
 name = "The network kernel imports only the kernel and httpx"
 type = "forbidden"
