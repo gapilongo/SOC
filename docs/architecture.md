@@ -134,7 +134,7 @@ next two partitions ahead and drops expired ones.
 | `sources` | PK (`tenant_id`, `id`) — ids are unique per tenant, `type` (splunk/qradar/sentinel/wazuh/crowdstrike/guardduty/webhook/file), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `poll_interval_s`, `cursor JSONB`, `last_polled_at`, `last_error`, `health` |
 | `alerts` | PK (`tenant_id`, `id`); `source_id`, `source_alert_id`, `fingerprint`, `title`, `severity` (info/low/medium/high/critical), `category`, `status` (see §6), `disposition` (malicious/benign/inconclusive, null until decided), `confidence`, `threat_score`, `priority`, `assigned_to`, `occurred_at`, `ingested_at`, `updated_at`, `closed_at`, `raw JSONB` (original, size-capped), `normalized JSONB` (canonical model), `summary JSONB` (verdict, indicators, correlations digest, recommended actions, reasoning digest, LLM usage), `case_key`. UNIQUE (`tenant_id`, `source_id`, `source_alert_id`). Indexes: (`tenant_id`, `ingested_at DESC`, `id`), (`tenant_id`, `status`, `ingested_at DESC`), (`tenant_id`, `severity`, `ingested_at DESC`), (`tenant_id`, `fingerprint`, `ingested_at DESC`) |
 | `alert_events` | partitioned; `tenant_id`, `alert_id`, `ts`, `node`, `event_type`, `actor_type` (system/user/agent), `actor_id`, `data JSONB`. Timeline for the UI and audit of agent decisions |
-| `workflow_runs` | PK (`tenant_id`, `alert_id`); `thread_id` UNIQUE, `status` (queued/running/waiting_human/waiting_approval/completed/failed/dead_lettered), `attempt`, `worker_id`, `lease_expires_at`, `last_error`, `created_at`, `updated_at`, `completed_at` |
+| `workflow_runs` | PK (`tenant_id`, `alert_id`); `thread_id` UNIQUE, `status` (queued/running/waiting_human/waiting_approval/completed/failed/dead_lettered), `attempt`, `worker_id`, `lease_expires_at`, `last_error`, `created_at`, `updated_at`, `completed_at`, `graph_version` (the graph its checkpointed thread started on; NULL = no thread yet, or one started before graph versions, which ran graph 1) |
 | `escalations` | `id` PK, `tenant_id`, `alert_id`, `thread_id`, `level` (L1/L2/L3), `status` (open/claimed/decided/expired/cancelled), `reason`, `priority`, `summary JSONB`, `related_alert_ids TEXT[]`, `assigned_to`, `sla_deadline`, `decision` (true_positive/false_positive/benign_positive/needs_more_info), `decision_notes`, `approved_actions TEXT[]`, `decided_by`, `decided_at`, `version INT` (optimistic lock). Partial unique index: one open/claimed escalation per (`tenant_id`, `alert_id`) |
 | `analyst_feedback` | `id` PK, `tenant_id`, `escalation_id`, `alert_id`, `user_id`, `decision`, `confidence`, `notes`, `triage_correct`, `correlation_helpful`, `analysis_accurate`, `review_duration_s`, `created_at` |
 | `response_actions` | Action ledger. `id UUID` PK, `tenant_id`, `alert_id`, `action_type`, `target`, `risk_level`, `idempotency_key` (UNIQUE per tenant = sha256(tenant, alert, action_type, target)), `status` (proposed/awaiting_approval/approved/rejected/executing/succeeded/failed/dry_run/blocked), `blocked_reason`, `requested_by`, `approved_by`, `approved_at`, `executed_at`, `connector`, `result JSONB`, `rollback_of` |
@@ -249,6 +249,18 @@ Rules:
   any severity.)
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
+* The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,
+  `GRAPH_BUILDERS`). A change that could break a run checkpointed on the
+  previous graph (nodes, edges, state schema, interrupt payloads) bumps
+  `GRAPH_VERSION` and keeps the previous builder. Each worker compiles every
+  kept graph; a fresh thread starts on the current one after its version is
+  stamped on `workflow_runs.graph_version`, and a run with a checkpoint
+  continues and resumes on the graph it started on, so runs waiting for an
+  analyst drain on graph N-1 after an upgrade. A run on a version the worker
+  does not have fails with `UnknownGraphVersion` (logged
+  `workflow.unknown_graph_version`) before anything is written, is retried,
+  and is dead-lettered like any failing run; it never runs on another graph.
+  Drop a builder only when no run that can still resume is on its version.
 * A model refusal at any stage escalates with reason `model_refused`; no
   actions are planned from a refused analysis.
 * Related alerts (shared key entities or fingerprint within the grouping

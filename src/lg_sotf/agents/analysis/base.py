@@ -73,6 +73,7 @@ from lg_sotf.domain.phishing import (
     evidence_from_triage,
 )
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
@@ -140,6 +141,9 @@ class AnalysisVerdict(BaseModel):
     verdict: lenient_literal("malicious", "benign", "inconclusive")  # type: ignore[valid-type]
     conclusion: clipped_str(2_000)  # type: ignore[valid-type]
     recommended_actions: clipped_list(MAX_ACTIONS, item_chars=MAX_ACTION_CHARS)  # type: ignore[valid-type]
+
+
+VERDICT_PROMPT = register_prompt("analysis.verdict", system=SYSTEM_PROMPT, task=VERDICT_TASK, schema=AnalysisVerdict)
 
 
 @dataclass
@@ -677,9 +681,7 @@ class AnalysisAgent(BaseAgent):
         llm: LLMResult[AnalysisVerdict] = await self.call_llm(
             ctx,
             tier="deep",
-            schema=AnalysisVerdict,
-            system=SYSTEM_PROMPT,
-            task=VERDICT_TASK,
+            prompt=VERDICT_PROMPT,
             untrusted=run.alert_block,
             enabled=self.enable_llm,
         )

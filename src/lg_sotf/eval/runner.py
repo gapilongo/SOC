@@ -50,7 +50,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.routing import refused_by
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
-from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
+from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult, llm_provenance
 from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -93,6 +93,7 @@ def _apply_usage(result: ItemResult, summary: Mapping[str, Any]) -> None:
     result.output_tokens = _int(usage.get("output_tokens"))
     result.total_tokens = _int(usage.get("total_tokens"))
     result.cost_usd = _float(usage.get("cost_usd"))
+    result.llm_provenance = llm_provenance(usage)
 
 
 @dataclass

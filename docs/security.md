@@ -363,6 +363,56 @@ incident before retention removes it.
   root filesystem, no build tools, no pip/setuptools and no setuid binaries; `dumb-init` as PID 1. Kubernetes
   manifests drop all capabilities and use the `RuntimeDefault` seccomp
   profile.
+* Every published image (`ghcr.io/gapilongo/lg-sotf` and
+  `ghcr.io/gapilongo/lg-sotf-frontend`, amd64 and arm64) is signed with
+  cosign and carries a SLSA build-provenance attestation. Both are keyless:
+  the certificate is issued by Sigstore for the GitHub OIDC identity of the
+  `Release images` workflow on `main`, and both are recorded in the public
+  Rekor transparency log. The signature covers the multi-arch image digest,
+  not a tag. A release tag `vX.Y.Z` points at the same digest that `main`
+  built and signed, so it is covered too.
+* Signing runs in its own job. That job checks out no code and runs no build
+  step; it only signs the digests that the build job pushed. It is the only
+  job in the release path that can request an OIDC token. The images are
+  built on GitHub-hosted runners in fresh VMs. A compromised build step
+  therefore cannot sign or attest anything (SLSA Build L3: the build cannot
+  forge its own provenance).
+* The deploy workflow (`.github/workflows/deploy.yml`) runs `cosign verify`
+  and `gh attestation verify` on both digests before anything reaches a host.
+  It requires this exact signer identity and issuer, and stops the deploy if
+  either check fails. Images published before signing existed
+  are refused too.
+
+### Verify an image yourself
+
+You need [cosign](https://docs.sigstore.dev/cosign/system_config/installation/)
+3.0.6 or later and, for the provenance, the GitHub CLI (`gh`). Always
+verify the digest you will run, not a tag:
+
+```sh
+SIGNER=https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+ISSUER=https://token.actions.githubusercontent.com
+
+# Resolve the release tag to its digest once, then use only the digest.
+docker buildx imagetools inspect ghcr.io/gapilongo/lg-sotf:v1.3.0 --format '{{json .Manifest}}' | jq -r .digest
+IMAGE=ghcr.io/gapilongo/lg-sotf@sha256:<digest>
+
+# 1. Signature: made by the release workflow on main, logged in Rekor.
+cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$IMAGE"
+
+# 2. Build provenance (SLSA v1): which repository, commit and workflow built it.
+gh attestation verify "oci://$IMAGE" --repo gapilongo/SOC \
+    --cert-identity "$SIGNER" --cert-oidc-issuer "$ISSUER" --deny-self-hosted-runners
+```
+
+Do the same for `ghcr.io/gapilongo/lg-sotf-frontend`. Never accept a looser
+identity, such as `--certificate-identity-regexp '.*'` or only the
+repository owner. Any other workflow in the repository can also get a
+GitHub OIDC token, and only the release workflow on `main` publishes
+images. In Kubernetes, an admission controller (the Sigstore
+policy-controller or Kyverno `verifyImages`) can enforce the same identity
+and issuer. For air-gapped hosts, see
+[air-gapped.md](air-gapped.md#verify-the-published-images-before-you-bundle-them).
 
 ## 10. Known limitations
 

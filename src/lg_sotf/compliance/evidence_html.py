@@ -22,6 +22,21 @@ def _step_rows(steps: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
     return [{**s, "mode": "HUMAN" if s.get("mode") == "human" else "automated"} for s in steps]
 
 
+def _model_rows(model: Mapping[str, Any]) -> List[Tuple[str, Any]]:
+    """The provider/model and prompt-version rows of one agent step."""
+    if not model.get("recorded"):
+        return [("Provider / model", model.get("note"))]
+    prompt = (
+        f"{model.get('prompt_name')} (version {model.get('prompt_hash')})"
+        if model.get("prompt_name")
+        else "not recorded (processed before prompt versions were recorded)"
+    )
+    return [
+        ("Provider / model", f"{model.get('provider')} / {model.get('model')} ({model.get('tier')} tier)"),
+        ("Prompt", prompt),
+    ]
+
+
 def render_evidence_html(pack: Mapping[str, Any]) -> str:
     """The pack as a standalone, print-friendly HTML document (every value escaped)."""
     alert = _obj(pack.get("alert"))
@@ -80,12 +95,6 @@ def render_evidence_html(pack: Mapping[str, Any]) -> str:
     agent_parts: List[str] = []
     for step in AGENT_STEPS:
         info = _obj(agents.get(step))
-        model = _obj(info.get("model"))
-        model_text = (
-            f"{model.get('provider')} / {model.get('model')} ({model.get('tier')} tier)"
-            if model.get("recorded")
-            else model.get("note")
-        )
         agent_parts.append(f"<h3>{h.esc(step.title())}</h3>")
         agent_parts.append(
             h.kv_table(
@@ -93,7 +102,7 @@ def render_evidence_html(pack: Mapping[str, Any]) -> str:
                     ("Ran", info.get("ran")),
                     ("Completed at", info.get("completed_at")),
                     ("LLM used", info.get("llm_used")),
-                    ("Provider / model", model_text),
+                    *_model_rows(_obj(info.get("model"))),
                     ("Verdict", info.get("verdict")),
                     ("Confidence", info.get("confidence")),
                     ("Threat score", info.get("threat_score")),

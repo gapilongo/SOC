@@ -33,6 +33,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from lg_sotf.ingestion.entities import normalize_hash, normalize_ip
 from lg_sotf.ingestion.normalizers.base import AlertBuilder, NormalizeContext
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget, ainvoke_structured, build_messages, get_chat_model
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.models.alert import SEVERITIES, CanonicalAlert, Severity
 from lg_sotf.settings import Settings
 
@@ -74,6 +75,9 @@ class LLMNormalizedAlert(BaseModel):
     emails: List[str] = Field(default_factory=list, max_length=20)
     mitre_tactics: List[str] = Field(default_factory=list, max_length=20)
     mitre_techniques: List[str] = Field(default_factory=list, max_length=20)
+
+
+PROMPT = register_prompt("ingestion.normalize", system=SYSTEM, task=TASK, schema=LLMNormalizedAlert)
 
 
 def _scalar_text(value: Any, out: List[str], depth: int = 0) -> None:
@@ -157,7 +161,7 @@ async def llm_normalize(
     """Raises :class:`lg_sotf.llm.LLMError` subclasses (``LLMBudgetExceeded`` when the
     tenant's daily budget is spent) or :class:`NormalizationError`."""
     model = get_chat_model("fast", settings)
-    messages = build_messages(SYSTEM, TASK, {"event": dict(event)}, settings=settings)
+    messages = build_messages(PROMPT.system, PROMPT.task, {"event": dict(event)}, settings=settings)
     out = await ainvoke_structured(
         model,
         LLMNormalizedAlert,
@@ -168,6 +172,7 @@ async def llm_normalize(
         settings=settings,
         budget=budget,
         budget_limit=budget_limit,
+        prompt=PROMPT,
     )
     grounding = Grounding(event)
     b = AlertBuilder(event, ctx)

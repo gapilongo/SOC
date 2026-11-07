@@ -73,6 +73,7 @@ from lg_sotf.db.errors import NotFound
 from lg_sotf.domain import routing
 from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 
 if TYPE_CHECKING:
@@ -177,6 +178,9 @@ class TriageAssessment(BaseModel):
     urgency_level: lenient_literal("low", "medium", "high", "critical")  # type: ignore[valid-type]
     recommended_actions: clipped_list(10, item_chars=200)  # type: ignore[valid-type]
     reasoning: clipped_str(4_000)  # type: ignore[valid-type]
+
+
+PROMPT = register_prompt("triage.assess", system=SYSTEM_PROMPT, task=TASK_PROMPT, schema=TriageAssessment)
 
 
 @dataclass
@@ -554,9 +558,7 @@ class TriageAgent(BaseAgent):
             llm = await self.call_llm(
                 ctx,
                 tier="fast",
-                schema=TriageAssessment,
-                system=SYSTEM_PROMPT,
-                task=TASK_PROMPT,
+                prompt=PROMPT,
                 untrusted=self.prompt_data(alert, rule_fp, rule_tp, base),
                 enabled=self.enable_llm,
             )

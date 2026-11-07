@@ -9,6 +9,12 @@ name: Deploy
 #   pick the environment and an existing image tag (sha-<7 hex>, main or
 #   vX.Y.Z).
 #
+# Before anything reaches the host, both image digests must carry a cosign
+# signature and a SLSA build-provenance attestation made by this repository's
+# "Release images" workflow on main (exact certificate identity and OIDC
+# issuer). Anything else, including an image published before signing
+# existed, stops the deploy (fail closed; docs/security.md, section 9).
+#
 # The deploy bundle (compose files, Caddy templates, deploy/backup scripts) is
 # taken from the exact commit the images were built from, copied to the VM and
 # run there as the non-root deploy user. Secrets travel only on the SSH
@@ -61,6 +67,10 @@ env:
   APP_REPO: ghcr.io/gapilongo/lg-sotf
   FRONTEND_REPO: ghcr.io/gapilongo/lg-sotf-frontend
   REMOTE_ROOT: /opt/lg-sotf
+  # Who may sign a deployable image: the release workflow, run from main.
+  SIGNER_REPO: gapilongo/SOC
+  SIGNER_IDENTITY: https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+  SIGNER_OIDC_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   deploy:
@@ -70,6 +80,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      attestations: read
     environment:
       name: ${{ inputs.environment }}
       url: https://${{ vars.APP_DOMAIN }}
@@ -198,6 +209,32 @@ jobs:
             echo "commit=$commit"
             echo "ingress_supported=$ingress_supported"
           } >> "$GITHUB_OUTPUT"
+          docker logout ghcr.io >/dev/null
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.0.6
+
+      # Fail closed: no signed provenance from the release workflow, no deploy.
+      - name: Verify image signatures and provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+          APP_REF: ${{ steps.images.outputs.app_ref }}
+          FRONTEND_REF: ${{ steps.images.outputs.frontend_ref }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          for ref in "$APP_REF" "$FRONTEND_REF"; do
+            cosign verify --certificate-identity "$SIGNER_IDENTITY" \
+              --certificate-oidc-issuer "$SIGNER_OIDC_ISSUER" "$ref" >/dev/null \
+              || fail "$ref has no valid signature from $SIGNER_IDENTITY"
+            gh attestation verify "oci://$ref" --repo "$SIGNER_REPO" \
+              --cert-identity "$SIGNER_IDENTITY" --cert-oidc-issuer "$SIGNER_OIDC_ISSUER" \
+              --predicate-type https://slsa.dev/provenance/v1 --deny-self-hosted-runners >/dev/null \
+              || fail "$ref has no valid build provenance from $SIGNER_IDENTITY"
+            echo "verified: $ref"
+          done
           docker logout ghcr.io >/dev/null
 
       - name: Build the deploy bundle

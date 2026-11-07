@@ -79,7 +79,9 @@ def test_tailnet_step_is_pinned_conditional_and_precedes_ssh() -> None:
 def test_permissions_stay_least_privilege() -> None:
     wf = yaml.safe_load(DEPLOY.read_text())
     assert wf["permissions"] == {"contents": "read"}
-    assert job()["permissions"] == {"contents": "read", "packages": "read"}, "no id-token: OAuth client secret"
+    assert job()["permissions"] == {"contents": "read", "packages": "read", "attestations": "read"}, (
+        "no id-token: OAuth client secret"
+    )
 
 
 def test_auth_key_travels_only_on_stdin() -> None:

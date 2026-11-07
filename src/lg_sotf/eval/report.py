@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 from lg_sotf import __version__
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset
 from lg_sotf.eval.metrics import compute_metrics, metrics_by_split
-from lg_sotf.eval.results import ItemResult
+from lg_sotf.eval.results import PROVENANCE_FIELDS, ItemResult
 
 REPORT_SCHEMA_VERSION = 1
 FAKE_MODEL_NOTE = (
@@ -66,8 +66,35 @@ def build_report(
         "notes": notes,
         "metrics": compute_metrics(results),
         "splits": {name: {"metrics": m} for name, m in splits.items()},
+        "llm_provenance": provenance_rows(results),
         "items": [r.as_dict() for r in results],
     }
+
+
+def provenance_rows(results: Sequence[ItemResult]) -> List[Dict[str, Any]]:
+    """Each distinct (agent, provider, model, prompt name, prompt hash) the run called, with its item count."""
+    counts: Dict[tuple[str, ...], int] = {}
+    for r in results:
+        for agent, entry in r.llm_provenance.items():
+            key = (agent, *(entry.get(k, "") for k in PROVENANCE_FIELDS))
+            counts[key] = counts.get(key, 0) + 1
+    return [
+        {"agent": key[0], **dict(zip(PROVENANCE_FIELDS, key[1:], strict=True)), "items": n}
+        for key, n in sorted(counts.items())
+    ]
+
+
+def _provenance_lines(report: Mapping[str, Any]) -> List[str]:
+    """The "Models and prompts" section: which model and prompt version each agent's calls used."""
+    rows = report.get("llm_provenance") or []
+    lines = ["## Models and prompts", ""]
+    if not rows:
+        return [*lines, "No LLM call was recorded.", ""]
+    lines += ["| Agent | Provider | Model | Prompt | Prompt hash | Items |", "|---|---|---|---|---|---|"]
+    for row in rows:
+        cells = [_escape(row.get(k) or "n/a") for k in ("agent", "provider", "model", "prompt_name")]
+        lines.append(f"| {' | '.join(cells)} | `{_escape(row.get('prompt_hash') or 'n/a')}` | {row.get('items')} |")
+    return [*lines, ""]
 
 
 def write_json(report: Mapping[str, Any], path: str | Path) -> None:
@@ -137,10 +164,7 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
     for note in report.get("notes") or []:
         lines.append(f"> {note}")
         lines.append("")
-    lines.append("## Run")
-    lines.append("")
-    lines.append("| Field | Value |")
-    lines.append("|---|---|")
+    lines.extend(["## Run", "", "| Field | Value |", "|---|---|"])
     lines.append(f"| Dataset | `{_escape(ds.get('path'))}` ({ds['items']} items, sha256 `{str(ds.get('sha256'))[:12]}`) |")
     lines.append(f"| Synthetic | {'yes' if ds.get('synthetic') else 'no'} |")
     lines.append(f"| Splits | {', '.join(f'{k}: {v}' for k, v in (ds.get('splits') or {}).items())} |")
@@ -157,6 +181,7 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
             f"limit {_escape(sel.get('limit') or 'none')} |"
         )
     lines.append("")
+    lines.extend(_provenance_lines(report))
     if gate is not None:
         lines.append("## Gate")
         lines.append("")

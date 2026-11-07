@@ -235,10 +235,15 @@ usage, cost and latency.
 * JSON (`--report`): `schema_version`, `dataset` (path, sha256, item count,
   synthetic flag, splits), `run` (isolation, tenants, provider, models,
   concurrency, duration, `selection`: splits, tags, limit, isolation),
-  `notes`, `metrics`, `splits`, `items` and, with thresholds, `gate`. Keep it
-  as the next run's `--baseline`.
+  `notes`, `metrics`, `splits`, `llm_provenance`, `items` and, with
+  thresholds, `gate`. Keep it as the next run's `--baseline`.
+  `llm_provenance` lists each agent, provider, model, prompt name and prompt
+  hash the run called, with the number of items; each item carries the same
+  per-agent fields under `llm_provenance`. A changed prompt hash between two
+  reports means the prompt text or schema changed (see
+  [compliance](compliance.md#model-provenance)).
 * Markdown (`--markdown`, default next to the JSON): notices, run facts,
-  gate result, headline table per split, per-class scores, confusion matrix,
+  the models and prompts used, gate result, headline table per split, per-class scores, confusion matrix,
   inter-annotator agreement and the item table with missed malicious items
   marked `MISSED`.
 * Scorecard: `lg-sotf eval-scorecard synthetic.json phishing.json --output

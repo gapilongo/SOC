@@ -57,7 +57,7 @@ from lg_sotf.db.repos.reports import DecidedAlert
 from lg_sotf.domain import routing
 from lg_sotf.domain.routing import RoutingThresholds, refused_by
 from lg_sotf.eval.dataset import Dataset, EvalItem, Expected
-from lg_sotf.eval.results import ItemResult
+from lg_sotf.eval.results import ItemResult, llm_provenance
 from lg_sotf.llm import UsageTally, merge_usage_summary
 from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import DISPOSITIONS
@@ -232,6 +232,7 @@ def classify(result: ItemResult, replay: Replay) -> None:
     result.output_tokens = int(usage.get("output_tokens") or 0)
     result.total_tokens = int(usage.get("total_tokens") or 0)
     result.cost_usd = float(usage.get("cost_usd") or 0.0)
+    result.llm_provenance = llm_provenance(usage)
 
 
 @dataclass
