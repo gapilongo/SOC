@@ -70,7 +70,6 @@
   "lg_sotf.integrations.microsoft.entra.users.Refused": [500, "internal_error"],
   "lg_sotf.integrations.microsoft.http.MicrosoftApiError": [500, "internal_error"],
   "lg_sotf.integrations.microsoft.http.ReadOnlyViolation": [500, "internal_error"],
-  "lg_sotf.integrations.microsoft.http._TooLarge": [500, "internal_error"],
   "lg_sotf.integrations.microsoft.mail.mailboxes.AmbiguousMailbox": [500, "internal_error"],
   "lg_sotf.integrations.microsoft.mail.mailboxes.Refusal": [500, "internal_error"],
   "lg_sotf.integrations.microsoft.mail.mailboxes.StateLimit": [500, "internal_error"],

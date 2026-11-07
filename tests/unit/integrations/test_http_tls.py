@@ -1,8 +1,9 @@
-"""Integration and webhook clients reuse cached TLS contexts (roadmap D3).
+"""Integration, webhook and Microsoft clients reuse cached TLS contexts (roadmap D3, X2.2).
 
-Both clients open one ``httpx.AsyncClient`` per request. Before D3 each one
+All three open one ``httpx.AsyncClient`` per request. Before D3 the first two
 built a transport with ``verify=True``, so ``httpx`` loaded the CA bundle into
-a new ``SSLContext`` on the event loop for every request. The real transport
+a new ``SSLContext`` on the event loop for every request; the Microsoft
+factory kept its own copy of the default context until X2.2. The real transport
 class runs here (its constructor builds the context); only the network send
 is stubbed.
 """
@@ -16,6 +17,7 @@ import httpx
 import pytest
 
 from lg_sotf.integrations.http import IntegrationHttp, tls_verify
+from lg_sotf.integrations.microsoft.http import MicrosoftHttpFactory
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.net.tls import TlsContexts
 from lg_sotf.security.crypto import SecretBox, generate_key
@@ -150,3 +152,18 @@ async def test_tenant_webhook_cas_are_cached_per_ca(
     assert t1.get_ca_certs(binary_form=True) == [ssl.PEM_cert_to_DER_cert(pem_1)]
     assert t2.get_ca_certs(binary_form=True) == [ssl.PEM_cert_to_DER_cert(pem_2)]
     assert len(t3.get_ca_certs()) > 1  # verify on with the default bundle, not another tenant's CA
+
+
+async def test_microsoft_requests_share_the_default_context(
+    transports: Transports, make_settings: Callable[..., Settings]
+) -> None:
+    contexts = TlsContexts()
+    factory = MicrosoftHttpFactory(make_settings(), resolver=public_resolver, tls=contexts)
+    for path in ("/v1.0/users", "/v1.0/groups"):
+        status, _body, _headers = await factory.send_once(
+            "GET", f"https://graph.microsoft.com{path}", headers={}, content=None, timeout_s=5.0, max_bytes=1024
+        )
+        assert status == 200
+    first, second = transports.verify
+    assert first is second is contexts.default()
+    assert transports.contexts_built == 1
