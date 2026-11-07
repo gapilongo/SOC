@@ -608,3 +608,29 @@ def redact(obj: Any) -> Tuple[Any, int]:
     by :data:`TOO_DEEP`.
     """
     return _redact(obj, 0)
+
+
+def safe_text(text: str, limit: int) -> str:
+    """``text`` made fit to show or store: redacted, whitespace collapsed, then cut to ``limit`` chars.
+
+    Redaction runs on the whole text before anything is cut, so a credential
+    straddling the cut point is still recognised. A cut text ends in ``...``
+    and is never longer than ``limit``.
+    """
+    collapsed = " ".join(redact_text(text)[0].split())
+    if len(collapsed) <= limit:
+        return collapsed
+    if limit <= 3:
+        return collapsed[: max(limit, 0)]
+    return collapsed[: limit - 3] + "..."
+
+
+def safe_error_text(exc: BaseException, limit: int = 300) -> str:
+    """``Type: message`` for an error shown to a user or stored, at most ``limit`` chars (:func:`safe_text`).
+
+    Never log this: logs carry only the exception type and a frames-only stack
+    (``observability.logging.log_failure``, ADR-0005).
+    """
+    name = type(exc).__name__
+    message = safe_text(str(exc), limit - len(name) - 2)
+    return f"{name}: {message}" if message else name[:limit]
