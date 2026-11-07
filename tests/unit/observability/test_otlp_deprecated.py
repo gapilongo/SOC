@@ -50,7 +50,7 @@ def test_no_warning_without_an_endpoint(make_settings: Callable[..., Settings]) 
     assert _lines(make_settings, otlp_endpoint="") == []
 
 
-def test_opentelemetry_is_no_longer_a_dependency_of_the_package() -> None:
+def test_the_tracing_module_is_gone() -> None:
     import lg_sotf.observability as observability
 
     assert not hasattr(observability, "setup_tracing")

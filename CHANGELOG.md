@@ -130,8 +130,9 @@ All notable changes to this project are documented here. The format follows
 ### Removed
 
 - OpenTelemetry tracing. The exporter it configured never sent anything: no
-  code created spans. The OpenTelemetry packages (and their protobuf
-  dependencies) are no longer installed, and `configs/*.yaml`, the
+  code created spans. The OpenTelemetry SDK and OTLP exporter (and their
+  protobuf dependencies) are no longer installed; `opentelemetry-api` stays,
+  as a dependency of FastAPI and the Anthropic client. `configs/*.yaml`, the
   production compose file, `.env.example` and the Helm example no longer
   mention an OTLP endpoint. Logs and Prometheus metrics are unchanged.
   `docs/adr/0008-remove-tracing.md` records the decision and how tracing

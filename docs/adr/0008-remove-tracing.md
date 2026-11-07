@@ -44,8 +44,10 @@ nodes and the LLM calls, a `traceparent` carried on stream messages, a
 
 ## Consequences
 
-* Smaller images and dependency set, and no OpenTelemetry advisories to
-  track.
+* A smaller dependency set: the SDK, the OTLP exporter, their protobuf
+  stack and their advisories go. `opentelemetry-api` stays installed as a
+  transitive dependency (FastAPI and the Anthropic client require it); it is
+  not a direct dependency and nothing in `lg_sotf` imports it.
 * Logs (with `request_id`, `tenant_id`, `alert_id`, `thread_id` and `node`)
   and Prometheus metrics remain the observability surface
   (`docs/operations.md` §9).
