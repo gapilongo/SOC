@@ -154,6 +154,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Backtests (`lg-sotf eval --from-history`) start each replay from the same
+  initial state as the workflow. A tenant `llm_daily_token_budget` stored as
+  `true` or `false` is now ignored by the backtest too (the install default
+  applies), as the workflow already did; the backtest used to carry the bool
+  into the replayed state.
 - The account menu button in the web app now includes the initials it
   shows in its accessible name ("Account: <email>, <role>, initials MR"),
   so speech-input users can activate it by saying what they see (WCAG

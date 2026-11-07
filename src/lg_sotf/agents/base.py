@@ -26,7 +26,7 @@ policy handles them. Token and cost totals of every call are accumulated in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, Optional, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, Optional, Type, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
@@ -51,6 +51,7 @@ from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
 from lg_sotf.settings import Settings, get_settings
 
 if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary, LlmRefusal
     from lg_sotf.db.repos import Repositories
 
 log = get_logger(__name__)
@@ -226,7 +227,7 @@ async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool
     async with repos.db.tenant_tx(ctx.tenant_id) as conn:
         alert = await repos.alerts.get(ctx.tenant_id, ctx.alert_id, conn=conn)
         summary = alert.summary if isinstance(alert.summary, Mapping) else {}
-        patch: Dict[str, Any] = {}
+        patch: AlertSummary = {}
         if not ctx.usage.is_empty():
             patch["llm_usage"] = merge_usage_summary(summary.get("llm_usage"), ctx.usage)
         if ctx.llm_budget_exceeded:
@@ -234,7 +235,7 @@ async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool
         if ctx.refusals:
             previous = summary.get("llm_refusals")
             kept = [r for r in previous if isinstance(r, Mapping)] if isinstance(previous, list) else []
-            patch["llm_refusals"] = [*kept, *ctx.refusals][-MAX_REFUSALS_KEPT:]
+            patch["llm_refusals"] = cast("List[LlmRefusal]", [*kept, *ctx.refusals][-MAX_REFUSALS_KEPT:])
         if ctx.models:
             patch["llm_models"] = merge_model_provenance(summary.get("llm_models"), ctx.models)
         await repos.alerts.update(ctx.tenant_id, ctx.alert_id, summary=patch, conn=conn)

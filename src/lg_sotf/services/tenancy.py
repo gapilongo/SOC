@@ -42,6 +42,7 @@ from lg_sotf.db import Connection
 from lg_sotf.db.repos import Repositories, Tenant, User
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.tenancy import switch_tenant
+from lg_sotf.models.tenant_settings import COPIED_KEYS, TenantSettingsDoc
 from lg_sotf.services.escalation import resolve_review_policy
 from lg_sotf.settings import Settings
 
@@ -50,7 +51,7 @@ Profile = Literal["conservative", "balanced", "autonomous"]
 # Saving either settings section counts as the onboarding "autonomy reviewed" step.
 AUTONOMY_REVIEW_KEYS = frozenset({"autonomy", "response"})
 
-PROFILES: Dict[str, Dict[str, Any]] = {
+PROFILES: Dict[str, TenantSettingsDoc] = {
     # Nothing runs without a person; high-risk and critical actions are never proposed for execution.
     "conservative": {
         "autonomy": {"low": "approval", "medium": "approval", "high": "disabled", "critical": "disabled"},
@@ -73,8 +74,6 @@ PROFILES: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Never "phishing": its brands, executives and mail servers identify the customer.
-COPIED_KEYS = ("autonomy", "review", "llm_daily_token_budget", "retention", "reporting")
 COPIED_SECURITY_KEYS = ("require_mfa",)
 COPIED_RESPONSE_KEYS = (
     "dry_run",
@@ -89,7 +88,7 @@ CIPHERTEXT_SUFFIX = "_ciphertext"
 
 def profile_settings(profile: str) -> Dict[str, Any]:
     """The settings a profile seeds (a fresh copy); ``KeyError`` for an unknown profile."""
-    return copy.deepcopy(PROFILES[profile])
+    return dict(copy.deepcopy(PROFILES[profile]))
 
 
 def _without_ciphertexts(value: Any) -> Any:

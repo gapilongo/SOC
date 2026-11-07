@@ -16,13 +16,23 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.state import (
+    AlertSummary,
+    AnalystInput,
+    DecisionDigest,
+    EscalationSummary,
+    GateDigest,
+    ResponseSummary,
+    RoutingDigest,
+    SuppressedBy,
+)
 from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
@@ -74,7 +84,7 @@ def _small(data: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def _escalation_summary(state: WorkflowState) -> Dict[str, Any]:
+def _escalation_summary(state: WorkflowState, routing_digest: RoutingDigest) -> EscalationSummary:
     """What an escalation shows the analyst about this alert (small; no raw alert data)."""
     analysis = state.get("analysis") or {}
     confidence = float(state.get("confidence", 50))
@@ -89,6 +99,7 @@ def _escalation_summary(state: WorkflowState) -> Dict[str, Any]:
         "recommended_actions": list(analysis.get("recommended_actions") or [])[:10],
         # Whether ``conclusion`` was written by the model (else by the rules); unknown without an analysis.
         "llm_used": analysis["llm_used"] if isinstance(analysis.get("llm_used"), bool) else None,
+        "routing": routing_digest,
     }
 
 
@@ -186,7 +197,7 @@ class WorkflowNodes:
         match = first_matching_rule(rules, view)
         if match is not None:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
-            by = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
+            by: SuppressedBy = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
         raw_flags = alert.get("flags")
         flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
@@ -195,7 +206,7 @@ class WorkflowNodes:
         if state["severity"] != "critical" and "llm_normalized" not in flags:
             cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
             if cached is not None and cache_applies(cached, state["severity"]):
-                cache_hit: Dict[str, Any] = {
+                cache_hit: SuppressedBy = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
                     "source_alert_id": cached.get("alert_id"),
@@ -266,7 +277,7 @@ class WorkflowNodes:
             correlation=state.get("correlation") or {},
             analyst_notes=notes,
         )
-        summary: Dict[str, Any] = {"analysis": result.summary()}
+        summary: AlertSummary = {"analysis": result.summary()}
         if ctx.llm_budget_exceeded:
             summary["llm_budget_exceeded"] = True
         await self.deps.repos.alerts.update(
@@ -313,10 +324,7 @@ class WorkflowNodes:
             threat_score=float(analysis.get("threat_score", confidence)),
             reason=str(decision.get("reason") or "analyst review required"),
             reason_code=code,
-            summary={
-                **_escalation_summary(state),
-                "routing": routing.routing_digest(code, confidence, self.deps.thresholds),
-            },
+            summary=_escalation_summary(state, routing.routing_digest(code, confidence, self.deps.thresholds)),
             correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
             fingerprint=state.get("fingerprint") or None,
         )
@@ -375,10 +383,9 @@ class WorkflowNodes:
             severity=state["severity"],
             confidence=confidence,
             threat_score=float(analysis.get("threat_score", confidence)),
-            summary={
-                **_escalation_summary(state),
-                "routing": routing.routing_digest("group_review", confidence, self.deps.thresholds),
-            },
+            summary=_escalation_summary(
+                state, routing.routing_digest("group_review", confidence, self.deps.thresholds)
+            ),
         )
         if ticket.created:
             await self.deps.repos.alerts.update(
@@ -446,15 +453,20 @@ class WorkflowNodes:
         # A response for this detection contradicts any cached "benign" verdict for it.
         await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
-        counts = {"auto": len(plan.auto), "awaiting": len(plan.awaiting), "blocked": len(plan.blocked), "done": len(plan.done)}
-        await self.deps.repos.alerts.update(
-            tenant_id, alert_id, summary={"response": {"threat_type": plan.threat_type, "evidence": ctx.evidence, **counts}}
-        )
+        response: ResponseSummary = {
+            "threat_type": plan.threat_type,
+            "evidence": ctx.evidence,
+            "auto": len(plan.auto),
+            "awaiting": len(plan.awaiting),
+            "blocked": len(plan.blocked),
+            "done": len(plan.done),
+        }
+        await self.deps.repos.alerts.update(tenant_id, alert_id, summary={"response": response})
         return {
             "plan": plan.as_dict(),
             "awaiting_actions": list(plan.awaiting),
             "approval": None,
-            EVENT_KEY: {"threat_type": plan.threat_type, "evidence": ctx.evidence, **counts},
+            EVENT_KEY: dict(response),
         }
 
     async def await_approval(self, state: WorkflowState) -> Dict[str, Any]:
@@ -533,18 +545,19 @@ class WorkflowNodes:
     @staticmethod
     def outcome(state: Mapping[str, Any]) -> tuple[str, str]:
         """(disposition, close reason) for the path that reached ``close``."""
-        analyst = state.get("analyst") or {}
+        analyst = cast(AnalystInput, state.get("analyst") or {})
         decision = analyst.get("decision")
         if decision in BENIGN_DECISIONS:
             return "benign", f"analyst:{decision}"
         if decision == "true_positive":
             return "malicious", "analyst:true_positive"
-        gate = state.get("gate") or {}
+        gate = cast(GateDigest, state.get("gate") or {})
         if gate.get("suppressed"):
             return "benign", str((gate.get("suppressed_by") or {}).get("type") or "suppressed")
-        route = (state.get("decision") or {}).get("route")
+        decided = cast(DecisionDigest, state.get("decision") or {})
+        route = decided.get("route")
         if route == "close":
-            return str((state.get("decision") or {}).get("disposition") or "benign"), "policy:close"
+            return str(decided.get("disposition") or "benign"), "policy:close"
         if route == "plan_response":
             return "malicious", "policy:response"
         return "benign", "triage:false_positive"
@@ -558,7 +571,7 @@ class WorkflowNodes:
         statuses: Dict[str, int] = {}
         for status in executed.values():
             statuses[status] = statuses.get(status, 0) + 1
-        summary: Dict[str, Any] = {
+        summary: AlertSummary = {
             "verdict": disposition,
             "close_reason": reason,
             "confidence": state.get("confidence"),

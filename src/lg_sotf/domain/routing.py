@@ -24,12 +24,24 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
 from lg_sotf.models.vocabulary import Route as DecideRoute
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import (
+        AnalysisDigest,
+        AnalystInput,
+        CorrelationDigest,
+        DecisionDigest,
+        GateDigest,
+        PlanDigest,
+        RoutingDigest,
+        TriageDigest,
+    )
 
 GateRoute = Literal["triage", "close"]
 TriageRoute = Literal["correlation", "close"]
@@ -74,7 +86,7 @@ class Decision:
     disposition: Optional[str]
     code: str
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> DecisionDigest:
         return {"route": self.route, "reason": self.reason, "disposition": self.disposition, "code": self.code}
 
 
@@ -106,7 +118,7 @@ def llm_normalized(state: Mapping[str, Any]) -> bool:
 
 
 def route_after_gate(state: Mapping[str, Any]) -> GateRoute:
-    gate = state.get("gate") or {}
+    gate = cast("GateDigest", state.get("gate") or {})
     return "close" if gate.get("suppressed") else "triage"
 
 
@@ -126,7 +138,7 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
     """
     if _is_high(state) or llm_normalized(state):
         return "correlation"
-    triage = state.get("triage") or {}
+    triage = cast("TriageDigest", state.get("triage") or {})
     if isinstance(triage.get("llm_refusal"), Mapping):
         return "correlation"
     rule_fp = len(triage.get("rule_fp") or [])
@@ -140,7 +152,7 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
 
 
 def route_after_correlation(state: Mapping[str, Any], t: RoutingThresholds) -> CorrelationRoute:
-    corr = state.get("correlation") or {}
+    corr = cast("CorrelationDigest", state.get("correlation") or {})
     score = float(corr.get("score", 0))
     related = int(corr.get("related_count", 0))
     confidence = float(state.get("confidence", 50))
@@ -163,8 +175,8 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
     if refused is not None:
         return Decision("escalate", f"the model declined to assess the alert ({refused})", None, "model_refused")
 
-    triage = state.get("triage") or {}
-    analysis = state.get("analysis") or {}
+    triage = cast("TriageDigest", state.get("triage") or {})
+    analysis = cast("AnalysisDigest", state.get("analysis") or {})
     confidence = float(state.get("confidence", triage.get("confidence", 50)))
     if analysis:
         threat = float(analysis.get("threat_score", confidence))
@@ -212,7 +224,7 @@ def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[
     return None
 
 
-def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> Dict[str, Any]:
+def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> RoutingDigest:
     """What an escalation records about the routing that created it: the code, the confidence and the band."""
     band = review_band(code, confidence, t)
     return {
@@ -223,15 +235,15 @@ def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> Dict[s
 
 
 def route_after_decide(state: Mapping[str, Any]) -> DecideRoute:
-    decision = state.get("decision") or {}
+    decision = cast("DecisionDigest", state.get("decision") or {})
     route = decision.get("route")
     if route not in ROUTES:
         raise ValueError(f"decide produced no valid route: {route!r}")
-    return cast(DecideRoute, route)
+    return route
 
 
 def route_after_analyst(state: Mapping[str, Any], t: RoutingThresholds) -> AnalystRoute:
-    analyst = state.get("analyst") or {}
+    analyst = cast("AnalystInput", state.get("analyst") or {})
     decision = analyst.get("decision")
     if decision == "true_positive":
         return "plan_response"
@@ -245,11 +257,12 @@ def route_after_analyst(state: Mapping[str, Any], t: RoutingThresholds) -> Analy
 
 
 def _analyst_confirmed(state: Mapping[str, Any]) -> bool:
-    return (state.get("analyst") or {}).get("decision") == "true_positive"
+    analyst = cast("AnalystInput", state.get("analyst") or {})
+    return analyst.get("decision") == "true_positive"
 
 
 def route_after_plan(state: Mapping[str, Any]) -> PlanRoute:
-    plan = state.get("plan") or {}
+    plan = cast("PlanDigest", state.get("plan") or {})
     if plan.get("auto"):
         return "execute_actions"
     if state.get("awaiting_actions", plan.get("awaiting")):

@@ -49,11 +49,14 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Annotated, Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Annotated, Any, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
 
 from lg_sotf.domain.urls import ascii_host, site, site_label, unicode_host
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import PhishingDigest
 
 DMARC_FAIL = "email_dmarc_fail"
 SPF_FAIL = "email_spf_fail"
@@ -375,9 +378,9 @@ class PhishingAssessment:
             suspicious_urls=list(self.suspicious_urls),
         )
 
-    def digest(self) -> Dict[str, Any]:
+    def digest(self) -> PhishingDigest:
         """For the triage digest: what analysis and the response planner read back."""
-        out: Dict[str, Any] = {"sender_authenticated": self.sender_authenticated}
+        out: PhishingDigest = {"sender_authenticated": self.sender_authenticated}
         if self.lookalikes:
             out["lookalikes"] = self.lookalikes[:MAX_DETAILS]
             out["lookalike_hosts"] = self.lookalike_hosts[:MAX_DETAILS]
