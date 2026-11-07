@@ -137,7 +137,7 @@ export function QueueRow({ e, now, selection, nested = false }: { e: EscalationO
       <td className="px-2 py-2">
         <SeverityTag value={escalationSeverity(e)} />
       </td>
-      <td className="min-w-[240px] px-2 py-2">
+      <td className="min-w-[224px] px-2 py-2">
         <Link to={escalationHref(e)} state={{ from: `${location.pathname}${location.search}` }} className="font-medium text-fg hover:underline">
           {title}
         </Link>
@@ -147,7 +147,7 @@ export function QueueRow({ e, now, selection, nested = false }: { e: EscalationO
           </span>
         )}
       </td>
-      <td className="w-[22%] max-w-0 px-2 py-2 text-xs text-body">
+      <td className="w-[26%] max-w-0 px-2 py-2 text-xs text-body">
         <span className="block truncate" title={reason ? `${reason.text}${reason.source ? ` (written by the ${reason.source === 'model' ? 'model' : 'rules'})` : ''}` : e.reason}>
           {reason?.text ?? e.reason}
         </span>
