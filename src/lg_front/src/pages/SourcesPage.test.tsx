@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SourceOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
-import SourcesPage from './SourcesPage';
+import SourcesPage, { buildConfig, splitConfig } from './SourcesPage';
 
 function source(overrides: Partial<SourceOut> = {}): SourceOut {
   return {
@@ -138,5 +138,18 @@ describe('SourcesPage', () => {
     await userEvent.click(within(screen.getByRole('dialog', { name: 'Delete source' })).getByRole('button', { name: 'Delete source' }));
     expect(await screen.findByText('No sources yet')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'DELETE' && c.path === '/sources/wazuh-1')).toBe(true);
+  });
+});
+
+describe('source configuration', () => {
+  it('builds source configuration from typed fields and extra JSON', () => {
+    expect(buildConfig('splunk', { base_url: ' https://splunk:8089 ', max_event_lag_s: '600' }, '{"verify": true}')).toEqual({
+      verify: true,
+      base_url: 'https://splunk:8089',
+      max_event_lag_s: 600,
+    });
+    expect(() => buildConfig('splunk', { max_event_lag_s: 'soon' }, '')).toThrow(/number/);
+    expect(() => buildConfig('splunk', {}, '[1]')).toThrow(/JSON object/);
+    expect(splitConfig('qradar', { base_url: 'https://q', custom: 1 })).toEqual({ known: { base_url: 'https://q' }, extra: '{\n  "custom": 1\n}' });
   });
 });

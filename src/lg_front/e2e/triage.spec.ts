@@ -6,12 +6,14 @@
  * the escalation as an analyst, approving its response as an admin until
  * the alert closes, role gating for analyst and viewer, sign-out, and no
  * token in browser storage. The Content-Security-Policy is checked on the
- * wire and in the browser (no violations on any page).
+ * wire and in the browser (no violations on any page), and the main pages
+ * pass axe (no serious or critical WCAG 2.2 A or AA violation).
  */
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
 import {
   API,
+  assertAccessible,
   assertNoTokenInStorage,
   decisionForm,
   escalationQueue,
@@ -490,6 +492,7 @@ test('response approval: role gating, the admin approves, the alert closes as ma
   }
 });
 
+// Each page is also checked with axe (WCAG 2.2 A and AA): a serious or critical violation fails.
 test('main pages render under the CSP (and screenshots for the README)', async ({ browser }) => {
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
@@ -512,6 +515,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     await expect(page.getByText(/^Loading/)).toHaveCount(0);
     await expect(page.getByRole('alert').filter({ hasText: /error|failed/i })).toHaveCount(0);
     await screenshot(page, shot);
+    await assertAccessible(page, path);
   }
   // The audit log recorded the analyst's claim and decision and the admin's approval.
   await page.goto('/audit');

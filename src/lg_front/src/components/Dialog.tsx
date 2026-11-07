@@ -1,23 +1,9 @@
 import { X } from 'lucide-react';
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Button, cx } from './ui';
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), summary, [tabindex]:not([tabindex="-1"])';
-
-/** Focusable elements that are actually reachable (not hidden, not inside a closed <details>). */
-function reachable(panel: HTMLElement): HTMLElement[] {
-  return Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((n) => {
-    if (n.closest('[hidden]')) return false;
-    const details = n.closest('details');
-    return !details || details.open || (n.tagName === 'SUMMARY' && n.parentElement === details);
-  });
-}
-
-// Open modals, innermost last: only the top one handles Escape and Tab.
-const modalStack: symbol[] = [];
+import { useFocusTrap } from './useFocusTrap';
 
 /**
  * Modal surface (centered dialog or side drawer): traps focus, closes on
@@ -46,50 +32,7 @@ export function Modal({
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const descId = useId();
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-
-  useEffect(() => {
-    if (!open) return;
-    const token = Symbol('modal');
-    modalStack.push(token);
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>('[data-autofocus]') ?? panel?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel)?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (modalStack[modalStack.length - 1] !== token) return;
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onCloseRef.current();
-        return;
-      }
-      if (e.key !== 'Tab' || !panel) return;
-      const nodes = reachable(panel);
-      if (nodes.length === 0) {
-        e.preventDefault();
-        return;
-      }
-      const firstNode = nodes[0];
-      const lastNode = nodes[nodes.length - 1];
-      if (e.shiftKey && document.activeElement === firstNode) {
-        e.preventDefault();
-        lastNode.focus();
-      } else if (!e.shiftKey && document.activeElement === lastNode) {
-        e.preventDefault();
-        firstNode.focus();
-      }
-    };
-    document.addEventListener('keydown', onKey, true);
-    const { overflow } = document.body.style;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey, true);
-      modalStack.splice(modalStack.indexOf(token), 1);
-      if (modalStack.length === 0) document.body.style.overflow = overflow;
-      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
-    };
-  }, [open]);
+  useFocusTrap(panelRef, open, { onEscape: onClose, lockScroll: true });
 
   if (!open) return null;
 

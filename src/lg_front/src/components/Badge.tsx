@@ -6,6 +6,7 @@
 
 import type { ReactNode } from 'react';
 
+import type { ActionStatus, AlertStatus, Disposition, EscalationStatus } from '../api/types';
 import { SeverityTag, StatePill, type StateTone } from './ui';
 
 export type Tone = 'neutral' | 'info' | 'good' | 'warn' | 'bad' | 'critical';
@@ -28,7 +29,14 @@ export function Badge({ tone = 'neutral', children, title }: { tone?: Tone; chil
   );
 }
 
-const STATUS_STATE: Record<string, StateTone> = {
+/** Source and connector health. */
+type HealthStatus = 'healthy' | 'degraded' | 'failing' | 'unknown';
+
+/**
+ * Every known status has a tone (adding one to a vocabulary in api/types.ts fails the type check
+ * until it gets one); a status from a newer API falls back to neutral.
+ */
+const STATUS_STATE: Record<AlertStatus | EscalationStatus | ActionStatus | HealthStatus, StateTone> = {
   new: 'processing',
   queued: 'processing',
   processing: 'processing',
@@ -54,10 +62,14 @@ const STATUS_STATE: Record<string, StateTone> = {
   failing: 'bad',
   unknown: 'neutral',
 };
-const DISPOSITION_STATE: Record<string, StateTone> = { malicious: 'bad', benign: 'ok', inconclusive: 'waiting' };
+const DISPOSITION_STATE: Record<Disposition, StateTone> = { malicious: 'bad', benign: 'ok', inconclusive: 'waiting' };
+
+function toneOf(map: Record<string, StateTone>, value: string): StateTone {
+  return Object.hasOwn(map, value) ? map[value] : 'neutral';
+}
 
 export function statusTone(value: string): StateTone {
-  return STATUS_STATE[value] ?? 'neutral';
+  return toneOf(STATUS_STATE, value);
 }
 
 export function SeverityBadge({ value }: { value: string | null | undefined }) {
@@ -76,7 +88,7 @@ export function StatusBadge({ value }: { value: string | null | undefined }) {
 export function DispositionBadge({ value }: { value: string | null | undefined }) {
   if (!value) return <span className="text-muted">pending</span>;
   return (
-    <StatePill tone={DISPOSITION_STATE[value] ?? 'neutral'} className="capitalize">
+    <StatePill tone={toneOf(DISPOSITION_STATE, value)} className="capitalize">
       {value}
     </StatePill>
   );

@@ -1,0 +1,54 @@
+import { useQuery } from '@tanstack/react-query';
+
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import { useApi } from '../../auth/AuthContext';
+import { Badge } from '../../components/Badge';
+import { ErrorMessage, LoadingState, PageHeader } from '../../components/ui';
+import { formatDateTime } from '../../lib/format';
+import { LlmTestCard } from './LlmTestCard';
+import { PhishingSection } from './PhishingSection';
+import { AutonomySection, BudgetSection, ProtectedSection, ResponseSection } from './ResponseSections';
+import { ReportingSection, RetentionSection, ReviewSection } from './ReviewSections';
+import { RoutingSection } from './RoutingSection';
+import { SecuritySection } from './SecuritySection';
+
+export default function TenantSettingsPage() {
+  const api = useApi();
+  const q = useQuery({ queryKey: qk.tenantSettings.all, queryFn: ({ signal }) => endpoints.tenantSettings(api, signal) });
+  const d = q.data;
+  return (
+    <>
+      <PageHeader
+        title="Tenant settings"
+        description={
+          d ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {d.name} ({d.tenant_id}) <Badge tone={d.status === 'active' ? 'good' : 'bad'}>{d.status}</Badge> last changed {formatDateTime(d.updated_at)}
+            </span>
+          ) : undefined
+        }
+      />
+      {q.isPending && <LoadingState label="Loading settings" />}
+      {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
+      {d && (
+        // Re-mount the sections when the stored settings change so the forms show saved values.
+        <div key={d.updated_at} className="grid gap-5 xl:grid-cols-2">
+          <AutonomySection data={d} />
+          <ResponseSection data={d} />
+          <RoutingSection data={d} />
+          <ProtectedSection data={d} />
+          <PhishingSection data={d} />
+          <div className="space-y-5">
+            <SecuritySection data={d} />
+            <BudgetSection data={d} />
+            <LlmTestCard />
+            <ReviewSection data={d} />
+            <RetentionSection data={d} />
+            <ReportingSection data={d} />
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

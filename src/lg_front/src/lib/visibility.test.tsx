@@ -1,7 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { shouldRetry } from '../queryClient';
+import { shouldRetry } from '../app/queryClient';
 import { ApiError } from '../api/client';
 import { usePollInterval } from './visibility';
 
