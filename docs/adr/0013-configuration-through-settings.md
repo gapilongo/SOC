@@ -22,12 +22,14 @@ dependency.
   standard `DATABASE_URL`, `REDIS_URL` and provider API keys apply only when
   nothing else sets the value. Ruff `TID251` bans `os.environ`, `os.getenv`
   and `os.putenv` everywhere else (`pyproject.toml`).
-* **Settings are passed, not fetched.** `get_settings()` is called in the
-  composition roots (`cli.py`, `api/app.py`, `runtime/`, `__main__.py`); the
-  remaining calls elsewhere are a shrink-only baseline
-  (`tests/unit/architecture/get_settings_baseline.txt`, checked by
-  `test_data_access.py`). Components take a `Settings` (or their section) in
-  their constructor.
+* **Settings are passed, not fetched.** `get_settings()` is called only in
+  the composition roots (`cli.py`, `api/app.py`, the `runtime/*.py`
+  entrypoints and `settings.py`), checked by `test_data_access.py` against an
+  empty shrink-only baseline (`tests/unit/architecture/get_settings_baseline.txt`).
+  Components take a `Settings` (or their section) as a required parameter,
+  in their constructor or call. The one other entrypoint, alembic's
+  `db/migrations/env.py` when alembic is run by hand, builds its own
+  `Settings()` and passes `.database` down.
 * **Fail closed at startup.** Every process calls `settings.assert_safe()`;
   in `staging` and `production` it refuses missing secrets, the fake LLM,
   wildcard CORS, insecure cookies and the development database password.
