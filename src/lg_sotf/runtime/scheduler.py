@@ -42,7 +42,7 @@ from lg_sotf.db.retention import purge_expired
 from lg_sotf.integrations.delivery import OutboxDelivery, sync_tickets
 from lg_sotf.integrations.events import ESCALATION_SLA_BREACHED
 from lg_sotf.integrations.outbox import enqueue_event
-from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import set_escalations_open, set_queue_depth, set_queue_pending
 from lg_sotf.queue.consumer import queue_stats
 from lg_sotf.queue.events import make_event
@@ -246,7 +246,7 @@ class Scheduler:
             raise
         except Exception as exc:  # noqa: BLE001 - one failing job must not stop the others
             job.failures += 1
-            log.error("scheduler.job_failed", job=job.name, error=type(exc).__name__)
+            log_failure(log, "scheduler.job_failed", exc, job=job.name)
             return
         job.runs += 1
         if override is not None:
@@ -269,7 +269,7 @@ class Scheduler:
             try:
                 await ingestion.close()
             except Exception as exc:  # noqa: BLE001 - shutdown cleanup
-                log.warning("scheduler.ingestion_close_failed", error=type(exc).__name__)
+                log_failure(log, "scheduler.ingestion_close_failed", exc, level="warning")
 
     async def wait_for_jobs(self) -> None:
         """Wait until every running job and source poll has finished (tests and tooling)."""
@@ -325,7 +325,7 @@ class Scheduler:
                         self._repos, self._queue, source.tenant_id, inserted, events=self._events
                     )
                 except Exception as exc:  # noqa: BLE001 - runs are queued; enqueue is retried every tick
-                    log.error("scheduler.dispatch_failed", source_id=source.id, error=type(exc).__name__)
+                    log_failure(log, "scheduler.dispatch_failed", exc, source_id=source.id)
                     self._remember_undispatched(source.tenant_id, [(a.alert_id, a.severity) for a in inserted])
 
             try:
@@ -335,13 +335,13 @@ class Scheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - isolate per-source failures
-                log.warning("scheduler.poll_failed", source_id=source.id, error=type(exc).__name__)
+                log_failure(log, "scheduler.poll_failed", exc, level="warning", source_id=source.id)
                 try:
                     await self._repos.sources.record_poll_result(
                         source.tenant_id, source.id, ok=False, error=sanitize_error(exc)
                     )
                 except Exception as record_exc:  # noqa: BLE001 - the source is retried when next due
-                    log.warning("scheduler.poll_result_not_recorded", error=type(record_exc).__name__)
+                    log_failure(log, "scheduler.poll_result_not_recorded", record_exc, level="warning")
                 return
             inserted = list(result.inserted)
             if not inserted:
@@ -366,7 +366,7 @@ class Scheduler:
             try:
                 await dispatch_new_alerts(self._repos, self._queue, tenant_id, alerts, events=self._events)
             except Exception as exc:  # noqa: BLE001 - keep them for the next tick
-                log.warning("scheduler.dispatch_retry_failed", error=type(exc).__name__)
+                log_failure(log, "scheduler.dispatch_retry_failed", exc, level="warning")
                 self._remember_undispatched(tenant_id, [(a.alert_id, a.severity) for a in alerts])
 
     # -- stale runs ----------------------------------------------------------
@@ -396,7 +396,7 @@ class Scheduler:
         try:
             settled = await self.responses().fail_orphaned_executing()
         except Exception as exc:  # noqa: BLE001 - retried on the next sweep
-            log.warning("scheduler.orphaned_actions_failed", error=type(exc).__name__)
+            log_failure(log, "scheduler.orphaned_actions_failed", exc, level="warning")
             return
         if settled:
             log.info("scheduler.orphaned_actions", settled=settled)
@@ -409,7 +409,7 @@ class Scheduler:
         try:
             await self._queue.enqueue_process(run.tenant_id, run.alert_id, severity)
         except Exception as exc:  # noqa: BLE001 - retried with the undispatched backlog
-            log.error("scheduler.requeue_enqueue_failed", error=type(exc).__name__)
+            log_failure(log, "scheduler.requeue_enqueue_failed", exc)
             self._remember_undispatched(run.tenant_id, [(run.alert_id, severity)])
 
     async def _fail_dead_lettered(self, run: WorkflowRun) -> None:
@@ -418,7 +418,7 @@ class Scheduler:
             try:
                 await self._repos.alerts.update_status(run.tenant_id, run.alert_id, "failed")
             except (NotFound, InvalidTransition) as exc:
-                log.warning("scheduler.alert_fail_skipped", error=type(exc).__name__)
+                log_failure(log, "scheduler.alert_fail_skipped", exc, level="warning")
                 return
             await self._publish(
                 run.tenant_id,
@@ -445,7 +445,7 @@ class Scheduler:
             try:
                 recovered += await dispatch_new_alerts(self._repos, self._queue, tenant_id, alerts, events=self._events)
             except Exception as exc:  # noqa: BLE001 - found again on the next sweep
-                log.error("scheduler.stranded_dispatch_failed", error=type(exc).__name__)
+                log_failure(log, "scheduler.stranded_dispatch_failed", exc)
         if recovered:
             log.warning("scheduler.stranded_alerts_dispatched", count=recovered)
         return recovered
@@ -481,7 +481,7 @@ class Scheduler:
                 try:
                     await self._queue.enqueue_process(run.tenant_id, run.alert_id, run.severity)
                 except Exception as exc:  # noqa: BLE001 - retried with the undispatched backlog
-                    log.error("scheduler.orphan_enqueue_failed", error=type(exc).__name__)
+                    log_failure(log, "scheduler.orphan_enqueue_failed", exc)
                     self._remember_undispatched(run.tenant_id, [(run.alert_id, run.severity)])
             recovered += len(orphans)
             if len(orphans) < SWEEP_BATCH:
@@ -564,7 +564,7 @@ class Scheduler:
                     )
             except (Conflict, NotFound) as exc:
                 # An analyst claimed or decided it meanwhile (version moved on); nothing to do.
-                log.info("scheduler.sla_skipped", escalation_id=esc.id, error=type(exc).__name__)
+                log_failure(log, "scheduler.sla_skipped", exc, level="info", escalation_id=esc.id)
                 return
             log.info("scheduler.sla_breach_handled", escalation_id=esc.id, action=action, escalation_level=updated.level)
             await self._publish(
@@ -644,7 +644,7 @@ class Scheduler:
         try:
             await self._events.publish(tenant_id, event)
         except Exception as exc:  # noqa: BLE001 - events are best-effort notifications
-            log.warning("scheduler.event_publish_failed", error=type(exc).__name__)
+            log_failure(log, "scheduler.event_publish_failed", exc, level="warning")
 
 
 async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
