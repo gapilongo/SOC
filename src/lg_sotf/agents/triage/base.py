@@ -64,7 +64,7 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, Field
 
@@ -74,6 +74,9 @@ from lg_sotf.domain import routing
 from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import TriageDigest
 
 SEVERITY_WEIGHTS: Dict[str, int] = {"critical": 30, "high": 20, "medium": 10, "low": -10, "info": -20}
 TP_KEYWORD_WEIGHTS: Dict[str, int] = {
@@ -206,7 +209,7 @@ class TriageResult:
     # Email alerts: sender authentication, lookalikes and suspicious links (lg_sotf.domain.phishing).
     phishing: Optional[Dict[str, Any]] = None
 
-    def digest(self) -> Dict[str, Any]:
+    def digest(self) -> TriageDigest:
         data = asdict(self)
         data.pop("notes")
         if data["reasoning"]:
@@ -215,7 +218,7 @@ class TriageResult:
             data.pop("llm_refusal")
         if data["phishing"] is None:
             data.pop("phishing")
-        return data
+        return cast("TriageDigest", data)
 
 
 def _raw(alert: Mapping[str, Any]) -> Mapping[str, Any]:

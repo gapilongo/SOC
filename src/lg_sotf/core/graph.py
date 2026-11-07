@@ -23,13 +23,38 @@ digests. Tool outputs and full reasoning live in ``alerts.summary`` and
 from __future__ import annotations
 
 import json
-from typing import Annotated, Any, Awaitable, Callable, Dict, List, Mapping, Optional, Protocol, TypedDict
+from typing import (
+    TYPE_CHECKING,
+    Annotated,
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    Optional,
+    Protocol,
+    TypedDict,
+)
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
+from lg_sotf.core.state import (
+    AnalysisDigest,
+    AnalystInput,
+    ApprovalInput,
+    CorrelationDigest,
+    DecisionDigest,
+    GateDigest,
+    PlanDigest,
+    TriageDigest,
+)
 from lg_sotf.domain import routing
 from lg_sotf.domain.routing import RoutingThresholds
+
+if TYPE_CHECKING:
+    from lg_sotf.db.repos import Alert
 
 MAX_NOTES = 50
 MAX_NOTE_CHARS = 300
@@ -61,24 +86,27 @@ def capped_notes(left: Optional[List[str]], right: Optional[List[str]]) -> List[
 
 
 class WorkflowState(TypedDict, total=False):
+    """The graph state. The digest types (``lg_sotf.core.state``) are imported at runtime: LangGraph
+    resolves this schema with ``typing.get_type_hints``."""
+
     tenant_id: str
     alert_id: str
     severity: str
     fingerprint: str
     alert: Dict[str, Any]
     confidence: float
-    gate: Dict[str, Any]
-    triage: Dict[str, Any]
-    correlation: Dict[str, Any]
-    analysis: Dict[str, Any]
+    gate: GateDigest
+    triage: TriageDigest
+    correlation: CorrelationDigest
+    analysis: AnalysisDigest
     analysis_runs: int
     more_info_loops: int
-    decision: Dict[str, Any]
+    decision: DecisionDigest
     escalation_id: Optional[str]
-    analyst: Optional[Dict[str, Any]]
-    plan: Dict[str, Any]
+    analyst: Optional[AnalystInput]
+    plan: PlanDigest
     awaiting_actions: List[str]
-    approval: Optional[Dict[str, Any]]
+    approval: Optional[ApprovalInput]
     executed: Dict[str, str]
     disposition: Optional[str]
     close_reason: Optional[str]
@@ -177,6 +205,58 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     if omitted:
         capped["_omitted_keys"] = [k[:MAX_OMITTED_KEY_CHARS] for k in omitted[:MAX_OMITTED_KEYS]]
     return capped
+
+
+def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[int] = None) -> WorkflowState:
+    """The state a fresh run of ``alert`` starts from: in the engine, and in the backtest's replay.
+
+    The alert is its normalized form with the row's own columns (and ``raw``
+    unless the normalized form has one), size-capped by :func:`cap_alert`.
+    ``llm_budget_limit`` is the tenant's daily LLM token budget
+    (:func:`lg_sotf.models.tenant_settings.token_budget`); ``None`` means the
+    install default.
+    """
+    canonical: Dict[str, Any] = dict(alert.normalized)
+    canonical.update(
+        {
+            "id": alert.id,
+            "title": alert.title,
+            "severity": alert.severity,
+            "category": alert.category if alert.category is not None else canonical.get("category"),
+            "source_id": alert.source_id,
+            "source_alert_id": alert.source_alert_id,
+            "fingerprint": alert.fingerprint,
+            "occurred_at": alert.occurred_at.isoformat(),
+        }
+    )
+    if "raw" not in canonical:
+        canonical["raw"] = alert.raw
+    return {
+        "tenant_id": tenant_id,
+        "alert_id": alert.id,
+        "severity": alert.severity,
+        "fingerprint": alert.fingerprint,
+        "alert": cap_alert(canonical),
+        "confidence": 50,
+        "gate": {},
+        "triage": {},
+        "correlation": {},
+        "analysis": {},
+        "analysis_runs": 0,
+        "more_info_loops": 0,
+        "decision": {},
+        "escalation_id": None,
+        "analyst": None,
+        "plan": {},
+        "awaiting_actions": [],
+        "approval": None,
+        "executed": {},
+        "disposition": None,
+        "close_reason": None,
+        "llm_budget_exceeded": False,
+        "llm_budget_limit": llm_budget_limit,
+        "notes": [],
+    }
 
 
 NodeFn = Callable[[WorkflowState], Awaitable[Dict[str, Any]]]

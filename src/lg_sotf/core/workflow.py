@@ -28,7 +28,7 @@ from pydantic import ValidationError as PydanticValidationError
 from redis.asyncio import Redis
 
 from lg_sotf.agents.registry import AgentSet
-from lg_sotf.core.graph import build_graph, cap_alert
+from lg_sotf.core.graph import WorkflowState, build_graph, initial_state
 from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy
 from lg_sotf.core.verdict_cache import VerdictCache
@@ -42,6 +42,7 @@ from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import InvalidResumePayload, WorkflowError
 from lg_sotf.llm import TokenBudget
+from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
@@ -360,50 +361,9 @@ class WorkflowEngine:
             await self._mark_processing(tenant_id, alert_id)
         return await self._invoke(tenant_id, alert_id, None, config)
 
-    async def _initial_state(self, tenant_id: str, alert: Alert) -> Dict[str, Any]:
-        canonical: Dict[str, Any] = dict(alert.normalized)
-        canonical.update(
-            {
-                "id": alert.id,
-                "title": alert.title,
-                "severity": alert.severity,
-                "category": alert.category if alert.category is not None else canonical.get("category"),
-                "source_id": alert.source_id,
-                "source_alert_id": alert.source_alert_id,
-                "fingerprint": alert.fingerprint,
-                "occurred_at": alert.occurred_at.isoformat(),
-            }
-        )
-        if "raw" not in canonical:
-            canonical["raw"] = alert.raw
+    async def _initial_state(self, tenant_id: str, alert: Alert) -> WorkflowState:
         tenant = await self.repos.tenants.get(tenant_id)
-        limit = tenant.settings.get("llm_daily_token_budget")
-        return {
-            "tenant_id": tenant_id,
-            "alert_id": alert.id,
-            "severity": alert.severity,
-            "fingerprint": alert.fingerprint,
-            "alert": cap_alert(canonical),
-            "confidence": 50,
-            "gate": {},
-            "triage": {},
-            "correlation": {},
-            "analysis": {},
-            "analysis_runs": 0,
-            "more_info_loops": 0,
-            "decision": {},
-            "escalation_id": None,
-            "analyst": None,
-            "plan": {},
-            "awaiting_actions": [],
-            "approval": None,
-            "executed": {},
-            "disposition": None,
-            "close_reason": None,
-            "llm_budget_exceeded": False,
-            "llm_budget_limit": limit if isinstance(limit, int) and not isinstance(limit, bool) else None,
-            "notes": [],
-        }
+        return initial_state(tenant_id, alert, llm_budget_limit=token_budget(tenant.settings))
 
     async def _invoke(self, tenant_id: str, alert_id: str, graph_input: Any, config: RunnableConfig) -> RunOutcome:
         try:

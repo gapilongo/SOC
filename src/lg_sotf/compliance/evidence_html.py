@@ -7,11 +7,11 @@ mapping: no database access (import-linter contract ``evidence-html-no-db``).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Literal, Mapping, Sequence, Tuple
 
 from lg_sotf.compliance import html as h
 
-AGENT_STEPS = ("triage", "correlation", "analysis")
+AGENT_STEPS: Tuple[Literal["triage", "correlation", "analysis"], ...] = ("triage", "correlation", "analysis")
 
 
 def _obj(value: Any) -> Dict[str, Any]:

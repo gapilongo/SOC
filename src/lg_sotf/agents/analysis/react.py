@@ -44,6 +44,7 @@ from lg_sotf.tools.enrichment import EnrichmentResult, EnrichmentService
 
 if TYPE_CHECKING:
     from lg_sotf.agents.base import BaseAgent
+    from lg_sotf.core.state import ToolObservation
 
 log = get_logger(__name__)
 
@@ -118,7 +119,7 @@ class Observation:
     def prompt_view(self) -> Dict[str, Any]:
         return {"target": self.candidate.id, "kind": self.candidate.kind, "results": [r.as_dict() for r in self.results]}
 
-    def digest(self) -> Dict[str, Any]:
+    def digest(self) -> ToolObservation:
         """For ``alerts.summary.analysis.tools``: real provider results, never simulated."""
         display, _ = redact_text(self.candidate.value)
         return {
