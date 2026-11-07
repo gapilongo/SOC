@@ -29,6 +29,15 @@ export function quotaText(used: number, limit: number | null): string {
   return limit === null ? formatInt(used) : `${formatInt(used)} / ${formatInt(limit)}`;
 }
 
+/** Usage against one quota in the tenants table; "-" when the API does not report that quota. */
+function QuotaCell({ usage }: { usage: { used: number; limit: number | null } | undefined }) {
+  return (
+    <td className={cx('py-2 pr-3 text-right tabular-nums', usage && quotaTone(usage.used, usage.limit))}>
+      {usage ? quotaText(usage.used, usage.limit) : '-'}
+    </td>
+  );
+}
+
 function quotaTone(used: number, limit: number | null): string {
   if (limit === null) return 'text-fg';
   if (used >= limit) return 'text-danger-fg font-medium';
@@ -70,7 +79,10 @@ function useUpdateTenant(onDone?: () => void) {
 function QuotaDialog({ tenant, onClose }: { tenant: TenantSummaryOut; onClose: () => void }) {
   const [values, setValues] = useState<Record<QuotaKey, string>>(() => {
     const init = {} as Record<QuotaKey, string>;
-    for (const key of QUOTA_KEYS) init[key] = tenant.quotas[key] === null ? '' : String(tenant.quotas[key]);
+    for (const key of QUOTA_KEYS) {
+      const limit = tenant.quotas[key];
+      init[key] = limit === null || limit === undefined ? '' : String(limit);
+    }
     return init;
   });
   const [localError, setLocalError] = useState<Error | null>(null);
@@ -111,7 +123,7 @@ function QuotaDialog({ tenant, onClose }: { tenant: TenantSummaryOut; onClose: (
             min={0}
             value={values[key]}
             onChange={(e) => setValues({ ...values, [key]: e.target.value })}
-            hint={`In use: ${formatInt(tenant.quota_usage[key].used)}${key === 'max_alerts_per_day' ? ' today (UTC)' : ''}`}
+            hint={`In use: ${formatInt(tenant.quota_usage[key]?.used)}${key === 'max_alerts_per_day' ? ' today (UTC)' : ''}`}
           />
         ))}
       </form>
@@ -189,9 +201,7 @@ export function TenantsTab() {
                       <Badge tone={t.status === 'active' ? 'good' : 'bad'}>{t.status}</Badge>
                     </td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatInt(s.alerts_24h)}</td>
-                    <td className={cx('py-2 pr-3 text-right tabular-nums', quotaTone(u.max_alerts_per_day.used, u.max_alerts_per_day.limit))}>
-                      {quotaText(u.max_alerts_per_day.used, u.max_alerts_per_day.limit)}
-                    </td>
+                    <QuotaCell usage={u.max_alerts_per_day} />
                     <td className="py-2 pr-3 text-secondary" title={s.last_ingest_at ?? undefined}>
                       {s.last_ingest_at ? formatRelative(s.last_ingest_at, now) : 'never'}
                     </td>
@@ -201,12 +211,8 @@ export function TenantsTab() {
                     </td>
                     <td className={cx('py-2 pr-3 text-right tabular-nums', s.sla_breaches_24h > 0 && 'text-warn-fg')}>{formatInt(s.sla_breaches_24h)}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(s.llm_cost_mtd_usd)}</td>
-                    <td className={cx('py-2 pr-3 text-right tabular-nums', quotaTone(u.max_users.used, u.max_users.limit))}>
-                      {quotaText(u.max_users.used, u.max_users.limit)}
-                    </td>
-                    <td className={cx('py-2 pr-3 text-right tabular-nums', quotaTone(u.max_sources.used, u.max_sources.limit))}>
-                      {quotaText(u.max_sources.used, u.max_sources.limit)}
-                    </td>
+                    <QuotaCell usage={u.max_users} />
+                    <QuotaCell usage={u.max_sources} />
                     <td className="py-2">
                       <div className="flex flex-wrap justify-end gap-1">
                         <Button size="sm" variant="quiet" onClick={() => open(t)} icon={<LogIn className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Open tenant ${t.name}`}>

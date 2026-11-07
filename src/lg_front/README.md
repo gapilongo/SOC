@@ -175,3 +175,21 @@ ESLint enforces the boundaries (`no-restricted-imports` in `eslint.config.js`):
 Tests may cross the boundaries (a page rendered inside the shell, for
 example). `src/main.tsx`, `src/auth/store.ts` and `src/auth/oidc.ts` must not
 move: the deployment tests pin them.
+
+## API types
+
+`src/api/types.ts` holds the API types the app uses, written by hand: names
+and vocabularies stay readable, and response vocabularies are open
+(`Open<T>`: the known values or any other string, so a newer API in a rolling
+deploy does not break the UI). They are held to the API contract:
+
+* `npm run gen:api` turns the committed `docs/openapi.json` into
+  `src/api/schema.gen.ts` (openapi-typescript, pinned). CI regenerates it and
+  fails when the committed file differs, so a backend change to the OpenAPI
+  document comes with the regenerated file.
+* `src/api/contract.check.ts`, compiled by `tsc -b`, requires every response
+  schema to be assignable to its hand-written type (as sent: FastAPI includes
+  every field) and every hand-written request type to be assignable to its
+  schema. A drift fails the type check and names the field. Give a new type
+  a line there.
+* Only `src/api` may import `schema.gen` (ESLint).

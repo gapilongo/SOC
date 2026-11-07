@@ -92,6 +92,19 @@ describe('IntegrationsPage', () => {
     expect(calls.map((c) => `${c.method} ${c.path}`)).toContain('POST /integrations/int-1/test');
   });
 
+  it('lists a kind from a newer API by its name and offers no form for it', async () => {
+    const { api } = fakeApi((method, path) => {
+      if (method === 'GET' && path === '/integrations') return [integration({ kind: 'pagerduty', name: 'On-call', secrets: {} })];
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const session = await signedInSession(api, { role: 'admin' });
+    renderWithSession(<IntegrationsPage />, session);
+    const row = (await screen.findByText('On-call')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('pagerduty')).toBeInTheDocument();
+    expect(within(row).getByRole('button', { name: 'Edit On-call' })).toBeDisabled();
+    expect(within(row).getByRole('button', { name: 'Delete On-call' })).toBeEnabled();
+  });
+
   it('creates a Teams integration with write-only credentials', async () => {
     const { api, calls } = fakeApi((method, path, body) => {
       if (method === 'GET' && path === '/integrations') return [];

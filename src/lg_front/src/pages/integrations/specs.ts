@@ -1,6 +1,6 @@
 /** Integration kinds: their form fields, events and the config conversions between the form and the API. */
 
-import { INTEGRATION_EVENTS, TICKETING_EVENTS, TICKETING_KINDS, type IntegrationKind, type IntegrationOut, type JsonObject } from '../../api/types';
+import { INTEGRATION_EVENTS, INTEGRATION_KINDS, isOneOf, TICKETING_EVENTS, TICKETING_KINDS, type IntegrationKind, type IntegrationOut, type JsonObject } from '../../api/types';
 import { getConfig } from '../../config';
 import { parseJsonObject } from '../../lib/json';
 import { secretField } from './MicrosoftIntegrationForm';
@@ -26,6 +26,11 @@ interface KindSpec {
 
 const RATE_LIMIT: FieldSpec = { key: 'rate_limit_per_minute', label: 'Rate limit (messages per minute)', kind: 'number', placeholder: 'default for the kind' };
 const CA_CERT: FieldSpec = { key: 'ca_cert_pem', label: 'Private CA certificate (PEM, optional)', kind: 'pem' };
+
+/** The spec of a stored integration's kind; undefined for a kind this version of the app does not know. */
+export function kindSpec(kind: string): KindSpec | undefined {
+  return isOneOf(INTEGRATION_KINDS, kind) ? KIND_SPECS[kind] : undefined;
+}
 
 /** Form fields per integration kind (lg_sotf.integrations.config). */
 export const KIND_SPECS: Record<IntegrationKind, KindSpec> = {
@@ -147,7 +152,7 @@ export function missingCredentials(i: IntegrationOut): string[] {
     const field = secretField(i.config?.credential === 'client_secret' ? 'client_secret' : 'certificate');
     return i.secrets?.[field] ? [] : [field];
   }
-  return (KIND_SPECS[i.kind]?.secrets ?? []).filter((f) => f.required && !i.secrets?.[f.key]).map((f) => f.key);
+  return (kindSpec(i.kind)?.secrets ?? []).filter((f) => f.required && !i.secrets?.[f.key]).map((f) => f.key);
 }
 
 function toText(value: unknown): string {

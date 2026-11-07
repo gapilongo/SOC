@@ -5,7 +5,7 @@ import { useState, type FormEvent } from 'react';
 
 import { endpoints } from '../../api/endpoints';
 import { afterIntegrationChange } from '../../api/invalidate';
-import { INTEGRATION_KINDS, SEVERITIES, TICKETING_EVENTS, type IntegrationCreateIn, type IntegrationKind, type IntegrationOut, type IntegrationUpdateIn } from '../../api/types';
+import { INTEGRATION_KINDS, SEVERITIES, TICKETING_EVENTS, isOneOf, type IntegrationCreateIn, type IntegrationKind, type IntegrationOut, type IntegrationUpdateIn, type Severity } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Modal } from '../../components/Dialog';
@@ -27,11 +27,14 @@ export function IntegrationForm({
   const client = useQueryClient();
   const toast = useToast();
   const editing = integration !== null;
-  const [kind, setKind] = useState<IntegrationKind>(integration?.kind ?? 'slack');
+  // The page offers editing only for known kinds; a new integration starts as Slack.
+  const storedKind = integration?.kind;
+  const [kind, setKind] = useState<IntegrationKind>(isOneOf(INTEGRATION_KINDS, storedKind) ? storedKind : 'slack');
   const initial = splitIntegrationConfig(kind, integration?.config);
   const [name, setName] = useState(integration?.name ?? '');
   const [enabled, setEnabled] = useState(integration?.enabled ?? true);
-  const [minSeverity, setMinSeverity] = useState(integration?.min_severity ?? 'low');
+  const storedSeverity = integration?.min_severity;
+  const [minSeverity, setMinSeverity] = useState<Severity>(isOneOf(SEVERITIES, storedSeverity) ? storedSeverity : 'low');
   const [events, setEvents] = useState<string[]>(integration?.events ?? ['escalation.created']);
   const [values, setValues] = useState<Record<string, string>>(initial.values);
   const [flags, setFlags] = useState<Record<string, boolean>>(initial.flags);
@@ -118,7 +121,9 @@ export function IntegrationForm({
           <SelectField
             label="Minimum alert severity"
             value={minSeverity}
-            onChange={(e) => setMinSeverity(e.target.value)}
+            onChange={(e) => {
+              if (isOneOf(SEVERITIES, e.target.value)) setMinSeverity(e.target.value);
+            }}
             hint="Events about less severe alerts are not sent."
           >
             {SEVERITIES.map((s) => (

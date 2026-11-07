@@ -12,6 +12,11 @@ import { Button, Card, ErrorMessage, LoadingState, TextField } from '../../compo
 import { downloadCsv, toCsv, type CsvColumn } from '../../lib/csv';
 import { formatInt, formatUsd } from '../../lib/format';
 
+/** The totals are an open document; the cost is a decimal string (or a number). */
+function costOf(value: unknown): number | string | null {
+  return typeof value === 'number' || typeof value === 'string' ? value : null;
+}
+
 function currentMonth(now: Date = new Date()): string {
   return now.toISOString().slice(0, 7);
 }
@@ -106,7 +111,7 @@ export function UsageTab() {
                 <td className="py-2 pr-3 text-right tabular-nums">
                   {formatInt(Number(q.data.totals.llm_input_tokens) + Number(q.data.totals.llm_output_tokens))}
                 </td>
-                <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(q.data.totals.llm_cost_usd)}</td>
+                <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(costOf(q.data.totals.llm_cost_usd))}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatInt(Number(q.data.totals.active_users))}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatInt(Number(q.data.totals.users))}</td>
                 <td className="py-2 pr-3 text-right tabular-nums">{formatInt(Number(q.data.totals.sources))}</td>

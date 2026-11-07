@@ -38,8 +38,8 @@ export function formatHours(hours: number | null | undefined): string {
 }
 
 /** "95% range 12.0% to 31.4%" for a Wilson interval, or an empty string. */
-export function formatRange(ci: [number, number] | null | undefined): string {
-  return ci ? `95% range ${formatPct(ci[0])} to ${formatPct(ci[1])}` : '';
+export function formatRange(ci: readonly number[] | null | undefined): string {
+  return ci && ci.length >= 2 ? `95% range ${formatPct(ci[0])} to ${formatPct(ci[1])}` : '';
 }
 
 export const SUGGESTION_LABEL: Record<string, string> = {

@@ -14,7 +14,7 @@ import { Button, EmptyState, ErrorMessage, LoadingState, PageHeader } from '../.
 import { DeliveryLog } from './DeliveryLog';
 import { IntegrationForm } from './IntegrationForm';
 import { MicrosoftTestReport } from './MicrosoftTestReport';
-import { EVENT_LABELS, KIND_SPECS, missingCredentials } from './specs';
+import { EVENT_LABELS, kindSpec, missingCredentials } from './specs';
 
 export default function IntegrationsPage() {
   const api = useApi();
@@ -94,7 +94,7 @@ export default function IntegrationsPage() {
                       <div className="font-medium text-fg">{i.name}</div>
                       {!i.enabled && <Badge>disabled</Badge>}
                     </td>
-                    <td className="px-3 py-2 text-body">{KIND_SPECS[i.kind]?.label ?? i.kind}</td>
+                    <td className="px-3 py-2 text-body">{kindSpec(i.kind)?.label ?? i.kind}</td>
                     <td className="px-3 py-2 text-xs text-secondary">
                       {i.events.length ? i.events.map((e) => EVENT_LABELS[e] ?? e).join(', ') : <span className="text-muted">none</span>}
                     </td>
@@ -116,7 +116,14 @@ export default function IntegrationsPage() {
                         >
                           Log
                         </Button>
-                        <Button size="sm" onClick={() => setEditing(i)} icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Edit ${i.name}`}>
+                        <Button
+                          size="sm"
+                          onClick={() => setEditing(i)}
+                          // A kind this version of the app does not know has no form here.
+                          disabled={!kindSpec(i.kind)}
+                          icon={<Pencil className="h-3.5 w-3.5" aria-hidden="true" />}
+                          aria-label={`Edit ${i.name}`}
+                        >
                           Edit
                         </Button>
                         <Button size="sm" variant="destructive" onClick={() => setDeleting(i)} icon={<Trash2 className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Delete ${i.name}`}>
