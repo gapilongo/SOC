@@ -24,6 +24,8 @@ services:
     environment:
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
       OPENSEARCH_PATH_CONF: /usr/share/wazuh-indexer/config
+      # The indexer image's built-in demo admin password; the lab binds to 127.0.0.1 only.
+      LAB_ADMIN_PASSWORD: ${LG_SOTF_WAZUH_LAB_ADMIN_PASSWORD:-admin}
     tmpfs:
       - /var/lib/wazuh-indexer:uid=1000,gid=1000
       - /var/log/wazuh-indexer:uid=1000,gid=1000
@@ -31,7 +33,7 @@ services:
       - "127.0.0.1:${LG_SOTF_WAZUH_LAB_PORT:-59200}:9200"
     healthcheck:
       # Healthy once the security index exists and the demo admin can read the cluster health.
-      test: ["CMD-SHELL", "curl -fsk -u admin:admin 'https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=2s'"]
+      test: ["CMD-SHELL", "printf 'machine localhost login admin password %s\\n' \"$$LAB_ADMIN_PASSWORD\" > /tmp/.lab-netrc && curl -fsk --netrc-file /tmp/.lab-netrc 'https://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=2s'"]
       interval: 5s
       timeout: 5s
       retries: 60
