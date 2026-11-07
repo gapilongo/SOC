@@ -5,7 +5,7 @@ One command takes a fresh clone to a running LG-SOTF with a demo tenant,
 how long that took**.
 
 ```sh
-git clone https://github.com/gapilongo/lg-sotf.git && cd lg-sotf
+git clone https://github.com/gapilongo/SOC.git && cd SOC
 scripts/quickstart.sh                      # or: make quickstart
 ```
 
