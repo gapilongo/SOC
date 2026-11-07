@@ -28,6 +28,16 @@ from typing import Annotated, Any, Awaitable, Callable, Dict, List, Mapping, Opt
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import RetryPolicy
 
+from lg_sotf.core.state import (
+    AnalysisDigest,
+    AnalystInput,
+    ApprovalInput,
+    CorrelationDigest,
+    DecisionDigest,
+    GateDigest,
+    PlanDigest,
+    TriageDigest,
+)
 from lg_sotf.domain import routing
 from lg_sotf.domain.routing import RoutingThresholds
 
@@ -61,24 +71,27 @@ def capped_notes(left: Optional[List[str]], right: Optional[List[str]]) -> List[
 
 
 class WorkflowState(TypedDict, total=False):
+    """The graph state. The digest types (``lg_sotf.core.state``) are imported at runtime: LangGraph
+    resolves this schema with ``typing.get_type_hints``."""
+
     tenant_id: str
     alert_id: str
     severity: str
     fingerprint: str
     alert: Dict[str, Any]
     confidence: float
-    gate: Dict[str, Any]
-    triage: Dict[str, Any]
-    correlation: Dict[str, Any]
-    analysis: Dict[str, Any]
+    gate: GateDigest
+    triage: TriageDigest
+    correlation: CorrelationDigest
+    analysis: AnalysisDigest
     analysis_runs: int
     more_info_loops: int
-    decision: Dict[str, Any]
+    decision: DecisionDigest
     escalation_id: Optional[str]
-    analyst: Optional[Dict[str, Any]]
-    plan: Dict[str, Any]
+    analyst: Optional[AnalystInput]
+    plan: PlanDigest
     awaiting_actions: List[str]
-    approval: Optional[Dict[str, Any]]
+    approval: Optional[ApprovalInput]
     executed: Dict[str, str]
     disposition: Optional[str]
     close_reason: Optional[str]

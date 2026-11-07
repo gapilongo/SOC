@@ -16,13 +16,14 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.state import AnalystInput, DecisionDigest, GateDigest, SuppressedBy
 from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
@@ -186,7 +187,7 @@ class WorkflowNodes:
         match = first_matching_rule(rules, view)
         if match is not None:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
-            by = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
+            by: SuppressedBy = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
         raw_flags = alert.get("flags")
         flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
@@ -195,7 +196,7 @@ class WorkflowNodes:
         if state["severity"] != "critical" and "llm_normalized" not in flags:
             cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
             if cached is not None and cache_applies(cached, state["severity"]):
-                cache_hit: Dict[str, Any] = {
+                cache_hit: SuppressedBy = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
                     "source_alert_id": cached.get("alert_id"),
@@ -533,18 +534,19 @@ class WorkflowNodes:
     @staticmethod
     def outcome(state: Mapping[str, Any]) -> tuple[str, str]:
         """(disposition, close reason) for the path that reached ``close``."""
-        analyst = state.get("analyst") or {}
+        analyst = cast(AnalystInput, state.get("analyst") or {})
         decision = analyst.get("decision")
         if decision in BENIGN_DECISIONS:
             return "benign", f"analyst:{decision}"
         if decision == "true_positive":
             return "malicious", "analyst:true_positive"
-        gate = state.get("gate") or {}
+        gate = cast(GateDigest, state.get("gate") or {})
         if gate.get("suppressed"):
             return "benign", str((gate.get("suppressed_by") or {}).get("type") or "suppressed")
-        route = (state.get("decision") or {}).get("route")
+        decided = cast(DecisionDigest, state.get("decision") or {})
+        route = decided.get("route")
         if route == "close":
-            return str((state.get("decision") or {}).get("disposition") or "benign"), "policy:close"
+            return str(decided.get("disposition") or "benign"), "policy:close"
         if route == "plan_response":
             return "malicious", "policy:response"
         return "benign", "triage:false_positive"

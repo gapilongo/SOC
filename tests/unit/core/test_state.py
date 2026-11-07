@@ -2,24 +2,29 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Set
+import asyncio
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Set, get_type_hints
 
 import pytest
 
 from lg_sotf.agents.analysis.base import AnalysisResult
 from lg_sotf.agents.correlation.base import CorrelationResult
 from lg_sotf.agents.triage.base import TriageResult
+from lg_sotf.core.graph import WorkflowState, build_graph
 from lg_sotf.core.state import (
     AnalysisDigest,
+    AnalystInput,
+    ApprovalInput,
     CorrelationDigest,
     DecisionDigest,
+    GateDigest,
     LlmRefusal,
     PhishingDigest,
     PlanDigest,
     TriageDigest,
 )
 from lg_sotf.domain.phishing import PhishingAssessment
-from lg_sotf.domain.routing import Decision
+from lg_sotf.domain.routing import Decision, RoutingThresholds
 from lg_sotf.services.response.planner import PlanResult
 
 pytestmark = pytest.mark.unit
@@ -112,4 +117,33 @@ def test_decision_and_plan_digest_keys_are_declared() -> None:
 
 def test_refusal_digest_keys_are_declared() -> None:
     assert set(REFUSAL) == declared(LlmRefusal)
+
+
+class GateClosesNodes:
+    """Stub nodes: the gate suppresses the alert, so the run goes gate -> close -> END."""
+
+    def node(self, name: str) -> Callable[[WorkflowState], Awaitable[Dict[str, Any]]]:
+        async def fn(state: WorkflowState) -> Dict[str, Any]:
+            if name == "gate":
+                return {"gate": {"suppressed": True, "suppressed_by": {"type": "suppression_rule", "rule_id": "r1"}}}
+            if name == "close":
+                return {"disposition": "benign", "close_reason": "suppression_rule"}
+            raise AssertionError(f"unexpected node {name}")
+
+        return fn
+
+
+def test_workflow_state_schema_resolves_and_the_graph_compiles() -> None:
+    """LangGraph reads the schema with get_type_hints: the digest types must resolve at runtime."""
+    hints = get_type_hints(WorkflowState, include_extras=True)
+    assert hints["gate"] is GateDigest and hints["triage"] is TriageDigest
+    assert hints["analyst"] == Optional[AnalystInput] and hints["approval"] == Optional[ApprovalInput]
+    compiled = build_graph(GateClosesNodes(), RoutingThresholds()).compile()
+    assert set(WorkflowState.__annotations__) <= set(compiled.channels)
+
+    final = asyncio.run(compiled.ainvoke({"tenant_id": "t1", "alert_id": "a1", "severity": "low"}))
+    # TypedDicts are erased: the state holds plain dicts, exactly as checkpoints store them.
+    assert type(final["gate"]) is dict
+    assert final["gate"]["suppressed_by"] == {"type": "suppression_rule", "rule_id": "r1"}
+    assert final["disposition"] == "benign"
 
