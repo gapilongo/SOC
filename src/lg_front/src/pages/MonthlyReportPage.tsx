@@ -80,61 +80,69 @@ function Report({ r }: { r: MonthlyReportOut }) {
           {formatPct(o.ai_inconclusive_rate)}.
         </p>
         {r.accuracy.by_model.length > 0 && (
-          <table className="mt-2 w-full text-sm">
-            <caption className="text-left text-xs text-secondary">By model</caption>
-            <thead>
-              <tr className="text-left text-xs uppercase text-secondary">
-                <th scope="col" className="py-1 pr-2">Model</th>
-                <th scope="col" className="py-1 pr-2 text-right">Samples</th>
-                <th scope="col" className="py-1 pr-2 text-right">Agreement</th>
-                <th scope="col" className="py-1 text-right">False-negative rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {r.accuracy.by_model.map((m) => (
-                <tr key={m.model} className="border-t border-subtle tabular-nums">
-                  <td className="break-all py-1 pr-2">{m.model}</td>
-                  <td className="py-1 pr-2 text-right">{formatInt(m.accuracy.samples)}</td>
-                  <td className="py-1 pr-2 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
-                  <td className="py-1 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
+          // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+          <div role="region" aria-label="Accuracy by model" tabIndex={0} className="relative mt-2 overflow-x-auto print:overflow-visible">
+            <table className="w-full text-sm">
+              <caption className="text-left text-xs text-secondary">By model</caption>
+              <thead>
+                <tr className="text-left text-xs uppercase text-secondary">
+                  <th scope="col" className="py-1 pr-2">Model</th>
+                  <th scope="col" className="py-1 pr-2 text-right">Samples</th>
+                  <th scope="col" className="py-1 pr-2 text-right">Agreement</th>
+                  <th scope="col" className="py-1 text-right">False-negative rate</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {r.accuracy.by_model.map((m) => (
+                  <tr key={m.model} className="border-t border-subtle tabular-nums">
+                    <td className="break-all py-1 pr-2">{m.model}</td>
+                    <td className="py-1 pr-2 text-right">{formatInt(m.accuracy.samples)}</td>
+                    <td className="py-1 pr-2 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
+                    <td className="py-1 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
       <section aria-labelledby="m-detections">
         <h2 id="m-detections" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
           3. Detection tuning
         </h2>
-        <table className="w-full text-sm">
-          <caption className="text-left text-xs text-secondary">Busiest {Math.min(TOP_DETECTIONS, r.detections.detections.length)} detections by volume</caption>
-          <thead>
-            <tr className="text-left text-xs uppercase text-secondary">
-              <th scope="col" className="py-1 pr-2">Source</th>
-              <th scope="col" className="py-1 pr-2">Rule</th>
-              <th scope="col" className="py-1 pr-2 text-right">Volume</th>
-              <th scope="col" className="py-1 pr-2 text-right">Benign</th>
-              <th scope="col" className="py-1 pr-2 text-right">Analyst FP</th>
-              <th scope="col" className="py-1">Suggestion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.detections.detections.slice(0, TOP_DETECTIONS).map((d) => (
-              <tr key={`${d.source_id}-${d.rule_field}-${d.rule}`} className="break-inside-avoid border-t border-subtle align-top tabular-nums">
-                <td className="py-1 pr-2">{d.source_id}</td>
-                <td className="break-words py-1 pr-2">{d.rule}</td>
-                <td className="py-1 pr-2 text-right">{formatInt(d.volume)}</td>
-                <td className="py-1 pr-2 text-right">{formatPct(d.benign_rate, 0)}</td>
-                <td className="py-1 pr-2 text-right">{formatInt(d.analyst_false_positive)}</td>
-                <td className="py-1">
-                  <strong>{d.suggestion ? SUGGESTION_LABEL[d.suggestion] : 'None'}</strong>
-                  <span className="block text-xs text-secondary">{d.reason}</span>
-                </td>
+        {/* On a phone the table scrolls on its own (and takes the keyboard focus to scroll); on paper it prints whole. */}
+        {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+        <div role="region" aria-label="Detection tuning" tabIndex={0} className="relative overflow-x-auto print:overflow-visible">
+          <table className="w-full text-sm">
+            <caption className="text-left text-xs text-secondary">Busiest {Math.min(TOP_DETECTIONS, r.detections.detections.length)} detections by volume</caption>
+            <thead>
+              <tr className="text-left text-xs uppercase text-secondary">
+                <th scope="col" className="py-1 pr-2">Source</th>
+                <th scope="col" className="py-1 pr-2">Rule</th>
+                <th scope="col" className="py-1 pr-2 text-right">Volume</th>
+                <th scope="col" className="py-1 pr-2 text-right">Benign</th>
+                <th scope="col" className="py-1 pr-2 text-right">Analyst FP</th>
+                <th scope="col" className="py-1">Suggestion</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {r.detections.detections.slice(0, TOP_DETECTIONS).map((d) => (
+                <tr key={`${d.source_id}-${d.rule_field}-${d.rule}`} className="break-inside-avoid border-t border-subtle align-top tabular-nums">
+                  <td className="py-1 pr-2">{d.source_id}</td>
+                  <td className="break-words py-1 pr-2">{d.rule}</td>
+                  <td className="py-1 pr-2 text-right">{formatInt(d.volume)}</td>
+                  <td className="py-1 pr-2 text-right">{formatPct(d.benign_rate, 0)}</td>
+                  <td className="py-1 pr-2 text-right">{formatInt(d.analyst_false_positive)}</td>
+                  <td className="py-1">
+                    <strong>{d.suggestion ? SUGGESTION_LABEL[d.suggestion] : 'None'}</strong>
+                    <span className="block text-xs text-secondary">{d.reason}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
       <section aria-labelledby="m-notes">
         <h2 id="m-notes" className="mb-2 border-b-2 border-subtle text-lg font-semibold">
@@ -189,7 +197,7 @@ export default function MonthlyReportPage() {
           Download HTML
         </Button>
       </div>
-      <main className="mx-auto max-w-4xl rounded-control bg-raised px-8 py-8 text-fg shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
+      <main className="mx-auto max-w-4xl rounded-control bg-raised px-4 py-8 sm:px-8 text-fg shadow print:max-w-none print:rounded-none print:p-0 print:shadow-none">
         {!valid && <p role="alert">The month must be YYYY-MM.</p>}
         {valid && q.isPending && <LoadingState label="Loading monthly report" />}
         {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}

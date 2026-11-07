@@ -304,7 +304,9 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
           {r.by_model.length === 0 ? (
             <EmptyState title="No analyst decisions in this range" />
           ) : (
-            <div className="relative overflow-x-auto">
+            // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
+            // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+            <div role="region" aria-label="Accuracy by model" tabIndex={0} className="relative overflow-x-auto">
               <table className="w-full text-sm">
                 <caption className="sr-only">Accuracy by model</caption>
                 <thead className="text-xs uppercase tracking-wide text-muted">
@@ -411,9 +413,9 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                   return (
                     <tr key={key(d)} className="border-t border-subtle align-top">
                       <td className="py-2 pr-3 text-body">
-                        <Truncated value={d.source_id} className="max-w-[10rem]" />
+                        <Truncated value={d.source_id} className="max-w-[7rem]" />
                       </td>
-                      <td className="min-w-[14rem] max-w-xs break-words py-2 pr-3 text-fg">
+                      <td className="min-w-[10rem] max-w-xs break-words py-2 pr-3 text-fg">
                         {d.rule}
                         {d.rule_field === 'title' && <span className="block text-xs text-muted">(alert title; no rule name)</span>}
                       </td>
@@ -425,7 +427,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.auto_closed)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.analyst_false_positive)}</td>
                       <td className="py-2 pr-3 capitalize text-body">{d.median_severity ?? '-'}</td>
-                      <td className="max-w-md py-2 pr-3">
+                      <td className="max-w-[14rem] py-2 pr-3">
                         {d.suggestion ? <Badge tone={d.suggestion === 'candidate_suppression' ? 'info' : 'warn'}>{SUGGESTION_LABEL[d.suggestion]}</Badge> : <span className="text-muted">None</span>}
                         <span className="mt-1 block text-xs text-secondary">{d.reason}</span>
                       </td>
