@@ -55,6 +55,17 @@ const PALETTE = [
   },
 ];
 
+// Layer boundaries (README "Structure", roadmap FE9): app -> pages -> components -> shared kernel
+// (api, auth, live, lib, theme). Imports point down only. Tests are exempt: they compose layers.
+const UP_TO_PAGES_OR_APP = {
+  regex: '^(\\.\\./)+(pages|app)(/|$)',
+  message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
+};
+const UP_TO_COMPONENTS = {
+  regex: '^(\\.\\./)+components(/|$)',
+  message: 'Layer boundary: the shared kernel (api, auth, live, lib, theme) must not import components.',
+};
+
 export default tseslint.config(
   { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
   {
@@ -83,6 +94,18 @@ export default tseslint.config(
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
+    },
+  },
+  {
+    files: ['src/{api,auth,live,lib,theme}/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS] }],
+    },
+  },
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP] }],
     },
   },
   {
@@ -121,6 +144,8 @@ export default tseslint.config(
       'no-restricted-properties': 'off',
       // Tests build and tear down their own query clients.
       'no-restricted-syntax': 'off',
+      // Tests compose layers (a page inside the shell, a guard around a page).
+      'no-restricted-imports': 'off',
     },
   },
   {
