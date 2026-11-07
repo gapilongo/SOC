@@ -11,6 +11,8 @@
 * The email-verified flag (claim ``auth.oidc_email_verified_claim``,
   default ``email_verified``) is surfaced so callers link an identity to a
   local user only by a verified email.
+* Discovery and JWKS documents are streamed and read up to
+  :data:`MAX_JWKS_BYTES`; a larger one is refused before it is buffered.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import httpx
 import jwt
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
 
+from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import AuthSettings
 
@@ -185,15 +188,16 @@ class OIDCVerifier:
 
     async def _get_json(self, url: str) -> Dict[str, Any]:
         try:
-            response = await self._client.get(url, headers={"Accept": "application/json"})
+            async with self._client.stream("GET", url, headers={"Accept": "application/json"}) as response:
+                if response.status_code != 200:
+                    raise OIDCUnavailable(f"fetching {url} returned {response.status_code}")
+                content = await read_capped(response, MAX_JWKS_BYTES)
+        except ResponseTooLarge:
+            raise OIDCUnavailable(f"{url} returned an oversized document") from None
         except httpx.HTTPError as exc:
             raise OIDCUnavailable(f"fetching {url} failed: {type(exc).__name__}") from exc
-        if response.status_code != 200:
-            raise OIDCUnavailable(f"fetching {url} returned {response.status_code}")
-        if len(response.content) > MAX_JWKS_BYTES:
-            raise OIDCUnavailable(f"{url} returned an oversized document")
         try:
-            data = response.json()
+            data = json.loads(content)
         except ValueError as exc:
             raise OIDCUnavailable(f"{url} did not return JSON") from exc
         if not isinstance(data, dict):
