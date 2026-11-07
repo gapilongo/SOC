@@ -23,7 +23,7 @@ TYPES_TS = FRONT_SRC / "api" / "types.ts"
 # blocked_reason codes written by the approval paths rather than by a guardrail.
 REVIEWER_REASONS = ("rejected_by_reviewer", "rejected_with_remaining")
 REVIEWER_SOURCES = (
-    REPO_ROOT / "src" / "lg_sotf" / "services" / "response.py",
+    REPO_ROOT / "src" / "lg_sotf" / "services" / "response" / "__init__.py",
     REPO_ROOT / "src" / "lg_sotf" / "services" / "review.py",
 )
 

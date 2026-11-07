@@ -30,8 +30,8 @@ from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf import __version__
-from lg_sotf.compliance import html as h
 from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
+from lg_sotf.compliance.evidence_html import AGENT_STEPS, render_evidence_html
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import AlertEvent, Escalation, Feedback, Repositories, ResponseAction
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
@@ -47,7 +47,6 @@ MAX_AUDIT_ENTRIES = 2_000
 MAX_SIGHTINGS = 1_000
 PAGE_SIZE = 200
 
-AGENT_STEPS = ("triage", "correlation", "analysis")
 AUTOMATED_NODES = ("gate", "triage", "correlation", "analysis", "decide", "escalate", "plan_response",
                    "execute_actions", "close")
 AI_MALICIOUS = frozenset({"malicious", "suspicious"})
@@ -242,22 +241,15 @@ def _feedback_view(f: Feedback) -> Dict[str, Any]:
     }
 
 
-def human_oversight(
-    summary: Mapping[str, Any],
-    events: Sequence[AlertEvent],
-    escalations: Sequence[Escalation],
-    actions: Sequence[ResponseAction],
-    feedback: Sequence[Feedback],
-    audit: Sequence[Mapping[str, Any]] = (),
-) -> Dict[str, Any]:
-    """Which steps ran automatically, which a person decided or approved, and where a person overrode the automation.
+Step = Dict[str, Any]
 
-    Rollback requests and retries (from the ``audit`` entries of the
-    actions) are human steps; a rollback also counts as an override of the
-    action it undoes.
-    """
-    steps: List[Dict[str, Any]] = []
-    overrides: List[Dict[str, Any]] = []
+
+def _audit_steps(
+    audit: Sequence[Mapping[str, Any]], actions: Sequence[ResponseAction]
+) -> tuple[List[Step], List[Step]]:
+    """Rollback and retry requests from the actions' audit entries (human steps; a rollback also overrides)."""
+    steps: List[Step] = []
+    overrides: List[Step] = []
     by_id = {str(a.id): a for a in actions}
     for entry in audit:
         action = by_id.get(str(entry.get("resource_id")))
@@ -278,13 +270,24 @@ def human_oversight(
                 {"at": entry.get("ts"), "step": f"retry_requested:{action.action_type}", "mode": "human",
                  "actor": entry.get("actor_id"), "detail": (details or {}).get("reason")}
             )
+    return steps, overrides
+
+
+def _event_steps(events: Sequence[AlertEvent]) -> List[Step]:
+    """Completed workflow nodes (automated) and timeline events a user caused (human)."""
+    steps: List[Step] = []
     for e in events:
         if e.event_type == "node.completed" and e.node in AUTOMATED_NODES:
             steps.append({"at": e.ts, "step": e.node, "mode": "automated", "actor": e.actor_id, "detail": None})
         elif e.actor_type == "user":
             steps.append({"at": e.ts, "step": e.event_type, "mode": "human", "actor": e.actor_id, "detail": None})
-    analysis = _obj(summary.get("analysis"))
-    ai_verdict = analysis.get("verdict")
+    return steps
+
+
+def _escalation_steps(escalations: Sequence[Escalation], ai_verdict: Any) -> tuple[List[Step], List[Step]]:
+    """Escalation, claim and analyst decision; a decision contradicting the AI verdict is an override."""
+    steps: List[Step] = []
+    overrides: List[Step] = []
     for esc in escalations:
         steps.append(
             {"at": esc.created_at, "step": "escalated", "mode": "automated", "actor": "workflow",
@@ -308,6 +311,13 @@ def human_oversight(
                     {"at": esc.decided_at, "kind": "verdict_overridden", "actor": esc.decided_by,
                      "detail": f"automated verdict {ai_verdict!s} -> analyst decision {esc.decision}"}
                 )
+    return steps, overrides
+
+
+def _action_steps(actions: Sequence[ResponseAction]) -> tuple[List[Step], List[Step]]:
+    """Approval (by a person or by policy), rejection (an override), guardrail block and execution."""
+    steps: List[Step] = []
+    overrides: List[Step] = []
     for a in actions:
         if a.approved_by and a.status != "rejected":
             human = a.approved_by != POLICY_APPROVER
@@ -334,6 +344,12 @@ def human_oversight(
                 {"at": a.executed_at, "step": f"action_executed:{a.action_type}", "mode": "automated",
                  "actor": a.connector, "detail": a.status}
             )
+    return steps, overrides
+
+
+def _feedback_overrides(feedback: Sequence[Feedback]) -> List[Step]:
+    """Analyst feedback that judged an agent's output wrong or unhelpful."""
+    overrides: List[Step] = []
     for f in feedback:
         for field, label in (
             ("triage_correct", "triage"),
@@ -345,6 +361,31 @@ def human_oversight(
                     {"at": f.created_at, "kind": "agent_output_disputed", "actor": f.user_id,
                      "detail": f"analyst feedback: {label} output judged wrong or unhelpful"}
                 )
+    return overrides
+
+
+def human_oversight(
+    summary: Mapping[str, Any],
+    events: Sequence[AlertEvent],
+    escalations: Sequence[Escalation],
+    actions: Sequence[ResponseAction],
+    feedback: Sequence[Feedback],
+    audit: Sequence[Mapping[str, Any]] = (),
+) -> Dict[str, Any]:
+    """Which steps ran automatically, which a person decided or approved, and where a person overrode the automation.
+
+    Rollback requests and retries (from the ``audit`` entries of the
+    actions) are human steps; a rollback also counts as an override of the
+    action it undoes.
+    """
+    # The sorts are stable: equal keys keep this append order (audit, events, escalations, actions, feedback),
+    # and bundle_sha256 depends on it.
+    audit_steps, audit_overrides = _audit_steps(audit, actions)
+    ai_verdict = _obj(summary.get("analysis")).get("verdict")
+    escalation_steps, escalation_overrides = _escalation_steps(escalations, ai_verdict)
+    action_steps, action_overrides = _action_steps(actions)
+    steps = [*audit_steps, *_event_steps(events), *escalation_steps, *action_steps]
+    overrides = [*audit_overrides, *escalation_overrides, *action_overrides, *_feedback_overrides(feedback)]
     steps.sort(key=lambda s: (str(jsonable(s["at"])), s["step"]))
     overrides.sort(key=lambda s: str(jsonable(s["at"])))
     human_steps = [s for s in steps if s["mode"] == "human"]
@@ -466,208 +507,6 @@ async def build_evidence_pack(
     }
     document = jsonable(pack)
     return seal(document, optional_signing_key(settings))
-
-
-# ------------------------------------------------------------------ HTML
-
-
-def _step_rows(steps: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    return [{**s, "mode": "HUMAN" if s.get("mode") == "human" else "automated"} for s in steps]
-
-
-def render_evidence_html(pack: Mapping[str, Any]) -> str:
-    """The pack as a standalone, print-friendly HTML document (every value escaped)."""
-    alert = _obj(pack.get("alert"))
-    integrity = _obj(pack.get("integrity"))
-    signature = _obj(integrity.get("signature"))
-    oversight = _obj(pack.get("human_oversight"))
-    osum = _obj(oversight.get("summary"))
-    agents = _obj(pack.get("agents"))
-    audit = _obj(pack.get("audit"))
-    chain = _obj(audit.get("chain_verification"))
-    limits = _obj(pack.get("limits"))
-    body: List[str] = [
-        f'<div class="notice">{h.esc(h.UNTRUSTED_NOTICE)}</div>',
-        h.kv_table(
-            [
-                ("Alert id", alert.get("id")),
-                ("Tenant", pack.get("tenant_id")),
-                ("Title (untrusted)", alert.get("title")),
-                ("Severity / status / disposition",
-                 f"{alert.get('severity')} / {alert.get('status')} / {alert.get('disposition') or '-'}"),
-                ("Confidence / threat score", f"{alert.get('confidence')} / {alert.get('threat_score')}"),
-                ("Occurred / ingested / closed",
-                 f"{alert.get('occurred_at')} / {alert.get('ingested_at')} / {alert.get('closed_at') or '-'}"),
-                ("Source", f"{alert.get('source_id')} ({alert.get('source_alert_id')})"),
-                ("Generated", f"{pack.get('generated_at')} by {_obj(pack.get('generated_by')).get('actor_id')}"),
-                ("LG-SOTF version", pack.get("lg_sotf_version")),
-            ]
-        ),
-    ]
-    overrides = oversight.get("overrides") or []
-    body.append(
-        h.section(
-            "Human oversight",
-            h.kv_table(
-                [
-                    ("Automated steps", osum.get("automated_steps")),
-                    ("Steps taken by a person", osum.get("human_steps")),
-                    ("Analyst decisions", osum.get("human_decisions")),
-                    ("Human action approvals", osum.get("human_action_approvals")),
-                    ("Overrides of the automation", osum.get("overrides")),
-                    ("Closed without human involvement", osum.get("closed_without_human")),
-                    ("Close reason", osum.get("close_reason")),
-                ]
-            ),
-            "<h3>Steps</h3>",
-            h.table(
-                [("at", "When"), ("step", "Step"), ("mode", "Mode"), ("actor", "Actor"), ("detail", "Detail")],
-                _step_rows(oversight.get("steps") or []),
-            ),
-            "<h3>Overrides</h3>",
-            h.table([("at", "When"), ("kind", "Kind"), ("actor", "Actor"), ("detail", "Detail")], overrides,
-                    empty="No human override of the automation was recorded."),
-            anchor="oversight",
-        )
-    )
-    agent_parts: List[str] = []
-    for step in AGENT_STEPS:
-        info = _obj(agents.get(step))
-        model = _obj(info.get("model"))
-        model_text = (
-            f"{model.get('provider')} / {model.get('model')} ({model.get('tier')} tier)"
-            if model.get("recorded")
-            else model.get("note")
-        )
-        agent_parts.append(f"<h3>{h.esc(step.title())}</h3>")
-        agent_parts.append(
-            h.kv_table(
-                [
-                    ("Ran", info.get("ran")),
-                    ("Completed at", info.get("completed_at")),
-                    ("LLM used", info.get("llm_used")),
-                    ("Provider / model", model_text),
-                    ("Verdict", info.get("verdict")),
-                    ("Confidence", info.get("confidence")),
-                    ("Threat score", info.get("threat_score")),
-                    ("Conclusion (model output, untrusted)", info.get("conclusion")),
-                    ("Reasoning (model output, untrusted)", info.get("reasoning")),
-                ]
-            )
-        )
-    agent_parts.append("<h3>Routing decision</h3>" + h.pre(agents.get("decision") or {}))
-    body.append(h.section("Agent reasoning and verdicts", *agent_parts, anchor="agents"))
-    enrichment = _obj(pack.get("enrichment"))
-    body.append(
-        h.section(
-            "Enrichment and correlation",
-            "<h3>Observations</h3>",
-            h.pre(enrichment.get("observations") or []),
-            "<h3>Indicator sightings</h3>",
-            h.table(
-                [("indicator_type", "Type"), ("value_display", "Value (display)"), ("seen_at", "Seen")],
-                enrichment.get("indicator_sightings") or [],
-            ),
-            "<h3>Correlation</h3>",
-            h.pre(pack.get("correlation") or {}),
-        )
-    )
-    body.append(
-        h.section(
-            "Escalations",
-            h.table(
-                [("id", "Id"), ("level", "Level"), ("status", "Status"), ("reason", "Reason"),
-                 ("created_at", "Created"), ("assigned_to", "Claimed by"), ("claimed_at", "Claimed"),
-                 ("decision", "Decision"), ("decided_by", "Decided by"), ("decided_at", "Decided"),
-                 ("decision_notes", "Notes")],
-                pack.get("escalations") or [],
-            ),
-        )
-    )
-    body.append(
-        h.section(
-            "Analyst feedback",
-            h.table(
-                [("created_at", "When"), ("user_id", "Analyst"), ("decision", "Decision"),
-                 ("triage_correct", "Triage correct"), ("correlation_helpful", "Correlation helpful"),
-                 ("analysis_accurate", "Analysis accurate"), ("notes", "Notes")],
-                pack.get("feedback") or [],
-            ),
-        )
-    )
-    body.append(
-        h.section(
-            "Response ledger",
-            h.table(
-                [("action_type", "Action"), ("target", "Target"), ("risk_level", "Risk"), ("status", "Status"),
-                 ("requested_by", "Requested by"), ("approved_by", "Approved by"), ("approved_at", "Approved"),
-                 ("executed_at", "Executed"), ("connector", "Connector"), ("verification", "Verification"),
-                 ("verified_at", "Verified"), ("rollback_of", "Rolls back"), ("blocked_reason", "Blocked reason")],
-                pack.get("actions") or [],
-            ),
-        )
-    )
-    body.append(
-        h.section(
-            "Timeline",
-            h.table(
-                [("ts", "When"), ("event_type", "Event"), ("node", "Node"), ("actor_type", "Actor type"),
-                 ("actor_id", "Actor"), ("data", "Data")],
-                pack.get("timeline") or [],
-            ),
-        )
-    )
-    chain_ok = chain.get("ok")
-    chain_text = "not checked (no related entries)" if chain_ok is None else ("VALID" if chain_ok else "BROKEN")
-    body.append(
-        h.section(
-            "Audit trail",
-            h.kv_table(
-                [
-                    ("Chain verification", f"{chain_text} (from {chain.get('since') or '-'})"),
-                    ("First bad entry", chain.get("first_bad_id")),
-                    ("Included entries' hashes recomputed and valid", audit.get("included_entry_hashes_valid")),
-                ]
-            ),
-            h.table(
-                [("id", "Id"), ("ts", "When"), ("actor_type", "Actor type"), ("actor_id", "Actor"),
-                 ("action", "Action"), ("resource_type", "Resource"), ("resource_id", "Resource id"),
-                 ("prev_hash", "Previous hash"), ("hash", "Hash"), ("hash_valid", "Hash valid")],
-                audit.get("entries") or [],
-            ),
-        )
-    )
-    body.append(
-        h.section(
-            "Alert data (untrusted)",
-            "<h3>Normalised</h3>",
-            h.pre(alert.get("normalized") or {}),
-            f"<h3>Raw event (redacted; {h.esc(alert.get('raw_redactions'))} redactions)</h3>",
-            h.pre(alert.get("raw_redacted") or {}),
-        )
-    )
-    body.append(
-        h.section(
-            "Integrity",
-            h.kv_table(
-                [
-                    ("bundle_sha256", integrity.get("bundle_sha256")),
-                    ("Canonicalisation", integrity.get("canonicalization")),
-                    ("Signature", f"{signature.get('alg')} key {signature.get('key_id')}" if signature else "unsigned"),
-                    ("Truncated lists", ", ".join(k for k, v in limits.items() if v) or "none"),
-                ]
-            ),
-            h.paragraph(
-                "The digest and signature cover the JSON bundle, not this HTML rendering. Verify the JSON with "
-                "`lg-sotf evidence-verify <file>` (see docs/compliance.md)."
-            ),
-        )
-    )
-    return h.document(
-        f"Case evidence pack: alert {alert.get('id')}",
-        body,
-        subtitle="LG-SOTF case record for review, audit and incident reporting.",
-    )
 
 
 __all__ = [

@@ -12,7 +12,7 @@ Pure values: standard library only, no I/O (docs/adr/0001-layering.md).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, Literal, Optional
+from typing import Any, Dict, FrozenSet, Literal, Optional
 
 __all__ = [
     "ACTION_CATALOG",
@@ -28,6 +28,7 @@ __all__ = [
     "PROTECTED_INVALID_REASON",
     "ActionSpec",
     "TargetKind",
+    "guardrail_result",
 ]
 
 TargetKind = Literal["ip", "domain", "url", "hash", "user", "host", "process", "alert", "email", "message"]
@@ -183,3 +184,8 @@ GUARDRAIL_REASONS: Dict[str, str] = {
         "executing it"
     ),
 }
+
+
+def guardrail_result(code: str, /, **detail: Any) -> Dict[str, Any]:
+    """The ``result`` of a row a guardrail blocked after planning: the code, its explanation, then ``detail``."""
+    return {"guardrail": code, "explanation": GUARDRAIL_REASONS.get(code, code), **detail}
