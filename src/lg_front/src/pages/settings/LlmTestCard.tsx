@@ -52,7 +52,7 @@ export function LlmTestCard() {
               Provider <span className="font-mono text-xs">{out.provider}</span>
               <Badge tone={out.ok ? 'good' : 'bad'}>{out.ok ? 'both tiers answered' : 'check failed'}</Badge>
             </p>
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-sm">
                 <caption className="sr-only">Model test results</caption>
                 <thead className="text-xs uppercase tracking-wide text-muted">
