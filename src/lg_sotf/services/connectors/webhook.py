@@ -103,7 +103,8 @@ import httpx
 
 from lg_sotf.domain.connectors import ConnectorConfigError, ConnectorResult
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, Resolver, system_resolve
+from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify
 from lg_sotf.observability.logging import get_logger
@@ -191,10 +192,6 @@ class WebhookTarget:
             raise ConnectorConfigError(f"webhook secret must be at least {MIN_SECRET_BYTES} bytes")
 
 
-class _ResponseTooLarge(Exception):
-    pass
-
-
 class WebhookConnector:
     """Delivers each action once per execution with retries; see the module docstring for the wire format."""
 
@@ -260,15 +257,14 @@ class WebhookConnector:
         return self._deadline_s
 
     def _client(self) -> httpx.AsyncClient:
-        verify = self._tls.resolve(self._target.verify)
-        inner = self._transport or httpx.AsyncHTTPTransport(verify=verify)
-        guarded = GuardedTransport(inner, self._policy, self._resolver, pin=self._transport is None)
-        return httpx.AsyncClient(
-            verify=verify,
+        return guarded_client(
+            policy=self._policy,
+            verify=self._tls.resolve(self._target.verify),
+            user_agent=USER_AGENT,
             timeout=httpx.Timeout(self._timeout_s, connect=self._connect_timeout_s),
-            transport=guarded,
-            follow_redirects=False,
-            headers={"User-Agent": USER_AGENT},
+            transport=self._transport,
+            resolver=self._resolver,
+            pin=self._transport is None,
         )
 
     def _backoff(self, attempt: int) -> float:
@@ -305,7 +301,7 @@ class WebhookConnector:
                 except SourceConfigError:
                     log.warning("response.webhook_destination_refused", action_type=action.action_type)
                     return ConnectorResult("failed", {**base, "error": "destination_refused", "attempts": attempt + 1})
-                except _ResponseTooLarge:
+                except ResponseTooLarge:
                     return ConnectorResult("failed", {**base, "error": "response_too_large", "attempts": attempt + 1})
                 except (httpx.TransportError, TimeoutError) as exc:
                     if attempt >= self._max_retries:
@@ -355,16 +351,10 @@ class WebhookConnector:
         async with asyncio.timeout(timeout_s):
             response = await client.send(request, stream=True)
             try:
-                chunks = []
-                total = 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if total > self._max_response_bytes:
-                        raise _ResponseTooLarge()
-                    chunks.append(chunk)
+                body = await read_capped(response, self._max_response_bytes)
             finally:
                 await response.aclose()
-        return response.status_code, _Received(response.headers, b"".join(chunks))
+        return response.status_code, _Received(response.headers, body)
 
     def _outcome(
         self, action: ResponseAction, base: Dict[str, Any], status: int, body: bytes, attempts: int

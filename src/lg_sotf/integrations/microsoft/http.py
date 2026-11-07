@@ -63,7 +63,6 @@ import asyncio
 import json
 import random
 import re
-import ssl
 import uuid
 from dataclasses import dataclass, field
 from typing import (
@@ -85,8 +84,10 @@ import httpx
 
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.integrations.microsoft.clouds import Api
-from lg_sotf.net.egress import GuardedTransport, Resolver, egress_policy, system_resolve
+from lg_sotf.net.egress import Resolver, egress_policy, system_resolve
+from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
+from lg_sotf.net.tls import PROCESS_TLS, TlsContexts
 from lg_sotf.observability.logging import get_logger
 
 if TYPE_CHECKING:
@@ -201,10 +202,6 @@ class ReadOnlyViolation(RuntimeError):
     """A write was attempted through a read-only client (a handler bug; never sent)."""
 
 
-class _TooLarge(Exception):
-    pass
-
-
 class _Bucket:
     """Token bucket with reservations (``tokens`` goes negative while callers wait their turn)."""
 
@@ -267,7 +264,8 @@ class MicrosoftHttpFactory:
 
     An injected ``transport`` is still wrapped by the destination policy but
     not pinned (it must see the original host), as in
-    :class:`~lg_sotf.services.connectors.registry.ConnectorRegistry`.
+    :class:`~lg_sotf.services.connectors.registry.ConnectorRegistry`. TLS uses
+    the system CAs through the process's shared default context (``tls``).
     """
 
     def __init__(
@@ -278,6 +276,7 @@ class MicrosoftHttpFactory:
         resolver: Optional[Resolver] = None,
         sleep: SleepFn = asyncio.sleep,
         rand: Callable[[], float] = random.random,
+        tls: TlsContexts = PROCESS_TLS,
     ) -> None:
         self._settings = settings
         # Microsoft endpoints are https, whatever the environment.
@@ -286,7 +285,7 @@ class MicrosoftHttpFactory:
         self._resolver = resolver or system_resolve
         self._sleep = sleep
         self._rand = rand
-        self._ssl: Optional[ssl.SSLContext] = None
+        self._tls = tls
         self._buckets: Dict[Tuple[str, str], _Bucket] = {}
 
     @property
@@ -317,21 +316,15 @@ class MicrosoftHttpFactory:
     async def sleep(self, seconds: float) -> None:
         await self._sleep(max(0.0, seconds))
 
-    def _ssl_context(self) -> ssl.SSLContext:
-        if self._ssl is None:
-            self._ssl = httpx.create_ssl_context()
-        return self._ssl
-
     def _client(self, timeout_s: float) -> httpx.AsyncClient:
-        verify: Any = self._ssl_context() if self._transport is None else True
-        inner = self._transport or httpx.AsyncHTTPTransport(verify=verify)
-        guarded = GuardedTransport(inner, self._policy, self._resolver, pin=self._transport is None)
-        return httpx.AsyncClient(
-            verify=verify,
+        return guarded_client(
+            policy=self._policy,
+            verify=self._tls.default(),
+            user_agent=USER_AGENT,
             timeout=httpx.Timeout(timeout_s, connect=min(5.0, timeout_s)),
-            transport=guarded,
-            follow_redirects=False,
-            headers={"User-Agent": USER_AGENT},
+            transport=self._transport,
+            resolver=self._resolver,
+            pin=self._transport is None,
         )
 
     async def send_once(
@@ -350,16 +343,10 @@ class MicrosoftHttpFactory:
             async with asyncio.timeout(timeout_s + 0.5):
                 response = await client.send(request, stream=True)
                 try:
-                    chunks: List[bytes] = []
-                    total = 0
-                    async for chunk in response.aiter_bytes():
-                        total += len(chunk)
-                        if total > max_bytes:
-                            raise _TooLarge()
-                        chunks.append(chunk)
+                    body = await read_capped(response, max_bytes)
                 finally:
                     await response.aclose()
-        return response.status_code, b"".join(chunks), response.headers
+        return response.status_code, body, response.headers
 
     async def post_form(
         self, url: str, form: Mapping[str, str], *, timeout_s: float
@@ -582,7 +569,7 @@ class MicrosoftApi:
                 status, raw, response_headers = await factory.send_once(
                     method, url, headers=send_headers, content=content, timeout_s=timeout_s, max_bytes=max_bytes
                 )
-            except _TooLarge:
+            except ResponseTooLarge:
                 raise MicrosoftApiError(
                     "size", f"{self.api} response exceeded {max_bytes} bytes", retryable=False,
                     ambiguous=not idem,
