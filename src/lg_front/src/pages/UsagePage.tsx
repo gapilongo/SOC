@@ -8,7 +8,7 @@ import type { UsageDayOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField } from '../components/ui';
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../lib/csv';
-import { formatInt, formatUsd } from '../lib/format';
+import { formatInt, formatUsd, formatUsdAxis } from '../lib/format';
 import { defaultRange, isoDay, rangeError } from '../lib/reports';
 
 export interface DayTotal {
@@ -58,9 +58,9 @@ function CostChart({ days }: { days: DayTotal[] }) {
           const y = pad.t + plotH - (t / max) * plotH;
           return (
             <g key={t}>
-              <line x1={pad.l} x2={width - pad.r} y1={y} y2={y} stroke="#334155" strokeWidth={1} />
-              <text x={pad.l - 6} y={y + 4} textAnchor="end" fontSize={11} fill="#94a3b8">
-                {formatUsd(t)}
+              <line x1={pad.l} x2={width - pad.r} y1={y} y2={y} className="stroke-strong" strokeWidth={1} />
+              <text x={pad.l - 6} y={y + 4} textAnchor="end" fontSize={11} className="fill-muted">
+                {formatUsdAxis(t)}
               </text>
             </g>
           );
@@ -76,7 +76,7 @@ function CostChart({ days }: { days: DayTotal[] }) {
                 width={barW}
                 height={Math.max(0, h)}
                 rx={Math.min(4, barW / 2)}
-                fill={hover === i ? '#7dd3fc' : '#0ea5e9'}
+                className={hover === i ? 'fill-link' : 'fill-accent'}
               />
               <rect
                 x={pad.l + i * step}
@@ -88,7 +88,7 @@ function CostChart({ days }: { days: DayTotal[] }) {
                 onMouseLeave={() => setHover(null)}
               />
               {i % labelEvery === 0 && (
-                <text x={x + barW / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="#94a3b8">
+                <text x={x + barW / 2} y={height - 8} textAnchor="middle" fontSize={11} className="fill-muted">
                   {d.day.slice(5)}
                 </text>
               )}
@@ -172,7 +172,7 @@ export default function UsagePage() {
             {q.data.days.length === 0 ? (
               <EmptyState title="No LLM usage in this range" />
             ) : (
-              <div className="max-h-[28rem] overflow-auto">
+              <div className="relative max-h-[28rem] overflow-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
                   <caption className="sr-only">LLM usage rows</caption>
                   <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
@@ -189,14 +189,14 @@ export default function UsagePage() {
                   <tbody>
                     {q.data.days.map((r) => (
                       <tr key={`${r.day}-${r.model}-${r.agent}`} className="border-t border-subtle tabular-nums">
-                        <td className="py-1.5 pr-3 text-body">{r.day}</td>
+                        <td className="whitespace-nowrap py-1.5 pr-3 text-body">{r.day}</td>
                         <td className="py-1.5 pr-3 text-body">{r.model}</td>
                         <td className="py-1.5 pr-3 text-secondary">{r.agent}</td>
                         <td className="py-1.5 pr-3 text-right">{formatInt(r.calls)}</td>
-                        <td className="py-1.5 pr-3 text-right">
+                        <td className="whitespace-nowrap py-1.5 pr-3 text-right">
                           {formatInt(r.input_tokens)} / {formatInt(r.output_tokens)}
                         </td>
-                        <td className="py-1.5 pr-3 text-right">
+                        <td className="whitespace-nowrap py-1.5 pr-3 text-right">
                           {formatInt(r.refusals)} / {formatInt(r.errors)}
                         </td>
                         <td className="py-1.5 text-right">{formatUsd(r.cost_usd)}</td>

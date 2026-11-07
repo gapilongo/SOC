@@ -10,7 +10,7 @@ import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
 import { Badge } from '../components/Badge';
 import { useToast } from '../components/Toast';
-import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, cx } from '../components/ui';
+import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, Truncated, cx } from '../components/ui';
 import { downloadText } from '../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../lib/format';
 import { SUGGESTION_LABEL, defaultRange, formatHours, formatPct, formatRange, monthOf, rangeError } from '../lib/reports';
@@ -28,10 +28,11 @@ const NEEDED_COLOR = '#d95926';
 
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
-    <div className="rounded-card border border-subtle bg-raised p-4">
+    // A subgrid of the row: labels, values and hints line up across the tiles even when a label wraps.
+    <div className="row-span-3 grid grid-rows-subgrid gap-0 rounded-card border border-subtle bg-raised p-4">
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums text-fg">{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-muted">{hint}</div>}
+      <div className="mt-0.5 text-xs text-muted">{hint}</div>
     </div>
   );
 }
@@ -96,8 +97,8 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
           const ty = pad.t + plotH - f * plotH;
           return (
             <g key={f}>
-              <line x1={pad.l} x2={width - pad.r} y1={ty} y2={ty} stroke="#334155" strokeWidth={1} />
-              <text x={pad.l - 6} y={ty + 4} textAnchor="end" fontSize={11} fill="#94a3b8">
+              <line x1={pad.l} x2={width - pad.r} y1={ty} y2={ty} className="stroke-strong" strokeWidth={1} />
+              <text x={pad.l - 6} y={ty + 4} textAnchor="end" fontSize={11} className="fill-muted">
                 {formatInt(Math.round(f * max))}
               </text>
             </g>
@@ -128,7 +129,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
               )}
               <rect x={pad.l + i * step} y={pad.t} width={step} height={plotH} fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />
               {i % labelEvery === 0 && (
-                <text x={x + barW / 2} y={height - 8} textAnchor="middle" fontSize={11} fill="#94a3b8">
+                <text x={x + barW / 2} y={height - 8} textAnchor="middle" fontSize={11} className="fill-muted">
                   {d.day.slice(5)}
                 </text>
               )}
@@ -172,7 +173,7 @@ function ValueTab({ from, to }: { from: string; to: string }) {
       </div>
       <Card title="Daily outcomes">{r.days.length ? <DailyChart days={r.days} /> : <EmptyState title="No days in range" />}</Card>
       <Card title="Daily figures">
-        <div className="max-h-[28rem] overflow-auto">
+        <div className="relative max-h-[28rem] overflow-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <caption className="sr-only">Value report by day</caption>
             <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
@@ -292,7 +293,7 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
           hint={`AI said malicious on ${formatInt(o.false_positives)} of ${formatInt(o.analyst_benign)} benign alerts; inconclusive on ${formatPct(o.ai_inconclusive_rate)} of all`}
         />
       </div>
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
         <Card title="Confusion matrix">
           <ConfusionMatrix block={o} />
         </Card>
@@ -300,31 +301,33 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
           {r.by_model.length === 0 ? (
             <EmptyState title="No analyst decisions in this range" />
           ) : (
-            <table className="w-full text-sm">
-              <caption className="sr-only">Accuracy by model</caption>
-              <thead className="text-xs uppercase tracking-wide text-muted">
-                <tr>
-                  <th scope="col" className="py-2 pr-3 text-left">Model</th>
-                  <th scope="col" className="py-2 pr-3 text-right">Samples</th>
-                  <th scope="col" className="py-2 pr-3 text-right">Agreement</th>
-                  <th scope="col" className="py-2 pr-3 text-right">False negatives</th>
-                  <th scope="col" className="py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {r.by_model.map((m) => (
-                  <tr key={m.model} className="border-t border-subtle tabular-nums">
-                    <th scope="row" className="break-all py-1.5 pr-3 text-left font-normal text-body">
-                      {m.model}
-                    </th>
-                    <td className="py-1.5 pr-3 text-right">{formatInt(m.accuracy.samples)}</td>
-                    <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
-                    <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
-                    <td className="py-1.5">{m.accuracy.status === 'ok' ? <Badge tone="good">ok</Badge> : <Badge tone="warn">insufficient data</Badge>}</td>
+            <div className="relative overflow-x-auto">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Accuracy by model</caption>
+                <thead className="text-xs uppercase tracking-wide text-muted">
+                  <tr>
+                    <th scope="col" className="py-2 pr-3 text-left">Model</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Samples</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Agreement</th>
+                    <th scope="col" className="py-2 pr-3 text-right">False negatives</th>
+                    <th scope="col" className="py-2">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {r.by_model.map((m) => (
+                    <tr key={m.model} className="border-t border-subtle tabular-nums">
+                      <th scope="row" className="break-all py-1.5 pr-3 text-left font-normal text-body">
+                        {m.model}
+                      </th>
+                      <td className="py-1.5 pr-3 text-right">{formatInt(m.accuracy.samples)}</td>
+                      <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
+                      <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
+                      <td className="py-1.5">{m.accuracy.status === 'ok' ? <Badge tone="good">ok</Badge> : <Badge tone="warn">insufficient data</Badge>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
       </div>
@@ -381,7 +384,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
         {r.detections.length === 0 ? (
           <EmptyState title="No alerts in this range" />
         ) : (
-          <div className="overflow-x-auto">
+          <div className="relative overflow-x-auto">
             <table className="w-full min-w-[960px] text-left text-sm">
               <caption className="sr-only">Detections by source and rule</caption>
               <thead className="text-xs uppercase tracking-wide text-muted">
@@ -404,8 +407,10 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                   const done = proposed[key(d)];
                   return (
                     <tr key={key(d)} className="border-t border-subtle align-top">
-                      <td className="py-2 pr-3 text-body">{d.source_id}</td>
-                      <td className="max-w-xs break-words py-2 pr-3 text-fg">
+                      <td className="py-2 pr-3 text-body">
+                        <Truncated value={d.source_id} className="max-w-[10rem]" />
+                      </td>
+                      <td className="min-w-[14rem] max-w-xs break-words py-2 pr-3 text-fg">
                         {d.rule}
                         {d.rule_field === 'title' && <span className="block text-xs text-muted">(alert title; no rule name)</span>}
                       </td>
