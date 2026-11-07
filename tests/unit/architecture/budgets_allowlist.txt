@@ -5,7 +5,6 @@
 # Modules
 mcp/tester.py	965
 services/reporting.py	852
-services/response.py	2527
 
 # Functions
 agents/correlation/base.py::CorrelationAgent._run	88

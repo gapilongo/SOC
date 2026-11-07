@@ -9,7 +9,7 @@ import asyncpg
 import httpx
 import pytest
 
-import lg_sotf.services.response as response_module
+import lg_sotf.services.response.execution as execution_module
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.services.connectors import WebhookConnector, WebhookTarget
 from lg_sotf.services.response import ResponseService
@@ -75,7 +75,7 @@ async def test_hourly_cap_window_uses_the_database_clock(
         await service.execute(TENANT_A, alert_id, [str(action_id)])
     async with db.system_tx() as conn:  # both ran 55 minutes ago on the database clock
         await conn.execute("UPDATE response_actions SET executed_at = now() - interval '55 minutes' WHERE status = 'succeeded'")
-    monkeypatch.setattr(response_module, "datetime", _FastClock)  # the worker's clock runs 6 minutes fast
+    monkeypatch.setattr(execution_module, "datetime", _FastClock)  # the worker's clock runs 6 minutes fast
     alert_id, action_id = ids[2]
     await service.execute(TENANT_A, alert_id, [str(action_id)])
     third = await repos.actions.get(TENANT_A, action_id)

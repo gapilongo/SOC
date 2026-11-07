@@ -92,7 +92,7 @@ SITES: List[Tuple[Any, str]] = [
     (v.ActionStatus, "lg_sotf.mcp.tester:ActionStatus"),
     (v.COMPLETED_ACTION_STATUSES, "lg_sotf.domain.routing:COMPLETED_ACTION_STATUSES"),
     (v.RISK_LEVELS, "lg_sotf.db.repos.actions:RISK_LEVELS"),
-    (v.RISK_LEVELS, "lg_sotf.services.response:RISK_LEVELS"),
+    (v.RISK_LEVELS, "lg_sotf.services.response.policy:RISK_LEVELS"),
     (v.RiskLevel, "lg_sotf.api.routers.review:Risk"),
     (v.RISK_LEVELS, "lg_sotf.mcp.tester:RISKS"),
     (v.RiskLevel, "lg_sotf.mcp.tester:Risk"),
