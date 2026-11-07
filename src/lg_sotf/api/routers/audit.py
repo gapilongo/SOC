@@ -17,9 +17,9 @@ from pydantic import BaseModel, Field
 
 from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import aware
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.routers.alerts import aware
 from lg_sotf.api.schemas import Out, PageOut
 from lg_sotf.db.pagination import API_MAX_LIMIT
 

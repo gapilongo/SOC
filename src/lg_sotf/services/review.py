@@ -78,6 +78,7 @@ from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Alert, Repositories, ResponseAction, SuppressionRule
+    from lg_sotf.queue.producer import WorkQueue
 
 log = get_logger(__name__)
 
@@ -395,27 +396,13 @@ class ReviewService:
         # Expiry only means the SLA was missed: the alert's run still waits on this escalation, so a
         # late decision is recorded (same optimistic lock as on an active one) rather than refused.
         decided = await self._repos.escalations.decide(
-            tenant_id,
-            escalation_id,
-            decision=decision,
-            decided_by=actor.user_id,
-            expected_version=expected_version,
-            notes=request.notes,
-            approved_actions=approved,
-            now=now,
-            allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES,
-            conn=conn,
+            tenant_id, escalation_id, decision=decision, decided_by=actor.user_id, expected_version=expected_version,
+            notes=request.notes, approved_actions=approved, now=now,
+            allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES, conn=conn,
         )
         fb, _ = await self._repos.feedback.create(
-            tenant_id,
-            escalation_id,
-            decided.alert_id,
-            decision,
-            user_id=actor.user_id,
-            notes=request.notes,
-            review_duration_s=duration,
-            conn=conn,
-            **request.feedback,
+            tenant_id, escalation_id, decided.alert_id, decision, user_id=actor.user_id, notes=request.notes,
+            review_duration_s=duration, conn=conn, **request.feedback,
         )
         own_review = await self._own_review(tenant_id, decided, decision, conn)
         await self._audit.record(
@@ -794,3 +781,17 @@ class ReviewService:
 
 def _s(value: Any) -> Optional[str]:
     return None if value is None else str(value)
+
+
+async def enqueue_resumes(queue: WorkQueue, tenant_id: str, requests: Sequence[ResumeRequest]) -> Tuple[int, int]:
+    """Enqueue a committed decision's resume messages: ``(enqueued, failed)``. A failure is logged and
+    counted, never raised: the decision stands."""
+    ok = failed = 0
+    for request in requests:
+        try:
+            await queue.enqueue_resume(tenant_id, request.alert_id, request.payload)
+            ok += 1
+        except Exception as exc:  # noqa: BLE001 - the decision is committed; report instead of failing it
+            failed += 1
+            log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
+    return ok, failed
