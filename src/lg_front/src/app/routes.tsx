@@ -46,7 +46,7 @@ const TenantSettingsPage = lazy(() => import('../pages/settings/TenantSettingsPa
 const UsagePage = lazy(() => import('../pages/UsagePage'));
 const AuditPage = lazy(() => import('../pages/AuditPage'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage'));
-const PlatformPage = lazy(() => import('../pages/PlatformPage'));
+const PlatformPage = lazy(() => import('../pages/platform/PlatformPage'));
 const GettingStartedPage = lazy(() => import('../pages/GettingStartedPage'));
 const AccountSecurityPage = lazy(() => import('../pages/AccountSecurityPage'));
 
