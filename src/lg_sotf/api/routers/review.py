@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import enqueue_resumes, escalations_out, one_escalation_out, user_ref
+from lg_sotf.api.common import escalations_out, one_escalation_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
@@ -57,6 +57,7 @@ from lg_sotf.models.vocabulary import VerificationState as Verification
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.action_views import ActionView, action_views
 from lg_sotf.services.response import ActionRequestError
+from lg_sotf.services.review import enqueue_resumes
 from lg_sotf.services.rollback import RollbackService
 from lg_sotf.services.verification import VerificationService
 
@@ -211,7 +212,7 @@ async def decide(
     )
     if body.decision == "true_positive":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])
-    ok, failed = await enqueue_resumes(ctx, principal.tenant_id, result)
+    ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, result)
     return DecisionOut(
         escalation=await one_escalation_out(ctx, principal.tenant_id, result.escalation),
         approved_actions=result.approved_actions,
@@ -266,7 +267,7 @@ async def _review_action(
     requests = await review(
         principal.tenant_id, [action_id], principal.user_id, principal.role, reject_remaining=body.reject_remaining
     )
-    ok, failed = await enqueue_resumes(ctx, principal.tenant_id, requests)
+    ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, requests)
     action = await ctx.repos.actions.get(principal.tenant_id, action_id)
     return ApprovalOut(
         action=await one_action_out(ctx, principal.tenant_id, action),
