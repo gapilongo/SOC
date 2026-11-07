@@ -253,7 +253,7 @@ class ReActReasoner:
             if candidate is None:
                 self._finish(run, step, "no_targets")
                 return
-            await self._observe(run, candidate)
+            await self._observe(run, candidate, agent=agent.name)
         # Unreachable: the loop always returns once run.lookups reaches max_steps.
         run.stop_reason = run.stop_reason or "max_steps"  # pragma: no cover
 
@@ -274,15 +274,21 @@ class ReActReasoner:
             run.final = run.assessments[-1]
             run.notes.append("analysis: investigation cut short, last model assessment kept")
 
-    async def _observe(self, run: AnalysisRunContext, candidate: Candidate) -> None:
+    async def _observe(self, run: AnalysisRunContext, candidate: Candidate, *, agent: str) -> None:
         ctx = run.agent_ctx
-        results = await self.enrichment.lookup(
-            ctx.tenant_id,
-            candidate.kind,
-            candidate.value,
-            repos=ctx.repos,
-            exclude_alert_id=ctx.alert_id,
-            providers=candidate.providers,
+        results = await ctx.trace.tool(
+            agent,
+            "reputation",
+            {"kind": candidate.kind, "value": candidate.value, "providers": sorted(candidate.providers)},
+            self.enrichment.lookup(
+                ctx.tenant_id,
+                candidate.kind,
+                candidate.value,
+                repos=ctx.repos,
+                exclude_alert_id=ctx.alert_id,
+                providers=candidate.providers,
+            ),
+            lambda found: [r.as_dict() for r in found],
         )
         run.observations.append(Observation(candidate, results))
         run.lookups += 1

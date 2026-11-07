@@ -31,5 +31,5 @@ integration variables, make smoke, npm test in src/lg_front ...). -->
 ## Checklist
 
 - [ ] `docs/architecture.md` and the affected docs match the code
-- [ ] `CHANGELOG.md` updated under "Unreleased" for user-visible changes
+- [ ] Changelog fragment added in `changelog.d/` for user-visible changes (not `CHANGELOG.md`)
 - [ ] No secrets or real customer data in code, fixtures or test output

@@ -23,6 +23,7 @@ from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.llm.prompting import build_messages
 from lg_sotf.llm.registry import PromptTemplate, unregistered_hash
 from lg_sotf.llm.structured import ainvoke_structured, estimate_input_tokens, structured_method
+from lg_sotf.llm.trace import TraceRecorder, content_hash, messages_hash
 from lg_sotf.llm.usage import get_usage_recorder
 from lg_sotf.settings import Settings
 
@@ -728,3 +729,71 @@ async def test_cancellation_while_waiting_to_retry_releases_the_reservation(
         await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, budget=budget)
     assert stub.calls == 1 and await budget.used("t1") == 0
     assert _rows()["triage"]["errors"] == 1  # the failed try, not the cancellation
+
+
+# ---------------------------------------------------------------- investigation trace (AI-E1.3)
+
+
+async def test_every_attempt_is_a_trace_step(make_settings: Callable[..., Settings], no_sleep: List[float]) -> None:
+    s = make_settings()
+    trace = TraceRecorder()
+    messages = _msgs(s)
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(503), failures=1)
+    prompt = PromptTemplate(name="test.verdict", system="You are a SOC analyst.", task="Return a verdict.", schema=Verdict)
+
+    verdict = await ainvoke_structured(
+        stub, Verdict, messages, agent="analysis", tier="deep", tenant_id="t1", settings=s, prompt=prompt, trace=trace
+    )
+
+    failed, ok = trace.steps
+    assert (failed.kind, failed.outcome, failed.error_type) == ("llm", "error", "_StatusError")
+    assert failed.output_hash is None and failed.result_digest is None and failed.input_tokens == 0
+    assert (ok.outcome, ok.error_type, ok.input_tokens, ok.output_tokens) == ("success", None, 120, 30)
+    for step in (failed, ok):
+        assert (step.agent, step.prompt_name, step.prompt_hash) == ("analysis", "test.verdict", prompt.hash)
+        assert step.model == "claude-opus-5-5" and step.provider
+        assert step.input_hash == messages_hash(messages) and step.started_at.tzinfo is not None
+    assert ok.output_hash == content_hash(verdict.model_dump(mode="json"))
+    assert ok.result_digest == {"value": verdict.model_dump(mode="json")}
+
+
+async def test_refused_and_invalid_attempts_are_traced_without_a_result(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings()
+    trace = TraceRecorder()
+    refusal = StubModel(result={"raw": _raw([], stop_reason="refusal"), "parsed": None, "parsing_error": None})
+    with pytest.raises(LLMRefusal):
+        await ainvoke_structured(refusal, Verdict, _msgs(s), agent="triage", tier="fast", settings=s, trace=trace)
+    reply = "not json at all: attacker text"
+    invalid = StubModel(result={"raw": _raw(reply), "parsed": None, "parsing_error": OutputParserException(reply)})
+    with pytest.raises(LLMOutputError):
+        await ainvoke_structured(invalid, Verdict, _msgs(s), agent="triage", tier="fast", settings=s, trace=trace)
+
+    refused, unusable = trace.steps
+    assert (refused.outcome, refused.error_type, refused.output_hash) == ("refusal", "LLMRefusal", None)
+    assert (unusable.outcome, unusable.error_type) == ("invalid_output", "LLMOutputError")
+    # The reply is identified by its hash; its text is never stored.
+    assert unusable.output_hash == content_hash(reply) and unusable.result_digest is None
+    assert refused.prompt_name == "unregistered"
+
+
+async def test_budget_rejections_are_not_steps(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings(llm={"daily_token_budget_per_tenant": 10})
+    trace = TraceRecorder()
+    budget = TokenBudget(fakeredis.FakeAsyncRedis(), s)
+    with pytest.raises(LLMBudgetExceeded):
+        await ainvoke_structured(StubModel(result=_ok_result()), Verdict, _msgs(s), agent="triage", tier="fast",
+                                 settings=s, tenant_id="t1", budget=budget, trace=trace)
+    assert trace.steps == []
+
+
+@pytest.mark.parametrize(("status", "tries"), [(429, 3), (400, 1)])
+async def test_each_failed_try_is_one_step(
+    make_settings: Callable[..., Settings], no_sleep: List[float], status: int, tries: int
+) -> None:
+    s = make_settings()
+    trace = TraceRecorder()
+    stub = FlakyStub(result=_ok_result(), error=_StatusError(status), failures=10)
+    with pytest.raises(_StatusError):
+        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", settings=s, trace=trace)
+    assert stub.calls == tries
+    assert [(step.outcome, step.error_type) for step in trace.steps] == [("error", "_StatusError")] * tries

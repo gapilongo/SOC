@@ -33,6 +33,7 @@ from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.integrations import Integration, IntegrationsRepo
+from lg_sotf.db.repos.investigation_steps import InvestigationStepsRepo, TraceStep
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
 from lg_sotf.db.repos.outbox import NewOutboxEntry, OutboxEntry, OutboxRepo
 from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
@@ -75,6 +76,7 @@ class Repositories:
     integrations: IntegrationsRepo
     outbox: OutboxRepo
     tickets: TicketsRepo
+    investigation_steps: InvestigationStepsRepo
     reports: ReportsRepo
     views: ViewsRepo
 
@@ -103,6 +105,7 @@ class Repositories:
             integrations=IntegrationsRepo(db),
             outbox=OutboxRepo(db),
             tickets=TicketsRepo(db),
+            investigation_steps=InvestigationStepsRepo(db),
             reports=ReportsRepo(db),
             views=ViewsRepo(db),
         )
@@ -133,6 +136,7 @@ __all__ = [
     "IndicatorsRepo",
     "Integration",
     "IntegrationsRepo",
+    "InvestigationStepsRepo",
     "LLMUsageDay",
     "LLMUsageDelta",
     "LLMUsageRepo",
@@ -162,6 +166,7 @@ __all__ = [
     "TenantUsage",
     "TenantsRepo",
     "TicketsRepo",
+    "TraceStep",
     "UNSET",
     "UsageDay",
     "UsageRepo",
