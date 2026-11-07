@@ -5,8 +5,8 @@ A pack bundles, for one alert of one tenant:
 * the alert (normalised form, the raw event redacted once more, the stored
   summary) and its full timeline;
 * each agent's reasoning, verdict and confidence, with the provider and
-  model it called (``summary.llm_models``; alerts processed before that was
-  recorded say so);
+  model it called and the name and hash of the prompt it sent
+  (``summary.llm_models``; alerts processed before that was recorded say so);
 * enrichment observations, indicator sightings and correlation;
 * escalations (who claimed and decided, when), analyst feedback and the
   response-action ledger (requested by, approved by, executed, blocked
@@ -132,7 +132,7 @@ async def _audit_entries(
 
 
 def _agents(summary: AlertSummary, events: Sequence[AlertEvent]) -> Dict[str, Any]:
-    """Per-step reasoning, verdict and confidence, with the provider/model that step called."""
+    """Per-step reasoning, verdict and confidence, with the provider/model and prompt version that step called."""
     models = _obj(summary.get("llm_models"))
     usage_by_agent = _obj(_obj(summary.get("llm_usage")).get("by_agent"))
     completed = {e.node: e for e in events if e.event_type == "node.completed" and e.node}

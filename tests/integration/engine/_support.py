@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Mapping, Union, get_args, get_origin, get_type_hints, is_typeddict
+from uuid import UUID, uuid4
+
+from lg_sotf.core.workflow import RunOutcome, WorkflowEngine
+from lg_sotf.db.repos import Repositories
+from tests.integration.db._support import TENANT_A, make_alert
 
 
 class RecordingEvents:
@@ -32,3 +37,51 @@ def undeclared_keys(value: Any, schema: Any, path: str = "summary") -> List[str]
         if key in hints:
             out.extend(undeclared_keys(child, hints[key], f"{path}.{key}"))
     return out
+
+
+SUSPICIOUS_ENTITIES = {
+    "ips": ["185.220.101.44", "10.0.0.5"],
+    "hosts": ["ws-042"],
+    "users": ["jdoe"],
+    "hashes": ["44d88612fea8a8f36de82e1278abb02f"],
+    "processes": ["powershell.exe"],
+}
+
+
+async def suspicious_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
+    return await make_alert(
+        repos,
+        tenant_id,
+        title="Possible C2 beacon from workstation",
+        severity="medium",
+        normalized={"entities": SUSPICIOUS_ENTITIES},
+        raw={"vendor": "edr"},
+        **kwargs,
+    )
+
+
+async def analyst(repos: Repositories, tenant_id: str = TENANT_A) -> str:
+    user = await repos.users.create(tenant_id, f"analyst-{uuid4().hex[:8]}@example.com", "analyst")
+    return str(user.id)
+
+
+async def decide(
+    engine: WorkflowEngine, repos: Repositories, alert_id: str, escalation_id: str, decision: str, user_id: str,
+    tenant_id: str = TENANT_A, **extra: Any,
+) -> RunOutcome:
+    """What the API does: record the decision with the analyst's version, then resume."""
+    esc = await repos.escalations.get(tenant_id, escalation_id)
+    await repos.escalations.decide(
+        tenant_id, escalation_id, decision=decision, decided_by=UUID(user_id),
+        expected_version=esc.version,
+    )
+    payload: Dict[str, Any] = {
+        "type": "analyst_decision",
+        "escalation_id": escalation_id,
+        "decision": decision,
+        "approved_actions": [],
+        "decided_by": user_id,
+        "notes": "",
+    }
+    payload.update(extra)
+    return await engine.resume(tenant_id, alert_id, payload)

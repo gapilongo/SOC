@@ -38,6 +38,7 @@ from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import PhishingProfile
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import AgentError
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str
 from lg_sotf.security.hashing import hmac_indicator
 
@@ -69,6 +70,9 @@ class CorrelationAssessment(BaseModel):
     campaign_likelihood: int = Field(ge=0, le=100)
     attack_campaign_indicators: clipped_list(10, item_chars=120)  # type: ignore[valid-type]
     reasoning: clipped_str(2_000)  # type: ignore[valid-type]
+
+
+PROMPT = register_prompt("correlation.assess", system=SYSTEM_PROMPT, task=TASK_PROMPT, schema=CorrelationAssessment)
 
 
 @dataclass
@@ -213,9 +217,7 @@ class CorrelationAgent(BaseAgent):
         llm: LLMResult[CorrelationAssessment] = await self.call_llm(
             ctx,
             tier="fast",
-            schema=CorrelationAssessment,
-            system=SYSTEM_PROMPT,
-            task=TASK_PROMPT,
+            prompt=PROMPT,
             untrusted={
                 "alert": self.alert_view(alert),
                 "correlation": {

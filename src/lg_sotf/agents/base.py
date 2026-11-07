@@ -4,11 +4,13 @@ Agents are stateless singletons: configuration and collaborators live on the
 instance, everything about the alert being processed is passed in an
 :class:`AgentContext` (or a per-run object derived from it).
 
-Every LLM call goes through :meth:`BaseAgent.call_llm`, which builds the
-prompt with :func:`~lg_sotf.llm.build_prompt` (fixed instructions in the
-system message, alert data in a delimited untrusted block) and validates the
-answer with :func:`~lg_sotf.llm.ainvoke_structured` (``json_schema``
-structured output). LLM-layer failures never fail the node:
+Every LLM call goes through :meth:`BaseAgent.call_llm` with a registered
+:class:`~lg_sotf.llm.registry.PromptTemplate`, which builds the prompt with
+:func:`~lg_sotf.llm.build_prompt` (fixed instructions in the system message,
+alert data in a delimited untrusted block) and validates the answer with
+:func:`~lg_sotf.llm.ainvoke_structured` (``json_schema`` structured output).
+The provider, model and prompt version of each agent's latest call go to
+``summary.llm_models``. LLM-layer failures never fail the node:
 
 * a refusal is recorded (metric by category, ``ctx.refusals``) and the agent
   falls back to its rules, marking its digest with ``llm_refusal`` so routing
@@ -26,7 +28,7 @@ policy handles them. Token and cost totals of every call are accumulated in
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, Optional, Type, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, Optional, TypeVar, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
@@ -46,6 +48,7 @@ from lg_sotf.llm import (
 )
 from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
+from lg_sotf.llm.registry import PromptTemplate
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
 from lg_sotf.settings import Settings
@@ -77,7 +80,7 @@ class AgentContext:
     usage: UsageTally = field(default_factory=UsageTally)
     refusals: List[Dict[str, Optional[str]]] = field(default_factory=list)
     models: Dict[str, Dict[str, str]] = field(default_factory=dict)
-    """Provider and model each agent called (``summary.llm_models``, evidence packs)."""
+    """Provider, model and prompt version each agent called (``summary.llm_models``, evidence packs)."""
     # False for a replay (the history backtest): agents read through ``repos`` but write nothing,
     # neither LLM accounting on the alert nor indicator sightings.
     persist: bool = True
@@ -155,9 +158,7 @@ class BaseAgent:
         ctx: AgentContext,
         *,
         tier: Tier,
-        schema: Type[T],
-        system: str,
-        task: str,
+        prompt: PromptTemplate[T],
         untrusted: Mapping[str, Any],
         context: Optional[Mapping[str, Any]] = None,
         cache_untrusted: bool = False,
@@ -171,14 +172,15 @@ class BaseAgent:
         agent = self.name
         try:
             model = self.model_factory(tier, ctx.settings)
-            ctx.models[agent] = model_provenance(model, tier)
-            prompt = build_prompt(
-                system, task, untrusted, context=context, cache_untrusted=cache_untrusted, settings=ctx.settings
+            ctx.models[agent] = model_provenance(model, tier, prompt)
+            bundle = build_prompt(
+                prompt.system, prompt.task, untrusted, context=context, cache_untrusted=cache_untrusted,
+                settings=ctx.settings,
             )
             value = await ainvoke_structured(
                 model,
-                schema,
-                prompt.messages,
+                prompt.schema,
+                bundle.messages,
                 agent=agent,
                 tier=tier,
                 tenant_id=ctx.tenant_id,
@@ -186,6 +188,7 @@ class BaseAgent:
                 budget=ctx.budget,
                 budget_limit=ctx.budget_limit,
                 tally=ctx.usage,
+                prompt=prompt,
             )
         except LLMBudgetExceeded:
             ctx.llm_budget_exceeded = True

@@ -297,6 +297,15 @@ _TALLY_COUNTERS = (
 MAX_TALLY_AGENTS = 16
 MAX_MODEL_ID_CHARS = 128
 MAX_PROVIDER_CHARS = 32
+MAX_PROMPT_NAME_CHARS = 64
+MAX_PROMPT_HASH_CHARS = 64
+# What an agent entry records about its latest call, with each value's length limit.
+LATEST_CALL_FIELDS: Tuple[Tuple[str, int], ...] = (
+    ("model", MAX_MODEL_ID_CHARS),
+    ("provider", MAX_PROVIDER_CHARS),
+    ("prompt_name", MAX_PROMPT_NAME_CHARS),
+    ("prompt_hash", MAX_PROMPT_HASH_CHARS),
+)
 
 
 @dataclass
@@ -310,9 +319,12 @@ class _AgentTally:
     errors: int = 0
     budget_exceeded: int = 0
     cost_usd: Decimal = field(default_factory=Decimal)
-    # The model that answered this agent's latest call and its provider (per-model accuracy reports).
+    # The model that answered this agent's latest call, its provider and the prompt version it was sent
+    # (per-model accuracy reports, prompt provenance in evaluation reports).
     model: Optional[str] = None
     provider: Optional[str] = None
+    prompt_name: Optional[str] = None
+    prompt_hash: Optional[str] = None
 
 
 @dataclass
@@ -346,6 +358,8 @@ class UsageTally:
         *,
         model: Optional[str] = None,
         provider: Optional[str] = None,
+        prompt_name: Optional[str] = None,
+        prompt_hash: Optional[str] = None,
     ) -> None:
         """Add one call. ``model`` is the requested model id; the served model (last sample) wins."""
         t = self._agent(agent)
@@ -355,6 +369,10 @@ class UsageTally:
             t.model = served[:MAX_MODEL_ID_CHARS]
         if provider:
             t.provider = provider[:MAX_PROVIDER_CHARS]
+        if prompt_name:
+            t.prompt_name = prompt_name[:MAX_PROMPT_NAME_CHARS]
+        if prompt_hash:
+            t.prompt_hash = prompt_hash[:MAX_PROMPT_HASH_CHARS]
         for s in samples:
             t.input_tokens += s.input_tokens
             t.output_tokens += s.output_tokens
@@ -404,8 +422,8 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
 
     Unknown or malformed stored values are treated as zero, so a hand-edited
     summary can never break processing. Each agent entry also carries the
-    ``provider`` and ``model`` of its latest call (when known), which the
-    accuracy report groups by.
+    ``provider``, ``model``, ``prompt_name`` and ``prompt_hash`` of its latest
+    call (when known), which the accuracy and evaluation reports group by.
     """
     stored: Mapping[str, Any] = existing if isinstance(existing, Mapping) else {}
     raw_agents = stored.get("by_agent")
@@ -415,7 +433,7 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
         if isinstance(name, str) and isinstance(value, Mapping):
             entry: Dict[str, Any] = {c: _as_int(value.get(c)) for c in _TALLY_COUNTERS}
             entry["cost_usd"] = _as_decimal(value.get("cost_usd"))
-            for key, limit in (("model", MAX_MODEL_ID_CHARS), ("provider", MAX_PROVIDER_CHARS)):
+            for key, limit in LATEST_CALL_FIELDS:
                 stored_text = value.get(key)
                 if isinstance(stored_text, str) and stored_text:
                     entry[key] = stored_text[:limit]
@@ -426,10 +444,9 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
         for c in _TALLY_COUNTERS:
             entry[c] += getattr(t, c)
         entry["cost_usd"] += t.cost_usd
-        if t.model:
-            entry["model"] = t.model
-        if t.provider:
-            entry["provider"] = t.provider
+        for key, _ in LATEST_CALL_FIELDS:
+            if getattr(t, key):
+                entry[key] = getattr(t, key)
     totals: Dict[str, Any] = {c: sum(a[c] for a in agents.values()) for c in _TALLY_COUNTERS}
     cost = sum((a["cost_usd"] for a in agents.values()), Decimal(0))
     totals["total_tokens"] = (
@@ -440,7 +457,7 @@ def merge_usage_summary(existing: Optional[Mapping[str, Any]], tally: UsageTally
         name: {
             **{c: a[c] for c in _TALLY_COUNTERS},
             "cost_usd": float(a["cost_usd"].quantize(_COST_QUANTUM)),
-            **{k: a[k] for k in ("provider", "model") if a.get(k)},
+            **{k: a[k] for k, _ in LATEST_CALL_FIELDS if a.get(k)},
         }
         for name, a in sorted(agents.items())
     }

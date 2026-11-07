@@ -27,6 +27,19 @@ All notable changes to this project are documented here. The format follows
   first triaged alert and records the time against a 30-minute budget
   (`tests/integration/e2e/test_first_run.py`; the browser twin is
   `src/lg_front/e2e/wizard.spec.ts`).
+- Every model call now records which prompt version it sent. Each prompt has
+  a name (such as `triage.assess`) and a short hash of its text and output
+  schema, so a changed hash means the model was asked something different.
+  The alert's model provenance, evidence packs (JSON and HTML), the
+  `llm.call` log event and evaluation reports (a new "Models and prompts"
+  section) show the prompt name and hash next to the provider and model.
+- Runs waiting for an analyst or an approval now survive upgrades that change
+  the workflow graph. Each run records the graph version it started on
+  (`workflow_runs.graph_version`, migration 0010), and workers keep the
+  previous graph next to the current one, so a waiting run resumes and is
+  decided on the graph it started on. A run on a graph version the worker
+  does not have fails with `UnknownGraphVersion` and is retried, then
+  dead-lettered; it is never run on a different graph.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
@@ -104,6 +117,13 @@ All notable changes to this project are documented here. The format follows
   connector that would run it, the guardrail verdict, whether it would run
   automatically or wait for approval, and whether your role may pre-approve
   it (high and critical risk need an admin).
+- The Wazuh connector is now tested against a real Wazuh 4.14 indexer, not
+  only a fake: `make test-wazuh-up` starts a Wazuh indexer lab with the alert
+  index template Wazuh publishes and sample 4.14 alerts, and `make
+  test-wazuh` runs live contract tests for authentication, paging and
+  resuming, severity mapping, empty windows and malformed documents. CI runs
+  them in a new, non-blocking job. More alerts can be loaded into the lab
+  with `python -m tests.fixtures.wazuh_lab load` (docs/testing.md).
 
 ### Changed
 
@@ -272,6 +292,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
+  `lg-sotf-frontend` digest now carries a keyless cosign signature and a SLSA
+  build-provenance attestation, both from the `Release images` workflow on
+  `main`. The deploy workflow verifies both before it deploys, and stops if
+  either check fails. This means the workflow can no longer deploy images
+  built before this change; roll back to those on the VM instead. To verify
+  an image yourself, including on an air-gapped host, see `docs/security.md`
+  (section 9) and `docs/air-gapped.md`.
 - Failure logs never carry the exception message (ADR-0005). An unhandled
   API error (`api.unhandled_error`) is no longer logged with a traceback,
   which quoted the message of the exception and of every exception chained

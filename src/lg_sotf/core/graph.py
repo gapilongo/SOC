@@ -323,3 +323,22 @@ def build_graph(
     )
     graph.add_edge("close", END)
     return graph
+
+
+GraphBuilder = Callable[..., StateGraph]
+"""A function with :func:`build_graph`'s signature."""
+
+GRAPH_VERSION = 1
+"""The graph new runs start on, stamped on ``workflow_runs.graph_version``.
+
+Bump it when a change to the graph (nodes, edges, state schema, interrupt
+payloads) could break a run checkpointed on the previous graph, and keep the
+previous builder in :data:`GRAPH_BUILDERS` (with the nodes it uses) until no
+run that can still resume is on that version.
+"""
+
+GRAPH_BUILDERS: Mapping[int, GraphBuilder] = {GRAPH_VERSION: build_graph}
+"""Every graph a worker can run, by version: the current graph and N-1, so waiting runs drain on theirs."""
+
+UNVERSIONED_GRAPH = 1
+"""The version of runs with no ``graph_version``: started before graphs were versioned, all on graph 1."""

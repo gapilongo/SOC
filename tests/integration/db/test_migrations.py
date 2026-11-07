@@ -199,6 +199,16 @@ async def test_query_indexes_exist(migrated_database_url: str) -> None:
     } <= names
 
 
+async def test_0010_graph_version_is_a_nullable_integer_without_default(migrated_database_url: str) -> None:
+    """Expand only: rows of the previous release (and of runs with no thread yet) stay NULL."""
+    column = _query(
+        migrated_database_url,
+        "SELECT data_type, is_nullable, column_default FROM information_schema.columns "
+        "WHERE table_name = 'workflow_runs' AND column_name = 'graph_version'",
+    )
+    assert column == [("integer", "YES", None)]
+
+
 # ------------------------------------------------------------------ 0009: direct response and verification
 
 

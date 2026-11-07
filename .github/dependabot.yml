@@ -16,6 +16,11 @@ updates:
     directory: /docker
     schedule:
       interval: weekly
+    ignore:
+      # The Wazuh lab (docker-compose.wazuh-test.yml) is the 4.14 contract lab: patches only.
+      # Wazuh 5 gets its own lab (roadmap INT3.3a), not a bump of this one.
+      - dependency-name: wazuh/wazuh-indexer
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     commit-message:
       prefix: docker
 
