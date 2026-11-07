@@ -5,6 +5,17 @@
 
 export type Role = 'viewer' | 'analyst' | 'admin';
 
+/**
+ * A vocabulary field of a response: the values this app knows, or another string from a newer API
+ * (tolerant reader: a rolling deploy must not break the UI). Narrow it before indexing a lookup table.
+ */
+export type Open<T extends string> = T | (string & {});
+
+/** Narrows an open vocabulary value (or any input) to one of `values`. */
+export function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
+  return typeof value === 'string' && (values as readonly string[]).includes(value);
+}
+
 export const ALERT_STATUSES = [
   'new',
   'queued',
@@ -57,6 +68,12 @@ export const ESCALATION_ORDERS = ['created_at', 'sla_deadline'] as const;
 /** Most escalations one bulk request takes (422 above). */
 export const BULK_MAX_ITEMS = 50;
 
+export type AlertStatus = (typeof ALERT_STATUSES)[number];
+export type Disposition = (typeof DISPOSITIONS)[number];
+export type EscalationStatus = (typeof ESCALATION_STATUSES)[number];
+export type EscalationLevel = (typeof ESCALATION_LEVELS)[number];
+export type ActionStatus = (typeof ACTION_STATUSES)[number];
+export type RiskLevel = (typeof RISK_LEVELS)[number];
 export type Severity = (typeof SEVERITIES)[number];
 export type Decision = (typeof DECISIONS)[number];
 export type SourceType = (typeof SOURCE_TYPES)[number];
@@ -77,7 +94,7 @@ export interface UserOut {
   id: string;
   tenant_id: string;
   email: string;
-  role: string;
+  role: Open<Role>;
   is_platform_admin: boolean;
   is_active: boolean;
   locked_until?: string | null;
@@ -145,7 +162,7 @@ export interface MeOut {
   tenant_id: string;
   home_tenant_id: string;
   auth_method: string;
-  role?: string | null;
+  role?: Open<Role> | null;
   scopes?: string[];
   user_id?: string | null;
   api_key_id?: string | null;
@@ -163,10 +180,10 @@ export interface AlertOut {
   source_alert_id: string;
   fingerprint: string;
   title: string;
-  severity: string;
+  severity: Open<Severity>;
   category?: string | null;
-  status: string;
-  disposition?: string | null;
+  status: Open<AlertStatus>;
+  disposition?: Open<Disposition> | null;
   confidence?: number | null;
   threat_score?: number | null;
   priority?: number | null;
@@ -251,8 +268,8 @@ export interface EscalationOut {
   id: string;
   tenant_id: string;
   alert_id: string;
-  level: string;
-  status: string;
+  level: Open<EscalationLevel>;
+  status: Open<EscalationStatus>;
   reason: string;
   priority: number;
   summary?: JsonObject;
@@ -398,7 +415,7 @@ export interface PreviewActionOut {
   action_type: string;
   target: string;
   description: string;
-  risk: string;
+  risk: Open<RiskLevel>;
   reversible: boolean;
   inverse_action?: string | null;
   irreversible_note?: string | null;
@@ -455,7 +472,7 @@ export interface DecisionOut {
 export interface RollbackEligibility {
   available: boolean;
   action_type?: string | null;
-  risk?: string | null;
+  risk?: Open<RiskLevel> | null;
   until?: string | null;
   reason?: string | null;
 }
@@ -467,8 +484,8 @@ export interface ActionOut {
   action_type: string;
   target: string;
   params?: JsonObject;
-  risk_level: string;
-  status: string;
+  risk_level: Open<RiskLevel>;
+  status: Open<ActionStatus>;
   blocked_reason?: string | null;
   requested_by?: string | null;
   approved_by?: string | null;
@@ -480,7 +497,7 @@ export interface ActionOut {
   created_at: string;
   updated_at: string;
   /** workflow: the alert's run executes it; scheduler: the background executor does. */
-  execution_owner?: 'workflow' | 'scheduler';
+  execution_owner?: Open<'workflow' | 'scheduler'>;
   integration_id?: string | null;
   /** The direct connector's state: ids, per-target steps, reversible, rollback_until. */
   external_ref?: JsonObject | null;
@@ -804,8 +821,9 @@ export interface TenantSummaryOut {
   status: 'active' | 'suspended' | string;
   created_at: string;
   updated_at: string;
-  quotas: Quotas;
-  quota_usage: Record<QuotaKey, { used: number; limit: number | null }>;
+  /** Keyed by QuotaKey; a key the API does not send is unlimited. */
+  quotas: Partial<Quotas>;
+  quota_usage: Partial<Record<QuotaKey, { used: number; limit: number | null }>>;
   stats: TenantStats;
 }
 
@@ -823,8 +841,8 @@ export interface PlatformEscalationOut {
   alert_id: string;
   alert_title: string | null;
   alert_severity: string | null;
-  level: string;
-  status: string;
+  level: Open<EscalationLevel>;
+  status: Open<EscalationStatus>;
   priority: number;
   reason: string;
   assigned_to: string | null;
@@ -855,7 +873,7 @@ export interface UsageReportOut {
   end: string;
   generated_at: string;
   tenants: TenantUsageOut[];
-  totals: Record<string, number | string>;
+  totals: Record<string, unknown>;
 }
 
 export interface OnboardingStepOut {
@@ -949,11 +967,11 @@ export const TICKETING_EVENTS = ['escalation.created', 'escalation.decided'] as 
 export interface IntegrationOut {
   id: string;
   tenant_id: string;
-  kind: IntegrationKind;
+  kind: Open<IntegrationKind>;
   name: string;
   enabled: boolean;
   events: string[];
-  min_severity: string;
+  min_severity: Open<Severity>;
   config: JsonObject;
   /** Which credential fields are configured; values are never returned. */
   secrets: Record<string, boolean>;
@@ -966,7 +984,7 @@ export interface IntegrationCreateIn {
   name: string;
   enabled?: boolean;
   events?: string[];
-  min_severity?: string;
+  min_severity?: Severity;
   config?: JsonObject;
   secret?: Record<string, string | null>;
 }
@@ -975,7 +993,7 @@ export interface IntegrationUpdateIn {
   name?: string;
   enabled?: boolean;
   events?: string[];
-  min_severity?: string;
+  min_severity?: Severity;
   config?: JsonObject;
   /** Merge patch: a value replaces that credential, null removes it. */
   secret?: Record<string, string | null>;
@@ -1101,7 +1119,7 @@ export interface DeliveryOut {
   event_id: string;
   event_type: string;
   operation: string;
-  status: 'pending' | 'sent' | 'failed' | 'dead';
+  status: Open<'pending' | 'sent' | 'failed' | 'dead'>;
   attempts: number;
   next_attempt_at: string;
   last_error?: string | null;
@@ -1193,11 +1211,13 @@ export interface AccuracyBlock {
   confusion_matrix: Record<string, Record<string, number>>;
   agreement: number;
   agreement_rate: number | null;
-  agreement_ci95: [number, number] | null;
+  /** Wilson 95% interval: [low, high]. */
+  agreement_ci95: number[] | null;
   analyst_malicious: number;
   false_negatives: number;
   false_negative_rate: number | null;
-  false_negative_ci95: [number, number] | null;
+  /** Wilson 95% interval: [low, high]. */
+  false_negative_ci95: number[] | null;
   analyst_benign: number;
   false_positives: number;
   false_positive_rate: number | null;

@@ -5,8 +5,9 @@ import { describe, expect, it } from 'vitest';
 import type { IntegrationCreateIn, IntegrationOut, IntegrationUpdateIn } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
 import { ISOLATION } from '../../test/microsoft';
-import IntegrationsPage, { missingCredentials } from '../IntegrationsPage';
+import IntegrationsPage from './IntegrationsPage';
 import { bindingChanged, buildMicrosoftConfig, type MicrosoftFormValues } from './MicrosoftIntegrationForm';
+import { kindSpec, missingCredentials } from './specs';
 
 // Identifiers and credentials are generated at runtime (no credential-shaped literals in fixtures).
 const DIRECTORY = crypto.randomUUID();
@@ -65,6 +66,10 @@ describe('Microsoft integration form helpers', () => {
     expect(bindingChanged(config, values({ credential: 'certificate' }))).toBe(true);
     expect(missingCredentials(stored())).toEqual([]);
     expect(missingCredentials(stored({ config: { credential: 'certificate' } }))).toEqual(['private_key_pem']);
+    // A kind from a newer API: nothing this app could ask for.
+    expect(missingCredentials(stored({ kind: 'pagerduty' }))).toEqual([]);
+    expect(kindSpec('pagerduty')).toBeUndefined();
+    expect(kindSpec('slack')?.label).toBe('Slack');
   });
 });
 

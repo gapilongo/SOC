@@ -2,13 +2,15 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { createApiClient } from '../../api/client';
+import { endpoints } from '../../api/endpoints';
 import type { AlertDetailOut, AlertOut, LiveEvent } from '../../api/types';
 import { writePref } from '../../lib/prefs';
 import { LiveContext, type LiveListener } from '../../live/LiveProvider';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
-import AlertsPage from './AlertsPage';
+import AlertsPage, { filtersFromParams } from './AlertsPage';
 import { startOfToday } from './views';
 
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();
@@ -310,5 +312,25 @@ describe('AlertsPage new alerts pill', () => {
     await userEvent.click(pill);
     await waitFor(() => expect(listCalls(calls).length).toBe(before + 1));
     await waitFor(() => expect(screen.queryByRole('button', { name: /new alert/ })).not.toBeInTheDocument());
+  });
+});
+
+describe('alert filters in the URL', () => {
+  it('reads alert filters from the URL, keeping multi-valued parameters', () => {
+    const f = filtersFromParams(new URLSearchParams('status=queued&status=failed&severity=high&q=mimikatz&from=2026-09-01T00:00:00.000Z'));
+    expect(f).toEqual({ status: ['queued', 'failed'], severity: ['high'], q: 'mimikatz', from: '2026-09-01T00:00:00.000Z' });
+  });
+  it('sends at most one source_id, as the API filters on a single source', () => {
+    const f = filtersFromParams(new URLSearchParams('source_id=splunk-prod&source_id=wazuh-dc'));
+    expect(f.source_id).toBe('splunk-prod');
+    expect(filtersFromParams(new URLSearchParams('source_id=%20')).source_id).toBeUndefined();
+  });
+  it('puts exactly one source_id in the alerts request', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ items: [], next_cursor: null }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const api = createApiClient({ baseUrl: '/api/v1', auth: { getToken: () => 't', refresh: async () => null, actingTenant: () => null }, fetchImpl });
+    await endpoints.alerts(api, filtersFromParams(new URLSearchParams('source_id=a&source_id=b&severity=high&severity=low')));
+    const url = new URL(String((fetchImpl.mock.calls[0] as unknown[])[0]), 'https://soc.example');
+    expect(url.searchParams.getAll('source_id')).toEqual(['a']);
+    expect(url.searchParams.getAll('severity')).toEqual(['high', 'low']);
   });
 });

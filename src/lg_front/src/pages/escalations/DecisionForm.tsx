@@ -7,11 +7,10 @@ import { Link } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
-import { useResponsePreview } from '../../api/hooks';
+import { useResponsePreview, useTenantLabel } from '../../api/hooks';
 import { afterEscalationChange, afterEscalationDecision } from '../../api/invalidate';
 import type { DecisionIn, DecisionOut, EscalationOut, PreviewActionOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
-import { useTenantLabel } from '../../components/shell/Header';
 import { useToast } from '../../components/Toast';
 import { Banner, Button, Checkbox, ErrorMessage, SelectField, Spinner, TextField, cx } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
