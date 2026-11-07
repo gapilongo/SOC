@@ -284,7 +284,7 @@ export default function UsersPage() {
           {users.isError && <ErrorMessage error={users.error} onRetry={() => void users.refetch()} />}
           {users.data && users.data.length === 0 && <EmptyState title="No users" />}
           {users.data && users.data.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <caption className="sr-only">Users</caption>
                 <thead className="text-xs uppercase tracking-wide text-muted">
@@ -305,20 +305,16 @@ export default function UsersPage() {
                         {principal?.userId === u.id && <span className="ml-2 text-xs text-muted">(you)</span>}
                       </td>
                       <td className="py-2 pr-3">
-                        <Badge tone={u.role === 'admin' ? 'warn' : 'neutral'}>{u.role}</Badge>
-                        {u.is_platform_admin && (
-                          <span className="ml-1">
-                            <Badge tone="critical">platform admin</Badge>
-                          </span>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          <Badge tone={u.role === 'admin' ? 'warn' : 'neutral'}>{u.role}</Badge>
+                          {u.is_platform_admin && <Badge tone="critical">platform admin</Badge>}
+                        </div>
                       </td>
                       <td className="py-2 pr-3">
-                        {u.is_active ? <Badge tone="good">active</Badge> : <Badge>inactive</Badge>}
-                        {u.locked_until && new Date(u.locked_until).getTime() > Date.now() && (
-                          <span className="ml-1">
-                            <Badge tone="bad">locked</Badge>
-                          </span>
-                        )}
+                        <div className="flex flex-wrap gap-1">
+                          {u.is_active ? <Badge tone="good">active</Badge> : <Badge>inactive</Badge>}
+                          {u.locked_until && new Date(u.locked_until).getTime() > Date.now() && <Badge tone="bad">locked</Badge>}
+                        </div>
                       </td>
                       <td className="py-2 pr-3" data-testid={`mfa-${u.id}`}>
                         {u.mfa_enabled ? (
@@ -329,7 +325,7 @@ export default function UsersPage() {
                           <Badge>off</Badge>
                         )}
                       </td>
-                      <td className="py-2 pr-3 text-secondary" title={formatDateTime(u.last_login_at)}>
+                      <td className="whitespace-nowrap py-2 pr-3 text-secondary" title={formatDateTime(u.last_login_at)}>
                         {u.last_login_at ? formatRelative(u.last_login_at) : 'never'}
                       </td>
                       <td className="py-2">
@@ -385,7 +381,7 @@ export default function UsersPage() {
           {keys.isError && <ErrorMessage error={keys.error} onRetry={() => void keys.refetch()} />}
           {keys.data && keys.data.length === 0 && <EmptyState title="No API keys" />}
           {keys.data && keys.data.length > 0 && (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
                 <caption className="sr-only">API keys</caption>
                 <thead className="text-xs uppercase tracking-wide text-muted">
@@ -412,8 +408,8 @@ export default function UsersPage() {
                       </td>
                       <td className="py-2 pr-3 font-mono text-xs text-secondary">{k.prefix}</td>
                       <td className="py-2 pr-3 text-body">{k.scopes.join(', ')}</td>
-                      <td className="py-2 pr-3 text-secondary">{k.last_used_at ? formatRelative(k.last_used_at) : 'never'}</td>
-                      <td className="py-2 pr-3 text-secondary">{formatDateTime(k.created_at)}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-secondary">{k.last_used_at ? formatRelative(k.last_used_at) : 'never'}</td>
+                      <td className="whitespace-nowrap py-2 pr-3 text-secondary">{formatDateTime(k.created_at)}</td>
                       <td className="py-2 text-right">
                         {!k.revoked_at && (
                           <Button size="sm" variant="destructive" onClick={() => setRevoking(k)} aria-label={`Revoke ${k.name}`}>

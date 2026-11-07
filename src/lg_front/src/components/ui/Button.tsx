@@ -26,7 +26,7 @@ const SIZES: Record<ButtonSize, { box: string; square: string }> = {
  */
 export function buttonClass(variant: ButtonVariant = 'secondary', size: ButtonSize = 'md', className?: string): string {
   return cx(
-    'inline-flex items-center justify-center gap-2 rounded-control transition-colors touch:min-h-11',
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control transition-colors touch:min-h-11',
     SIZES[size].box,
     LINK_VARIANTS[variant],
     className,
@@ -65,7 +65,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || busy}
       aria-busy={busy || undefined}
       className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-control transition-colors',
+        'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-control transition-colors',
         'disabled:cursor-not-allowed disabled:opacity-50 touch:min-h-11',
         iconOnly ? cx(SIZES[size].square, 'touch:min-w-11') : SIZES[size].box,
         VARIANTS[variant],

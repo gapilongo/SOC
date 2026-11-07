@@ -282,6 +282,8 @@ class ObservabilitySettings(BaseModel):
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "json"
     metrics_enabled: bool = True
+    # Deprecated and ignored: tracing was removed (ADR-0008). Still accepted so existing configurations
+    # load; configure_logging warns when it is set.
     otlp_endpoint: Optional[str] = None
     service_name: str = "lg-sotf"
 

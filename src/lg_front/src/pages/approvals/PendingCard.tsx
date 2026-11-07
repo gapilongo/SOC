@@ -105,7 +105,7 @@ export function PendingCard({
                   onClick={() => onOpenAlert(action.alert_id)}
                   aria-label={`Open alert ${action.alert_id}`}
                 >
-                  {shortId(action.alert_id)}
+                  <span className="inline-block max-w-[10ch] truncate align-bottom">{action.alert_id}</span>
                 </button>
                 <span>
                   · requested <time dateTime={action.created_at} title={formatDateTime(action.created_at)}>{formatRelative(action.created_at, now)}</time> by{' '}

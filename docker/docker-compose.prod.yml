@@ -82,7 +82,6 @@ x-passthrough: &passthrough
   LG_SOTF_RESPONSE__WEBHOOK_SECRET:
   LG_SOTF_WORKER__CONCURRENCY:
   LG_SOTF_OBSERVABILITY__LOG_LEVEL:
-  LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT:
 
 x-owner-url: &owner-url postgresql://lgsotf_owner:${LGSOTF_OWNER_PASSWORD:?set LGSOTF_OWNER_PASSWORD}@postgres:5432/lgsotf
 

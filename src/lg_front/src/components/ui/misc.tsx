@@ -111,6 +111,19 @@ export function JsonBlock({ value, label }: { value: unknown; label: string }) {
   );
 }
 
+/**
+ * A long value (an id, an address, a message id) kept on one line and cut
+ * with an ellipsis; the full value is the tooltip and stays in the DOM, so
+ * it is still found, read by screen readers and copied whole.
+ */
+export function Truncated({ value, mono = false, className }: { value: string; mono?: boolean; className?: string }) {
+  return (
+    <span title={value} className={cx('block min-w-0 truncate', mono && 'font-mono', className)}>
+      {value}
+    </span>
+  );
+}
+
 export function DefinitionList({ items }: { items: Array<[ReactNode, ReactNode]> }) {
   return (
     <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[max-content_1fr]">

@@ -31,7 +31,8 @@ export function LiveIndicator() {
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-ctl text-body" role="status" aria-live="polite" title={hint}>
       <span className={cx('h-2 w-2 flex-none rounded-full', color)} aria-hidden="true" />
-      <span className="truncate">{label}</span>
+      {/* Phones show the dot only (the word stays for screen readers), so the tenant name keeps the room. */}
+      <span className="sr-only sm:not-sr-only sm:truncate">{label}</span>
       {hint && <span className="sr-only">. {hint}</span>}
     </span>
   );

@@ -9,6 +9,6 @@ export { CountChip, SEVERITIES, SeverityTag, StatePill, isSeverity, type CountTo
 export { FilterChip, type FilterOption } from './FilterChip';
 export { Checkbox, FIELD_CLASS, FieldShell, SelectField, TextAreaField, TextField } from './fields';
 export { EmptyState, ErrorMessage, LoadingState, Spinner } from './feedback';
-export { DefinitionList, JsonBlock, Segmented, ToggleGroup, type SegmentedOption } from './misc';
+export { DefinitionList, JsonBlock, Segmented, ToggleGroup, Truncated, type SegmentedOption } from './misc';
 export { DensityToggle, ThemeSwitch } from './preferences';
 export { VisuallyHidden } from './VisuallyHidden';

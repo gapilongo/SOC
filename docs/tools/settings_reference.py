@@ -45,7 +45,7 @@ SECTION_INTRO: Dict[str, str] = {
     "scheduler": "Scheduler process (leader-elected periodic jobs).",
     "retention": "Data retention, applied by the scheduler's maintenance job.",
     "security": "Application keys. Required in staging and production.",
-    "observability": "Logging, tracing and metrics.",
+    "observability": "Logging and metrics.",
     "response": "Response automation defaults and the install-wide SOAR webhook.",
     "mcp": (
         "`lg-sotf mcp`, the Model Context Protocol server an analyst runs next to Claude or another MCP client "
@@ -205,8 +205,8 @@ DESCRIPTIONS: Dict[str, str] = {
     "observability.log_level": "Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`).",
     "observability.log_format": "`json` (default) or `console`.",
     "observability.metrics_enabled": "Reserved. Not read by any process in this release: metrics are always exposed (API `/metrics` behind `api.metrics_token`, worker/scheduler health port).",
-    "observability.otlp_endpoint": "OTLP/HTTP endpoint for traces; tracing is off when unset.",
-    "observability.service_name": "`service.name` of traces and a static field of every log line.",
+    "observability.otlp_endpoint": "Deprecated and ignored: tracing was removed (ADR-0008). A value is still accepted and logs a warning at startup.",
+    "observability.service_name": "A static field of every log line and the Redis client name.",
     "response.dry_run": "Force the dry-run connector everywhere (actions are recorded, never sent). Default true.",
     "response.default_autonomy": "Default autonomy per risk level (`auto`, `approval`, `disabled`); tenants override it in their settings.",
     "response.max_actions_per_hour_per_tenant": "Install-wide cap on executed actions per tenant per hour; tenant caps cannot exceed it.",

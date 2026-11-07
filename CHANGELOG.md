@@ -88,6 +88,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Building the web app from source (`src/lg_front`) now needs Node.js
+  22.12 or later; Node 20 is no longer supported. The frontend image
+  already built on Node 22, so container deployments are unaffected.
 - The command line now applies the API's password policy to the
   passwords it sets (`lg-sotf create-admin`, `lg-sotf create-tenant
   --admin-email` and the bootstrap admin that `lg-sotf migrate` creates
@@ -131,6 +134,24 @@ All notable changes to this project are documented here. The format follows
 - Web UI: while the phone menu is open, keyboard focus stays inside it, and
   Escape closes it.
 
+### Deprecated
+
+- `observability.otlp_endpoint` (`LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT`) is
+  ignored. It is still accepted, so existing configurations load, and every
+  process logs `observability.otlp_endpoint_deprecated` at startup while it
+  is set. Remove it; a later release drops the setting.
+
+### Removed
+
+- OpenTelemetry tracing. The exporter it configured never sent anything: no
+  code created spans. The OpenTelemetry SDK and OTLP exporter (and their
+  protobuf dependencies) are no longer installed; `opentelemetry-api` stays,
+  as a dependency of FastAPI and the Anthropic client. `configs/*.yaml`, the
+  production compose file, `.env.example` and the Helm example no longer
+  mention an OTLP endpoint. Logs and Prometheus metrics are unchanged.
+  `docs/adr/0008-remove-tracing.md` records the decision and how tracing
+  would be added back.
+
 ### Fixed
 
 - Backtests (`lg-sotf eval --from-history`) start each replay from the same
@@ -138,6 +159,15 @@ All notable changes to this project are documented here. The format follows
   `true` or `false` is now ignored by the backtest too (the install default
   applies), as the workflow already did; the backtest used to carry the bool
   into the replayed state.
+- The account menu button in the web app now includes the initials it
+  shows in its accessible name ("Account: <email>, <role>, initials MR"),
+  so speech-input users can activate it by saying what they see (WCAG
+  2.5.3 Label in Name).
+- `lg-sotf mcp` now honours every form of `Retry-After` the LG-SOTF API (or a
+  proxy in front of it) can send when it retries a read: fractional seconds
+  (`1.5`) and HTTP dates, as well as whole seconds. Before, only whole seconds
+  were understood and anything else fell back to the exponential backoff.
+  The wait is still at most 10 seconds; a negative value means retry now.
 - An LLM call that failed unexpectedly no longer leaves its token estimate
   counted against the tenant's daily LLM budget. Each call reserves an
   estimate first and settles it with the tokens actually used, but an

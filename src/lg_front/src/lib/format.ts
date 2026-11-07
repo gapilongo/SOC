@@ -13,6 +13,16 @@ export function formatDateTime(value: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? value : dateTime.format(d);
 }
 
+const dateOnly = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit' });
+const timeOnly = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+/** The date and the time of `value` apart, for a timestamp stacked on two lines in a narrow table column. */
+export function formatDateAndTime(value: string | null | undefined): { date: string; time: string } {
+  if (!value) return { date: '-', time: '' };
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? { date: value, time: '' } : { date: dateOnly.format(d), time: timeOnly.format(d) };
+}
+
 export function formatRelative(value: string | null | undefined, now: number = Date.now()): string {
   if (!value) return '-';
   const t = new Date(value).getTime();
@@ -58,6 +68,15 @@ export function formatInt(value: number | null | undefined): string {
 export function formatUsd(value: number | string | null | undefined): string {
   const n = typeof value === 'string' ? Number(value) : value;
   return n === null || n === undefined || !Number.isFinite(n) ? '-' : usd.format(n);
+}
+
+const usdAxis = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 2 });
+const usdAxisCents = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 4 });
+
+/** A chart axis label in dollars: two decimals from a dollar up ("$370.37", "$0"), up to four below ("$0.0042"). */
+export function formatUsdAxis(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  return (Math.abs(value) < 1 ? usdAxisCents : usdAxis).format(value);
 }
 
 export function humanize(value: string | null | undefined): string {

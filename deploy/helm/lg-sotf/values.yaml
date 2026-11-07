@@ -116,10 +116,10 @@ settings:
   response:
     dry_run: true
 
-# Extra environment for every component (e.g. OTLP endpoint, proxies).
+# Extra environment for every component (e.g. proxies).
 extraEnv: []
-#  - name: LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT
-#    value: http://otel-collector.observability:4318
+#  - name: HTTPS_PROXY
+#    value: http://proxy.internal:3128
 extraEnvFrom: []
 extraVolumes: []
 extraVolumeMounts: []

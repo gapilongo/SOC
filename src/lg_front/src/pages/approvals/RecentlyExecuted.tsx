@@ -82,9 +82,11 @@ export function RecentlyExecuted({
                 return (
                   <tr key={a.id} className="border-t border-subtle align-top">
                     <td className="px-4 py-2.5">
-                      <p className="font-medium text-fg">
-                        {humanize(a.action_type)} <code className="break-all font-mono text-xs font-normal text-body">{a.target}</code>
-                      </p>
+                      <p className="font-medium text-fg">{humanize(a.action_type)}</p>
+                      {/* One line; the full target is the tooltip (and the All actions view). */}
+                      <code className="block max-w-[16rem] truncate font-mono text-xs text-body" title={a.target}>
+                        {a.target}
+                      </code>
                       <p className="text-xs text-secondary">
                         {by ?? 'Not approved by anyone'} · alert{' '}
                         <button
@@ -93,7 +95,7 @@ export function RecentlyExecuted({
                           onClick={() => onOpenAlert(a.alert_id)}
                           aria-label={`Open alert ${a.alert_id}`}
                         >
-                          {shortId(a.alert_id)}
+                          <span className="inline-block max-w-[10ch] truncate align-bottom">{a.alert_id}</span>
                         </button>
                         {a.rollback_of && <> · rollback of {shortId(a.rollback_of)}</>}
                       </p>

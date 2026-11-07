@@ -219,11 +219,17 @@ export default function SuppressionsPage() {
           {visible.map((r) => (
             <li key={r.id} className="rounded-card border border-subtle bg-raised p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
+                {/* At least 16rem of text: on a phone the buttons move under it instead of squeezing it. */}
+                <div className="min-w-[min(16rem,100%)] flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold text-fg">{r.name}</h2>
                     <Badge tone={r.enabled ? 'good' : 'neutral'}>{r.enabled ? 'enabled' : 'disabled'}</Badge>
                     {r.source_feedback_id && <Badge tone="info">suggested</Badge>}
+                    {r.expires_at && new Date(r.expires_at).getTime() <= Date.now() && (
+                      <Badge tone="warn" title={`Expired ${formatDateTime(r.expires_at)}`}>
+                        expired
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-1 break-words font-mono text-xs text-secondary">{describeMatch(r.match)}</p>
                   <p className="mt-1 text-xs text-muted">

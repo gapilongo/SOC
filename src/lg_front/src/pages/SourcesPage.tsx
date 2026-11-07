@@ -10,7 +10,7 @@ import { useApi } from '../auth/AuthContext';
 import { Badge, StatusBadge } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../components/Dialog';
 import { useToast } from '../components/Toast';
-import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField } from '../components/ui';
+import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField, Truncated } from '../components/ui';
 import { formatDateTime, formatRelative } from '../lib/format';
 import { parseJsonObject } from '../lib/json';
 
@@ -380,7 +380,7 @@ export default function SourcesPage() {
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {q.data && q.data.length === 0 && <EmptyState title="No sources yet">Add a SIEM or EDR connection, or a webhook for push delivery.</EmptyState>}
       {q.data && q.data.length > 0 && (
-        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
+        <div className="relative overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Sources</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
@@ -397,23 +397,29 @@ export default function SourcesPage() {
               {q.data.map((s) => (
                 <tr key={s.id} className="border-b border-subtle align-top">
                   <td className="px-3 py-2">
-                    <div className="font-medium text-fg">{s.name}</div>
-                    <div className="font-mono text-xs text-muted">{s.id}</div>
-                    {!s.enabled && <Badge>disabled</Badge>}
+                    <div className="min-w-[10rem] font-medium text-fg">{s.name}</div>
+                    <Truncated value={s.id} mono className="max-w-[10rem] text-xs text-muted" />
+                    {!s.enabled && healthTone(s) !== 'disabled' && <Badge>disabled</Badge>}
                   </td>
                   <td className="px-3 py-2 text-body">{SOURCE_SPECS[s.type as SourceType]?.label ?? s.type}</td>
                   <td className="px-3 py-2">
                     <StatusBadge value={healthTone(s)} />
                     {s.consecutive_failures ? <div className="mt-1 text-xs text-danger-fg">{s.consecutive_failures} consecutive failures</div> : null}
-                    {s.last_error && <div className="mt-1 max-w-xs break-words text-xs text-danger-fg">{s.last_error}</div>}
+                    {s.last_error && (
+                      // At most three lines in the table; the whole error is the tooltip.
+                      <div className="mt-1 line-clamp-3 max-w-[14rem] break-words text-xs text-danger-fg" title={s.last_error}>
+                        {s.last_error}
+                      </div>
+                    )}
                   </td>
-                  <td className="px-3 py-2 text-secondary">
+                  <td className="whitespace-nowrap px-3 py-2 text-secondary">
                     <span title={formatDateTime(s.last_polled_at)}>{s.last_polled_at ? formatRelative(s.last_polled_at) : 'never'}</span>
                     {s.next_poll_at && <div className="text-xs text-muted">next {formatRelative(s.next_poll_at)}</div>}
                   </td>
-                  <td className="px-3 py-2">{s.has_secret ? <Badge tone="good">configured</Badge> : <Badge>none</Badge>}</td>
+                  <td className="whitespace-nowrap px-3 py-2">{s.has_secret ? <Badge tone="good">configured</Badge> : <Badge>none</Badge>}</td>
                   <td className="px-3 py-2">
-                    <div className="flex justify-end gap-1.5">
+                    {/* Two buttons a row, so the table fits at 1280 px. */}
+                    <div className="ml-auto flex w-[11rem] flex-wrap justify-end gap-1.5">
                       <Button size="sm" onClick={() => void test(s)} busy={testing === s.id} icon={<PlugZap className="h-3.5 w-3.5" aria-hidden="true" />}>
                         Test
                       </Button>
