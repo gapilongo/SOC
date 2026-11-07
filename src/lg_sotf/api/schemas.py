@@ -35,7 +35,6 @@ from lg_sotf.models.vocabulary import (
     Role,
     Scope,
     SourceType,
-    VerificationState,
 )
 
 T = TypeVar("T")
@@ -422,7 +421,7 @@ class RollbackEligibilityOut(BaseModel):
 
     available: bool = False
     action_type: Optional[str] = None
-    risk: Optional[str] = None
+    risk: Optional[RiskLevelStr] = None
     until: Optional[datetime] = None
     reason: Optional[str] = None
 
@@ -455,8 +454,8 @@ class ActionOut(Out):
     action_type: str
     target: str
     params: Dict[str, Any] = Field(default_factory=dict)
-    risk_level: str
-    status: str
+    risk_level: RiskLevelStr
+    status: ActionStatusStr
     blocked_reason: Optional[str] = None
     requested_by: Optional[str] = None
     approved_by: Optional[str] = None
@@ -467,11 +466,11 @@ class ActionOut(Out):
     rollback_of: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime
-    execution_owner: str = "workflow"
+    execution_owner: ExecutionOwnerStr = "workflow"
     integration_id: Optional[UUID] = None
     external_ref: Optional[Dict[str, Any]] = None
     attempts: int = 0
-    verification: Optional[VerificationState] = None
+    verification: Optional[VerificationStateStr] = None
     verification_detail: Optional[Dict[str, Any]] = None
     verify_deadline: Optional[datetime] = None
     verified_at: Optional[datetime] = None

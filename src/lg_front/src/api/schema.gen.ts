@@ -1547,8 +1547,9 @@ export interface components {
             /**
              * Execution Owner
              * @default workflow
+             * @enum {string}
              */
-            execution_owner?: string;
+            execution_owner?: "workflow" | "scheduler";
             /** External Ref */
             external_ref?: {
                 [key: string]: unknown;
@@ -1578,8 +1579,11 @@ export interface components {
              * @description The action type has an inverse (rollback).
              */
             reversible?: boolean | null;
-            /** Risk Level */
-            risk_level: string;
+            /**
+             * Risk Level
+             * @enum {string}
+             */
+            risk_level: "low" | "medium" | "high" | "critical";
             rollback?: components["schemas"]["RollbackEligibilityOut"];
             /** Rollback Of */
             rollback_of?: string | null;
@@ -1588,8 +1592,11 @@ export interface components {
              * @description The live rollback of this action, if any.
              */
             rolled_back_by?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "awaiting_approval" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "dry_run" | "blocked";
             /** Target */
             target: string;
             /** Tenant Id */
@@ -3422,7 +3429,7 @@ export interface components {
             /** Reason */
             reason?: string | null;
             /** Risk */
-            risk?: string | null;
+            risk?: ("low" | "medium" | "high" | "critical") | null;
             /** Until */
             until?: string | null;
         };

@@ -9,9 +9,11 @@ value the schema does not list (a newer release during a rolling deploy).
 from __future__ import annotations
 
 import importlib.util
+from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, List, Sequence, Tuple
+from uuid import uuid4
 
 import pytest
 
@@ -46,6 +48,12 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("EscalationOut", "alert_severity", v.SEVERITIES),
     ("PreviewActionOut", "risk", v.RISK_LEVELS),
     ("PreviewActionOut", "autonomy", v.AUTONOMY_MODES),
+    # response actions
+    ("ActionOut", "risk_level", v.RISK_LEVELS),
+    ("ActionOut", "status", v.ACTION_STATUSES),
+    ("ActionOut", "execution_owner", v.EXECUTION_OWNERS),
+    ("ActionOut", "verification", v.VERIFICATION_STATES),
+    ("RollbackEligibilityOut", "risk", v.RISK_LEVELS),
 ]
 
 
@@ -94,6 +102,25 @@ def test_response_models_tolerate_unknown_values() -> None:
     )
     assert me.model_dump(mode="json")["role"] == "auditor"
     assert me.model_dump(mode="json")["scopes"] == ["export"]
+
+
+def test_action_verification_is_a_tolerant_reader_too() -> None:
+    """``verification`` was a strict ``Literal`` before T2: an unknown state now serializes instead of a 500."""
+    now = datetime.now(UTC)
+    action = schemas.ActionOut(
+        id=uuid4(),
+        tenant_id="t1",
+        alert_id="a1",
+        action_type="isolate_host",
+        target="host-1",
+        risk_level="severe",
+        status="paused",
+        created_at=now,
+        updated_at=now,
+        verification="superseded",
+    )
+    dumped = action.model_dump(mode="json")
+    assert (dumped["risk_level"], dumped["status"], dumped["verification"]) == ("severe", "paused", "superseded")
 
 
 def test_request_models_stay_strict() -> None:

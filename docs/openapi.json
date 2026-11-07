@@ -310,6 +310,10 @@
           },
           "execution_owner": {
             "default": "workflow",
+            "enum": [
+              "workflow",
+              "scheduler"
+            ],
             "title": "Execution Owner",
             "type": "string"
           },
@@ -404,6 +408,12 @@
             "title": "Reversible"
           },
           "risk_level": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Risk Level",
             "type": "string"
           },
@@ -436,6 +446,17 @@
             "title": "Rolled Back By"
           },
           "status": {
+            "enum": [
+              "proposed",
+              "awaiting_approval",
+              "approved",
+              "rejected",
+              "executing",
+              "succeeded",
+              "failed",
+              "dry_run",
+              "blocked"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -5443,6 +5464,12 @@
           "risk": {
             "anyOf": [
               {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
