@@ -62,6 +62,39 @@ A reference pinned by digest is saved under its tag (`ollama/ollama:0.35.0`),
 because `docker load` does not restore registry digests; the digest was
 verified when the image was pulled.
 
+### Verify the published images before you bundle them
+
+The published images are signed and carry build provenance
+([security.md](security.md#verify-an-image-yourself)). Check them on the
+connected machine, which still has access to Sigstore and GitHub. Then bundle
+them by that digest, and take the signed copies and the Sigstore trust root
+across with the bundle. You need cosign 3.0.6 or later and `gh`.
+
+```sh
+SIGNER=https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+ISSUER=https://token.actions.githubusercontent.com
+APP=ghcr.io/gapilongo/lg-sotf:v1.3.0@sha256:<digest>          # docs/security.md shows how to get it
+FRONTEND=ghcr.io/gapilongo/lg-sotf-frontend:v1.3.0@sha256:<digest>
+
+cosign initialize                                              # current Sigstore trust root (TUF)
+SIGNED=/media/usb/lg-sotf-signed                               # next to the bundle, not inside it
+mkdir -p "$SIGNED"
+for ref in "$APP" "$FRONTEND"; do
+  cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$ref"
+  gh attestation verify "oci://$ref" --repo gapilongo/SOC --cert-identity "$SIGNER" --deny-self-hosted-runners
+  name="${ref##*/}"; name="${name%%:*}"
+  cosign save --dir "$SIGNED/$name" "$ref"                     # image + signature + attestations
+  (cd "$SIGNED" && gh attestation download "oci://$ref" --repo gapilongo/SOC)   # provenance, as evidence
+done
+cp ~/.sigstore/root/tuf-repo-cdn.sigstore.dev/targets/trusted_root.json "$SIGNED/"
+
+APP_IMAGE="$APP" FRONTEND_IMAGE="$FRONTEND" scripts/airgap/bundle.sh --ollama --models --output /media/usb/lg-sotf-airgap
+```
+
+`bundle.sh` pulls a `name:tag@sha256:` reference by its digest, so the bundle
+holds the bytes you just verified. Keep `lg-sotf-signed/` outside the bundle
+directory, because `load.sh` refuses files that its manifest does not list.
+
 ## 2. On the air-gapped host: verify and load
 
 ```sh
@@ -83,6 +116,27 @@ with `--network none`.
 Check `deploy.tar.gz` too before you extract it: it is covered by the manifest,
 so run `load.sh` from a previously installed copy of the scripts, or compare
 `sha256sum deploy.tar.gz` with its line in `SHA256SUMS` first.
+
+To check the image signatures again on the air-gapped side, with no network
+access, use the signed copies:
+
+```sh
+SIGNER=https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+ISSUER=https://token.actions.githubusercontent.com
+for dir in /media/usb/lg-sotf-signed/lg-sotf /media/usb/lg-sotf-signed/lg-sotf-frontend; do
+  cosign verify --trusted-root /media/usb/lg-sotf-signed/trusted_root.json \
+      --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" --local-image "$dir"
+done
+```
+
+With an internal registry, push the signed copies instead of using
+`docker load`: run `cosign load --dir /media/usb/lg-sotf-signed/lg-sotf
+registry.internal/lg-sotf`, and the same for the frontend. Then run the images
+from that registry by digest. The same `cosign verify
+--trusted-root ...` command, given `registry.internal/lg-sotf@sha256:<digest>`,
+checks the exact image you run, and an admission controller can enforce it.
+The `sha256:<digest>.jsonl` files are the provenance attestations, kept as
+evidence; they were verified on the connected machine.
 
 ## 3. Configure and start
 

@@ -70,12 +70,14 @@ def test_only_publishing_jobs_may_write_packages() -> None:
     wf = workflow(RELEASE)
     assert wf["permissions"] == {"contents": "read"}
     writers = {name for name, job in wf["jobs"].items() if job.get("permissions", {}).get("packages") == "write"}
-    assert writers == {"build", "promote"}
+    assert writers == {"build", "sign", "promote"}
     for name, job in wf["jobs"].items():
         perms = job.get("permissions")
         assert perms is not None, f"{name}: declare job permissions explicitly"
         assert perms.get("contents") == "read", name
-        assert set(perms) <= {"contents", "packages"}, name
+        if name != "sign":  # the signing job's OIDC and attestation rights: test_ci_workflow.py
+            assert set(perms) <= {"contents", "packages", "attestations"}, name
+            assert perms.get("attestations", "read") == "read", name
 
 
 def test_images_are_multi_arch_tagged_by_sha_and_main_with_attestations() -> None:
@@ -115,12 +117,12 @@ def test_dev_follows_main_and_uat_follows_release_tags() -> None:
     for job, needs, env in (("deploy-dev", "build", "dev"), ("deploy-uat", "promote", "uat")):
         call = jobs[job]
         assert call["uses"] == "./.github/workflows/deploy.yml"
-        assert call["needs"] == needs
+        assert call["needs"] == (["build", "sign"] if needs == "build" else needs), "dev waits for the signatures"
         assert call["with"]["environment"] == env
         assert call["with"]["app_digest"] == f"${{{{ needs.{needs}.outputs.app_digest }}}}"
         assert call["with"]["frontend_digest"] == f"${{{{ needs.{needs}.outputs.frontend_digest }}}}"
         assert call["secrets"] == "inherit"
-        assert call["permissions"] == {"contents": "read", "packages": "read"}
+        assert call["permissions"] == {"contents": "read", "packages": "read", "attestations": "read"}
 
 
 # --------------------------------------------------------------------------- deploy.yml
@@ -141,7 +143,7 @@ def test_deploy_targets_github_environments_one_at_a_time() -> None:
     assert job["concurrency"] == {"group": "deploy-${{ inputs.environment }}", "cancel-in-progress": False}
     assert 10 <= job["timeout-minutes"] <= 60
     assert wf["permissions"] == {"contents": "read"}
-    assert job["permissions"] == {"contents": "read", "packages": "read"}
+    assert job["permissions"] == {"contents": "read", "packages": "read", "attestations": "read"}
 
 
 def test_deploy_validates_inputs_before_using_them() -> None:
