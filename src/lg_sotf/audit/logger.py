@@ -9,13 +9,25 @@ access events and other entries that have no transaction to join
 Logging goes through :mod:`lg_sotf.observability.logging` (this module never
 configures logging). ``details`` must be small and must not contain secrets
 or raw alert bodies; they are redacted before logging as defence in depth.
+
+Dual audit. While a request acts in a customer tenant under an MSSP
+organisation's grant (:func:`act_under_grant`, set by authentication on
+every request), each entry written to that tenant's chain is recorded
+twice: in the customer's chain, its details naming the organisation and the
+grant (``delegation``), and in the organisation's chain as
+``delegated.<action>`` with the customer, the grant and the customer
+entry's id and hash, never its details. With a connection both rows are
+written in the change's transaction, so they commit together. No write path
+has to remember the second entry.
 """
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Optional
 
+from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact
 
@@ -32,6 +44,23 @@ class Actor:
 
     type: str
     id: Optional[str]
+
+
+@dataclass(frozen=True)
+class Delegation:
+    """The current request acts in ``tenant_id`` under ``grant_id``, given to ``organisation_id``."""
+
+    tenant_id: str
+    organisation_id: str
+    grant_id: str
+
+
+_delegation: ContextVar[Optional[Delegation]] = ContextVar("lg_sotf_audit_delegation", default=None)
+
+
+def act_under_grant(delegation: Optional[Delegation]) -> None:
+    """Set the grant the current request acts under (``None``: none). Authentication calls it on every request."""
+    _delegation.set(delegation)
 
 
 class AuditLogger:
@@ -95,6 +124,11 @@ class AuditLogger:
         conn: Optional[Connection],
     ) -> Optional[AuditEntry]:
         safe_details, _ = redact(dict(details or {}))
+        delegation = _delegation.get()
+        if delegation is not None and delegation.tenant_id != tenant_id:
+            delegation = None  # an entry in another chain (the organisation's own, for one)
+        if delegation is not None:
+            safe_details["delegation"] = {"organisation_id": delegation.organisation_id, "grant_id": delegation.grant_id}
         entry = None
         if self._repos is not None:
             entry = await self._repos.audit.append(
@@ -107,6 +141,8 @@ class AuditLogger:
                 safe_details,
                 conn=conn,
             )
+            if delegation is not None:
+                await self._record_for_organisation(delegation, entry, conn)
         _log.info(
             "audit",
             audit_action=action,
@@ -119,3 +155,23 @@ class AuditLogger:
             persisted=entry is not None,
         )
         return entry
+
+    async def _record_for_organisation(
+        self, delegation: Delegation, entry: AuditEntry, conn: Optional[Connection]
+    ) -> None:
+        """The organisation's entry for ``entry``, which was written in the customer's chain under its grant."""
+        assert self._repos is not None
+        if conn is not None:
+            await switch_tenant(conn, delegation.organisation_id)
+        await self._repos.audit.append(
+            delegation.organisation_id,
+            entry.actor_type,
+            entry.actor_id,
+            f"delegated.{entry.action}",
+            entry.resource_type,
+            entry.resource_id,
+            {"tenant_id": entry.tenant_id, "grant_id": delegation.grant_id, "entry_id": entry.id, "entry_hash": entry.hash},
+            conn=conn,
+        )
+        if conn is not None:
+            await switch_tenant(conn, entry.tenant_id)

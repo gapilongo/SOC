@@ -24,10 +24,10 @@ In the web app, **MSSP console** (`/platform`) has four tabs:
   suspended.
 * **Escalation queue**: open and claimed escalations of every tenant, the
   soonest SLA deadline first. Opening one switches to its tenant and shows
-  its escalation queue. Deciding needs an account in that tenant: under a
-  tenant switch, claims, decisions and approvals are refused, because they
-  belong to the customer's analysts (or to your analysts' accounts in that
-  tenant).
+  its escalation queue. Under a platform admin's tenant switch, claims,
+  decisions and approvals are refused, because they belong to the
+  customer's analysts; an MSSP analyst the customer granted access to
+  decides there under the grant (see [Delegated access](#delegated-access-organisations-and-grants)).
 * **Usage**: invoicing figures per tenant for a month, with CSV export.
 * **Create tenant**: id, name, optional first admin, and the initial
   settings (see [Templates](#templates)).
@@ -60,7 +60,24 @@ staff accounts may act in customer tenants that granted it access.
 
 Under a grant the member has the grant's role, never more than their own
 role in the home tenant, and no platform-admin powers (a platform admin who
-is also a member and holds a grant acts under the grant). The grant is read
+is also a member and holds a grant acts under the grant). With the analyst
+role they decide escalations and approve, reject, roll back, retry and
+verify actions within the role's approval authority, and write what the role
+allows (notes, suppression rules; settings, sources and integrations with an
+admin grant). Two things are never available under a grant: claiming an
+escalation (it assigns it to an account of the customer; decide without
+claiming) and anything that creates or changes credentials that would
+outlive the grant (users, MFA resets, API keys, grants). Rows written under a
+grant leave the customer's user columns empty (`decided_by`, `created_by`):
+the member's account belongs to the organisation's tenant, and the audit log
+names them.
+
+Every audit entry written under a grant is recorded in both chains, in the
+same transaction: in the customer's, with `delegation` (the organisation and
+the grant) in its details, and in the organisation's as
+`delegated.<action>` (for example `delegated.escalation.decided`) with the
+customer, the grant, and the customer entry's id and hash, but never its
+details. Either side can show the other's entry exists and is unchanged. The grant is read
 on every request: a revoked or expired grant, a removed member or a
 suspended customer gets 403 on the next request. Every request is written to
 the customer's audit log (`grant.tenant_access`, with the grant and the

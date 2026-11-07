@@ -134,7 +134,10 @@ recorded in that tenant's audit log:
 * a member of an MSSP organisation that holds a live grant to that tenant
   (`grant.tenant_access`): the caller has the grant's role, capped at their
   own role, and no platform-admin powers (see docs/mssp.md, "Delegated
-  access"); `GET /auth/me` returns the `grant_id`;
+  access"); `GET /auth/me` returns the `grant_id`. They may decide
+  escalations and approve actions, but not claim, and not create or change
+  users, API keys or grants. Every audit entry they cause is also recorded
+  in their organisation's chain (`delegated.<action>`);
 * otherwise a platform admin (`users.is_platform_admin`), with their own
   role (`platform_admin.tenant_access`).
 

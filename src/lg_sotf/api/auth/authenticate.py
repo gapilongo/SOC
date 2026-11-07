@@ -48,7 +48,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
 from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.ratelimit import RateDecision, rate_limited
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import AuditLogger, Delegation, act_under_grant
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
@@ -149,6 +149,7 @@ async def record_failure(ctx: ApiContext, ip: str, credential: Optional[str]) ->
 
 async def authenticate(ctx: ApiContext, conn: HTTPConnection, *, allow_api_key: bool = True) -> Principal:
     """Authenticate the request and apply tenant checks and the ``X-Tenant-ID`` override."""
+    act_under_grant(None)  # set below once the request is known to act under a grant
     ip = client_ip(conn)
     api_key, bearer = _credentials(conn)
     credential = api_key if api_key is not None else bearer
@@ -174,6 +175,9 @@ async def authenticate(ctx: ApiContext, conn: HTTPConnection, *, allow_api_key: 
                 raise rate_limited(decision) from exc
         raise
     principal = await _apply_tenant_override(ctx, conn, principal)
+    if principal.grant_id is not None:
+        # Every audit entry of this request in the customer's chain is also recorded in the organisation's.
+        act_under_grant(Delegation(principal.tenant_id, principal.home_tenant_id, str(principal.grant_id)))
     mark_principal(conn.scope, principal.tenant_id, principal.id)
     bind_context(tenant_id=principal.tenant_id)
     return principal

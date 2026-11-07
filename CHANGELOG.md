@@ -97,6 +97,15 @@ All notable changes to this project are documented here. The format follows
   `POST /tenant/grants/{id}/revoke` for the customer's admins. Giving and
   revoking a grant is audited in both the customer's and the organisation's
   chain. `GET /auth/me` returns `grant_id`. See docs/mssp.md.
+- MSSP organisation model, part 3 (writing and deciding under grants): an
+  MSSP analyst acting under a grant can now decide escalations (one at a
+  time or with bulk close) and approve, reject, roll back, retry and verify
+  actions, within the grant's role. Every audit entry written under a grant
+  is recorded in both chains: the customer's, naming the organisation and
+  grant, and the organisation's as `delegated.<action>` with the customer
+  entry's id and hash. Claiming an escalation and creating or changing
+  users, MFA, API keys and grants stay refused under a grant. A platform
+  admin's tenant switch still cannot claim or decide.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

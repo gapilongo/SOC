@@ -6,10 +6,12 @@ Access rules (contract section 10):
   ``admin``);
 * API keys need the endpoint's scope; endpoints without a scope (user,
   API key, source, settings administration, reprocessing) refuse API keys;
-* endpoints whose effect is attributed to a person (claiming and deciding
-  escalations, approving actions) also need a provisioned user account, and
-  refuse a platform admin acting on another tenant via ``X-Tenant-ID`` (the
-  decision must be made by a member of that tenant);
+* endpoints whose effect is attributed to a person (deciding escalations,
+  approving actions) also need a provisioned user account, and refuse a
+  platform admin acting on another tenant via ``X-Tenant-ID`` (the decision
+  must be made by a member of that tenant, or by an MSSP analyst the tenant
+  granted access to); claiming refuses both, because it assigns the
+  escalation to an account of the tenant;
 * endpoints that administer delegated access refuse a principal acting
   under a grant (``no_grant``): only the customer gives or reads grants;
 * platform endpoints (tenant provisioning) need an admin user with the
@@ -42,6 +44,7 @@ class Access:
     home_tenant_only: bool = False
     platform_admin: bool = False
     no_grant: bool = False
+    no_platform_override: bool = False
     bucket: str = API_BUCKET
 
     def check(self, principal: Principal) -> None:
@@ -65,6 +68,8 @@ class Access:
             raise forbidden("this action cannot be performed with an X-Tenant-ID override")
         if self.no_grant and principal.delegated:
             raise forbidden("this action is not available under a grant")
+        if self.no_platform_override and principal.overridden and not principal.delegated:
+            raise forbidden("this action cannot be performed with an X-Tenant-ID override")
 
 
 def _limit(ctx: ApiContext, bucket: str) -> int:
@@ -91,7 +96,8 @@ def principal_dep(access: Access) -> object:
 
 VIEWER = Access(role="viewer", scope="read")
 ANALYST = Access(role="analyst", scope="write")
-REVIEWER = Access(role="analyst", user_account=True, home_tenant_only=True)
+REVIEWER = Access(role="analyst", user_account=True, no_platform_override=True)
+CLAIMER = Access(role="analyst", user_account=True, home_tenant_only=True)
 ADMIN = Access(role="admin")
 ADMIN_USER = Access(role="admin", user_account=True)
 ANY = Access(role="viewer", any_api_key=True)

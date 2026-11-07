@@ -67,7 +67,7 @@ async def test_bulk_close_records_one_benign_decision_with_the_same_note() -> No
         suggest_suppression=False,
     )
     assert out[0].escalation == "A" and out[0].decision is not None and isinstance(out[1].error, ReviewDenied)
-    assert review.calls[0][1] == ("a", "benign_positive", "known", [], 0, {"suggest_suppression": False})
+    assert review.calls[0][1] == ("a", "benign_positive", "known", [], 0, {"suggest_suppression": False, "delegated": False})
 
 
 @pytest.mark.parametrize(

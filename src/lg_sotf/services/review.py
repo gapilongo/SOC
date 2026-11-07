@@ -156,6 +156,7 @@ class _DecisionRequest:
 class _Actor(NamedTuple):
     user_id: UUID
     role: str
+    local_id: Optional[UUID]  # for the tenant's user columns; None under a grant (another tenant's account)
 
 
 class _Recorded(NamedTuple):
@@ -326,6 +327,7 @@ class ReviewService:
         *,
         feedback: Optional[Mapping[str, Any]] = None,
         suggest_suppression: Optional[bool] = None,
+        delegated: bool = False,
         now: Optional[datetime] = None,
     ) -> DecisionResult:
         """Record the analyst decision and return one resume message per waiting alert.
@@ -344,6 +346,7 @@ class ReviewService:
         An escalation the SLA sweep *expired* can still be decided (the
         alert's run keeps waiting on it); the audit entry records
         ``after_sla_expiry``. Decided and cancelled escalations cannot.
+        ``delegated`` (an MSSP analyst under a grant): ``decided_by`` stays empty; the audit log names them.
         """
         _require_role(role)
         user_id = _user_uuid(user)
@@ -355,7 +358,7 @@ class ReviewService:
         if current.status == "claimed" and current.assigned_to not in (None, user_id) and role != "admin":
             raise ReviewDenied("the escalation is claimed by another analyst")
         approved = await self._resolve_approvals(tenant_id, current.alert_id, request.requested)
-        actor = _Actor(user_id, role)
+        actor = _Actor(user_id, role, None if delegated else user_id)
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             recorded = await self._record_decision(
                 conn, tenant_id, current, request, approved, actor,
@@ -396,12 +399,12 @@ class ReviewService:
         # Expiry only means the SLA was missed: the alert's run still waits on this escalation, so a
         # late decision is recorded (same optimistic lock as on an active one) rather than refused.
         decided = await self._repos.escalations.decide(
-            tenant_id, escalation_id, decision=decision, decided_by=actor.user_id, expected_version=expected_version,
+            tenant_id, escalation_id, decision=decision, decided_by=actor.local_id, expected_version=expected_version,
             notes=request.notes, approved_actions=approved, now=now,
             allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES, conn=conn,
         )
         fb, _ = await self._repos.feedback.create(
-            tenant_id, escalation_id, decided.alert_id, decision, user_id=actor.user_id, notes=request.notes,
+            tenant_id, escalation_id, decided.alert_id, decision, user_id=actor.local_id, notes=request.notes,
             review_duration_s=duration, conn=conn, **request.feedback,
         )
         own_review = await self._own_review(tenant_id, decided, decision, conn)
@@ -426,7 +429,7 @@ class ReviewService:
         )
         suggestion_id: Optional[str] = None
         if decision == "false_positive" and suggest():
-            suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, actor.user_id, now, conn)
+            suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, actor, now, conn)
         await enqueue_event(
             conn,
             tenant_id,
@@ -490,7 +493,7 @@ class ReviewService:
         return resolve_review_policy(tenant_settings, self._settings).suggest_suppressions
 
     async def _suggest_suppression(
-        self, tenant_id: str, escalation: Escalation, feedback_id: str, user_id: UUID, now: datetime, conn: Connection
+        self, tenant_id: str, escalation: Escalation, feedback_id: str, actor: _Actor, now: datetime, conn: Connection
     ) -> Optional[str]:
         """A disabled rule matching the alert's fingerprint (and source), for an admin to review and enable."""
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
@@ -512,8 +515,8 @@ class ReviewService:
                 name=f"Suggested from false positive (severity <= {alert.severity}): {alert.title}",
                 match=match,
                 actor_type="user",
-                actor_id=str(user_id),
-                created_by=user_id,
+                actor_id=str(actor.user_id),
+                created_by=actor.local_id,
                 source_feedback_id=feedback_id,
                 details={"alert_id": alert.id, "escalation_id": escalation.id},
                 now=now,
