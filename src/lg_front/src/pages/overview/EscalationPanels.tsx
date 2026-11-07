@@ -79,7 +79,12 @@ export function MyClaimedList({ now, interval, total }: { now: number; interval:
 function OwnerCell({ e }: { e: EscalationOut }) {
   const { principal } = useAuth();
   const owner = escalationOwner(e, principal?.userId);
-  return <span className={cx(owner.kind === 'you' ? 'font-medium text-fg' : 'text-secondary', 'break-all')}>{owner.label}</span>;
+  // One line: a long e-mail is cut, the whole address is the tooltip.
+  return (
+    <span title={owner.label} className={cx(owner.kind === 'you' ? 'font-medium text-fg' : 'text-secondary', 'block max-w-[13rem] truncate')}>
+      {owner.label}
+    </span>
+  );
 }
 
 /** The next SLA deadlines of the whole queue (overdue first), with the next deadline still ahead. */
@@ -121,7 +126,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
       {q.items.length > 0 && (
         // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-        <div role="region" aria-labelledby="ov-sla" tabIndex={0} className="overflow-x-auto">
+        <div role="region" aria-labelledby="ov-sla" tabIndex={0} className="relative overflow-x-auto">
           <table className="w-full min-w-[640px] border-collapse text-ctl">
             <thead>
               <tr className="text-left text-xs text-secondary">

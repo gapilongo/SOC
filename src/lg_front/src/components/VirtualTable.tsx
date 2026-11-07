@@ -131,7 +131,7 @@ export function VirtualTable<T>({
 
   return (
     <div className="overflow-hidden rounded-card border border-subtle bg-raised">
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} style={{ minWidth }}>
           <div role="rowgroup">
             <div

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCcw, RotateCcw, Undo2 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { endpoints } from '../../api/endpoints';
 import { afterActionChange } from '../../api/invalidate';
@@ -48,7 +48,7 @@ export function canRecheck(action: ActionOut): boolean {
 function Steps({ steps }: { steps: JsonObject[] }) {
   const columns = Array.from(new Set(steps.flatMap((s) => Object.keys(s)))).slice(0, 6);
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full text-left text-xs">
         <caption className="sr-only">Steps</caption>
         <thead className="text-muted">
@@ -77,7 +77,16 @@ function Steps({ steps }: { steps: JsonObject[] }) {
 }
 
 /** Everything the ledger knows about one action: outcome, verification, connector state and rollback lineage. */
-export function ActionDetails({ action, onSelectAction }: { action: ActionOut; onSelectAction?: (id: string) => void }) {
+export function ActionDetails({
+  action,
+  onSelectAction,
+  lead = [],
+}: {
+  action: ActionOut;
+  onSelectAction?: (id: string) => void;
+  /** Rows shown first in the same list (the ledger moves its long target and details here). */
+  lead?: Array<[ReactNode, ReactNode]>;
+}) {
   const result = action.result ?? null;
   const ref = action.external_ref ?? null;
   const steps = Array.isArray(ref?.steps) ? (ref?.steps as unknown[]).map(asObjectOrNull).filter((s): s is JsonObject => s !== null) : [];
@@ -101,6 +110,7 @@ export function ActionDetails({ action, onSelectAction }: { action: ActionOut; o
       {hint && <p className="text-warn-fg">{hint}</p>}
       <DefinitionList
         items={[
+          ...lead,
           ['Connector', action.connector ?? '-'],
           ['Executed by', action.execution_owner === 'scheduler' ? 'scheduler (background)' : 'alert workflow'],
           ['Attempts', action.attempts ?? 0],

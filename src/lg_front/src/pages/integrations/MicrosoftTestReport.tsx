@@ -108,7 +108,7 @@ export function MicrosoftTestReport({ report }: { report: Report }) {
         </p>
       )}
       {capabilities.length > 0 ? (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <caption className="sr-only">Capabilities and permissions</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">

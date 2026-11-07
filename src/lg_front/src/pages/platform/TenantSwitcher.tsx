@@ -151,7 +151,7 @@ export function TenantSwitcher({ label }: { label?: string } = {}) {
   const override = isTenantOverride(principal);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-0">
       <Button
         ref={buttonRef}
         size="sm"

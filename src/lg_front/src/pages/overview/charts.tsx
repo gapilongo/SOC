@@ -109,9 +109,11 @@ export function StatusPipeline({ title, counts: raw, linkFor }: { title: string;
               <span className={cx('text-xl font-semibold tabular-nums', n ? 'text-fg' : 'text-secondary')}>{formatInt(n)}</span>
             </>
           );
-          const cls = 'flex h-full flex-col gap-1 rounded-control border border-subtle bg-sidebar p-2.5';
+          // Subgrids of the row, so the counts line up when a label wraps ("Waiting for an analyst").
+          const cls = 'row-span-2 grid grid-rows-subgrid gap-1 rounded-control border border-subtle bg-sidebar p-2.5';
           return (
-            <li key={step.status}>
+            <li key={step.status} className="row-span-2 grid grid-rows-subgrid">
+
               {n > 0 ? (
                 <Link to={linkFor(step.status)} className={cx(cls, 'hover:border-control')}>
                   {body}

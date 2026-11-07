@@ -298,8 +298,12 @@ describe('ApprovalsPage: all actions', () => {
     const row = within(table).getByText('alice@contoso.example').closest('tr') as HTMLElement;
     expect(within(row).getByText(/failed \(Synced user reenabled\)/i)).toBeInTheDocument();
     expect(within(row).getByRole('button', { name: 'Roll back' })).toBeInTheDocument();
+    // The target stays on one line in the table, its full value as the tooltip...
+    expect(within(row).getByText('alice@contoso.example')).toHaveAttribute('title', 'alice@contoso.example');
     await userEvent.click(within(row).getByRole('button', { name: /Show details of Disable user/i }));
     expect(screen.getByText('account disabled')).toBeInTheDocument();
+    // ...and whole in the expanded row.
+    expect(screen.getAllByText('alice@contoso.example')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Export CSV' })).toBeEnabled();
 
     await userEvent.click(screen.getByRole('button', { name: 'Verification: Any' }));

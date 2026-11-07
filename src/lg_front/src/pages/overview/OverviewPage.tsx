@@ -150,7 +150,8 @@ function ApprovalsCard({ queue }: { queue: QueueFigures }) {
 
 function Kpi({ label, value, sub, to }: { label: string; value: string; sub: string; to?: string }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-card border border-subtle bg-raised px-4 py-3.5">
+    // A subgrid of the row: labels, values and notes line up across the tiles even when a label wraps.
+    <div className="row-span-3 grid min-w-0 grid-rows-subgrid gap-1 rounded-card border border-subtle bg-raised px-4 py-3.5">
       <dt className="text-xs text-secondary">{to ? <Link to={to} className="text-secondary hover:text-fg hover:underline">{label}</Link> : label}</dt>
       <dd className="text-2xl font-semibold tabular-nums text-fg">{value}</dd>
       <dd className="text-xs text-muted">{sub}</dd>
@@ -207,7 +208,7 @@ function AdminFigures({ d, phrase }: { d: DashboardOut; phrase: string }) {
           to="/reports"
         />
       </dl>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-2">
         <Breakdown
           title="Worker health"
           meta="Workflow runs not finished yet, by status, right now"

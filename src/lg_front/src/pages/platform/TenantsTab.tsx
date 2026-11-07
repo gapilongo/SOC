@@ -13,7 +13,7 @@ import { useApi, useAuth } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../components/Dialog';
 import { useToast } from '../../components/Toast';
-import { Button, Card, EmptyState, ErrorMessage, LoadingState, TextField, cx } from '../../components/ui';
+import { Button, Card, EmptyState, ErrorMessage, LoadingState, TextField, Truncated, cx } from '../../components/ui';
 import { formatInt, formatRelative, formatUsd } from '../../lib/format';
 import { usePollInterval } from '../../lib/visibility';
 import { filterTenants, usePlatformTenants, useSwitchTenant } from './TenantSwitcher';
@@ -32,7 +32,7 @@ export function quotaText(used: number, limit: number | null): string {
 /** Usage against one quota in the tenants table; "-" when the API does not report that quota. */
 function QuotaCell({ usage }: { usage: { used: number; limit: number | null } | undefined }) {
   return (
-    <td className={cx('py-2 pr-3 text-right tabular-nums', usage && quotaTone(usage.used, usage.limit))}>
+    <td className={cx('whitespace-nowrap py-2 pr-3 text-right tabular-nums', usage && quotaTone(usage.used, usage.limit))}>
       {usage ? quotaText(usage.used, usage.limit) : '-'}
     </td>
   );
@@ -164,10 +164,10 @@ export function TenantsTab() {
     >
       {q.isPending && <LoadingState label="Loading tenants" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
-      {q.data && rows.length === 0 && <EmptyState title="No tenant matches the filter." />}
+      {q.data && rows.length === 0 && <EmptyState title={search.trim() ? 'No tenant matches the filter.' : 'No tenants yet.'} />}
       {rows.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
+        <div className="relative overflow-x-auto">
+          <table className="w-full min-w-[960px] text-sm">
             <caption className="sr-only">Tenants with activity, quotas and status</caption>
             <thead className="text-left text-xs uppercase tracking-wide text-muted">
               <tr>
@@ -181,7 +181,7 @@ export function TenantsTab() {
                 <th scope="col" className="py-2 pr-3 text-right">LLM cost (month)</th>
                 <th scope="col" className="py-2 pr-3 text-right">Users</th>
                 <th scope="col" className="py-2 pr-3 text-right">Sources</th>
-                <th scope="col" className="py-2"><span className="sr-only">Actions</span></th>
+                <th scope="col" className="sticky right-0 border-l border-subtle bg-raised py-2 pl-3"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-subtle">
@@ -192,10 +192,7 @@ export function TenantsTab() {
                   <tr key={t.id} className="align-top">
                     <th scope="row" className="py-2 pr-3 text-left font-normal">
                       <div className="font-medium text-fg">{t.name}</div>
-                      <div className="font-mono text-xs text-muted">
-                        {t.id}
-                        {t.id === home ? ' (home)' : ''}
-                      </div>
+                      <Truncated value={`${t.id}${t.id === home ? ' (home)' : ''}`} mono className="max-w-[13rem] text-xs text-muted" />
                     </th>
                     <td className="py-2 pr-3">
                       <Badge tone={t.status === 'active' ? 'good' : 'bad'}>{t.status}</Badge>
@@ -210,11 +207,12 @@ export function TenantsTab() {
                       {s.overdue_escalations > 0 && <span className="ml-1 text-danger-fg">({formatInt(s.overdue_escalations)} overdue)</span>}
                     </td>
                     <td className={cx('py-2 pr-3 text-right tabular-nums', s.sla_breaches_24h > 0 && 'text-warn-fg')}>{formatInt(s.sla_breaches_24h)}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(s.llm_cost_mtd_usd)}</td>
+                    <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">{formatUsd(s.llm_cost_mtd_usd)}</td>
                     <QuotaCell usage={u.max_users} />
                     <QuotaCell usage={u.max_sources} />
-                    <td className="py-2">
-                      <div className="flex flex-wrap justify-end gap-1">
+                    {/* Pinned to the right edge: the actions stay in view when the table scrolls. */}
+                    <td className="sticky right-0 border-l border-subtle bg-raised py-2 pl-3">
+                      <div className="flex flex-col items-end gap-1">
                         <Button size="sm" variant="quiet" onClick={() => open(t)} icon={<LogIn className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Open tenant ${t.name}`}>
                           Open
                         </Button>

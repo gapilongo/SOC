@@ -43,7 +43,7 @@ export function DeliveryLog({ integration }: { integration: IntegrationOut }) {
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />}
       {q.data && q.data.length === 0 && <EmptyState title="Nothing delivered yet">Events appear here once they are queued.</EmptyState>}
       {q.data && q.data.length > 0 && (
-        <div className="overflow-x-auto">
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
             <caption className="sr-only">Recent deliveries of {integration.name}</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
