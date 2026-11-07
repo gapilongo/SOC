@@ -100,17 +100,21 @@ async function rows() {
 
 afterEach(() => writePref('density', 'compact'));
 
-// jsdom lays nothing out: give elements a size so the virtualized grid renders its rows.
-const sizes = ['offsetHeight', 'offsetWidth'] as const;
-const saved = sizes.map((k) => Object.getOwnPropertyDescriptor(HTMLElement.prototype, k));
+// jsdom lays nothing out: give elements a size so the virtualized grid renders its rows. The
+// virtualizer measures the scroll viewport with client* (virtual-core 3.19.6+) and rows with offset*.
+const sizes = { offsetHeight: 600, offsetWidth: 1024, clientHeight: 600, clientWidth: 1024 } as const;
+const saved = Object.keys(sizes).map((k) => Object.getOwnPropertyDescriptor(HTMLElement.prototype, k));
 beforeAll(() => {
-  Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 600 });
-  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 1024 });
+  for (const [k, v] of Object.entries(sizes)) {
+    Object.defineProperty(HTMLElement.prototype, k, { configurable: true, get: () => v });
+  }
 });
 afterAll(() => {
-  sizes.forEach((k, i) => {
+  Object.keys(sizes).forEach((k, i) => {
     const d = saved[i];
+    // clientHeight/clientWidth live on Element.prototype: drop the shadowing stub instead.
     if (d) Object.defineProperty(HTMLElement.prototype, k, d);
+    else Reflect.deleteProperty(HTMLElement.prototype, k);
   });
 });
 

@@ -95,6 +95,14 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
+      // eslint-plugin-react-hooks 7 adds the React Compiler rules to `recommended`. These four flag
+      // existing code (refs read during render, setState in effects, Date.now() in render, the
+      // virtualizer's unmemoizable API); each needs a component refactor, not a dependency bump.
+      // Turn them back on as that code is reworked.
+      'react-hooks/refs': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/purity': 'off',
+      'react-hooks/incompatible-library': 'off',
       // Pages export small pure helpers next to the component for unit tests; that only
       // affects development hot reload granularity.
       'react-refresh/only-export-components': 'off',

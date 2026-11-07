@@ -287,7 +287,7 @@ def test_package_scripts_and_no_create_react_app() -> None:
         assert script in pkg["scripts"], script
     deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
     assert "react-scripts" not in deps
-    assert deps["react"].startswith("^18")
+    assert deps["react"].startswith("^19")
     assert "vite" in deps and "vitest" in deps
     default_config = (FRONT / "public" / "config.js").read_text()
     assert "window.__LG_SOTF_CONFIG__" in default_config
