@@ -1,4 +1,5 @@
 /** Shared helpers for the end-to-end suite (see playwright.config.ts). */
+import AxeBuilder from '@axe-core/playwright';
 import { expect, type APIRequestContext, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -185,6 +186,22 @@ export async function screenshot(page: Page, name: string): Promise<void> {
   // Let entrance transitions and pending fetches finish so the picture shows settled data.
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await page.screenshot({ path: join(dir, `${name}.png`), animations: 'disabled' });
+}
+
+/** The WCAG 2.2 A and AA rules (axe tags); the UI targets WCAG 2.2 AA. */
+const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+
+/**
+ * Run axe on the page and fail on any serious or critical WCAG A/AA violation, listing each rule
+ * with its first offending elements. Axe runs through the DevTools protocol, so the
+ * Content-Security-Policy stays in force (and the CSP watch stays clean).
+ */
+export async function assertAccessible(page: Page, label: string): Promise<void> {
+  const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+  const blocking = results.violations
+    .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+    .map((v) => `${v.impact} ${v.id}: ${v.help} (${v.nodes.slice(0, 3).map((n) => n.target.join(' ')).join('; ')})`);
+  expect(blocking, `accessibility of ${label}`).toEqual([]);
 }
 
 // ----------------------------------------------------------------------------- API (machine access)
