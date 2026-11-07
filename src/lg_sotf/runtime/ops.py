@@ -22,6 +22,7 @@ from lg_sotf.queue.dlq import DeadLetter, DeadLetterQueue
 from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.hashing import ahash_password
+from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.tenancy import TenantRequest, provision_tenant
 from lg_sotf.settings import Settings
 
@@ -31,8 +32,10 @@ MAX_TENANT_NAME_CHARS = 200
 
 
 def check_password(settings: Settings, password: str) -> None:
-    if len(password) < settings.auth.password_min_length:
-        raise OperationError(f"password must be at least {settings.auth.password_min_length} characters")
+    """The local-account password policy (:mod:`lg_sotf.security.passwords`), as the API applies it."""
+    problem = password_problem(password, settings.auth.password_min_length)
+    if problem is not None:
+        raise OperationError(problem)
 
 
 async def audit_user_created(repos: Repositories, user: User, *, via: str, conn: Connection) -> None:

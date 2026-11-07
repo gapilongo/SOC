@@ -88,6 +88,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The command line now applies the API's password policy to the
+  passwords it sets (`lg-sotf create-admin`, `lg-sotf create-tenant
+  --admin-email` and the bootstrap admin that `lg-sotf migrate` creates
+  from `auth.bootstrap_admin_password`): besides at least
+  `auth.password_min_length` characters, a password must have at most
+  1,024 characters and at least 4 different characters, or the command
+  fails with "password is too repetitive" or "password must be at most
+  1024 characters". Before, the CLI checked only the minimum length.
+  Generated bootstrap passwords already comply.
 - The worker and the scheduler now refuse to start when
   `security.encryption_keys` is set but holds a key that is not a valid
   Fernet key, as the API already did: `lg-sotf worker` and

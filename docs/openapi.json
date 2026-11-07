@@ -7509,7 +7509,6 @@
           },
           "llm_cost_mtd_usd": {
             "default": "0",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Llm Cost Mtd Usd",
             "type": "string"
           },
@@ -7678,7 +7677,6 @@
             "type": "integer"
           },
           "llm_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Llm Cost Usd",
             "type": "string"
           },
@@ -7960,7 +7958,6 @@
             "type": "integer"
           },
           "cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cost Usd",
             "type": "string"
           },
@@ -8030,7 +8027,6 @@
             "type": "integer"
           },
           "total_cost_usd": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Cost Usd",
             "type": "string"
           },
