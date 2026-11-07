@@ -38,133 +38,136 @@ the project board.
 
 ## Scheduled work: 108 stories, 419 points
 
-### Week of 2026-11-09: 45 stories, 175 points
+Done: 17 stories, 59 points. A story is done when its GitHub issue is
+closed by the merged pull request.
 
-| Story | Title | Pts | Priority | Tier | Day |
-|---|---|---|---|---|---|
-| `AI-E1.1` | Real-model baseline run and scorecard template (EU/local model; DeepSeek on synthetic only, never published) | 3 | Must | T2 | 2026-11-09 |
-| `AI-E1.2` | Prompt/model registry with version hash in provenance and reports | 3 | Must | T2 | 2026-11-09 |
-| `PRD-13.1` | First-run wizard: admin, org/tenant, LLM profile (EU or local default, tested), samples; ends at first PoV | 5 | Must | T2 | 2026-11-09 |
-| `SEC1.1` | Cosign keyless image signing and build-provenance attestations (SLSA Build L3) | 3 | Must | T3 | 2026-11-09 |
-| `INT3.1` | Wazuh 4.14 container in test-services; live ingestion contract tests | 3 | Must | T2 | 2026-11-09 |
-| `AI-E1.3` | Investigation trace store in Postgres (LLM and tool calls, hashes, tokens) shown in the evidence pack | 5 | Must | T2 | 2026-11-09 |
-| `AI-E1.7` | Confidence intervals (Wilson, n shown) on every rate in eval and PoV reports (ECE/Brier cut, CR7) | 3 | Must | T2 | 2026-11-09 |
-| `AI-E1.4` | Record/replay of tool observations (cassettes) | 5 | Must | T2 | 2026-11-09 |
-| `AI-E1.5a` | Shadow mode (a): side-effect sink plus a test that enumerates every egress (executor, outbox, Slack, mail, webhooks, tickets, WS) | 5 | Must | T3 | 2026-11-09 |
-| `ARCH-E1.1` | graph_version on workflow_runs; worker keeps the N-1 graph to drain waiting runs | 5 | Must | T3 | 2026-11-10 |
-| `AI-E1.5b` | Shadow mode (b): agreement report current vs candidate | 3 | Must | T2 | 2026-11-10 |
-| `AI-E1.8` | Attack-emulation ground-truth corpus: Wazuh 4.14 lab, Atomic Red Team/Caldera scenarios plus replayed benign noise (CR2) | 8 | Must | T2 | 2026-11-10 |
-| `SEC2.3` | Dependency policy and admission checklist | 1 | Must | T1 | 2026-11-10 |
-| `GTM3.2` | pov install profile: read-only sources, response disabled by policy, egress allow-list, one command | 5 | Must | T2 | 2026-11-10 |
-| `ARCH-E1.2` | CI upgrade test: N-1 database with waiting runs, migrate, resume and decide | 5 | Must | T3 | 2026-11-10 |
-| `PRD-11.1` | PoV run object and wizard: window, backtest plus shadow period | 3 | Must | T2 | 2026-11-10 |
-| `PRD-11.3` | PoV report content: FN first with CI, agreement, auto-handling, hours, cost, noisy detections, cited samples | 5 | Must | T2 | 2026-11-10 |
-| `ARCH-E1.5` | Release trains: weekly signed partner train, monthly LTS candidate, security-relevant changelog, N-1 upgrade test and install rehearsal on every train (CR5, delivery #8) | 5 | Must | T3 | 2026-11-11 |
-| `ARCH-E2.2` | OpenAPI stability tags, oasdiff breaking-change gate, Deprecation and Sunset headers | 3 | Must | T2 | 2026-11-11 |
-| `ARCH-E4.1a` | Organisation model (a): schema, grants table, RLS policies (delivery split; risk:authz) | 5 | Must | T3 | 2026-11-11 |
-| `PRD-11.4` | PoV signing, branding, methodology and limits appendix (absorbs GTM3.3 report generator) | 3 | Must | T2 | 2026-11-11 |
-| `SEC1.2` | CycloneDX SBOMs (Python, npm, image) and OpenVEX as release assets | 3 | Must | T2 | 2026-11-11 |
-| `SEC1.3` | Trivy gate; base images pinned by digest; --require-hashes lock files | 3 | Must | T2 | 2026-11-11 |
-| `SEC3.1` | Threat model v2: STRIDE per component, OWASP Agentic Top 10, ATLAS; gate per epic | 3 | Must | T1 | 2026-11-11 |
-| `SEC4.1` | Hardening guide: CIS-style numbered controls, L1/L2 profiles | 3 | Must | T1 | 2026-11-11 |
-| `SEC10.5` | Fix stale security docs (erasure statement, security.md:333-335) | 1 | Must | T1 | 2026-11-11 |
-| `INT9.2` | Evidence-fact schema v1, shared with AI-E3.2 | 3 | Must | T2 | 2026-11-11 |
-| `PRD-13.6` | Install-to-PoV rehearsal on a clean VM plus lab, every release | 3 | Must | T2 | 2026-11-11 |
-| `ARCH-E2.1` | Eval gate in CI: synthetic and phishing sets, fake model per PR plus pinned real-model run | 3 | Must | T2 | 2026-11-12 |
-| `ARCH-E4.1b` | Organisation model (b): read paths under grants across all routers | 5 | Must | T3 | 2026-11-12 |
-| `AI-E6.1` | Adversarial corpus v2: log-field persona hijacks, tool-output injection, response steering | 5 | Must | T2 | 2026-11-12 |
-| `AI-E6.2` | AI system card plus AI Act / NIS2 mapping | 3 | Must | T1 | 2026-11-12 |
-| `PRD-10.2` | Blind audit sampling of auto-closed alerts, verdict hidden (absorbs GTM3.4 labelling flow) | 5 | Must | T2 | 2026-11-12 |
-| `SEC6.5` | Break-glass procedure, alert on use, drill | 2 | Must | T3 | 2026-11-12 |
-| `SEC9.1` | Invariant registry, tests/invariants, CI gate, lg-sotf verify-invariants | 5 | Must | T2 | 2026-11-12 |
-| `INT1.10` | Microsoft SKU coverage matrix (Business Premium, E3, E5) for every evidence and response API (CR6) | 2 | Must | T1 | 2026-11-12 |
-| `ARCH-E4.1c` | Organisation model (c): write paths and decisions under grants with dual audit | 5 | Must | T3 | 2026-11-12 |
-| `ARCH-E4.1d` | Organisation model (d): WS, MCP and API keys under grants plus cross-tenant leak suite over every route | 5 | Must | T3 | 2026-11-13 |
-| `AI-E2.1` | Tool protocol and registry: risk class, schemas, per-tenant enablement, egress, row caps (absorbs ARCH-E6 registry and query safety) | 5 | Must | T3 | 2026-11-13 |
-| `PRD-11.5` | PoV technical runbook and synthetic demo tenant; CI grep for DeepSeek in assets | 2 | Must | T1 | 2026-11-13 |
-| `PRD-11.6` | CSV labelled-history import fallback for the first PoV (from PRD risk 2 mitigation; keeps Wazuh PoVs unblocked) | 2 | Must | T2 | 2026-11-13 |
-| `PRD-13.2a` | Guided connector: Wazuh (for PoV installs) | 3 | Must | T2 | 2026-11-13 |
-| `INT1.2` | live_ms harness plus cassette recorder that feeds the fakes | 5 | Must | T2 | 2026-11-13 |
-| `AI-E3.1a` | Hypothesis schema plus recipes for 2 Wazuh classes (endpoint malware, identity/auth) (CR3) | 5 | Must | T2 | 2026-11-13 |
-| `INT3.4` | Wazuh evidence tools: host timeline, auth events, FIM, process, network (investigation v0, shadow) | 8 | Must | T2 | 2026-11-13 |
+### Week of 2026-11-09: 45 stories, 175 points, 17 done
+
+| Story | Title | Pts | Priority | Tier | Day | Status |
+|---|---|---|---|---|---|---|
+| `AI-E1.1` | Real-model baseline run and scorecard template (EU/local model; DeepSeek on synthetic only, never published) | 3 | Must | T2 | 2026-11-09 | Done |
+| `AI-E1.2` | Prompt/model registry with version hash in provenance and reports | 3 | Must | T2 | 2026-11-09 | Done |
+| `PRD-13.1` | First-run wizard: admin, org/tenant, LLM profile (EU or local default, tested), samples; ends at first PoV | 5 | Must | T2 | 2026-11-09 | Done |
+| `SEC1.1` | Cosign keyless image signing and build-provenance attestations (SLSA Build L3) | 3 | Must | T3 | 2026-11-09 | Done |
+| `INT3.1` | Wazuh 4.14 container in test-services; live ingestion contract tests | 3 | Must | T2 | 2026-11-09 | Done |
+| `AI-E1.3` | Investigation trace store in Postgres (LLM and tool calls, hashes, tokens) shown in the evidence pack | 5 | Must | T2 | 2026-11-09 | Done |
+| `AI-E1.7` | Confidence intervals (Wilson, n shown) on every rate in eval and PoV reports (ECE/Brier cut, CR7) | 3 | Must | T2 | 2026-11-09 | Done |
+| `AI-E1.4` | Record/replay of tool observations (cassettes) | 5 | Must | T2 | 2026-11-09 |  |
+| `AI-E1.5a` | Shadow mode (a): side-effect sink plus a test that enumerates every egress (executor, outbox, Slack, mail, webhooks, tickets, WS) | 5 | Must | T3 | 2026-11-09 |  |
+| `ARCH-E1.1` | graph_version on workflow_runs; worker keeps the N-1 graph to drain waiting runs | 5 | Must | T3 | 2026-11-10 | Done |
+| `AI-E1.5b` | Shadow mode (b): agreement report current vs candidate | 3 | Must | T2 | 2026-11-10 |  |
+| `AI-E1.8` | Attack-emulation ground-truth corpus: Wazuh 4.14 lab, Atomic Red Team/Caldera scenarios plus replayed benign noise (CR2) | 8 | Must | T2 | 2026-11-10 |  |
+| `SEC2.3` | Dependency policy and admission checklist | 1 | Must | T1 | 2026-11-10 |  |
+| `GTM3.2` | pov install profile: read-only sources, response disabled by policy, egress allow-list, one command | 5 | Must | T2 | 2026-11-10 | Done |
+| `ARCH-E1.2` | CI upgrade test: N-1 database with waiting runs, migrate, resume and decide | 5 | Must | T3 | 2026-11-10 | Done |
+| `PRD-11.1` | PoV run object and wizard: window, backtest plus shadow period | 3 | Must | T2 | 2026-11-10 |  |
+| `PRD-11.3` | PoV report content: FN first with CI, agreement, auto-handling, hours, cost, noisy detections, cited samples | 5 | Must | T2 | 2026-11-10 |  |
+| `ARCH-E1.5` | Release trains: weekly signed partner train, monthly LTS candidate, security-relevant changelog, N-1 upgrade test and install rehearsal on every train (CR5, delivery #8) | 5 | Must | T3 | 2026-11-11 |  |
+| `ARCH-E2.2` | OpenAPI stability tags, oasdiff breaking-change gate, Deprecation and Sunset headers | 3 | Must | T2 | 2026-11-11 | Done |
+| `ARCH-E4.1a` | Organisation model (a): schema, grants table, RLS policies (delivery split; risk:authz) | 5 | Must | T3 | 2026-11-11 |  |
+| `PRD-11.4` | PoV signing, branding, methodology and limits appendix (absorbs GTM3.3 report generator) | 3 | Must | T2 | 2026-11-11 |  |
+| `SEC1.2` | CycloneDX SBOMs (Python, npm, image) and OpenVEX as release assets | 3 | Must | T2 | 2026-11-11 | Done |
+| `SEC1.3` | Trivy gate; base images pinned by digest; --require-hashes lock files | 3 | Must | T2 | 2026-11-11 | Done |
+| `SEC3.1` | Threat model v2: STRIDE per component, OWASP Agentic Top 10, ATLAS; gate per epic | 3 | Must | T1 | 2026-11-11 | Done |
+| `SEC4.1` | Hardening guide: CIS-style numbered controls, L1/L2 profiles | 3 | Must | T1 | 2026-11-11 | Done |
+| `SEC10.5` | Fix stale security docs (erasure statement, security.md:333-335) | 1 | Must | T1 | 2026-11-11 | Done |
+| `INT9.2` | Evidence-fact schema v1, shared with AI-E3.2 | 3 | Must | T2 | 2026-11-11 | Done |
+| `PRD-13.6` | Install-to-PoV rehearsal on a clean VM plus lab, every release | 3 | Must | T2 | 2026-11-11 |  |
+| `ARCH-E2.1` | Eval gate in CI: synthetic and phishing sets, fake model per PR plus pinned real-model run | 3 | Must | T2 | 2026-11-12 |  |
+| `ARCH-E4.1b` | Organisation model (b): read paths under grants across all routers | 5 | Must | T3 | 2026-11-12 |  |
+| `AI-E6.1` | Adversarial corpus v2: log-field persona hijacks, tool-output injection, response steering | 5 | Must | T2 | 2026-11-12 |  |
+| `AI-E6.2` | AI system card plus AI Act / NIS2 mapping | 3 | Must | T1 | 2026-11-12 |  |
+| `PRD-10.2` | Blind audit sampling of auto-closed alerts, verdict hidden (absorbs GTM3.4 labelling flow) | 5 | Must | T2 | 2026-11-12 |  |
+| `SEC6.5` | Break-glass procedure, alert on use, drill | 2 | Must | T3 | 2026-11-12 |  |
+| `SEC9.1` | Invariant registry, tests/invariants, CI gate, lg-sotf verify-invariants | 5 | Must | T2 | 2026-11-12 |  |
+| `INT1.10` | Microsoft SKU coverage matrix (Business Premium, E3, E5) for every evidence and response API (CR6) | 2 | Must | T1 | 2026-11-12 |  |
+| `ARCH-E4.1c` | Organisation model (c): write paths and decisions under grants with dual audit | 5 | Must | T3 | 2026-11-12 |  |
+| `ARCH-E4.1d` | Organisation model (d): WS, MCP and API keys under grants plus cross-tenant leak suite over every route | 5 | Must | T3 | 2026-11-13 |  |
+| `AI-E2.1` | Tool protocol and registry: risk class, schemas, per-tenant enablement, egress, row caps (absorbs ARCH-E6 registry and query safety) | 5 | Must | T3 | 2026-11-13 |  |
+| `PRD-11.5` | PoV technical runbook and synthetic demo tenant; CI grep for DeepSeek in assets | 2 | Must | T1 | 2026-11-13 |  |
+| `PRD-11.6` | CSV labelled-history import fallback for the first PoV (from PRD risk 2 mitigation; keeps Wazuh PoVs unblocked) | 2 | Must | T2 | 2026-11-13 |  |
+| `PRD-13.2a` | Guided connector: Wazuh (for PoV installs) | 3 | Must | T2 | 2026-11-13 |  |
+| `INT1.2` | live_ms harness plus cassette recorder that feeds the fakes | 5 | Must | T2 | 2026-11-13 |  |
+| `AI-E3.1a` | Hypothesis schema plus recipes for 2 Wazuh classes (endpoint malware, identity/auth) (CR3) | 5 | Must | T2 | 2026-11-13 |  |
+| `INT3.4` | Wazuh evidence tools: host timeline, auth events, FIM, process, network (investigation v0, shadow) | 8 | Must | T2 | 2026-11-13 |  |
 
 ### Week of 2026-11-16: 46 stories, 171 points
 
-| Story | Title | Pts | Priority | Tier | Day |
-|---|---|---|---|---|---|
-| `AI-E3.2` | Quarantined reader producing typed facts | 8 | Must | T3 | 2026-11-16 |
-| `INT3.3a` | Wazuh 5.0 RC container and findings fixtures in test-services (delivery split) | 3 | Must | T2 | 2026-11-16 |
-| `GTM3.7` | PoV sizing guide (CPU, RAM, optional GPU) | 2 | Must | T1 | 2026-11-16 |
-| `GTM7.3` | GitHub Projects v2 board plus tools/sync_board.py (idempotent upsert by story ID; nightly status export) | 3 | Must | T1 | 2026-11-16 |
-| `AI-E3.3` | Planner and executor with budgets (steps, tokens, money) | 5 | Must | T2 | 2026-11-16 |
-| `INT3.3b` | Wazuh 5.x findings connector plus ECS/WCS mapper (gates nothing, CR6) | 5 | Must | T2 | 2026-11-16 |
-| `AI-E3.4` | Critic with deterministic citation check; unsupported claims escalate | 5 | Must | T2 | 2026-11-16 |
-| `INT4.1` | Elastic alerts ingestion reusing the ECS mapper (CR6: the PoV promises Elastic) | 3 | Must | T2 | 2026-11-16 |
-| `AI-E3.6` | Per-tenant flag and promotion via shadow mode | 3 | Must | T2 | 2026-11-17 |
-| `PRD-2.1` | Narrative with citation chips and fact drawer | 5 | Must | T2 | 2026-11-17 |
-| `PRD-5.1` | Cross-tenant case queue, decide in place under grants | 5 | Must | T3 | 2026-11-17 |
-| `PRD-13.2d` | Connector readiness score | 2 | Should | T1 | 2026-11-17 |
-| `PRD-13.5` | Local time-to-value timestamps; no phone-home | 2 | Should | T2 | 2026-11-17 |
-| `PRD-15.6` | Axe WCAG 2.2 AA gate on every new page; keyboard map; screen-reader citations | 3 | Must | T1 | 2026-11-17 |
-| `SEC3.3` | Security whitepaper with shared-responsibility matrix | 3 | Must | T1 | 2026-11-17 |
-| `SEC6.2` | Delegated-access controls: customer grant register and revoke, expiry, JIT reason, co-approval, dual audit | 5 | Must | T3 | 2026-11-17 |
-| `SEC9.2` | Signed per-release safety scorecard | 2 | Must | T2 | 2026-11-17 |
-| `SEC7.8` | Supplier-assurance pack, static part per release, white-labelable | 5 | Must | T2 | 2026-11-17 |
-| `AI-E1.6` | GUIDE converter and ExCyTIn adapter | 5 | Should | T2 | 2026-11-18 |
-| `AI-E3.1b` | Recipes for 2 more classes (phishing, lateral movement) | 3 | Should | T2 | 2026-11-18 |
-| `PRD-5.3` | Grants UI: staff x tenant x role, time-boxed, justified; customer-visible page (UI over SEC6.2) | 5 | Must | T3 | 2026-11-18 |
-| `PRD-13.3` | Tenant mode Observe/Assist/Autonomous over shadow mode | 5 | Must | T3 | 2026-11-18 |
-| `PRD-15.7` | Versioned docs site from docs/ (absorbs GTM5.2) | 5 | Should | T1 | 2026-11-18 |
-| `INT1.3` | Microsoft open questions: 1-day spike; each answer files a story citing lab evidence (delivery split) | 2 | Must | T1 | 2026-11-18 |
-| `GTM5.11` | Public per-release scorecard page | 1 | Should | T1 | 2026-11-18 |
-| `AI-E2.3` | Entra sign-ins and risky users evidence tool | 5 | Should | T2 | 2026-11-18 |
-| `AI-E3.1c` | Recipes for the last 2 classes (cloud, exfiltration) | 3 | Should | T2 | 2026-11-18 |
-| `ARCH-E9.3` | Metering export for billing | 3 | Should | T2 | 2026-11-19 |
-| `AI-E5.1` | Per-task model routing | 3 | Should | T2 | 2026-11-19 |
-| `AI-E5.3` | Cost-per-investigation metric and per-investigation budget | 3 | Should | T2 | 2026-11-19 |
-| `PRD-6.1` | Branding (org default, tenant override): name, logo, accent, support contact | 5 | Should | T2 | 2026-11-19 |
-| `PRD-8.3` | Four-eyes to raise autonomy or disable dry-run; MSSP lock | 5 | Should | T3 | 2026-11-19 |
-| `PRD-10.1` | Scorecard page by model and prompt version | 5 | Should | T1 | 2026-11-19 |
-| `SEC6.1` | One OIDC IdP per tenant; tenant bound to issuer | 5 | Must | T3 | 2026-11-19 |
-| `PRD-6.2` | White-label shell, login, title, favicon | 3 | Should | T1 | 2026-11-19 |
-| `PRD-13.4` | Daily shadow digest; graduation criteria gate promotion | 3 | Must | T2 | 2026-11-19 |
-| `ARCH-E1.3` | RPO/RTO targets, PITR, automated restore drill in the nightly run | 3 | Must | T3 | 2026-11-20 |
-| `SEC2.2` | Security-release runbook incl. CRA Art. 14 reporting (24 h / 72 h / 14 days to ENISA) | 3 | Must | T1 | 2026-11-20 |
-| `SEC8.2a` | CRA Annex I essential-requirements mapping | 3 | Must | T1 | 2026-11-20 |
-| `SEC8.4` | Secure-by-default audit and documentation | 2 | Should | T1 | 2026-11-20 |
-| `SEC9.3` | Per-tenant kill switches (LLM off, autonomy to approval), audited | 2 | Should | T2 | 2026-11-20 |
-| `SEC10.2` | Redacted support bundle; no vendor remote access (absorbs GTM6.7b) | 3 | Should | T2 | 2026-11-20 |
-| `INT3.2` | Tenant scoping on shared Wazuh clusters (agent group/label filter), DLS role per tenant, DLS negative test per tenant (CR4) | 8 | Must | T3 | 2026-11-20 |
-| `ARCH-E1.4` | HA reference: managed Postgres, Redis persistence, PgBouncer validated (B10) | 3 | Must | T2 | 2026-11-20 |
-| `SEC8.2b` | CRA cybersecurity risk assessment | 3 | Must | T1 | 2026-11-20 |
-| `SEC8.2c` | CRA Annex VII technical file assembly | 3 | Must | T1 | 2026-11-20 |
+| Story | Title | Pts | Priority | Tier | Day | Status |
+|---|---|---|---|---|---|---|
+| `AI-E3.2` | Quarantined reader producing typed facts | 8 | Must | T3 | 2026-11-16 |  |
+| `INT3.3a` | Wazuh 5.0 RC container and findings fixtures in test-services (delivery split) | 3 | Must | T2 | 2026-11-16 |  |
+| `GTM3.7` | PoV sizing guide (CPU, RAM, optional GPU) | 2 | Must | T1 | 2026-11-16 |  |
+| `GTM7.3` | GitHub Projects v2 board plus tools/sync_board.py (idempotent upsert by story ID; nightly status export) | 3 | Must | T1 | 2026-11-16 |  |
+| `AI-E3.3` | Planner and executor with budgets (steps, tokens, money) | 5 | Must | T2 | 2026-11-16 |  |
+| `INT3.3b` | Wazuh 5.x findings connector plus ECS/WCS mapper (gates nothing, CR6) | 5 | Must | T2 | 2026-11-16 |  |
+| `AI-E3.4` | Critic with deterministic citation check; unsupported claims escalate | 5 | Must | T2 | 2026-11-16 |  |
+| `INT4.1` | Elastic alerts ingestion reusing the ECS mapper (CR6: the PoV promises Elastic) | 3 | Must | T2 | 2026-11-16 |  |
+| `AI-E3.6` | Per-tenant flag and promotion via shadow mode | 3 | Must | T2 | 2026-11-17 |  |
+| `PRD-2.1` | Narrative with citation chips and fact drawer | 5 | Must | T2 | 2026-11-17 |  |
+| `PRD-5.1` | Cross-tenant case queue, decide in place under grants | 5 | Must | T3 | 2026-11-17 |  |
+| `PRD-13.2d` | Connector readiness score | 2 | Should | T1 | 2026-11-17 |  |
+| `PRD-13.5` | Local time-to-value timestamps; no phone-home | 2 | Should | T2 | 2026-11-17 |  |
+| `PRD-15.6` | Axe WCAG 2.2 AA gate on every new page; keyboard map; screen-reader citations | 3 | Must | T1 | 2026-11-17 |  |
+| `SEC3.3` | Security whitepaper with shared-responsibility matrix | 3 | Must | T1 | 2026-11-17 |  |
+| `SEC6.2` | Delegated-access controls: customer grant register and revoke, expiry, JIT reason, co-approval, dual audit | 5 | Must | T3 | 2026-11-17 |  |
+| `SEC9.2` | Signed per-release safety scorecard | 2 | Must | T2 | 2026-11-17 |  |
+| `SEC7.8` | Supplier-assurance pack, static part per release, white-labelable | 5 | Must | T2 | 2026-11-17 |  |
+| `AI-E1.6` | GUIDE converter and ExCyTIn adapter | 5 | Should | T2 | 2026-11-18 |  |
+| `AI-E3.1b` | Recipes for 2 more classes (phishing, lateral movement) | 3 | Should | T2 | 2026-11-18 |  |
+| `PRD-5.3` | Grants UI: staff x tenant x role, time-boxed, justified; customer-visible page (UI over SEC6.2) | 5 | Must | T3 | 2026-11-18 |  |
+| `PRD-13.3` | Tenant mode Observe/Assist/Autonomous over shadow mode | 5 | Must | T3 | 2026-11-18 |  |
+| `PRD-15.7` | Versioned docs site from docs/ (absorbs GTM5.2) | 5 | Should | T1 | 2026-11-18 |  |
+| `INT1.3` | Microsoft open questions: 1-day spike; each answer files a story citing lab evidence (delivery split) | 2 | Must | T1 | 2026-11-18 |  |
+| `GTM5.11` | Public per-release scorecard page | 1 | Should | T1 | 2026-11-18 |  |
+| `AI-E2.3` | Entra sign-ins and risky users evidence tool | 5 | Should | T2 | 2026-11-18 |  |
+| `AI-E3.1c` | Recipes for the last 2 classes (cloud, exfiltration) | 3 | Should | T2 | 2026-11-18 |  |
+| `ARCH-E9.3` | Metering export for billing | 3 | Should | T2 | 2026-11-19 |  |
+| `AI-E5.1` | Per-task model routing | 3 | Should | T2 | 2026-11-19 |  |
+| `AI-E5.3` | Cost-per-investigation metric and per-investigation budget | 3 | Should | T2 | 2026-11-19 |  |
+| `PRD-6.1` | Branding (org default, tenant override): name, logo, accent, support contact | 5 | Should | T2 | 2026-11-19 |  |
+| `PRD-8.3` | Four-eyes to raise autonomy or disable dry-run; MSSP lock | 5 | Should | T3 | 2026-11-19 |  |
+| `PRD-10.1` | Scorecard page by model and prompt version | 5 | Should | T1 | 2026-11-19 |  |
+| `SEC6.1` | One OIDC IdP per tenant; tenant bound to issuer | 5 | Must | T3 | 2026-11-19 |  |
+| `PRD-6.2` | White-label shell, login, title, favicon | 3 | Should | T1 | 2026-11-19 |  |
+| `PRD-13.4` | Daily shadow digest; graduation criteria gate promotion | 3 | Must | T2 | 2026-11-19 |  |
+| `ARCH-E1.3` | RPO/RTO targets, PITR, automated restore drill in the nightly run | 3 | Must | T3 | 2026-11-20 |  |
+| `SEC2.2` | Security-release runbook incl. CRA Art. 14 reporting (24 h / 72 h / 14 days to ENISA) | 3 | Must | T1 | 2026-11-20 |  |
+| `SEC8.2a` | CRA Annex I essential-requirements mapping | 3 | Must | T1 | 2026-11-20 |  |
+| `SEC8.4` | Secure-by-default audit and documentation | 2 | Should | T1 | 2026-11-20 |  |
+| `SEC9.3` | Per-tenant kill switches (LLM off, autonomy to approval), audited | 2 | Should | T2 | 2026-11-20 |  |
+| `SEC10.2` | Redacted support bundle; no vendor remote access (absorbs GTM6.7b) | 3 | Should | T2 | 2026-11-20 |  |
+| `INT3.2` | Tenant scoping on shared Wazuh clusters (agent group/label filter), DLS role per tenant, DLS negative test per tenant (CR4) | 8 | Must | T3 | 2026-11-20 |  |
+| `ARCH-E1.4` | HA reference: managed Postgres, Redis persistence, PgBouncer validated (B10) | 3 | Must | T2 | 2026-11-20 |  |
+| `SEC8.2b` | CRA cybersecurity risk assessment | 3 | Must | T1 | 2026-11-20 |  |
+| `SEC8.2c` | CRA Annex VII technical file assembly | 3 | Must | T1 | 2026-11-20 |  |
 
 ### Week of 2026-11-23: 6 stories, 31 points
 
-| Story | Title | Pts | Priority | Tier | Day |
-|---|---|---|---|---|---|
-| `AI-E3.5` | Corroboration weights for tool-observed facts | 5 | Should | T3 | 2026-11-23 |
-| `AI-E5.2` | Per-tenant model profile: BYO key, local or EU model, egress checks (absorbs ARCH-E8.3) | 8 | Should | T3 | 2026-11-24 |
-| `PRD-8.1` | Model profile UI: model per task, residency label, BYO key, test, cost (keeps PRD residency checks) | 5 | Should | T2 | 2026-11-24 |
-| `GTM1.4` | ee/ wheel, entry-point loading, import-linter contract, one image with ee dormant (includes minimal hook, not full ARCH-E7.1) | 5 | Must | T2 | 2026-11-27 |
-| `GTM1.5` | Offline Ed25519 licence file, verifier, entitlements, banner and grace; never fails closed | 5 | Should | T3 | 2026-11-27 |
-| `GTM1.6` | Signed monthly usage report for true-up | 3 | Should | T2 | 2026-11-27 |
+| Story | Title | Pts | Priority | Tier | Day | Status |
+|---|---|---|---|---|---|---|
+| `AI-E3.5` | Corroboration weights for tool-observed facts | 5 | Should | T3 | 2026-11-23 |  |
+| `AI-E5.2` | Per-tenant model profile: BYO key, local or EU model, egress checks (absorbs ARCH-E8.3) | 8 | Should | T3 | 2026-11-24 |  |
+| `PRD-8.1` | Model profile UI: model per task, residency label, BYO key, test, cost (keeps PRD residency checks) | 5 | Should | T2 | 2026-11-24 |  |
+| `GTM1.4` | ee/ wheel, entry-point loading, import-linter contract, one image with ee dormant (includes minimal hook, not full ARCH-E7.1) | 5 | Must | T2 | 2026-11-27 |  |
+| `GTM1.5` | Offline Ed25519 licence file, verifier, entitlements, banner and grace; never fails closed | 5 | Should | T3 | 2026-11-27 |  |
+| `GTM1.6` | Signed monthly usage report for true-up | 3 | Should | T2 | 2026-11-27 |  |
 
 ### Week of 2026-11-30: 11 stories, 42 points
 
-| Story | Title | Pts | Priority | Tier | Day |
-|---|---|---|---|---|---|
-| `INT1.4` | Mail end to end: execute, verify, roll back | 3 | Must | T3 | 2026-11-30 |
-| `INT1.5` | Entra end to end | 3 | Must | T3 | 2026-11-30 |
-| `INT1.6` | Defender end to end | 5 | Must | T3 | 2026-11-30 |
-| `AI-E2.5` | Mail message trace evidence tool | 3 | Should | T2 | 2026-11-30 |
-| `AI-E2.6` | Lab-tenant validation of the Microsoft evidence tools (5 pts: INT1 provides the harness) | 5 | Should | T2 | 2026-11-30 |
-| `INT1.7` | Live ingestion validation; remove tenant-supplied auth and API URLs | 3 | Must | T3 | 2026-12-01 |
-| `PRD-11.2` | Labelled history import: closed Sentinel incidents and Defender alerts with TP/FP (Must again if C8 = Microsoft-heavy) | 8 | Should | T2 | 2026-12-01 |
-| `PRD-13.2c` | Guided connector: Sentinel | 3 | Should | T2 | 2026-12-01 |
-| `INT1.8` | Connection-test truth table, least-privilege runbook, Validated integrations page | 2 | Must | T1 | 2026-12-01 |
-| `PRD-13.2b` | Guided connector: Microsoft admin consent, least privilege (after lab validation) | 5 | Must | T2 | 2026-12-01 |
-| `INT1.9` | Weekly drift run | 2 | Should | T2 | 2026-12-01 |
+| Story | Title | Pts | Priority | Tier | Day | Status |
+|---|---|---|---|---|---|---|
+| `INT1.4` | Mail end to end: execute, verify, roll back | 3 | Must | T3 | 2026-11-30 |  |
+| `INT1.5` | Entra end to end | 3 | Must | T3 | 2026-11-30 |  |
+| `INT1.6` | Defender end to end | 5 | Must | T3 | 2026-11-30 |  |
+| `AI-E2.5` | Mail message trace evidence tool | 3 | Should | T2 | 2026-11-30 |  |
+| `AI-E2.6` | Lab-tenant validation of the Microsoft evidence tools (5 pts: INT1 provides the harness) | 5 | Should | T2 | 2026-11-30 |  |
+| `INT1.7` | Live ingestion validation; remove tenant-supplied auth and API URLs | 3 | Must | T3 | 2026-12-01 |  |
+| `PRD-11.2` | Labelled history import: closed Sentinel incidents and Defender alerts with TP/FP (Must again if C8 = Microsoft-heavy) | 8 | Should | T2 | 2026-12-01 |  |
+| `PRD-13.2c` | Guided connector: Sentinel | 3 | Should | T2 | 2026-12-01 |  |
+| `INT1.8` | Connection-test truth table, least-privilege runbook, Validated integrations page | 2 | Must | T1 | 2026-12-01 |  |
+| `PRD-13.2b` | Guided connector: Microsoft admin consent, least privilege (after lab validation) | 5 | Must | T2 | 2026-12-01 |  |
+| `INT1.9` | Weekly drift run | 2 | Should | T2 | 2026-12-01 |  |
 
 ## Later: 134 stories, 596 points
 
