@@ -78,6 +78,11 @@ def test_errors_are_redacted() -> None:
     assert "q" * 32 not in text and text.startswith("DeliveryError: HTTP 400")
 
 
+def test_errors_are_redacted_before_they_are_cut() -> None:
+    text = safe_error(RuntimeError("x" * 975 + " token=" + "q" * 40))
+    assert "q" * 8 not in text and len(text) == 1_000 and text.endswith("...")
+
+
 async def test_success_posts_block_kit_to_the_webhook(settings: Settings, box: SecretBox) -> None:
     recorder = Recorder(httpx.Response(200, text="ok"))
     slack = _slack(box)

@@ -38,6 +38,7 @@ from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.redaction import safe_text
 
 log = get_logger(__name__)
 
@@ -95,9 +96,7 @@ def validate_api_url(url: str) -> str:
 
 
 def _safe_text(value: Any, limit: int = MAX_ERROR_MESSAGE_CHARS) -> str:
-    text = value if isinstance(value, str) else str(value)
-    text = " ".join(text.split())
-    return text if len(text) <= limit else text[: limit - 3] + "..."
+    return safe_text(value if isinstance(value, str) else str(value), limit)
 
 
 def _error_from(response_status: int, body: bytes) -> ApiCallError:

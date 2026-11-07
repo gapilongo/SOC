@@ -32,7 +32,14 @@ def test_sanitize_error_is_short_single_line_and_redacted() -> None:
     assert text.startswith("RuntimeError: ")
     assert "\n" not in text
     assert "sk-ant-api03" not in text
-    assert len(text) < 400
+    assert len(text) <= 300
+
+
+def test_sanitize_error_redacts_before_cutting() -> None:
+    # Cutting first would leave the token's head, too short for the JWT pattern, in last_error.
+    jwt = "eyJ" + "x" * 20 + "." + "eyJ" + "y" * 20 + "." + "z" * 24
+    text = sanitize_error(RuntimeError("m" * 270 + " " + jwt))
+    assert "eyJ" not in text and "xxxxx" not in text and len(text) <= 300
 
 
 def test_sanitize_error_without_message() -> None:

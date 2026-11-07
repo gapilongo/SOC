@@ -216,6 +216,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Error text that is stored or shown is now redacted before it is cut to
+  length: a run's and a source's `last_error`, an outbox delivery's and a
+  ticket sync's error, a ticketing receiver's error body, the ticket
+  connector's `detail`, eval and backtest item errors, and the MCP server's
+  messages for errors the LG-SOTF API returned. Before, run errors and
+  receiver error bodies were cut first, so a token straddling the cut could
+  slip past the redaction patterns; eval and backtest errors and ticket
+  details were cut and never redacted; and the MCP client did not redact the
+  API's error messages at all. Each limit now covers the whole text,
+  including the error type name (300 characters for runs, sources, eval and
+  MCP, 1,000 for deliveries and ticket syncs).
 - OIDC sign-in now reads the identity provider's discovery and key (JWKS)
   documents up to their 256 KiB limit and stops there. Before, the API
   downloaded the whole response into memory and only then checked its size,

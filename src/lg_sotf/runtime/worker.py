@@ -58,7 +58,7 @@ from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.queue.events import make_event
 from lg_sotf.queue.streams import Message
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
-from lg_sotf.security.redaction import redact_text
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -112,16 +112,12 @@ def default_worker_id() -> str:
 
 
 def sanitize_error(exc: BaseException) -> str:
-    """``Type: message`` short enough for ``workflow_runs.last_error``, with credentials redacted.
+    """``Type: message`` for ``workflow_runs.last_error``: redacted, one line, at most 300 chars.
 
-    Exception messages can quote input, so they are cut short; never log or
-    store the full text.
+    Exception messages can quote input, so they are cut short; never log the
+    text (ADR-0005).
     """
-    message = str(exc).replace("\n", " ").strip()
-    if len(message) > MAX_ERROR_MESSAGE_CHARS:
-        message = message[: MAX_ERROR_MESSAGE_CHARS - 3] + "..."
-    message = redact_text(message)[0] if message else ""
-    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+    return safe_error_text(exc, MAX_ERROR_MESSAGE_CHARS)
 
 
 def waiting_status_to_restore(claimed_from: Optional[str], alert_status: Optional[str]) -> Optional[str]:

@@ -60,7 +60,7 @@ from lg_sotf.integrations.ticketing import DeliveryDeferred, TicketService
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import REGISTRY
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.security.redaction import redact_text
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -94,8 +94,8 @@ def backoff_s(attempts: int, *, base_s: float, max_s: float, rand: Callable[[], 
 
 
 def safe_error(exc: BaseException) -> str:
-    text, _ = redact_text(" ".join(str(exc).split()))
-    return (f"{type(exc).__name__}: {text}" if text else type(exc).__name__)[:1_000]
+    """``Type: message`` for an outbox row or a ticket sync: redacted, one line, at most 1,000 chars."""
+    return safe_error_text(exc, 1_000)
 
 
 class RateLimiter:

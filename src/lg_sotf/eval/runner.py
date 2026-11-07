@@ -55,6 +55,7 @@ from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -164,7 +165,7 @@ class EvalRunner:
         except Exception as exc:  # noqa: BLE001 - one failing item must not stop the evaluation
             result.latency_s = time.perf_counter() - started
             result.status = "error"
-            result.error = f"{type(exc).__name__}: {str(exc)[:200]}"[:MAX_ERROR_CHARS]
+            result.error = safe_error_text(exc, MAX_ERROR_CHARS)
             log_failure(log, "eval.item_failed", exc, level="warning", item_id=item.id, error_type=type(exc).__name__)
             await self._usage_after_error(result)
         return result
@@ -332,7 +333,7 @@ async def check_services(db: Any, redis: Any) -> None:
     try:
         await redis.ping()
     except (RedisError, OSError) as exc:
-        raise EvalSetupError(f"redis unavailable: {type(exc).__name__}: {str(exc)[:200]}") from exc
+        raise EvalSetupError(f"redis unavailable: {safe_error_text(exc, 200)}") from exc
 
 
 async def run_evaluation(

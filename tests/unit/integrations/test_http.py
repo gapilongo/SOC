@@ -300,3 +300,11 @@ def test_no_ca_means_the_system_trust_store() -> None:
 def test_error_snippets_are_collapsed_and_truncated() -> None:
     assert error_snippet(b"  line one\n\n line   two ") == "line one line two"
     assert len(error_snippet(b"x " * 5_000)) == 300
+
+
+def test_error_snippets_are_redacted_before_they_are_cut() -> None:
+    # Before X1.4 the body was cut at 4 KiB first: padding pushed the token across that cut,
+    # its head no longer matched the JWT pattern, and whitespace collapsing brought it into view.
+    jwt = "eyJ" + "x" * 20 + "." + "eyJ" + "y" * 20 + "." + "z" * 24
+    snippet = error_snippet(b" " * 4_090 + jwt.encode())
+    assert "eyJ" not in snippet and "xxxxx" not in snippet
