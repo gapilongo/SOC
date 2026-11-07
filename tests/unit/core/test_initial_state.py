@@ -1,0 +1,84 @@
+"""Characterization (roadmap T4): the engine's and the backtest's initial workflow state, on the same alerts.
+
+``eval/history.py`` hand-copies how ``WorkflowEngine`` builds a run's initial
+state. This pins how the two copies compare today.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import Any, Dict, List, Mapping
+
+import pytest
+
+from lg_sotf.core.workflow import WorkflowEngine
+from lg_sotf.db.repos import Alert
+from lg_sotf.eval.history import initial_state
+
+pytestmark = pytest.mark.unit
+
+T0 = datetime(2026, 10, 1, 9, 30, tzinfo=UTC)
+TENANT = "t-char"
+
+
+def alert(**overrides: Any) -> Alert:
+    base: Dict[str, Any] = dict(
+        tenant_id=TENANT, id="a-1", source_id="src-1", source_alert_id="ext-1", fingerprint="fp-1",
+        title="Possible C2 beacon", severity="medium", category="malware", status="queued", disposition=None,
+        confidence=None, threat_score=None, priority=None, assigned_to=None, occurred_at=T0, ingested_at=T0,
+        updated_at=T0, closed_at=None, summary={}, case_key=None,
+        raw={"vendor": "edr", "process_name": "powershell.exe"},
+        normalized={"entities": {"ips": ["203.0.113.9"], "hosts": ["ws-042"]}, "description": "beacon"},
+    )
+    base.update(overrides)
+    return Alert(**base)
+
+
+FIXTURES: List[Alert] = [
+    alert(),
+    # The normalized form carries its own raw and category; the row's category is unset.
+    alert(id="a-2", category=None, normalized={"category": "phishing", "raw": {"from": "normalized"}, "email": {}}),
+    # Over the size caps: cap_alert drops and truncates.
+    alert(id="a-3", severity="critical", normalized={"description": "x" * 50_000, "entities": {"ips": ["198.51.100.1"]}}),
+]
+
+
+def engine_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
+    engine = WorkflowEngine.__new__(WorkflowEngine)
+
+    async def get(tenant_id: str) -> Any:
+        assert tenant_id == TENANT
+        return SimpleNamespace(settings=dict(tenant_settings))
+
+    engine.repos = SimpleNamespace(tenants=SimpleNamespace(get=get))  # type: ignore[assignment]
+    return dict(asyncio.run(engine._initial_state(TENANT, item)))
+
+
+def backtest_state(item: Alert, tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
+    return dict(initial_state(TENANT, item, tenant_settings.get("llm_daily_token_budget")))
+
+
+# Keys only the engine sets today: the backtest stops at ``decide``.
+ENGINE_ONLY = {"escalation_id", "plan", "awaiting_actions", "approval", "executed", "disposition", "close_reason", "notes"}
+
+
+@pytest.mark.parametrize("item", FIXTURES, ids=lambda a: a.id)
+@pytest.mark.parametrize("budget", [None, 0, 250_000, "250000", 2.5])
+def test_backtest_initial_state_matches_the_engine_except_known_drift(item: Alert, budget: Any) -> None:
+    settings = {"llm_daily_token_budget": budget}
+    engine, backtest = engine_state(item, settings), backtest_state(item, settings)
+    assert set(engine) - set(backtest) == ENGINE_ONLY and set(backtest) <= set(engine)
+    # Known drift: the gate starts empty in the engine, "not suppressed" in the backtest.
+    assert (engine["gate"], backtest["gate"]) == ({}, {"suppressed": False})
+    shared = set(backtest) - {"gate"}
+    assert {k: engine[k] for k in shared} == {k: backtest[k] for k in shared}
+    assert engine["llm_budget_limit"] == (budget if isinstance(budget, int) else None)
+
+
+@pytest.mark.parametrize("budget", [True, False])
+def test_a_bool_token_budget_is_rejected_by_the_engine_but_not_the_backtest(budget: bool) -> None:
+    settings = {"llm_daily_token_budget": budget}
+    assert engine_state(FIXTURES[0], settings)["llm_budget_limit"] is None
+    assert backtest_state(FIXTURES[0], settings)["llm_budget_limit"] is budget
