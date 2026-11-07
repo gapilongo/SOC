@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from lg_sotf.llm import LLMError, LLMOutputError, LLMRefusal, LLMUnavailable, ainvoke_structured, build_messages
 from lg_sotf.llm.client import TIERS, Tier, get_chat_model
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_str
 from lg_sotf.llm.structured import structured_method, usage_model_id
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -41,6 +42,9 @@ ModelFactory = Callable[[Tier, Settings], BaseChatModel]
 class LLMProbe(BaseModel):
     status: Literal["ok"]
     echo: clipped_str(64)  # type: ignore[valid-type]
+
+
+PROMPT = register_prompt("llm_check.probe", system=SYSTEM, task=TASK, schema=LLMProbe)
 
 
 @dataclass(frozen=True)
@@ -121,9 +125,12 @@ async def _check_tier(
     try:
         model = factory(tier, settings)
         model_id, method = usage_model_id(model), structured_method(model)
-        messages = build_messages(SYSTEM, TASK, {"probe": "ping"}, settings=settings)
+        messages = build_messages(PROMPT.system, PROMPT.task, {"probe": "ping"}, settings=settings)
         await asyncio.wait_for(
-            ainvoke_structured(model, LLMProbe, messages, agent=AGENT, tier=tier, tenant_id=tenant_id, settings=settings),
+            ainvoke_structured(
+                model, LLMProbe, messages, agent=AGENT, tier=tier, tenant_id=tenant_id, settings=settings,
+                prompt=PROMPT,
+            ),
             timeout=timeout_s,
         )
     except Exception as exc:  # noqa: BLE001 - every failure becomes a sanitized report line

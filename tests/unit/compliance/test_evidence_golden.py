@@ -33,7 +33,7 @@ from tests.unit.compliance._support import ANALYST, T0, action, alert, escalatio
 
 GOLDEN_HTML = Path(__file__).with_name("evidence_pack.golden.html")
 # sha256 of the canonical JSON of the fixed pack below (integrity block excluded, as seal() computes it).
-GOLDEN_BUNDLE_SHA256 = "040a4b1f9abb3366630dc90bbe10c33929439d60341a34d61804da75bf72d302"
+GOLDEN_BUNDLE_SHA256 = "873dd174f2b332ffbd6815f94216ed73ccf86c6710e917bae3ecb2aee0f77983"
 UPDATE_ENV = "LG_SOTF_UPDATE_GOLDENS"
 REGENERATE = f"{UPDATE_ENV}=1 python -m pytest tests/unit/compliance/test_evidence_golden.py"
 
@@ -83,7 +83,12 @@ def _fixed_case() -> Dict[str, Any]:
             "conclusion": "Credential dumping", "tools": [{"tool": "vt", "result": "known bad"}],
             "threat_indicators": ["T1003.001"], "history": [],
         },
-        "llm_models": {"triage": {"provider": "anthropic", "model": "claude-x", "tier": "fast"}},
+        "llm_models": {
+            "triage": {
+                "provider": "anthropic", "model": "claude-x", "tier": "fast", "prompt_name": "triage.assess",
+                "prompt_hash": "0123456789abcdef",
+            },
+        },
         "llm_usage": {"by_agent": {"triage": {"calls": 1, "input_tokens": 900}}},
         "decision": {"route": "escalate", "reason": "high severity"},
         "response": {"threat_type": "credential_theft"},

@@ -12,6 +12,17 @@ ItemStatus = Literal[
     "error",  # ingestion rejected the event, or the run failed or timed out
 ]
 REVIEW_UNREVIEWED = "unreviewed"
+PROVENANCE_FIELDS = ("provider", "model", "prompt_name", "prompt_hash")
+
+
+def llm_provenance(usage: Mapping[str, Any]) -> Dict[str, Dict[str, str]]:
+    """``{agent: {provider, model, prompt_name, prompt_hash}}`` from ``summary.llm_usage.by_agent``."""
+    by_agent = usage.get("by_agent")
+    out: Dict[str, Dict[str, str]] = {}
+    for agent, entry in (by_agent.items() if isinstance(by_agent, Mapping) else ()):
+        if isinstance(agent, str) and isinstance(entry, Mapping) and entry.get("calls"):
+            out[agent] = {k: str(entry[k]) for k in PROVENANCE_FIELDS if isinstance(entry.get(k), str)}
+    return out
 
 
 @dataclass
@@ -53,6 +64,8 @@ class ItemResult:
     cost_usd: float = 0.0
     latency_s: float = 0.0
     error: Optional[str] = None
+    llm_provenance: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    """Per agent: the provider, model, prompt name and prompt hash of its latest LLM call."""
 
     @property
     def scored(self) -> bool:
