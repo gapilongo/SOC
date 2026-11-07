@@ -70,7 +70,7 @@ from lg_sotf.errors import SourceConfigError
 from lg_sotf.integrations.microsoft.clouds import Api, CloudProfile
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MicrosoftHttpFactory
 from lg_sotf.net.retry import parse_retry_after
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -398,7 +398,7 @@ class TokenProvider:
                     await self._http.sleep(wait)
                     attempt += 1
                     continue
-                log.warning("microsoft.token_network_error", error_type=type(exc).__name__)
+                log_failure(log, "microsoft.token_network_error", exc, level="warning", error_type=type(exc).__name__)
                 raise MicrosoftAuthError(
                     "token_unavailable", hint="the sign-in endpoint could not be reached", retryable=True
                 ) from None

@@ -35,7 +35,7 @@ from typing import Any, Awaitable, Dict, List, Mapping, Optional
 from lg_sotf.domain.connectors import ConnectorResult
 from lg_sotf.integrations.microsoft.capability import MARKER_PREFIX, HandlerContext, ProbeCheck
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MsResponse, ledger_error
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -215,7 +215,7 @@ async def alert_title(ctx: HandlerContext, limit: int = 100) -> str:
     try:
         view = await ctx.alert()
     except Exception as exc:  # noqa: BLE001 - the title only decorates a comment; the marker is what matters
-        log.info("defender.alert_title_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "defender.alert_title_unavailable", exc, level="info", error_type=type(exc).__name__)
         return ""
     return text(text(view.title, 1_000).replace(MARKER_PREFIX, ""), limit)
 
