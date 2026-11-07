@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import (
     Any,
     AsyncIterator,
+    Awaitable,
+    Callable,
     Iterable,
     List,
     Mapping,
     Optional,
+    ParamSpec,
     Sequence,
     Type,
     TypeVar,
@@ -23,7 +27,7 @@ from pydantic import BaseModel, ConfigDict
 
 from lg_sotf.db.errors import Conflict, DatabaseError, InvalidValue, ReferenceNotFound
 from lg_sotf.db.pagination import Params
-from lg_sotf.db.pool import Database
+from lg_sotf.db.pool import Database, retry_stale_statement
 from lg_sotf.db.tenancy import switch_tenant, validate_tenant_id
 from lg_sotf.db.types import Connection, DbRecord
 
@@ -72,6 +76,29 @@ class Record(BaseModel):
 
 
 R = TypeVar("R", bound=Record)
+
+
+P = ParamSpec("P")
+T = TypeVar("T")
+
+
+def retries_stale_statement(method: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
+    """Retry a repository method once on a stale cached statement when it owns its transaction.
+
+    Without ``conn`` the method is one transaction of its own and only talks
+    to the database, so :func:`retry_stale_statement` can run it again. With
+    the caller's ``conn`` it is not retried: the stale statement aborted the
+    caller's transaction, which only the caller can run again
+    (:meth:`Database.run_tenant_tx`).
+    """
+
+    @functools.wraps(method)
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        if kwargs.get("conn") is not None:
+            return await method(*args, **kwargs)
+        return await retry_stale_statement(lambda: method(*args, **kwargs))
+
+    return wrapper
 
 
 def to_model(model: Type[R], row: Optional[DbRecord]) -> Optional[R]:

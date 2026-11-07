@@ -20,6 +20,7 @@ CONTRACT_METRICS = {
     "lgsotf_llm_cost_usd_total": ("model",),
     "lgsotf_escalations_open": (),
     "lgsotf_actions_total": ("action_type", "status"),
+    "lgsotf_db_stale_statement_retries_total": (),
     # LLM agent quality/cost (architecture section 13 addendum).
     "lgsotf_llm_refusals_total": ("agent", "category"),
     "lgsotf_llm_skipped_total": ("agent", "reason"),
@@ -73,6 +74,10 @@ def test_helpers_update_values() -> None:
     actions = _value("lgsotf_actions_total", action_type="block_ip", status="dry_run")
     metrics.record_action("block_ip", "dry_run")
     assert _value("lgsotf_actions_total", action_type="block_ip", status="dry_run") == actions + 1
+
+    retries = _value("lgsotf_db_stale_statement_retries_total")
+    metrics.record_stale_statement_retry()
+    assert _value("lgsotf_db_stale_statement_retries_total") == retries + 1
 
 
 def test_time_node_records_on_failure() -> None:

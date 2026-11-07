@@ -50,6 +50,7 @@ from lg_sotf.db.errors import InvalidTransition, LeaseLost, NotFound, RunNotClai
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories, WorkflowRun
 from lg_sotf.db.repos.runs import WAITING_RUN_STATUSES
+from lg_sotf.db.types import Connection
 from lg_sotf.errors import InvalidResumePayload
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
@@ -455,15 +456,9 @@ class Worker:
         # A fresh triage pass (not a resume, not a run claimed back from waiting) is metered once.
         metered = msg.kind == "process" and claimed.claimed_from not in WAITING_RUN_STATUSES
         try:
-            async with self._db.tenant_tx(msg.tenant_id) as conn:
-                if outcome.status == "completed":
-                    await self._repos.runs.complete(msg.tenant_id, msg.alert_id, worker_id=self.worker_id, conn=conn)
-                else:
-                    await self._repos.runs.mark_waiting(
-                        msg.tenant_id, msg.alert_id, outcome.status, worker_id=self.worker_id, conn=conn
-                    )
-                if metered:
-                    await self._repos.usage.add_processed(msg.tenant_id, msg.alert_id, conn=conn)
+            await self._db.run_tenant_tx(
+                msg.tenant_id, lambda conn: self._record_outcome(msg, outcome.status, metered, conn)
+            )
             if outcome.status == "completed":
                 self.stats.completed += 1
             else:
@@ -481,6 +476,17 @@ class Worker:
             kind=msg.kind,
             seconds=round(self._clock() - started, 3),
         )
+
+    async def _record_outcome(self, msg: Message, status: str, metered: bool, conn: Connection) -> None:
+        """Record the run's outcome and meter it, in the caller's transaction."""
+        if status == "completed":
+            await self._repos.runs.complete(msg.tenant_id, msg.alert_id, worker_id=self.worker_id, conn=conn)
+        else:
+            await self._repos.runs.mark_waiting(
+                msg.tenant_id, msg.alert_id, status, worker_id=self.worker_id, conn=conn
+            )
+        if metered:
+            await self._repos.usage.add_processed(msg.tenant_id, msg.alert_id, conn=conn)
 
     async def _handle_unclaimable(self, msg: Message, exc: RunNotClaimable) -> None:
         if exc.reason in TERMINAL_REASONS:
@@ -688,7 +694,8 @@ class Worker:
 
     async def _mark_dead_lettered(self, msg: Message, reason: str) -> bool:
         """Dead-letter the run and fail the alert in one transaction; returns whether the alert changed."""
-        async with self._db.tenant_tx(msg.tenant_id) as conn:
+
+        async def mark(conn: Connection) -> bool:
             try:
                 await self._repos.runs.dead_letter(msg.tenant_id, msg.alert_id, reason, conn=conn)
             except InvalidTransition as exc:
@@ -700,7 +707,9 @@ class Worker:
             except InvalidTransition as exc:
                 log.warning("worker.alert_fail_skipped", current=exc.current)
                 return False
-        return True
+            return True
+
+        return await self._db.run_tenant_tx(msg.tenant_id, mark)
 
     async def flush_usage(self) -> int:
         """Write buffered LLM usage to ``llm_usage_daily``; failures keep the buffer for the next flush."""

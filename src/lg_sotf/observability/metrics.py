@@ -110,6 +110,11 @@ ACTIONS = Counter(
     ["action_type", "status"],
     registry=REGISTRY,
 )
+DB_STALE_STATEMENT_RETRIES = Counter(
+    "lgsotf_db_stale_statement_retries_total",
+    "Transactions run again because a migration made a cached prepared statement stale (rolling upgrade).",
+    registry=REGISTRY,
+)
 
 LLM_TOKEN_KINDS = ("input", "output", "cache_read", "cache_write")
 
@@ -205,6 +210,10 @@ def set_escalations_open(count: int) -> None:
 
 def record_action(action_type: str, status: str) -> None:
     ACTIONS.labels(action_type=action_type, status=status).inc()
+
+
+def record_stale_statement_retry() -> None:
+    DB_STALE_STATEMENT_RETRIES.inc()
 
 
 def render_latest() -> Tuple[bytes, str]:
