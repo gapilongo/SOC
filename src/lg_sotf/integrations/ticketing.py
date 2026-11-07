@@ -430,6 +430,7 @@ class TicketService:
 
     def _secret_box(self) -> Optional[SecretBox]:
         if self._box is None and self._settings.security.encryption_keys is not None:
+            log.warning("security.secret_box_lazy_load", component="TicketService")
             try:
                 self._box = SecretBox.from_settings(self._settings)
             except SecurityConfigError:

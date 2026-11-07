@@ -148,6 +148,7 @@ class OutboxDelivery:
         self._http = http or IntegrationHttp(settings)
         self._box = secret_box
         if self._box is None and settings.security.encryption_keys is not None:
+            log.warning("security.secret_box_lazy_load", component="OutboxDelivery")
             try:
                 self._box = SecretBox.from_settings(settings)
             except SecurityConfigError:

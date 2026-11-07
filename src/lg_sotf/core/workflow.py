@@ -44,6 +44,7 @@ from lg_sotf.errors import InvalidResumePayload, WorkflowError
 from lg_sotf.llm import TokenBudget
 from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.response import Connector, ResponseService
@@ -162,6 +163,7 @@ class WorkflowEngine:
         agents: Optional[AgentSet] = None,
         connectors: Optional[Mapping[str, Connector]] = None,
         checkpoint_pool_size: Optional[int] = None,
+        secret_box: Optional[SecretBox] = None,
     ) -> WorkflowEngine:
         """Build agents and services, open the checkpointer pool and compile the graph.
 
@@ -170,14 +172,16 @@ class WorkflowEngine:
         :class:`~lg_sotf.security.hashing.SecurityConfigError` when
         ``security.indicator_hmac_key`` is missing or unusable: correlation
         needs it for every alert with indicators, so a worker without it
-        must not start and fail each run instead.
+        must not start and fail each run instead. ``secret_box`` is the
+        process's (built once by its composition root): the response service
+        and analysis enrichment decrypt tenant credentials with it.
         """
         indicator_hmac_key(settings)
         repos = Repositories.create(db)
-        agent_set = agents or AgentSet.build(settings)
+        agent_set = agents or AgentSet.build(settings, secret_box=secret_box)
         await agent_set.initialize()
         escalations = EscalationService(repos, events, settings)
-        responses = ResponseService(repos, settings, events, connectors=connectors)
+        responses = ResponseService(repos, settings, events, connectors=connectors, secret_box=secret_box)
         deps = NodeDeps(
             settings=settings,
             repos=repos,

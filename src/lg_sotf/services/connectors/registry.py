@@ -155,6 +155,7 @@ class ConnectorRegistry:
 
     def _secret_box(self) -> SecretBox:
         if self._box is None:
+            log.warning("security.secret_box_lazy_load", component="ConnectorRegistry")
             try:
                 self._box = SecretBox.from_settings(self._settings)
             except SecurityConfigError as exc:

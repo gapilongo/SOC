@@ -254,6 +254,8 @@ class ResponseService:
         """The install's secret box, or ``None`` when no encryption keys are configured."""
         if not self._box_loaded:
             self._box_loaded = True
+            if self._settings.security.encryption_keys is not None:
+                log.warning("security.secret_box_lazy_load", component="ResponseService")
             try:
                 self._box = SecretBox.from_settings(self._settings)
             except SecurityConfigError:

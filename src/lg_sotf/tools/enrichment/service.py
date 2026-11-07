@@ -274,6 +274,7 @@ class CredentialResolver:
         if not self._box_loaded:
             self._box_loaded = True
             if self.settings.security.encryption_keys is not None:
+                log.warning("security.secret_box_lazy_load", component="CredentialResolver")
                 try:
                     self._box = SecretBox.from_settings(self.settings)
                 except SecurityConfigError:
@@ -383,9 +384,16 @@ class EnrichmentService:
 
     @classmethod
     def from_settings(
-        cls, settings: Settings, *, transport: Optional[httpx.AsyncBaseTransport] = None
+        cls,
+        settings: Settings,
+        *,
+        transport: Optional[httpx.AsyncBaseTransport] = None,
+        secret_box: Optional[SecretBox] = None,
     ) -> EnrichmentService:
-        """VirusTotal, AbuseIPDB and history providers configured from ``settings.tools``."""
+        """VirusTotal, AbuseIPDB and history providers configured from ``settings.tools``.
+
+        ``secret_box`` (the process's, injected by its composition root) decrypts tenant tool keys.
+        """
         tools = settings.tools
 
         def section(name: str) -> Mapping[str, Any]:
@@ -398,7 +406,7 @@ class EnrichmentService:
             AbuseIPDBProvider(section("abuseipdb"), production=production, transport=transport),
             HistoryProvider(section("history")),
         ]
-        return cls(providers, settings)
+        return cls(providers, settings, credentials=CredentialResolver(settings, box=secret_box))
 
     def provider(self, name: str) -> EnrichmentProvider:
         return self._providers[name]
