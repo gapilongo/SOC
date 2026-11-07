@@ -49,7 +49,16 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import check_password
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.schemas import In, Out, PageOut, UserOut
+from lg_sotf.api.schemas import (
+    EscalationLevelStr,
+    EscalationStatusStr,
+    In,
+    Out,
+    PageOut,
+    SeverityStr,
+    TenantStatusStr,
+    UserOut,
+)
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.pagination import API_MAX_LIMIT
@@ -102,7 +111,7 @@ class TenantCreateIn(In):
 class TenantCreatedOut(Out):
     id: str
     name: str
-    status: str
+    status: TenantStatusStr
     created_at: datetime
     admin: Optional[UserOut] = None
     settings_keys: List[str] = Field(default_factory=list)
@@ -143,7 +152,7 @@ class TenantStatsOut(BaseModel):
 class TenantSummaryOut(BaseModel):
     id: str
     name: str
-    status: str
+    status: TenantStatusStr
     created_at: datetime
     updated_at: datetime
     quotas: Dict[str, Optional[int]]
@@ -155,12 +164,12 @@ class PlatformEscalationOut(Out):
     id: str
     tenant_id: str
     tenant_name: str
-    tenant_status: str
+    tenant_status: TenantStatusStr
     alert_id: str
     alert_title: Optional[str] = None
-    alert_severity: Optional[str] = None
-    level: str
-    status: str
+    alert_severity: Optional[SeverityStr] = None
+    level: EscalationLevelStr
+    status: EscalationStatusStr
     priority: int
     reason: str
     assigned_to: Optional[UUID] = None
@@ -172,7 +181,7 @@ class PlatformEscalationOut(Out):
 class TenantUsageOut(Out):
     tenant_id: str
     tenant_name: str
-    tenant_status: str
+    tenant_status: TenantStatusStr
     alerts_ingested: int
     alerts_processed: int
     alerts_rejected_quota: int

@@ -24,6 +24,7 @@ from fastapi import Depends, Request
 from lg_sotf.api.auth.authenticate import authenticate, forbidden
 from lg_sotf.api.auth.principal import Principal, role_at_least
 from lg_sotf.api.context import ApiContext, get_ctx
+from lg_sotf.models.vocabulary import Role, Scope
 
 INGEST_BUCKET = "ingest"
 API_BUCKET = "api"
@@ -31,8 +32,8 @@ API_BUCKET = "api"
 
 @dataclass(frozen=True)
 class Access:
-    role: Optional[str] = None
-    scope: Optional[str] = None
+    role: Optional[Role] = None
+    scope: Optional[Scope] = None
     api_key_only: bool = False
     user_account: bool = False
     any_api_key: bool = False

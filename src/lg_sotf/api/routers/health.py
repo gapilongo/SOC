@@ -17,6 +17,7 @@ from prometheus_client import generate_latest
 
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.payload_schemas import ReadinessOut
 from lg_sotf.db.errors import DatabaseUnavailable
 from lg_sotf.ingestion.metrics import REGISTRY as INGESTION_REGISTRY
 from lg_sotf.observability.logging import get_logger
@@ -35,7 +36,11 @@ async def healthz() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/readyz", summary="Readiness (database and Redis reachable)")
+@router.get(
+    "/readyz",
+    summary="Readiness (database and Redis reachable)",
+    responses={200: {"model": ReadinessOut}, 503: {"model": ReadinessOut}},
+)
 async def readyz(request: Request) -> JSONResponse:
     ctx = get_ctx(request)
     checks: Dict[str, str] = {}
