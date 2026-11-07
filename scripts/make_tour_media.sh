@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Turns the recorded tour (scripts/record_tour.mjs) into the README media:
 #   docs/media/tour.mp4  H.264, 1280 px wide, for the full-quality video link
-#   docs/media/tour.gif  880 px wide, 6 fps, plays inline on GitHub
+#   docs/media/tour.gif  880 px wide, up to 6 fps, plays inline on GitHub
 #
 #   scripts/make_tour_media.sh <dir containing tour.webm>
 #
@@ -21,9 +21,14 @@ mkdir -p "$OUT"
 
 PALETTE="$(mktemp --suffix=.png)"
 trap 'rm -f "$PALETTE"' EXIT
-FILTERS="fps=6,scale=880:-1:flags=lanczos"
-"$FF" -loglevel error -y -i "$SRC" -vf "$FILTERS,palettegen=max_colors=96:stats_mode=diff" "$PALETTE"
+# mpdecimate drops frames that differ from the previous one only by the
+# recording's compression noise; with -fps_mode vfr (ffmpeg 5.1+) the kept
+# frames are shown longer, so the timing stays the same and the GIF shrinks
+# to about a third.
+FILTERS="fps=6,scale=880:-1:flags=lanczos,mpdecimate"
+"$FF" -loglevel error -y -i "$SRC" -vf "$FILTERS,palettegen=max_colors=96:stats_mode=diff" -update 1 "$PALETTE"
 "$FF" -loglevel error -y -i "$SRC" -i "$PALETTE" \
-  -lavfi "$FILTERS [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" "$OUT/tour.gif"
+  -lavfi "$FILTERS [x]; [x][1:v] paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+  -fps_mode vfr "$OUT/tour.gif"
 
 ls -l "$OUT/tour.mp4" "$OUT/tour.gif"

@@ -1,7 +1,7 @@
 /**
  * The analyst workflow through the real UI, against a running stack:
  * security headers and sign-in, provisioning (API key, analyst, viewer),
- * the dashboard updating live after alerts arrive through the ingest API,
+ * the Overview updating live after alerts arrive through the ingest API,
  * alert filters and pagination, the alert timeline, claiming and deciding
  * the escalation as an analyst, approving its response as an admin until
  * the alert closes, role gating for analyst and viewer, sign-out, and no
@@ -182,7 +182,7 @@ test('the admin creates an API key, an analyst and a viewer in the UI', async ({
   await context.close();
 });
 
-test('the dashboard updates live when alerts arrive through the ingest API', async ({ browser, request }) => {
+test('the Overview updates live when alerts arrive through the ingest API', async ({ browser, request }) => {
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
@@ -195,7 +195,7 @@ test('the dashboard updates live when alerts arrive through the ingest API', asy
 
   // No navigation, no Refresh click: the WebSocket events refresh the page.
   await expect.poll(() => statValue(page, 'Alerts ingested'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
-  await screenshot(page, '02-dashboard');
+  await screenshot(page, '02-overview');
   await watch.assertClean();
   await context.close();
 });
@@ -349,8 +349,6 @@ async function decideAsAnalyst(
     await expect(page.getByRole('status').filter({ hasText: 'Escalation claimed.' })).toBeVisible();
     await expect(row.getByRole('link', { name: `Decide ${title}`, exact: true })).toBeVisible();
     await expect(row).toContainText('You');
-    await row.scrollIntoViewIfNeeded();
-    if (shots) await screenshot(page, '05-escalations');
     await row.getByRole('link', { name: `Decide ${title}`, exact: true }).click();
     await expect(page).toHaveURL(/\/escalations\/[^/?]+/);
     await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
@@ -363,7 +361,13 @@ async function decideAsAnalyst(
     if (decision === 'True positive') await expect(form.getByText('Expected response plan')).toBeVisible();
     await form.getByText('Rate the automated triage (optional)').click();
     await form.getByLabel('Triage correct').selectOption('yes');
-    if (shots) await screenshot(page, '06-decision');
+    if (shots) {
+      // The "Escalation claimed." notice would cover the form in the picture.
+      const notices = page.getByRole('button', { name: 'Dismiss notification' });
+      for (const notice of await notices.all()) await notice.click();
+      await expect(notices).toHaveCount(0);
+      await screenshot(page, '06-decision');
+    }
     await form.getByRole('button', { name: 'Record decision' }).click();
     await expect(page.getByRole('status').filter({ hasText: /Decision recorded; \d+ alert\(s\) resumed\./ })).toBeVisible();
     await expect(page.getByText(`Decided: ${decision}`)).toBeVisible();
@@ -452,7 +456,7 @@ test('response approval: role gating, the admin approves, the alert closes as ma
       await page.goto('/approvals');
       const row = pendingCards(page, beaconId).first();
       await expect(row).toBeVisible();
-      if (approved === 0) await screenshot(page, '07-actions');
+      if (approved === 0) await screenshot(page, '07-approvals');
       await row.getByRole('button', { name: 'Approve', exact: true }).click();
       const dialog = page.getByRole('dialog', { name: /^Approve / });
       await dialog.getByLabel("Reject the alert's other pending actions").check();
@@ -498,8 +502,9 @@ test('main pages render under the CSP (and screenshots for the README)', async (
   await signIn(page, admin);
   const pages: [string, string, string][] = [
     ['/alerts', 'Alerts', '03-alerts'],
+    ['/escalations', 'Escalations', '05-escalations'],
     ['/escalations?status=decided', 'Escalations', '05-escalations-decided'],
-    ['/approvals?view=all', 'Approvals', '07-actions-ledger'],
+    ['/approvals?view=all', 'Approvals', '07-approvals-ledger'],
     ['/suppressions', 'Suppressions', '08-suppressions'],
     ['/sources', 'Sources', '09-sources'],
     ['/users', 'Users and API keys', '10-users'],
@@ -507,7 +512,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     ['/usage', 'LLM usage', '12-usage'],
     ['/audit', 'Audit log', '13-audit'],
     // Last: the summary is cached for 15 seconds, so it now reflects the decisions above.
-    ['/', 'Overview', '02-dashboard'],
+    ['/', 'Overview', '02-overview'],
   ];
   for (const [path, heading, shot] of pages) {
     await page.goto(path);
@@ -517,6 +522,13 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     await screenshot(page, shot);
     await assertAccessible(page, path);
   }
+  // The theme switch in the header: the Overview in the light theme passes axe as well.
+  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await screenshot(page, '02-overview-light');
+  await assertAccessible(page, '/ (light theme)');
+  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   // The audit log recorded the analyst's claim and decision and the admin's approval.
   await page.goto('/audit');
   await expect(page.getByText('escalation.claimed').first()).toBeVisible();

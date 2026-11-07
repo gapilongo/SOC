@@ -224,6 +224,33 @@
       "ActionOut": {
         "properties": {
           "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
             "title": "Action Type",
             "type": "string"
           },
@@ -310,6 +337,10 @@
           },
           "execution_owner": {
             "default": "workflow",
+            "enum": [
+              "workflow",
+              "scheduler"
+            ],
             "title": "Execution Owner",
             "type": "string"
           },
@@ -404,6 +435,12 @@
             "title": "Reversible"
           },
           "risk_level": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Risk Level",
             "type": "string"
           },
@@ -436,6 +473,17 @@
             "title": "Rolled Back By"
           },
           "status": {
+            "enum": [
+              "proposed",
+              "awaiting_approval",
+              "approved",
+              "rejected",
+              "executing",
+              "succeeded",
+              "failed",
+              "dry_run",
+              "blocked"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -652,6 +700,11 @@
           "disposition": {
             "anyOf": [
               {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
                 "type": "string"
               },
               {
@@ -717,6 +770,13 @@
             "type": "object"
           },
           "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Severity",
             "type": "string"
           },
@@ -741,6 +801,15 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -804,6 +873,11 @@
             "title": "Actor Id"
           },
           "actor_type": {
+            "enum": [
+              "system",
+              "user",
+              "agent"
+            ],
             "title": "Actor Type",
             "type": "string"
           },
@@ -913,6 +987,11 @@
           "disposition": {
             "anyOf": [
               {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
                 "type": "string"
               },
               {
@@ -961,6 +1040,13 @@
             "title": "Priority"
           },
           "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Severity",
             "type": "string"
           },
@@ -985,6 +1071,15 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -1128,6 +1223,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -1208,6 +1308,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -1289,6 +1394,12 @@
             "title": "Actor Id"
           },
           "actor_type": {
+            "enum": [
+              "system",
+              "user",
+              "agent",
+              "api_key"
+            ],
             "title": "Actor Type",
             "type": "string"
           },
@@ -1425,6 +1536,18 @@
           "target_kind": {
             "anyOf": [
               {
+                "enum": [
+                  "ip",
+                  "domain",
+                  "url",
+                  "hash",
+                  "user",
+                  "host",
+                  "process",
+                  "alert",
+                  "email",
+                  "message"
+                ],
                 "type": "string"
               },
               {
@@ -2201,6 +2324,12 @@
             "type": "string"
           },
           "operation": {
+            "enum": [
+              "notify",
+              "ticket_create",
+              "ticket_update",
+              "test"
+            ],
             "title": "Operation",
             "type": "string"
           },
@@ -2229,6 +2358,12 @@
             "title": "Sent At"
           },
           "status": {
+            "enum": [
+              "pending",
+              "sent",
+              "failed",
+              "dead"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -2305,6 +2440,13 @@
           "max_confirmed_benign_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -2316,6 +2458,13 @@
           "max_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -2327,6 +2476,13 @@
           "median_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -2587,6 +2743,10 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -2767,6 +2927,13 @@
           "alert_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -2860,6 +3027,12 @@
           "decision": {
             "anyOf": [
               {
+                "enum": [
+                  "true_positive",
+                  "false_positive",
+                  "benign_positive",
+                  "needs_more_info"
+                ],
                 "type": "string"
               },
               {
@@ -2894,6 +3067,11 @@
             "type": "string"
           },
           "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "L3"
+            ],
             "title": "Level",
             "type": "string"
           },
@@ -2969,6 +3147,13 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "open",
+              "claimed",
+              "decided",
+              "expired",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -3004,6 +3189,170 @@
           "updated_at"
         ],
         "title": "EscalationOut",
+        "type": "object"
+      },
+      "EvidenceIntegrityOut": {
+        "properties": {
+          "bundle_sha256": {
+            "description": "SHA-256 of the canonical bundle without this block (X-Evidence-Bundle-SHA256).",
+            "title": "Bundle Sha256",
+            "type": "string"
+          },
+          "canonicalization": {
+            "title": "Canonicalization",
+            "type": "string"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "alg, key_id and value when a key is set.",
+            "title": "Signature"
+          }
+        },
+        "required": [
+          "canonicalization",
+          "bundle_sha256"
+        ],
+        "title": "EvidenceIntegrityOut",
+        "type": "object"
+      },
+      "EvidencePackOut": {
+        "description": "``GET /alerts/{alert_id}/evidence``: the sealed case bundle (docs/compliance.md).",
+        "properties": {
+          "actions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "agents": {
+            "additionalProperties": true,
+            "description": "Per workflow step: whether it ran, its model, verdict and reasoning.",
+            "title": "Agents",
+            "type": "object"
+          },
+          "alert": {
+            "additionalProperties": true,
+            "description": "The alert record, raw payload redacted (raw_redacted, raw_redactions).",
+            "title": "Alert",
+            "type": "object"
+          },
+          "audit": {
+            "additionalProperties": true,
+            "description": "The audit entries of the case and the chain verification.",
+            "title": "Audit",
+            "type": "object"
+          },
+          "correlation": {
+            "additionalProperties": true,
+            "title": "Correlation",
+            "type": "object"
+          },
+          "enrichment": {
+            "additionalProperties": true,
+            "title": "Enrichment",
+            "type": "object"
+          },
+          "escalations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Escalations",
+            "type": "array"
+          },
+          "feedback": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Feedback",
+            "type": "array"
+          },
+          "format": {
+            "description": "lg-sotf.evidence-pack",
+            "title": "Format",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "generated_by": {
+            "additionalProperties": true,
+            "title": "Generated By",
+            "type": "object"
+          },
+          "human_oversight": {
+            "additionalProperties": true,
+            "title": "Human Oversight",
+            "type": "object"
+          },
+          "integrity": {
+            "$ref": "#/components/schemas/EvidenceIntegrityOut"
+          },
+          "lg_sotf_version": {
+            "title": "Lg Sotf Version",
+            "type": "string"
+          },
+          "limits": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "Which lists were truncated.",
+            "title": "Limits",
+            "type": "object"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "timeline": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "format",
+          "version",
+          "generated_at",
+          "generated_by",
+          "lg_sotf_version",
+          "tenant_id",
+          "alert",
+          "timeline",
+          "agents",
+          "enrichment",
+          "correlation",
+          "escalations",
+          "feedback",
+          "actions",
+          "human_oversight",
+          "audit",
+          "limits",
+          "integrity"
+        ],
+        "title": "EvidencePackOut",
         "type": "object"
       },
       "FeedbackIn": {
@@ -3359,6 +3708,11 @@
             "type": "string"
           },
           "stage": {
+            "enum": [
+              "early_warning",
+              "notification",
+              "final"
+            ],
             "title": "Stage",
             "type": "string"
           }
@@ -3574,6 +3928,16 @@
           },
           "events": {
             "items": {
+              "enum": [
+                "escalation.created",
+                "escalation.sla_breached",
+                "escalation.decided",
+                "action.awaiting_approval",
+                "action.executed",
+                "action.failed",
+                "action.verification_failed",
+                "alert.critical_received"
+              ],
               "type": "string"
             },
             "title": "Events",
@@ -3585,10 +3949,26 @@
             "type": "string"
           },
           "kind": {
+            "enum": [
+              "slack",
+              "teams",
+              "email",
+              "webhook",
+              "jira",
+              "servicenow",
+              "microsoft"
+            ],
             "title": "Kind",
             "type": "string"
           },
           "min_severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Min Severity",
             "type": "string"
           },
@@ -3960,6 +4340,11 @@
           "role": {
             "anyOf": [
               {
+                "enum": [
+                  "viewer",
+                  "analyst",
+                  "admin"
+                ],
                 "type": "string"
               },
               {
@@ -3970,6 +4355,11 @@
           },
           "scopes": {
             "items": {
+              "enum": [
+                "ingest",
+                "read",
+                "write"
+              ],
               "type": "string"
             },
             "title": "Scopes",
@@ -4276,6 +4666,328 @@
           "code"
         ],
         "title": "MfaVerifyIn",
+        "type": "object"
+      },
+      "MicrosoftActionSupportOut": {
+        "properties": {
+          "inverse": {
+            "anyOf": [
+              {
+                "enum": [
+                  "block_ip",
+                  "block_domain",
+                  "block_url",
+                  "isolate_host",
+                  "terminate_process",
+                  "quarantine_file",
+                  "disable_user",
+                  "reset_password",
+                  "revoke_sessions",
+                  "collect_forensics",
+                  "create_ticket",
+                  "send_alert",
+                  "block_sender",
+                  "purge_message",
+                  "notify_reporter",
+                  "confirm_compromised",
+                  "release_host",
+                  "unblock_ip",
+                  "unblock_domain",
+                  "unblock_url",
+                  "unblock_file",
+                  "unblock_sender",
+                  "enable_user",
+                  "restore_message",
+                  "dismiss_user_risk"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inverse"
+          },
+          "irreversible_note": {
+            "title": "Irreversible Note",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "restorative": {
+            "title": "Restorative",
+            "type": "boolean"
+          },
+          "reversible": {
+            "title": "Reversible",
+            "type": "boolean"
+          },
+          "risk": {
+            "anyOf": [
+              {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk"
+          },
+          "rollback_window_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollback Window S"
+          }
+        },
+        "required": [
+          "reversible",
+          "note",
+          "restorative",
+          "irreversible_note"
+        ],
+        "title": "MicrosoftActionSupportOut",
+        "type": "object"
+      },
+      "MicrosoftCapabilityOut": {
+        "properties": {
+          "actions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MicrosoftActionSupportOut"
+            },
+            "description": "Keyed by action type.",
+            "title": "Actions",
+            "type": "object"
+          },
+          "api": {
+            "enum": [
+              "graph",
+              "defender"
+            ],
+            "title": "Api",
+            "type": "string"
+          },
+          "clouds": {
+            "items": {
+              "enum": [
+                "global",
+                "usgov_gcc_high",
+                "usgov_dod"
+              ],
+              "type": "string"
+            },
+            "title": "Clouds",
+            "type": "array"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "excludes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Excludes",
+            "type": "array"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "licence": {
+            "title": "Licence",
+            "type": "string"
+          },
+          "live_confirmation": {
+            "title": "Live Confirmation",
+            "type": "string"
+          },
+          "options_defaults": {
+            "additionalProperties": true,
+            "title": "Options Defaults",
+            "type": "object"
+          },
+          "options_schema": {
+            "additionalProperties": true,
+            "description": "JSON schema of the capability's options.",
+            "title": "Options Schema",
+            "type": "object"
+          },
+          "package": {
+            "enum": [
+              "mail",
+              "entra",
+              "defender"
+            ],
+            "title": "Package",
+            "type": "string"
+          },
+          "permissions": {
+            "items": {
+              "$ref": "#/components/schemas/MicrosoftPermissionOut"
+            },
+            "title": "Permissions",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "package",
+          "api",
+          "title",
+          "description",
+          "actions",
+          "permissions",
+          "options_schema",
+          "options_defaults",
+          "clouds",
+          "licence",
+          "live_confirmation",
+          "excludes"
+        ],
+        "title": "MicrosoftCapabilityOut",
+        "type": "object"
+      },
+      "MicrosoftCatalogOut": {
+        "description": "``GET /integrations/microsoft/catalog``: the capabilities, the clouds and the Defender geos.",
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/MicrosoftCapabilityOut"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "clouds": {
+            "items": {
+              "$ref": "#/components/schemas/MicrosoftCloudOut"
+            },
+            "title": "Clouds",
+            "type": "array"
+          },
+          "defender_geos": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Defender Geos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "capabilities",
+          "clouds",
+          "defender_geos"
+        ],
+        "title": "MicrosoftCatalogOut",
+        "type": "object"
+      },
+      "MicrosoftCloudOut": {
+        "properties": {
+          "defender_supported": {
+            "title": "Defender Supported",
+            "type": "boolean"
+          },
+          "graph_host": {
+            "title": "Graph Host",
+            "type": "string"
+          },
+          "login_host": {
+            "title": "Login Host",
+            "type": "string"
+          },
+          "name": {
+            "enum": [
+              "global",
+              "usgov_gcc_high",
+              "usgov_dod"
+            ],
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "login_host",
+          "graph_host",
+          "defender_supported"
+        ],
+        "title": "MicrosoftCloudOut",
+        "type": "object"
+      },
+      "MicrosoftPermissionOut": {
+        "properties": {
+          "api": {
+            "enum": [
+              "graph",
+              "defender"
+            ],
+            "title": "Api",
+            "type": "string"
+          },
+          "directory_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Directory Role"
+          },
+          "exchange_rbac": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Rbac"
+          },
+          "purpose": {
+            "title": "Purpose",
+            "type": "string"
+          },
+          "required": {
+            "title": "Required",
+            "type": "boolean"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "when": {
+            "title": "When",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api",
+          "role",
+          "purpose",
+          "required",
+          "when"
+        ],
+        "title": "MicrosoftPermissionOut",
         "type": "object"
       },
       "MicrosoftTestReport": {
@@ -4693,6 +5405,13 @@
           "alert_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -4734,6 +5453,11 @@
             "type": "string"
           },
           "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "L3"
+            ],
             "title": "Level",
             "type": "string"
           },
@@ -4763,6 +5487,13 @@
             "title": "Sla Deadline"
           },
           "status": {
+            "enum": [
+              "open",
+              "claimed",
+              "decided",
+              "expired",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -4775,6 +5506,10 @@
             "type": "string"
           },
           "tenant_status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Tenant Status",
             "type": "string"
           }
@@ -4797,6 +5532,33 @@
       "PreviewActionOut": {
         "properties": {
           "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
             "title": "Action Type",
             "type": "string"
           },
@@ -4806,7 +5568,12 @@
             "type": "string"
           },
           "autonomy": {
-            "description": "The tenant's autonomy mode for this risk: auto, approval or disabled.",
+            "description": "The tenant's autonomy mode for this risk.",
+            "enum": [
+              "auto",
+              "approval",
+              "disabled"
+            ],
             "title": "Autonomy",
             "type": "string"
           },
@@ -4852,6 +5619,12 @@
             "type": "boolean"
           },
           "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Risk",
             "type": "string"
           },
@@ -5148,6 +5921,38 @@
         "title": "QuotasIn",
         "type": "object"
       },
+      "ReadinessOut": {
+        "description": "``GET /readyz``: 200 when every dependency answers, else 503 with the same body.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "enum": [
+                "ok",
+                "busy",
+                "error"
+              ],
+              "type": "string"
+            },
+            "description": "Per dependency (database, redis): busy means every pooled connection is serving requests.",
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessOut",
+        "type": "object"
+      },
       "RecoveryCodesOut": {
         "properties": {
           "recovery_codes": {
@@ -5175,6 +5980,15 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -5233,6 +6047,29 @@
           "actions"
         ],
         "title": "ResponsePreviewOut",
+        "type": "object"
+      },
+      "ResponseRoutesOut": {
+        "description": "``GET /tenant/response/routes``: which connector executes each catalog action type, and why.",
+        "properties": {
+          "dry_run_forced": {
+            "title": "Dry Run Forced",
+            "type": "boolean"
+          },
+          "routes": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RouteOut"
+            },
+            "description": "Keyed by action type.",
+            "title": "Routes",
+            "type": "object"
+          }
+        },
+        "required": [
+          "dry_run_forced",
+          "routes"
+        ],
+        "title": "ResponseRoutesOut",
         "type": "object"
       },
       "RetentionLimitsOut": {
@@ -5304,6 +6141,33 @@
           "action_type": {
             "anyOf": [
               {
+                "enum": [
+                  "block_ip",
+                  "block_domain",
+                  "block_url",
+                  "isolate_host",
+                  "terminate_process",
+                  "quarantine_file",
+                  "disable_user",
+                  "reset_password",
+                  "revoke_sessions",
+                  "collect_forensics",
+                  "create_ticket",
+                  "send_alert",
+                  "block_sender",
+                  "purge_message",
+                  "notify_reporter",
+                  "confirm_compromised",
+                  "release_host",
+                  "unblock_ip",
+                  "unblock_domain",
+                  "unblock_url",
+                  "unblock_file",
+                  "unblock_sender",
+                  "enable_user",
+                  "restore_message",
+                  "dismiss_user_risk"
+                ],
                 "type": "string"
               },
               {
@@ -5331,6 +6195,12 @@
           "risk": {
             "anyOf": [
               {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -5396,6 +6266,68 @@
           "created"
         ],
         "title": "RollbackOut",
+        "type": "object"
+      },
+      "RouteOut": {
+        "properties": {
+          "capability": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
+          "connector": {
+            "description": "microsoft, ticketing, webhook or dry_run.",
+            "title": "Connector",
+            "type": "string"
+          },
+          "live": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Live"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "source": {
+            "enum": [
+              "kill_switch",
+              "tenant_dry_run",
+              "sample",
+              "pinned",
+              "explicit",
+              "ticketing",
+              "capability",
+              "default"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connector",
+          "source"
+        ],
+        "title": "RouteOut",
         "type": "object"
       },
       "RoutingOut": {
@@ -5590,6 +6522,12 @@
             "type": "boolean"
           },
           "health": {
+            "enum": [
+              "unknown",
+              "healthy",
+              "degraded",
+              "failing"
+            ],
             "title": "Health",
             "type": "string"
           },
@@ -5645,6 +6583,18 @@
             "type": "string"
           },
           "type": {
+            "enum": [
+              "splunk",
+              "qradar",
+              "sentinel",
+              "wazuh",
+              "crowdstrike",
+              "guardduty",
+              "webhook",
+              "file",
+              "m365_mailbox",
+              "imap"
+            ],
             "title": "Type",
             "type": "string"
           },
@@ -5814,6 +6764,11 @@
             "title": "Created By"
           },
           "disposition": {
+            "enum": [
+              "malicious",
+              "benign",
+              "inconclusive"
+            ],
             "title": "Disposition",
             "type": "string"
           },
@@ -6089,6 +7044,10 @@
             "type": "array"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           }
@@ -6182,6 +7141,10 @@
             "type": "object"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -6308,6 +7271,10 @@
             "$ref": "#/components/schemas/TenantStatsOut"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -6423,6 +7390,10 @@
             "type": "string"
           },
           "tenant_status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Tenant Status",
             "type": "string"
           },
@@ -6535,6 +7506,10 @@
             "title": "Resolved By"
           },
           "system": {
+            "enum": [
+              "jira",
+              "servicenow"
+            ],
             "title": "System",
             "type": "string"
           }
@@ -6926,6 +7901,11 @@
             "type": "boolean"
           },
           "role": {
+            "enum": [
+              "viewer",
+              "analyst",
+              "admin"
+            ],
             "title": "Role",
             "type": "string"
           },
@@ -8487,9 +9467,15 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EvidencePackOut"
+                }
               },
-              "text/html": {}
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
             },
             "description": "Successful Response"
           },
@@ -10174,9 +11160,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Microsoft Catalog Api V1 Integrations Microsoft Catalog Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MicrosoftCatalogOut"
                 }
               }
             },
@@ -10921,10 +11905,12 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
-              },
-              "application/zip": {}
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
             },
             "description": "Successful Response"
           },
@@ -11822,9 +12808,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Response Routes Api V1 Tenant Response Routes Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ResponseRoutesOut"
                 }
               }
             },
@@ -12365,10 +13349,22 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessOut"
+                }
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessOut"
+                }
+              }
+            },
+            "description": "Service Unavailable"
           }
         },
         "summary": "Readiness (database and Redis reachable)",

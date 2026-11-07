@@ -232,7 +232,7 @@ What to look at for a local model:
 ## Metering
 
 Calls to self-hosted models are metered as `local/<model>` (for example
-`local/qwen3:8b`) in `/usage/llm`, the dashboard and each alert's
+`local/qwen3:8b`) in `/usage/llm`, the dashboard summary (the Overview) and each alert's
 `summary.llm_usage`, at zero cost, so no `llm.price_unknown` warning is logged.
 To charge an internal GPU rate back to tenants, price the tagged id:
 `LG_SOTF_LLM__PRICES='{"local/qwen3:8b": {"input": 0.05, "output": 0.10}}'`
