@@ -738,7 +738,6 @@ def worker_pool_size(settings: Settings) -> int:
 async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
     """Process entry point for ``lg-sotf worker``: wire dependencies, serve health, run until signalled."""
     from lg_sotf.core.workflow import WorkflowEngine
-    from lg_sotf.observability.tracing import shutdown_tracing
     from lg_sotf.queue.events import EventBus
     from lg_sotf.queue.redis import create_redis
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
@@ -772,4 +771,3 @@ async def run_worker(settings: Settings, *, metrics_host: str, metrics_port: int
             await engine.close()
         await redis.aclose()
         await db.close()
-        shutdown_tracing()

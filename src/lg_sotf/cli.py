@@ -20,13 +20,11 @@ DEFAULT_METRICS_PORT = 9100
 
 
 def _prepare() -> Settings:
-    """Common startup for every command: logging, tracing, production safety checks."""
+    """Common startup for every command: logging and production safety checks."""
     from lg_sotf.observability.logging import configure_logging
-    from lg_sotf.observability.tracing import setup_tracing
 
     settings = get_settings()
     configure_logging(settings, stream=sys.stderr)
-    setup_tracing(settings)
     try:
         settings.assert_safe()
     except RuntimeError as exc:

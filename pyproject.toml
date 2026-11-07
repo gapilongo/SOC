@@ -54,9 +54,6 @@ dependencies = [
     # Observability
     "prometheus-client>=0.20,<1",
     "structlog>=24.1",
-    "opentelemetry-api>=1.25,<2",
-    "opentelemetry-sdk>=1.25,<2",
-    "opentelemetry-exporter-otlp-proto-http>=1.25,<2",
 ]
 
 [project.optional-dependencies]
