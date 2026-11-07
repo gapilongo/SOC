@@ -4,7 +4,7 @@ import { useId, type ReactNode } from 'react';
 import type { ActionOut } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { RiskBadge } from '../../components/Badge';
-import type { PendingDecision } from '../../components/actions/ApprovalDialog';
+import type { PendingDecision } from '../actions/ApprovalDialog';
 import { Button, Card, cx } from '../../components/ui';
 import { formatDateTime, formatRelative, humanize, shortId } from '../../lib/format';
 import {

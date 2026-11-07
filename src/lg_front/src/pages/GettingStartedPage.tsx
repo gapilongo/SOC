@@ -1,4 +1,4 @@
-import { OnboardingChecklist, SampleAlertsButton, useDismissOnboarding, useOnboardingStatus } from '../components/Onboarding';
+import { OnboardingChecklist, SampleAlertsButton, useDismissOnboarding, useOnboardingStatus } from './onboarding/Onboarding';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader } from '../components/ui';
 
 export default function GettingStartedPage() {

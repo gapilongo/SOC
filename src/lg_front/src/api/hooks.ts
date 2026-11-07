@@ -57,6 +57,18 @@ export function useMe() {
   });
 }
 
+/**
+ * The current tenant's display name: `tenant_name` from GET /auth/me when the
+ * API sends it, otherwise the tenant id.
+ */
+export function useTenantLabel(): string {
+  const { principal } = useAuth();
+  const tenantId = principal?.tenantId ?? '';
+  const me = useMe();
+  const name = me.data?.tenant_name;
+  return typeof name === 'string' && name.trim() && me.data?.tenant_id === tenantId ? name.trim() : tenantId || '-';
+}
+
 /** GET /dashboard/summary over the last `windowHours` (the queue figures are always "now"). */
 export function useDashboardSummary(windowHours: number, opts: PollOptions = {}) {
   const api = useApi();

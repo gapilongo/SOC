@@ -33,6 +33,7 @@ export function VirtualTable<T>({
   autoLoad = true,
   rowHeight: rowHeightProp,
   maxHeight = 'calc(100vh - 20rem)',
+  minWidth = '900px',
 }: {
   label: string;
   columns: Column<T>[];
@@ -49,6 +50,8 @@ export function VirtualTable<T>({
   /** Fixed row height (px); by default it follows the table density preference. */
   rowHeight?: number;
   maxHeight?: string;
+  /** Narrowest the grid gets before it scrolls sideways. */
+  minWidth?: string;
 }) {
   const { density } = useDensity();
   const rowHeight = rowHeightProp ?? ROW_HEIGHT[density];
@@ -129,7 +132,7 @@ export function VirtualTable<T>({
   return (
     <div className="overflow-hidden rounded-card border border-subtle bg-raised">
       <div className="overflow-x-auto">
-        <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} className="min-w-[900px]">
+        <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} style={{ minWidth }}>
           <div role="rowgroup">
             <div
               role="row"

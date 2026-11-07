@@ -1,8 +1,8 @@
 import type { ActionOut } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
 import { StatusBadge } from '../../components/Badge';
-import { ActionControls, ROLLBACK_REASONS } from '../../components/actions/ActionDetails';
-import { VERIFICATION_HELP, VerificationBadge } from '../../components/actions/VerificationBadge';
+import { ActionControls, ROLLBACK_REASONS } from '../actions/ActionDetails';
+import { VERIFICATION_HELP, VerificationBadge } from '../actions/VerificationBadge';
 import { Button, ErrorMessage, LoadingState } from '../../components/ui';
 import { formatDateTime, formatRelative, humanize, shortId } from '../../lib/format';
 import { approverLabel } from './approvals';

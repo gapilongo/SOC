@@ -24,12 +24,7 @@ import {
   type GuardrailOut,
   type RoutingOut,
 } from './types';
-
-type Rec = Record<string, unknown>;
-
-function isRecord(value: unknown): value is Rec {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
+import { isJsonObject } from '../lib/json';
 
 /** A non-blank string, else null. */
 export function text(value: unknown): string | null {
@@ -50,7 +45,7 @@ function count(value: unknown): number | null {
 /** `{key: count}` keeping only finite, non-negative counts. */
 export function readCounts(value: unknown): Record<string, number> {
   const out: Record<string, number> = {};
-  if (!isRecord(value)) return out;
+  if (!isJsonObject(value)) return out;
   for (const [k, v] of Object.entries(value)) {
     const n = count(v);
     if (n !== null) out[k] = n;
@@ -71,10 +66,10 @@ function isEntityKind(value: unknown): value is EntityKind {
 
 /** An `entities_preview`, or null when absent, empty or malformed. */
 export function readEntitiesPreview(value: unknown): EntitiesPreviewOut | null {
-  if (!isRecord(value)) return null;
+  if (!isJsonObject(value)) return null;
   const items: EntityRefOut[] = Array.isArray(value.items)
     ? value.items.flatMap((item): EntityRefOut[] => {
-        if (!isRecord(item) || !isEntityKind(item.kind)) return [];
+        if (!isJsonObject(item) || !isEntityKind(item.kind)) return [];
         const v = text(item.value);
         return v ? [{ kind: item.kind, value: v }] : [];
       })
@@ -105,10 +100,10 @@ export function formatEntities(value: unknown, max = 3): string {
 
 /** `routing`, or null on escalations opened before it was recorded (or when malformed). */
 export function readRouting(value: unknown): RoutingOut | null {
-  if (!isRecord(value)) return null;
+  if (!isJsonObject(value)) return null;
   const code = text(value.code);
   if (!code) return null;
-  const band = isRecord(value.band) && finite(value.band.min) !== null && finite(value.band.max) !== null
+  const band = isJsonObject(value.band) && finite(value.band.min) !== null && finite(value.band.max) !== null
     ? { min: value.band.min as number, max: value.band.max as number }
     : null;
   return { code, confidence: finite(value.confidence), band };
@@ -158,14 +153,14 @@ export function readFindings(alert: Pick<AlertDetailOut, 'findings'>): FindingOu
   if (!Array.isArray(alert.findings)) return [];
   return alert.findings.filter(
     (f): f is FindingOut =>
-      isRecord(f) && (f.origin === 'threat_intel' || f.origin === 'history') && Boolean(text(f.kind)) && Boolean(text(f.source)),
+      isJsonObject(f) && (f.origin === 'threat_intel' || f.origin === 'history') && Boolean(text(f.kind)) && Boolean(text(f.source)),
   );
 }
 
 /** An action's guardrail verdict, or null when absent or malformed. */
 export function readGuardrail(action: Pick<ActionOut, 'guardrail'>): GuardrailOut | null {
   const g: unknown = action.guardrail;
-  if (!isRecord(g) || (g.verdict !== 'passed' && g.verdict !== 'blocked')) return null;
+  if (!isJsonObject(g) || (g.verdict !== 'passed' && g.verdict !== 'blocked')) return null;
   return {
     verdict: g.verdict,
     evaluated: g.evaluated === 'recorded' ? 'recorded' : 'now',

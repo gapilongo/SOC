@@ -1,5 +1,5 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { qk } from '../api/queryKeys';
 import type { LiveEvent } from '../api/types';
@@ -8,11 +8,41 @@ import { wsEndpoint } from '../config';
 import { invalidateBounded } from '../lib/pagination';
 import { LiveSocket, type LiveStatus } from './socket';
 
-interface LiveContextValue {
+export type LiveListener = (event: LiveEvent) => void;
+
+export interface LiveContextValue {
   status: LiveStatus;
+  /** Hear every live event (after its invalidation is queued); returns the unsubscribe. */
+  subscribe: (listener: LiveListener) => () => void;
 }
 
-const LiveContext = createContext<LiveContextValue>({ status: 'idle' });
+/** Exported for tests, which provide their own event source. */
+export const LiveContext = createContext<LiveContextValue>({ status: 'idle', subscribe: () => () => undefined });
+
+/**
+ * Fan-out of live events to the components that listen (the alert list's
+ * "N new" pill). A listener that throws does not stop the others.
+ */
+export function createLiveBus() {
+  const listeners = new Set<LiveListener>();
+  return {
+    subscribe(listener: LiveListener): () => void {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    emit(event: LiveEvent): void {
+      for (const listener of [...listeners]) {
+        try {
+          listener(event);
+        } catch (err) {
+          console.error('live event listener failed', err);
+        }
+      }
+    },
+  };
+}
 
 /** Query key prefixes (first key elements, see api/queryKeys.ts) each event type makes stale. */
 export function keysForEvent(type: LiveEvent['type']): string[] {
@@ -63,6 +93,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const store = useAuthStore();
   const client = useQueryClient();
   const [status, setStatus] = useState<LiveStatus>('idle');
+  const [bus] = useState(createLiveBus);
 
   useEffect(() => {
     // The socket is tenant-scoped by the token; a platform admin acting on
@@ -77,7 +108,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       getToken: store.getToken,
       refreshToken: store.refresh,
       onStatus: setStatus,
-      onEvent: (event) => inv.add(keysForEvent(event.type)),
+      onEvent: (event) => {
+        inv.add(keysForEvent(event.type));
+        bus.emit(event);
+      },
       onResync: () => {
         // Events may have been missed while disconnected: re-read everything visible.
         void invalidateBounded(client);
@@ -91,13 +125,21 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       socket.stop();
       inv.cancel();
     };
-  }, [authStatus, actingTenant, client, store]);
+  }, [authStatus, actingTenant, client, store, bus]);
 
   // Stable while the status holds, so consumers do not re-render per event.
-  const value = useMemo(() => ({ status }), [status]);
+  const value = useMemo(() => ({ status, subscribe: bus.subscribe }), [status, bus]);
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }
 
 export function useLive(): LiveContextValue {
   return useContext(LiveContext);
+}
+
+/** Call `handler` for every live event while mounted (the latest handler, without resubscribing). */
+export function useLiveEvents(handler: LiveListener): void {
+  const { subscribe } = useLive();
+  const ref = useRef(handler);
+  ref.current = handler;
+  useEffect(() => subscribe((event) => ref.current(event)), [subscribe]);
 }

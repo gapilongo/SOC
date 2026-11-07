@@ -2,10 +2,10 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { OnboardingStatusOut } from '../api/types';
-import { OnboardingBanner } from '../components/Onboarding';
+import { OnboardingBanner } from './onboarding/Onboarding';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import GettingStartedPage from './GettingStartedPage';
-import { retentionPatch } from './TenantSettingsPage';
+import { retentionPatch } from './settings/ReviewSections';
 
 function status(overrides: Partial<OnboardingStatusOut> = {}): OnboardingStatusOut {
   return {
