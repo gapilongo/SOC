@@ -9,7 +9,7 @@ import { useApi } from '../auth/AuthContext';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField } from '../components/ui';
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../lib/csv';
 import { formatInt, formatUsd } from '../lib/format';
-import { defaultRange, isoDay } from '../lib/reports';
+import { defaultRange, isoDay, rangeError } from '../lib/reports';
 
 export interface DayTotal {
   day: string;
@@ -122,10 +122,12 @@ export default function UsagePage() {
   const [initial] = useState(defaultRange);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
+  // The API refuses windows over 366 days; say so before sending the request.
+  const invalid = rangeError(from, to);
   const q = useQuery({
     queryKey: qk.usage.range(from, to),
     queryFn: ({ signal }) => endpoints.llmUsage(api, from, to, signal),
-    enabled: Boolean(from && to && from <= to),
+    enabled: invalid === null,
   });
   const days = useMemo(() => (q.data ? dailyTotals(q.data.days, from, to) : []), [q.data, from, to]);
   return (
@@ -139,9 +141,14 @@ export default function UsagePage() {
           </Button>
         }
       />
-      <div className="mb-4 flex flex-wrap gap-3">
+      <div className="mb-4 flex flex-wrap items-end gap-3">
         <TextField label="From" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} />
         <TextField label="To" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} />
+        {invalid && (
+          <p role="alert" className="pb-2 text-sm text-warn-fg">
+            {invalid}
+          </p>
+        )}
       </div>
       {q.isPending && q.fetchStatus !== 'idle' && <LoadingState label="Loading usage" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
