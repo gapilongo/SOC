@@ -26,38 +26,8 @@ The legacy forms ``protected_assets: [..]`` (a flat list of names/CIDRs) and
 and :class:`ProtectedAssetsSettings` are the schemas of these sections; the
 settings API validates writes with :func:`validate_response_settings`.
 
-Malformed policy fails closed. When the guardrail keys of ``response`` (or
-the top-level ``autonomy``) do not match the schema, every action is blocked
-with ``response_policy_invalid``; when ``protected_assets`` /
-``protected_cidrs`` are malformed or hold more than
-:data:`MAX_PROTECTED_ENTRIES` entries per list, every action on a host, user,
-address, domain, URL, hash or process is blocked with
-``protected_assets_invalid``. Both are logged with the problems found.
-
-Guardrails, in order (the first that fails blocks the action, and blocked
-actions can never be approved later):
-
-0. the tenant's response policy and protected assets are well formed;
-1. the action type is known and allowed by the tenant's allowlist;
-2. the target kind is one the action accepts (:data:`ACTION_TARGET_KINDS`);
-3. the target is syntactically valid for its kind;
-4. IP blocks never target loopback, link-local, multicast, unspecified or
-   reserved addresses (also when embedded in IPv4-mapped, 6to4, NAT64,
-   Teredo or IPv4-compatible IPv6 addresses), and target private/CGNAT/ULA
-   addresses only when the tenant sets ``allow_internal_ip_blocks``;
-5. protected hosts, users, domains (and their subdomains) and CIDRs are never
-   acted on, whatever the target's spelling (sender addresses are checked by
-   their domain and as a whole address; senders of the tenant's own
-   ``tools.internal_domains`` are never blocked: disable or reset the account
-   instead): IP literals in host, domain and
-   URL targets (including the decimal/hex/octal IPv4 forms browsers accept
-   and IPv6 forms embedding an IPv4 address) are checked against protected
-   CIDRs; domain and URL hosts are checked against protected host names;
-   user names are compared as written, as the CN/UID of a DN and as the bare
-   account (``DOMAIN\\user``, ``domain/user``, ``user@domain``); names are
-   compared case-insensitively after Unicode NFKC normalisation with
-   invisible format characters removed;
-6. the tenant's autonomy policy is not ``disabled`` for the action's risk.
+Malformed policy fails closed, and the guardrails apply in a fixed order
+(:mod:`lg_sotf.services.response.guardrails`).
 
 Rate limits: the per-tenant hourly cap and the per-action blast-radius
 limits (``DEFAULT_BLAST_RADIUS``, e.g. at most 5 hosts isolated per hour)
@@ -107,17 +77,13 @@ need ``approver_role="admin"`` (:func:`approval_allowed`).
 from __future__ import annotations
 
 import asyncio
-import fnmatch
-import ipaddress
 import json
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
-    Callable,
     Dict,
     FrozenSet,
     Iterable,
@@ -127,24 +93,8 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
-    Union,
 )
-from urllib.parse import urlsplit
 from uuid import UUID
-
-from pydantic import (
-    AfterValidator,
-    BaseModel,
-    ConfigDict,
-    Field,
-    StrictBool,
-    StrictInt,
-    StrictStr,
-    StringConstraints,
-    TypeAdapter,
-    ValidationError,
-    field_validator,
-)
 
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db import AlreadyInState, Connection, InvalidTransition, locks
@@ -179,14 +129,12 @@ from lg_sotf.integrations.events import (
 )
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models import vocabulary
-from lg_sotf.models.vocabulary import POLICY_APPROVER, RISK_LEVELS, SCHEDULER_OWNER, WORKFLOW_OWNER, RiskLevel
+from lg_sotf.models.vocabulary import POLICY_APPROVER, SCHEDULER_OWNER, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_action
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.connectors import (
-    CONNECTOR_NAMES,
-    ROUTE_NAMES,
     STATEFUL_CONNECTORS,
     Connector,
     ConnectorRegistry,
@@ -195,7 +143,6 @@ from lg_sotf.services.connectors import (
     LedgerUnavailable,
     MisconfiguredConnector,
     VerifyPlan,
-    tenant_response_settings,
 )
 from lg_sotf.services.connectors.microsoft import (
     DEADLINE_MARGIN_S,
@@ -206,22 +153,31 @@ from lg_sotf.services.connectors.microsoft import (
     with_progress,
 )
 from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
+from lg_sotf.services.response.guardrails import GuardrailBlock, check_guardrails
+from lg_sotf.services.response.policy import (
+    ANALYST_APPROVAL_RISKS,
+    MICROSOFT_CONNECTOR_NAME,
+    ResponsePolicy,
+    ResponsePolicyError,
+    ResponsePolicySettings,
+    approval_allowed,
+    preapproval_allowed,
+    resolve_autonomy,
+    validate_response_settings,
+)
+from lg_sotf.services.response.protected import (
+    MAX_PROTECTED_ENTRIES,
+    ProtectedAssets,
+    ProtectedAssetsSettings,
+    protected_lookup,
+)
 from lg_sotf.services.response.targets import (
-    IPAddress,
     clean,
-    critical_process,
-    domain_key,
-    embedded_ipv4,
-    host_forms,
     ip_block_class,
     loose_ipv4,
-    parse_address,
     process_base,
-    process_forms,
     target_corroborated,
     target_key,
-    url_hosts,
-    user_forms,
     validate_target,
 )
 from lg_sotf.settings import Settings
@@ -232,6 +188,7 @@ if TYPE_CHECKING:
 __all__ = [
     "ACTION_CATALOG",
     "ACTION_TARGET_KINDS",
+    "ANALYST_APPROVAL_RISKS",
     "APPROVAL_EXPIRED_REASON",
     "APPROVAL_SUPERSEDED_REASON",
     "ActionRequestError",
@@ -247,6 +204,7 @@ __all__ = [
     "GUARDRAIL_REASONS",
     "GuardrailBlock",
     "HOURLY_CAP_REASON",
+    "MAX_PROTECTED_ENTRIES",
     "POLICY_INVALID_REASON",
     "PROTECTED_INVALID_REASON",
     "PlanContext",
@@ -276,23 +234,9 @@ __all__ = [
 log = get_logger(__name__)
 
 Evidence = Literal["rules", "llm_only", "analyst"]
-IPNetwork = Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
 MAX_TARGETS_PER_TYPE = 3
 MAX_ACTIONS = 15
 PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
-ANALYST_APPROVAL_RISKS = frozenset({"low", "medium"})
-ANALYST_PREAPPROVAL_RISKS = ANALYST_APPROVAL_RISKS
-# Per list (hosts, users, domains, cidrs). Larger inventories belong in the SOAR, not in tenant settings.
-MAX_PROTECTED_ENTRIES = 10_000
-MAX_PROTECTED_ENTRY_CHARS = 256
-MAX_BLAST_RADIUS = 10_000
-MAX_TENANT_HOURLY_CAP = 100_000
-MAX_POLICY_PROBLEMS = 5
-# create_ticket runs through the tenant's ticketing integration when one is enabled (lg_sotf.integrations).
-TICKET_ACTION = "create_ticket"
-TICKET_CONNECTOR_NAME = "ticketing"
-MICROSOFT_CONNECTOR_NAME = "microsoft"
-MAX_ROUTES = 64
 # Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
 ACTION_EVENTS: Dict[str, str] = {
     "awaiting_approval": ACTION_AWAITING_APPROVAL,
@@ -559,573 +503,7 @@ def build_candidates(ctx: PlanContext, alert_id: str) -> Tuple[str, List[Candida
 # --------------------------------------------------------------------------- guardrails
 
 
-_WILDCARDS = frozenset("*?[")
-
-
-class _Names:
-    """Exact names in a set (constant-time lookup), wildcard patterns matched with fnmatch."""
-
-    __slots__ = ("exact", "patterns")
-
-    def __init__(self, entries: Iterable[str]) -> None:
-        exact: set[str] = set()
-        patterns: List[str] = []
-        for entry in entries:
-            if not entry or set(entry) <= {"*", "?"}:
-                continue  # a bare wildcard (e.g. the short form of "*.corp.local") would match everything
-            if _WILDCARDS & set(entry):
-                patterns.append(entry)
-            else:
-                exact.add(entry)
-        self.exact = frozenset(exact)
-        self.patterns = tuple(dict.fromkeys(patterns))
-
-    def matches(self, forms: Iterable[str]) -> bool:
-        for form in forms:
-            if form in self.exact or any(fnmatch.fnmatchcase(form, p) for p in self.patterns):
-                return True
-        return False
-
-
-def _problem_list(prefix: str, exc: ValidationError) -> List[str]:
-    out: List[str] = []
-    for error in exc.errors()[:MAX_POLICY_PROBLEMS]:
-        loc = ".".join(str(p) for p in error["loc"])
-        out.append(f"{prefix}{'.' + loc if loc else ''}: {error['msg']}"[:200])
-    return out
-
-
-def _check_cidr(value: str) -> str:
-    try:
-        ipaddress.ip_network(value, strict=False)
-    except ValueError as exc:
-        raise ValueError("not an IP network in CIDR notation") from exc
-    return value
-
-
-ProtectedName = Annotated[
-    StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_PROTECTED_ENTRY_CHARS)
-]
-ProtectedCidr = Annotated[
-    StrictStr, StringConstraints(strip_whitespace=True, min_length=1, max_length=64), AfterValidator(_check_cidr)
-]
-
-
-class ProtectedAssetsSettings(BaseModel):
-    """Schema of ``tenants.settings["protected_assets"]``. Host and user entries may use ``*``/``?`` wildcards."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    hosts: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-    users: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-    domains: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-    cidrs: List[ProtectedCidr] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-    # Process names (or wildcards) never terminated, and file hashes never quarantined, on top of
-    # the built-in CRITICAL_PROCESSES (e.g. line-of-business agents, known-good binaries).
-    processes: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-    hashes: List[ProtectedName] = Field(default_factory=list, max_length=MAX_PROTECTED_ENTRIES)
-
-
-_LEGACY_ASSETS: TypeAdapter[List[str]] = TypeAdapter(
-    Annotated[List[ProtectedName], Field(max_length=MAX_PROTECTED_ENTRIES)]
-)
-_LEGACY_CIDRS: TypeAdapter[List[str]] = TypeAdapter(
-    Annotated[List[ProtectedCidr], Field(max_length=MAX_PROTECTED_ENTRIES)]
-)
-
-
-@dataclass(frozen=True)
-class ProtectedAssets:
-    """Tenant assets no action may touch. ``problems`` non-empty means the setting is malformed (fail closed)."""
-
-    hosts: Tuple[str, ...] = ()
-    users: Tuple[str, ...] = ()
-    domains: Tuple[str, ...] = ()
-    networks: Tuple[IPNetwork, ...] = ()
-    problems: Tuple[str, ...] = ()
-    processes: Tuple[str, ...] = ()
-    hashes: Tuple[str, ...] = ()
-    _hosts: _Names = field(init=False, repr=False, compare=False)
-    _users: _Names = field(init=False, repr=False, compare=False)
-    _domains: FrozenSet[str] = field(init=False, repr=False, compare=False)
-    _processes: _Names = field(init=False, repr=False, compare=False)
-    _hashes: FrozenSet[str] = field(init=False, repr=False, compare=False)
-
-    def __post_init__(self) -> None:
-        host_entries: List[str] = []
-        for host in self.hosts:
-            host_entries.extend(host_forms(host))
-        user_entries: List[str] = []
-        for user in self.users:
-            user_entries.extend(user_forms(user))
-        object.__setattr__(self, "_hosts", _Names(host_entries))
-        object.__setattr__(self, "_users", _Names(user_entries))
-        # "*.example.com" means example.com and its subdomains, which is what every domain entry covers.
-        domains = (domain_key(d[2:] if d.startswith("*.") else d) for d in self.domains)
-        object.__setattr__(self, "_domains", frozenset(d for d in domains if d))
-        process_entries: List[str] = []
-        for process in self.processes:
-            process_entries.extend(process_forms(process))
-        object.__setattr__(self, "_processes", _Names(process_entries))
-        object.__setattr__(self, "_hashes", frozenset(clean(h) for h in self.hashes if clean(h)))
-
-    @property
-    def invalid(self) -> bool:
-        return bool(self.problems)
-
-    @classmethod
-    def from_tenant_settings(cls, tenant_settings: Mapping[str, Any]) -> ProtectedAssets:
-        raw = tenant_settings.get("protected_assets")
-        hosts: List[str] = []
-        users: List[str] = []
-        domains: List[str] = []
-        cidrs: List[str] = []
-        processes: List[str] = []
-        hashes: List[str] = []
-        problems: List[str] = []
-        if isinstance(raw, Mapping):
-            try:
-                parsed = ProtectedAssetsSettings.model_validate(dict(raw))
-            except ValidationError as exc:
-                problems += _problem_list("protected_assets", exc)
-            else:
-                hosts, users, domains, cidrs = list(parsed.hosts), list(parsed.users), list(parsed.domains), list(parsed.cidrs)
-                processes, hashes = list(parsed.processes), list(parsed.hashes)
-        elif raw is not None:
-            # Legacy flat list: networks become CIDRs, anything else protects that exact name everywhere.
-            try:
-                entries = _LEGACY_ASSETS.validate_python(raw)
-            except ValidationError as exc:
-                problems += _problem_list("protected_assets", exc)
-            else:
-                for entry in entries:
-                    if any(ch.isdigit() for ch in entry) and ("." in entry or ":" in entry) and _is_network(entry):
-                        cidrs.append(entry)
-                    else:
-                        hosts.append(entry)
-                        users.append(entry)
-                        domains.append(entry)
-        legacy_cidrs = tenant_settings.get("protected_cidrs")
-        if legacy_cidrs is not None:
-            try:
-                cidrs += _LEGACY_CIDRS.validate_python(legacy_cidrs)
-            except ValidationError as exc:
-                problems += _problem_list("protected_cidrs", exc)
-        if problems:
-            log.warning("response.protected_assets_invalid", problems=problems[:MAX_POLICY_PROBLEMS])
-        return cls(
-            hosts=tuple(hosts),
-            users=tuple(users),
-            domains=tuple(domains),
-            networks=tuple(ipaddress.ip_network(c, strict=False) for c in cidrs),
-            problems=tuple(problems[:MAX_POLICY_PROBLEMS]),
-            processes=tuple(processes),
-            hashes=tuple(hashes),
-        )
-
-    def _host_protected(self, host: str) -> bool:
-        return self._hosts.matches(host_forms(host))
-
-    def _user_protected(self, user: str) -> bool:
-        return self._users.matches(user_forms(user))
-
-    def _domain_protected(self, domain: str) -> bool:
-        labels = domain_key(domain).split(".")
-        return any(".".join(labels[i:]) in self._domains for i in range(len(labels)))
-
-    def _ip_protected(self, address: IPAddress) -> bool:
-        forms: List[IPAddress] = [address]
-        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
-            forms.append(address.ipv4_mapped)
-        forms += embedded_ipv4(address)
-        return any(form.version == net.version and form in net for form in forms for net in self.networks)
-
-    def _address_match(self, value: str, *, as_domain: bool) -> Optional[str]:
-        address = parse_address(value)
-        if address is not None and self._ip_protected(address):
-            return "cidr"
-        if self._host_protected(value):
-            return "host"
-        if as_domain and self._domain_protected(value):
-            return "domain"
-        return None
-
-    def match(self, kind: str, target: str) -> Optional[str]:
-        """Which protected category the target falls in, else ``None``.
-
-        Categories: ``host``/``user``/``domain``/``cidr``/``process``/``hash``
-        and ``critical_process`` (the built-in never-terminate list). IP and
-        host targets are checked against CIDRs and host names; domain targets
-        and URL hosts (canonicalised) also against protected domains; sender
-        addresses by their domain (and subdomains) and as a whole address
-        against protected users (a bare account name such as ``admin`` does
-        not protect ``admin@`` every domain).
-        """
-        if kind == "process":
-            if critical_process(target):
-                return "critical_process"
-            return "process" if self._processes.matches(process_forms(target)) else None
-        if kind == "hash":
-            return "hash" if clean(target) in self._hashes else None
-        if kind == "user":
-            return "user" if self._user_protected(target) else None
-        if kind in ("ip", "host"):
-            return self._address_match(target, as_domain=False)
-        if kind == "domain":
-            return self._address_match(target, as_domain=True)
-        if kind == "url":
-            for host in url_hosts(target):
-                category = self._address_match(host, as_domain=True)
-                if category is not None:
-                    return category
-            return None
-        if kind == "email":
-            address = clean(target)
-            if address in self._users.exact or any(fnmatch.fnmatchcase(address, p) for p in self._users.patterns):
-                return "user"
-            domain = address.rsplit("@", 1)[-1]
-            return self._address_match(domain, as_domain=True)
-        return None
-
-
-def _is_network(value: str) -> bool:
-    try:
-        ipaddress.ip_network(value.strip(), strict=False)
-    except ValueError:
-        return False
-    return True
-
-
 # --------------------------------------------------------------------------- policy
-
-
-def _catalog_actions(values: Optional[List[str]]) -> Optional[List[str]]:
-    unknown = [v for v in values or [] if v not in ACTION_CATALOG]
-    if unknown:
-        raise ValueError(f"unknown action types: {', '.join(sorted(unknown)[:5])[:120]}")
-    return values
-
-
-NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
-AutonomyMap = Dict[RiskLevel, vocabulary.AutonomyMode]
-
-
-class ResponsePolicySettings(BaseModel):
-    """Schema of ``tenants.settings["response"]`` (connector keys: :mod:`lg_sotf.services.connectors.registry`)."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    connector: Optional[StrictStr] = None
-    dry_run: Optional[StrictBool] = None
-    webhook_url: Optional[Annotated[StrictStr, StringConstraints(min_length=1, max_length=2_048)]] = None
-    webhook_secret_ciphertext: Optional[Annotated[StrictStr, StringConstraints(min_length=1, max_length=8_192)]] = None
-    ca_cert_pem: Optional[Annotated[StrictStr, StringConstraints(min_length=1, max_length=65_536)]] = None
-    tls_verify: Optional[StrictBool] = None
-    allow_internal_ip_blocks: Optional[StrictBool] = None
-    allowed_actions: Optional[List[StrictStr]] = Field(default=None, max_length=64)
-    max_actions_per_hour: Optional[Annotated[StrictInt, Field(ge=0, le=MAX_TENANT_HOURLY_CAP)]] = None
-    blast_radius: Optional[Dict[StrictStr, Annotated[StrictInt, Field(ge=0, le=MAX_BLAST_RADIUS)]]] = None
-    autonomy: Optional[AutonomyMap] = None
-    # Per action type, which connector executes it (lg_sotf.services.connectors.routing).
-    routes: Optional[Dict[StrictStr, StrictStr]] = Field(default=None, max_length=MAX_ROUTES)
-
-    @field_validator("connector")
-    @classmethod
-    def _connector(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None and value not in CONNECTOR_NAMES:
-            raise ValueError(f"connector must be one of {', '.join(CONNECTOR_NAMES)}")
-        return value
-
-    @field_validator("webhook_url")
-    @classmethod
-    def _url(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        try:
-            parts = urlsplit(value)
-        except ValueError as exc:
-            raise ValueError("webhook_url is not a URL") from exc
-        if parts.scheme not in ("https", "http") or not parts.hostname or parts.username or parts.password:
-            raise ValueError("webhook_url must be an http(s) URL with a host and no credentials")
-        return value
-
-    @field_validator("tls_verify")
-    @classmethod
-    def _tls(cls, value: Optional[bool]) -> Optional[bool]:
-        if value is False:
-            raise ValueError("TLS verification cannot be disabled for response webhooks (use ca_cert_pem)")
-        return value
-
-    @field_validator("allowed_actions")
-    @classmethod
-    def _allowed(cls, value: Optional[List[str]]) -> Optional[List[str]]:
-        return _catalog_actions(value)
-
-    @field_validator("blast_radius")
-    @classmethod
-    def _blast(cls, value: Optional[Dict[str, int]]) -> Optional[Dict[str, int]]:
-        _catalog_actions(list(value or {}))
-        return value
-
-    @field_validator("routes")
-    @classmethod
-    def _routes(cls, value: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        for action_type, route in (value or {}).items():
-            problem = route_problem(action_type, route)
-            if problem:
-                raise ValueError(problem)
-        return value
-
-
-def route_problem(action_type: str, route: Any) -> Optional[str]:
-    """Why ``response.routes[action_type] = route`` is not allowed, or ``None``."""
-    if action_type not in ACTION_CATALOG:
-        return f"routes: unknown action type {str(action_type)[:64]!r}"
-    if route not in ROUTE_NAMES:
-        return f"routes.{action_type}: must be one of {', '.join(ROUTE_NAMES)}"
-    if route == TICKET_CONNECTOR_NAME and action_type != TICKET_ACTION:
-        return f"routes.{action_type}: ticketing executes create_ticket only"
-    if route == MICROSOFT_CONNECTOR_NAME:
-        from lg_sotf.integrations.microsoft.catalog import executes
-
-        if not executes(action_type):
-            return f"routes.{action_type}: no Microsoft capability executes {action_type}"
-    return None
-
-
-# The response keys the guardrails read; malformed values fail closed when a policy is resolved.
-GUARDRAIL_KEYS = ("allow_internal_ip_blocks", "allowed_actions", "max_actions_per_hour", "blast_radius", "autonomy")
-_AUTONOMY: TypeAdapter[Dict[str, str]] = TypeAdapter(AutonomyMap)
-
-
-class ResponsePolicyError(ValueError):
-    """Tenant response settings do not match the schema (message lists the problems; safe to return)."""
-
-    def __init__(self, problems: Sequence[str]) -> None:
-        super().__init__("; ".join(problems))
-        self.problems = list(problems)
-
-
-def validate_response_settings(tenant_settings: Mapping[str, Any]) -> Dict[str, Any]:
-    """Validate the response sections of a tenant settings document (for the settings API).
-
-    Checks ``response``, ``protected_assets`` (object form, or the legacy flat
-    list), ``protected_cidrs``, ``autonomy`` and the legacy top-level
-    ``connector``/``dry_run`` when present, and returns them normalised
-    (whitespace stripped, unset keys dropped). Raises
-    :class:`ResponsePolicyError` listing every problem found.
-    """
-    problems: List[str] = []
-    out: Dict[str, Any] = {}
-    if "response" in tenant_settings:
-        try:
-            out["response"] = ResponsePolicySettings.model_validate(tenant_settings["response"]).model_dump(
-                exclude_none=True
-            )
-        except ValidationError as exc:
-            problems += _problem_list("response", exc)
-    if "protected_assets" in tenant_settings:
-        raw = tenant_settings["protected_assets"]
-        try:
-            if isinstance(raw, Mapping):
-                out["protected_assets"] = ProtectedAssetsSettings.model_validate(dict(raw)).model_dump()
-            else:
-                out["protected_assets"] = _LEGACY_ASSETS.validate_python(raw)
-        except ValidationError as exc:
-            problems += _problem_list("protected_assets", exc)
-    if "protected_cidrs" in tenant_settings:
-        try:
-            out["protected_cidrs"] = _LEGACY_CIDRS.validate_python(tenant_settings["protected_cidrs"])
-        except ValidationError as exc:
-            problems += _problem_list("protected_cidrs", exc)
-    if "autonomy" in tenant_settings:
-        try:
-            out["autonomy"] = _AUTONOMY.validate_python(tenant_settings["autonomy"])
-        except ValidationError as exc:
-            problems += _problem_list("autonomy", exc)
-    if "connector" in tenant_settings or "dry_run" in tenant_settings:
-        legacy = {k: tenant_settings[k] for k in ("connector", "dry_run") if k in tenant_settings}
-        try:
-            out.update(ResponsePolicySettings.model_validate(legacy).model_dump(exclude_none=True))
-        except ValidationError as exc:
-            problems += _problem_list("settings", exc)
-    if problems:
-        raise ResponsePolicyError(problems)
-    return out
-
-
-def resolve_autonomy(risk: str, tenant_settings: Mapping[str, Any], settings: Settings) -> vocabulary.AutonomyMode:
-    """Tenant autonomy (``response.autonomy`` over top-level ``autonomy``) over the install default.
-
-    A value outside ``auto``/``approval``/``disabled`` means ``disabled``: a
-    typo never loosens the policy.
-    """
-    policy: Dict[str, Any] = dict(settings.response.default_autonomy)
-    for override in (tenant_settings.get("autonomy"), tenant_response_settings(tenant_settings).get("autonomy")):
-        if isinstance(override, Mapping):
-            policy.update({k: v for k, v in override.items() if k in RISK_LEVELS})
-    mode = policy.get(risk, "approval")
-    return mode if mode in vocabulary.AUTONOMY_MODES else "disabled"
-
-
-@dataclass(frozen=True)
-class ResponsePolicy:
-    """The effective response policy for one tenant (tenant settings over install settings).
-
-    ``problems`` non-empty means the tenant's guardrail settings are
-    malformed: every action is blocked (``response_policy_invalid``).
-    """
-
-    autonomy: Mapping[str, vocabulary.AutonomyMode]
-    protected: ProtectedAssets
-    allow_internal_ip_blocks: bool = False
-    allowed_actions: Optional[FrozenSet[str]] = None
-    max_actions_per_hour: int = 50
-    blast_radius: Mapping[str, int] = field(default_factory=lambda: dict(DEFAULT_BLAST_RADIUS))
-    problems: Tuple[str, ...] = ()
-    # The tenant's own mail domains (tools.internal_domains, tenant and install): never blocked as senders.
-    internal_domains: Tuple[str, ...] = ()
-
-    @classmethod
-    def resolve(cls, tenant_settings: Mapping[str, Any], settings: Settings) -> ResponsePolicy:
-        rs = tenant_response_settings(tenant_settings)
-        install_cap = int(settings.response.max_actions_per_hour_per_tenant)
-        problems: List[str] = []
-        parsed = ResponsePolicySettings()
-        try:
-            parsed = ResponsePolicySettings.model_validate({k: rs[k] for k in GUARDRAIL_KEYS if k in rs})
-        except ValidationError as exc:
-            problems += _problem_list("response", exc)
-        if tenant_settings.get("autonomy") is not None:
-            try:
-                _AUTONOMY.validate_python(tenant_settings["autonomy"])
-            except ValidationError as exc:
-                problems += _problem_list("autonomy", exc)
-        if problems:
-            log.warning("response.policy_invalid", problems=problems[:MAX_POLICY_PROBLEMS])
-        blast = dict(DEFAULT_BLAST_RADIUS)
-        blast.update(parsed.blast_radius or {})
-        tenant_cap = parsed.max_actions_per_hour
-        return cls(
-            autonomy={risk: resolve_autonomy(risk, tenant_settings, settings) for risk in RISK_LEVELS},
-            protected=ProtectedAssets.from_tenant_settings(tenant_settings),
-            allow_internal_ip_blocks=parsed.allow_internal_ip_blocks is True,
-            allowed_actions=frozenset(parsed.allowed_actions) if parsed.allowed_actions is not None else None,
-            max_actions_per_hour=install_cap if tenant_cap is None else min(tenant_cap, install_cap),
-            blast_radius=blast,
-            problems=tuple(problems[:MAX_POLICY_PROBLEMS]),
-            internal_domains=_internal_domains(tenant_settings, settings),
-        )
-
-    def internal_sender(self, address: str) -> bool:
-        domain = domain_key(address.rsplit("@", 1)[-1])
-        return any(domain == d or domain.endswith("." + d) for d in self.internal_domains)
-
-
-def _internal_domains(tenant_settings: Mapping[str, Any], settings: Settings) -> Tuple[str, ...]:
-    tools = tenant_settings.get("tools")
-    values: List[Any] = []
-    for source in (tools if isinstance(tools, Mapping) else {}, settings.tools or {}):
-        entries = source.get("internal_domains")
-        if isinstance(entries, list):
-            values.extend(entries)
-    domains = (domain_key(v.strip().lstrip("*.")) for v in values if isinstance(v, str) and v.strip())
-    return tuple(dict.fromkeys(d for d in domains if d))
-
-
-@dataclass(frozen=True)
-class GuardrailBlock:
-    code: str
-    detail: str
-
-    @property
-    def explanation(self) -> str:
-        return f"{GUARDRAIL_REASONS.get(self.code, self.code)}: {self.detail}" if self.detail else GUARDRAIL_REASONS.get(
-            self.code, self.code
-        )
-
-
-def check_guardrails(
-    action_type: str,
-    target: str,
-    policy: ResponsePolicy,
-    *,
-    target_kind: Optional[str] = None,
-    restorative: bool = False,
-) -> Optional[GuardrailBlock]:
-    """The first guardrail the action fails (module docstring, rules 0-6), or ``None``.
-
-    ``restorative`` (a rollback that undoes one of our own changes) skips the
-    non-public-IP, protected-asset and internal-sender rules: releasing a host
-    that became protected after it was isolated must stay possible. An
-    inverse type passes the ``allowed_actions`` allowlist when it or its
-    forward type is listed; autonomy is checked against its own risk.
-    """
-    spec = ACTION_CATALOG.get(action_type)
-    if spec is None:
-        return GuardrailBlock("unknown_action", action_type[:64])
-    if policy.problems:
-        return GuardrailBlock(POLICY_INVALID_REASON, "; ".join(policy.problems)[:300])
-    if policy.allowed_actions is not None and not (
-        action_type in policy.allowed_actions or FORWARD_OF.get(action_type) in policy.allowed_actions
-    ):
-        return GuardrailBlock("action_not_allowed", action_type)
-    kind = target_kind or spec.target_kind
-    if kind not in ACTION_TARGET_KINDS[action_type]:
-        return GuardrailBlock("target_type_not_allowed", f"{action_type} accepts {sorted(ACTION_TARGET_KINDS[action_type])}, got {kind[:32]}")
-    invalid = validate_target(kind, target)
-    if invalid is not None:
-        return GuardrailBlock(invalid, "")
-    if kind != "alert" and policy.protected.invalid:
-        return GuardrailBlock(PROTECTED_INVALID_REASON, "; ".join(policy.protected.problems)[:300])
-    if kind == "ip":
-        cls = ip_block_class(ipaddress.ip_address(target.strip("[]")))
-        if cls == "unroutable":
-            return GuardrailBlock("unroutable_ip", "")
-        if cls == "internal" and not policy.allow_internal_ip_blocks and not restorative:
-            return GuardrailBlock("non_public_ip", "tenant setting response.allow_internal_ip_blocks is off")
-    if not restorative:
-        category = policy.protected.match(kind, target)
-        if category is not None:
-            return GuardrailBlock("protected_asset", f"matches a protected {category} entry")
-        if kind == "email" and policy.internal_sender(target):
-            return GuardrailBlock("internal_sender", "")
-    if policy.autonomy.get(spec.risk) == "disabled":
-        return GuardrailBlock("autonomy_disabled", f"{spec.risk} risk")
-    return None
-
-
-def protected_lookup(tenant_settings: Mapping[str, Any]) -> Callable[[str, str], Optional[str]]:
-    """The tenant's protected assets as a connector lookup: ``lookup(kind, value)`` -> the category matched.
-
-    A direct connector checks the identity it resolved a target to (an alias
-    or object id resolved to a user) with it, because the guardrails only
-    saw the literal target. A malformed list matches everything (fail closed).
-    """
-    assets = ProtectedAssets.from_tenant_settings(tenant_settings)
-
-    def lookup(kind: str, value: str) -> Optional[str]:
-        if assets.invalid:
-            return PROTECTED_INVALID_REASON
-        return assets.match(kind, value)
-
-    return lookup
-
-
-def approval_allowed(risk: str, role: Optional[str], autonomy: Optional[str] = None) -> bool:
-    """Role vs risk: analysts approve low/medium, admins also high and critical; nothing whose autonomy is disabled."""
-    if autonomy == "disabled":
-        return False
-    if role == "admin":
-        return risk in RISK_LEVELS
-    if role == "analyst":
-        return risk in ANALYST_APPROVAL_RISKS
-    return False
-
-
-def preapproval_allowed(risk: str, approver_role: Optional[str]) -> bool:
-    """Analysts may pre-approve low/medium actions; high and critical need an admin."""
-    return risk in ANALYST_PREAPPROVAL_RISKS or approver_role == "admin"
 
 
 def _is_preapproved(candidate: Candidate, approved: Sequence[str]) -> bool:

@@ -102,7 +102,7 @@
   "lg_sotf.services.connectors.webhook._ResponseTooLarge": [500, "internal_error"],
   "lg_sotf.services.reporting.ReportWindowError": [400, "invalid_request"],
   "lg_sotf.services.response.ActionRequestError": [500, "internal_error"],
-  "lg_sotf.services.response.ResponsePolicyError": [422, "invalid_settings"],
+  "lg_sotf.services.response.policy.ResponsePolicyError": [422, "invalid_settings"],
   "lg_sotf.services.review.ReviewDenied": [403, "forbidden"],
   "lg_sotf.services.review.ReviewError": [400, "invalid_request"],
   "lg_sotf.services.tenancy.QuotaExceeded": [500, "internal_error"],
