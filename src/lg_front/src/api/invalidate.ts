@@ -92,6 +92,9 @@ export const afterTenantSettingsChange = (client: QueryClient) => invalidate(cli
 
 export const afterOnboardingChange = (client: QueryClient) => invalidate(client, qk.onboarding.all);
 
+/** The setup wizard saved the tenant name: the header and the MSSP console show it. */
+export const afterSetupSaved = (client: QueryClient) => invalidate(client, qk.me.all, qk.platformTenants.all);
+
 // Users and credentials ------------------------------------------------------
 
 export const afterUserChange = (client: QueryClient) => invalidate(client, qk.users.all);

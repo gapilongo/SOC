@@ -50,6 +50,8 @@ import type {
   ReprocessOut,
   ResponsePreviewOut,
   SampleAlertsOut,
+  SetupIn,
+  SetupOut,
   SourceCreateIn,
   SourceOut,
   SourceTestOut,
@@ -261,6 +263,12 @@ export const endpoints = {
   sendSampleAlerts: (api: ApiClient) => api.post<SampleAlertsOut>('/onboarding/sample-alerts'),
   markAutonomyReviewed: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/autonomy-reviewed'),
   dismissOnboarding: (api: ApiClient) => api.post<OnboardingStatusOut>('/onboarding/dismiss'),
+  // First-run setup: the platform admin's home tenant, never an X-Tenant-ID override.
+  setup: (api: ApiClient, signal?: AbortSignal) => api.get<SetupOut>('/onboarding/setup', { signal, homeTenant: true }),
+  saveSetup: (api: ApiClient, body: SetupIn) =>
+    api.request<SetupOut>('PUT', '/onboarding/setup', { body, homeTenant: true }),
+  completeSetup: (api: ApiClient, skipped = false) =>
+    api.post<SetupOut>('/onboarding/setup/complete', { skipped }, { homeTenant: true }),
 
   evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
     api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
