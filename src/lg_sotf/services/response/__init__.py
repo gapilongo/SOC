@@ -81,7 +81,6 @@ from lg_sotf.models import vocabulary
 from lg_sotf.models.vocabulary import POLICY_APPROVER, SCHEDULER_OWNER, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.connectors import Connector, ConnectorRegistry, ConnectorResult, DryRunConnector
 from lg_sotf.services.connectors.microsoft import MicrosoftClients, microsoft_connector_for
 from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
@@ -185,8 +184,8 @@ class ResponseService:
         executes ``create_ticket`` through the tenant's ticketing integration;
         built on first use when not given. ``microsoft`` holds the process's
         Microsoft HTTP factory and token cache (built here when not given);
-        ``secret_box`` decrypts integration credentials (from the settings
-        when not given). ``router`` replaces the connector routing (tests).
+        ``secret_box`` (the process's, built by its composition root)
+        decrypts integration credentials; without one they cannot be read. ``router`` replaces the connector routing (tests).
         """
         self._repos = repos
         self._ticketing = ticketing
@@ -201,7 +200,6 @@ class ResponseService:
         self._execution_budget_s = float(settings.worker.node_timeout_s) * EXECUTION_BUDGET_FRACTION
         self._microsoft = microsoft
         self._box = secret_box
-        self._box_loaded = secret_box is not None
         self._router = router or ConnectorRouter(
             self._registry, repos, tickets=self._ticket_connector, microsoft=self._microsoft_connector
         )
@@ -251,13 +249,7 @@ class ResponseService:
         return await self._router.snapshot(tenant_id, tenant_settings)
 
     def secret_box(self) -> Optional[SecretBox]:
-        """The install's secret box, or ``None`` when no encryption keys are configured."""
-        if not self._box_loaded:
-            self._box_loaded = True
-            try:
-                self._box = SecretBox.from_settings(self._settings)
-            except SecurityConfigError:
-                self._box = None
+        """The process's secret box (injected by its composition root), or ``None`` when it has none."""
         return self._box
 
     def _ticket_connector(self, integration: Integration) -> Connector:

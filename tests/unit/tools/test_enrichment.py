@@ -255,12 +255,18 @@ async def test_abuseipdb_check(settings: Settings) -> None:
 # ------------------------------------------------------------------- service
 
 
-def service(settings: Settings, rec: Recorder, *, clock: Optional[Callable[[], float]] = None, repos: Any = None) -> EnrichmentService:
+def service(
+    settings: Settings, rec: Recorder, *, clock: Optional[Callable[[], float]] = None, repos: Any = None,
+    box: Optional[SecretBox] = None,
+) -> EnrichmentService:
+    """``box`` is the process's SecretBox (tenant keys are unreadable without one)."""
     kwargs: Dict[str, Any] = {}
+    resolver: Dict[str, Any] = {"box": box}
     if clock is not None:
         kwargs["cache"] = TenantTTLCache(clock=clock)
         kwargs["limiter"] = RateLimiter(clock=clock)
-        kwargs["credentials"] = CredentialResolver(settings, clock=clock)
+        resolver["clock"] = clock
+    kwargs["credentials"] = CredentialResolver(settings, **resolver)
     base = EnrichmentService.from_settings(settings, transport=rec.transport())
     return EnrichmentService(list(base._providers.values()), settings, **kwargs)
 
@@ -321,7 +327,7 @@ async def test_a_tenant_key_has_its_own_budget_and_backoff(settings: Settings) -
     own = {"tools": {"virustotal": {"api_key_ciphertext": encrypt_tool_secret(box, "t2", "virustotal", TENANT_KEY)}}}
     repos = fake_repos(tenant_settings={"t2": own})
     rec = Recorder(httpx.Response(429, headers={"Retry-After": "30"}, json={}))
-    svc = service(settings, rec)
+    svc = service(settings, rec, box=box)
     assert (await svc.lookup("t1", "hash", HASH, repos=repos))[0].status == "rate_limited"
     assert (await svc.lookup("t3", "hash", HASH, repos=repos))[0].status == "rate_limited"
     result = await svc.lookup("t2", "hash", HASH, repos=repos)
@@ -376,7 +382,10 @@ async def test_tenant_key_is_decrypted_and_overrides_the_install_key(settings: S
     }
     repos = fake_repos(tenant_settings=tenant_settings)
     rec = Recorder()
-    svc = service(settings, rec)
+    unboxed = service(settings, Recorder())
+    missing = await unboxed.lookup("t1", "hash", HASH, repos=repos)
+    assert missing[0].status == "error" and missing[0].error == "credentials unreadable"  # no injected box
+    svc = service(settings, rec, box=box)
     await svc.lookup("t1", "hash", HASH, repos=repos)
     assert rec.requests[-1].headers["x-apikey"] == TENANT_KEY
     disabled = await svc.lookup("t2", "hash", HASH, repos=repos)
