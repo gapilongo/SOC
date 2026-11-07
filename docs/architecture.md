@@ -93,6 +93,21 @@ CREATE POLICY tenant_isolation ON <t>
 session user is a member of the role that owns the schema, so setting the GUC
 from a runtime session does nothing.
 
+One table has a second, read-only policy. `tenant_grants` (migration 0012)
+holds the delegated access a customer tenant gives an MSSP organisation; its
+rows belong to the customer (`tenant_id`), which alone writes them, and the
+organisation reads its own grants from its home tenant:
+
+```sql
+CREATE POLICY org_read ON tenant_grants FOR SELECT
+  USING (organisation_id = current_setting('app.tenant_id', true) OR (SELECT lgsotf_rls_bypass()));
+```
+
+Permissive policies combine per command, so the organisation can `SELECT`
+its grants but never insert, extend or revoke one, and no third tenant sees
+them. An organisation is keyed by its home tenant id (`organisations`), and
+its staff are users of that tenant listed in `organisation_members`.
+
 Two database roles:
 
 * **Owner** (`database.migration_url`): runs `lg-sotf migrate` and the

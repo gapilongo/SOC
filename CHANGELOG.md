@@ -77,6 +77,14 @@ All notable changes to this project are documented here. The format follows
   and decides every waiting alert through the new release's API. The build
   fails if any of those runs fails, is dead-lettered or stays open, or if the
   upgrade changes the runtime database role's privileges.
+- MSSP organisation model, part 1 (schema): a tenant can be an MSSP
+  *organisation* with named staff members, and a customer tenant can give an
+  organisation (or one of its members) a role in it, with a reason and an
+  expiry of at most a year. Grants belong to the customer: only the customer
+  can create or revoke them, the organisation can only read its own, and no
+  other tenant sees them (row-level security). Tenant exports include them
+  (`tenant_grants.jsonl`, `organisations.jsonl`,
+  `organisation_members.jsonl`). Nothing uses grants yet.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
