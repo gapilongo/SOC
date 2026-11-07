@@ -22,7 +22,9 @@ The provider, model and prompt version of each agent's latest call go to
 Transport errors (rate limits, timeouts, 5xx) propagate so the node's retry
 policy handles them. Token and cost totals of every call are accumulated in
 ``ctx.usage`` and added to ``alerts.summary.llm_usage`` by
-:func:`persist_llm_accounting`.
+:func:`persist_llm_accounting`. Every model attempt and tool call is also
+recorded in ``ctx.trace`` and appended to the investigation trace store by
+:func:`persist_trace` (best effort: a failed write is logged, never raised).
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, Generic, List, Mapping, O
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel
 
+from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.llm import (
     USE_DEFAULT,
     BudgetLimit,
@@ -49,6 +52,7 @@ from lg_sotf.llm import (
 from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import merge_model_provenance, model_provenance
 from lg_sotf.llm.registry import PromptTemplate
+from lg_sotf.llm.trace import TraceRecorder
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
 from lg_sotf.settings import Settings
@@ -81,6 +85,10 @@ class AgentContext:
     refusals: List[Dict[str, Optional[str]]] = field(default_factory=list)
     models: Dict[str, Dict[str, str]] = field(default_factory=dict)
     """Provider, model and prompt version each agent called (``summary.llm_models``, evidence packs)."""
+    trace: TraceRecorder = field(default_factory=TraceRecorder)
+    """The LLM and tool steps of this node (``investigation_steps``, evidence packs)."""
+    run_id: Optional[str] = None
+    """The run the steps belong to; ``None`` is the alert's workflow run (its LangGraph thread id)."""
     # False for a replay (the history backtest): agents read through ``repos`` but write nothing,
     # neither LLM accounting on the alert nor indicator sightings.
     persist: bool = True
@@ -189,6 +197,7 @@ class BaseAgent:
                 budget_limit=ctx.budget_limit,
                 tally=ctx.usage,
                 prompt=prompt,
+                trace=ctx.trace,
             )
         except LLMBudgetExceeded:
             ctx.llm_budget_exceeded = True
@@ -244,11 +253,31 @@ async def persist_llm_accounting(ctx: AgentContext, *, budget_was_exceeded: bool
         await repos.alerts.update(ctx.tenant_id, ctx.alert_id, summary=patch, conn=conn)
 
 
-class AccountedRun:
-    """``async with AccountedRun(ctx):`` persists LLM accounting when the block ends.
+async def persist_trace(ctx: AgentContext) -> None:
+    """Append the steps recorded in ``ctx.trace`` to the investigation trace store, then clear them.
 
-    On an exception the accounting is written best-effort (a failure to
-    write it never replaces the original error); cancellation writes nothing.
+    Best effort: a failed write is logged (``agent.trace_write_failed``) and the steps are dropped, so the
+    run never fails or waits on its trace. Writes nothing for a context with ``persist=False``.
+    """
+    steps, ctx.trace.steps = ctx.trace.steps, []
+    if ctx.trace.dropped:
+        log.warning("agent.trace_steps_dropped", dropped=ctx.trace.dropped)
+        ctx.trace.dropped = 0
+    if not steps or not ctx.persist or ctx.repos is None:
+        return
+    try:
+        run_id = ctx.run_id or thread_id_for(ctx.tenant_id, ctx.alert_id)
+        await ctx.repos.investigation_steps.append(ctx.tenant_id, ctx.alert_id, run_id, steps)
+    except Exception as exc:  # noqa: BLE001 - the trace never fails the run
+        log_failure(log, "agent.trace_write_failed", exc, level="warning", error_type=type(exc).__name__,
+                    steps=len(steps))
+
+
+class AccountedRun:
+    """``async with AccountedRun(ctx):`` persists the trace and the LLM accounting when the block ends.
+
+    On an exception both are written best-effort (a failure to write them
+    never replaces the original error); cancellation writes nothing.
     """
 
     def __init__(self, ctx: AgentContext) -> None:
@@ -259,6 +288,8 @@ class AccountedRun:
         return self.ctx
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
+        if exc_type is None or isinstance(exc, Exception):
+            await persist_trace(self.ctx)
         if exc_type is None:
             await persist_llm_accounting(self.ctx, budget_was_exceeded=self._budget_was_exceeded)
             return

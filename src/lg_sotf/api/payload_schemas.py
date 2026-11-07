@@ -53,6 +53,10 @@ class EvidencePackOut(BaseModel):
     alert: Dict[str, Any] = Field(description="The alert record, raw payload redacted (raw_redacted, raw_redactions).")
     timeline: List[Dict[str, Any]]
     agents: Dict[str, Any] = Field(description="Per workflow step: whether it ran, its model, verdict and reasoning.")
+    investigation: Dict[str, Any] = Field(
+        description="The investigation trace: every LLM and tool step (prompt and model or tool, tokens, latency, "
+        "input and output SHA-256, redacted result digest) and totals."
+    )
     enrichment: Dict[str, Any]
     correlation: Dict[str, Any]
     escalations: List[Dict[str, Any]]

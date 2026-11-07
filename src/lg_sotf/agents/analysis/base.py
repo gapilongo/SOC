@@ -580,9 +580,11 @@ class AnalysisAgent(BaseAgent):
             return []
         out: List[Tuple[Indicator, EnrichmentResult]] = []
         for ind in history_targets(alert, self.history_lookups):
-            result = await self.enrichment.history(
+            lookup = self.enrichment.history(
                 ctx.tenant_id, ind.type, ind.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
             )
+            request = {"kind": ind.type, "value": ind.value}
+            result = await ctx.trace.tool(self.name, "history", request, lookup, EnrichmentResult.as_dict)
             out.append((ind, result))
         return out
 
