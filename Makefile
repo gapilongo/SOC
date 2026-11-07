@@ -3,7 +3,7 @@
 # Variables (override on the command line, e.g. `make image IMAGE=lg-sotf:0.2.0`):
 #   PYTHON             interpreter for local targets
 #   IMAGE              image tag built by `make image` and used by compose
-#   PYTHON_BASE_IMAGE  base image (e.g. mirror.gcr.io/library/python:3.11-slim)
+#   PYTHON_BASE_IMAGE  base image override (default: the digest-pinned one in docker/Dockerfile)
 #   PROFILES           extra compose profiles, e.g. PROFILES=frontend
 #   BUILD_CA_FILE      CA bundle for builds behind a TLS-intercepting proxy
 
@@ -13,7 +13,7 @@ SHELL := /bin/bash
 
 PYTHON ?= python3
 IMAGE ?= lg-sotf:dev
-PYTHON_BASE_IMAGE ?= python:3.11-slim
+PYTHON_BASE_IMAGE ?=
 PROFILES ?=
 BUILD_CA_FILE ?=
 HELM ?= helm
@@ -38,9 +38,13 @@ help: ## Show this help
 # Local development
 # ---------------------------------------------------------------------------
 .PHONY: dev
-dev: ## Install pinned dev dependencies and the package (editable) into the active venv
-	$(PYTHON) -m pip install -r requirements-dev.txt
+dev: ## Install the hash-locked dev dependencies and the package (editable) into the active venv
+	$(PYTHON) -m pip install --require-hashes -r requirements-dev.txt
 	$(PYTHON) -m pip install --no-deps -e .
+
+.PHONY: lock
+lock: ## Re-lock every requirements file with hashes (needs uv; ARGS="--upgrade-package X")
+	scripts/lock_requirements.sh $(ARGS)
 
 .PHONY: env
 env: ## Create .env from .env.example and add freshly generated secrets (never overwrites)
@@ -71,7 +75,7 @@ test-fast: ## Unit and deploy tests only (no PostgreSQL or Redis needed)
 check: lint typecheck import-lint test-fast ## Everything CI's lint and fast jobs run
 
 .PHONY: security-scan
-security-scan: ## Bandit over the product and the SOAR examples (pip install "bandit[toml]==1.8.6", as CI)
+security-scan: ## Bandit over the product and the SOAR examples (bandit from scripts/ci/requirements-tools.txt, as CI)
 	bandit -q -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
 
 .PHONY: test

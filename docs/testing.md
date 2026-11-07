@@ -52,7 +52,7 @@ tests with the same outcomes; both are non-blocking until about ten green
 runs. `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
 it is non-blocking while its image pull and start time settle.
 `.github/workflows/nightly.yml` runs the suite in a random order
-(pinned `pytest-randomly`).
+(hash-locked `pytest-randomly` from `scripts/ci/requirements-nightly.txt`).
 
 `upgrade` runs `scripts/ci/upgrade_rehearsal.sh`: the previous release (the
 latest `v*` tag) runs in a git worktree on its own venv, migrates a fresh
