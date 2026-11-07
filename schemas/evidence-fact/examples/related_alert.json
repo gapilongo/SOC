@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0.0",
+  "id": "fact-related-ws042-1",
+  "kind": "related_alert",
+  "subject": {"type": "host", "value": "WS-042"},
+  "observed_at": "2026-11-07T09:21:30Z",
+  "source": {"name": "lg-sotf.alerts", "version": "1.2.3"},
+  "value": {
+    "alert_id": "6f1c2a9e-1b7d-4c43-9a51-0d2b9e7c4f10",
+    "title": "Suspicious Office child process",
+    "severity": "high",
+    "created_at": "2026-11-05T14:03:00Z",
+    "disposition": "malicious"
+  }
+}

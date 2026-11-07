@@ -39,6 +39,16 @@
             ],
             "title": "Agreement Rate"
           },
+          "agreement_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "ai_inconclusive": {
             "title": "Ai Inconclusive",
             "type": "integer"
@@ -53,6 +63,16 @@
               }
             ],
             "title": "Ai Inconclusive Rate"
+          },
+          "ai_inconclusive_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "analyst_benign": {
             "title": "Analyst Benign",
@@ -104,6 +124,16 @@
             ],
             "title": "False Negative Rate"
           },
+          "false_negative_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "false_negatives": {
             "title": "False Negatives",
             "type": "integer"
@@ -118,6 +148,16 @@
               }
             ],
             "title": "False Positive Rate"
+          },
+          "false_positive_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "false_positives": {
             "title": "False Positives",
@@ -3757,6 +3797,16 @@
             ],
             "title": "Benign Rate"
           },
+          "benign_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "can_propose_suppression": {
             "title": "Can Propose Suppression",
             "type": "boolean"
@@ -4767,6 +4817,39 @@
       },
       "FeedbackRate": {
         "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "N"
+          },
           "rate": {
             "anyOf": [
               {
@@ -7343,6 +7426,56 @@
         "title": "QuotasIn",
         "type": "object"
       },
+      "RateInterval": {
+        "description": "A rate with its sample size and 95% Wilson interval; ``rate`` and the bounds are ``None`` when ``n`` is 0.",
+        "properties": {
+          "ci_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci High"
+          },
+          "ci_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ci Low"
+          },
+          "n": {
+            "title": "N",
+            "type": "integer"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          }
+        },
+        "required": [
+          "rate",
+          "n",
+          "ci_low",
+          "ci_high"
+        ],
+        "title": "RateInterval",
+        "type": "object"
+      },
       "ReadinessOut": {
         "description": "``GET /readyz``: 200 when every dependency answers, else 503 with the same body.",
         "properties": {
@@ -9636,6 +9769,16 @@
             ],
             "title": "Handled Without Human Rate"
           },
+          "handled_without_human_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "human_decided": {
             "title": "Human Decided",
             "type": "integer"
@@ -9823,6 +9966,16 @@
               }
             ],
             "title": "Handled Without Human Rate"
+          },
+          "handled_without_human_rate_ci": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateInterval"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "human_decided": {
             "title": "Human Decided",
@@ -10215,7 +10368,8 @@
         "summary": "Response action ledger (newest first)",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}": {
@@ -10258,7 +10412,8 @@
         "summary": "Response action detail",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}/approve": {
@@ -10318,7 +10473,8 @@
         "summary": "Approve one pending action",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}/reject": {
@@ -10378,7 +10534,8 @@
         "summary": "Reject one pending action",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}/retry": {
@@ -10432,7 +10589,8 @@
         "summary": "Run a failed Microsoft action again",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}/rollback": {
@@ -10486,7 +10644,8 @@
         "summary": "Roll back an executed action (a new action of the inverse type)",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/actions/{action_id}/verify": {
@@ -10547,7 +10706,8 @@
         "summary": "Verify an executed Microsoft action again",
         "tags": [
           "actions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts": {
@@ -10795,7 +10955,8 @@
         "summary": "List alerts (newest first, keyset pagination)",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts/counts": {
@@ -10867,7 +11028,8 @@
         "summary": "Alert counts by status for the list views (cached 15 s)",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts/{alert_id}": {
@@ -10909,7 +11071,8 @@
         "summary": "Alert detail",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts/{alert_id}/events": {
@@ -10980,7 +11143,8 @@
         "summary": "Alert timeline (oldest first)",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts/{alert_id}/evidence": {
@@ -11041,7 +11205,8 @@
         "summary": "Case evidence pack (JSON bundle or printable HTML)",
         "tags": [
           "compliance"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/alerts/{alert_id}/incident-report": {
@@ -11093,7 +11258,8 @@
         "summary": "Draft a NIS2 incident report (early warning, notification or final) for a person to complete",
         "tags": [
           "compliance"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/alerts/{alert_id}/notes": {
@@ -11145,7 +11311,8 @@
         "summary": "Add an analyst note",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/alerts/{alert_id}/reprocess": {
@@ -11187,7 +11354,8 @@
         "summary": "Run the workflow again",
         "tags": [
           "alerts"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/api-keys": {
@@ -11234,7 +11402,8 @@
         "summary": "List API keys",
         "tags": [
           "api-keys"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "post": {
         "operationId": "create_key_api_v1_api_keys_post",
@@ -11273,7 +11442,8 @@
         "summary": "Create an API key (secret shown once)",
         "tags": [
           "api-keys"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/api-keys/{key_id}": {
@@ -11309,7 +11479,8 @@
         "summary": "Revoke an API key",
         "tags": [
           "api-keys"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/audit": {
@@ -11473,7 +11644,8 @@
         "summary": "Audit log (newest first, keyset pagination)",
         "tags": [
           "audit"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/audit/verify": {
@@ -11523,7 +11695,8 @@
         "summary": "Recompute the tenant's audit hash chain",
         "tags": [
           "audit"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/auth/login": {
@@ -11572,7 +11745,8 @@
         "summary": "Sign in with email and password (answers mfa_required when a second factor must follow)",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/auth/logout": {
@@ -11586,7 +11760,8 @@
         "summary": "Revoke the refresh cookie (and the presented access token)",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/auth/me": {
@@ -11607,7 +11782,8 @@
         "summary": "The authenticated principal",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/auth/mfa": {
@@ -11628,7 +11804,8 @@
         "summary": "MFA status of the signed-in account",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/mfa/confirm": {
@@ -11669,7 +11846,8 @@
         "summary": "Activate MFA with a code; returns recovery codes once",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/mfa/disable": {
@@ -11703,7 +11881,8 @@
         "summary": "Turn MFA off (password and a current code)",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/mfa/enroll": {
@@ -11744,7 +11923,8 @@
         "summary": "Start TOTP enrollment (secret shown once)",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/mfa/recovery-codes": {
@@ -11785,7 +11965,8 @@
         "summary": "Replace the recovery codes (needs a TOTP code)",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/mfa/verify": {
@@ -11826,7 +12007,8 @@
         "summary": "Finish signing in with a TOTP or recovery code",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/refresh": {
@@ -11847,7 +12029,8 @@
         "summary": "Rotate the refresh cookie and get a new access token",
         "tags": [
           "auth"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/dashboard/summary": {
@@ -11893,7 +12076,8 @@
         "summary": "Counts, MTTA/MTTR, queue depth and LLM cost",
         "tags": [
           "dashboard"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/escalations": {
@@ -12124,7 +12308,8 @@
         "summary": "List escalations (newest first, or by SLA)",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/escalations/bulk/claim": {
@@ -12166,7 +12351,8 @@
         "summary": "Claim several escalations (per-item results)",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/escalations/bulk/close": {
@@ -12208,7 +12394,8 @@
         "summary": "Close several escalations as benign with one note (per-item results)",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/escalations/bulk/propose-suppression": {
@@ -12250,7 +12437,8 @@
         "summary": "Propose one (disabled) suppression rule from escalations decided benign; an admin enables it",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/escalations/groups": {
@@ -12328,7 +12516,8 @@
         "summary": "Active escalations grouped by detection rule",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/escalations/{escalation_id}": {
@@ -12370,7 +12559,8 @@
         "summary": "Escalation detail",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/escalations/{escalation_id}/claim": {
@@ -12422,7 +12612,8 @@
         "summary": "Claim (assign to yourself)",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/escalations/{escalation_id}/decision": {
@@ -12474,7 +12665,8 @@
         "summary": "Record the analyst decision and resume the run(s)",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/escalations/{escalation_id}/response-preview": {
@@ -12517,7 +12709,8 @@
         "summary": "Dry run of the response plan a true_positive decision would produce",
         "tags": [
           "escalations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/ingest/alerts": {
@@ -12538,7 +12731,8 @@
         "summary": "Push canonical alerts",
         "tags": [
           "ingest"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/ingest/email": {
@@ -12590,7 +12784,8 @@
         "summary": "Push one raw email (a user-reported message) for phishing triage",
         "tags": [
           "ingest"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/ingest/webhook/{source_id}": {
@@ -12632,7 +12827,8 @@
         "summary": "Push a vendor payload to a push source",
         "tags": [
           "ingest"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/integrations": {
@@ -12657,7 +12853,8 @@
         "summary": "List integrations",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "post": {
         "operationId": "create_integration_api_v1_integrations_post",
@@ -12696,7 +12893,8 @@
         "summary": "Create an integration",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/integrations/microsoft/catalog": {
@@ -12718,7 +12916,8 @@
         "summary": "Microsoft direct-response capabilities, clouds and Defender geos",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/integrations/slack/interactions": {
@@ -12765,7 +12964,8 @@
         "summary": "Slack Interactivity Request URL (approve or reject actions from Slack)",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/integrations/{integration_id}": {
@@ -12801,7 +13001,8 @@
         "summary": "Delete an integration (its delivery log and ticket links)",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "get": {
         "operationId": "get_integration_api_v1_integrations__integration_id__get",
@@ -12842,7 +13043,8 @@
         "summary": "Integration detail",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "patch": {
         "operationId": "update_integration_api_v1_integrations__integration_id__patch",
@@ -12893,7 +13095,8 @@
         "summary": "Update an integration",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/integrations/{integration_id}/deliveries": {
@@ -12977,7 +13180,8 @@
         "summary": "Recent deliveries (newest first)",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/integrations/{integration_id}/test": {
@@ -13021,7 +13225,8 @@
         "summary": "Send a test message now",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/onboarding/autonomy-reviewed": {
@@ -13042,7 +13247,8 @@
         "summary": "Mark the autonomy policy reviewed",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/onboarding/dismiss": {
@@ -13063,7 +13269,8 @@
         "summary": "Hide the getting-started banner",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/onboarding/sample-alerts": {
@@ -13084,7 +13291,8 @@
         "summary": "Send the built-in sample alerts (idempotent)",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/onboarding/setup": {
@@ -13105,7 +13313,8 @@
         "summary": "First-run setup state (platform admin)",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       },
       "put": {
         "operationId": "put_setup_api_v1_onboarding_setup_put",
@@ -13144,7 +13353,8 @@
         "summary": "Save the organisation, tenant name and model profile",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/onboarding/setup/complete": {
@@ -13192,7 +13402,8 @@
         "summary": "Mark the first-run setup done",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/onboarding/status": {
@@ -13213,7 +13424,8 @@
         "summary": "Getting-started checklist",
         "tags": [
           "onboarding"
-        ]
+        ],
+        "x-stability": "internal"
       }
     },
     "/api/v1/platform/escalations": {
@@ -13292,7 +13504,8 @@
         "summary": "Open and claimed escalations of every tenant, soonest SLA first",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/platform/tenants": {
@@ -13349,7 +13562,8 @@
         "summary": "Every tenant with status, quotas and activity",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "post": {
         "operationId": "create_tenant_api_v1_platform_tenants_post",
@@ -13388,7 +13602,8 @@
         "summary": "Provision a tenant",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/platform/tenants/{tenant_id}": {
@@ -13443,7 +13658,8 @@
         "summary": "Erase a suspended tenant's data (the audit log is retained)",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "patch": {
         "operationId": "update_tenant_api_v1_platform_tenants__tenant_id__patch",
@@ -13493,7 +13709,8 @@
         "summary": "Rename, suspend/reactivate or set quotas",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/platform/tenants/{tenant_id}/erasure": {
@@ -13538,7 +13755,8 @@
         "summary": "Whether a tenant can be erased now",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/platform/tenants/{tenant_id}/export": {
@@ -13584,7 +13802,8 @@
         "summary": "Export a tenant's data (streamed ZIP of JSONL files; secrets removed)",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/platform/usage": {
@@ -13650,7 +13869,8 @@
         "summary": "Invoicing figures per tenant for a month (JSON or CSV)",
         "tags": [
           "platform"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/reports/accuracy": {
@@ -13717,7 +13937,8 @@
         "summary": "AI verdict against analyst decisions: confusion matrix, agreement, false-negative rate",
         "tags": [
           "reports"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/reports/detections": {
@@ -13799,7 +14020,8 @@
         "summary": "Per source and rule: volume, benign rate, analyst false positives and a tuning suggestion",
         "tags": [
           "reports"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/reports/detections/propose-suppression": {
@@ -13840,7 +14062,8 @@
         "summary": "Propose a (disabled) suppression rule for a detection; an admin enables it",
         "tags": [
           "reports"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/reports/monthly": {
@@ -13907,7 +14130,8 @@
         "summary": "Monthly report (value, accuracy, detections) as print-friendly HTML or JSON",
         "tags": [
           "reports"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/reports/value": {
@@ -13989,7 +14213,8 @@
         "summary": "Automation outcomes, analyst hours saved, MTTA/MTTR and cost per alert, by day",
         "tags": [
           "reports"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/sources": {
@@ -14014,7 +14239,8 @@
         "summary": "List sources",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "post": {
         "operationId": "create_source_api_v1_sources_post",
@@ -14053,7 +14279,8 @@
         "summary": "Create a source",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/sources/{source_id}": {
@@ -14088,7 +14315,8 @@
         "summary": "Delete a source",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "get": {
         "operationId": "get_source_api_v1_sources__source_id__get",
@@ -14128,7 +14356,8 @@
         "summary": "Source detail",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "patch": {
         "operationId": "update_source_api_v1_sources__source_id__patch",
@@ -14178,7 +14407,8 @@
         "summary": "Update a source",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/sources/{source_id}/test": {
@@ -14220,7 +14450,8 @@
         "summary": "Check a source's configuration and connectivity",
         "tags": [
           "sources"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/suppressions": {
@@ -14267,7 +14498,8 @@
         "summary": "List suppression rules",
         "tags": [
           "suppressions"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "post": {
         "operationId": "create_rule_api_v1_suppressions_post",
@@ -14306,7 +14538,8 @@
         "summary": "Create a suppression rule",
         "tags": [
           "suppressions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/suppressions/{rule_id}": {
@@ -14341,7 +14574,8 @@
         "summary": "Delete a rule",
         "tags": [
           "suppressions"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "get": {
         "operationId": "get_rule_api_v1_suppressions__rule_id__get",
@@ -14381,7 +14615,8 @@
         "summary": "Suppression rule detail",
         "tags": [
           "suppressions"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "patch": {
         "operationId": "update_rule_api_v1_suppressions__rule_id__patch",
@@ -14431,7 +14666,8 @@
         "summary": "Update or enable/disable a rule",
         "tags": [
           "suppressions"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/tenant/llm/test": {
@@ -14452,7 +14688,8 @@
         "summary": "Send a tiny probe to the fast and deep model tiers",
         "tags": [
           "tenant"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/tenant/response/routes": {
@@ -14474,7 +14711,8 @@
         "summary": "Which connector executes each action type, and why",
         "tags": [
           "tenant"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/tenant/settings": {
@@ -14495,7 +14733,8 @@
         "summary": "Tenant settings (secrets redacted)",
         "tags": [
           "tenant"
-        ]
+        ],
+        "x-stability": "beta"
       },
       "patch": {
         "operationId": "patch_settings_api_v1_tenant_settings_patch",
@@ -14544,7 +14783,8 @@
         "summary": "Merge-patch tenant settings",
         "tags": [
           "tenant"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/tenant/verdict-cache": {
@@ -14565,7 +14805,8 @@
         "summary": "Forget every cached analyst-benign verdict of the tenant",
         "tags": [
           "tenant"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/tickets": {
@@ -14639,7 +14880,8 @@
         "summary": "External tickets linked to an alert or escalations",
         "tags": [
           "integrations"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/usage/llm": {
@@ -14706,7 +14948,8 @@
         "summary": "Daily LLM usage and cost",
         "tags": [
           "usage"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/users": {
@@ -14753,7 +14996,8 @@
         "summary": "List users",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "post": {
         "operationId": "create_user_api_v1_users_post",
@@ -14792,7 +15036,8 @@
         "summary": "Create a user",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/users/{user_id}": {
@@ -14828,7 +15073,8 @@
         "summary": "Delete a user",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "get": {
         "operationId": "get_user_api_v1_users__user_id__get",
@@ -14869,7 +15115,8 @@
         "summary": "User detail",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       },
       "patch": {
         "operationId": "update_user_api_v1_users__user_id__patch",
@@ -14920,7 +15167,8 @@
         "summary": "Update role, status or password",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/api/v1/users/{user_id}/mfa/reset": {
@@ -14956,7 +15204,8 @@
         "summary": "Remove a user's MFA (lost device); signs them out",
         "tags": [
           "users"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/healthz": {
@@ -14981,7 +15230,8 @@
         "summary": "Liveness (no dependencies)",
         "tags": [
           "health"
-        ]
+        ],
+        "x-stability": "stable"
       }
     },
     "/metrics": {
@@ -14995,7 +15245,8 @@
         "summary": "Prometheus metrics",
         "tags": [
           "health"
-        ]
+        ],
+        "x-stability": "beta"
       }
     },
     "/readyz": {
@@ -15026,7 +15277,8 @@
         "summary": "Readiness (database and Redis reachable)",
         "tags": [
           "health"
-        ]
+        ],
+        "x-stability": "stable"
       }
     }
   }

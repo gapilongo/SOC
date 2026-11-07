@@ -10,7 +10,10 @@ untrusted:
 * CSV: a text cell starting with ``=``, ``+``, ``-``, ``@``, a tab or a
   carriage return is prefixed with ``'`` so spreadsheet applications never
   evaluate it as a formula (OWASP "CSV injection"); numbers are written
-  unchanged.
+  unchanged. A rate's interval (``<rate>_ci``) is written as three columns,
+  ``<rate>_n``, ``<rate>_ci_low`` and ``<rate>_ci_high``, after the other columns.
+
+Every rate in the HTML report shows its sample size and 95% Wilson interval.
 """
 
 from __future__ import annotations
@@ -23,11 +26,13 @@ from datetime import date
 from html import escape
 from typing import Any, Iterable, List, Optional, Sequence, Tuple
 
+from lg_sotf.domain.rates import RateInterval, format_interval, format_rate, not_enough_data
 from lg_sotf.models.vocabulary import DISPOSITIONS
 from lg_sotf.services.reporting import (
     AccuracyBlock,
     Detection,
     DetectionsReport,
+    FeedbackRate,
     MonthlyReport,
     ValueDay,
     ValueMetrics,
@@ -105,19 +110,44 @@ def to_csv(header: Sequence[str], rows: Iterable[Sequence[Any]]) -> str:
     return buf.getvalue()
 
 
-VALUE_COLUMNS: Tuple[str, ...] = ("day", *ValueMetrics.model_fields.keys())
+CsvField = Tuple[str, str, Optional[str]]  # (column, model field, RateInterval attribute)
+INTERVAL_PARTS = ("n", "ci_low", "ci_high")
+
+
+def csv_fields(names: Iterable[str]) -> Tuple[CsvField, ...]:
+    """One column per field, then ``<rate>_n``, ``<rate>_ci_low``, ``<rate>_ci_high`` per ``<rate>_ci`` interval.
+
+    The interval columns go last so the earlier columns keep their positions for existing spreadsheets.
+    """
+    names = list(names)
+    plain: List[CsvField] = [(name, name, None) for name in names if not name.endswith("_rate_ci")]
+    intervals: List[CsvField] = [
+        (f"{name.removesuffix('_ci')}_{part}", name, part)
+        for name in names if name.endswith("_rate_ci") for part in INTERVAL_PARTS
+    ]
+    return (*plain, *intervals)
+
+
+def csv_rows(fields_: Sequence[CsvField], rows: Iterable[Any]) -> Iterable[List[Any]]:
+    for row in rows:
+        yield [getattr(getattr(row, f), part, None) if part else getattr(row, f) for _, f, part in fields_]
+
+
+VALUE_FIELDS = csv_fields(("day", *ValueMetrics.model_fields.keys()))
+VALUE_COLUMNS: Tuple[str, ...] = tuple(c for c, _, _ in VALUE_FIELDS)
 
 
 def value_csv(report: ValueReport) -> str:
     """The daily value series, one row per day of the window."""
-    return to_csv(VALUE_COLUMNS, ([getattr(d, c) for c in VALUE_COLUMNS] for d in report.days))
+    return to_csv(VALUE_COLUMNS, csv_rows(VALUE_FIELDS, report.days))
 
 
-DETECTION_COLUMNS: Tuple[str, ...] = tuple(Detection.model_fields.keys())
+DETECTION_FIELDS = csv_fields(Detection.model_fields.keys())
+DETECTION_COLUMNS: Tuple[str, ...] = tuple(c for c, _, _ in DETECTION_FIELDS)
 
 
 def detections_csv(report: DetectionsReport) -> str:
-    return to_csv(DETECTION_COLUMNS, ([getattr(d, c) for c in DETECTION_COLUMNS] for d in report.detections))
+    return to_csv(DETECTION_COLUMNS, csv_rows(DETECTION_FIELDS, report.detections))
 
 
 # -------------------------------------------------------------------- HTML
@@ -151,8 +181,13 @@ def _duration(seconds: Optional[float]) -> str:
     return f"{seconds / 86_400:.1f} d"
 
 
-def _ci(ci: Optional[Tuple[float, float]]) -> str:
-    return "" if ci is None else f"95% range {_pct(ci[0])} to {_pct(ci[1])}"
+def _rate(r: Optional[RateInterval], value: Optional[float]) -> str:
+    """``93.3% (14 of 15; 95% CI 70.2% to 98.8%)``; a cached report without the interval shows the bare rate."""
+    return _pct(value) if r is None else format_rate(r)
+
+
+def _ci(r: Optional[RateInterval]) -> str:
+    return "" if r is None else format_interval(r)
 
 
 def _tile(label: str, value: str, hint: str = "") -> str:
@@ -212,7 +247,8 @@ def _value_section(value: ValueReport) -> str:
     t = value.totals
     tiles = [
         _tile("Handled without a human", _pct(t.handled_without_human_rate),
-              f"{t.handled_without_human:,} of {t.handled_without_human + t.needed_human:,} finished alerts"),
+              f"{t.handled_without_human:,} of {t.handled_without_human + t.needed_human:,} finished alerts. "
+              f"{_ci(t.handled_without_human_rate_ci)}".strip()),
         _tile("Analyst hours saved (estimate)", f"{t.analyst_hours_saved:,.1f} h",
               f"{value.minutes_per_alert} min per alert handled"),
         _tile("Alerts ingested", _int(t.alerts_ingested), f"{t.in_progress:,} still in progress"),
@@ -240,8 +276,8 @@ def _accuracy_block(block: AccuracyBlock, min_samples: int) -> str:
     warn = ""
     if block.status == "insufficient_data":
         warn = (
-            f'<div class="warn">Insufficient data: {block.samples} analyst-decided alert(s), at least {min_samples} '
-            "are needed before these rates mean much.</div>"
+            f'<div class="warn">{_e(not_enough_data(block.samples, min_samples))}: analyst-decided alerts are too '
+            "few for these rates to mean much.</div>"
         )
     m = block.confusion_matrix
     matrix = _table(
@@ -257,13 +293,16 @@ def _accuracy_block(block: AccuracyBlock, min_samples: int) -> str:
         '<p><span class="headline">'
         f"{_e(_pct(block.false_negative_rate))}</span> false-negative rate: the AI said benign on "
         f"{block.false_negatives:,} of {block.analyst_malicious:,} alerts an analyst confirmed as malicious "
-        f"<span class=\"muted\">{_e(_ci(block.false_negative_ci95))}</span></p>"
-        f"<p>Agreement {_e(_pct(block.agreement_rate))} ({block.agreement:,} of {block.samples:,}) "
-        f"<span class=\"muted\">{_e(_ci(block.agreement_ci95))}</span>; false-positive rate "
-        f"{_e(_pct(block.false_positive_rate))} ({block.false_positives:,} of {block.analyst_benign:,} benign); "
-        f"AI inconclusive {_e(_pct(block.ai_inconclusive_rate))}.</p>"
+        f"<span class=\"muted\">{_e(_ci(block.false_negative_rate_ci))}</span></p>"
+        f"<p>Agreement {_e(_rate(block.agreement_rate_ci, block.agreement_rate))}; false-positive rate (of benign) "
+        f"{_e(_rate(block.false_positive_rate_ci, block.false_positive_rate))}; "
+        f"AI inconclusive {_e(_rate(block.ai_inconclusive_rate_ci, block.ai_inconclusive_rate))}.</p>"
         f"{matrix}"
     )
+
+
+def _feedback_interval(r: FeedbackRate) -> Optional[RateInterval]:
+    return None if r.n is None else RateInterval(rate=r.rate, n=r.n, ci_low=r.ci_low, ci_high=r.ci_high)
 
 
 def _accuracy_section(monthly: MonthlyReport) -> str:
@@ -274,8 +313,8 @@ def _accuracy_section(monthly: MonthlyReport) -> str:
             [
                 _e(m.model),
                 _int(m.accuracy.samples),
-                _e(_pct(m.accuracy.agreement_rate)),
-                _e(_pct(m.accuracy.false_negative_rate)),
+                _e(_rate(m.accuracy.agreement_rate_ci, m.accuracy.agreement_rate)),
+                _e(_rate(m.accuracy.false_negative_rate_ci, m.accuracy.false_negative_rate)),
                 _e(m.accuracy.status.replace("_", " ")),
             ]
             for m in acc.by_model
@@ -286,7 +325,7 @@ def _accuracy_section(monthly: MonthlyReport) -> str:
     feedback = _table(
         [("Analyst feedback", False), ("Rate", True), ("Answers", True), ("Status", False)],
         [
-            [_e(label), _e(_pct(r.rate)), _int(r.samples), _e(r.status.replace("_", " "))]
+            [_e(label), _e(_rate(_feedback_interval(r), r.rate)), _int(r.samples), _e(r.status.replace("_", " "))]
             for label, r in (
                 ("Triage correct", fb.triage_correct),
                 ("Analysis accurate", fb.analysis_accurate),
@@ -307,7 +346,7 @@ def _detection_rows(detections: Sequence[Detection]) -> Iterable[Sequence[str]]:
             _e(d.source_id),
             f'<span class="rule">{_e(d.rule)}</span>',
             _int(d.volume),
-            _e(_pct(d.benign_rate)),
+            _e(_rate(d.benign_rate_ci, d.benign_rate)),
             _int(d.auto_closed),
             _int(d.analyst_false_positive),
             _e(d.median_severity or "n/a"),

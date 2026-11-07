@@ -41,6 +41,7 @@ from lg_sotf.api.routers import (
     triage,
     ws,
 )
+from lg_sotf.api.stability import DEPRECATION_HEADERS, DeprecationHeadersMiddleware, Stability, classify
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.ingestion.email import EmailLimits
@@ -53,7 +54,7 @@ API_PREFIX = "/api/v1"
 INGEST_PREFIX = f"{API_PREFIX}/ingest/"
 EMAIL_INGEST_PATH = f"{API_PREFIX}/ingest/email"
 ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-Tenant-ID", "X-Request-ID"]
-EXPOSED_HEADERS = ["X-Request-ID", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining"]
+EXPOSED_HEADERS = ["X-Request-ID", "Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", *DEPRECATION_HEADERS]
 
 
 def cors_origins(settings: Settings) -> list[str]:
@@ -119,32 +120,37 @@ async def close_context(ctx: ApiContext) -> None:
     await ctx.db.close()
 
 
-def api_routers() -> Tuple[APIRouter, ...]:
-    """The ``/api/v1`` routers, in matching order (the first route that matches a path wins)."""
+def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
+    """The ``/api/v1`` routers, in matching order (the first route that matches a path wins), each with
+    the stability tier its routes get unless they declare their own (lg_sotf.api.stability, docs/api.md).
+
+    ``stable``: the integration surface (ingest, alerts, review, actions, sources, suppressions, users,
+    API keys, audit, auth). ``beta``: platform administration and features still settling. ``internal``:
+    screens of the bundled UI."""
     return (
-        auth.router,
-        mfa.router,
-        ingest.router,
-        alerts.router,
+        (auth.router, "stable"),
+        (mfa.router, "beta"),
+        (ingest.router, "stable"),
+        (alerts.router, "stable"),
         # Before review.escalations: /escalations/groups and /escalations/bulk/... are not escalation ids.
-        triage.router,
-        review.escalations,
-        review.actions,
-        sources.router,
-        suppressions.router,
-        identity.users,
-        identity.api_keys,
-        tenant.router,
-        dashboard.dashboard,
-        dashboard.usage,
-        audit.router,
-        platform.router,
-        onboarding.router,
-        compliance.alerts,
-        compliance.platform,
-        integrations.router,
-        integrations.tickets,
-        reports.router,
+        (triage.router, "beta"),
+        (review.escalations, "stable"),
+        (review.actions, "stable"),
+        (sources.router, "stable"),
+        (suppressions.router, "stable"),
+        (identity.users, "stable"),
+        (identity.api_keys, "stable"),
+        (tenant.router, "beta"),
+        (dashboard.dashboard, "internal"),
+        (dashboard.usage, "beta"),
+        (audit.router, "stable"),
+        (platform.router, "beta"),
+        (onboarding.router, "internal"),
+        (compliance.alerts, "beta"),
+        (compliance.platform, "beta"),
+        (integrations.router, "beta"),
+        (integrations.tickets, "beta"),
+        (reports.router, "beta"),
     )
 
 
@@ -189,10 +195,10 @@ def create_app(
     install_error_handlers(app)
 
     api = APIRouter(prefix=API_PREFIX)
-    for router in api_routers():
-        api.include_router(router)
-    app.include_router(health.router)
-    app.include_router(health.metrics_router)
+    for router, stability in api_routers():
+        api.include_router(classify(router, stability))
+    app.include_router(classify(health.router, "stable"))
+    app.include_router(classify(health.metrics_router, "beta"))
     # Probes only: /metrics stays off /api/v1, which the public ingress routes here.
     app.include_router(health.router, prefix=API_PREFIX, include_in_schema=False)
     app.include_router(api)
@@ -213,6 +219,7 @@ def create_app(
         return max_ingest if path.startswith(INGEST_PREFIX) else max_body
 
     # Added innermost first: the last one added wraps everything.
+    app.add_middleware(DeprecationHeadersMiddleware)
     app.add_middleware(BodyLimitMiddleware, limit_for=limit_for)
     app.add_middleware(
         CORSMiddleware,

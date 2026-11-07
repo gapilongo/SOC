@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "id": "fact-lineage-ws042-4711",
+  "kind": "process_lineage",
+  "subject": {"type": "process", "value": "WS-042:4711"},
+  "observed_at": "2026-11-07T09:12:55Z",
+  "source": {"name": "defender.ah", "version": "1.0"},
+  "confidence": 1.0,
+  "provenance": {"input_hash": "ea44360ef96b6efaa3f6181c8e8d25e899a64f241004cec2d08cc078856b6d53"},
+  "redactions": [{"path": "/value/chain/2/command_line", "reason": "truncated"}],
+  "value": {
+    "chain": [
+      {"name": "explorer.exe", "pid": 1204, "user": "CONTOSO\\a.analyst"},
+      {
+        "name": "WINWORD.EXE",
+        "pid": 3312,
+        "command_line": "\"WINWORD.EXE\" /n C:\\Users\\a.analyst\\Downloads\\invoice.docm",
+        "sha256": "218d4d2e2a1dd6500b0e347bb7499ea154a0951ff32eabb7eb45c30383aef724",
+        "started_at": "2026-11-07T09:12:01Z"
+      },
+      {
+        "name": "powershell.exe",
+        "pid": 4711,
+        "command_line": "powershell.exe -NoProfile -EncodedCommand SQBFAFgA...[truncated]",
+        "sha256": "10cf297b8f33f25630e5849e7efbe0f537b2fed990fa03934754aefd7ef550cd",
+        "user": "CONTOSO\\a.analyst",
+        "started_at": "2026-11-07T09:12:09Z"
+      }
+    ]
+  }
+}

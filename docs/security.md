@@ -392,9 +392,18 @@ incident before retention removes it.
 
 ## 9. Supply chain and build
 
-* Pinned runtime and development dependencies (`requirements*.txt`),
-  `pip-audit` and Bandit in CI, Gitleaks on every change and a weekly
-  full-history scan, Dependabot for GitHub Actions and Python dependencies.
+* Every dependency is pinned and hash-locked, and every base image is
+  pinned by digest (see "Pinned inputs and the image CVE gate" below).
+  `pip-audit` and Bandit run in CI, Gitleaks on every change and in a weekly
+  full-history scan, and Dependabot keeps GitHub Actions, base-image digests,
+  and Python and npm dependencies current. When a dependency may be added,
+  how updates are triaged, and the patch SLAs (critical 7 days, high 14,
+  medium 30, low the next minor release) are in
+  [dependency-policy.md](dependency-policy.md).
+* Both images are scanned with Trivy on every change: a fixable critical or
+  high CVE fails CI.
+* Every release carries CycloneDX SBOMs and an OpenVEX document, each with
+  a build-provenance attestation (see "SBOMs and VEX" below).
 * The container image runs as a non-root user (uid 10001) with a read-only
   root filesystem, no build tools, no pip/setuptools and no setuid binaries; `dumb-init` as PID 1. Kubernetes
   manifests drop all capabilities and use the `RuntimeDefault` seccomp
@@ -406,7 +415,10 @@ incident before retention removes it.
   `Release images` workflow on `main`, and both are recorded in the public
   Rekor transparency log. The signature covers the multi-arch image digest,
   not a tag. A release tag `vX.Y.Z` points at the same digest that `main`
-  built and signed, so it is covered too.
+  built and signed, so it is covered too. So do the release channels
+  (`:partner`, `:lts`, `:lts-X.Y`). The release train moves them only to
+  digests that first pass the same verification as a deploy
+  ([releases.md](releases.md)).
 * Signing runs in its own job. That job checks out no code and runs no build
   step; it only signs the digests that the build job pushed. It is the only
   job in the release path that can request an OIDC token. The images are
@@ -449,6 +461,92 @@ images. In Kubernetes, an admission controller (the Sigstore
 policy-controller or Kyverno `verifyImages`) can enforce the same identity
 and issuer. For air-gapped hosts, see
 [air-gapped.md](air-gapped.md#verify-the-published-images-before-you-bundle-them).
+
+### Pinned inputs and the image CVE gate
+
+* **Python packages.** `requirements.txt` (what the image installs),
+  `requirements-dev.txt` (CI and development: the same versions plus the
+  test tools), `docker/requirements-build.txt` (pip, setuptools and
+  dumb-init for the image build) and the CI tool locks in `scripts/ci/` pin
+  every package and carry the SHA-256 of each of its wheels and sdists, for
+  every platform (the amd64 and arm64 images, and macOS for development).
+  The Dockerfile, CI and `make dev` install them with
+  `pip install --require-hashes`, so a file that changed on the index, or a
+  package missing from the lock, fails the install. The files are generated:
+  re-lock with `make lock` (or `make lock ARGS="--upgrade-package fastapi"`)
+  and never edit them by hand. `pip-audit` checks all of them in CI.
+* **Base images.** Every `FROM` in `docker/Dockerfile` and
+  `src/lg_front/Dockerfile`, and the `# syntax=` frontend, is pinned as
+  `name:tag@sha256:digest`; Dependabot bumps the digest weekly. The
+  PostgreSQL, Redis and Caddy defaults in the compose files are pinned the
+  same way. To build from a registry mirror, set `PYTHON_BASE_IMAGE`,
+  `NODE_IMAGE` or `NGINX_IMAGE`, preferably with the same digest.
+* **Image CVE gate.** CI scans the backend and frontend images it builds
+  with Trivy (OS packages and language libraries) and fails on any critical
+  or high finding that has a fix. The fix is a base-image digest bump or a
+  re-lock. An exception goes in `.trivyignore`, reviewed in a pull request:
+  each entry names the reviewer's reasoning, expires within 90 days (Trivy
+  then reports it again), and, if the finding does not affect the product,
+  has a matching `not_affected` statement in `security/vex.json`.
+  `tests/deploy/test_supply_chain.py` enforces all three. Scan an image
+  locally the same way:
+
+  ```sh
+  trivy image --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed \
+      --ignorefile .trivyignore --exit-code 1 lg-sotf:dev
+  ```
+
+### SBOMs and VEX
+
+Each GitHub release `vX.Y.Z` has these assets:
+
+| Asset | What it lists |
+|---|---|
+| `lg-sotf-vX.Y.Z-python.cdx.json` | Every Python package of `requirements.txt` (the backend image's lock), with versions, package URLs and the SHA-256 hashes the build verifies. Packages behind a platform marker (Windows-only, for example) are listed too. |
+| `lg-sotf-vX.Y.Z-frontend-npm.cdx.json` | The web app's production npm packages, from `package-lock.json`. |
+| `lg-sotf-vX.Y.Z-image-linux-amd64.cdx.json`, `...-linux-arm64.cdx.json` | Everything installed in the backend image at the release digest: Debian packages and Python packages. |
+| `lg-sotf-frontend-vX.Y.Z-image-linux-amd64.cdx.json`, `...-linux-arm64.cdx.json` | The same for the frontend image (Alpine packages). |
+| `lg-sotf-vX.Y.Z.openvex.json` | OpenVEX 0.2.0: CVEs that scanners report in these images but that do not affect LG-SOTF, each with its justification (`security/vex.json` at the tagged commit). |
+| `SHA256SUMS` | SHA-256 of every file above. |
+
+The SBOMs are CycloneDX JSON (1.6 for Python, 1.5 for npm, 1.7 for the
+images). The release workflow validates every file against its schema
+before it publishes it (CycloneDX's strict JSON schemas and the OpenVEX
+JSON schema in `security/schemas/`), and CI does the same on every change.
+The image SBOMs are made from the exact digests the release tag points at.
+
+Fetch and verify them:
+
+```sh
+TAG=v1.3.0
+gh release download "$TAG" --repo gapilongo/SOC --dir lg-sotf-$TAG \
+    --pattern '*.cdx.json' --pattern '*.openvex.json' --pattern SHA256SUMS
+cd lg-sotf-$TAG && sha256sum --check SHA256SUMS
+
+# Provenance: built by the release workflow for this tag, from this repository.
+for f in *.json; do
+  gh attestation verify "$f" --repo gapilongo/SOC --deny-self-hosted-runners \
+      --cert-identity "https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/tags/$TAG" \
+      --cert-oidc-issuer https://token.actions.githubusercontent.com
+done
+```
+
+Then use the VEX document with your scanner, scanning the release digest:
+
+```sh
+grype "ghcr.io/gapilongo/lg-sotf@sha256:<digest>" --vex "lg-sotf-$TAG.openvex.json"
+trivy image --vex "lg-sotf-$TAG.openvex.json" "ghcr.io/gapilongo/lg-sotf@sha256:<digest>"
+```
+
+A VEX statement names the image (`pkg:oci/lg-sotf` or
+`pkg:oci/lg-sotf-frontend`) and the package inside it, and says why the CVE
+does not apply (for example, `vulnerable_code_not_in_execute_path`, with
+an impact statement naming the code that is never called). Trivy 0.76
+applies these image-scoped statements to Alpine packages (the frontend)
+but not to Debian packages (the backend); compare the backend's findings
+with the document by CVE ID. Statements are added in a reviewed pull
+request, together with the matching `.trivyignore` entry, and removed once
+a base-image update ships the fix.
 
 ## 10. Known limitations
 

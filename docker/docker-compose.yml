@@ -26,7 +26,8 @@ x-app-build: &app-build
   context: ..
   dockerfile: docker/Dockerfile
   args:
-    BASE_IMAGE: ${PYTHON_BASE_IMAGE:-python:3.11-slim}
+    # Empty: the digest-pinned base in docker/Dockerfile.
+    BASE_IMAGE: ${PYTHON_BASE_IMAGE:-}
   secrets:
     - build_ca
 
@@ -58,7 +59,7 @@ x-app: &app
 
 services:
   postgres:
-    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139}
     environment:
       POSTGRES_USER: soc
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-soc_dev_password}
@@ -74,7 +75,7 @@ services:
     restart: unless-stopped
 
   redis:
-    image: ${REDIS_IMAGE:-redis:7-alpine}
+    image: ${REDIS_IMAGE:-redis:7-alpine@sha256:c5d34a98396a4775e223c74e929162c35c5a2182901ba26b50ade939941ce14b}
     command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--save", ""]
     volumes:
       - redisdata:/data
@@ -189,8 +190,9 @@ services:
       context: ../src/lg_front
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
-        NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.28-alpine}
+        # Empty: the digest-pinned bases in src/lg_front/Dockerfile.
+        NODE_IMAGE: ${NODE_IMAGE:-}
+        NGINX_IMAGE: ${NGINX_IMAGE:-}
       secrets:
         - build_ca
     environment:

@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 import httpx
 import pytest
 import redis.asyncio as aioredis
-from asyncpg.exceptions import ReadOnlySQLTransactionError
+from asyncpg.exceptions import InvalidCachedStatementError, ReadOnlySQLTransactionError
 
 from lg_sotf.core.shadow import ShadowRunner
 from lg_sotf.core.workflow import WorkflowEngine
@@ -157,5 +157,17 @@ async def test_a_write_no_boundary_diverts_fails_in_shadow_mode(db: Database, re
         with pytest.raises(ReadOnlySQLTransactionError):
             async with db.system_tx() as conn:
                 await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
+        # A transaction retried after a stale cached statement is a new transaction: read only too.
+        attempts: List[str] = []
+
+        async def stale_then_write(conn: Any) -> None:
+            attempts.append("attempt")
+            if len(attempts) == 1:
+                raise InvalidCachedStatementError("cached statement plan is invalid")
+            await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
+
+        with pytest.raises(ReadOnlySQLTransactionError):
+            await db.run_tenant_tx(TENANT_A, stale_then_write)
+        assert attempts == ["attempt", "attempt"]
     tenant = await repos.tenants.get(TENANT_A)
     assert tenant.name == "Tenant A" and not tenant.settings

@@ -1,0 +1,244 @@
+name: Release train
+
+# Cuts the release channels (docs/releases.md) without building anything:
+#
+# * Every Thursday (or Run workflow with `promote` empty): the weekly partner
+#   train. The head of main becomes vX.Y.Z-rc.N (X.Y.Z = its __version__) and
+#   the :partner image tags move to its digests.
+# * Run workflow with `promote` = vX.Y.Z-rc.N: that RC becomes the stable
+#   vX.Y.Z; with `lts` ticked the LTS channel (git tag lts-X.Y, image tags
+#   :lts and :lts-X.Y) moves to it too.
+#
+# Nothing is tagged unless the commit's CI run on main passed, including the
+# N-1 upgrade rehearsal and the install rehearsal (RELEASE_GATES), and its
+# images, built and signed by Release images on main, pass the same cosign
+# and build-provenance checks as deploy.yml. The new tag then goes through the
+# existing signed release path: Release images is started on it (a tag created
+# with GITHUB_TOKEN starts no workflow by itself) and re-tags the same
+# digests, attaches the attested SBOMs and VEX, and deploys uat.
+
+on:
+  schedule:
+    - cron: "0 9 * * 4" # Thursday 09:00 UTC
+  workflow_dispatch:
+    inputs:
+      promote:
+        description: "Empty: cut a partner RC from the head of main. Or an RC tag (vX.Y.Z-rc.N) to promote to the stable vX.Y.Z"
+        type: string
+        default: ""
+      lts:
+        description: "With promote: also move the LTS channel (lts-X.Y, :lts, :lts-X.Y) to the new release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+
+env:
+  APP_REPO: ghcr.io/gapilongo/lg-sotf
+  FRONTEND_REPO: ghcr.io/gapilongo/lg-sotf-frontend
+  # Who may sign a releasable image: the release workflow, run from main (as in deploy.yml).
+  SIGNER_REPO: gapilongo/SOC
+  SIGNER_IDENTITY: https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+  SIGNER_OIDC_ISSUER: https://token.actions.githubusercontent.com
+  # The ci.yml jobs that must have passed on the commit: the N-1 upgrade rehearsal, the full suite
+  # (it runs the install rehearsal, tests/integration/e2e/test_first_run.py) and the image job.
+  RELEASE_GATES: |
+    Upgrade rehearsal (N-1 runs waiting for an analyst, migrate, decide on N)
+    Tests (PostgreSQL 16, Redis 7)
+    Container image
+
+jobs:
+  gates:
+    name: Plan, check the gates, verify the images
+    # Only this repository's main: a dispatch from another branch runs nothing.
+    if: github.repository == 'gapilongo/SOC' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Waits (up to an hour) for the head's CI and Release images runs.
+    timeout-minutes: 80
+    permissions:
+      contents: read
+      actions: read # the CI and Release images runs of the commit
+      packages: read
+      attestations: read
+    outputs:
+      skip: ${{ steps.plan.outputs.skip }}
+      tag: ${{ steps.plan.outputs.tag }}
+      commit: ${{ steps.plan.outputs.commit }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+      channels: ${{ steps.plan.outputs.channels }}
+      lts_ref: ${{ steps.plan.outputs.lts_ref }}
+      security: ${{ steps.plan.outputs.security }}
+      app_digest: ${{ steps.images.outputs.app_digest }}
+      frontend_digest: ${{ steps.images.outputs.frontend_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # every tag and origin/main
+          persist-credentials: false
+
+      - name: Plan the release
+        id: plan
+        env:
+          PROMOTE: ${{ inputs.promote }}
+          LTS: ${{ inputs.lts || false }}
+        run: scripts/ci/release_train.sh plan
+
+      - name: Check the release gates (CI, upgrade and install rehearsals, signed images)
+        if: steps.plan.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+        run: scripts/ci/release_train.sh gates "$COMMIT"
+
+      - name: Resolve image digests and source commit
+        id: images
+        if: steps.plan.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r '.digest // empty'
+          }
+          revision_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Image}}' \
+              | jq -r '(if has("config") then . else .["linux/amd64"] end).config.Labels["org.opencontainers.image.revision"] // empty'
+          }
+          app="$(digest_of "$APP_REPO:sha-${COMMIT:0:7}")"
+          fe="$(digest_of "$FRONTEND_REPO:sha-${COMMIT:0:7}")"
+          [[ "$app" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "no image $APP_REPO:sha-${COMMIT:0:7}"
+          [[ "$fe" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "no image $FRONTEND_REPO:sha-${COMMIT:0:7}"
+          # A 7-hex tag could name another commit's images: the revision label must be this commit.
+          for ref in "$APP_REPO@$app" "$FRONTEND_REPO@$fe"; do
+            [ "$(revision_of "$ref")" = "$COMMIT" ] || fail "$ref was not built from $COMMIT"
+          done
+          {
+            echo "app_ref=$APP_REPO@$app"
+            echo "frontend_ref=$FRONTEND_REPO@$fe"
+            echo "app_digest=$app"
+            echo "frontend_digest=$fe"
+          } >> "$GITHUB_OUTPUT"
+          docker logout ghcr.io >/dev/null
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: steps.plan.outputs.skip == 'false'
+        with:
+          cosign-release: v3.0.6
+
+      # Fail closed, exactly as deploy.yml: no signed provenance from the release workflow, no tag.
+      - name: Verify image signatures and provenance
+        if: steps.plan.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+          APP_REF: ${{ steps.images.outputs.app_ref }}
+          FRONTEND_REF: ${{ steps.images.outputs.frontend_ref }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin >/dev/null
+          for ref in "$APP_REF" "$FRONTEND_REF"; do
+            cosign verify --certificate-identity "$SIGNER_IDENTITY" \
+              --certificate-oidc-issuer "$SIGNER_OIDC_ISSUER" "$ref" >/dev/null \
+              || fail "$ref has no valid signature from $SIGNER_IDENTITY"
+            gh attestation verify "oci://$ref" --repo "$SIGNER_REPO" \
+              --cert-identity "$SIGNER_IDENTITY" --cert-oidc-issuer "$SIGNER_OIDC_ISSUER" \
+              --predicate-type https://slsa.dev/provenance/v1 --deny-self-hosted-runners >/dev/null \
+              || fail "$ref has no valid build provenance from $SIGNER_IDENTITY"
+            echo "verified: $ref"
+          done
+          docker logout ghcr.io >/dev/null
+
+  release:
+    name: Tag the release and move its channels
+    needs: gates
+    if: needs.gates.outputs.skip == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Settings > Environments > release: deployment branches "main" only (docs/releases.md).
+    environment: release
+    # Checks out and runs no repository code: only gh and docker on the tag, commit and
+    # digests the gates job verified. It holds no OIDC token.
+    permissions:
+      contents: write # the release tag, its GitHub release and the lts-X.Y tag
+      packages: write # the :partner, :lts and :lts-X.Y image tags
+      actions: write # start Release images on the new tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.gates.outputs.tag }}
+      COMMIT: ${{ needs.gates.outputs.commit }}
+      APP_DIGEST: ${{ needs.gates.outputs.app_digest }}
+      FRONTEND_DIGEST: ${{ needs.gates.outputs.frontend_digest }}
+    steps:
+      - name: Create the release tag and its GitHub release
+        env:
+          PRERELEASE: ${{ needs.gates.outputs.prerelease }}
+          SECURITY: ${{ needs.gates.outputs.security }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]] || { echo "::error::unexpected tag '$TAG'"; exit 1; }
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::unexpected commit '$COMMIT'"; exit 1; }
+          # Creating a ref that exists fails: a release tag is never moved.
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$COMMIT" >/dev/null
+          args=(--repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes)
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease); else args+=(--latest); fi
+          if [ "$SECURITY" = true ]; then
+            args+=(--title "$TAG (security fixes)" --notes "**Security-relevant release:** see the Security section of CHANGELOG.md and docs/releases.md.")
+          else
+            args+=(--title "$TAG")
+          fi
+          gh release create "$TAG" "${args[@]}"
+
+      - name: Start Release images on the tag (same digests, SBOMs and VEX, uat)
+        run: gh workflow run release-images.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move the channel tags to the verified digests
+        env:
+          CHANNELS: ${{ needs.gates.outputs.channels }}
+          LTS_REF: ${{ needs.gates.outputs.lts_ref }}
+        run: |
+          fail() { echo "::error::$*"; exit 1; }
+          for d in "$APP_DIGEST" "$FRONTEND_DIGEST"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "unexpected digest '$d'"
+          done
+          digest_of() {
+            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r '.digest // empty'
+          }
+          for channel in $CHANNELS; do
+            [[ "$channel" =~ ^(partner|lts|lts-[0-9]+\.[0-9]+)$ ]] || fail "unexpected channel '$channel'"
+            docker buildx imagetools create --tag "$APP_REPO:$channel" "$APP_REPO@$APP_DIGEST"
+            docker buildx imagetools create --tag "$FRONTEND_REPO:$channel" "$FRONTEND_REPO@$FRONTEND_DIGEST"
+            [ "$(digest_of "$APP_REPO:$channel")" = "$APP_DIGEST" ] && [ "$(digest_of "$FRONTEND_REPO:$channel")" = "$FRONTEND_DIGEST" ] \
+              || fail ":$channel does not resolve to the verified digests"
+          done
+          if [ -n "$LTS_REF" ]; then
+            [[ "$LTS_REF" =~ ^lts-[0-9]+\.[0-9]+$ ]] || fail "unexpected LTS tag '$LTS_REF'"
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$LTS_REF" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/$LTS_REF" -f sha="$COMMIT" -F force=true >/dev/null
+            else
+              gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$LTS_REF" -f sha="$COMMIT" >/dev/null
+            fi
+          fi
+          {
+            echo "### Released $TAG"
+            echo ""
+            echo "Commit \`$COMMIT\`; channels: ${CHANNELS:-none}${LTS_REF:+; git tag $LTS_REF moved}."
+            echo ""
+            echo "| Image | Digest |"
+            echo "|---|---|"
+            echo "| \`$APP_REPO\` | \`$APP_DIGEST\` |"
+            echo "| \`$FRONTEND_REPO\` | \`$FRONTEND_DIGEST\` |"
+          } >> "$GITHUB_STEP_SUMMARY"

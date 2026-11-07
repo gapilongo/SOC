@@ -25,8 +25,12 @@ env:
   KUBECONFORM_VERSION: v0.6.7
   KUBECONFORM_SHA256: 95f14e87aa28c09d5941f11bd024c1d02fdc0303ccaa23f61cef67bc92619d73
   KUBERNETES_VERSION: 1.29.0
+  OASDIFF_VERSION: 1.34.1
+  OASDIFF_SHA256: 75775f65b0adebd26a8e013af51a799342dfdc6262d89efa9e3b7bdf89657d90
   GITLEAKS_IMAGE: zricethezav/gitleaks:v8.24.3@sha256:e1b35e12a8c6fa8901f060459cfb6b2fc4c484d3afbe3b029733a3bbfab07055
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  # Image CVE gate (docs/security.md, section 9). Same Trivy release in every workflow.
+  TRIVY_VERSION: v0.76.1
 
 jobs:
   lint:
@@ -44,7 +48,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Ruff
         run: ruff check --output-format=github src tests scripts docker examples
@@ -57,7 +61,8 @@ jobs:
         run: |
           shopt -s nullglob
           shellcheck docker/postgres/init-roles.sh scripts/smoke_stack.sh scripts/e2e_ui_stack.sh scripts/make_tour_media.sh \
-            scripts/ci/upgrade_rehearsal.sh src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
+            scripts/lock_requirements.sh scripts/ci/release_assets.sh scripts/ci/upgrade_rehearsal.sh scripts/ci/release_train.sh \
+            src/lg_front/docker/entrypoint.sh deploy/vm/*.sh deploy/pc/*.sh
 
   fast:
     name: Unit and deploy tests (no services)
@@ -76,13 +81,71 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest (unit and deploy)
         run: pytest tests/unit tests/deploy
+
+  api-compat:
+    name: API compatibility (oasdiff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # scripts/ci/check_api_compat.py: a breaking change to a stable operation of docs/openapi.json fails;
+    # beta and internal operations are reported only (docs/api.md, "Stability and deprecation").
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base branch's docs/openapi.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install oasdiff
+        run: |
+          curl -fsSL -o /tmp/oasdiff.tgz \
+            "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
+          echo "${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -
+          tar -xzf /tmp/oasdiff.tgz -C /tmp oasdiff
+          sudo install -m 0755 /tmp/oasdiff /usr/local/bin/oasdiff
+      - name: Self-test (breaking a stable operation fails, breaking a beta one does not)
+        run: python scripts/ci/check_api_compat.py --self-test docs/openapi.json
+      - name: Breaking changes against the base
+        # Pull request: the merge base with the target branch. Push: the previous commit of the branch.
+        run: |
+          if [ -n "${GITHUB_BASE_REF}" ]; then
+            BASE="$(git merge-base "origin/${GITHUB_BASE_REF}" HEAD)"
+          else
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          if ! git cat-file -e "${BASE}:docs/openapi.json" 2>/dev/null; then
+            echo "No docs/openapi.json at ${BASE}; nothing to compare."
+            exit 0
+          fi
+          git show "${BASE}:docs/openapi.json" > /tmp/openapi-base.json
+          python scripts/ci/check_api_compat.py /tmp/openapi-base.json docs/openapi.json
+
+  schemas:
+    name: Published schemas (SemVer breaking-change check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # schemas/<name>/v<major>.json against the base revision: a change needs the version bump it
+    # implies, and a breaking one a new major file (docs/evidence-facts.md). The unit tier checks
+    # that each file matches its Pydantic model (scripts/export_schemas.py --check).
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base revision's schemas
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Compare with the base revision
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: python scripts/ci/schema_compat.py --base "${BASE_REF}"
 
   test:
     name: Tests (PostgreSQL 16, Redis 7)
@@ -124,7 +187,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Create the non-superuser test role
         env:
@@ -201,7 +264,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Create the non-superuser test role
         env:
@@ -259,7 +322,7 @@ jobs:
           cache-dependency-path: requirements-dev.txt
       - name: Install
         run: |
-          pip install -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.txt
           pip install --no-deps -e .
       - name: Start and seed the Wazuh lab
         run: make test-wazuh-up PYTHON=python
@@ -293,11 +356,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install scanners
-        run: pip install "pip-audit==2.9.0" "bandit[toml]==1.8.6"
-      - name: pip-audit (pinned runtime and dev dependencies)
+        run: pip install --require-hashes -r scripts/ci/requirements-tools.txt
+      - name: pip-audit (every hash-locked requirements file)
         run: |
-          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements.txt
-          pip-audit --strict --progress-spinner off --no-deps --disable-pip -r requirements-dev.txt
+          for lock in requirements.txt requirements-dev.txt docker/requirements-build.txt \
+              scripts/ci/requirements-tools.txt scripts/ci/requirements-nightly.txt; do
+            pip-audit --strict --progress-spinner off --disable-pip --require-hashes -r "$lock"
+          done
       - name: Bandit (new medium+ findings against the reviewed baseline)
         run: bandit -r src/lg_sotf examples -ll -ii -b scripts/ci/bandit-baseline.json
       - name: Gitleaks (commits in this change)
@@ -368,6 +433,33 @@ jobs:
           docker run --rm --entrypoint python lg-sotf:ci /usr/local/lib/lg-sotf/healthcheck.py
           # No package manager and no setuid/setgid binaries in the runtime image.
           test -z "$(docker run --rm --entrypoint sh lg-sotf:ci -c 'command -v pip pip3; ls /usr/local/lib/python3*/site-packages | grep -E "^(pip|setuptools|wheel)"; find / -xdev -type f -perm /6000 2>/dev/null')"
+      - name: Image CVE gate (Trivy, fixable critical and high)
+        # Fails on any critical or high finding that has a fix, in OS packages or Python
+        # libraries. Exceptions: .trivyignore (reviewed, each with an expiry date).
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+      - name: Image SBOM (CycloneDX)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf:ci
+          format: cyclonedx
+          output: lg-sotf-ci-image.cdx.json
+      - name: Upload the image SBOM (validated by the sbom job)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-sbom-lg-sotf
+          path: lg-sotf-ci-image.cdx.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Validate compose files
         env:
           POSTGRES_SUPERUSER_PASSWORD: ci
@@ -401,10 +493,12 @@ jobs:
   upgrade:
     name: Upgrade rehearsal (N-1 runs waiting for an analyst, migrate, decide on N)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     # scripts/ci/upgrade_rehearsal.sh: the previous release (latest v* tag) migrates a fresh database and
     # leaves runs waiting for an analyst; this checkout migrates it as the schema owner and must resume and
     # close every one of them through its API. Any run that fails, dead-letters or stays open fails the build.
+    # The same again from the latest LTS release (lts-X.Y), when it is not the previous release
+    # (docs/releases.md). The release train tags nothing whose run of this job failed.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -416,9 +510,11 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - name: Install
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements.txt
       - name: Rehearse the upgrade from the previous release
         run: scripts/ci/upgrade_rehearsal.sh
+      - name: Rehearse the upgrade from the latest LTS release
+        run: scripts/ci/upgrade_rehearsal.sh --from lts
 
   helm:
     name: Helm chart
@@ -450,6 +546,36 @@ jobs:
             -schema-location default \
             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
             /tmp/default.yaml /tmp/full.yaml
+
+  sbom:
+    name: SBOMs and VEX (schema validation)
+    # The release assets (docs/security.md, section 9), built the way release-images.yml builds them
+    # and validated against the CycloneDX and OpenVEX schemas, so a format break shows up here and not
+    # on release day.
+    needs: [docker, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install SBOM tooling
+        run: pip install --require-hashes -r scripts/ci/requirements-tools.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: image-sbom-*
+          path: image-sbom
+          merge-multiple: true
+      - name: Python and npm SBOMs, VEX (validated)
+        run: scripts/ci/release_assets.sh release-assets ci
+      - name: Image SBOMs (validated)
+        run: python scripts/ci/validate_sbom.py image-sbom/lg-sotf-ci-image.cdx.json image-sbom/lg-sotf-frontend-ci-image.cdx.json
 
   frontend:
     name: Frontend build
@@ -498,6 +624,34 @@ jobs:
       - name: Build frontend image (no push)
         if: steps.detect.outputs.dockerfile == 'true'
         run: docker build -t lg-sotf-frontend:ci src/lg_front
+      - name: Image CVE gate (Trivy, fixable critical and high)
+        if: steps.detect.outputs.dockerfile == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf-frontend:ci
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          exit-code: "1"
+      - name: Image SBOM (CycloneDX)
+        if: steps.detect.outputs.dockerfile == 'true'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+          image-ref: lg-sotf-frontend:ci
+          format: cyclonedx
+          output: lg-sotf-frontend-ci-image.cdx.json
+      - name: Upload the image SBOM (validated by the sbom job)
+        if: steps.detect.outputs.dockerfile == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-sbom-lg-sotf-frontend
+          path: lg-sotf-frontend-ci-image.cdx.json
+          if-no-files-found: error
+          retention-days: 7
 
   e2e-ui:
     name: Web UI end-to-end (Playwright, compose stack)

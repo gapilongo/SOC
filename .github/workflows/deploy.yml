@@ -4,7 +4,7 @@ name: Deploy
 # a self-hosted PC behind Tailscale Funnel: docs/self-hosting-pc.md).
 #
 # * Called by "Release images": dev after every green main build, uat after a
-#   vX.Y.Z tag has been promoted (same digest, never rebuilt).
+#   vX.Y.Z or vX.Y.Z-rc.N tag has been promoted (same digest, never rebuilt).
 # * Run by hand (Actions > Deploy > Run workflow) to redeploy or roll back:
 #   pick the environment and an existing image tag (sha-<7 hex>, main or
 #   vX.Y.Z).
@@ -56,7 +56,7 @@ on:
         options: [dev, uat]
         required: true
       image_tag:
-        description: "Image tag to deploy: sha-<7 hex>, main or vX.Y.Z (the previous one rolls back)"
+        description: "Image tag to deploy: sha-<7 hex>, main, vX.Y.Z or vX.Y.Z-rc.N (the previous one rolls back)"
         type: string
         required: true
 
@@ -111,8 +111,8 @@ jobs:
         run: |
           fail() { echo "::error::$*"; exit 1; }
           [[ "$TARGET_ENV" =~ ^(dev|uat)$ ]] || fail "environment must be dev or uat"
-          [[ "$IMAGE_TAG" =~ ^(main|sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+)$ ]] \
-            || fail "image_tag must be sha-<hex>, main or vX.Y.Z"
+          [[ "$IMAGE_TAG" =~ ^(main|sha-[0-9a-f]{7,40}|v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?)$ ]] \
+            || fail "image_tag must be sha-<hex>, main, vX.Y.Z or vX.Y.Z-rc.N"
           [ -z "$INPUT_COMMIT" ] || [[ "$INPUT_COMMIT" =~ ^[0-9a-f]{40}$ ]] || fail "bad commit input"
           for d in "$INPUT_APP_DIGEST" "$INPUT_FRONTEND_DIGEST"; do
             [ -z "$d" ] || [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "bad digest input"

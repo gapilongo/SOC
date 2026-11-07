@@ -118,7 +118,11 @@ def test_upgrade_job_rehearses_the_previous_release_and_blocks_the_build() -> No
     assert "continue-on-error" not in job
     checkout = job["steps"][0]
     assert checkout["uses"].startswith("actions/checkout@") and checkout["with"]["fetch-depth"] == 0  # the tags
-    assert job["steps"][-1]["run"].strip() == "scripts/ci/upgrade_rehearsal.sh"
+    # ARCH-E1.5: from the previous release (the latest v* tag, an RC included), then from the latest LTS release.
+    assert [s["run"].strip() for s in job["steps"][-2:]] == [
+        "scripts/ci/upgrade_rehearsal.sh", "scripts/ci/upgrade_rehearsal.sh --from lts",
+    ]
+    assert not any("continue-on-error" in s or "if" in s for s in job["steps"])
     lint = next(s for s in steps() if s.get("name") == "Shellcheck")
     assert "scripts/ci/upgrade_rehearsal.sh" in lint["run"]
 
@@ -136,6 +140,21 @@ def test_upgrade_job_rehearses_the_previous_release_and_blocks_the_build() -> No
     rehearsed = re.search(r'DRAIN_CHECK="([^"]*)"', text)
     assert documented and rehearsed
     assert " ".join(documented.group(1).split()) == rehearsed.group(1)
+
+
+def test_api_compat_job_runs_a_pinned_oasdiff_and_blocks_the_build() -> None:
+    """ARCH-E2.2: a breaking change to a stable operation of docs/openapi.json fails CI."""
+    wf = workflow()
+    job = wf["jobs"]["api-compat"]
+    assert "continue-on-error" not in job
+    assert job["steps"][0]["with"]["fetch-depth"] == 0  # the base branch's document
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wf["env"]["OASDIFF_VERSION"])
+    assert re.fullmatch(r"[0-9a-f]{64}", wf["env"]["OASDIFF_SHA256"])
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any('"${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -' in r for r in runs)
+    assert "python scripts/ci/check_api_compat.py --self-test docs/openapi.json" in runs
+    assert any("check_api_compat.py /tmp/openapi-base.json docs/openapi.json" in r for r in runs)
+    assert os.access(REPO_ROOT / "scripts" / "ci" / "check_api_compat.py", os.X_OK)
 
 
 WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))
@@ -217,7 +236,7 @@ def test_ci_and_make_type_check_the_same_files() -> None:
 
 
 def test_pre_commit_ruff_matches_the_pinned_ruff() -> None:
-    pinned = re.search(r"^ruff==(\S+)$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
+    pinned = re.search(r"^ruff==([^\s\\]+) \\$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
     hooks = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
     [ruff] = [r for r in hooks["repos"] if r["repo"].endswith("/ruff-pre-commit")]
     assert pinned and ruff["rev"] == f"v{pinned.group(1)}"
@@ -272,9 +291,11 @@ def test_the_parallel_tier_runs_beside_the_serial_job_until_it_is_proven() -> No
 
 def test_a_nightly_job_runs_the_suite_in_random_order_with_a_pinned_plugin() -> None:
     nightly = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "nightly.yml").read_text())
-    assert re.fullmatch(r"\d+\.\d+\.\d+", nightly["env"]["PYTEST_RANDOMLY_VERSION"])
+    lock = (REPO_ROOT / "scripts" / "ci" / "requirements-nightly.txt").read_text()
+    assert re.search(r"^pytest-randomly==\d+\.\d+\.\d+ \\\n    --hash=sha256:[0-9a-f]{64}", lock, re.MULTILINE)
     runs = " ".join(s.get("run", "") for s in nightly["jobs"]["random-order"]["steps"])
-    assert '"pytest-randomly==${PYTEST_RANDOMLY_VERSION}"' in runs and "pytest -p randomly" in runs
+    assert "pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt" in runs
+    assert "pytest -p randomly" in runs
     # Installed, pytest-randomly shuffles every run: it stays out of the dev requirements.
     assert "pytest-randomly" not in (REPO_ROOT / "requirements-dev.txt").read_text()
 
@@ -302,6 +323,7 @@ def test_compare_junit_requires_the_same_tests_and_outcomes(tmp_path: Path) -> N
 
 RELEASE = REPO_ROOT / ".github" / "workflows" / "release-images.yml"
 DEPLOY = REPO_ROOT / ".github" / "workflows" / "deploy.yml"
+TRAIN = REPO_ROOT / ".github" / "workflows" / "release-train.yml"
 COSIGN_INSTALLER = re.compile(r"^sigstore/cosign-installer@[0-9a-f]{40}$")
 SIGNER = "https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main"
 ISSUER = "https://token.actions.githubusercontent.com"
@@ -315,7 +337,7 @@ def _load(path: Path) -> Dict[str, Any]:
 
 
 def test_release_and_deploy_pin_every_action_with_its_version() -> None:
-    for path in (RELEASE, DEPLOY):
+    for path in (RELEASE, DEPLOY, TRAIN):
         for line in path.read_text().splitlines():
             if re.match(r"^\s*(- )?uses: [^.]", line):
                 assert re.search(r"@[0-9a-f]{40} # v\d+\.\d+\.\d+$", line), f"{path.name}: {line.strip()}"
@@ -351,10 +373,17 @@ def test_id_token_write_is_scoped_to_the_signing_job_only() -> None:
         wf = _load(path)
         assert "id-token" not in (wf.get("permissions") or {}), path.name
         holders += [f"{path.name}:{n}" for n, j in wf["jobs"].items() if (j.get("permissions") or {}).get("id-token")]
-    assert holders == ["release-images.yml:sign"]
-    assert _load(RELEASE)["jobs"]["sign"]["permissions"] == {
+    assert holders == ["release-images.yml:sign", "release-images.yml:attest-release-assets"]
+    jobs = _load(RELEASE)["jobs"]
+    assert jobs["sign"]["permissions"] == {
         "contents": "read", "packages": "write", "id-token": "write", "attestations": "write",
     }
+    # SEC1.2: the release SBOMs and VEX are attested by a job that, like `sign`, runs only pinned
+    # actions on files another job produced: no checkout, no shell step.
+    attest = jobs["attest-release-assets"]
+    assert attest["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}
+    assert all("run" not in s for s in attest["steps"])
+    assert [s["uses"].split("@")[0] for s in attest["steps"]] == ["actions/download-artifact", "actions/attest"]
 
 
 def test_deploy_verifies_signature_and_provenance_before_touching_the_host() -> None:
@@ -384,6 +413,8 @@ def test_signing_and_verifying_use_the_same_cosign() -> None:
     signer = installer(_load(RELEASE)["jobs"]["sign"]["steps"])
     verifier = installer(_load(DEPLOY)["jobs"]["deploy"]["steps"])
     assert signer["uses"] == verifier["uses"] and signer["with"] == verifier["with"]
+    train = installer(_load(TRAIN)["jobs"]["gates"]["steps"])
+    assert train["uses"] == verifier["uses"] and train["with"] == verifier["with"]
     assert re.fullmatch(r"v3\.\d+\.\d+", signer["with"]["cosign-release"])
 
 
@@ -440,3 +471,114 @@ def test_verify_step_fails_closed(tmp_path: Path, cosign_rc: int, gh_rc: int, er
     assert proc.returncode == 1
     assert "::error::" in proc.stdout and error in proc.stdout
     assert "verified:" not in proc.stdout, "the first failure stops the step"
+
+
+# --------------------------------------------------------------------------- ARCH-E1.5: release trains
+
+TAG_MOVES = ("git/refs", "imagetools create", "gh release create", "gh workflow run")
+CHECK_GATES = "Check the release gates (CI, upgrade and install rehearsals, signed images)"
+RESOLVE = "Resolve image digests and source commit"
+
+
+def _step_named(steps_: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    return next(s for s in steps_ if s.get("name") == name)
+
+
+def test_release_train_runs_weekly_or_by_hand_on_main_only() -> None:
+    wf = _load(TRAIN)
+    on = wf[True] if True in wf else wf["on"]  # PyYAML reads the bare `on` key as boolean true
+    assert set(on) == {"schedule", "workflow_dispatch"}, "no push or pull_request trigger near tag-writing rights"
+    [cron] = [entry["cron"] for entry in on["schedule"]]
+    assert cron.split()[4] == "4", "the partner train leaves on Thursday"
+    assert set(on["workflow_dispatch"]["inputs"]) == {"promote", "lts"}
+    assert wf["concurrency"] == {"group": "release-train", "cancel-in-progress": False}
+    gates_if = wf["jobs"]["gates"]["if"]
+    assert "github.repository == 'gapilongo/SOC'" in gates_if and "github.ref == 'refs/heads/main'" in gates_if
+
+
+def test_release_train_permissions_are_split_and_least_privilege() -> None:
+    """The job that verifies holds no write right; the job that writes runs no repository code and no OIDC."""
+    wf = _load(TRAIN)
+    assert wf["permissions"] == {"contents": "read"}
+    jobs = wf["jobs"]
+    assert set(jobs) == {"gates", "release"}
+    assert jobs["gates"]["permissions"] == {
+        "contents": "read", "actions": "read", "packages": "read", "attestations": "read",
+    }
+    release = jobs["release"]
+    assert release["permissions"] == {"contents": "write", "packages": "write", "actions": "write"}
+    assert release["needs"] == "gates" and release["if"] == "needs.gates.outputs.skip == 'false'"
+    assert release["environment"] == "release"
+    assert not any(s.get("uses", "").startswith("actions/checkout@") for s in release["steps"])
+    assert not any("scripts/" in s.get("run", "") for s in release["steps"])
+    assert not any("continue-on-error" in job for job in jobs.values())
+    assert not any("continue-on-error" in s for job in jobs.values() for s in job["steps"])
+
+
+def test_release_train_verifies_like_deploy_before_any_tag_moves() -> None:
+    train, deploy = _load(TRAIN), _load(DEPLOY)
+    for key in ("APP_REPO", "FRONTEND_REPO", "SIGNER_REPO", "SIGNER_IDENTITY", "SIGNER_OIDC_ISSUER"):
+        assert train["env"][key] == deploy["env"][key], key
+    gates = train["jobs"]["gates"]
+    names = [s.get("name", s.get("uses", "")) for s in gates["steps"]]
+    i = names.index(VERIFY_STEP)
+    verify = gates["steps"][i]
+    assert verify["run"] == _step_named(deploy["jobs"]["deploy"]["steps"], VERIFY_STEP)["run"], "the deploy's checks"
+    assert verify["env"]["APP_REF"] == "${{ steps.images.outputs.app_ref }}"
+    assert verify["env"]["FRONTEND_REF"] == "${{ steps.images.outputs.frontend_ref }}"
+    assert names.index("Plan the release") < names.index(CHECK_GATES) < names.index(RESOLVE) < i
+    assert COSIGN_INSTALLER.match(gates["steps"][i - 1]["uses"])
+    assert i == len(names) - 1, "verification is the last step of the gates job"
+    # Nothing moves in the verifying job; the moving job starts only once it succeeded.
+    assert not any(m in s.get("run", "") for s in gates["steps"] for m in TAG_MOVES)
+    release = train["jobs"]["release"]
+    assert release["needs"] == "gates"
+    # What moves is exactly the digests that were verified, by digest.
+    assert gates["outputs"]["app_digest"] == "${{ steps.images.outputs.app_digest }}"
+    assert gates["outputs"]["frontend_digest"] == "${{ steps.images.outputs.frontend_digest }}"
+    assert release["env"]["APP_DIGEST"] == "${{ needs.gates.outputs.app_digest }}"
+    assert release["env"]["FRONTEND_DIGEST"] == "${{ needs.gates.outputs.frontend_digest }}"
+    move = _step_named(release["steps"], "Move the channel tags to the verified digests")["run"]
+    assert '"$APP_REPO@$APP_DIGEST"' in move and '"$FRONTEND_REPO@$FRONTEND_DIGEST"' in move
+    assert r"^(partner|lts|lts-[0-9]+\.[0-9]+)$" in move
+    resolve = _step_named(gates["steps"], RESOLVE)["run"]
+    assert '[ "$(revision_of "$ref")" = "$COMMIT" ]' in resolve, "the images were built from the tagged commit"
+
+
+def test_release_train_gates_are_the_blocking_rehearsal_jobs() -> None:
+    """Acceptance (ARCH-E1.5): no tag unless the N-1 upgrade rehearsal and the install rehearsal passed."""
+    train = _load(TRAIN)
+    gates = [g.strip() for g in train["env"]["RELEASE_GATES"].splitlines() if g.strip()]
+    ci_jobs = workflow()["jobs"]
+    by_name = {job["name"]: job for job in ci_jobs.values()}
+    for gate in gates:
+        assert gate in by_name, f"RELEASE_GATES names no ci.yml job: {gate}"
+        assert "continue-on-error" not in by_name[gate], gate
+    assert ci_jobs["upgrade"]["name"] in gates  # the N-1 and LTS upgrade rehearsals
+    assert ci_jobs["test"]["name"] in gates  # the whole suite, including the install rehearsal
+    assert (REPO_ROOT / "tests" / "integration" / "e2e" / "test_first_run.py").is_file()
+    check = _step_named(train["jobs"]["gates"]["steps"], CHECK_GATES)
+    assert check["run"] == 'scripts/ci/release_train.sh gates "$COMMIT"'
+    assert check["env"]["COMMIT"] == "${{ steps.plan.outputs.commit }}"
+    assert os.access(REPO_ROOT / "scripts" / "ci" / "release_train.sh", os.X_OK)
+    lint = next(s for s in steps() if s.get("name") == "Shellcheck")
+    assert "scripts/ci/release_train.sh" in lint["run"]
+
+
+def test_release_train_hands_new_tags_to_the_signed_release_path() -> None:
+    """The train builds and signs nothing: Release images re-tags the main digests and publishes the assets."""
+    release_images = _load(RELEASE)
+    on = release_images[True] if True in release_images else release_images["on"]
+    assert "workflow_dispatch" in on and on["workflow_dispatch"] is None, "no inputs: the tag ref is the input"
+    promote = release_images["jobs"]["promote"]
+    assert "github.event_name == 'workflow_dispatch'" in promote["if"]
+    assert "startsWith(github.ref, 'refs/tags/v')" in promote["if"]
+    assert r"^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$" in _step_named(promote["steps"], "Check the tag")["run"]
+    steps_ = _load(TRAIN)["jobs"]["release"]["steps"]
+    runs = [s.get("run", "") for s in steps_]
+    tag = next(i for i, r in enumerate(runs) if '/git/refs" -f ref="refs/tags/$TAG"' in r)
+    start = runs.index('gh workflow run release-images.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"')
+    assert tag < start
+    assert "gh release create" in runs[tag] and "--prerelease" in runs[tag]
+    uses = [s.get("uses", "") for s in steps_]
+    assert not any(u.startswith(("docker/build-push-action@", "sigstore/", "actions/attest@")) for u in uses)

@@ -1,4 +1,4 @@
-# Build context allowlist: the image needs only the pinned requirements, the
+# Build context allowlist: the image needs only the hash-locked requirements, the
 # package metadata, the application source, the reference configs and the
 # health probe. Everything else (VCS data, local secrets, caches, tests,
 # frontend sources) stays out of the context and therefore out of the image.
@@ -12,6 +12,7 @@
 !src/lg_sotf/
 !configs/
 !docker/healthcheck.py
+!docker/requirements-build.txt
 
 # Never ship bytecode, build metadata or local environment files.
 **/__pycache__

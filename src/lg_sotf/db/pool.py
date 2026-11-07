@@ -10,6 +10,12 @@ API/worker runtime role cannot bypass isolation by setting the GUC.
 In a shadow run (:mod:`lg_sotf.security.shadow`) every transaction and bare
 connection is read only, whatever the caller asked for: a write that no
 egress boundary diverted fails instead of committing.
+
+:meth:`Database.run_tenant_tx` and :func:`retry_stale_statement` run a
+transaction again, once, when a migration made one of the pool's cached
+prepared statements stale (a rolling upgrade migrates while the previous
+release is still running). The second attempt opens a new transaction, so in
+a shadow run it is read only too.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date, datetime
 from datetime import time as dt_time
-from typing import Any, AsyncIterator, Mapping, Optional, TypeAlias, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, TypeAlias, TypeVar, Union
 
 import asyncpg
 import structlog
@@ -34,12 +40,37 @@ from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted,
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.types import Connection
 from lg_sotf.db.urls import redact_url, to_libpq_url
+from lg_sotf.observability.metrics import record_stale_statement_retry
 from lg_sotf.security.shadow import in_shadow
 from lg_sotf.settings import DatabaseSettings, Settings
 
 log = structlog.get_logger(__name__)
 
 SSLArg: TypeAlias = Union[bool, str, ssl.SSLContext, None]
+T = TypeVar("T")
+
+# Raised by asyncpg when a schema change made a statement it had prepared stale: the result type of
+# a cached statement changed (ALTER TABLE) or a cached type did. asyncpg clears the statement and type
+# caches of every connection in the pool before raising, but inside a transaction it cannot run the
+# statement again itself: Postgres has aborted (and on exit rolled back) the whole transaction.
+STALE_STATEMENT_ERRORS = (asyncpg.InvalidCachedStatementError, asyncpg.OutdatedSchemaCacheError)
+
+
+async def retry_stale_statement(attempt: Callable[[], Awaitable[T]]) -> T:
+    """Await ``attempt()``; on a stale cached statement, await it once more.
+
+    ``attempt`` must be one whole transaction that only talks to the
+    database, so that running it again repeats nothing outside the database.
+    The second attempt prepares its statements afresh. A second stale
+    statement (another migration in between) is raised.
+    """
+    try:
+        return await attempt()
+    except STALE_STATEMENT_ERRORS as exc:
+        log.warning("db.stale_statement_retry", error=type(exc).__name__)
+        record_stale_statement_retry()
+    return await attempt()
+
 
 # A ``\u0000`` escape that is not itself an escaped backslash followed by "u0000".
 _NUL_ESCAPE = re.compile(r"(?<!\\)((?:\\\\)*)\\u0000")
@@ -252,6 +283,22 @@ class Database:
             async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
                 yield conn
+
+    async def run_tenant_tx(
+        self, tenant_id: str, work: Callable[[Connection], Awaitable[T]], *, readonly: bool = False
+    ) -> T:
+        """``await work(conn)`` in :meth:`tenant_tx`, retried once (:func:`retry_stale_statement`).
+
+        ``work`` must only run statements on ``conn``. A retry opens a new
+        :meth:`tenant_tx` for the same ``tenant_id``, so it is scoped exactly
+        like the first attempt.
+        """
+
+        async def attempt() -> T:
+            async with self.tenant_tx(tenant_id, readonly=readonly) as conn:
+                return await work(conn)
+
+        return await retry_stale_statement(attempt)
 
     @asynccontextmanager
     async def system_tx(self, *, readonly: bool = False) -> AsyncIterator[Connection]:

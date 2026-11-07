@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
 import { qk } from '../api/queryKeys';
-import type { AccuracyBlock, AccuracyReportOut, DetectionOut, FeedbackRate, ValueDay, ValueReportOut } from '../api/types';
+import type { AccuracyBlock, AccuracyReportOut, DetectionOut, FeedbackRate, RateInterval, ValueDay, ValueReportOut } from '../api/types';
 import { useApi, useAuth } from '../auth/AuthContext';
 import { can } from '../auth/roles';
 import { Badge } from '../components/Badge';
@@ -13,7 +13,7 @@ import { useToast } from '../components/Toast';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, Truncated, cx } from '../components/ui';
 import { downloadText } from '../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../lib/format';
-import { SUGGESTION_LABEL, defaultRange, formatHours, formatPct, formatRange, monthOf, rangeError } from '../lib/reports';
+import { SUGGESTION_LABEL, defaultRange, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rateDetail } from '../lib/reports';
 
 type Tab = 'value' | 'accuracy' | 'detections';
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -53,9 +53,25 @@ function Notes({ notes }: { notes: string[] }) {
 function InsufficientData({ samples, needed }: { samples: number; needed: number }) {
   return (
     <p role="status" className="rounded-control border border-warn/60 bg-tint-warn px-4 py-3 text-sm text-warn-fg">
-      Insufficient data: {formatInt(samples)} analyst-decided alert{samples === 1 ? '' : 's'} in this range; at least {formatInt(needed)} are needed
-      before these rates mean much. They are shown for reference only.
+      {notEnoughData(samples, needed)}: too few analyst-decided alerts in this range for these rates to mean much. They are shown
+      for reference only.
     </p>
+  );
+}
+
+/** The status badge of a rate with a minimum sample: "ok", or the shared small-sample wording. */
+function SampleBadge({ status, n, needed }: { status: string; n: number; needed: number }) {
+  return status === 'ok' ? <Badge tone="good">ok</Badge> : <Badge tone="warn">{notEnoughData(n, needed)}</Badge>;
+}
+
+/** A table cell's rate with its sample and interval underneath: "75.0%" over "3 of 4; 95% CI ...". */
+function RateCell({ r, fallback, digits = 1 }: { r: RateInterval | null | undefined; fallback: number | null; digits?: number }) {
+  if (!r || r.rate === null) return <>{formatRate(r, fallback, digits)}</>;
+  return (
+    <>
+      {formatPct(r.rate, digits)}
+      <span className="block text-xs text-muted">{rateDetail(r)}</span>
+    </>
   );
 }
 
@@ -159,7 +175,7 @@ function ValueTab({ from, to }: { from: string; to: string }) {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-        <Tile label="Handled without a human" value={formatPct(t.handled_without_human_rate)} hint={`${formatInt(t.handled_without_human)} of ${formatInt(t.handled_without_human + t.needed_human)} finished alerts`} />
+        <Tile label="Handled without a human" value={formatPct(t.handled_without_human_rate)} hint={`${formatInt(t.handled_without_human)} of ${formatInt(t.handled_without_human + t.needed_human)} finished alerts. ${formatInterval(t.handled_without_human_rate_ci)}`} />
         <Tile label="Analyst hours saved (estimate)" value={formatHours(t.analyst_hours_saved)} hint={`${r.minutes_per_alert} min per handled alert (tenant setting)`} />
         <Tile label="Alerts ingested" value={formatInt(t.alerts_ingested)} hint={`${formatInt(t.in_progress)} still in progress`} />
         <Tile label="Auto-closed benign" value={formatInt(t.auto_closed_benign)} hint={`${formatInt(t.suppressed_by_rule)} by suppression rules, ${formatInt(t.verdict_cache_hits)} by cached analyst verdicts`} />
@@ -253,15 +269,22 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
   );
 }
 
+/** The API's minimum answers before a feedback rate is "ok" (services/reporting.py MIN_FEEDBACK_SAMPLES). */
+const MIN_FEEDBACK_SAMPLES = 10;
+
 function feedbackRow(label: string, r: FeedbackRate) {
   return (
     <tr key={label} className="border-t border-subtle tabular-nums">
       <th scope="row" className="py-1.5 pr-3 text-left font-normal text-body">
         {label}
       </th>
-      <td className="py-1.5 pr-3 text-right">{formatPct(r.rate)}</td>
+      <td className="py-1.5 pr-3 text-right">
+        <RateCell r={feedbackInterval(r)} fallback={r.rate} />
+      </td>
       <td className="py-1.5 pr-3 text-right">{formatInt(r.samples)}</td>
-      <td className="py-1.5">{r.status === 'ok' ? <Badge tone="good">ok</Badge> : <Badge tone="warn">insufficient data</Badge>}</td>
+      <td className="py-1.5">
+        <SampleBadge status={r.status} n={r.samples} needed={MIN_FEEDBACK_SAMPLES} />
+      </td>
     </tr>
   );
 }
@@ -285,15 +308,15 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
           value={formatPct(o.false_negative_rate)}
           hint={
             <>
-              AI said benign on {formatInt(o.false_negatives)} of {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. {formatRange(o.false_negative_ci95)}
+              AI said benign on {formatInt(o.false_negatives)} of {formatInt(o.analyst_malicious)} alerts an analyst confirmed malicious. {formatInterval(o.false_negative_rate_ci)}
             </>
           }
         />
-        <Tile label="Agreement with analysts" value={formatPct(o.agreement_rate)} hint={`${formatInt(o.agreement)} of ${formatInt(o.samples)} decisions. ${formatRange(o.agreement_ci95)}`} />
+        <Tile label="Agreement with analysts" value={formatPct(o.agreement_rate)} hint={`${formatInt(o.agreement)} of ${formatInt(o.samples)} decisions. ${formatInterval(o.agreement_rate_ci)}`} />
         <Tile
           label="False-positive rate"
           value={formatPct(o.false_positive_rate)}
-          hint={`AI said malicious on ${formatInt(o.false_positives)} of ${formatInt(o.analyst_benign)} benign alerts; inconclusive on ${formatPct(o.ai_inconclusive_rate)} of all`}
+          hint={`AI said malicious on ${formatInt(o.false_positives)} of ${formatInt(o.analyst_benign)} benign alerts. ${formatInterval(o.false_positive_rate_ci)} Inconclusive on ${formatRate(o.ai_inconclusive_rate_ci, o.ai_inconclusive_rate)} of all.`}
         />
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-2">
@@ -325,9 +348,15 @@ function AccuracyTab({ from, to }: { from: string; to: string }) {
                         {m.model}
                       </th>
                       <td className="py-1.5 pr-3 text-right">{formatInt(m.accuracy.samples)}</td>
-                      <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.agreement_rate)}</td>
-                      <td className="py-1.5 pr-3 text-right">{formatPct(m.accuracy.false_negative_rate)}</td>
-                      <td className="py-1.5">{m.accuracy.status === 'ok' ? <Badge tone="good">ok</Badge> : <Badge tone="warn">insufficient data</Badge>}</td>
+                      <td className="py-1.5 pr-3 text-right">
+                        <RateCell r={m.accuracy.agreement_rate_ci} fallback={m.accuracy.agreement_rate} />
+                      </td>
+                      <td className="py-1.5 pr-3 text-right">
+                        <RateCell r={m.accuracy.false_negative_rate_ci} fallback={m.accuracy.false_negative_rate} />
+                      </td>
+                      <td className="py-1.5">
+                        <SampleBadge status={m.accuracy.status} n={m.accuracy.samples} needed={r.min_samples} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -421,8 +450,8 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.volume)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">
-                        {formatPct(d.benign_rate, 0)}
-                        <span className="block text-xs text-muted">of {formatInt(d.decided)} decided</span>
+                        <RateCell r={d.benign_rate_ci} fallback={d.benign_rate} digits={0} />
+                        {!d.benign_rate_ci && <span className="block text-xs text-muted">of {formatInt(d.decided)} decided</span>}
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.auto_closed)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.analyst_false_positive)}</td>

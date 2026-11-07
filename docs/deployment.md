@@ -41,10 +41,12 @@ make image IMAGE=registry.example.com/lg-sotf:1.0.0 \
      PYTHON_BASE_IMAGE=mirror.gcr.io/library/python:3.11-slim
 ```
 
-* Builder stage installs the **pinned** `requirements.txt` (binary wheels only,
-  no compiler) and the application wheel with `--no-deps`, then `pip check`.
-* Runtime stage is `python:3.11-slim` (override with `--build-arg BASE_IMAGE=`,
-  ideally digest-pinned), contains no build tools and no pip, and runs as uid/gid
+* Builder stage installs the **hash-locked** `requirements.txt` with
+  `pip install --require-hashes` (binary wheels only, no compiler) and the
+  application wheel with `--no-deps`, then `pip check`.
+* Runtime stage is `python:3.11-slim`, pinned by digest in `docker/Dockerfile`
+  (override with `--build-arg BASE_IMAGE=`, ideally with the same digest),
+  contains no build tools and no pip, and runs as uid/gid
   **10001**. Only `/tmp` must be writable, so it runs with a read-only root
   filesystem.
 * `dumb-init` is PID 1 (signal forwarding, zombie reaping); `SIGTERM` starts a
@@ -619,11 +621,19 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
    CI rehearses this upgrade on every change (`scripts/ci/upgrade_rehearsal.sh`):
    the previous release leaves runs waiting, the new release migrates the
    database while the old one still runs, runs this check, and must resume and
-   close every waiting run.
+   close every waiting run. It does the same from the latest LTS release, so
+   upgrading from the LTS line straight to the new release is tested too
+   ([releases.md](releases.md)).
 
 Migrations must be expand/contract (additive first, removals in a later
 release) so the previous release keeps working against the new schema during
-the rollout. `lg-sotf migrate` is idempotent and
+the rollout. A migration that changes a table makes the statements the
+running pods have prepared on it stale, and the first transaction to use one
+fails with `InvalidCachedStatementError`. A worker runs its run transactions
+again once, in a new transaction for the same tenant (log event
+`db.stale_statement_retry`, metric `lgsotf_db_stale_statement_retries_total`),
+so in-flight runs finish normally. An API request that hits it is not retried
+and fails once; the client can send it again. `lg-sotf migrate` is idempotent and
 safe to re-run. Rolling back the application is `helm rollback`; schema
 downgrades are not automatic; restore from backup if the release notes say a
 migration is not backward compatible.

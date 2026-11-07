@@ -15,7 +15,7 @@ application.
 ```sh
 git clone https://github.com/gapilongo/SOC.git && cd SOC
 python3.11 -m venv .venv && . .venv/bin/activate
-make dev          # pinned dependencies from requirements-dev.txt, editable install
+make dev          # hash-locked dependencies from requirements-dev.txt, editable install (make lock re-locks)
 pre-commit install --hook-type pre-commit --hook-type pre-push
 make check        # what CI's lint and fast jobs run: ruff, mypy, import contracts, unit + deploy tests
 
@@ -59,8 +59,10 @@ its README.
   Fixtures use documentation address ranges (192.0.2.0/24, 198.51.100.0/24,
   203.0.113.0/24), `example.com` names and are marked synthetic. CI runs
   Gitleaks.
-* **Dependencies** are pinned in `requirements*.txt`; explain why a new one
-  is needed. CI runs `pip-audit` and Bandit.
+* **Dependencies** are pinned in `requirements*.txt`. A new one must pass
+  the admission checklist in
+  [docs/dependency-policy.md](docs/dependency-policy.md), answered in the
+  pull request. CI runs `pip-audit` and Bandit.
 
 ## Style
 

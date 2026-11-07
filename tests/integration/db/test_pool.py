@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, Dict, List
 
 import asyncpg
 import pytest
 
 from lg_sotf.db.errors import DatabaseUnavailable, InvalidTenantId, PoolExhausted
 from lg_sotf.db.pool import Database
-from tests.integration.db._support import db_settings
+from lg_sotf.db.types import Connection
+from lg_sotf.observability.metrics import REGISTRY
+from tests.integration.db._support import TENANT_A, db_settings
 
 pytestmark = pytest.mark.asyncio
 
@@ -153,3 +156,46 @@ async def test_unreachable_database_raises_unavailable() -> None:
     with pytest.raises(DatabaseUnavailable) as info:
         await asyncio.wait_for(db.open(), timeout=10)
     assert "wrong" not in str(info.value)
+
+
+def _stale_retries() -> float:
+    return REGISTRY.get_sample_value("lgsotf_db_stale_statement_retries_total") or 0.0
+
+
+async def test_run_tenant_tx_runs_a_transaction_a_migration_made_stale_again(
+    db: Database, migrated_database_url: str
+) -> None:
+    """ARCH-E1.6: a migration makes a cached statement stale mid-transaction; the whole transaction runs again.
+
+    The failed attempt is rolled back, and the retry is scoped to the same tenant as the first attempt.
+    """
+    one_conn = Database(db_settings(migrated_database_url, pool_min=1, pool_max=1))
+    tenants_seen: List[str] = []
+
+    async def work(conn: Connection) -> Dict[str, Any]:
+        tenants_seen.append(await conn.fetchval("SELECT current_setting('app.tenant_id')"))
+        await conn.execute("INSERT INTO arch_e1_6_stale_probe (id) VALUES ($1)", len(tenants_seen) + 1)
+        return dict(await conn.fetchrow("SELECT * FROM arch_e1_6_stale_probe WHERE id = $1", 1))
+
+    async with db.connection() as ddl:
+        await ddl.execute("CREATE TABLE arch_e1_6_stale_probe (id int PRIMARY KEY)")
+        await ddl.execute("INSERT INTO arch_e1_6_stale_probe VALUES (1)")
+        try:
+            await one_conn.open()
+            assert await one_conn.run_tenant_tx(TENANT_A, work) == {"id": 1}  # caches the statements
+
+            await ddl.execute("ALTER TABLE arch_e1_6_stale_probe ADD COLUMN note text")
+            before = _stale_retries()
+            assert await one_conn.run_tenant_tx(TENANT_A, work) == {"id": 1, "note": None}
+            assert _stale_retries() == before + 1
+            assert tenants_seen == [TENANT_A] * 3
+            assert await ddl.fetchval("SELECT array_agg(id ORDER BY id) FROM arch_e1_6_stale_probe") == [1, 2, 4]
+
+            # Without the retry the same change fails the transaction.
+            await ddl.execute("ALTER TABLE arch_e1_6_stale_probe ADD COLUMN extra text")
+            with pytest.raises(asyncpg.InvalidCachedStatementError):
+                async with one_conn.tenant_tx(TENANT_A) as conn:
+                    await work(conn)
+        finally:
+            await one_conn.close()
+            await ddl.execute("DROP TABLE arch_e1_6_stale_probe")

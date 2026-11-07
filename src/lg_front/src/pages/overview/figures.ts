@@ -2,7 +2,7 @@
 
 import type { DashboardOut } from '../../api/types';
 import { formatDuration, formatInt } from '../../lib/format';
-import { formatPct } from '../../lib/reports';
+import { formatPct, notEnoughData } from '../../lib/reports';
 
 export interface OverviewWindow {
   hours: number;
@@ -39,7 +39,7 @@ export interface Figure {
 }
 
 function notEnough(n: number): Figure {
-  return { value: '—', sub: `Not enough data (n=${formatInt(n)}; at least ${MIN_SAMPLE} needed)`, enough: false };
+  return { value: '—', sub: notEnoughData(n, MIN_SAMPLE), enough: false };
 }
 
 /** Share of the window's finished alerts closed without an analyst. */

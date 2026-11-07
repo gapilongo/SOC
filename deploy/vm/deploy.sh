@@ -422,8 +422,9 @@ render_edge() {
   sed -e "s|@@ENV@@|$ENV_NAME|g" -e "s|@@DOMAIN@@|$DOMAIN|g" -e "s|@@TLS@@|$tls|" \
     "$RELEASE_DIR/deploy/vm/caddy/site.caddy.tmpl" | atomic_write "$conf/sites/$ENV_NAME.caddy" 0644
   atomic_write "$EDGE_DIR/compose.yml" 0644 < "$RELEASE_DIR/deploy/vm/docker-compose.edge.yml"
+  # An empty CADDY_IMAGE keeps the digest pin in docker-compose.edge.yml (one place to bump).
   printf '%s=%s\n' \
-    CADDY_IMAGE "${VALUES[CADDY_IMAGE]:-caddy:2.11-alpine}" \
+    CADDY_IMAGE "${VALUES[CADDY_IMAGE]:-}" \
     CADDY_IP "$CADDY_IP" \
     PROXY_NETWORK "$PROXY_NETWORK" \
     EDGE_HTTP_PORT "$HTTP_PORT" \

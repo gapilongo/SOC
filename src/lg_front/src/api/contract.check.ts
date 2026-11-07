@@ -82,6 +82,7 @@ import type {
   PreviewGuardrailOut,
   ProposeSuppressionIn,
   Quotas,
+  RateInterval,
   RecoveryCodesOut,
   ReprocessOut,
   ResponsePreviewOut,
@@ -195,6 +196,7 @@ export interface ResponseContract {
   PreviewActionOut: Response<Wire<Schemas['PreviewActionOut']>, PreviewActionOut>;
   PreviewConnectorOut: Response<Wire<Schemas['PreviewConnectorOut']>, PreviewConnectorOut>;
   PreviewGuardrailOut: Response<Wire<Schemas['PreviewGuardrailOut']>, PreviewGuardrailOut>;
+  RateInterval: Response<Wire<Schemas['RateInterval']>, RateInterval>;
   RecoveryCodesOut: Response<Wire<Schemas['RecoveryCodesOut']>, RecoveryCodesOut>;
   ReprocessOut: Response<Wire<Schemas['ReprocessOut']>, ReprocessOut>;
   ResponsePreviewOut: Response<Wire<Schemas['ResponsePreviewOut']>, ResponsePreviewOut>;

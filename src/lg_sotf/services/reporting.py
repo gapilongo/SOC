@@ -49,13 +49,15 @@ Accuracy (alerts whose analyst decision was recorded in the window):
   samples (an ``inconclusive`` AI verdict never agrees);
 * fewer than :data:`MIN_ACCURACY_SAMPLES` samples is ``insufficient_data``.
 
+Every rate also comes as ``<name>_ci`` (``FeedbackRate`` carries the fields itself): ``{rate, n,
+ci_low, ci_high}`` with its 95% Wilson interval (``lg_sotf.domain.rates``, shared with eval and PoV).
+
 Only escalated alerts have an analyst decision, so accuracy describes the
 alerts the AI sent to a human, not the ones it closed on its own.
 """
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, fields
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -66,6 +68,7 @@ from redis.exceptions import RedisError
 
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
+from lg_sotf.domain.rates import RateInterval, rate_interval, ratio
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.pricing import LOCAL_PREFIX
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
@@ -91,7 +94,6 @@ MIN_DECIDED_FOR_SUGGESTION = 10
 TUNE_BENIGN_RATE = 0.80
 SUPPRESSION_BENIGN_RATE = 0.95
 MIN_CONFIRMED_BENIGN = 3
-Z_95 = 1.959963984540054
 
 AnalystClass = Literal["malicious", "benign"]
 ANALYST_CLASSES: Tuple[str, ...] = ("malicious", "benign")
@@ -178,11 +180,6 @@ def month_window(month: str) -> ReportWindow:
 # -------------------------------------------------------------- pure math
 
 
-def ratio(numerator: float, denominator: float) -> Optional[float]:
-    """``numerator / denominator``; ``None`` (never 0) when the denominator is zero."""
-    return None if denominator == 0 else numerator / denominator
-
-
 def mean_or_none(total: float, count: int) -> Optional[float]:
     return None if count == 0 else total / count
 
@@ -192,19 +189,6 @@ def hours_saved(handled_without_human: int, minutes_per_alert: int) -> float:
     if handled_without_human <= 0 or minutes_per_alert <= 0:
         return 0.0
     return round(handled_without_human * minutes_per_alert / 60.0, 2)
-
-
-def wilson_interval(successes: int, trials: int, z: float = Z_95) -> Optional[Tuple[float, float]]:
-    """95 % Wilson score interval for a proportion; ``None`` without trials."""
-    if trials <= 0:
-        return None
-    if not 0 <= successes <= trials:
-        raise ValueError("successes must be between 0 and trials")
-    p = successes / trials
-    denom = 1 + z * z / trials
-    centre = (p + z * z / (2 * trials)) / denom
-    half = z * math.sqrt(p * (1 - p) / trials + z * z / (4 * trials * trials)) / denom
-    return (max(0.0, round(centre - half, 6)), min(1.0, round(centre + half, 6)))
 
 
 def severity_name(rank: Optional[int]) -> Optional[str]:
@@ -307,6 +291,7 @@ class ValueMetrics(BaseModel):
     needed_human: int
     in_progress: int
     handled_without_human_rate: Optional[float]
+    handled_without_human_rate_ci: Optional[RateInterval] = None
     analyst_hours_saved: float
     auto_closed_benign: int
     auto_contained: int
@@ -340,6 +325,7 @@ def value_metrics(s: ValueSums, minutes_per_alert: int) -> ValueMetrics:
         needed_human=s.needed_human,
         in_progress=max(0, s.ingested - decided),
         handled_without_human_rate=ratio(s.handled_without_human, decided),
+        handled_without_human_rate_ci=rate_interval(s.handled_without_human, decided),
         analyst_hours_saved=hours_saved(s.handled_without_human, minutes_per_alert),
         auto_closed_benign=s.auto_closed_benign,
         auto_contained=s.auto_contained,
@@ -446,6 +432,10 @@ class AccuracyBlock(BaseModel):
     false_positive_rate: Optional[float]
     ai_inconclusive: int
     ai_inconclusive_rate: Optional[float]
+    agreement_rate_ci: Optional[RateInterval] = None
+    false_negative_rate_ci: Optional[RateInterval] = None
+    false_positive_rate_ci: Optional[RateInterval] = None
+    ai_inconclusive_rate_ci: Optional[RateInterval] = None
 
 
 class ModelAccuracy(BaseModel):
@@ -457,6 +447,9 @@ class FeedbackRate(BaseModel):
     rate: Optional[float]
     samples: int
     status: Literal["ok", "insufficient_data"]
+    n: Optional[int] = None
+    ci_low: Optional[float] = None
+    ci_high: Optional[float] = None
 
 
 class FeedbackSummary(BaseModel):
@@ -489,8 +482,8 @@ ACCURACY_NOTES = (
     "that no threat was auto-closed; use the backtest (lg-sotf eval --from-history) for that question.",
     "The AI verdict is the one on the alert's first escalation, before any analyst input; the analyst "
     "class is the alert's latest decision other than needs_more_info.",
-    "Ranges are 95% Wilson intervals. With fewer samples than min_samples the result is marked "
-    "insufficient_data: the rates are shown but should not be relied on.",
+    "Every rate comes with its sample size n and a 95% Wilson interval. With fewer samples than min_samples "
+    "the result is marked insufficient_data: the rates are shown but should not be relied on.",
 )
 
 
@@ -507,29 +500,34 @@ def accuracy_block(pairs: Mapping[Tuple[str, str], int], min_samples: int = MIN_
     false_negatives = matrix["malicious"]["benign"]
     false_positives = matrix["benign"]["malicious"]
     inconclusive = matrix["malicious"]["inconclusive"] + matrix["benign"]["inconclusive"]
+    agree, fn = rate_interval(agreement, samples), rate_interval(false_negatives, analyst_malicious)
     return AccuracyBlock(
         samples=samples,
         status="ok" if samples >= min_samples else "insufficient_data",
         confusion_matrix=matrix,
         agreement=agreement,
-        agreement_rate=ratio(agreement, samples),
-        agreement_ci95=wilson_interval(agreement, samples),
+        agreement_rate=agree.rate,
+        agreement_ci95=agree.bounds,
         analyst_malicious=analyst_malicious,
         false_negatives=false_negatives,
-        false_negative_rate=ratio(false_negatives, analyst_malicious),
-        false_negative_ci95=wilson_interval(false_negatives, analyst_malicious),
+        false_negative_rate=fn.rate,
+        false_negative_ci95=fn.bounds,
         analyst_benign=analyst_benign,
         false_positives=false_positives,
         false_positive_rate=ratio(false_positives, analyst_benign),
         ai_inconclusive=inconclusive,
         ai_inconclusive_rate=ratio(inconclusive, samples),
+        agreement_rate_ci=agree,
+        false_negative_rate_ci=fn,
+        false_positive_rate_ci=rate_interval(false_positives, analyst_benign),
+        ai_inconclusive_rate_ci=rate_interval(inconclusive, samples),
     )
 
 
 def feedback_rate(rate: Optional[float], samples: int) -> FeedbackRate:
-    return FeedbackRate(
-        rate=rate, samples=samples, status="ok" if samples >= MIN_FEEDBACK_SAMPLES else "insufficient_data"
-    )
+    ci = rate_interval(0 if rate is None else round(rate * samples), samples)  # rate = yes answers / samples
+    status: Literal["ok", "insufficient_data"] = "ok" if samples >= MIN_FEEDBACK_SAMPLES else "insufficient_data"
+    return FeedbackRate(rate=rate, samples=samples, status=status, n=ci.n, ci_low=ci.ci_low, ci_high=ci.ci_high)
 
 
 def build_accuracy_report(
@@ -588,6 +586,7 @@ class Detection(BaseModel):
     decided: int
     benign: int
     benign_rate: Optional[float]
+    benign_rate_ci: Optional[RateInterval] = None
     malicious: int
     auto_closed: int
     analyst_false_positive: int
@@ -683,6 +682,7 @@ def detection_out(row: DetectionRow) -> Detection:
         decided=row.decided,
         benign=row.benign,
         benign_rate=ratio(row.benign, row.decided),
+        benign_rate_ci=rate_interval(row.benign, row.decided),
         malicious=row.malicious,
         auto_closed=row.auto_closed,
         analyst_false_positive=row.analyst_false_positive,

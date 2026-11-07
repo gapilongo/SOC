@@ -14,6 +14,7 @@ from lg_sotf.db.repos._base import (
     check_choice,
     fetch_one,
     require_aware,
+    retries_stale_statement,
     to_model,
     to_models,
     truncate,
@@ -227,6 +228,7 @@ class RunsRepo(Repository):
             )
         return [(r["alert_id"], r["severity"]) for r in rows]
 
+    @retries_stale_statement
     async def start(
         self,
         tenant_id: str,
@@ -318,6 +320,7 @@ class RunsRepo(Repository):
             return None
         return "waiting" if status in WAITING_RUN_STATUSES else "not_waiting"
 
+    @retries_stale_statement
     async def heartbeat(
         self,
         tenant_id: str,
@@ -418,6 +421,7 @@ class RunsRepo(Repository):
             conn=conn,
         )
 
+    @retries_stale_statement
     async def _finish(
         self,
         tenant_id: str,
@@ -468,6 +472,7 @@ class RunsRepo(Repository):
             raise LeaseLost(f"run {tenant_id}:{alert_id} is leased by another worker")
         raise InvalidTransition("workflow run", f"{tenant_id}:{alert_id}", run.status, to_status)
 
+    @retries_stale_statement
     async def set_graph_version(
         self, tenant_id: str, alert_id: str, version: int, *, conn: Optional[Connection] = None
     ) -> None:
@@ -480,6 +485,7 @@ class RunsRepo(Repository):
                 version,
             )
 
+    @retries_stale_statement
     async def get(self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None) -> WorkflowRun:
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow(

@@ -284,7 +284,7 @@ startup while it is set; remove it from your configuration. Metrics are Promethe
 | Dashboard | Panels (PromQL sketches) |
 |---|---|
 | Overview | request rate and 5xx ratio `sum(rate(lgsotf_http_requests_total{status=~"5.."}[5m])) / sum(rate(lgsotf_http_requests_total[5m]))`; p95 latency `histogram_quantile(0.95, sum by (le, route) (rate(lgsotf_http_request_seconds_bucket[5m])))`; pod restarts |
-| Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket[15m])))`; worker replicas |
+| Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket[15m])))`; worker replicas; transactions retried after a migration `increase(lgsotf_db_stale_statement_retries_total[1h])` (expected only around an upgrade) |
 | LLM | calls by model/agent/outcome; tokens `sum by (model, kind) (rate(lgsotf_llm_tokens_total[1h]))`; spend `sum by (model) (increase(lgsotf_llm_cost_usd_total[1d]))`; refusals and skipped calls by reason |
 | Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))` |
 | Ingestion | `lgsotf_ingest_events_total`, `lgsotf_source_polls_total` by outcome, `lgsotf_source_poll_seconds` |
