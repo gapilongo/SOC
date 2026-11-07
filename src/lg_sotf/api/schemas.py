@@ -9,6 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from lg_sotf.api.summary_schema import AlertSummaryJson
 from lg_sotf.models.vocabulary import Decision, Role, Scope, SourceType, VerificationState
 
 T = TypeVar("T")
@@ -224,7 +225,7 @@ class AlertOut(Out):
     ingested_at: datetime
     updated_at: datetime
     closed_at: Optional[datetime] = None
-    summary: Dict[str, Any] = Field(default_factory=dict)
+    summary: AlertSummaryJson = Field(default_factory=dict)
     case_key: Optional[str] = None
     source_name: Optional[str] = Field(default=None, description="The source's name; null once it is deleted.")
     entities_preview: Optional[EntitiesPreviewOut] = None

@@ -745,7 +745,646 @@
             "type": "string"
           },
           "summary": {
-            "additionalProperties": true,
+            "description": "What the workflow recorded about the alert. Every key is optional: a key appears once the step that writes it has run, and alerts processed by an older release may lack keys or hold other shapes.",
+            "properties": {
+              "actions": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "analysis": {
+                "description": "``alerts.summary.analysis``: the analysis digest plus the evidence behind it.",
+                "properties": {
+                  "certainty": {
+                    "type": "integer"
+                  },
+                  "conclusion": {
+                    "type": "string"
+                  },
+                  "corroborated_targets": {
+                    "items": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "history": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "llm_calls": {
+                    "type": "integer"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "reasoning": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "recommended_actions": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_corroborated": {
+                    "type": "boolean"
+                  },
+                  "rule_evidence": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_threat_score": {
+                    "type": "integer"
+                  },
+                  "rule_verdict": {
+                    "type": "string"
+                  },
+                  "simulated_evidence": {
+                    "type": "boolean"
+                  },
+                  "stop_reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "threat_indicators": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threat_score": {
+                    "type": "integer"
+                  },
+                  "tool_steps": {
+                    "type": "integer"
+                  },
+                  "tools": {
+                    "items": {
+                      "description": "One reputation lookup of the analysis agent (``alerts.summary.analysis.tools``).",
+                      "properties": {
+                        "checked_at": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "simulated": {
+                          "type": "boolean"
+                        },
+                        "target": {
+                          "type": "string"
+                        },
+                        "tool": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "verdict": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "close_reason": {
+                "type": "string"
+              },
+              "confidence": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "correlation": {
+                "properties": {
+                  "burst": {
+                    "type": "boolean"
+                  },
+                  "campaign_indicators": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "confidence": {
+                    "type": "integer"
+                  },
+                  "frequency_level": {
+                    "type": "string"
+                  },
+                  "indicator_count": {
+                    "type": "integer"
+                  },
+                  "indicator_types": {
+                    "additionalProperties": {
+                      "type": "integer"
+                    },
+                    "type": "object"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_skipped": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "related_alert_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "related_count": {
+                    "type": "integer"
+                  },
+                  "related_dispositions": {
+                    "additionalProperties": {
+                      "type": "integer"
+                    },
+                    "type": "object"
+                  },
+                  "score": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "description": "The routing decision after analysis (``lg_sotf.domain.routing.Decision``).",
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "disposition": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "route": {
+                        "enum": [
+                          "escalate",
+                          "plan_response",
+                          "close"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "detached_from": {
+                "type": "string"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "escalation_attached": {
+                "type": "boolean"
+              },
+              "escalation_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "llm_budget_exceeded": {
+                "type": "boolean"
+              },
+              "llm_models": {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "llm_refusals": {
+                "items": {
+                  "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                  "properties": {
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "category": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "llm_usage": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "response": {
+                "description": "``alerts.summary.response``: the response plan's playbook, evidence and action counts.",
+                "properties": {
+                  "auto": {
+                    "type": "integer"
+                  },
+                  "awaiting": {
+                    "type": "integer"
+                  },
+                  "blocked": {
+                    "type": "integer"
+                  },
+                  "done": {
+                    "type": "integer"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  },
+                  "threat_type": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "simulated_evidence": {
+                "type": "boolean"
+              },
+              "suppressed_by": {
+                "anyOf": [
+                  {
+                    "description": "What closed the alert at the gate: a suppression rule or a cached analyst verdict.",
+                    "properties": {
+                      "decision": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "rule_id": {
+                        "type": "string"
+                      },
+                      "source_alert_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threat_score": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "triage": {
+                "properties": {
+                  "confidence": {
+                    "type": "integer"
+                  },
+                  "llm_fp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_skipped": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "llm_tp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "phishing": {
+                    "description": "Email alerts: sender authentication, lookalikes and suspicious links (``lg_sotf.domain.phishing``).",
+                    "properties": {
+                      "impersonation": {
+                        "type": "string"
+                      },
+                      "lookalike_hosts": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "lookalikes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "sender_authenticated": {
+                        "type": "boolean"
+                      },
+                      "suspicious_urls": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "reasoning": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rule_confidence": {
+                    "type": "integer"
+                  },
+                  "rule_fp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_score": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rule_tp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threat_assessment": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "threat_categories": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "trusted_score": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "verdict": {
+                "type": "string"
+              }
+            },
             "title": "Summary",
             "type": "object"
           },
@@ -989,7 +1628,646 @@
             "type": "string"
           },
           "summary": {
-            "additionalProperties": true,
+            "description": "What the workflow recorded about the alert. Every key is optional: a key appears once the step that writes it has run, and alerts processed by an older release may lack keys or hold other shapes.",
+            "properties": {
+              "actions": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              "analysis": {
+                "description": "``alerts.summary.analysis``: the analysis digest plus the evidence behind it.",
+                "properties": {
+                  "certainty": {
+                    "type": "integer"
+                  },
+                  "conclusion": {
+                    "type": "string"
+                  },
+                  "corroborated_targets": {
+                    "items": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "history": {
+                    "items": {
+                      "additionalProperties": true,
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "llm_calls": {
+                    "type": "integer"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "reasoning": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "recommended_actions": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_corroborated": {
+                    "type": "boolean"
+                  },
+                  "rule_evidence": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_threat_score": {
+                    "type": "integer"
+                  },
+                  "rule_verdict": {
+                    "type": "string"
+                  },
+                  "simulated_evidence": {
+                    "type": "boolean"
+                  },
+                  "stop_reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "threat_indicators": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threat_score": {
+                    "type": "integer"
+                  },
+                  "tool_steps": {
+                    "type": "integer"
+                  },
+                  "tools": {
+                    "items": {
+                      "description": "One reputation lookup of the analysis agent (``alerts.summary.analysis.tools``).",
+                      "properties": {
+                        "checked_at": {
+                          "type": "string"
+                        },
+                        "kind": {
+                          "type": "string"
+                        },
+                        "results": {
+                          "items": {
+                            "additionalProperties": true,
+                            "type": "object"
+                          },
+                          "type": "array"
+                        },
+                        "simulated": {
+                          "type": "boolean"
+                        },
+                        "target": {
+                          "type": "string"
+                        },
+                        "tool": {
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "verdict": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "close_reason": {
+                "type": "string"
+              },
+              "confidence": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "correlation": {
+                "properties": {
+                  "burst": {
+                    "type": "boolean"
+                  },
+                  "campaign_indicators": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "confidence": {
+                    "type": "integer"
+                  },
+                  "frequency_level": {
+                    "type": "string"
+                  },
+                  "indicator_count": {
+                    "type": "integer"
+                  },
+                  "indicator_types": {
+                    "additionalProperties": {
+                      "type": "integer"
+                    },
+                    "type": "object"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_skipped": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "related_alert_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "related_count": {
+                    "type": "integer"
+                  },
+                  "related_dispositions": {
+                    "additionalProperties": {
+                      "type": "integer"
+                    },
+                    "type": "object"
+                  },
+                  "score": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "decision": {
+                "anyOf": [
+                  {
+                    "description": "The routing decision after analysis (``lg_sotf.domain.routing.Decision``).",
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "disposition": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "type": "string"
+                      },
+                      "route": {
+                        "enum": [
+                          "escalate",
+                          "plan_response",
+                          "close"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "detached_from": {
+                "type": "string"
+              },
+              "dry_run": {
+                "type": "boolean"
+              },
+              "escalation_attached": {
+                "type": "boolean"
+              },
+              "escalation_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "llm_budget_exceeded": {
+                "type": "boolean"
+              },
+              "llm_models": {
+                "additionalProperties": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "llm_refusals": {
+                "items": {
+                  "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                  "properties": {
+                    "agent": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "category": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "llm_usage": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "response": {
+                "description": "``alerts.summary.response``: the response plan's playbook, evidence and action counts.",
+                "properties": {
+                  "auto": {
+                    "type": "integer"
+                  },
+                  "awaiting": {
+                    "type": "integer"
+                  },
+                  "blocked": {
+                    "type": "integer"
+                  },
+                  "done": {
+                    "type": "integer"
+                  },
+                  "evidence": {
+                    "type": "string"
+                  },
+                  "threat_type": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "simulated_evidence": {
+                "type": "boolean"
+              },
+              "suppressed_by": {
+                "anyOf": [
+                  {
+                    "description": "What closed the alert at the gate: a suppression rule or a cached analyst verdict.",
+                    "properties": {
+                      "decision": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "rule_id": {
+                        "type": "string"
+                      },
+                      "source_alert_id": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "threat_score": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "triage": {
+                "properties": {
+                  "confidence": {
+                    "type": "integer"
+                  },
+                  "llm_fp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "llm_refusal": {
+                    "description": "``llm_refusal`` in an agent digest: the model declined to assess the alert.",
+                    "properties": {
+                      "agent": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "category": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "reason": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "llm_skipped": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "llm_tp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "llm_used": {
+                    "type": "boolean"
+                  },
+                  "phishing": {
+                    "description": "Email alerts: sender authentication, lookalikes and suspicious links (``lg_sotf.domain.phishing``).",
+                    "properties": {
+                      "impersonation": {
+                        "type": "string"
+                      },
+                      "lookalike_hosts": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "lookalikes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "sender_authenticated": {
+                        "type": "boolean"
+                      },
+                      "suspicious_urls": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "priority": {
+                    "type": "integer"
+                  },
+                  "reasoning": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rule_confidence": {
+                    "type": "integer"
+                  },
+                  "rule_fp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "rule_score": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rule_tp": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "threat_assessment": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "threat_categories": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "trusted_score": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "type": "object"
+              },
+              "verdict": {
+                "type": "string"
+              }
+            },
             "title": "Summary",
             "type": "object"
           },

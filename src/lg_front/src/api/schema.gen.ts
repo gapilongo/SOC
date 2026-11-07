@@ -1700,9 +1700,154 @@ export interface components {
             source_name?: string | null;
             /** Status */
             status: string;
-            /** Summary */
+            /**
+             * Summary
+             * @description What the workflow recorded about the alert. Every key is optional: a key appears once the step that writes it has run, and alerts processed by an older release may lack keys or hold other shapes.
+             */
             summary?: {
-                [key: string]: unknown;
+                actions?: {
+                    [key: string]: number;
+                };
+                /** @description ``alerts.summary.analysis``: the analysis digest plus the evidence behind it. */
+                analysis?: {
+                    certainty?: number;
+                    conclusion?: string;
+                    corroborated_targets?: string[][];
+                    history?: {
+                        [key: string]: unknown;
+                    }[];
+                    llm_calls?: number;
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_used?: boolean;
+                    reasoning?: string[];
+                    recommended_actions?: string[];
+                    rule_corroborated?: boolean;
+                    rule_evidence?: string[];
+                    rule_threat_score?: number;
+                    rule_verdict?: string;
+                    simulated_evidence?: boolean;
+                    stop_reason?: string | null;
+                    threat_indicators?: string[];
+                    threat_score?: number;
+                    tool_steps?: number;
+                    tools?: {
+                        checked_at?: string;
+                        kind?: string;
+                        results?: {
+                            [key: string]: unknown;
+                        }[];
+                        simulated?: boolean;
+                        target?: string;
+                        tool?: string;
+                    }[];
+                    verdict?: string;
+                };
+                analyst_decision?: string | null;
+                close_reason?: string;
+                confidence?: number | null;
+                correlation?: {
+                    burst?: boolean;
+                    campaign_indicators?: string[];
+                    confidence?: number;
+                    frequency_level?: string;
+                    indicator_count?: number;
+                    indicator_types?: {
+                        [key: string]: number;
+                    };
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_skipped?: string | null;
+                    llm_used?: boolean;
+                    related_alert_ids?: string[];
+                    related_count?: number;
+                    related_dispositions?: {
+                        [key: string]: number;
+                    };
+                    score?: number;
+                };
+                decision?: {
+                    code?: string;
+                    disposition?: string | null;
+                    reason?: string;
+                    /** @enum {string} */
+                    route?: "escalate" | "plan_response" | "close";
+                } | null;
+                detached_from?: string;
+                dry_run?: boolean;
+                escalation_attached?: boolean;
+                escalation_id?: string | null;
+                llm_budget_exceeded?: boolean;
+                llm_models?: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                llm_refusals?: {
+                    agent?: string | null;
+                    category?: string | null;
+                    reason?: string | null;
+                }[];
+                llm_usage?: {
+                    [key: string]: unknown;
+                };
+                /** @description ``alerts.summary.response``: the response plan's playbook, evidence and action counts. */
+                response?: {
+                    auto?: number;
+                    awaiting?: number;
+                    blocked?: number;
+                    done?: number;
+                    evidence?: string;
+                    threat_type?: string;
+                };
+                simulated_evidence?: boolean;
+                suppressed_by?: {
+                    decision?: string | null;
+                    name?: string;
+                    rule_id?: string;
+                    source_alert_id?: string | null;
+                    type?: string;
+                } | null;
+                threat_score?: number | null;
+                triage?: {
+                    confidence?: number;
+                    llm_fp?: string[];
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_skipped?: string | null;
+                    llm_tp?: string[];
+                    llm_used?: boolean;
+                    /** @description Email alerts: sender authentication, lookalikes and suspicious links (``lg_sotf.domain.phishing``). */
+                    phishing?: {
+                        impersonation?: string;
+                        lookalike_hosts?: string[];
+                        lookalikes?: string[];
+                        sender_authenticated?: boolean;
+                        suspicious_urls?: string[];
+                    };
+                    priority?: number;
+                    reasoning?: string | null;
+                    rule_confidence?: number;
+                    rule_fp?: string[];
+                    rule_score?: number | null;
+                    rule_tp?: string[];
+                    threat_assessment?: string | null;
+                    threat_categories?: string[];
+                    trusted_score?: number | null;
+                };
+                verdict?: string;
             };
             /** Tenant Id */
             tenant_id: string;
@@ -1784,9 +1929,154 @@ export interface components {
             source_name?: string | null;
             /** Status */
             status: string;
-            /** Summary */
+            /**
+             * Summary
+             * @description What the workflow recorded about the alert. Every key is optional: a key appears once the step that writes it has run, and alerts processed by an older release may lack keys or hold other shapes.
+             */
             summary?: {
-                [key: string]: unknown;
+                actions?: {
+                    [key: string]: number;
+                };
+                /** @description ``alerts.summary.analysis``: the analysis digest plus the evidence behind it. */
+                analysis?: {
+                    certainty?: number;
+                    conclusion?: string;
+                    corroborated_targets?: string[][];
+                    history?: {
+                        [key: string]: unknown;
+                    }[];
+                    llm_calls?: number;
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_used?: boolean;
+                    reasoning?: string[];
+                    recommended_actions?: string[];
+                    rule_corroborated?: boolean;
+                    rule_evidence?: string[];
+                    rule_threat_score?: number;
+                    rule_verdict?: string;
+                    simulated_evidence?: boolean;
+                    stop_reason?: string | null;
+                    threat_indicators?: string[];
+                    threat_score?: number;
+                    tool_steps?: number;
+                    tools?: {
+                        checked_at?: string;
+                        kind?: string;
+                        results?: {
+                            [key: string]: unknown;
+                        }[];
+                        simulated?: boolean;
+                        target?: string;
+                        tool?: string;
+                    }[];
+                    verdict?: string;
+                };
+                analyst_decision?: string | null;
+                close_reason?: string;
+                confidence?: number | null;
+                correlation?: {
+                    burst?: boolean;
+                    campaign_indicators?: string[];
+                    confidence?: number;
+                    frequency_level?: string;
+                    indicator_count?: number;
+                    indicator_types?: {
+                        [key: string]: number;
+                    };
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_skipped?: string | null;
+                    llm_used?: boolean;
+                    related_alert_ids?: string[];
+                    related_count?: number;
+                    related_dispositions?: {
+                        [key: string]: number;
+                    };
+                    score?: number;
+                };
+                decision?: {
+                    code?: string;
+                    disposition?: string | null;
+                    reason?: string;
+                    /** @enum {string} */
+                    route?: "escalate" | "plan_response" | "close";
+                } | null;
+                detached_from?: string;
+                dry_run?: boolean;
+                escalation_attached?: boolean;
+                escalation_id?: string | null;
+                llm_budget_exceeded?: boolean;
+                llm_models?: {
+                    [key: string]: {
+                        [key: string]: string;
+                    };
+                };
+                llm_refusals?: {
+                    agent?: string | null;
+                    category?: string | null;
+                    reason?: string | null;
+                }[];
+                llm_usage?: {
+                    [key: string]: unknown;
+                };
+                /** @description ``alerts.summary.response``: the response plan's playbook, evidence and action counts. */
+                response?: {
+                    auto?: number;
+                    awaiting?: number;
+                    blocked?: number;
+                    done?: number;
+                    evidence?: string;
+                    threat_type?: string;
+                };
+                simulated_evidence?: boolean;
+                suppressed_by?: {
+                    decision?: string | null;
+                    name?: string;
+                    rule_id?: string;
+                    source_alert_id?: string | null;
+                    type?: string;
+                } | null;
+                threat_score?: number | null;
+                triage?: {
+                    confidence?: number;
+                    llm_fp?: string[];
+                    /** @description ``llm_refusal`` in an agent digest: the model declined to assess the alert. */
+                    llm_refusal?: {
+                        agent?: string | null;
+                        category?: string | null;
+                        reason?: string | null;
+                    };
+                    llm_skipped?: string | null;
+                    llm_tp?: string[];
+                    llm_used?: boolean;
+                    /** @description Email alerts: sender authentication, lookalikes and suspicious links (``lg_sotf.domain.phishing``). */
+                    phishing?: {
+                        impersonation?: string;
+                        lookalike_hosts?: string[];
+                        lookalikes?: string[];
+                        sender_authenticated?: boolean;
+                        suspicious_urls?: string[];
+                    };
+                    priority?: number;
+                    reasoning?: string | null;
+                    rule_confidence?: number;
+                    rule_fp?: string[];
+                    rule_score?: number | null;
+                    rule_tp?: string[];
+                    threat_assessment?: string | null;
+                    threat_categories?: string[];
+                    trusted_score?: number | null;
+                };
+                verdict?: string;
             };
             /** Tenant Id */
             tenant_id: string;
