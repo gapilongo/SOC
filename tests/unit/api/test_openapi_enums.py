@@ -111,9 +111,21 @@ def _exporter() -> ModuleType:
 
 
 @pytest.fixture(scope="module")
-def components() -> Dict[str, Any]:
-    document: Dict[str, Any] = _exporter().build_openapi()
-    return document["components"]["schemas"]
+def document() -> Dict[str, Any]:
+    built: Dict[str, Any] = _exporter().build_openapi()
+    return built
+
+
+@pytest.fixture(scope="module")
+def components(document: Dict[str, Any]) -> Dict[str, Any]:
+    schemas_: Dict[str, Any] = document["components"]["schemas"]
+    return schemas_
+
+
+@pytest.fixture(scope="module")
+def paths(document: Dict[str, Any]) -> Dict[str, Any]:
+    paths_: Dict[str, Any] = document["paths"]
+    return paths_
 
 
 def _enum(prop: Dict[str, Any]) -> List[str]:
@@ -134,6 +146,43 @@ def test_response_field_advertises_its_vocabulary(
     components: Dict[str, Any], schema: str, field: str, values: Sequence[str]
 ) -> None:
     assert _enum(components[schema]["properties"][field]) == list(values)
+
+
+DOCUMENTED_RESPONSES = [
+    ("/readyz", "get", "200", "ReadinessOut"),
+    ("/readyz", "get", "503", "ReadinessOut"),
+    ("/api/v1/alerts/{alert_id}/evidence", "get", "200", "EvidencePackOut"),
+    ("/api/v1/tenant/response/routes", "get", "200", "ResponseRoutesOut"),
+    ("/api/v1/integrations/microsoft/catalog", "get", "200", "MicrosoftCatalogOut"),
+]
+
+
+@pytest.mark.parametrize(("path", "method", "status", "model"), DOCUMENTED_RESPONSES)
+def test_plain_json_responses_are_documented(
+    paths: Dict[str, Any], path: str, method: str, status: str, model: str
+) -> None:
+    """Routes that build their JSON themselves publish its schema (``responses={...: {"model": X}}``)."""
+    content = paths[path][method]["responses"][status]["content"]
+    assert content["application/json"]["schema"] == {"$ref": f"#/components/schemas/{model}"}
+
+
+def test_no_json_response_is_untyped(paths: Dict[str, Any]) -> None:
+    """Every 2xx JSON body has a schema with a shape (not ``{}`` and not a bare ``Dict[str, Any]``)."""
+    untyped = []
+    for path, operations in paths.items():
+        for method, operation in operations.items():
+            for status, response in operation.get("responses", {}).items():
+                schema = response.get("content", {}).get("application/json", {}).get("schema")
+                if status.startswith("2") and schema is not None:
+                    shaped = any(key in schema for key in ("$ref", "properties", "anyOf", "items"))
+                    if not shaped and schema.get("additionalProperties") in (None, True):
+                        untyped.append(f"{method.upper()} {path} {status}")
+    assert untyped == []
+
+
+def test_tenant_export_is_a_zip_only(paths: Dict[str, Any]) -> None:
+    content = paths["/api/v1/platform/tenants/{tenant_id}/export"]["post"]["responses"]["200"]["content"]
+    assert content == {"application/zip": {"schema": {"type": "string", "format": "binary"}}}
 
 
 def test_vocabulary_schema_keeps_the_canonical_order() -> None:

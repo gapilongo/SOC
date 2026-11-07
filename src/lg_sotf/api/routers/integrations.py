@@ -38,6 +38,7 @@ from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.payload_schemas import MicrosoftCatalogOut
 from lg_sotf.api.routers._slack import decide_from_slack, reply_text
 from lg_sotf.api.schemas import (
     DeliveryOperationStr,
@@ -401,7 +402,12 @@ async def slack_interactions(
     return Response(status_code=200)
 
 
-@router.get("/microsoft/catalog", summary="Microsoft direct-response capabilities, clouds and Defender geos")
+@router.get(
+    "/microsoft/catalog",
+    summary="Microsoft direct-response capabilities, clouds and Defender geos",
+    response_model=None,
+    responses={200: {"model": MicrosoftCatalogOut}},
+)
 async def microsoft_catalog(principal: Principal = Depends(require(ADMIN))) -> Dict[str, Any]:
     """Every capability the Microsoft integration can enable: actions, permissions, options schema, clouds."""
     return catalog_out()

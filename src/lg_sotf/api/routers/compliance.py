@@ -28,6 +28,7 @@ from lg_sotf.api.auth.deps import ANALYST, PLATFORM_ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.payload_schemas import EvidencePackOut
 from lg_sotf.api.schemas import In, TenantStatusStr, vocabulary_schema
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.compliance import nis2
@@ -75,7 +76,7 @@ def _actor(principal: Principal) -> Dict[str, Any]:
 @alerts.get(
     "/{alert_id}/evidence",
     summary="Case evidence pack (JSON bundle or printable HTML)",
-    responses={200: {"content": {"application/json": {}, "text/html": {}}}},
+    responses={200: {"model": EvidencePackOut, "content": {"text/html": {"schema": {"type": "string"}}}}},
 )
 async def evidence_pack(
     alert_id: str,
@@ -293,7 +294,8 @@ async def erasure_status(
 @platform.post(
     "/tenants/{tenant_id}/export",
     summary="Export a tenant's data (streamed ZIP of JSONL files; secrets removed)",
-    responses={200: {"content": {"application/zip": {}}}},
+    response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}},
 )
 async def export_tenant(
     request: Request, tenant_id: str = TenantIdPath, principal: Principal = Depends(require(PLATFORM_ADMIN))
