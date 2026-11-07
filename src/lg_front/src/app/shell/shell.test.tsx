@@ -187,7 +187,7 @@ describe('account menu', () => {
   it('opens with the keyboard, moves with arrows and returns focus on Escape', async () => {
     const user = userEvent.setup();
     await renderMenu();
-    const button = screen.getByRole('button', { name: 'Account: analyst@acme.test, Analyst' });
+    const button = screen.getByRole('button', { name: 'Account: analyst@acme.test, Analyst, initials AN' });
     expect(button).toHaveAttribute('aria-haspopup', 'menu');
     button.focus();
     await user.keyboard('{ArrowDown}');
@@ -259,7 +259,7 @@ describe('account menu', () => {
     const user = userEvent.setup();
     const { session } = await renderMenu({ role: 'admin', is_platform_admin: true });
     act(() => session.auth.setActingTenant('globex'));
-    await user.click(screen.getByRole('button', { name: 'Account: analyst@acme.test, Admin, platform admin' }));
+    await user.click(screen.getByRole('button', { name: 'Account: analyst@acme.test, Admin, platform admin, initials AN' }));
     expect(screen.queryByRole('menuitem', { name: 'Account security' })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitemradio', { name: 'Dark theme' })).toHaveFocus();
   });

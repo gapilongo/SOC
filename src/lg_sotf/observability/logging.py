@@ -212,6 +212,11 @@ def configure_logging(settings: Settings, *, stream: Optional[TextIO] = None) ->
     for name in _NOISY_LOGGERS:
         logging.getLogger(name).setLevel(max(level, logging.WARNING))
     logging.captureWarnings(True)
+    if obs.otlp_endpoint:  # the value is not logged: an endpoint URL can carry credentials
+        get_logger(__name__).warning(
+            "observability.otlp_endpoint_deprecated",
+            detail="tracing was removed (ADR-0008); observability.otlp_endpoint is ignored",
+        )
 
 
 def is_configured() -> bool:

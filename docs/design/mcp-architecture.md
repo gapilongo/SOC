@@ -782,7 +782,7 @@ There are no tenant labels.
 
 ### Tracing and replay
 
-- **Tracing (Phase 3).** OTel spans per call. `traceparent` is taken from `_meta` or the header and continued into REST spans. Export only happens when an OTLP endpoint is configured.
+- **Tracing (Phase 3).** Tracing was removed from the product in X5 ([ADR-0008](../adr/0008-remove-tracing.md)); this item needs that ADR superseded first. OTel spans per call. `traceparent` is taken from `_meta` or the header and continued into REST spans. Export only happens when an OTLP endpoint is configured.
 - **Replay.**
   - Phase 3: `lg-sotf mcp replay --grant <id>|--key <id> --since …` rebuilds the call sequence for incident review. The audit UI gains a `channel=mcp` filter.
   - Phase 4: `--rerun-reads` re-runs read calls under the same principal and diffs result hashes.
