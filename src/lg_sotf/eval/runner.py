@@ -53,6 +53,7 @@ from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, IngestResult, email_source_id
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -339,6 +340,7 @@ async def run_evaluation(
     isolate: Isolation = "splits",
     progress: Optional[Progress] = None,
     create_tenant: Optional[Callable[[Settings, str], Awaitable[None]]] = None,
+    secret_box: Optional[SecretBox] = None,
 ) -> EvalRun:
     """Evaluate ``dataset`` against the database and Redis named by ``settings``.
 
@@ -350,6 +352,7 @@ async def run_evaluation(
     must exist (``lg-sotf migrate``); the database, schema and Redis are
     checked before any tenant is created. Point the settings at a dedicated
     evaluation database: runs, escalations and alerts stay there afterwards.
+    ``secret_box`` (built by the CLI) decrypts tenant credentials, as in a worker.
     """
     import asyncpg
     from redis.asyncio import Redis
@@ -390,7 +393,7 @@ async def run_evaluation(
         stack.push_async_callback(redis.aclose)
         await check_services(db, redis)
 
-        ingestion = IngestionService(db, settings)
+        ingestion = IngestionService(db, settings, secret_box=secret_box)
         stack.push_async_callback(ingestion.close)
         try:
             engine = await WorkflowEngine.create(
@@ -399,6 +402,7 @@ async def run_evaluation(
                 redis=redis,
                 events=None,
                 checkpoint_pool_size=max(2, min(concurrency + 1, settings.database.pool_max)),
+                secret_box=secret_box,
             )
         except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
             raise EvalSetupError(f"cannot start the workflow engine: {type(exc).__name__}: {exc}") from exc
@@ -436,8 +440,15 @@ async def run_evaluation(
             for result in await runner.run(group, progress=forward):
                 by_id[result.item_id] = result
         results = [by_id[item.id] for item in dataset.items if item.id in by_id]
+    return EvalRun(results=results, info=_run_info(settings, base, isolate, tenants, concurrency, started))
+
+
+def _run_info(
+    settings: Settings, base: str, isolate: Isolation, tenants: Dict[str, str], concurrency: int, started: float
+) -> Dict[str, Any]:
+    """``report.run`` of an evaluation: where it ran, with which models, and how long it took."""
     fake = settings.llm.provider == "fake"
-    info: Dict[str, Any] = {
+    return {
         "tenant_id": base if isolate == "none" else None,
         "isolation": isolate,
         "tenants": tenants if isolate == "splits" else {"*": base},
@@ -448,4 +459,3 @@ async def run_evaluation(
         "concurrency": concurrency,
         "duration_s": round(time.perf_counter() - started, 3),
     }
-    return EvalRun(results=results, info=info)

@@ -139,7 +139,7 @@ async def test_tenant_provider_key_from_encrypted_settings(repos: Repositories, 
         seen.append(request)
         return httpx.Response(200, json={"data": {"attributes": {"last_analysis_stats": {"malicious": 7}}}})
 
-    service = EnrichmentService.from_settings(settings, transport=httpx.MockTransport(handler))
+    service = EnrichmentService.from_settings(settings, transport=httpx.MockTransport(handler), secret_box=box)
     [result] = [r for r in await service.lookup(TENANT_A, "hash", ENTITIES["hashes"][0], repos=repos) if r.provider == "virustotal"]
     assert result.verdict == "malicious" and seen[0].headers["x-apikey"] == "tenant-a-vt"
     assert await service.configured_kinds(TENANT_B, repos) == {}
