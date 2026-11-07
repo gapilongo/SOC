@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-08
+
+Verifiable releases, measured accuracy and a read-only proof of value.
+Release images are signed and carry build provenance, and the deploy
+verifies both; every release attaches SBOMs and a VEX document; builds are
+hash-locked and a Trivy gate blocks fixable critical and high CVEs. A
+one-command proof-of-value install can only read. A first-run wizard takes
+a new install to its first triaged alert. A real local model has a
+published scorecard, and every reported rate now carries its sample size
+and a 95% interval. Each investigation step is traced into the evidence
+pack. Runs waiting for a human survive upgrades, and CI rehearses the
+upgrade from the previous release on every change. The API is split into
+stability tiers with a breaking-change gate. Also: threat model v2, a
+hardening guide, the evidence-fact schema v1, richer escalation and
+approval queues in the API, and web UI fixes.
+
 ### Added
 
 - An investigation trace. Every model call and every threat-intelligence or
@@ -162,6 +178,44 @@ All notable changes to this project are documented here. The format follows
   them in a new, non-blocking job. More alerts can be loaded into the lab
   with `python -m tests.fixtures.wazuh_lab load` (docs/testing.md).
 
+- Every rate in the evaluation reports, the scorecard and the Reports pages
+  now comes with its sample size and a 95% Wilson interval, for example
+  `25.0% (1 of 4; 95% CI 4.6% to 69.9%)`, so a rate over a handful of alerts
+  no longer reads like a firm number. Eval reports carry `metrics.intervals`,
+  which the gate can check (for example
+  `intervals.malicious_false_negative_rate.ci_high`). The `/reports/*`
+  responses add a `<rate>_ci` field next to each rate, with `rate`, `n`,
+  `ci_low` and `ci_high`, and the CSV exports add `_n`, `_ci_low` and
+  `_ci_high` columns at the end. Existing fields and columns are unchanged.
+  A sample too small to read is shown everywhere as "Not enough data (n=…)".
+
+- API stability tiers. Every operation in the OpenAPI document now carries
+  `x-stability`: `stable` (ingest, alerts, escalation review, actions,
+  sources, suppressions, users, API keys, audit, auth and the health probes),
+  `beta` (platform administration, tenant settings, reports, integrations,
+  compliance exports, triage groups and bulk actions, MFA, usage, metrics) or
+  `internal` (the dashboard summary and onboarding screens). A stable
+  operation is deprecated for at least 6 months, and over two minor releases,
+  before it is removed or changed incompatibly. See "Stability and
+  deprecation" in docs/api.md.
+- A deprecated route answers with `Deprecation` (RFC 9745), `Sunset`
+  (RFC 8594) and `Link: <...>; rel="deprecation"` headers on every response,
+  errors included, and is marked `deprecated: true` with an `x-sunset` date
+  in the OpenAPI document. Browsers can read the three headers (CORS). No
+  route is deprecated yet.
+- A CI gate, `api-compat`: a pinned, checksum-verified oasdiff compares
+  `docs/openapi.json` with the base branch's and fails on a breaking change
+  to a stable operation, including a removal before its sunset or a move from
+  stable to beta. Changes to beta and internal operations are reported only.
+
+- The evidence-fact schema v1, a published contract for the typed
+  observations investigation tools return (IP, domain, URL and file
+  reputation, process lineage, sign-in history, related alerts), which
+  verdicts will cite by id. It is a JSON Schema 2020-12 file with a SemVer
+  version, `schemas/evidence-fact/v1.json`, with an example per kind, and CI
+  refuses a change that is not matched by the right version bump. See
+  docs/evidence-facts.md.
+
 ### Changed
 
 - Building the web app from source (`src/lg_front`) now needs Node.js
@@ -209,6 +263,11 @@ All notable changes to this project are documented here. The format follows
   message as the reports page.
 - Web UI: while the phone menu is open, keyboard focus stays inside it, and
   Escape closes it.
+
+- Pull requests now add a changelog fragment in `changelog.d/` instead of
+  editing `CHANGELOG.md`, so parallel pull requests no longer conflict.
+  `python scripts/changelog.py fold` moves the fragments into the changelog at
+  release time; `check` validates them.
 
 ### Deprecated
 
@@ -327,6 +386,16 @@ All notable changes to this project are documented here. The format follows
   sends the logout with `keepalive` so a navigation cannot abort it. Logout
   also revokes every token the presented one was rotated into.
 
+- A run no longer fails when an upgrade migrates the database while it is in
+  flight. A migration that changes a table made the running workers'
+  prepared statements on it stale, and the first transaction to use one
+  failed with `InvalidCachedStatementError`; the message then waited for the
+  visibility timeout (20 minutes by default) before another try. The worker's
+  transactions on runs are now run again once, in a new transaction for the
+  same tenant, and the run finishes normally. Each retry logs
+  `db.stale_statement_retry` and counts in the new
+  `lgsotf_db_stale_statement_retries_total` metric.
+
 ### Security
 
 - Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
@@ -365,6 +434,47 @@ All notable changes to this project are documented here. The format follows
   so a broken or hostile identity provider could make it hold an arbitrarily
   large body. A document over the limit is refused as before, now without
   being downloaded.
+
+- Builds now verify every input. Every Python requirements file is
+  hash-locked for all platforms and installed with `pip install
+  --require-hashes` in the image build, CI and `make dev`; re-lock with
+  `make lock`. Every base image is pinned by digest, including the
+  Dockerfiles' `# syntax=` line and the PostgreSQL, Redis and Caddy defaults
+  in the compose files. `PYTHON_BASE_IMAGE`, `NODE_IMAGE` and `NGINX_IMAGE`
+  now default to the pinned images; set them only to use a mirror. The
+  frontend runs on `nginx-unprivileged:1.30-alpine-slim`. The old
+  `1.28-alpine` tag no longer receives updates and carried fixable critical
+  CVEs.
+- CI now scans both images with Trivy and fails on any critical or high CVE
+  that has a fix. Reviewed exceptions live in `.trivyignore`, and each one
+  expires within 90 days. `pip-audit` now also checks the build and CI tool
+  locks. See `docs/security.md`, section 9.
+- Every release now carries CycloneDX SBOMs as assets: the Python lock, the
+  frontend's production npm packages, and both images for amd64 and arm64,
+  made from the release digests. It also carries an OpenVEX document
+  (`security/vex.json`) that lists the CVEs scanners report in the images
+  but that do not affect LG-SOTF, with the reason for each. Every asset is
+  validated against its schema (here and on every change in CI) and has a
+  build-provenance attestation; `docs/security.md` (section 9) shows how to
+  download and verify them and how to use the VEX document with Grype or
+  Trivy. If the GitHub release does not exist when the tag is pushed, it is
+  created with generated notes.
+
+### Upgrade notes for 1.3
+
+- Take a backup, then migrate with the new image before the new workers
+  start (the Helm pre-upgrade hook does this; with Compose,
+  `make image && make migrate && make up`). Migration 0010 adds
+  `workflow_runs.graph_version` and 0011 the `investigation_steps` table;
+  both are additive, so 1.2.3 keeps working during the rollout. Runs that
+  1.2.3 left waiting for an analyst or an approval resume and are decided on
+  1.3.0
+  (docs/deployment.md, section 7).
+- The deploy workflow now refuses unsigned images, so it cannot redeploy a
+  1.2.x image. To roll back to one, do it on the host.
+- Remove `observability.otlp_endpoint` from your configuration: it is
+  ignored and logs a deprecation warning at startup.
+- Building the web app from source needs Node.js 22.12 or later.
 
 ## [1.2.3] - 2026-11-05
 

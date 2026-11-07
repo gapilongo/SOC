@@ -108,7 +108,7 @@ it can be committed to a project:
         "-e", "LG_SOTF_MCP__API_URL=${LG_SOTF_MCP_URL}",
         "-e", "LG_SOTF_MCP__API_KEY_FILE=/run/secrets/lg-sotf.key",
         "-v", "${LG_SOTF_MCP_KEY_PATH}:/run/secrets/lg-sotf.key:ro",
-        "ghcr.io/gapilongo/lg-sotf:v1.2.3", "mcp"
+        "ghcr.io/gapilongo/lg-sotf:v1.3.0", "mcp"
       ]
     }
   }
@@ -137,7 +137,7 @@ change that, and the server refuses such a key file.
 Pull the image once before your first `claude` session in the project:
 
 ```sh
-docker pull ghcr.io/gapilongo/lg-sotf:v1.2.3
+docker pull ghcr.io/gapilongo/lg-sotf:v1.3.0
 ```
 
 Claude Code gives each MCP server 30 seconds to start (`MCP_TIMEOUT`). If
@@ -147,7 +147,7 @@ hundred MB, and the server shows as failed in `/mcp`.
 The container can reach the install only over the network: `localhost` in
 `LG_SOTF_MCP_URL` means the container itself, so use the install's real
 address (on a tailnet, its `ts.net` name). Pin the image tag of the install
-you test (`v1.2.3` here). A committed `*.mcp.json` decides which program
+you test (`v1.3.0` here). A committed `*.mcp.json` decides which program
 runs with the key and where the key goes, so `.github/CODEOWNERS` gives
 every `*.mcp.json`, this page, the test that pins the entry and
 `src/lg_sotf/mcp/` to the repository's security owner. Keep "Require review
@@ -553,7 +553,7 @@ person. `approval_url` is only a link to the alert in the UI.
   runs as `LG_SOTF_MCP_UID`; set it to your `id -u`.
 * **`lg-sotf` failed in `/mcp` on the first start with docker**: the image
   was still downloading when Claude Code's 30-second startup timeout ran
-  out. Run `docker pull ghcr.io/gapilongo/lg-sotf:v1.2.3` and reconnect
+  out. Run `docker pull ghcr.io/gapilongo/lg-sotf:v1.3.0` and reconnect
   with `/mcp`, or start once with `MCP_TIMEOUT=300000 claude`.
 * **"set LG_SOTF_MCP__API_KEY or LG_SOTF_MCP__API_KEY_FILE, not both"**
   (exit code 2): remove one.
