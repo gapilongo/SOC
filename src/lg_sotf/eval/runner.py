@@ -53,7 +53,7 @@ from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult
 from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
 
@@ -165,7 +165,7 @@ class EvalRunner:
             result.latency_s = time.perf_counter() - started
             result.status = "error"
             result.error = f"{type(exc).__name__}: {str(exc)[:200]}"[:MAX_ERROR_CHARS]
-            log.warning("eval.item_failed", item_id=item.id, error_type=type(exc).__name__)
+            log_failure(log, "eval.item_failed", exc, level="warning", item_id=item.id, error_type=type(exc).__name__)
             await self._usage_after_error(result)
         return result
 
@@ -177,7 +177,10 @@ class EvalRunner:
             alert = await self.repos.alerts.get(self.tenant_id, result.alert_id)
             _apply_usage(result, alert.summary or {})
         except Exception as exc:  # noqa: BLE001 - the item already failed; usage is informational
-            log.warning("eval.usage_unavailable", item_id=result.item_id, error_type=type(exc).__name__)
+            log_failure(
+                log, "eval.usage_unavailable", exc, level="warning", item_id=result.item_id,
+                error_type=type(exc).__name__,
+            )
 
     async def _collect(self, result: ItemResult, run: RunOutcome) -> None:
         assert result.alert_id is not None

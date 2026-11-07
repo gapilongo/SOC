@@ -37,7 +37,7 @@ from lg_sotf import __version__
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy
 from lg_sotf.net.http import ResponseTooLarge, read_capped
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -189,7 +189,10 @@ class LgSotfApiClient:
             try:
                 status, headers, content = await self._send(method, path, query, body)
             except httpx.TransportError as exc:
-                log.warning("mcp.api_transport_error", method=method, error_type=type(exc).__name__, attempt=attempt)
+                log_failure(
+                    log, "mcp.api_transport_error", exc, level="warning", method=method, error_type=type(exc).__name__,
+                    attempt=attempt,
+                )
                 if last:
                     raise ApiCallError(
                         f"the LG-SOTF API could not be reached ({type(exc).__name__}); check LG_SOTF_MCP__API_URL"
