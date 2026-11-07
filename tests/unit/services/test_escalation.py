@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import Callable, Optional
 
 import pytest
@@ -9,6 +10,9 @@ import pytest
 from lg_sotf.services.escalation import (
     DEFAULT_KEY_INDICATOR_TYPES,
     EscalationService,
+    ReviewPolicy,
+    _place,
+    _Placement,
     compute_level,
     compute_priority,
     max_level,
@@ -94,3 +98,25 @@ def test_own_review_reason(
         decision, parent_fingerprint=parent[0], parent_severity=parent[1], fingerprint=attached[0], severity=attached[1]
     )
     assert got == reason
+
+
+def test_place_matches_priority_level_and_sla() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    policy = ReviewPolicy(sla_minutes={"L1": 30, "L2": 45, "L3": 90})
+    low = _place(policy, "low", 20, 60, 0, "false_positive_review", now)
+    assert low == _Placement(priority=1, level="L1", sla_deadline=now + timedelta(minutes=30))
+    high = _place(policy, "critical", 90, 20, 12, "high_risk", now)
+    assert high == _Placement(priority=10, level="L3", sla_deadline=now + timedelta(minutes=90))
+    # The correlation count raises the priority (5 or more: +1, 10 or more: +2).
+    assert [_place(policy, "medium", 50, 60, n, "grey_zone", now).priority for n in (0, 5, 10)] == [6, 7, 8]
+    assert _place(policy, "medium", 50, 60, 10, "grey_zone", now).level == "L2"
+
+
+def test_place_follows_the_tenant_thresholds_and_minimum_levels() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    policy = ReviewPolicy(level_thresholds={"L2": 6, "L3": 9}, min_level={"high": "L3"})
+    assert _place(policy, "medium", 50, 60, 0, "grey_zone", now).level == "L2"
+    assert _place(policy, "high", 10, 60, 0, "group_review", now).level == "L3"
+    assert _place(policy, "low", 10, 60, 0, "group_review", now).sla_deadline == now + timedelta(
+        minutes=policy.sla_minutes["L1"]
+    )
