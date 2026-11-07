@@ -1,4 +1,4 @@
-"""The investigation trace store: one row per LLM call and tool call of a run (migration 0010).
+"""The investigation trace store: one row per LLM call and tool call of a run (migration 0011).
 
 Rows are append-only. :meth:`InvestigationStepsRepo.append` numbers a batch
 after the steps the run already has, in one statement, so the nodes of a

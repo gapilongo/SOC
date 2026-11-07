@@ -15,8 +15,8 @@ empty: the migration only changes the catalog. Tenant-scoped with forced
 RLS like every tenant table; the runtime role may read and insert, never
 update or delete (the trace is append-only).
 
-Revision ID: 0010
-Revises: 0009
+Revision ID: 0011
+Revises: 0010
 Create Date: 2026-11-07
 """
 
@@ -28,8 +28,8 @@ from alembic import op
 
 from lg_sotf.db.partitions import TENANT_POLICY_PREDICATE
 
-revision: str = "0010"
-down_revision: Union[str, None] = "0009"
+revision: str = "0011"
+down_revision: Union[str, None] = "0010"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

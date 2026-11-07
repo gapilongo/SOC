@@ -2,7 +2,7 @@
 
 Written by :class:`lg_sotf.llm.trace.TraceRecorder`, stored by
 :class:`lg_sotf.db.repos.investigation_steps.InvestigationStepsRepo` (table
-``investigation_steps``, migration 0010). Hashes are lowercase hex SHA-256;
+``investigation_steps``, migration 0011). Hashes are lowercase hex SHA-256;
 ``result_digest`` is already redacted and size-capped.
 """
 
