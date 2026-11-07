@@ -7,7 +7,7 @@ import { keysForEvent } from '../live/LiveProvider';
 import { filtersFromParams } from './alerts/AlertsPage';
 import { buildConfig, splitConfig } from './SourcesPage';
 import { buildMatch } from './SuppressionsPage';
-import { autonomyPatch, storedAutonomy } from './TenantSettingsPage';
+import { autonomyPatch, storedAutonomy } from './settings/ResponseSections';
 import { dailyTotals } from './UsagePage';
 
 describe('page helpers', () => {

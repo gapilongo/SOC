@@ -42,7 +42,7 @@ const SuppressionsPage = lazy(() => import('../pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('../pages/SourcesPage'));
 const IntegrationsPage = lazy(() => import('../pages/IntegrationsPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
-const TenantSettingsPage = lazy(() => import('../pages/TenantSettingsPage'));
+const TenantSettingsPage = lazy(() => import('../pages/settings/TenantSettingsPage'));
 const UsagePage = lazy(() => import('../pages/UsagePage'));
 const AuditPage = lazy(() => import('../pages/AuditPage'));
 const ReportsPage = lazy(() => import('../pages/ReportsPage'));
