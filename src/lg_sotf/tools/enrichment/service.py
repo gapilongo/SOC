@@ -57,7 +57,7 @@ import httpx
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_enrichment_lookup
 from lg_sotf.security.crypto import DecryptionError, SecretBox
-from lg_sotf.security.hashing import SecurityConfigError, normalize_indicator
+from lg_sotf.security.hashing import normalize_indicator
 from lg_sotf.tools.enrichment.base import (
     CACHEABLE_STATUSES,
     EnrichmentProvider,
@@ -265,21 +265,9 @@ class CredentialResolver:
 
     def __init__(self, settings: Settings, *, box: Optional[SecretBox] = None, clock: Clock = time.monotonic) -> None:
         self.settings = settings
-        self._box = box
-        self._box_loaded = box is not None
+        self._box = box  # the process's (injected); None: tenant keys cannot be read
         self._cache = TenantTTLCache(max_entries_per_tenant=16, max_tenants=DEFAULT_CACHE_TENANTS, clock=clock)
         self._install_internal = frozenset(_domain_suffixes(settings.tools.get("internal_domains")))
-
-    def _secret_box(self) -> Optional[SecretBox]:
-        if not self._box_loaded:
-            self._box_loaded = True
-            if self.settings.security.encryption_keys is not None:
-                log.warning("security.secret_box_lazy_load", component="CredentialResolver")
-                try:
-                    self._box = SecretBox.from_settings(self.settings)
-                except SecurityConfigError:
-                    log.error("enrichment.secret_box_unavailable")
-        return self._box
 
     def _install(self, provider: str, *, tenant_opted_in: bool) -> _Resolved:
         cfg = self.settings.tools.get(provider)
@@ -330,7 +318,7 @@ class CredentialResolver:
             opted_in = entry.get("enabled") is True
             ciphertext = entry.get("api_key_ciphertext")
             if isinstance(ciphertext, str) and ciphertext:
-                box = self._secret_box()
+                box = self._box
                 if box is None:
                     log.error("enrichment.tenant_key_unreadable", provider=provider, reason="no_encryption_keys")
                     return _Resolved(None, "credentials unreadable")

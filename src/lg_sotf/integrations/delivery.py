@@ -60,7 +60,6 @@ from lg_sotf.integrations.ticketing import DeliveryDeferred, TicketService
 from lg_sotf.observability.logging import bound_context, get_logger
 from lg_sotf.observability.metrics import REGISTRY
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.settings import Settings
 
@@ -146,13 +145,7 @@ class OutboxDelivery:
         self._settings = settings
         self._cfg = settings.integrations
         self._http = http or IntegrationHttp(settings)
-        self._box = secret_box
-        if self._box is None and settings.security.encryption_keys is not None:
-            log.warning("security.secret_box_lazy_load", component="OutboxDelivery")
-            try:
-                self._box = SecretBox.from_settings(settings)
-            except SecurityConfigError:
-                self._box = None
+        self._box = secret_box  # the process's (injected); None: integration secrets cannot be read
         self._tickets = tickets or TicketService(repos, settings, http=self._http, secret_box=self._box)
         self._smtp_factory = smtp_factory
         self._limiter = limiter or RateLimiter()

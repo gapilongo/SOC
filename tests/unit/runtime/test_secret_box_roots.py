@@ -114,4 +114,4 @@ def test_the_scheduler_forwards_its_box_to_the_services_it_builds(make_settings:
 def test_the_workflow_agents_get_the_box(make_settings: Callable[..., Settings]) -> None:
     box = SecretBox([generate_key()])
     agents = AgentSet.build(make_settings(), secret_box=box)
-    assert agents.analysis.enrichment.credentials._secret_box() is box
+    assert agents.analysis.enrichment.credentials._box is box

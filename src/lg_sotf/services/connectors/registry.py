@@ -44,7 +44,6 @@ from lg_sotf.net.egress import Resolver, egress_policy
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, build_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import DecryptionError, SecretBox
-from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.services.connectors.webhook import DEFAULT_DEADLINE_S, MIN_ATTEMPT_S, WebhookConnector, WebhookTarget
 from lg_sotf.settings import Settings
@@ -154,12 +153,9 @@ class ConnectorRegistry:
         return MisconfiguredConnector(str(name)[:64], f"unknown connector {str(name)[:64]!r}")
 
     def _secret_box(self) -> SecretBox:
+        """The injected box; a process without one cannot decrypt tenant webhook secrets."""
         if self._box is None:
-            log.warning("security.secret_box_lazy_load", component="ConnectorRegistry")
-            try:
-                self._box = SecretBox.from_settings(self._settings)
-            except SecurityConfigError as exc:
-                raise ConnectorConfigError("tenant webhook secret cannot be decrypted: encryption keys unavailable") from exc
+            raise ConnectorConfigError("tenant webhook secret cannot be decrypted: encryption keys unavailable")
         return self._box
 
     def _webhook(self, tenant_id: str, rs: Mapping[str, Any]) -> WebhookConnector:

@@ -40,7 +40,6 @@ from lg_sotf.integrations.events import alert_summary, build_event, clean_text, 
 from lg_sotf.integrations.http import DeliveryError, HttpResult, IntegrationHttp, tls_verify
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
-from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -428,17 +427,8 @@ class TicketService:
         self._audit = AuditLogger(repos)
         self.base_url = ui_base_url(settings)
 
-    def _secret_box(self) -> Optional[SecretBox]:
-        if self._box is None and self._settings.security.encryption_keys is not None:
-            log.warning("security.secret_box_lazy_load", component="TicketService")
-            try:
-                self._box = SecretBox.from_settings(self._settings)
-            except SecurityConfigError:
-                return None
-        return self._box
-
     def secret(self, integration: Integration) -> Dict[str, str]:
-        return decrypt_secret(self._secret_box(), integration.tenant_id, integration.id, integration.secret_ciphertext)
+        return decrypt_secret(self._box, integration.tenant_id, integration.id, integration.secret_ciphertext)
 
     def client(self, integration: Integration) -> TicketClient:
         return ticket_client(integration, self._http, self.secret(integration), retries=self._retries)
