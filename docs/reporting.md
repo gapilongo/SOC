@@ -8,7 +8,7 @@ faith.
 
 | What | Where | Who |
 |---|---|---|
-| Value: automation outcomes, analyst hours saved, time to verdict, MTTA/MTTR, SLA breaches, cost per alert | `GET /api/v1/reports/value?from=&to=[&format=csv]`, Reports > Value, dashboard tiles | viewer |
+| Value: automation outcomes, analyst hours saved, time to verdict, MTTA/MTTR, SLA breaches, cost per alert | `GET /api/v1/reports/value?from=&to=[&format=csv]`, Reports > Value, Overview figures | viewer |
 | Accuracy: AI verdict against the analyst's final decision | `GET /api/v1/reports/accuracy?from=&to=`, Reports > Accuracy | viewer |
 | Detection tuning: noisy rules, tune-or-suppress suggestions | `GET /api/v1/reports/detections?from=&to=[&format=csv]`, Reports > Detections | viewer |
 | Propose a suppression for a detection | `POST /api/v1/reports/detections/propose-suppression` | analyst (`write` API keys) |
@@ -211,15 +211,15 @@ the audit log by time, analyst feedback by creation time, response actions
 by creation time, LLM usage by day; the first triage event per alert is an
 index probe that skips partitions older than the window), so no migration
 was needed. Results are cached in Redis for 60 seconds per tenant, report
-and window (`{prefix}:t:{tenant}:cache:reports:...`); the dashboard tiles
-share the dashboard's 15-second cache. A year-long report on a large tenant
+and window (`{prefix}:t:{tenant}:cache:reports:...`); the Overview figures
+share the dashboard summary's 15-second cache. A year-long report on a large tenant
 can take seconds the first time; prefer monthly windows for routine use.
 
 ## Limits
 
 * **Sample alerts** (the onboarding "load sample alerts", source
   `demo:samples`) are left out of the value, accuracy, detection and
-  backtest figures and the dashboard tiles. Escalation, SLA-breach and LLM
+  backtest figures and the Overview figures. Escalation, SLA-breach and LLM
   cost figures come from their own tables and still include them.
 * **Ingest duplicates** are dropped before they are stored, so they are not
   in these reports; they are counted in the Prometheus metric
