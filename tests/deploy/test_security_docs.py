@@ -104,6 +104,19 @@ def test_hardening_covers_every_layer_with_complete_controls() -> None:
         assert levels[prefix] == {"L1", "L2"}, f"{prefix}: needs both L1 and L2 controls"
 
 
+def test_security_md_describes_export_and_erasure() -> None:
+    text = SECURITY.read_text(encoding="utf-8")
+    assert "no self-service tenant data export" not in text
+    for needle in (
+        "POST /api/v1/platform/tenants/{id}/export",
+        "DELETE /api/v1/platform/tenants/{id}",
+        "lg-sotf tenant-export",
+        "lg-sotf tenant-erase",
+    ):
+        assert needle in text, needle
+    assert (REPO_ROOT / "src" / "lg_sotf" / "compliance" / "tenant_data.py").is_file()
+
+
 @pytest.mark.parametrize("doc", [SECURITY, INDEX], ids=lambda p: p.name)
 def test_new_security_docs_are_linked(doc: Path) -> None:
     text = doc.read_text(encoding="utf-8")
