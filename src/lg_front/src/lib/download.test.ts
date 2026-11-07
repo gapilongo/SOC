@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { csvFilename, downloadCsv } from './csv';
-import { downloadBlob, fileStamp, openHtmlBlob, safeFilename } from './download';
-import { downloadText } from './reports';
+import { downloadBlob, downloadText, fileStamp, openHtmlBlob, safeFilename } from './download';
 
 /** Every helper builds an object URL, clicks a hidden link (or opens a tab) and revokes the URL later. */
 describe('download helpers', () => {
@@ -90,5 +89,13 @@ describe('download helpers', () => {
     expect(clicked.map((a) => a.download)).toEqual(['r.csv', 'r.json']);
     vi.advanceTimersByTime(1_000);
     expect(revoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('downloadText defaults to UTF-8 plain text and sanitises the filename', () => {
+    downloadText('recovery codes.txt', 'abcd-efgh\n');
+    expect(created[0].type).toBe('text/plain;charset=utf-8');
+    expect(created[0].size).toBe('abcd-efgh\n'.length); // no byte-order mark
+    expect(clicked[0].download).toBe('recovery_codes.txt');
+    expectRevokedAfter(1_000, 'blob:test/1');
   });
 });

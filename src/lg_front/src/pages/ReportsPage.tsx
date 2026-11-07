@@ -11,8 +11,9 @@ import { can } from '../auth/roles';
 import { Badge } from '../components/Badge';
 import { useToast } from '../components/Toast';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, cx } from '../components/ui';
+import { downloadText } from '../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../lib/format';
-import { SUGGESTION_LABEL, defaultRange, downloadText, formatHours, formatPct, formatRange, monthOf, rangeError } from '../lib/reports';
+import { SUGGESTION_LABEL, defaultRange, formatHours, formatPct, formatRange, monthOf, rangeError } from '../lib/reports';
 
 type Tab = 'value' | 'accuracy' | 'detections';
 const TABS: Array<{ id: Tab; label: string }> = [
