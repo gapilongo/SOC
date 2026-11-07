@@ -83,16 +83,19 @@ function burst(n: number): object {
 const expectedBySeverity = (sev: string) =>
   Array.from({ length: BURST }, (_, n) => SEVERITIES[n % SEVERITIES.length]).filter((s) => s === sev).length + (sev === 'medium' ? 1 : 0);
 
+/** Search the All view for `title`, open its row and return the alert side panel. */
 async function openAlertFromList(page: Page, title: string) {
-  await page.goto('/alerts');
-  await page.getByLabel('Title contains').fill(title);
-  await page.getByRole('button', { name: 'Apply' }).click();
+  await page.goto('/alerts?view=all');
+  const search = page.getByRole('searchbox', { name: 'Search titles' });
+  await search.fill(title);
+  await search.press('Enter');
+  await expect(page).toHaveURL(/[?&]q=/);
   const row = page.getByRole('row', { name: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
   await expect(row).toHaveCount(1);
   await row.click();
-  const drawer = page.getByRole('dialog', { name: title });
-  await expect(drawer).toBeVisible();
-  return drawer;
+  const panel = page.getByRole('complementary', { name: title });
+  await expect(panel).toBeVisible();
+  return panel;
 }
 
 /** Rows of the All actions ledger (/approvals?view=all) for this alert. */
@@ -231,8 +234,14 @@ test('alerts: filters, pagination and the alert timeline', async ({ browser, req
   await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeVisible();
   await screenshot(page, '03-alerts');
 
-  await page.getByLabel('Title contains').fill(run);
-  await page.getByRole('button', { name: 'Apply' }).click();
+  // The default view lists what needs an analyst; this run's alerts are in every status.
+  const views = page.getByRole('navigation', { name: 'Alert views' });
+  await expect(views.getByRole('link', { name: /^Needs analyst/ })).toHaveAttribute('aria-current', 'page');
+  await views.getByRole('link', { name: 'All', exact: true }).click();
+  await expect(page).toHaveURL(/view=all/);
+  const search = page.getByRole('searchbox', { name: 'Search titles' });
+  await search.fill(run);
+  await search.press('Enter');
   await expect(page).toHaveURL(new RegExp(`q=${run}`));
   const footer = page.getByText(/rows? loaded/);
   await expect(footer).toHaveText('100 rows loaded, more available');
@@ -240,28 +249,33 @@ test('alerts: filters, pagination and the alert timeline', async ({ browser, req
   await expect(footer).toHaveText(`${BURST + 1} rows loaded`);
   await expect(page.getByRole('grid', { name: 'Alerts' })).toHaveAttribute('aria-rowcount', String(BURST + 2));
 
-  const severity = page.getByRole('group', { name: 'Severity' });
-  await severity.getByRole('button', { name: 'high', exact: true }).click();
-  await expect(severity.getByRole('button', { name: 'high', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  // Severity is a filter chip: a listbox of several choices, kept in the URL.
+  await page.getByRole('button', { name: /^Severity:/ }).click();
+  const severity = page.getByRole('listbox', { name: 'Severity' });
+  await severity.getByRole('option', { name: 'High', exact: true }).click();
+  await expect(severity.getByRole('option', { name: 'High', exact: true })).toHaveAttribute('aria-selected', 'true');
   await expect(page).toHaveURL(/severity=high/);
   await expect(footer).toHaveText(`${expectedBySeverity('high')} rows loaded`);
-  await severity.getByRole('button', { name: 'medium', exact: true }).click();
+  await severity.getByRole('option', { name: 'Medium', exact: true }).click();
   await expect(footer).toHaveText(`${expectedBySeverity('high') + expectedBySeverity('medium')} rows loaded`);
+  await page.keyboard.press('Escape');
+  await expect(severity).toBeHidden();
+  await expect(page.getByRole('button', { name: /^Severity:/ })).toContainText('High, Medium');
   // Every rendered row respects the filter.
   const labels = await page.getByRole('grid', { name: 'Alerts' }).getByRole('row').evaluateAll((rows) =>
     rows.map((r) => r.getAttribute('aria-label')).filter(Boolean),
   );
   expect(labels.length).toBeGreaterThan(0);
   for (const label of labels) expect(label).toMatch(/^(high|medium) alert: /);
-  await page.getByRole('button', { name: 'Clear' }).click();
+  await page.getByRole('button', { name: 'Clear filters' }).click();
   await expect(page).not.toHaveURL(/severity=/);
 
-  const drawer = await openAlertFromList(page, BEACON_TITLE);
-  const timeline = drawer.locator('section', { has: page.getByRole('heading', { name: 'Timeline' }) }).locator('li');
+  const panel = await openAlertFromList(page, BEACON_TITLE);
+  const timeline = panel.getByRole('region', { name: 'Timeline' }).locator('li');
   await expect.poll(() => timeline.count()).toBeGreaterThanOrEqual(3);
-  await expect(drawer.getByRole('heading', { name: 'Verdict and reasoning' })).toBeVisible();
-  await expect(drawer.getByLabel('Add a note')).toBeVisible();
-  await drawer.getByRole('heading', { name: 'Timeline' }).scrollIntoViewIfNeeded();
+  await expect(panel.getByRole('heading', { name: 'Automated triage' })).toBeVisible();
+  await expect(panel.getByLabel('Add a note')).toBeVisible();
+  await panel.getByRole('heading', { name: 'Timeline' }).scrollIntoViewIfNeeded();
   await screenshot(page, '04-alert-timeline');
   await watch.assertClean();
   await context.close();
@@ -277,9 +291,10 @@ test('a viewer reads everything but sees no administration', async ({ browser })
   }
   await page.goto('/users');
   await expect(page.getByRole('heading', { name: 'You do not have access to this page' })).toBeVisible();
-  const drawer = await openAlertFromList(page, BEACON_TITLE);
-  await expect(drawer.getByLabel('Add a note')).toHaveCount(0);
-  await expect(drawer.getByRole('button', { name: 'Reprocess' })).toHaveCount(0);
+  const panel = await openAlertFromList(page, BEACON_TITLE);
+  await expect(panel.getByLabel('Add a note')).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Reprocess' })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Claim', exact: true })).toHaveCount(0);
   await assertNoTokenInStorage(page);
   await watch.assertClean();
   await context.close();
@@ -371,11 +386,12 @@ test('an analyst claims and decides an escalation, and the alert closes', async 
 
   const closed = await waitForAlert(request, apiKey, escalatedId, ['closed']);
   expect(closed.disposition).toBe('benign');
-  const drawer = await openAlertFromList(a.page, ESCALATED_TITLE);
-  await expect(drawer.getByText('closed', { exact: true }).first()).toBeVisible();
-  await expect(drawer.getByText('benign', { exact: true }).first()).toBeVisible();
-  // The timeline records who decided.
-  await expect(drawer.getByText(/^analyst[ ._]decision$/i).first()).toBeVisible();
+  const panel = await openAlertFromList(a.page, ESCALATED_TITLE);
+  await expect(panel.getByText('Closed', { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText('Benign', { exact: true }).first()).toBeVisible();
+  // The escalation box says who decided, and the timeline records it.
+  await expect(panel.getByText(/^Decided false positive by You/)).toBeVisible();
+  await expect(panel.getByText(/^analyst[ ._]decision$/i).first()).toBeVisible();
   for (const s of [v, a]) {
     await assertNoTokenInStorage(s.page);
     await s.watch.assertClean();
@@ -462,9 +478,11 @@ test('response approval: role gating, the admin approves, the alert closes as ma
   const rows = actionRows(page, beaconId);
   await expect(rows.filter({ hasText: 'Recorded only (dry run)' }).first()).toBeVisible();
   await expect(rows.filter({ hasText: 'awaiting approval' })).toHaveCount(0);
-  const drawer = await openAlertFromList(page, BEACON_TITLE);
-  await expect(drawer.getByText('closed', { exact: true }).first()).toBeVisible();
-  await expect(drawer.getByText('malicious', { exact: true }).first()).toBeVisible();
+  const panel = await openAlertFromList(page, BEACON_TITLE);
+  await expect(panel.getByText('Closed', { exact: true }).first()).toBeVisible();
+  await expect(panel.getByText('Malicious', { exact: true }).first()).toBeVisible();
+  // The approved action ran as a dry run: the panel warns about it.
+  await expect(panel.getByRole('alert').filter({ hasText: 'The response ran as a dry run.' })).toBeVisible();
   for (const s of [v, a, ad]) {
     await assertNoTokenInStorage(s.page);
     await s.watch.assertClean();
