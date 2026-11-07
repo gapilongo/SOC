@@ -457,7 +457,7 @@ jobs:
           npx playwright install --with-deps chromium
       # Builds the api and frontend images, starts the production-like compose
       # stack with the web UI (fake LLM, bootstrap admin), runs e2e/ in Chromium
-      # (sign-in, live dashboard, filters and pagination, timeline, escalation
+      # (sign-in, live Overview, filters and pagination, timeline, escalation
       # decision, approval, role gating, sign-out, CSP) and checks the container
       # logs for tokens; tears the stack down afterwards.
       - name: Run the suite against the stack

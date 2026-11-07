@@ -26,7 +26,7 @@ request is written to that tenant's audit log.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple, cast
 from uuid import UUID
 
 from redis.exceptions import RedisError
@@ -44,6 +44,7 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.models.vocabulary import Role, Scope
 from lg_sotf.observability.logging import bind_context, get_logger
 from lg_sotf.security.hashing import InvalidApiKey, looks_like_api_key, parse_api_key, sha256_hex, verify_api_key
 from lg_sotf.services import accounts
@@ -208,7 +209,7 @@ async def _local_principal(ctx: ApiContext, token: str) -> Principal:
         tenant_id=tenant_id,
         home_tenant_id=tenant_id,
         auth_method="password",
-        role=user.role,
+        role=cast(Role, user.role),
         user_id=user.id,
         email=user.email,
         subject=str(user.id),
@@ -271,7 +272,7 @@ async def _oidc_principal(ctx: ApiContext, token: str) -> Principal:
         tenant_id=tenant_id,
         home_tenant_id=tenant_id,
         auth_method="oidc",
-        role=role,
+        role=cast(Role, role),
         user_id=user_id,
         email=email,
         subject=identity.subject,
@@ -306,7 +307,7 @@ def _oidc_user_principal(identity: OIDCIdentity, tenant_id: str, role: str, user
         tenant_id=tenant_id,
         home_tenant_id=tenant_id,
         auth_method="oidc",
-        role=role,
+        role=cast(Role, role),
         user_id=user.id,
         email=user.email,
         subject=identity.subject,
@@ -375,7 +376,7 @@ async def _api_key_principal(ctx: ApiContext, presented: str) -> Principal:
         tenant_id=key.tenant_id,
         home_tenant_id=key.tenant_id,
         auth_method="api_key",
-        scopes=frozenset(key.scopes),
+        scopes=cast(FrozenSet[Scope], frozenset(key.scopes)),
         api_key_id=key.id,
         subject=str(key.id),
     )

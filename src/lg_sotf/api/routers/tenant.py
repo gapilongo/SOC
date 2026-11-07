@@ -54,6 +54,7 @@ from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
+from lg_sotf.api.payload_schemas import ResponseRoutesOut
 from lg_sotf.api.ratelimit import rate_limited
 from lg_sotf.api.schemas import (
     LLMTestOut,
@@ -410,7 +411,12 @@ async def patch_settings(
     return _out(updated).model_copy(update={"retention_limits": retention_limits(ctx)})
 
 
-@router.get("/response/routes", summary="Which connector executes each action type, and why")
+@router.get(
+    "/response/routes",
+    summary="Which connector executes each action type, and why",
+    response_model=None,
+    responses={200: {"model": ResponseRoutesOut}},
+)
 async def response_routes(request: Request, principal: Principal = Depends(require(ADMIN))) -> Dict[str, Any]:
     """``{dry_run_forced, routes: {action_type: {connector, source, capability, live, problem}}}``."""
     ctx = get_ctx(request)

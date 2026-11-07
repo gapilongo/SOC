@@ -19,8 +19,9 @@ Every request:
 * ignores proxy and ``.netrc`` environment settings (``trust_env=False``).
 
 Reads (``GET``) are retried a bounded number of times on 429, 502, 503, 504
-and transport errors, honouring ``Retry-After`` up to :data:`MAX_RETRY_AFTER_S`.
-Writes are never retried (a note must not be added twice).
+and transport errors, honouring ``Retry-After`` (seconds, fractional or not,
+or an HTTP date) up to :data:`MAX_RETRY_AFTER_S`. Writes are never retried (a
+note must not be added twice).
 """
 
 from __future__ import annotations
@@ -36,6 +37,8 @@ import httpx
 from lg_sotf import __version__
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy
+from lg_sotf.net.http import ResponseTooLarge, read_capped
+from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -228,17 +231,9 @@ class LgSotfApiClient:
         )
         response = await self._client.send(request, stream=True)
         try:
-            declared = response.headers.get("content-length")
-            if declared is not None and declared.isdigit() and int(declared) > self._max_bytes:
-                raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit")
-            chunks = []
-            size = 0
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > self._max_bytes:
-                    raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit")
-                chunks.append(chunk)
-            return response.status_code, response.headers, b"".join(chunks)
+            return response.status_code, response.headers, await read_capped(response, self._max_bytes)
+        except ResponseTooLarge:
+            raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit") from None
         finally:
             await response.aclose()
 
@@ -258,8 +253,9 @@ def _query(params: Optional[Mapping[str, QueryValue]]) -> Sequence[Tuple[str, st
 
 
 def _retry_delay(retry_after: Optional[str], attempt: int) -> float:
-    if retry_after is not None and retry_after.strip().isdigit():
-        return min(float(retry_after.strip()), MAX_RETRY_AFTER_S)
+    hint = parse_retry_after(retry_after, cap=MAX_RETRY_AFTER_S)
+    if hint is not None:
+        return hint
     backoff: float = BACKOFF_BASE_S * (2**attempt)
     return min(backoff, MAX_RETRY_AFTER_S)
 
