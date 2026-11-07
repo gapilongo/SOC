@@ -1,21 +1,31 @@
-"""Helpers shared by several routers (routers never import each other): response builders, resume enqueueing."""
+"""Helpers shared by several routers (routers never import each other).
+
+Response builders, query timestamps, the sign-in cookie and failed-login
+limit (auth and mfa), the password policy as an API error (identity and
+platform) and the catch-all suppression rule check (suppressions and reports).
+"""
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+import ipaddress
+import re
+from datetime import UTC, datetime
+from typing import Any, List, Mapping, Optional, Sequence
 from uuid import UUID
 
+from fastapi import Request, Response
+
+from lg_sotf.api.auth.authenticate import client_ip
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
 from lg_sotf.domain.digests import entities_preview, findings
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.domain.suppression import InvalidRule
+from lg_sotf.models.vocabulary import SEVERITIES
+from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.escalation_views import EscalationView, escalation_views
-from lg_sotf.services.review import ResumeRequest
-
-log = get_logger(__name__)
 
 
 def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:
@@ -30,20 +40,6 @@ def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[
         return UUID(value)
     except ValueError as exc:
         raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
-
-
-async def enqueue_resumes(ctx: ApiContext, tenant_id: str, requests: Sequence[ResumeRequest]) -> Tuple[int, int]:
-    """Enqueue a committed decision's resume messages: ``(enqueued, failed)``. A failure is logged and
-    counted, never raised: the decision stands."""
-    ok = failed = 0
-    for request in requests:
-        try:
-            await ctx.queue.enqueue_resume(tenant_id, request.alert_id, request.payload)
-            ok += 1
-        except Exception as exc:  # noqa: BLE001 - the decision is committed; report instead of failing it
-            failed += 1
-            log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
-    return ok, failed
 
 
 def alert_out(alert: AlertListItem) -> AlertOut:
@@ -91,3 +87,100 @@ async def escalations_out(ctx: ApiContext, tenant_id: str, escalations: Sequence
 
 async def one_escalation_out(ctx: ApiContext, tenant_id: str, escalation: Escalation) -> EscalationOut:
     return (await escalations_out(ctx, tenant_id, [escalation]))[0]
+
+
+# ------------------------------------------------------------------ timestamps
+
+
+def aware(value: Optional[datetime]) -> Optional[datetime]:
+    """Query timestamps without an offset are taken as UTC."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+# ------------------------------------------------------------------ sign-in (auth and mfa routers)
+
+REFRESH_COOKIE = "lgsotf_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
+LOGIN_IP_BUCKET = "login-ip"
+LOGIN_IP_MULTIPLIER = 10
+
+
+def set_refresh_cookie(ctx: ApiContext, response: Response, token: str) -> None:
+    auth = ctx.settings.auth
+    response.set_cookie(
+        REFRESH_COOKIE,
+        token,
+        max_age=int(auth.refresh_token_ttl_s),
+        path=REFRESH_COOKIE_PATH,
+        domain=auth.cookie_domain,
+        secure=auth.cookie_secure,
+        httponly=True,
+        samesite="strict",
+    )
+
+
+def login_ip_limit(ctx: ApiContext) -> int:
+    return ctx.settings.api.login_rate_limit_per_minute * LOGIN_IP_MULTIPLIER
+
+
+async def count_failed_login(ctx: ApiContext, request: Request) -> None:
+    await ctx.limiter.hit(LOGIN_IP_BUCKET, client_ip(request), login_ip_limit(ctx))
+
+
+def check_password(ctx: ApiContext, password: str) -> None:
+    """The local-account password policy (:mod:`lg_sotf.security.passwords`) as a 422 ``weak_password``."""
+    problem = password_problem(password, ctx.settings.auth.password_min_length)
+    if problem is not None:
+        raise ApiError(422, "weak_password", problem)
+
+
+# ------------------------------------------------------------------ suppression rules (suppressions and reports)
+
+_SEVERITY_PATHS = frozenset({"severity", "normalized.severity"})
+_FLAGS = re.compile(r"^\(\?[a-zA-Z]+\)")
+_UNIVERSAL_PATTERNS = frozenset({"", ".*", ".+", "(.*)", "(.+)", ".*?", "[\\s\\S]*", "[\\s\\S]+"})
+
+
+def _values(predicate: Any) -> List[Any]:
+    if isinstance(predicate, Mapping):
+        if "in" in predicate and isinstance(predicate["in"], (list, tuple)):
+            return list(predicate["in"])
+        if "eq" in predicate:
+            return [predicate["eq"]]
+        return []
+    if isinstance(predicate, (list, tuple)):
+        return list(predicate)
+    return [predicate]
+
+
+def _universal(path: str, predicate: Any) -> bool:
+    """Whether ``predicate`` matches (practically) every alert."""
+    if path in _SEVERITY_PATHS:
+        values = {v.lower() for v in _values(predicate) if isinstance(v, str)}
+        if set(SEVERITIES) <= values:
+            return True
+    if isinstance(predicate, Mapping):
+        pattern = predicate.get("regex")
+        if isinstance(pattern, str):
+            body = _FLAGS.sub("", pattern.strip())
+            body = body.removeprefix("^").removesuffix("$")
+            if body in _UNIVERSAL_PATTERNS:
+                return True
+        networks = predicate.get("cidr")
+        if networks is not None:
+            items = networks if isinstance(networks, (list, tuple)) else [networks]
+            for item in items:
+                try:
+                    if isinstance(item, str) and ipaddress.ip_network(item, strict=False).prefixlen == 0:
+                        return True
+                except ValueError:
+                    continue
+    return False
+
+
+def reject_catch_all(match: Mapping[str, Any]) -> None:
+    """Refuse a rule whose every predicate matches any alert."""
+    if match and all(_universal(str(path), predicate) for path, predicate in match.items()):
+        raise InvalidRule("the rule matches every alert; add a narrower predicate")

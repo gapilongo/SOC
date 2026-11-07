@@ -282,6 +282,14 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "evidence-html-no-db"
+name = "The evidence-pack HTML renderer reads only the pack, never the database"
+type = "forbidden"
+source_modules = ["lg_sotf.compliance.evidence_html"]
+# S6: rendering is a pure function of the sealed pack; the builder (compliance.evidence) does the I/O.
+forbidden_modules = ["lg_sotf.db", "asyncpg", "lg_sotf.compliance.evidence"]
+
+[[tool.importlinter.contracts]]
 id = "safe-regex-is-leaf"
 name = "The safe regex engine imports only the standard library and observability"
 type = "forbidden"
@@ -394,12 +402,4 @@ modules = [
     "lg_sotf.api.routers.tenant",
     "lg_sotf.api.routers.triage",
     "lg_sotf.api.routers.ws",
-]
-ignore_imports = [
-    # S9 thin routers: move each shared helper to api/common.py
-    "lg_sotf.api.routers.audit -> lg_sotf.api.routers.alerts",
-    "lg_sotf.api.routers.mfa -> lg_sotf.api.routers.auth",
-    "lg_sotf.api.routers.platform -> lg_sotf.api.routers.identity",
-    "lg_sotf.api.routers.reports -> lg_sotf.api.routers.suppressions",
-    "lg_sotf.api.routers.suppressions -> lg_sotf.api.routers.alerts",
 ]
