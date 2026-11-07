@@ -51,7 +51,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 from uuid import UUID
 
 from lg_sotf.audit.logger import AuditLogger
@@ -78,6 +78,7 @@ from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Alert, Repositories, ResponseAction, SuppressionRule
+    from lg_sotf.queue.producer import WorkQueue
 
 log = get_logger(__name__)
 
@@ -140,6 +141,102 @@ class DecisionResult(List[ResumeRequest]):
 class _ActionCheck:
     action: ResponseAction
     autonomy: str
+
+
+@dataclass(frozen=True)
+class _DecisionRequest:
+    """A decision request after validation: what :meth:`ReviewService.decide` records."""
+
+    decision: str
+    notes: Optional[str]
+    requested: List[str]
+    feedback: Dict[str, Any]
+
+
+class _Actor(NamedTuple):
+    user_id: UUID
+    role: str
+
+
+class _Recorded(NamedTuple):
+    escalation: Escalation
+    feedback_id: str
+    own_review: List[str]
+    suggestion_id: Optional[str]
+
+
+def _parse_decision(
+    decision: str,
+    notes: Optional[str],
+    approved_actions: Sequence[str],
+    feedback: Optional[Mapping[str, Any]],
+) -> _DecisionRequest:
+    """Validate a decision request (no I/O): the decision, trimmed notes, requested approvals and feedback."""
+    if decision not in DECISIONS:
+        raise ReviewError(f"decision must be one of {', '.join(DECISIONS)}")
+    trimmed = (notes or "").strip()[:MAX_NOTES_CHARS] or None
+    requested = [str(a).strip() for a in approved_actions if str(a).strip()]
+    if len(requested) > MAX_APPROVED_ACTIONS:
+        raise ReviewError(f"at most {MAX_APPROVED_ACTIONS} approved actions")
+    if requested and decision != "true_positive":
+        raise ReviewError("approved_actions are only accepted with a true_positive decision")
+    return _DecisionRequest(decision, trimmed, requested, _feedback_fields(feedback))
+
+
+def _authorise_approvals(requested: Sequence[str], role: str, autonomy: Mapping[str, str]) -> None:
+    """Refuse a malformed entry (:class:`ReviewError`) or one above ``role``'s authority (:class:`ReviewDenied`).
+
+    ``autonomy`` is the tenant's autonomy policy (risk level to mode); entries are checked in order.
+    """
+    for entry in requested:
+        action_type, sep, target = entry.partition(":")
+        spec = ACTION_CATALOG.get(action_type)
+        if spec is None:
+            raise ReviewError(f"unknown action type {action_type[:64]!r}")
+        if sep and not target.strip():
+            raise ReviewError(f"approved action {action_type!r} names an empty target")
+        if len(entry) > MAX_APPROVED_ENTRY_CHARS:
+            raise ReviewError(f"approved action entries are at most {MAX_APPROVED_ENTRY_CHARS} characters")
+        if not approval_allowed(spec.risk, role, autonomy.get(spec.risk)):
+            raise ReviewDenied(f"role {role!r} may not approve {spec.risk} risk action {action_type!r}")
+
+
+def _resume_requests(
+    escalation_id: str, decided: Escalation, request: _DecisionRequest, approved: List[str], actor: _Actor
+) -> List[ResumeRequest]:
+    """One ``analyst_decision`` resume message per alert waiting on the decided escalation."""
+    return [
+        ResumeRequest(
+            alert_id,
+            {
+                "type": "analyst_decision",
+                "escalation_id": escalation_id,
+                "decision": request.decision,
+                # Pre-approvals name the reviewed alert's targets: attached alerts never receive them.
+                "approved_actions": approved if alert_id == decided.alert_id else [],
+                "decided_by": str(actor.user_id),
+                "notes": request.notes or "",
+                "approver_role": actor.role,
+            },
+        )
+        for alert_id in EscalationService.alerts_to_resume(decided)
+    ]
+
+
+def _feedback_fields(feedback: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
+    out: Dict[str, Any] = {}
+    for key, value in (feedback or {}).items():
+        if key not in FEEDBACK_FIELDS:
+            raise ReviewError(f"unknown feedback field {str(key)[:32]!r}")
+        if value is None:
+            continue
+        if key == "confidence":
+            if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+                raise ReviewError("feedback confidence must be an integer 0-100")
+        elif not isinstance(value, bool):
+            raise ReviewError(f"feedback {key} must be true or false")
+        out[key] = value
+    return out
 
 
 def _user_uuid(user: Union[UUID, str]) -> UUID:
@@ -251,133 +348,95 @@ class ReviewService:
         _require_role(role)
         user_id = _user_uuid(user)
         now = now or datetime.now(UTC)
-        if decision not in DECISIONS:
-            raise ReviewError(f"decision must be one of {', '.join(DECISIONS)}")
-        notes = (notes or "").strip()[:MAX_NOTES_CHARS] or None
-        requested = [str(a).strip() for a in approved_actions if str(a).strip()]
-        if len(requested) > MAX_APPROVED_ACTIONS:
-            raise ReviewError(f"at most {MAX_APPROVED_ACTIONS} approved actions")
-        if requested and decision != "true_positive":
-            raise ReviewError("approved_actions are only accepted with a true_positive decision")
-        extra = self._feedback_fields(feedback)
-
+        request = _parse_decision(decision, notes, approved_actions, feedback)
         tenant = await self._repos.tenants.get(tenant_id)
-        policy = self._responses.policy(tenant.settings)
-        for entry in requested:
-            action_type, sep, target = entry.partition(":")
-            spec = ACTION_CATALOG.get(action_type)
-            if spec is None:
-                raise ReviewError(f"unknown action type {action_type[:64]!r}")
-            if sep and not target.strip():
-                raise ReviewError(f"approved action {action_type!r} names an empty target")
-            if len(entry) > MAX_APPROVED_ENTRY_CHARS:
-                raise ReviewError(f"approved action entries are at most {MAX_APPROVED_ENTRY_CHARS} characters")
-            if not approval_allowed(spec.risk, role, policy.autonomy.get(spec.risk)):
-                raise ReviewDenied(f"role {role!r} may not approve {spec.risk} risk action {action_type!r}")
-
+        _authorise_approvals(request.requested, role, self._responses.policy(tenant.settings).autonomy)
         current = await self._repos.escalations.get(tenant_id, escalation_id)
         if current.status == "claimed" and current.assigned_to not in (None, user_id) and role != "admin":
             raise ReviewDenied("the escalation is claimed by another analyst")
-        late = current.status == "expired"
-        started = current.claimed_at or current.created_at
-        duration = max(0, int((now - started).total_seconds())) if started else None
-        approved = await self._resolve_approvals(tenant_id, current.alert_id, requested)
-
-        suggestion_id: Optional[str] = None
+        approved = await self._resolve_approvals(tenant_id, current.alert_id, request.requested)
+        actor = _Actor(user_id, role)
         async with self._repos.db.tenant_tx(tenant_id) as conn:
-            # Expiry only means the SLA was missed: the alert's run still waits on this escalation, so a
-            # late decision is recorded (same optimistic lock as on an active one) rather than refused.
-            decided = await self._repos.escalations.decide(
-                tenant_id,
-                escalation_id,
-                decision=decision,
-                decided_by=user_id,
+            recorded = await self._record_decision(
+                conn, tenant_id, current, request, approved, actor,
                 expected_version=expected_version,
-                notes=notes,
-                approved_actions=approved,
+                suggest=lambda: self._suggest(tenant.settings, suggest_suppression),
                 now=now,
-                allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES,
-                conn=conn,
             )
-            fb, _ = await self._repos.feedback.create(
-                tenant_id,
-                escalation_id,
-                decided.alert_id,
-                decision,
-                user_id=user_id,
-                notes=notes,
-                review_duration_s=duration,
-                conn=conn,
-                **extra,
-            )
-            own_review = await self._own_review(tenant_id, decided, decision, conn)
-            await self._audit.record(
-                tenant_id,
-                "escalation.decided",
-                "escalation",
-                escalation_id,
-                actor_type="user",
-                actor_id=str(user_id),
-                details={
-                    "alert_id": decided.alert_id,
-                    "decision": decision,
-                    "role": role,
-                    "attached_alerts": len(decided.related_alert_ids),
-                    "approved_actions": approved[:20],
-                    "own_review_alerts": len(own_review),
-                    "version": decided.version,
-                    "after_sla_expiry": late,
-                },
-                conn=conn,
-            )
-            if decision == "false_positive" and self._suggest(tenant.settings, suggest_suppression):
-                suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, user_id, now, conn)
-            await enqueue_event(
-                conn,
-                tenant_id,
-                ESCALATION_DECIDED,
-                alert_id=decided.alert_id,
-                dedupe_key=f"{ESCALATION_DECIDED}:{escalation_id}",
-                escalation=decided,
-                escalation_extra={"after_sla_expiry": late or None},
-            )
-
-        requests = [
-            ResumeRequest(
-                alert_id,
-                {
-                    "type": "analyst_decision",
-                    "escalation_id": escalation_id,
-                    "decision": decision,
-                    # Pre-approvals name the reviewed alert's targets: attached alerts never receive them.
-                    "approved_actions": approved if alert_id == decided.alert_id else [],
-                    "decided_by": str(user_id),
-                    "notes": notes or "",
-                    "approver_role": role,
-                },
-            )
-            for alert_id in EscalationService.alerts_to_resume(decided)
-        ]
-        for request in requests:
+        decided = recorded.escalation
+        requests = _resume_requests(escalation_id, decided, request, approved, actor)
+        for resume in requests:
             await publish_event(
-                self._events,
-                "escalation.updated",
-                tenant_id,
-                request.alert_id,
-                {"escalation_id": escalation_id, "status": decided.status, "decision": decision},
+                self._events, "escalation.updated", tenant_id, resume.alert_id,
+                {"escalation_id": escalation_id, "status": decided.status, "decision": request.decision},
             )
         log.info(
-            "review.decided", decision=decision, resumes=len(requests), own_review=len(own_review),
-            suggestion=suggestion_id is not None,
+            "review.decided", decision=request.decision, resumes=len(requests), own_review=len(recorded.own_review),
+            suggestion=recorded.suggestion_id is not None,
         )
         return DecisionResult(
             requests,
             escalation=decided,
-            feedback_id=fb.id,
-            suppression_suggestion_id=suggestion_id,
+            feedback_id=recorded.feedback_id,
+            suppression_suggestion_id=recorded.suggestion_id,
             approved_actions=approved,
-            own_review_alert_ids=own_review,
+            own_review_alert_ids=recorded.own_review,
         )
+
+    async def _record_decision(
+        self, conn: Connection, tenant_id: str, current: Escalation, request: _DecisionRequest, approved: List[str],
+        actor: _Actor, *, expected_version: int, suggest: Callable[[], bool], now: datetime,
+    ) -> _Recorded:
+        """In the decision's one transaction: escalation, feedback, audit, suggestion (if ``suggest()``), outbox."""
+        escalation_id = current.id
+        decision = request.decision
+        late = current.status == "expired"
+        started = current.claimed_at or current.created_at
+        duration = max(0, int((now - started).total_seconds())) if started else None
+        # Expiry only means the SLA was missed: the alert's run still waits on this escalation, so a
+        # late decision is recorded (same optimistic lock as on an active one) rather than refused.
+        decided = await self._repos.escalations.decide(
+            tenant_id, escalation_id, decision=decision, decided_by=actor.user_id, expected_version=expected_version,
+            notes=request.notes, approved_actions=approved, now=now,
+            allowed_from=("expired",) if late else ACTIVE_ESCALATION_STATUSES, conn=conn,
+        )
+        fb, _ = await self._repos.feedback.create(
+            tenant_id, escalation_id, decided.alert_id, decision, user_id=actor.user_id, notes=request.notes,
+            review_duration_s=duration, conn=conn, **request.feedback,
+        )
+        own_review = await self._own_review(tenant_id, decided, decision, conn)
+        await self._audit.record(
+            tenant_id,
+            "escalation.decided",
+            "escalation",
+            escalation_id,
+            actor_type="user",
+            actor_id=str(actor.user_id),
+            details={
+                "alert_id": decided.alert_id,
+                "decision": decision,
+                "role": actor.role,
+                "attached_alerts": len(decided.related_alert_ids),
+                "approved_actions": approved[:20],
+                "own_review_alerts": len(own_review),
+                "version": decided.version,
+                "after_sla_expiry": late,
+            },
+            conn=conn,
+        )
+        suggestion_id: Optional[str] = None
+        if decision == "false_positive" and suggest():
+            suggestion_id = await self._suggest_suppression(tenant_id, decided, fb.id, actor.user_id, now, conn)
+        await enqueue_event(
+            conn,
+            tenant_id,
+            ESCALATION_DECIDED,
+            alert_id=decided.alert_id,
+            dedupe_key=f"{ESCALATION_DECIDED}:{escalation_id}",
+            escalation=decided,
+            escalation_extra={"after_sla_expiry": late or None},
+        )
+        return _Recorded(decided, fb.id, own_review, suggestion_id)
 
     async def _resolve_approvals(self, tenant_id: str, alert_id: str, requested: Sequence[str]) -> List[str]:
         """Explicit ``action_type:target`` entries; a bare type becomes one entry per target the planner proposes."""
@@ -423,22 +482,6 @@ class ReviewService:
             )
             if reason is not None:
                 out.append(alert_id)
-        return out
-
-    @staticmethod
-    def _feedback_fields(feedback: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
-        out: Dict[str, Any] = {}
-        for key, value in (feedback or {}).items():
-            if key not in FEEDBACK_FIELDS:
-                raise ReviewError(f"unknown feedback field {str(key)[:32]!r}")
-            if value is None:
-                continue
-            if key == "confidence":
-                if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
-                    raise ReviewError("feedback confidence must be an integer 0-100")
-            elif not isinstance(value, bool):
-                raise ReviewError(f"feedback {key} must be true or false")
-            out[key] = value
         return out
 
     def _suggest(self, tenant_settings: Mapping[str, Any], requested: Optional[bool]) -> bool:
@@ -738,3 +781,17 @@ class ReviewService:
 
 def _s(value: Any) -> Optional[str]:
     return None if value is None else str(value)
+
+
+async def enqueue_resumes(queue: WorkQueue, tenant_id: str, requests: Sequence[ResumeRequest]) -> Tuple[int, int]:
+    """Enqueue a committed decision's resume messages: ``(enqueued, failed)``. A failure is logged and
+    counted, never raised: the decision stands."""
+    ok = failed = 0
+    for request in requests:
+        try:
+            await queue.enqueue_resume(tenant_id, request.alert_id, request.payload)
+            ok += 1
+        except Exception as exc:  # noqa: BLE001 - the decision is committed; report instead of failing it
+            failed += 1
+            log.error("api.resume_enqueue_failed", alert_id=request.alert_id, error_type=type(exc).__name__)
+    return ok, failed

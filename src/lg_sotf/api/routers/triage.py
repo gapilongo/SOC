@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from lg_sotf.api.auth.deps import ANALYST, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import enqueue_resumes, escalations_out, user_ref
+from lg_sotf.api.common import escalations_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError, describe_error
 from lg_sotf.api.schemas import SuppressionOut
@@ -42,6 +42,7 @@ from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services import triage
 from lg_sotf.services.response_preview import PreviewAction, response_preview
+from lg_sotf.services.review import enqueue_resumes
 
 log = get_logger(__name__)
 
@@ -104,7 +105,7 @@ async def _bulk_out(ctx: ApiContext, tenant_id: str, outcomes: List[triage.ItemO
     # Resumes first: the decisions are committed, whatever happens to the read below.
     for item, outcome in zip(results, outcomes, strict=True):
         if outcome.decision is not None:
-            item.resumes_enqueued, item.resumes_failed = await enqueue_resumes(ctx, tenant_id, outcome.decision)
+            item.resumes_enqueued, item.resumes_failed = await enqueue_resumes(ctx.queue, tenant_id, outcome.decision)
     done = [o.escalation for o in outcomes if o.escalation is not None]
     rows = {e.id: e for e in await escalations_out(ctx, tenant_id, done)}
     for item, outcome in zip(results, outcomes, strict=True):

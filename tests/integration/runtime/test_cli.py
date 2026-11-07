@@ -177,6 +177,10 @@ def test_create_tenant_validates_input(cli_env: str) -> None:
         result = runner.invoke(cli, ["create-tenant", *argv], input="short\n")
         assert result.exit_code != 0, argv
         assert message in result.output, (argv, result.output)
+    # The API's password policy: long enough is not enough.
+    argv = ["--id", "ok-id", "--name", "x", "--admin-email", "a@b.example", "--password-stdin"]
+    repetitive = runner.invoke(cli, ["create-tenant", *argv], input="abcabcabcabcabc\n")
+    assert repetitive.exit_code != 0 and "password is too repetitive" in repetitive.output, repetitive.output
 
 
 async def _seed_alert(url: str) -> str:

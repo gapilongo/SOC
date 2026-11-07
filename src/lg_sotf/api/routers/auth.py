@@ -27,6 +27,14 @@ from lg_sotf.api.auth.authenticate import (
 from lg_sotf.api.auth.deps import ANY, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.auth.service import AuthService, MfaChallenge, invalid_session
+from lg_sotf.api.common import (
+    LOGIN_IP_BUCKET,
+    REFRESH_COOKIE,
+    REFRESH_COOKIE_PATH,
+    count_failed_login,
+    login_ip_limit,
+    set_refresh_cookie,
+)
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
@@ -35,28 +43,10 @@ from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
 
-REFRESH_COOKIE = "lgsotf_refresh"
-REFRESH_COOKIE_PATH = "/api/v1/auth"
 LOGIN_BUCKET = "login"
-LOGIN_IP_BUCKET = "login-ip"
-LOGIN_IP_MULTIPLIER = 10
 REFRESH_BUCKET = "refresh"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-
-def set_refresh_cookie(ctx: ApiContext, response: Response, token: str) -> None:
-    auth = ctx.settings.auth
-    response.set_cookie(
-        REFRESH_COOKIE,
-        token,
-        max_age=int(auth.refresh_token_ttl_s),
-        path=REFRESH_COOKIE_PATH,
-        domain=auth.cookie_domain,
-        secure=auth.cookie_secure,
-        httponly=True,
-        samesite="strict",
-    )
 
 
 def _clear_refresh_cookie(ctx: ApiContext, response: Response) -> None:
@@ -69,10 +59,6 @@ def _clear_refresh_cookie(ctx: ApiContext, response: Response) -> None:
         httponly=True,
         samesite="strict",
     )
-
-
-def login_ip_limit(ctx: ApiContext) -> int:
-    return ctx.settings.api.login_rate_limit_per_minute * LOGIN_IP_MULTIPLIER
 
 
 async def _limit_login(ctx: ApiContext, request: Request, email: str) -> None:
@@ -92,10 +78,6 @@ async def _limit_login(ctx: ApiContext, request: Request, email: str) -> None:
     blocked = await ctx.limiter.blocked(LOGIN_IP_BUCKET, ip, login_ip_limit(ctx))
     if blocked is not None:
         raise rate_limited(blocked)
-
-
-async def count_failed_login(ctx: ApiContext, request: Request) -> None:
-    await ctx.limiter.hit(LOGIN_IP_BUCKET, client_ip(request), login_ip_limit(ctx))
 
 
 def _origin_host(value: str) -> str:
