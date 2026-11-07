@@ -87,7 +87,6 @@ from typing import (
 )
 from uuid import UUID
 
-from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db import AlreadyInState, Connection, InvalidTransition, locks
 from lg_sotf.db.repos._base import UNSET
 from lg_sotf.db.repos.actions import VerificationWrite
@@ -109,18 +108,10 @@ from lg_sotf.domain.actions import (
     guardrail_result,
 )
 from lg_sotf.domain.connectors import call_deadline
-from lg_sotf.domain.events import EventPublisher, publish_event
-from lg_sotf.integrations.events import (
-    ACTION_AWAITING_APPROVAL,
-    ACTION_EXECUTED,
-    ACTION_FAILED,
-    ACTION_VERIFICATION_FAILED,
-)
-from lg_sotf.integrations.outbox import enqueue_event
+from lg_sotf.domain.events import EventPublisher
 from lg_sotf.models import vocabulary
 from lg_sotf.models.vocabulary import POLICY_APPROVER, SCHEDULER_OWNER, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
-from lg_sotf.observability.metrics import record_action
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.services.connectors import (
@@ -143,6 +134,7 @@ from lg_sotf.services.connectors.microsoft import (
 )
 from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
 from lg_sotf.services.response.guardrails import GuardrailBlock, check_guardrails
+from lg_sotf.services.response.ledger import SCHEDULER_ACTOR, ActionLedger
 from lg_sotf.services.response.planner import (
     HOST_SCOPED_ACTIONS,
     MAX_SCOPE_HOSTS,
@@ -236,13 +228,6 @@ __all__ = [
 log = get_logger(__name__)
 
 PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
-# Ledger statuses that raise an integration event (lg_sotf.integrations), written with their audit entry.
-ACTION_EVENTS: Dict[str, str] = {
-    "awaiting_approval": ACTION_AWAITING_APPROVAL,
-    "succeeded": ACTION_EXECUTED,
-    "dry_run": ACTION_EXECUTED,
-    "failed": ACTION_FAILED,
-}
 # Execution: parallel connector calls per node run, and the share of the node timeout they may use.
 EXECUTION_CONCURRENCY = 4
 EXECUTION_BUDGET_FRACTION = 0.75
@@ -253,7 +238,6 @@ MIN_STATEFUL_EXECUTION_S = DEADLINE_MARGIN_S + MIN_HANDLER_S + 0.5
 # How long a started stateful row waits while a kill switch holds it (each wait counts one attempt).
 HALTED_RETRY_S = 300.0
 ORPHAN_GRACE_S = 60.0
-SCHEDULER_ACTOR = "scheduler"
 # Connector results are stored in response_actions.result; larger details keep their essential keys.
 MAX_RESULT_BYTES = 8 * 1024
 MAX_VERIFICATION_DETAIL_BYTES = 12 * 1024
@@ -320,7 +304,7 @@ class ResponseService:
         self._ticketing = ticketing
         self._settings = settings
         self._events = events
-        self._audit = AuditLogger(repos)
+        self._ledger = ActionLedger(repos, events)
         self._registry = registry or ConnectorRegistry(
             settings,
             overrides=connectors, secret_box=secret_box,
@@ -450,7 +434,7 @@ class ResponseService:
                     blocked_reason=reason, conn=conn,
                 )
                 if created:
-                    await self._record_transition(
+                    await self._ledger.record_transition(
                         tenant_id, action, "response_action.proposed", {"approved_by": approved_by, "autonomy": autonomy},
                         conn=conn,
                     )
@@ -469,7 +453,7 @@ class ResponseService:
     ) -> ResponseAction:
         """A row left 'proposed' by an interrupted approval whose decision changed on re-plan."""
         try:
-            return await self._transition_audited(
+            return await self._ledger.transition_audited(
                 tenant_id, action.id, status, details={"replanned": True}, expected_from="proposed", blocked_reason=reason
             )
         except (AlreadyInState, InvalidTransition):
@@ -478,7 +462,7 @@ class ResponseService:
     async def _approve_proposed(self, tenant_id: str, action: ResponseAction, approved_by: str) -> ResponseAction:
         policy = approved_by == POLICY_APPROVER
         try:
-            return await self._transition_audited(
+            return await self._ledger.transition_audited(
                 tenant_id, action.id, "approved", details={"approved_by": approved_by[:128], "preapproved": not policy},
                 actor_type="agent" if policy else "user", actor_id=approved_by, expected_from="proposed",
                 approved_by=approved_by[:128],
@@ -545,7 +529,7 @@ class ResponseService:
             else:
                 continue
             try:
-                updated = await self._transition_audited(
+                updated = await self._ledger.transition_audited(
                     tenant_id, action.id, target,
                     details={"decided_by": decided_by[:128], "reject_remaining": reject_remaining and action_id not in rejected},
                     actor_type="user", actor_id=decided_by, expected_from="awaiting_approval", **extra,
@@ -788,7 +772,7 @@ class ResponseService:
                 settled += len(handed)
                 continue
             try:
-                await self._transition_audited(
+                await self._ledger.transition_audited(
                     owner,
                     action_id,
                     "failed",
@@ -818,7 +802,7 @@ class ResponseService:
             return handed
         handed = await self._repos.actions.hand_off(tenant_id, action_ids, reason=reason, conn=conn)
         for action in await self._repos.actions.get_many(tenant_id, handed, conn=conn):
-            await self._audit_only(
+            await self._ledger.audit_action(
                 tenant_id, action, "response_action.handed_off", {"reason": reason}, actor_type="system",
                 actor_id=SCHEDULER_ACTOR, conn=conn,
             )
@@ -831,7 +815,7 @@ class ResponseService:
     ) -> Optional[ResponseAction]:
         """``approved -> blocked`` with a guardrail-style reason (expiry, superseded), audited; ``None`` if it moved on."""
         try:
-            return await self._transition_audited(
+            return await self._ledger.transition_audited(
                 tenant_id, action_id, "blocked", details={"reason": code}, actor_type="system", actor_id=SCHEDULER_ACTOR,
                 expected_from="approved", blocked_reason=code, result=guardrail_result(code, **detail),
             )
@@ -933,9 +917,9 @@ class ResponseService:
     ) -> None:
         """Audit a claim inside its transaction (published by the caller after commit)."""
         if blocked is not None:
-            await self._record_transition(tenant_id, blocked, "response_action.blocked", {"stage": "execution"}, conn=conn)
+            await self._ledger.record_transition(tenant_id, blocked, "response_action.blocked", {"stage": "execution"}, conn=conn)
         elif executing is not None:
-            await self._record_transition(
+            await self._ledger.record_transition(
                 tenant_id, executing, "response_action.executing", {"connector": connector.name}, conn=conn
             )
 
@@ -1026,7 +1010,7 @@ class ResponseService:
                 final = await self._repos.actions.transition(
                     tenant_id, executing.id, status, expected_from="executing", result=detail, conn=conn, **changes
                 )
-                await self._record_transition(
+                await self._ledger.record_transition(
                     tenant_id, final, f"response_action.{status}", {"connector": connector.name}, conn=conn
                 )
                 if final.verification == "verified":
@@ -1057,7 +1041,7 @@ class ResponseService:
                     external_ref=result.external_ref if result.external_ref is not None else UNSET,
                     conn=conn,
                 )
-                await self._audit_only(
+                await self._ledger.audit_action(
                     tenant_id, deferred, "response_action.deferred",
                     {"connector": connector.name, "retry_after_s": round(retry_after, 1),
                      "reason": detail.get("deferred")},
@@ -1068,49 +1052,6 @@ class ResponseService:
         log.info("response.deferred", action_type=executing.action_type, retry_after_s=round(retry_after, 1))
         await self.publish_action(tenant_id, deferred)
         return deferred.status
-
-    async def record_verification_outcome(
-        self, tenant_id: str, action: ResponseAction, *, conn: Connection, notify: bool = True
-    ) -> None:
-        """Audit, timeline entry and (failed or inconclusive) outbox event of a final verification, in ``conn``'s tx.
-
-        ``notify=False`` (an outcome that is not news, e.g. a verification
-        ended by the action's rollback) writes the audit entry only.
-        """
-        state = action.verification
-        detail = dict(action.verification_detail or {})
-        reason = detail.get("reason") if isinstance(detail.get("reason"), str) else None
-        audit_action = {
-            "verified": "response_action.verified",
-            "failed": "response_action.verification_failed",
-            "inconclusive": "response_action.verification_inconclusive",
-        }.get(str(state))
-        if audit_action is None:
-            return
-        await self._audit_only(
-            tenant_id, action, audit_action, {"outcome": state, "detail": detail}, actor_type="system",
-            actor_id=SCHEDULER_ACTOR, conn=conn,
-        )
-        if not notify:
-            return
-        await self._repos.alert_events.append(
-            tenant_id,
-            action.alert_id,
-            "action.verified" if state == "verified" else "action.verification_failed",
-            actor_type="system",
-            actor_id=SCHEDULER_ACTOR,
-            data={"action_id": str(action.id), "action_type": action.action_type, "outcome": state, "reason": reason},
-            conn=conn,
-        )
-        if state in ("failed", "inconclusive"):
-            await enqueue_event(
-                conn,
-                tenant_id,
-                ACTION_VERIFICATION_FAILED,
-                alert_id=action.alert_id,
-                dedupe_key=f"{ACTION_VERIFICATION_FAILED}:{action.id}:{action.verify_attempts}",
-                action=action,
-            )
 
     # -------------------------------------------------------------- retry
 
@@ -1168,7 +1109,7 @@ class ResponseService:
                 reset_attempts=True,
                 conn=conn,
             )
-            await self._audit_only(
+            await self._ledger.audit_action(
                 tenant_id, updated, "response_action.retry_requested",
                 {"reason": reason[:500], "role": role, "previous_error": result.get("error")},
                 actor_type="user", actor_id=str(user), conn=conn,
@@ -1186,150 +1127,30 @@ class ResponseService:
                 reason="not_retryable",
             )
 
-    # --------------------------------------------------------------- audit
-
-    async def _transition_audited(
-        self,
-        tenant_id: str,
-        action_id: Any,
-        to_status: str,
-        *,
-        audit_action: Optional[str] = None,
-        details: Optional[Mapping[str, Any]] = None,
-        actor_type: str = "agent",
-        actor_id: Optional[str] = None,
-        **changes: Any,
-    ) -> ResponseAction:
-        """A ledger transition and its audit entry in one transaction; the event is published after commit.
-
-        If the audit append fails the transition rolls back too, so a retry
-        repeats both: the audit trail never misses a transition that happened.
-        """
-        async with self._repos.db.tenant_tx(tenant_id) as conn:
-            updated = await self._repos.actions.transition(tenant_id, action_id, to_status, conn=conn, **changes)
-            await self._record_transition(
-                tenant_id, updated, audit_action or f"response_action.{to_status}", details or {},
-                actor_type=actor_type, actor_id=actor_id, conn=conn,
-            )
-        await self.publish_action(tenant_id, updated)
-        return updated
-
-    async def _audit_only(
-        self,
-        tenant_id: str,
-        action: ResponseAction,
-        audit_action: str,
-        details: Mapping[str, Any],
-        *,
-        actor_type: str,
-        actor_id: Optional[str],
-        conn: Connection,
-    ) -> None:
-        """An audit entry about an action without a status event (hand-offs, deferrals, verification, requests)."""
-        await self._audit.record(
-            tenant_id,
-            audit_action,
-            "response_action",
-            str(action.id),
-            actor_type=actor_type,
-            actor_id=actor_id,
-            details={
-                "alert_id": action.alert_id,
-                "action_type": action.action_type,
-                "risk_level": action.risk_level,
-                "status": action.status,
-                **dict(details),
-            },
-            conn=conn,
-        )
+    # ---------------------------------------------------------------- ledger (lg_sotf.services.response.ledger)
 
     async def audit_action(
-        self,
-        tenant_id: str,
-        action: ResponseAction,
-        audit_action: str,
-        details: Mapping[str, Any],
-        *,
-        actor_type: str,
-        actor_id: Optional[str],
-        conn: Connection,
+        self, tenant_id: str, action: ResponseAction, audit_action: str, details: Mapping[str, Any], *,
+        actor_type: str, actor_id: Optional[str], conn: Connection,
     ) -> None:
         """Audit a request about an action made by another service (rollback, verification), in ``conn``'s tx."""
-        await self._audit_only(
+        await self._ledger.audit_action(
             tenant_id, action, audit_action, details, actor_type=actor_type, actor_id=actor_id, conn=conn
         )
-
-    async def _record_transition(
-        self,
-        tenant_id: str,
-        action: ResponseAction,
-        audit_action: str,
-        details: Mapping[str, Any],
-        *,
-        actor_type: str = "agent",
-        actor_id: Optional[str] = None,
-        conn: Optional[Connection] = None,
-    ) -> None:
-        event_type = ACTION_EVENTS.get(action.status)
-        if conn is None and event_type is not None:
-            # The integration event must commit with the audit entry: give both one transaction.
-            async with self._repos.db.tenant_tx(tenant_id) as scoped:
-                await self._record_transition(
-                    tenant_id, action, audit_action, details, actor_type=actor_type, actor_id=actor_id, conn=scoped
-                )
-            await self.publish_action(tenant_id, action)
-            return
-        assert conn is not None  # every caller passes its transaction (AuditLogger.record refuses None)
-        await self._audit.record(
-            tenant_id,
-            audit_action,
-            "response_action",
-            str(action.id),
-            actor_type=actor_type,
-            actor_id=(actor_id or ("workflow" if actor_type == "agent" else None)),
-            details={
-                "alert_id": action.alert_id,
-                "action_type": action.action_type,
-                "risk_level": action.risk_level,
-                "status": action.status,
-                "blocked_reason": action.blocked_reason,
-                **dict(details),
-            },
-            conn=conn,
-        )
-        if event_type is not None:
-            await enqueue_event(
-                conn,
-                tenant_id,
-                event_type,
-                alert_id=action.alert_id,
-                dedupe_key=f"{event_type}:{action.id}",
-                action=action,
-            )
-        # Inside a caller's transaction the caller publishes after commit (publish_action).
-        record_action(action.action_type, action.status)
 
     async def record_transition(
-        self,
-        tenant_id: str,
-        action: ResponseAction,
-        audit_action: str,
-        details: Mapping[str, Any],
-        *,
-        actor_type: str = "agent",
-        actor_id: Optional[str] = None,
-        conn: Optional[Connection] = None,
+        self, tenant_id: str, action: ResponseAction, audit_action: str, details: Mapping[str, Any], *,
+        actor_type: str = "agent", actor_id: Optional[str] = None, conn: Optional[Connection] = None,
     ) -> None:
         """Audit a ledger transition made by another service (the review service); see ``publish_action``."""
-        await self._record_transition(
+        await self._ledger.record_transition(
             tenant_id, action, audit_action, details, actor_type=actor_type, actor_id=actor_id, conn=conn
         )
 
+    async def record_verification_outcome(
+        self, tenant_id: str, action: ResponseAction, *, conn: Connection, notify: bool = True
+    ) -> None:
+        await self._ledger.record_verification_outcome(tenant_id, action, conn=conn, notify=notify)
+
     async def publish_action(self, tenant_id: str, action: ResponseAction) -> None:
-        await publish_event(
-            self._events,
-            "action.updated",
-            tenant_id,
-            action.alert_id,
-            {"action_id": str(action.id), "action_type": action.action_type, "status": action.status},
-        )
+        await self._ledger.publish_action(tenant_id, action)
