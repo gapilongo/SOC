@@ -39,7 +39,7 @@ from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
 from lg_sotf.api.schemas import LoginIn, MeOut, MfaChallengeOut, TokenOut, UserOut
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -200,7 +200,7 @@ async def logout(request: Request) -> Response:
             try:
                 await ctx.redis.set(revoked_key(ctx, principal.token_id), b"1", ex=max(ttl, 1))
             except (RedisError, OSError, TimeoutError) as exc:
-                log.warning("auth.revoke_access_failed", error_type=type(exc).__name__)
+                log_failure(log, "auth.revoke_access_failed", exc, level="warning", error_type=type(exc).__name__)
     response = Response(status_code=204)
     _clear_refresh_cookie(ctx, response)
     return response

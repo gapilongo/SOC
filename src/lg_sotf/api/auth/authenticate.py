@@ -45,7 +45,7 @@ from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.models.vocabulary import Role, Scope
-from lg_sotf.observability.logging import bind_context, get_logger
+from lg_sotf.observability.logging import bind_context, get_logger, log_failure
 from lg_sotf.security.hashing import InvalidApiKey, looks_like_api_key, parse_api_key, sha256_hex, verify_api_key
 from lg_sotf.services import accounts
 from lg_sotf.services.tenancy import QuotaExceeded
@@ -190,7 +190,7 @@ async def _local_principal(ctx: ApiContext, token: str) -> Principal:
             raise unauthorized("token has been revoked")
     except (RedisError, OSError, TimeoutError) as exc:
         # Access tokens are short-lived; an unreachable Redis must not lock every user out.
-        log.warning("auth.revocation_check_unavailable", error_type=type(exc).__name__)
+        log_failure(log, "auth.revocation_check_unavailable", exc, level="warning", error_type=type(exc).__name__)
     tenant_id = claims["tenant"]
     if not is_valid_tenant_id(tenant_id):
         raise unauthorized("invalid token")
@@ -370,7 +370,7 @@ async def _api_key_principal(ctx: ApiContext, presented: str) -> Principal:
     try:
         await ctx.repos.api_keys.touch_last_used(key.tenant_id, key.id)
     except Exception as exc:  # noqa: BLE001 - bookkeeping only; never fail the request for it
-        log.warning("auth.api_key_touch_failed", error_type=type(exc).__name__)
+        log_failure(log, "auth.api_key_touch_failed", exc, level="warning", error_type=type(exc).__name__)
     return Principal(
         kind="api_key",
         tenant_id=key.tenant_id,

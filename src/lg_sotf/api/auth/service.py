@@ -46,7 +46,7 @@ from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound, RefreshTokenInvalid, RefreshTokenReuse
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.hashing import (
     aburn_password_check,
     ahash_password,
@@ -214,7 +214,9 @@ class AuthService:
             used = await self._ctx.redis.exists(used_challenge_key(self._ctx, claims["jti"]))
         except (RedisError, OSError, TimeoutError) as exc:
             # Codes stay single-use in the database; the token itself expires within minutes.
-            log.warning("auth.mfa_challenge_check_unavailable", error_type=type(exc).__name__)
+            log_failure(
+                log, "auth.mfa_challenge_check_unavailable", exc, level="warning", error_type=type(exc).__name__
+            )
             used = 0
         if used:
             raise invalid_challenge()
@@ -239,7 +241,9 @@ class AuthService:
         try:
             first = await self._ctx.redis.set(used_challenge_key(self._ctx, claims["jti"]), b"1", ex=ttl, nx=True)
         except (RedisError, OSError, TimeoutError) as exc:
-            log.warning("auth.mfa_challenge_spend_unavailable", error_type=type(exc).__name__)
+            log_failure(
+                log, "auth.mfa_challenge_spend_unavailable", exc, level="warning", error_type=type(exc).__name__
+            )
             return
         if not first:
             raise invalid_challenge()

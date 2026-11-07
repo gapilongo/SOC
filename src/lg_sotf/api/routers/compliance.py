@@ -46,7 +46,7 @@ from lg_sotf.db.repos import LLMUsageDelta, Tenant
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
 from lg_sotf.domain.events import publish_event
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, LLMUsageRow, TokenBudget, get_usage_recorder
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -172,7 +172,7 @@ async def _flush_llm_usage(ctx: Any) -> None:
     try:
         await get_usage_recorder().flush(sink)
     except Exception as exc:  # noqa: BLE001 - kept in the buffer for the next flush
-        log.warning("api.llm_usage_flush_failed", error_type=type(exc).__name__)
+        log_failure(log, "api.llm_usage_flush_failed", exc, level="warning", error_type=type(exc).__name__)
 
 
 @alerts.post(

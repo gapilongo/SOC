@@ -73,7 +73,7 @@ from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.pricing import local_model_id
 from lg_sotf.llm.prompting import serialize_untrusted
 from lg_sotf.llm.usage import Outcome, UsageRecorder, UsageSample, UsageTally, extract_usage, get_usage_recorder
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings, get_settings
 
 T = TypeVar("T", bound=BaseModel)
@@ -458,12 +458,9 @@ async def _invoke_with_transient_retry(
                 raise
             meter.no_usage("error")
             wait_s = delay_s * random.uniform(0.8, 1.2)  # noqa: S311 - jitter, not security
-            log.warning(
-                "llm.call_retrying",
-                error_type=type(exc).__name__,
-                attempt=attempt,
-                retry=retry + 1,
-                delay_s=round(wait_s, 1),
+            log_failure(
+                log, "llm.call_retrying", exc, level="warning", error_type=type(exc).__name__, attempt=attempt,
+                retry=retry + 1, delay_s=round(wait_s, 1),
             )
             await asyncio.sleep(wait_s)
     async with llm_slot(tier, settings):
@@ -498,11 +495,9 @@ async def _reserve(
 def _call_failed(exc: BaseException, start: float, attempt: int, *, meter: _CallMeter, log: BoundLogger) -> None:
     """Meter and log an attempt that raised (cancellation is neither)."""
     meter.no_usage("error")
-    log.warning(
-        "llm.call_failed",
-        error_type=type(exc).__name__,
-        latency_ms=round((time.perf_counter() - start) * 1000),
-        attempt=attempt,
+    log_failure(
+        log, "llm.call_failed", exc, level="warning", error_type=type(exc).__name__,
+        latency_ms=round((time.perf_counter() - start) * 1000), attempt=attempt,
     )
 
 
@@ -647,4 +642,6 @@ async def _settle(budget: TokenBudget, reservation: Reservation, actual: int) ->
         await budget.settle(reservation, actual)
     except RedisError as exc:
         # The call already happened; failing it now would discard a paid-for result.
-        logger.error("llm.budget_settle_failed", error_type=type(exc).__name__, tenant_id=reservation.tenant_id)
+        log_failure(
+            logger, "llm.budget_settle_failed", exc, error_type=type(exc).__name__, tenant_id=reservation.tenant_id
+        )

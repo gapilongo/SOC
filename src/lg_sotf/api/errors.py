@@ -27,7 +27,7 @@ from lg_sotf.db.errors import (
 )
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.ingestion.errors import SourceConfigError, SourceDisabled, SourceNotPushable
-from lg_sotf.observability.logging import current_context, get_logger
+from lg_sotf.observability.logging import current_context, get_logger, log_failure
 from lg_sotf.services.response import ResponsePolicyError
 from lg_sotf.services.review import ReviewDenied, ReviewError
 
@@ -179,13 +179,13 @@ async def _policy(_: Request, exc: Exception) -> JSONResponse:
 
 
 async def _unavailable(_: Request, exc: Exception) -> JSONResponse:
-    log.warning("api.dependency_unavailable", error_type=type(exc).__name__)
+    log_failure(log, "api.dependency_unavailable", exc, level="warning", error_type=type(exc).__name__)
     return error_response(503, "service_unavailable", "a backing service is unavailable; retry later")
 
 
 async def _value_error(_: Request, exc: Exception) -> JSONResponse:
     # Repository input checks raise ValueError; its text may quote internal names, so it is not echoed.
-    log.info("api.invalid_request", error_type=type(exc).__name__)
+    log_failure(log, "api.invalid_request", exc, level="info", error_type=type(exc).__name__)
     return error_response(400, "invalid_request", "invalid request parameters")
 
 

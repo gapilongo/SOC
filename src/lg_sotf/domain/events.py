@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any, Dict, Mapping, Optional, Protocol, runtime_checkable
 
-from lg_sotf.observability.logging import get_logger
+from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
@@ -42,4 +42,6 @@ async def publish_event(
     try:
         await events.publish(tenant_id, event)
     except Exception as exc:  # noqa: BLE001 - see docstring
-        log.warning("events.publish_failed", event_type=event_type, error_type=type(exc).__name__)
+        log_failure(
+            log, "events.publish_failed", exc, level="warning", event_type=event_type, error_type=type(exc).__name__
+        )

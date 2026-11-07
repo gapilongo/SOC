@@ -44,7 +44,7 @@ from lg_sotf.api.routers import (
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.ingestion.email import EmailLimits
-from lg_sotf.observability.logging import configure_logging, get_logger, is_configured
+from lg_sotf.observability.logging import configure_logging, get_logger, is_configured, log_failure
 from lg_sotf.observability.tracing import setup_tracing, shutdown_tracing
 from lg_sotf.settings import Settings, get_settings
 
@@ -113,7 +113,7 @@ async def close_context(ctx: ApiContext) -> None:
         try:
             await step()
         except Exception as exc:  # noqa: BLE001 - keep closing the rest
-            log.warning("api.shutdown_step_failed", error_type=type(exc).__name__)
+            log_failure(log, "api.shutdown_step_failed", exc, level="warning", error_type=type(exc).__name__)
     if ctx.oidc is not None:
         await ctx.oidc.aclose()
     await ctx.redis.aclose()
