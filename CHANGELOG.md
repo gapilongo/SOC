@@ -216,6 +216,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Failure logs never carry the exception message (ADR-0005). An unhandled
+  API error (`api.unhandled_error`) is no longer logged with a traceback,
+  which quoted the message of the exception and of every exception chained
+  to it, and the source line of every frame. The record keeps `error_type`
+  and now carries `error` (the same type name), `stack` (the innermost 15
+  frames as `module:lineno in func`, one per line, without source text)
+  and `cause_types`. The worker, scheduler, services, integrations, MCP,
+  eval, ingestion, queue, LLM and other API failure logs, which already
+  logged only the type, gain the same three fields; their event names and
+  existing fields are unchanged. To find where a 500 came from, search
+  `event=api.unhandled_error` and read `stack` instead of a `Traceback`.
 - Error text that is stored or shown is now redacted before it is cut to
   length: a run's and a source's `last_error`, an outbox delivery's and a
   ticket sync's error, a ticketing receiver's error body, the ticket

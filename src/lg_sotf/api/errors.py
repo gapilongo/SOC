@@ -190,7 +190,7 @@ async def _value_error(_: Request, exc: Exception) -> JSONResponse:
 
 
 async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
-    log.error("api.unhandled_error", error_type=type(exc).__name__, exc_info=exc)
+    log_failure(log, "api.unhandled_error", exc, error_type=type(exc).__name__)
     return error_response(500, "internal_error", "internal server error")
 
 
