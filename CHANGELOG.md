@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format follows
   The alert's model provenance, evidence packs (JSON and HTML), the
   `llm.call` log event and evaluation reports (a new "Models and prompts"
   section) show the prompt name and hash next to the provider and model.
+- Runs waiting for an analyst or an approval now survive upgrades that change
+  the workflow graph. Each run records the graph version it started on
+  (`workflow_runs.graph_version`, migration 0010), and workers keep the
+  previous graph next to the current one, so a waiting run resumes and is
+  decided on the graph it started on. A run on a graph version the worker
+  does not have fails with `UnknownGraphVersion` and is retried, then
+  dead-lettered; it is never run on a different graph.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
