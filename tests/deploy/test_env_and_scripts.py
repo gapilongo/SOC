@@ -263,6 +263,8 @@ def test_only_useful_scripts_remain() -> None:
         "ci/create_test_role.sql",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
+        "ci/upgrade_rehearsal.py",
+        "ci/upgrade_rehearsal.sh",
         "demo/alerts.json",
         "demo/seed_demo.py",
         "e2e_ui_stack.sh",
