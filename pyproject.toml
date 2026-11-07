@@ -192,7 +192,7 @@ disallow_incomplete_defs = true
 warn_return_any = true
 
 # Untyped imports only: asyncpg ships no type information (lg_sotf.db.types describes the parts used), and
-# typeshed has no stubs for the CPython-internal regex parser modules domain/suppression.py reads.
+# typeshed has no stubs for the CPython-internal regex parser modules security/safe_regex.py reads.
 [[tool.mypy.overrides]]
 module = ["asyncpg.*", "re._constants", "re._parser"]
 ignore_missing_imports = true
@@ -282,6 +282,19 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "safe-regex-is-leaf"
+name = "The safe regex engine imports only the standard library and observability"
+type = "forbidden"
+source_modules = ["lg_sotf.security.safe_regex"]
+# S7: the layers contract keeps security off every higher layer; this keeps the engine off the kernel
+# siblings, the other security modules and every third-party library.
+forbidden_modules = [
+    "lg_sotf.errors", "lg_sotf.settings", "lg_sotf.security.crypto", "lg_sotf.security.hashing",
+    "lg_sotf.security.insecure", "lg_sotf.security.qr", "lg_sotf.security.redaction", "lg_sotf.security.signing",
+    "lg_sotf.security.totp", "pydantic", "httpx", "cryptography", "structlog", "regex",
+]
+
+[[tool.importlinter.contracts]]
 id = "net-is-leaf"
 name = "The network kernel imports only the kernel and httpx"
 type = "forbidden"
@@ -315,6 +328,21 @@ name = "Integrations are adapters: they never import the services, the workflow 
 type = "forbidden"
 source_modules = ["lg_sotf.integrations"]
 forbidden_modules = ["lg_sotf.services", "lg_sotf.core", "lg_sotf.agents"]
+
+[[tool.importlinter.contracts]]
+id = "response-is-not-a-dependency-of-its-adapters"
+name = "The connectors and integrations the response service drives never import it"
+type = "forbidden"
+source_modules = ["lg_sotf.integrations", "lg_sotf.services.connectors"]
+forbidden_modules = ["lg_sotf.services.response"]
+
+[[tool.importlinter.contracts]]
+id = "response-layers"
+name = "services/response: submodules import down only, the target library at the bottom"
+type = "layers"
+# Derived from the imports (S2). The package __init__ (ResponseService) sits above every layer.
+containers = ["lg_sotf.services.response"]
+layers = ["execution", "planner | ledger", "guardrails", "policy", "protected", "targets"]
 
 [[tool.importlinter.contracts]]
 id = "mcp-thin-client"

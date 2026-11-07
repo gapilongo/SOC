@@ -29,6 +29,7 @@ pytestmark = pytest.mark.unit
 
 MODULE_BUDGET = 800
 FUNCTION_BUDGET = 80
+PACKAGE_MODULE_BUDGETS = {"services/response/": 600}
 ALLOWLIST = baseline_path("budgets_allowlist.txt")
 
 
@@ -104,6 +105,17 @@ def test_module_size_budget() -> None:
     modules, _ = _split_allowlist()
     problems = budget_problems(module_sizes(), modules, MODULE_BUDGET, "module")
     assert not problems, "\n".join(problems)
+
+
+def test_package_module_budgets() -> None:
+    """Tighter budgets for split packages (S2: every services/response module stays within 600 lines)."""
+    over = [
+        f"{rel} has {lines} lines (budget {budget} under {prefix})"
+        for rel, lines in sorted(module_sizes().items())
+        for prefix, budget in PACKAGE_MODULE_BUDGETS.items()
+        if rel.startswith(prefix) and lines > budget
+    ]
+    assert not over, "\n".join(over)
 
 
 def test_function_size_budget() -> None:

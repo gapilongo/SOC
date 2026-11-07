@@ -11,7 +11,6 @@ import pytest
 from lg_sotf.domain.suppression import (
     MAX_SUBJECT_CHARS,
     InvalidRule,
-    WorkBudget,
     alert_match_view,
     compile_pattern,
     evaluate_predicate,
@@ -21,6 +20,7 @@ from lg_sotf.domain.suppression import (
     validate_regex,
     validate_rule_match,
 )
+from lg_sotf.security.safe_regex import WorkBudget
 
 VIEW = alert_match_view(
     title="Known scanner sweep",
@@ -204,3 +204,43 @@ def test_first_matching_rule_skips_invalid_rules() -> None:
     hit = first_matching_rule(rules, VIEW)
     assert hit is not None and hit.rule_id == "r3"
     assert first_matching_rule(rules[:2], VIEW) is None
+
+
+# Exact rejection messages: they reach API clients (422 invalid_rule, the explain endpoint), so a
+# refactor of the regex engine must keep them byte-identical.
+REGEX_REJECTIONS = [
+    (None, "regex must be a non-empty string"),
+    ("", "regex must be a non-empty string"),
+    (3, "regex must be a non-empty string"),
+    ("x" * 257, "regex longer than 256 characters"),
+    ("[", "invalid regex: unterminated character set"),
+    ("a{3}{2}", "invalid regex: multiple repeat"),
+    ("(a)\\1", "regex uses backreferences"),
+    ("(a)?(?(1)b|c)", "regex uses conditionals"),
+    ("(?<=a)b", "regex uses lookarounds"),
+    ("x{257}", "regex repeat bound above 256"),
+    ("(a+)+", "regex uses nested quantifiers"),
+    ("(ab|cd)+", "regex quantifies an alternation"),
+    ("[a-z]*[0-9]*[A-Z]*!", "regex uses more than 2 unbounded quantifiers"),
+    ("a{0,20}b{0,20}c{0,20}!", "regex uses more than 2 wide quantifiers"),
+    ("((x{0,16}){0,16}){0,16}", "regex expands to more than 512 matcher states"),
+    ("(?a)\\w+", "regex uses unsupported flags"),
+    ("(?i:a(?m:b))", "regex uses unsupported inline flags"),
+    ("a*+b", "regex uses possessive quantifiers or atomic groups"),
+    ("\\bfoo", "regex anchors and word boundaries are only supported as ^ and $ at the ends"),
+]
+
+
+@pytest.mark.parametrize(("pattern", "message"), REGEX_REJECTIONS)
+def test_regex_rejection_messages_are_stable(pattern: Any, message: str) -> None:
+    with pytest.raises(InvalidRule) as raised:
+        validate_regex(pattern)
+    assert str(raised.value) == message
+    with pytest.raises(InvalidRule) as raised:
+        validate_rule_match({"title": {"regex": pattern}})
+    assert str(raised.value) == message
+    with pytest.raises(InvalidRule) as raised:
+        rule_matches({"title": {"regex": pattern}}, VIEW)
+    assert str(raised.value) == message
+    explained = explain_rule({"title": {"regex": pattern}}, VIEW)
+    assert explained.error == message and explained.predicates[0].error == message
