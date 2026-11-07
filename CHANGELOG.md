@@ -8,6 +8,25 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- A first-run setup wizard for the install's admin (the platform admin
+  `lg-sotf migrate` creates). Until setup is done the Overview invites them to
+  it; five steps confirm the account, name the organisation and the first
+  tenant, pick a language-model profile (an EU-hosted Mistral profile is
+  preselected, local Ollama or your own model server are offered; the wizard
+  shows the settings that select it and tests the model configured now), send
+  the sample alerts and wait for the first verdict. Finishing lands on the
+  Overview with a link to start a proof of value (a placeholder page until the
+  proof-of-value run ships). The wizard never changes the running model,
+  which stays install configuration. API: `GET` and `PUT /onboarding/setup`,
+  `POST /onboarding/setup/complete`, audited as `onboarding.setup_saved` and
+  `onboarding.setup_completed`.
+- `GET /onboarding/status` now returns `first_verdict`: an alert, samples
+  included, is closed or waits for an analyst or an approval (the moment
+  `make quickstart` measures).
+- An install rehearsal test drives the setup from an empty database to the
+  first triaged alert and records the time against a 30-minute budget
+  (`tests/integration/e2e/test_first_run.py`; the browser twin is
+  `src/lg_front/e2e/wizard.spec.ts`).
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

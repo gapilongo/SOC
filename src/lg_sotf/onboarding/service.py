@@ -14,6 +14,11 @@ Steps (ids are stable; the UI owns the wording and links):
 * ``first_alert_triaged``: an alert (sample alerts included) has a
   disposition or is closed.
 
+``first_verdict`` (not a step) says whether the triage of an alert (samples
+included) has reached its first verdict: closed, or waiting for an analyst or
+an approval. The setup wizard waits for it; ``make quickstart`` measures the
+same moment.
+
 Everything runs in one read-only transaction scoped to the tenant.
 """
 
@@ -49,7 +54,10 @@ SELECT
     (SELECT count(*) FROM users WHERE tenant_id = $1) AS users,
     EXISTS (
         SELECT 1 FROM alerts WHERE tenant_id = $1 AND (disposition IS NOT NULL OR status = 'closed')
-    ) AS triaged
+    ) AS triaged,
+    EXISTS (
+        SELECT 1 FROM alerts WHERE tenant_id = $1 AND status IN ('waiting_human', 'waiting_approval', 'closed')
+    ) AS verdict
 """
 
 
@@ -67,6 +75,7 @@ class OnboardingStatus:
     dismissed_at: Optional[str]
     samples_sent: bool
     marks: Dict[str, Any] = field(default_factory=dict)
+    first_verdict: bool = False
 
     @property
     def dismissed(self) -> bool:
@@ -127,6 +136,7 @@ async def onboarding_status(db: Database, tenant: Tenant) -> OnboardingStatus:
         dismissed_at=str(dismissed) if dismissed else None,
         samples_sent=bool(facts["has_samples"]),
         marks=marks,
+        first_verdict=bool(facts["verdict"]),
     )
 
 

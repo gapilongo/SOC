@@ -29,7 +29,9 @@ from lg_sotf.db.tenancy import validate_tenant_id
 
 TENANT_STATUSES = ("active", "suspended")
 QUOTA_FIELDS = ("max_alerts_per_day", "max_sources", "max_users")
-ONBOARDING_MARKS = ("dismissed_at", "autonomy_reviewed_at", "samples_sent_at")
+ONBOARDING_MARKS = ("dismissed_at", "autonomy_reviewed_at", "samples_sent_at", "setup_completed_at")
+# Values the first-run setup wizard stores next to the marks (``tenants.onboarding``).
+ONBOARDING_FIELDS = ("organisation", "llm_profile")
 
 
 class Tenant(Record):
@@ -220,6 +222,29 @@ class TenantsRepo(Repository):
                 tenant_id,
                 mark,
                 overwrite,
+            )
+        tenant = to_model(Tenant, row)
+        if tenant is None:
+            raise NotFound("tenant", tenant_id)
+        return tenant
+
+    async def set_onboarding_fields(
+        self, tenant_id: str, fields: Mapping[str, Optional[str]], *, conn: Optional[Connection] = None
+    ) -> Tenant:
+        """Store first-run setup values (``onboarding.<field>``, ``ONBOARDING_FIELDS`` only); ``None`` removes one."""
+        for name in fields:
+            check_choice(name, ONBOARDING_FIELDS, "onboarding field")
+        async with self._tenant(tenant_id, conn) as c:
+            row = await c.fetchrow(
+                """
+                UPDATE tenants
+                SET onboarding = (onboarding || jsonb_strip_nulls($2::jsonb))
+                    - ARRAY(SELECT key FROM jsonb_each($2::jsonb) WHERE value = 'null'::jsonb)
+                WHERE id = $1
+                RETURNING *
+                """,
+                tenant_id,
+                dict(fields),
             )
         tenant = to_model(Tenant, row)
         if tenant is None:
