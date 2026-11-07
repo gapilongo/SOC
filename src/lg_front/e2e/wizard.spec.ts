@@ -106,8 +106,9 @@ test('the setup wizard takes a fresh install to its first triaged alert and the 
   await expect(page.getByRole('heading', { name: 'Proof of value', level: 1 })).toBeVisible();
   await assertAccessible(page, '/pov (390 px)');
 
-  test.info().annotations.push({ type: 'time_to_first_triage_s', description: (firstVerdictMs / 1000).toFixed(1) });
-  console.log(`setup wizard: first verdict ${(firstVerdictMs / 1000).toFixed(1)} s after sign-in (budget ${BUDGET_MS / 1000} s)`);
+  const timing = { budget_s: BUDGET_MS / 1000, time_to_first_triage_s: Number((firstVerdictMs / 1000).toFixed(1)) };
+  test.info().annotations.push({ type: 'time_to_first_triage_s', description: String(timing.time_to_first_triage_s) });
+  await test.info().attach('first-run-timing', { body: JSON.stringify(timing), contentType: 'application/json' });
   expect(firstVerdictMs).toBeLessThanOrEqual(BUDGET_MS);
   await watch.assertClean();
   await context.close();

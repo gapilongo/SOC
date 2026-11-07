@@ -80,7 +80,7 @@ export function AdminStep({ onNext }: StepProps) {
       {mfa.data && !mfa.data.enabled && (
         <p className="mt-3 text-sm text-secondary">
           Turn on two-step sign-in for this account in{' '}
-          <Link to="/account" className="text-link hover:underline">
+          <Link to="/account" className="text-link underline">
             Account security
           </Link>
           ; it is required for platform admins in production.
@@ -275,7 +275,7 @@ export function SamplesStep({ onNext, onBack }: StepProps & { onBack: () => void
       </p>
       {verdict && (
         <p className="mt-2 text-sm">
-          <Link to={alertsHref({ view: 'all' })} className="text-link hover:underline">
+          <Link to={alertsHref({ view: 'all' })} className="text-link underline">
             See how the alerts were triaged
           </Link>
         </p>
@@ -305,7 +305,7 @@ export function FinishStep({ setup, onFinish, onBack, busy }: { setup: SetupOut;
       />
       <p className="mt-4 text-sm text-secondary">
         Next: connect a real alert source, invite your analysts and start a proof of value on your own alerts. The{' '}
-        <Link to="/getting-started" className="text-link hover:underline">
+        <Link to="/getting-started" className="text-link underline">
           Getting started
         </Link>{' '}
         page keeps the checklist.
