@@ -257,6 +257,7 @@ def test_only_useful_scripts_remain() -> None:
     assert scripts == [
         "airgap/bundle.sh",
         "airgap/load.sh",
+        "changelog.py",
         "ci/bandit-baseline.json",
         "ci/compare_junit.py",
         "ci/coverage_floors.py",
