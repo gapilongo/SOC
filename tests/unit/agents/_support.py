@@ -88,6 +88,24 @@ class FakeTenants:
         return SimpleNamespace(id=tenant_id, settings=self.settings.get(tenant_id, {}))
 
 
+class FakeSteps:
+    """The investigation trace store: ``(tenant_id, alert_id, run_id, step)`` per appended step."""
+
+    def __init__(self) -> None:
+        self.rows: List[Tuple[str, str, str, Any]] = []
+        self.error: Optional[Exception] = None
+
+    async def append(self, tenant_id: str, alert_id: str, run_id: str, steps: Sequence[Any]) -> int:
+        if self.error is not None:
+            raise self.error
+        self.rows.extend((tenant_id, alert_id, run_id, step) for step in steps)
+        return len(steps)
+
+    @property
+    def steps(self) -> List[Any]:
+        return [row[3] for row in self.rows]
+
+
 class FakeDb:
     def __init__(self) -> None:
         self.transactions = 0
@@ -109,7 +127,8 @@ def fake_repos(
     store = FakeAlerts(alerts)
     store.add("t1", current or StoredAlert(id="a1", status="processing"))
     return SimpleNamespace(
-        alerts=store, indicators=FakeIndicators(related), tenants=FakeTenants(tenant_settings), db=FakeDb()
+        alerts=store, indicators=FakeIndicators(related), tenants=FakeTenants(tenant_settings), db=FakeDb(),
+        investigation_steps=FakeSteps(),
     )
 
 

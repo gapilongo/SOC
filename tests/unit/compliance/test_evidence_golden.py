@@ -28,12 +28,13 @@ import pytest
 from lg_sotf.compliance import evidence
 from lg_sotf.compliance.canonical import canonical_bytes, sha256_hex
 from lg_sotf.compliance.evidence import build_evidence_pack, render_evidence_html
+from lg_sotf.db.repos import TraceStep
 from lg_sotf.db.repos.audit import ChainVerification
 from tests.unit.compliance._support import ANALYST, T0, action, alert, escalation, event, feedback
 
 GOLDEN_HTML = Path(__file__).with_name("evidence_pack.golden.html")
 # sha256 of the canonical JSON of the fixed pack below (integrity block excluded, as seal() computes it).
-GOLDEN_BUNDLE_SHA256 = "873dd174f2b332ffbd6815f94216ed73ccf86c6710e917bae3ecb2aee0f77983"
+GOLDEN_BUNDLE_SHA256 = "d8dd4d89631e9d686a427ca2ea472698fdb33ebfbd2a9ec552cab1fc7934d7ad"
 UPDATE_ENV = "LG_SOTF_UPDATE_GOLDENS"
 REGENERATE = f"{UPDATE_ENV}=1 python -m pytest tests/unit/compliance/test_evidence_golden.py"
 
@@ -44,6 +45,32 @@ def _uuid(n: int) -> UUID:
 
 def _hash(n: int) -> str:
     return f"{n:02d}" * 32
+
+
+def _trace_step(n: int, kind: str, **fields: Any) -> TraceStep:
+    data: Dict[str, Any] = {
+        "id": _uuid(200 + n), "tenant_id": "t1", "alert_id": "a1", "run_id": "t1:a1", "step_index": n,
+        "agent": "analysis", "kind": kind, "input_hash": _hash(40 + n), "outcome": "success",
+        "started_at": T0 + timedelta(minutes=4, seconds=n), "created_at": T0 + timedelta(minutes=5),
+    }
+    data.update(fields)
+    return TraceStep.model_validate(data)
+
+
+def _trace() -> List[TraceStep]:
+    """One LLM step per outcome kind that renders differently, and a tool step that failed."""
+    return [
+        _trace_step(0, "llm", agent="triage", prompt_name="triage.assess", prompt_hash="0123456789abcdef",
+                    provider="anthropic", model="claude-x", output_hash=_hash(50),
+                    result_digest={"value": {"reasoning": "LSASS access <b>pattern</b>"}}, input_tokens=900,
+                    output_tokens=120, cache_read_tokens=10, latency_ms=812),
+        _trace_step(1, "tool", tool="history", output_hash=_hash(51),
+                    result_digest={"value": {"provider": "history", "status": "not_found"}}, latency_ms=4),
+        _trace_step(2, "tool", tool="reputation", outcome="error", error_type="ProviderHTTPError", latency_ms=3000),
+        _trace_step(3, "llm", prompt_name="analysis.react_step", prompt_hash="fedcba9876543210", provider="anthropic",
+                    model="claude-y", outcome="invalid_output", error_type="LLMOutputError", input_tokens=1500,
+                    output_tokens=4096, latency_ms=20_000),
+    ]
 
 
 def _fixed_case() -> Dict[str, Any]:
@@ -122,6 +149,7 @@ def _fixed_case() -> Dict[str, Any]:
             SimpleNamespace(indicator_type="ip", value_display="203.0.113.7", value_hash=_hash(7), seen_at=T0),
         ],
         "audit": audit,
+        "trace": _trace(),
     }
 
 
@@ -167,6 +195,7 @@ def _repos(case: Dict[str, Any]) -> Any:
         actions=SimpleNamespace(list=fake(_page(case["actions"]))),
         feedback=SimpleNamespace(list_for_alert=fake(case["feedback"])),
         indicators=SimpleNamespace(sightings_for_alert=fake(case["sightings"])),
+        investigation_steps=SimpleNamespace(list_for_alert=fake(case["trace"])),
         audit=SimpleNamespace(verify_chain=fake(ChainVerification(ok=True, first_bad_id=None))),
     )
 
@@ -208,6 +237,21 @@ def test_fixed_pack_oversight_covers_the_tie_breaks(fixed_pack: Dict[str, Any]) 
                                   "verdict_overridden"]
     assert {"rollback_requested:create_ticket", "retry_requested:disable_user", "action_blocked:disable_user",
             "action_executed:create_ticket", "escalation_claimed", "analyst_decision", "note"} <= {s for s, _ in steps}
+
+
+def test_fixed_pack_shows_every_trace_step(fixed_pack: Dict[str, Any]) -> None:
+    trace = fixed_pack["investigation"]
+    assert [(s["step_index"], s["kind"], s["outcome"]) for s in trace["steps"]] == [
+        (0, "llm", "success"), (1, "tool", "success"), (2, "tool", "error"), (3, "llm", "invalid_output"),
+    ]
+    assert trace["totals"] == {"llm_steps": 2, "tool_steps": 2, "input_tokens": 2400, "output_tokens": 4216,
+                               "latency_ms": 23816}
+    assert trace["runs"] == ["t1:a1"] and fixed_pack["limits"]["investigation_truncated"] is False
+    page = render_evidence_html(fixed_pack)
+    for step in trace["steps"]:
+        assert (step["output_hash"] or "-") in page
+    assert "triage.assess (version 0123456789abcdef)" in page and "anthropic / claude-x" in page
+    assert "error: ProviderHTTPError" in page and "LSASS access" not in page.split('id="trace"')[1].split("</section>")[0]
 
 
 def test_evidence_html_matches_golden(fixed_pack: Dict[str, Any]) -> None:

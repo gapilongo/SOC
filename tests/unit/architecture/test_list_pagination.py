@@ -25,6 +25,7 @@ BOUNDED_LISTS = {
     "ApiKeysRepo.list": "a tenant's API keys, created one by one by its admins",
     "FeedbackRepo.list_for_alert": "the feedback given on one alert",
     "IntegrationsRepo.list": "at most MAX_INTEGRATIONS_PER_TENANT (50) per tenant",
+    "InvestigationStepsRepo.list_for_alert": "its limit (check_limit, MAX_STEPS_LISTED): the trace of one alert",
     "LLMUsageRepo.list_range": "one row per day and model in a date range the callers cap (MAX_USAGE_DAYS)",
     "RunsRepo.list_queued": "its limit (check_limit, MAX_QUEUED_LISTED)",
     "SourcesRepo.list": "a tenant's configured sources (max_sources quota)",

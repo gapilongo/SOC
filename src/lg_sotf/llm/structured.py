@@ -36,6 +36,7 @@ import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import (
     Any,
@@ -73,6 +74,7 @@ from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.pricing import local_model_id
 from lg_sotf.llm.prompting import serialize_untrusted
 from lg_sotf.llm.registry import CallProvenance, PromptTemplate, call_provenance
+from lg_sotf.llm.trace import TraceRecorder
 from lg_sotf.llm.usage import Outcome, UsageRecorder, UsageSample, UsageTally, extract_usage, get_usage_recorder
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
@@ -400,7 +402,7 @@ def _plan_invoke(model: BaseChatModel, schema: Type[BaseModel], messages: Sequen
 
 @dataclass(frozen=True)
 class _CallMeter:
-    """Meters one structured call: the usage recorder first, then the per-alert tally (when given)."""
+    """Meters one structured call: the usage recorder first, then the per-alert tally and trace (when given)."""
 
     recorder: UsageRecorder
     tally: Optional[UsageTally]
@@ -408,6 +410,7 @@ class _CallMeter:
     provenance: CallProvenance
     tenant_id: Optional[str]
     self_hosted: bool
+    trace: Optional[TraceRecorder] = None
 
     @property
     def model_id(self) -> str:
@@ -442,6 +445,30 @@ class _CallMeter:
             self.tally.add_call(self.agent, samples, outcome, cost, **self._call_fields())
         return cost
 
+    def step(
+        self,
+        messages: Sequence[BaseMessage],
+        started: Tuple[datetime, float],
+        outcome: Outcome,
+        *,
+        samples: Sequence[UsageSample] = (),
+        value: Optional[BaseModel] = None,
+        raw: Any = None,
+        error: Optional[BaseException] = None,
+    ) -> None:
+        """Add one model attempt to the investigation trace (when one is kept); ``started`` is (wall, perf) time."""
+        if self.trace is None or outcome == "budget_exceeded":
+            return
+        self.trace.llm_step(
+            agent=self.agent, provenance=self.provenance, messages=messages, started_at=started[0],
+            latency_ms=round((time.perf_counter() - started[1]) * 1000), outcome=outcome, samples=samples,
+            value=value, reply=reply_text(raw), error=error,
+        )
+
+
+def _started() -> Tuple[datetime, float]:
+    return datetime.now(UTC), time.perf_counter()
+
 
 async def _invoke_with_transient_retry(
     plan: _InvokePlan,
@@ -455,13 +482,15 @@ async def _invoke_with_transient_retry(
 ) -> Any:
     """One attempt, tried again after a jittered delay while it fails fast with a transient provider error.
 
-    Each failed try is metered as an error; the last failure propagates unchanged.
+    Each failed try is metered as an error and is a trace step; the last failure propagates unchanged.
     """
     for retry, delay_s in enumerate(TRANSIENT_RETRY_DELAYS_S):
+        started = _started()
         try:
             async with llm_slot(tier, settings):
                 return await plan.invoke(messages)
         except Exception as exc:
+            meter.step(messages, started, "error", error=exc)
             if not _fails_fast_and_transient(exc):
                 raise
             meter.no_usage("error")
@@ -471,8 +500,13 @@ async def _invoke_with_transient_retry(
                 retry=retry + 1, delay_s=round(wait_s, 1),
             )
             await asyncio.sleep(wait_s)
-    async with llm_slot(tier, settings):
-        return await plan.invoke(messages)
+    started = _started()
+    try:
+        async with llm_slot(tier, settings):
+            return await plan.invoke(messages)
+    except Exception as exc:
+        meter.step(messages, started, "error", error=exc)
+        raise
 
 
 async def _reserve(
@@ -568,6 +602,7 @@ async def _run_attempts(
     while True:
         attempt += 1
         start = time.perf_counter()
+        started = _started()
         try:
             result = await _invoke_with_transient_retry(
                 plan, attempt_messages, tier=tier, settings=settings, meter=meter, log=log, attempt=attempt
@@ -581,6 +616,7 @@ async def _run_attempts(
 
         if not isinstance(result, Mapping):
             meter.no_usage("invalid_output")
+            meter.step(attempt_messages, started, "invalid_output")
             raise LLMOutputError(
                 f"{agent}: structured runnable returned {type(result).__name__}, expected a mapping", model=model_id
             )
@@ -588,6 +624,9 @@ async def _run_attempts(
         spent.tokens += sum(sample.total_tokens for sample in samples)
         outcome, value, error = _classify(result, schema, model_id, agent)
         cost = meter.call(samples, outcome)
+        meter.step(
+            attempt_messages, started, outcome, samples=samples, value=value, raw=result.get("raw"), error=error
+        )
 
         event = _call_event(outcome, latency_ms, samples, cost, model_id)
         if plan.max_attempts > 1:
@@ -617,6 +656,7 @@ async def ainvoke_structured(
     budget_limit: BudgetLimit = USE_DEFAULT,
     tally: Optional[UsageTally] = None,
     prompt: Optional[PromptTemplate[Any]] = None,
+    trace: Optional[TraceRecorder] = None,
 ) -> T:
     """Invoke ``model`` and return a validated ``schema`` instance.
 
@@ -629,7 +669,8 @@ async def ainvoke_structured(
     given, accumulates the call's tokens and cost (per-alert totals).
     ``prompt`` is the registered template the messages were built from; the
     call records its name and hash with the model id (see
-    :mod:`lg_sotf.llm.registry`).
+    :mod:`lg_sotf.llm.registry`). ``trace``, when given, gets one step per
+    model attempt (:mod:`lg_sotf.llm.trace`).
 
     Self-hosted models answering in JSON text get one repair attempt (see the
     module docstring).
@@ -638,7 +679,7 @@ async def ainvoke_structured(
         raise ValueError(f"{agent}: prompt {prompt.name!r} answers {prompt.schema.__name__}, not {schema.__name__}")
     provenance = call_provenance(prompt, messages, model_id=usage_model_id(model), provider=provider_of(model))
     meter = _CallMeter(
-        get_usage_recorder(settings), tally, agent, provenance, tenant_id, model_is_self_hosted(model)
+        get_usage_recorder(settings), tally, agent, provenance, tenant_id, model_is_self_hosted(model), trace
     )
     log = logger.bind(
         agent=agent, tier=tier, model=provenance.model_id, prompt_name=provenance.prompt_name,
