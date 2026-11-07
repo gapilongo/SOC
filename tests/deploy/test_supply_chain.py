@@ -1,4 +1,4 @@
-"""Supply-chain policy (SEC1.3): digest-pinned base images, hash-locked installs, the image CVE gate."""
+"""Supply-chain policy: pinned images, hash-locked installs, the CVE gate (SEC1.3); dependency policy (SEC2.3)."""
 
 from __future__ import annotations
 
@@ -357,3 +357,69 @@ def test_validator_accepts_the_published_documents_and_rejects_broken_ones(tmp_p
     assert any("no components" in e for e in validate(tmp_path / "empty.cdx.json"))
     (tmp_path / "other.json").write_text("{}")
     assert validate(tmp_path / "other.json") == ["neither a CycloneDX SBOM nor an OpenVEX 0.2.0 document"]
+
+
+# --------------------------------------------------------------------------- SEC2.3: dependency policy
+
+POLICY = REPO_ROOT / "docs" / "dependency-policy.md"
+DEPENDABOT = REPO_ROOT / ".github" / "dependabot.yml"
+PATCH_SLAS = {"Critical": "7 days", "High": "14 days", "Medium": "30 days", "Low": "The next minor release"}
+
+
+def _section(text: str, heading: str) -> str:
+    match = re.search(rf"^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", text, re.MULTILINE | re.DOTALL)
+    assert match, heading
+    return match.group(1)
+
+
+def test_policy_states_the_patch_slas_and_a_triage_time_inside_the_shortest() -> None:
+    """Acceptance (SEC2.3): one patch-SLA table, and triage and Dependabot fit inside it."""
+    text = POLICY.read_text()
+    rows = dict(re.findall(r"^\| (Critical|High|Medium|Low) \| ([^|]+?) \|$", _section(text, "Patch SLAs"), re.MULTILINE))
+    assert rows == PATCH_SLAS
+    shortest = min(int(v.split()[0]) for v in rows.values() if v.endswith("days"))
+    triage = re.search(r"within \*\*(\d+) business days\*\*", _section(text, "Updates and triage"))
+    assert triage and int(triage.group(1)) <= 2 < shortest
+    # The same numbers wherever they are repeated.
+    for path in (DEPENDABOT, REPO_ROOT / "docs" / "security.md"):
+        flat = " ".join(path.read_text().replace("#", " ").split())
+        assert "critical 7 days, high 14, medium 30, low the next minor release" in flat, path.name
+    assert "(dependency-policy.md#patch-slas)" in (REPO_ROOT / "docs" / "releases.md").read_text()
+
+
+def test_policy_has_the_admission_checklist() -> None:
+    checklist = _section(POLICY.read_text(), "Adding a dependency")
+    items = re.findall(r"^\d+\. \*\*([^*]+)\.\*\*", checklist, re.MULTILINE)
+    assert items == ["Need", "Licence", "Maintenance", "Size and transitive dependencies", "Security history", "Hash-locked"]
+    assert "`make lock`" in checklist and "MIT" in checklist and "OSV" in checklist
+
+
+def test_dependabot_matches_the_policy_and_the_release_trains() -> None:
+    """Weekly on Monday (before Thursday's train) for every ecosystem, labelled, minor and patch grouped."""
+    updates = _load(DEPENDABOT)["updates"]
+    assert {u["package-ecosystem"] for u in updates} == {"github-actions", "docker", "npm", "pip"}
+    for u in updates:
+        where = f"{u['package-ecosystem']} {u['directory']}"
+        assert u["schedule"] == {"interval": "weekly", "day": "monday", "time": "05:00", "timezone": "Etc/UTC"}, where
+        assert u["labels"][0] == "dependencies" and len(u["labels"]) == 2, where
+        for group in (u.get("groups") or {}).values():
+            assert group.get("applies-to", "version-updates") == "version-updates", f"{where}: never group security updates"
+    by_ecosystem = {u["package-ecosystem"]: u for u in updates}
+    assert by_ecosystem["pip"]["groups"]["python"]["update-types"] == ["minor", "patch"]
+    assert by_ecosystem["npm"]["groups"]["frontend-prod"] == {"dependency-type": "production", "update-types": ["minor", "patch"]}
+    # The weekly CI run that re-audits the locks against fresh advisories runs on the same day.
+    ci = _load(CI)
+    [cron] = [entry["cron"] for entry in (ci[True] if True in ci else ci["on"])["schedule"]]
+    assert cron.split()[4] == "1"
+
+
+def test_new_dependencies_are_flagged_in_pull_requests_and_reviewed_by_the_owner() -> None:
+    template = (REPO_ROOT / ".github" / "pull_request_template.md").read_text()
+    line = next(line for line in template.splitlines() if "New dependency" in line)
+    assert line.startswith("- [ ] ") and "docs/dependency-policy.md#adding-a-dependency" in line
+    owned = {line.split()[0] for line in (REPO_ROOT / ".github" / "CODEOWNERS").read_text().splitlines()
+             if line.strip() and not line.startswith("#")}
+    for path in ("/requirements.txt", "/requirements-dev.txt", "/docker/requirements-build.txt",
+                 "/src/lg_front/package.json", "/src/lg_front/package-lock.json", "/.github/dependabot.yml"):
+        assert path in owned, path
+    assert "(dependency-policy.md)" in (REPO_ROOT / "docs" / "index.md").read_text()

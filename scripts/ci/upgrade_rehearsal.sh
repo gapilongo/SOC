@@ -3,6 +3,8 @@
 #
 #   scripts/ci/upgrade_rehearsal.sh                 # N-1 = the latest v* tag before HEAD, N = this checkout
 #   scripts/ci/upgrade_rehearsal.sh --from v1.2.3   # any git ref as N-1
+#   scripts/ci/upgrade_rehearsal.sh --from lts      # N-1 = the latest LTS release (lts-X.Y tag, docs/releases.md);
+#                                                   # skipped when there is none or it is the latest v* tag
 #
 # What it does, as an upgrade runs in production (docs/deployment.md section 7):
 #   1. starts PostgreSQL and Redis from docker/docker-compose.test.yml (own project
@@ -27,7 +29,7 @@
 # migration: anything it had must be unchanged (privileges on new objects are listed).
 #
 # Needs docker with compose v2, git and python3. Environment overrides:
-#   UPGRADE_FROM          N-1 ref (or --from; default: the latest v* tag reachable from HEAD^)
+#   UPGRADE_FROM          N-1 ref (or --from; default: the latest v* tag reachable from HEAD^, an RC included)
 #   UPGRADE_PYTHON        interpreter that builds the N-1 venv (default python3; CPython 3.11)
 #   UPGRADE_OLD_PYTHON    use this interpreter for N-1 instead of building a venv
 #   UPGRADE_NEW_PYTHON    interpreter with this checkout's requirements (default python3)
@@ -45,11 +47,21 @@ FROM="${UPGRADE_FROM:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --from) FROM="${2:?--from needs a git ref}"; shift 2 ;;
-    -h|--help) sed -n '2,36p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,38p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[ -n "$FROM" ] || FROM="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^)"
+latest() { git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD^; }
+if [ "$FROM" = lts ]; then
+  FROM="$(git tag --merged HEAD --list 'lts-*' --sort=-v:refname | head -n 1)"
+  [ -n "$FROM" ] || { echo "no LTS release (lts-X.Y tag) yet: nothing to rehearse"; exit 0; }
+  LATEST="$(latest)"
+  if [ "$(git rev-parse "$FROM^{commit}")" = "$(git rev-parse "$LATEST^{commit}")" ]; then
+    echo "$FROM is the latest release ($LATEST), rehearsed already"; exit 0
+  fi
+  echo "rehearsing the upgrade from the latest LTS release: $FROM"
+fi
+[ -n "$FROM" ] || FROM="$(latest)"
 
 PROJECT="${UPGRADE_PROJECT:-lgsotf-upgrade}"
 PG_PORT="${UPGRADE_PG_PORT:-55491}"
