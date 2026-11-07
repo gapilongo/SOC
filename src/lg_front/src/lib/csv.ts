@@ -8,6 +8,8 @@
  * written as numbers and never altered.
  */
 
+import { downloadText } from './download';
+
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
 const NEEDS_QUOTES = /[",\r\n]/;
 
@@ -37,16 +39,7 @@ export function toCsv<T>(columns: ReadonlyArray<CsvColumn<T>>, rows: ReadonlyArr
 
 /** Trigger a download of `csv` (UTF-8 with BOM so spreadsheet apps detect the encoding). */
 export function downloadCsv(filename: string, csv: string): void {
-  const blob = new Blob(['﻿', csv], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename.replace(/[^A-Za-z0-9._-]/g, '_');
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  downloadText(filename, csv, 'text/csv;charset=utf-8');
 }
 
 export function csvFilename(prefix: string, now: Date = new Date()): string {

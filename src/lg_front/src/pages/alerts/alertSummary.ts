@@ -10,21 +10,18 @@
 
 import { finite, text } from '../../api/fields';
 import type { AlertDetailOut, AlertOut, FindingOut, JsonObject } from '../../api/types';
+import { asObjectOrNull } from '../../lib/json';
 
 type Rec = Record<string, unknown>;
 
-function rec(value: unknown): Rec | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Rec) : null;
-}
-
 function records(value: unknown): Rec[] {
-  return Array.isArray(value) ? value.map(rec).filter((r): r is Rec => r !== null) : [];
+  return Array.isArray(value) ? value.map(asObjectOrNull).filter((r): r is Rec => r !== null) : [];
 }
 
 /** The AI's verdict (the analysis while open, the disposition once closed) and the triage confidence (0-100). */
 export function aiVerdict(alert: Pick<AlertOut, 'summary' | 'disposition' | 'confidence'>): { verdict: string | null; confidence: number | null } {
-  const summary = rec(alert.summary);
-  const analysis = rec(summary?.analysis);
+  const summary = asObjectOrNull(alert.summary);
+  const analysis = asObjectOrNull(summary?.analysis);
   const verdict = text(analysis?.verdict) ?? text(summary?.verdict) ?? text(alert.disposition);
   const confidence = finite(alert.confidence);
   return { verdict, confidence: confidence === null ? null : Math.round(confidence) };
@@ -32,7 +29,7 @@ export function aiVerdict(alert: Pick<AlertOut, 'summary' | 'disposition' | 'con
 
 /** The escalation this alert raised (or was attached to), from the summary; null when none. */
 export function escalationIdOf(alert: Pick<AlertOut, 'summary'>): string | null {
-  return text(rec(alert.summary)?.escalation_id);
+  return text(asObjectOrNull(alert.summary)?.escalation_id);
 }
 
 export interface EvidenceFlags {
@@ -50,8 +47,8 @@ export interface EvidenceFlags {
  * digest, each lookup (`tools[].simulated`) and the finding data.
  */
 export function evidenceFlags(alert: Pick<AlertDetailOut, 'summary' | 'findings'>): EvidenceFlags {
-  const summary = rec(alert.summary);
-  const analysis = rec(summary?.analysis);
+  const summary = asObjectOrNull(alert.summary);
+  const analysis = asObjectOrNull(summary?.analysis);
   const sources = new Set<string>();
   for (const tool of records(analysis?.tools)) {
     if (tool.simulated !== true) continue;
@@ -64,7 +61,7 @@ export function evidenceFlags(alert: Pick<AlertDetailOut, 'summary' | 'findings'
   }
   const findings: FindingOut[] = Array.isArray(alert.findings) ? alert.findings : [];
   for (const f of findings) {
-    if (rec(f?.data)?.simulated === true && text(f.source)) sources.add(f.source);
+    if (asObjectOrNull(f?.data)?.simulated === true && text(f.source)) sources.add(f.source);
   }
   const simulated = summary?.simulated_evidence === true || analysis?.simulated_evidence === true || sources.size > 0;
   return { simulated, simulatedSources: [...sources].sort(), dryRun: summary?.dry_run === true };
@@ -72,7 +69,7 @@ export function evidenceFlags(alert: Pick<AlertDetailOut, 'summary' | 'findings'
 
 /** A finding was served from a simulated provider. */
 export function isSimulatedFinding(f: FindingOut): boolean {
-  return rec(f.data as JsonObject | undefined)?.simulated === true;
+  return asObjectOrNull(f.data as JsonObject | undefined)?.simulated === true;
 }
 
 const STATUS_WORDS: Record<string, string> = {

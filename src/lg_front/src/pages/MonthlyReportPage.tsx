@@ -9,8 +9,9 @@ import type { MonthlyReportOut } from '../api/types';
 import { useApi } from '../auth/AuthContext';
 import { useToast } from '../components/Toast';
 import { Button, ErrorMessage, LoadingState } from '../components/ui';
+import { downloadText } from '../lib/download';
 import { formatDateTime, formatDuration, formatInt, formatUsd } from '../lib/format';
-import { SUGGESTION_LABEL, downloadText, formatHours, formatPct, formatRange } from '../lib/reports';
+import { SUGGESTION_LABEL, formatHours, formatPct, formatRange } from '../lib/reports';
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const TOP_DETECTIONS = 25;

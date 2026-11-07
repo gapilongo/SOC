@@ -1,6 +1,7 @@
 import type { JsonObject } from '../../api/types';
 import { Badge, type Tone } from '../../components/Badge';
 import { DefinitionList } from '../../components/ui';
+import { asObjectOrNull } from '../../lib/json';
 
 /** The parsed facts of a reported email (``CanonicalAlert.email``, written by the email normalizer). */
 export interface EmailSection {
@@ -37,13 +38,9 @@ export interface EmailSection {
   parse_error?: string;
 }
 
-function obj(value: unknown): JsonObject | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
-}
-
 /** The email section of a normalized alert, or null for alerts that are not emails. */
 export function emailSection(normalized: JsonObject | null | undefined): EmailSection | null {
-  const section = obj(normalized?.email);
+  const section = asObjectOrNull(normalized?.email);
   return section ? (section as unknown as EmailSection) : null;
 }
 
