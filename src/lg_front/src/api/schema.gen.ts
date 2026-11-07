@@ -1912,8 +1912,11 @@ export interface components {
             action: string;
             /** Actor Id */
             actor_id?: string | null;
-            /** Actor Type */
-            actor_type: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "system" | "user" | "agent" | "api_key";
             /** Details */
             details?: {
                 [key: string]: unknown;

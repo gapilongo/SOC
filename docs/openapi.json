@@ -1367,6 +1367,12 @@
             "title": "Actor Id"
           },
           "actor_type": {
+            "enum": [
+              "system",
+              "user",
+              "agent",
+              "api_key"
+            ],
             "title": "Actor Type",
             "type": "string"
           },
