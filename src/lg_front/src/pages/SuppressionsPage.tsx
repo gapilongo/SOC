@@ -224,6 +224,11 @@ export default function SuppressionsPage() {
                     <h2 className="text-sm font-semibold text-fg">{r.name}</h2>
                     <Badge tone={r.enabled ? 'good' : 'neutral'}>{r.enabled ? 'enabled' : 'disabled'}</Badge>
                     {r.source_feedback_id && <Badge tone="info">suggested</Badge>}
+                    {r.expires_at && new Date(r.expires_at).getTime() <= Date.now() && (
+                      <Badge tone="warn" title={`Expired ${formatDateTime(r.expires_at)}`}>
+                        expired
+                      </Badge>
+                    )}
                   </div>
                   <p className="mt-1 break-words font-mono text-xs text-secondary">{describeMatch(r.match)}</p>
                   <p className="mt-1 text-xs text-muted">
