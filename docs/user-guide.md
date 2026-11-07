@@ -28,7 +28,7 @@ dead-lettered (operators handle those).
 
 | Role | Can |
 |---|---|
-| Viewer | Read alerts, timelines, escalations, actions, suppression rules and the dashboard. |
+| Viewer | Read alerts, timelines, escalations, actions, suppression rules and the Overview (the dashboard summary). |
 | Analyst | Everything a viewer can, plus add notes, propose suppression rules, claim and decide escalations, approve or reject low and medium risk actions. |
 | Admin | Everything in the tenant: users, API keys, sources, tenant settings (response policy, protected assets, review policy, enrichment, LLM budget), suppression management, reprocessing, LLM usage, audit log, high and critical risk approvals. |
 

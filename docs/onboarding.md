@@ -1,13 +1,13 @@
 # First-run onboarding
 
-A new tenant's admin lands on a dashboard with nothing in it. The
+A new tenant's admin lands on an empty Overview. The
 getting-started checklist walks them to their first triaged alert, and
 built-in sample alerts let them see the triage before any source is
 connected.
 
 ## Getting started page and banner
 
-Admins see **Getting started** in the navigation and, on the dashboard, a
+Admins see **Getting started** in the navigation and, on the Overview, a
 banner with their progress, the next steps, a **Send sample alerts** button
 and a dismiss button. The banner disappears when it is dismissed or every
 step is done; the page stays available.
@@ -34,7 +34,7 @@ reported as `available: false`, hidden in the UI and not counted.
 | GET | `/api/v1/onboarding/status` | `steps` (`id`, `done`, `available`), `completed`, `total`, `complete`, `dismissed`, `dismissed_at`, `samples_sent`. |
 | POST | `/api/v1/onboarding/sample-alerts` | Ingest the sample set and queue it for triage. Returns `inserted`, `duplicates`, `enqueued`, `alert_ids`. |
 | POST | `/api/v1/onboarding/autonomy-reviewed` | Mark the autonomy policy reviewed without changing it. |
-| POST | `/api/v1/onboarding/dismiss` | Hide the dashboard banner for the tenant. |
+| POST | `/api/v1/onboarding/dismiss` | Hide the Overview banner for the tenant. |
 
 Analysts, viewers and API keys get `403`. The three `POST`s are audited
 (`onboarding.sample_alerts_sent`, `onboarding.autonomy_reviewed`,
