@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { can } from './auth/roles';
 import { APP_ROUTES, NAV_GROUPS, pageLabel } from './routes';
 
 describe('route table', () => {
@@ -16,6 +17,10 @@ describe('route table', () => {
     expect(items).toHaveLength(withNav.length);
     for (const item of items) expect(item.allowed).toBe(APP_ROUTES.find((r) => r.path === item.to)?.allowed);
     expect(NAV_GROUPS.map((g) => g.title)).toEqual(['Operate', 'Report', 'Configure', 'Platform']);
+  });
+
+  it('gates account security with can.account', () => {
+    expect(APP_ROUTES.find((r) => r.path === '/account')?.allowed).toBe(can.account);
   });
 
   it('names pages for the breadcrumb', () => {

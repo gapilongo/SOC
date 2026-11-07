@@ -120,8 +120,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: '/settings', Page: TenantSettingsPage, allowed: can.admin, nav: { group: 'configure', label: 'Tenant settings', icon: Settings } },
   // Platform
   { path: '/platform', Page: PlatformPage, allowed: can.platform, nav: { group: 'platform', label: 'MSSP console', icon: Building2 } },
-  // Reached from the account menu.
-  { path: '/account', Page: AccountSecurityPage, allowed: can.view, label: 'Account security' },
+  // Reached from the account menu, which shows it under the same gate.
+  { path: '/account', Page: AccountSecurityPage, allowed: can.account, label: 'Account security' },
 ];
 
 /** The sidebar: every route with a nav entry, grouped, each item gated like its route. */

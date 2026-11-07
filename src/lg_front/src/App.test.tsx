@@ -54,15 +54,15 @@ describe('App', () => {
 const DENIED = 'You do not have access to this page';
 
 /** Every static page of the route table (parameterised routes and redirects are covered by their pages' tests). */
-const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && r.path !== '/actions' && r.path !== '/account');
+const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && r.path !== '/actions');
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
-  ['viewer', { role: 'viewer' }, null, 6],
-  ['analyst', { role: 'analyst' }, null, 6],
-  ['admin', { role: 'admin' }, null, 13],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 14],
-  // No MSSP console while acting on another tenant.
+  ['viewer', { role: 'viewer' }, null, 7],
+  ['analyst', { role: 'analyst' }, null, 7],
+  ['admin', { role: 'admin' }, null, 14],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 15],
+  // No MSSP console and no account security while acting on another tenant.
   ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 13],
 ];
 
