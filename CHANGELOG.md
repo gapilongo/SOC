@@ -140,6 +140,11 @@ All notable changes to this project are documented here. The format follows
   shows in its accessible name ("Account: <email>, <role>, initials MR"),
   so speech-input users can activate it by saying what they see (WCAG
   2.5.3 Label in Name).
+- `lg-sotf mcp` now honours every form of `Retry-After` the LG-SOTF API (or a
+  proxy in front of it) can send when it retries a read: fractional seconds
+  (`1.5`) and HTTP dates, as well as whole seconds. Before, only whole seconds
+  were understood and anything else fell back to the exponential backoff.
+  The wait is still at most 10 seconds; a negative value means retry now.
 - An LLM call that failed unexpectedly no longer leaves its token estimate
   counted against the tenant's daily LLM budget. Each call reserves an
   estimate first and settles it with the tokens actually used, but an
