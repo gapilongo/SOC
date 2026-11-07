@@ -15,7 +15,8 @@
 #   3. runs N's `lg-sotf migrate` while N-1 still runs (expand-only migrations: the
 #      previous release must keep working on the new schema), and ingests two more
 #      alerts through N-1 on the migrated schema (those its worker has not settled
-#      within 30s are left queued for N; its message failures are printed as warnings);
+#      within 30s are left queued for N; its message failures are printed as warnings,
+#      and fail the rehearsal on a stale cached statement once N-1 retries those);
 #   4. stops N-1, runs the drain check (no waiting run on a graph N does not have),
 #      starts N's api and worker and decides or approves every waiting run through
 #      the API, then works one new alert end to end on N;
@@ -241,10 +242,16 @@ step "release N-1 keeps taking alerts on the migrated schema"
 before_migration="$(grep -c '"worker.message_failed"' "$LOGS/n-1-worker.log" || true)"
 driver seed --count 2 --settle-within 30
 stop_release n-1
-# Not fatal (the entry stays pending and N's worker claims it from the stopped consumer), but shown: an
-# N-1 worker fails a message once per pooled connection whose cached statements the migration invalidated.
+# Shown, not fatal (the entry stays pending and N's worker claims it from the stopped consumer)...
 grep '"worker.message_failed"' "$LOGS/n-1-worker.log" | tail -n "+$((before_migration + 1))" \
-  | grep -o '"error": "[A-Za-z]*"' | sort | uniq -c | sed 's/^ */warn  N-1 worker after the migration: /' || true
+  | grep -o '"error": "[A-Za-z]*"' | sort | uniq -c >"$WORK/n-1-failures.txt" || true
+sed 's/^ */warn  N-1 worker after the migration: /' "$WORK/n-1-failures.txt"
+# ...except a stale cached statement (the migration changed a table under one), once N-1 retries those
+# (ARCH-E1.6; releases before it fail the message and leave it pending until the visibility timeout).
+if grep -q 'def retry_stale_statement' "$OLD/src/lg_sotf/db/pool.py" \
+  && grep -qE 'InvalidCachedStatementError|OutdatedSchemaCacheError' "$WORK/n-1-failures.txt"; then
+  fail "the N-1 worker failed a message on a stale cached statement it should have retried"
+fi
 
 # ----------------------------------------------------------- drain on N
 step "drain check (docs/deployment.md section 7)"
