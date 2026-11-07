@@ -105,6 +105,8 @@ async def test_narrative_goes_through_the_untrusted_boundary(make_settings: Call
         "label": AI_LABEL,
         "provider": "fake",
         "model": "fake-scripted",
+        "prompt_name": "nis2.narrative.notification",
+        "prompt_hash": nis2.NARRATIVE_PROMPTS["notification"].hash,
     }
     [call] = model.calls
     system, data = (message_text(m) for m in call.messages)

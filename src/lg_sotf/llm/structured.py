@@ -72,6 +72,7 @@ from lg_sotf.llm.client import (
 from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.pricing import local_model_id
 from lg_sotf.llm.prompting import serialize_untrusted
+from lg_sotf.llm.registry import CallProvenance, PromptTemplate, call_provenance
 from lg_sotf.llm.usage import Outcome, UsageRecorder, UsageSample, UsageTally, extract_usage, get_usage_recorder
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
@@ -404,10 +405,17 @@ class _CallMeter:
     recorder: UsageRecorder
     tally: Optional[UsageTally]
     agent: str
-    model_id: str
-    provider: str
+    provenance: CallProvenance
     tenant_id: Optional[str]
     self_hosted: bool
+
+    @property
+    def model_id(self) -> str:
+        return self.provenance.model_id
+
+    def _call_fields(self) -> Dict[str, str]:
+        p = self.provenance
+        return {"model": p.model_id, "provider": p.provider, "prompt_name": p.prompt_name, "prompt_hash": p.prompt_hash}
 
     def budget_exceeded(self) -> None:
         self.recorder.record(model=self.model_id, agent=self.agent, outcome="budget_exceeded", tenant_id=self.tenant_id)
@@ -418,7 +426,7 @@ class _CallMeter:
         """An attempt that reported no usage: a provider error, or a result that is not a mapping."""
         self.recorder.record(model=self.model_id, agent=self.agent, outcome=outcome, tenant_id=self.tenant_id)
         if self.tally is not None:
-            self.tally.add_call(self.agent, [], outcome, Decimal(0), model=self.model_id, provider=self.provider)
+            self.tally.add_call(self.agent, [], outcome, Decimal(0), **self._call_fields())
 
     def samples(self, raw: Any) -> List[UsageSample]:
         """The usage a reply reports, under ``local/<model>`` ids for self-hosted providers."""
@@ -431,7 +439,7 @@ class _CallMeter:
         """Record an attempt that reported usage; returns its cost."""
         cost = self.recorder.record_samples(samples, agent=self.agent, outcome=outcome, tenant_id=self.tenant_id)
         if self.tally is not None:
-            self.tally.add_call(self.agent, samples, outcome, cost, model=self.model_id, provider=self.provider)
+            self.tally.add_call(self.agent, samples, outcome, cost, **self._call_fields())
         return cost
 
 
@@ -608,6 +616,7 @@ async def ainvoke_structured(
     budget: Optional[TokenBudget] = None,
     budget_limit: BudgetLimit = USE_DEFAULT,
     tally: Optional[UsageTally] = None,
+    prompt: Optional[PromptTemplate[Any]] = None,
 ) -> T:
     """Invoke ``model`` and return a validated ``schema`` instance.
 
@@ -618,15 +627,23 @@ async def ainvoke_structured(
     daily limit: an int, ``None`` for unlimited, or ``USE_DEFAULT`` (the
     default) for ``llm.daily_token_budget_per_tenant``. ``tally``, when
     given, accumulates the call's tokens and cost (per-alert totals).
+    ``prompt`` is the registered template the messages were built from; the
+    call records its name and hash with the model id (see
+    :mod:`lg_sotf.llm.registry`).
 
     Self-hosted models answering in JSON text get one repair attempt (see the
     module docstring).
     """
-    model_id = usage_model_id(model)
+    if prompt is not None and prompt.schema is not schema:
+        raise ValueError(f"{agent}: prompt {prompt.name!r} answers {prompt.schema.__name__}, not {schema.__name__}")
+    provenance = call_provenance(prompt, messages, model_id=usage_model_id(model), provider=provider_of(model))
     meter = _CallMeter(
-        get_usage_recorder(settings), tally, agent, model_id, provider_of(model), tenant_id, model_is_self_hosted(model)
+        get_usage_recorder(settings), tally, agent, provenance, tenant_id, model_is_self_hosted(model)
     )
-    log = logger.bind(agent=agent, tier=tier, model=model_id)
+    log = logger.bind(
+        agent=agent, tier=tier, model=provenance.model_id, prompt_name=provenance.prompt_name,
+        prompt_hash=provenance.prompt_hash,
+    )
 
     reservation = await _reserve(
         budget, tenant_id, messages, getattr(settings.llm, tier).max_tokens, budget_limit, meter=meter, log=log

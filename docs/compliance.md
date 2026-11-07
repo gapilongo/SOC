@@ -10,7 +10,7 @@ for:
 * **NIS2 incident-report drafts** for the 24-hour, 72-hour and final
   reports;
 * **tenant data export and erasure** for GDPR requests and customer offboarding;
-* **model provenance**: which provider and model informed each workflow step.
+* **model provenance**: which provider, model and prompt version informed each workflow step.
 
 These features *help you with* record keeping, incident reporting and data
 subject requests. They do not make an installation compliant on their own,
@@ -29,7 +29,7 @@ Open HTML**.
 |---|---|
 | `alert` | The alert row: normalised form, the raw event redacted once more for credentials (`raw_redacted`, with the count of redactions), and the stored `summary` |
 | `timeline` | Every timeline event (up to 5,000), oldest first |
-| `agents` | Per step (`triage`, `correlation`, `analysis`): whether it ran and when, verdict, confidence, threat score, reasoning and conclusion, token usage, and the **provider and model** it called; plus the routing decision, the response plan, model refusals and whether the LLM budget ran out |
+| `agents` | Per step (`triage`, `correlation`, `analysis`): whether it ran and when, verdict, confidence, threat score, reasoning and conclusion, token usage, and the **provider, model and prompt version** it called; plus the routing decision, the response plan, model refusals and whether the LLM budget ran out |
 | `enrichment` | Threat-intelligence and history observations, threat indicators, indicator sightings (display value and keyed hash) |
 | `correlation` | The correlation digest and the alerts grouped with this one |
 | `escalations` | Level, reason, SLA, who claimed it and when, the decision, who decided and when, notes, pre-approved actions |
@@ -69,12 +69,23 @@ alert was closed without any human involvement.
 
 ### Model provenance
 
-Since this release every agent records the provider, model and tier it
-called in `alerts.summary.llm_models` (`{"triage": {"provider": "anthropic",
-"model": "claude-haiku-4-5", "tier": "fast"}, ...}`). Evidence packs show it
-per step. Alerts processed before the upgrade show `recorded: false` with the
-note "processed before per-step model recording"; steps that made no model
-call say "rules only".
+Every agent records the provider, model and tier it called, and the name
+and hash of the prompt it sent, in `alerts.summary.llm_models`
+(`{"triage": {"provider": "anthropic", "model": "claude-haiku-4-5", "tier":
+"fast", "prompt_name": "triage.assess", "prompt_hash": "3f9c..."}, ...}`).
+Evidence packs show it per step. Alerts processed before model recording show
+`recorded: false` with the note "processed before per-step model recording";
+alerts processed before prompt versions were recorded show the model with
+the prompt "not recorded"; steps that made no model call say "rules only".
+
+Prompts are named templates in the code (`lg_sotf.llm.registry`). The hash
+is the first 16 hex characters of a SHA-256 over everything fixed that the
+model is sent for that template: the system prompt and task, the shared
+guard against instructions in alert data, the preambles of the data blocks
+and the output schema. The same hash means the model received the same
+instructions; any wording or schema change gives a new hash. Every model
+call also logs `prompt_name` and `prompt_hash` with the model in its
+`llm.call` event.
 
 ### Verifying a pack
 

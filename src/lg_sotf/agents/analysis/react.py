@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Literal, Mapping, O
 from pydantic import BaseModel, Field
 
 from lg_sotf.agents.base import AgentContext, LLMResult
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact_text
@@ -92,6 +93,9 @@ class InvestigationStep(BaseModel):
     recommended_actions: clipped_list(MAX_ACTIONS, item_chars=MAX_ACTION_CHARS)  # type: ignore[valid-type]
     action: lenient_literal("lookup", "finish")  # type: ignore[valid-type]
     target: clipped_str(64, default="")  # type: ignore[valid-type]
+
+
+STEP_PROMPT = register_prompt("analysis.react_step", system=SYSTEM_PROMPT, task=STEP_TASK, schema=InvestigationStep)
 
 
 @dataclass(frozen=True)
@@ -222,9 +226,7 @@ class ReActReasoner:
             llm = await agent.call_llm(
                 run.agent_ctx,
                 tier="deep",
-                schema=InvestigationStep,
-                system=SYSTEM_PROMPT,
-                task=STEP_TASK,
+                prompt=STEP_PROMPT,
                 untrusted=run.alert_block,
                 context=run.tool_data(),
                 cache_untrusted=True,

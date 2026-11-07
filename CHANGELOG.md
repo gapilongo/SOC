@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Every model call now records which prompt version it sent. Each prompt has
+  a name (such as `triage.assess`) and a short hash of its text and output
+  schema, so a changed hash means the model was asked something different.
+  The alert's model provenance, evidence packs (JSON and HTML), the
+  `llm.call` log event and evaluation reports (a new "Models and prompts"
+  section) show the prompt name and hash next to the provider and model.
 - Runs waiting for an analyst or an approval now survive upgrades that change
   the workflow graph. Each run records the graph version it started on
   (`workflow_runs.graph_version`, migration 0010), and workers keep the
