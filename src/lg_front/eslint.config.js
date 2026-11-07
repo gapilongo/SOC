@@ -61,6 +61,12 @@ const UP_TO_PAGES_OR_APP = {
   regex: '^(\\.\\./)+(pages|app)(/|$)',
   message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
 };
+// The generated OpenAPI types (npm run gen:api) are read only by src/api: types.ts stays the app's
+// vocabulary and contract.check.ts holds it to the schema.
+const SCHEMA_GEN = {
+  regex: '(^|/)api/schema\\.gen$',
+  message: 'Import API types from api/types.ts; only src/api reads the generated schema (contract.check.ts).',
+};
 const DATA_IN_COMPONENTS = {
   regex: '^(\\.\\./)+api/endpoints$',
   message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
@@ -75,7 +81,7 @@ const UP_TO_COMPONENTS = {
 };
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
+  { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report', 'src/api/schema.gen.ts'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended, jsxA11y.flatConfigs.recommended],
     files: ['**/*.{ts,tsx}'],
@@ -102,10 +108,17 @@ export default tseslint.config(
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
+      'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
     },
   },
   {
-    files: ['src/{api,auth,live,lib,theme}/**/*.{ts,tsx}'],
+    files: ['src/{auth,live,lib,theme}/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS, SCHEMA_GEN] }],
+    },
+  },
+  {
+    files: ['src/api/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS] }],
     },
@@ -113,7 +126,7 @@ export default tseslint.config(
   {
     files: ['src/components/**/*.{ts,tsx}'],
     rules: {
-      'no-restricted-imports': ['error', { paths: [REACT_QUERY_IN_COMPONENTS], patterns: [UP_TO_PAGES_OR_APP, DATA_IN_COMPONENTS] }],
+      'no-restricted-imports': ['error', { paths: [REACT_QUERY_IN_COMPONENTS], patterns: [UP_TO_PAGES_OR_APP, DATA_IN_COMPONENTS, SCHEMA_GEN] }],
     },
   },
   {
@@ -152,8 +165,9 @@ export default tseslint.config(
       'no-restricted-properties': 'off',
       // Tests build and tear down their own query clients.
       'no-restricted-syntax': 'off',
-      // Tests compose layers (a page inside the shell, a guard around a page).
-      'no-restricted-imports': 'off',
+      // Tests compose layers (a page inside the shell, a guard around a page), but read API types
+      // from api/types.ts like the app.
+      'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
     },
   },
   {
