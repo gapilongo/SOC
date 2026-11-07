@@ -1,6 +1,6 @@
 # LG-SOTF analyst web app
 
-React 18 + TypeScript single-page app for triaging alerts, deciding
+React 19 + TypeScript single-page app for triaging alerts, deciding
 escalations, approving response actions and administering a tenant. It talks
 only to the LG-SOTF API (`/api/v1`, see `docs/api.md`) and its `/ws` live
 event stream.
