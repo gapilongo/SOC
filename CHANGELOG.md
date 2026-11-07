@@ -125,6 +125,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The account menu button in the web app now includes the initials it
+  shows in its accessible name ("Account: <email>, <role>, initials MR"),
+  so speech-input users can activate it by saying what they see (WCAG
+  2.5.3 Label in Name).
 - An LLM call that failed unexpectedly no longer leaves its token estimate
   counted against the tenant's daily LLM budget. Each call reserves an
   estimate first and settles it with the tokens actually used, but an
