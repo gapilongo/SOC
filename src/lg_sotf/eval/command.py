@@ -20,7 +20,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Sequence
 
 from lg_sotf.eval.dataset import Dataset, DatasetError, load_dataset
 from lg_sotf.eval.gate import ThresholdsError, evaluate_gate, load_thresholds
@@ -33,8 +33,12 @@ from lg_sotf.eval.report import (
     write_json,
 )
 from lg_sotf.eval.results import ItemResult
-from lg_sotf.eval.runner import ISOLATION_MODES, EvalSetupError, run_evaluation
+from lg_sotf.eval.runner import ISOLATION_MODES, EvalRun, EvalSetupError, Progress, run_evaluation
+from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
+
+if TYPE_CHECKING:
+    from lg_sotf.eval.history import HistoryRun
 
 EXIT_OK = 0
 EXIT_GATE_FAILED = 1
@@ -63,6 +67,8 @@ class EvalOptions:
     validate_only: bool = False
     from_history: bool = False
     days: int = 30
+    # The process's SecretBox, built by cli.py (ADR-0006): enrichment reads tenant-encrypted tool keys with it.
+    secret_box: Optional[SecretBox] = None
 
 
 def markdown_path(options: EvalOptions) -> Path:
@@ -242,32 +248,7 @@ def execute(  # noqa: C901
         tail = f" ({result.error})" if result.error else ""
         echo(f"[{done}/{total}] {result.item_id}: {result.status}, predicted {result.predicted or 'n/a'}{tail}")
 
-    import asyncpg
-    from redis.exceptions import RedisError
-
-    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
-    from lg_sotf.errors import OperationError
-    from lg_sotf.security.hashing import SecurityConfigError
-
-    try:
-        run = asyncio.run(
-            run_evaluation(
-                settings,
-                dataset,
-                tenant_id=options.tenant_id,
-                concurrency=options.concurrency,
-                isolate=options.isolate,  # type: ignore[arg-type]
-                progress=progress,
-            )
-        )
-    except (EvalSetupError, SecurityConfigError, OperationError) as exc:
-        raise EvalCommandError(str(exc)) from exc
-    except DatabaseUnavailable as exc:
-        raise EvalCommandError(f"database unavailable: {exc}") from exc
-    except (DatabaseError, asyncpg.PostgresError) as exc:
-        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
-    except RedisError as exc:
-        raise EvalCommandError(f"redis unavailable: {type(exc).__name__}") from exc
+    run = _run_dataset(settings, dataset, options, progress)
     run_info = {**run.info, "selection": current_selection}
     report = build_report(run.results, dataset=dataset, run_info=run_info)
     gate_dict: Optional[Dict[str, Any]] = None
@@ -289,6 +270,37 @@ def execute(  # noqa: C901
     return EXIT_OK
 
 
+def _run_dataset(settings: Settings, dataset: Dataset, options: EvalOptions, progress: Progress) -> EvalRun:
+    """Run the evaluation; setup, database and Redis failures become :class:`EvalCommandError` (exit 2)."""
+    import asyncpg
+    from redis.exceptions import RedisError
+
+    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
+    from lg_sotf.errors import OperationError
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    try:
+        return asyncio.run(
+            run_evaluation(
+                settings,
+                dataset,
+                tenant_id=options.tenant_id,
+                concurrency=options.concurrency,
+                isolate=options.isolate,  # type: ignore[arg-type]
+                progress=progress,
+                secret_box=options.secret_box,
+            )
+        )
+    except (EvalSetupError, SecurityConfigError, OperationError) as exc:
+        raise EvalCommandError(str(exc)) from exc
+    except DatabaseUnavailable as exc:
+        raise EvalCommandError(f"database unavailable: {exc}") from exc
+    except (DatabaseError, asyncpg.PostgresError) as exc:
+        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
+    except RedisError as exc:
+        raise EvalCommandError(f"redis unavailable: {type(exc).__name__}") from exc
+
+
 def execute_history(
     settings: Settings,
     options: EvalOptions,
@@ -296,12 +308,7 @@ def execute_history(
     warn: Callable[[str], None] = _stderr,
 ) -> int:
     """``--from-history``: replay the tenant's analyst-decided alerts read-only, then report and gate."""
-    from lg_sotf.eval.history import (
-        DEFAULT_HISTORY_LIMIT,
-        MAX_HISTORY_DAYS,
-        HistoryBacktestError,
-        run_history_backtest,
-    )
+    from lg_sotf.eval.history import DEFAULT_HISTORY_LIMIT, MAX_HISTORY_DAYS
 
     if options.dataset:
         raise EvalCommandError("--from-history replays the tenant's own alerts; do not pass --dataset")
@@ -346,29 +353,7 @@ def execute_history(
             f"analyst {result.expected}{tail}"
         )
 
-    import asyncpg
-
-    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
-    from lg_sotf.security.hashing import SecurityConfigError
-
-    try:
-        run = asyncio.run(
-            run_history_backtest(
-                settings,
-                tenant_id=options.tenant_id,
-                days=options.days,
-                limit=limit,
-                concurrency=options.concurrency,
-                progress=progress,
-                before_replay=check,
-            )
-        )
-    except (HistoryBacktestError, SecurityConfigError) as exc:
-        raise EvalCommandError(str(exc)) from exc
-    except DatabaseUnavailable as exc:
-        raise EvalCommandError(f"database unavailable: {exc}") from exc
-    except (DatabaseError, asyncpg.PostgresError) as exc:
-        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
+    run = _run_history(settings, options, limit, progress, check)
     report = build_report(run.results, dataset=run.dataset, run_info={**run.info, "selection": current_selection})
     gate_dict: Optional[Dict[str, Any]] = None
     if thresholds is not None:
@@ -387,3 +372,35 @@ def execute_history(
     if gate_dict is not None and not gate_dict["passed"]:
         return EXIT_GATE_FAILED
     return EXIT_OK
+
+
+def _run_history(
+    settings: Settings, options: EvalOptions, limit: int, progress: Progress, check: Callable[[Dataset], None]
+) -> HistoryRun:
+    """Replay the tenant's decided alerts; backtest and database failures become :class:`EvalCommandError`."""
+    import asyncpg
+
+    from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable
+    from lg_sotf.eval.history import HistoryBacktestError, run_history_backtest
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    assert options.tenant_id is not None  # execute_history checked it
+    try:
+        return asyncio.run(
+            run_history_backtest(
+                settings,
+                tenant_id=options.tenant_id,
+                days=options.days,
+                limit=limit,
+                concurrency=options.concurrency,
+                progress=progress,
+                before_replay=check,
+                secret_box=options.secret_box,
+            )
+        )
+    except (HistoryBacktestError, SecurityConfigError) as exc:
+        raise EvalCommandError(str(exc)) from exc
+    except DatabaseUnavailable as exc:
+        raise EvalCommandError(f"database unavailable: {exc}") from exc
+    except (DatabaseError, asyncpg.PostgresError) as exc:
+        raise EvalCommandError(f"database error: {type(exc).__name__}: {exc}") from exc
