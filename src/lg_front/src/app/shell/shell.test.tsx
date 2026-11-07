@@ -300,6 +300,40 @@ describe('Layout', () => {
     expect(document.getElementById('main')).toHaveFocus();
   });
 
+  it('keeps Tab and Shift+Tab inside the open phone menu', async () => {
+    const user = userEvent.setup();
+    const { api } = shellApi();
+    const session = await signedInSession(api, { role: 'viewer' });
+    renderWithSession(
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<h1>Dashboard</h1>} />
+        </Route>
+      </Routes>,
+      session,
+    );
+    await user.click(screen.getByRole('button', { name: 'Open menu' }));
+    const drawer = screen.getByRole('dialog', { name: 'Main menu' });
+    const close = within(drawer).getByRole('button', { name: 'Close menu' });
+    expect(close).toHaveFocus();
+    const links = within(drawer).getAllByRole('link');
+    const last = links[links.length - 1];
+
+    // Backwards from the first control wraps to the last one, forwards from the last wraps to the first.
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    // A full round trip never leaves the menu.
+    for (let i = 0; i < links.length + 2; i += 1) {
+      await user.tab();
+      expect(drawer).toContainElement(document.activeElement as HTMLElement);
+    }
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open menu' })).toHaveFocus();
+  });
+
   it('signs out through the store from the account menu', async () => {
     const user = userEvent.setup();
     const { api } = shellApi();

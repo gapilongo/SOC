@@ -7,6 +7,7 @@ import { logoutUrl } from '../auth/oidc';
 import { ErrorBoundary, PageFallback } from '../components/ErrorBoundary';
 import { ActingTenantBanner } from '../pages/platform/TenantSwitcher';
 import { Button, LoadingState } from '../components/ui';
+import { useFocusTrap } from '../components/useFocusTrap';
 import { getConfig } from '../config';
 import { NAV_GROUPS, pageLabel } from './routes';
 import { Header } from './shell/Header';
@@ -26,18 +27,15 @@ export function Layout() {
 
   const mainRef = useRef<HTMLElement>(null);
   const firstRender = useRef(true);
-  const menuCloseRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  // The phone menu is modal: focus starts on its close button and Tab stays inside until it closes.
+  // Where focus goes on close is decided below, not by the trap.
+  useFocusTrap(menuRef, menuOpen, { restoreFocus: false, onEscape: () => setMenuOpen(false) });
   useEffect(() => {
     if (!menuOpen) return;
-    menuCloseRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false);
-    };
-    document.addEventListener('keydown', onKey);
     const button = menuButtonRef.current;
     return () => {
-      document.removeEventListener('keydown', onKey);
       // Return focus to the menu button unless navigation already moved it to the page.
       const active = document.activeElement;
       if (!active || active === document.body || active.closest('#mobile-nav')) button?.focus();
@@ -79,6 +77,7 @@ export function Layout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={() => setMenuOpen(false)} />
           <div
+            ref={menuRef}
             className="absolute inset-y-0 left-0 flex w-[min(18rem,85vw)] flex-col overflow-y-auto border-r border-subtle bg-sidebar"
             id="mobile-nav"
             role="dialog"
@@ -87,7 +86,7 @@ export function Layout() {
           >
             <div className="flex justify-end px-3 pt-3">
               <Button
-                ref={menuCloseRef}
+                data-autofocus
                 size="lg"
                 aria-label="Close menu"
                 onClick={() => setMenuOpen(false)}
