@@ -1139,7 +1139,7 @@ def route_problem(action_type: str, route: Any) -> Optional[str]:
 
 # The response keys the guardrails read; malformed values fail closed when a policy is resolved.
 GUARDRAIL_KEYS = ("allow_internal_ip_blocks", "allowed_actions", "max_actions_per_hour", "blast_radius", "autonomy")
-_AUTONOMY: TypeAdapter[Dict[str, str]] = TypeAdapter(AutonomyMap)
+_AUTONOMY: TypeAdapter[AutonomyMap] = TypeAdapter(AutonomyMap)
 
 
 class ResponsePolicyError(ValueError):
