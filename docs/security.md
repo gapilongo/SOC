@@ -396,7 +396,10 @@ incident before retention removes it.
   pinned by digest (see "Pinned inputs and the image CVE gate" below).
   `pip-audit` and Bandit run in CI, Gitleaks on every change and in a weekly
   full-history scan, and Dependabot keeps GitHub Actions, base-image digests,
-  and Python and npm dependencies current.
+  and Python and npm dependencies current. When a dependency may be added,
+  how updates are triaged, and the patch SLAs (critical 7 days, high 14,
+  medium 30, low the next minor release) are in
+  [dependency-policy.md](dependency-policy.md).
 * Both images are scanned with Trivy on every change: a fixable critical or
   high CVE fails CI.
 * Every release carries CycloneDX SBOMs and an OpenVEX document, each with

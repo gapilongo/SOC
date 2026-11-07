@@ -9,6 +9,10 @@
 /scripts/ci/                                @gapilongo
 /requirements.txt                           @gapilongo
 /requirements-dev.txt                       @gapilongo
+/docker/requirements-build.txt              @gapilongo
+/src/lg_front/package.json                  @gapilongo
+/src/lg_front/package-lock.json             @gapilongo
+/.github/dependabot.yml                     @gapilongo
 /pyproject.toml                             @gapilongo
 /tests/unit/architecture/                   @gapilongo
 /src/lg_front/eslint.config.js              @gapilongo

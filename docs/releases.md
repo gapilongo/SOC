@@ -18,7 +18,7 @@ deploy.
 | **Partner** | `vX.Y.Z-rc.N` | `:vX.Y.Z-rc.N`, moving `:partner` | Weekly, Thursday 09:00 UTC | Design partners and evaluation installs that want each week's work |
 | **Stable** | `vX.Y.Z` | `:vX.Y.Z` | When a candidate is promoted, usually monthly | Production |
 | **LTS** | moving `lts-X.Y` | moving `:lts` and `:lts-X.Y` | Monthly: the promoted release, when it becomes the LTS release | Production installs that upgrade monthly or less often |
-| **Security** | `vX.Y.Z-rc.N`, then `vX.Y.Z` | as above | Out of band, within the patch SLA | Everyone: see [Security-relevant releases](#security-relevant-releases) |
+| **Security** | `vX.Y.Z-rc.N`, then `vX.Y.Z` | as above | Out of band, within the [patch SLA](dependency-policy.md#patch-slas) | Everyone: see [Security-relevant releases](#security-relevant-releases) |
 
 `vX.Y.Z` and `vX.Y.Z-rc.N` tags never move. `lts-X.Y`, `:partner`, `:lts`
 and `:lts-X.Y` move, and only forward. `sha-<7 hex>` and `main` image tags
@@ -147,7 +147,9 @@ A security fix never waits for Thursday:
 3. Promote that candidate as soon as its gates pass. Tick `lts` if the
    current LTS line needs the fix (see the backport rules above).
 
-The gates are never skipped, for a security release either. Vulnerabilities
+The gates are never skipped, for a security release either. Vulnerable
+dependencies are patched within the SLAs in
+[dependency-policy.md](dependency-policy.md#patch-slas). Vulnerabilities
 reported to us follow [SECURITY.md](../SECURITY.md).
 
 ## Pin and verify a release
