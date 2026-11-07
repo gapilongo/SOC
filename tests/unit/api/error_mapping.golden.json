@@ -78,6 +78,8 @@
   "lg_sotf.integrations.microsoft.odata.InvalidTarget": [400, "invalid_request"],
   "lg_sotf.integrations.slack.SlackRequestError": [400, "invalid_request"],
   "lg_sotf.integrations.ticketing.DeliveryDeferred": [500, "internal_error"],
+  "lg_sotf.llm.cassette.CassetteError": [500, "internal_error"],
+  "lg_sotf.llm.cassette.CassetteMiss": [500, "internal_error"],
   "lg_sotf.llm.errors.LLMBudgetExceeded": [500, "internal_error"],
   "lg_sotf.llm.errors.LLMError": [500, "internal_error"],
   "lg_sotf.llm.errors.LLMOutputError": [500, "internal_error"],
