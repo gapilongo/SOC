@@ -6,9 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Principal } from '../../auth/store';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
 import { tenant } from '../../test/tenants';
+import { NAV_GROUPS } from '../../routes';
 import { Layout } from '../Layout';
 import { Header } from './Header';
-import { navCounts, navFor, pageLabel, roleNote } from './nav';
+import { navCounts, navFor, roleNote } from './nav';
 import { Sidebar } from './Sidebar';
 import { initials, roleLabel, UserMenu } from './UserMenu';
 
@@ -16,7 +17,7 @@ function principal(overrides: Partial<Principal> = {}): Principal {
   return { userId: 'u-1', email: 'x@acme.test', role: 'analyst', tenantId: 'acme', homeTenantId: 'acme', isPlatformAdmin: false, method: 'password', ...overrides };
 }
 
-const titles = (p: Principal) => navFor(p).map((g) => `${g.title}: ${g.items.map((i) => i.label).join(', ')}`);
+const titles = (p: Principal) => navFor(NAV_GROUPS, p).map((g) => `${g.title}: ${g.items.map((i) => i.label).join(', ')}`);
 
 const DASHBOARD = {
   window_hours: 24,
@@ -61,11 +62,11 @@ describe('navigation model', () => {
     expect(titles(principal({ role: 'admin', isPlatformAdmin: true })).at(-1)).toBe('Platform: MSSP console');
     // The console works across tenants: hidden while acting on one.
     expect(titles(principal({ role: 'admin', isPlatformAdmin: true, tenantId: 'globex' }))).not.toContain('Platform: MSSP console');
-    expect(navFor(null)).toEqual([]);
+    expect(navFor(NAV_GROUPS, null)).toEqual([]);
   });
 
   it('maps every item to an existing route', () => {
-    const items = navFor(principal({ role: 'admin', isPlatformAdmin: true })).flatMap((g) => g.items);
+    const items = navFor(NAV_GROUPS, principal({ role: 'admin', isPlatformAdmin: true })).flatMap((g) => g.items);
     expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Approvals: '/approvals', 'MSSP console': '/platform' });
   });
 
@@ -77,14 +78,6 @@ describe('navigation model', () => {
     expect(navCounts({ unassigned_breaching: 0, pending_approvals: -1 })).toEqual({});
     expect(navCounts({ unassigned_breaching: '3', pending_approvals: 1.5 })).toEqual({});
     expect(navCounts({ unassigned_breaching: null })).toEqual({});
-  });
-
-  it('names pages for the breadcrumb', () => {
-    expect(pageLabel('/')).toBe('Overview');
-    expect(pageLabel('/approvals')).toBe('Approvals');
-    expect(pageLabel('/reports/x')).toBe('Reports');
-    expect(pageLabel('/account')).toBe('Account security');
-    expect(pageLabel('/nowhere')).toBeNull();
   });
 
   it('explains the role under the nav', () => {
@@ -110,7 +103,7 @@ describe('Sidebar', () => {
   it('hides counts the API does not send yet', async () => {
     const { api, calls } = shellApi();
     const session = await signedInSession(api, { role: 'analyst' });
-    renderWithSession(<Sidebar />, session, { route: '/escalations' });
+    renderWithSession(<Sidebar groups={NAV_GROUPS} />, session, { route: '/escalations' });
     await waitFor(() => expect(calls.some((c) => c.path === '/dashboard/summary')).toBe(true));
     const nav = screen.getByRole('navigation', { name: 'Main' });
     expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('aria-current', 'page');
@@ -126,7 +119,7 @@ describe('Sidebar', () => {
   it('shows counts with their meaning once the API sends them', async () => {
     const { api } = shellApi({ summary: { ...DASHBOARD, unassigned_breaching: 3, pending_approvals: 1 } });
     const session = await signedInSession(api, { role: 'admin' });
-    renderWithSession(<Sidebar />, session, { route: '/' });
+    renderWithSession(<Sidebar groups={NAV_GROUPS} />, session, { route: '/' });
     const escalations = await screen.findByRole('link', { name: 'Escalations 3 unassigned escalations breaching SLA' });
     expect(escalations).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Approvals 1 action you can approve' })).toBeInTheDocument();
@@ -141,7 +134,7 @@ describe('Header', () => {
     const session = await signedInSession(api, overrides);
     const onOpenMenu = vi.fn();
     const onSignOut = vi.fn();
-    const utils = renderWithSession(<Header menuOpen={false} onOpenMenu={onOpenMenu} onSignOut={onSignOut} />, session, { route: '/alerts' });
+    const utils = renderWithSession(<Header page="Alerts" menuOpen={false} onOpenMenu={onOpenMenu} onSignOut={onSignOut} />, session, { route: '/alerts' });
     return { ...utils, calls, session, onOpenMenu, onSignOut };
   };
 

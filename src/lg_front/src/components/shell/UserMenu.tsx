@@ -3,7 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../../auth/AuthContext';
-import { isTenantOverride } from '../../auth/roles';
+import { can } from '../../auth/roles';
 import { useDensity } from '../../theme/density';
 import { useTheme, type ThemePreference } from '../../theme/theme';
 import { cx } from '../ui';
@@ -116,7 +116,7 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
 
   const role = roleLabel(principal.role, principal.isPlatformAdmin);
   const email = principal.email ?? 'Signed in';
-  const ownAccount = !isTenantOverride(principal);
+  const ownAccount = can.account(principal);
 
   return (
     <div ref={rootRef} className="relative">

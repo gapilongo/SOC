@@ -5,7 +5,6 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { SessionProvider, useAuth, useAuthStore } from './auth/AuthContext';
 import { bindQueryCacheToSession } from './auth/cacheBinding';
 import { CALLBACK_PATH } from './auth/oidc';
-import { can } from './auth/roles';
 import type { Session } from './auth/session';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { RequireAuth, RequireRole } from './components/Guards';
@@ -13,30 +12,14 @@ import { Layout } from './components/Layout';
 import { ToastProvider } from './components/Toast';
 import { LoadingState } from './components/ui';
 import { LiveProvider } from './live/LiveProvider';
-import { LegacyActionsRedirect } from './pages/approvals/redirect';
+import { APP_ROUTES } from './routes';
 import { DensityProvider } from './theme/density';
 import { ThemeProvider } from './theme/theme';
 
-// One chunk per route.
+// One chunk per route; the signed-in pages are in the route table (routes.tsx).
 const LoginPage = lazy(() => import('./pages/Login'));
 const OidcCallbackPage = lazy(() => import('./pages/OidcCallback'));
-const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'));
-const AlertsPage = lazy(() => import('./pages/alerts/AlertsPage'));
-const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
-const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
-const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
-const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
-const SourcesPage = lazy(() => import('./pages/SourcesPage'));
-const IntegrationsPage = lazy(() => import('./pages/IntegrationsPage'));
-const UsersPage = lazy(() => import('./pages/UsersPage'));
-const TenantSettingsPage = lazy(() => import('./pages/TenantSettingsPage'));
-const UsagePage = lazy(() => import('./pages/UsagePage'));
-const AuditPage = lazy(() => import('./pages/AuditPage'));
-const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
-const PlatformPage = lazy(() => import('./pages/PlatformPage'));
-const GettingStartedPage = lazy(() => import('./pages/GettingStartedPage'));
-const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFound'));
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
@@ -75,23 +58,14 @@ export function AppRoutes() {
             </RequireAuth>
           }
         >
-          <Route index element={<OverviewPage />} />
-          <Route path="alerts" element={<AlertsPage />} />
-          <Route path="escalations" element={<EscalationsPage />} />
-          <Route path="escalations/:id" element={<DecisionPage />} />
-          <Route path="approvals" element={<ApprovalsPage />} />
-          <Route path="actions" element={<LegacyActionsRedirect />} />
-          <Route path="suppressions" element={<SuppressionsPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="sources" element={<RequireRole allowed={can.admin}><SourcesPage /></RequireRole>} />
-          <Route path="integrations" element={<RequireRole allowed={can.admin}><IntegrationsPage /></RequireRole>} />
-          <Route path="users" element={<RequireRole allowed={can.admin}><UsersPage /></RequireRole>} />
-          <Route path="settings" element={<RequireRole allowed={can.admin}><TenantSettingsPage /></RequireRole>} />
-          <Route path="usage" element={<RequireRole allowed={can.admin}><UsagePage /></RequireRole>} />
-          <Route path="audit" element={<RequireRole allowed={can.admin}><AuditPage /></RequireRole>} />
-          <Route path="platform" element={<RequireRole allowed={can.platform}><PlatformPage /></RequireRole>} />
-          <Route path="getting-started" element={<RequireRole allowed={can.admin}><GettingStartedPage /></RequireRole>} />
-          <Route path="account" element={<AccountSecurityPage />} />
+          {APP_ROUTES.map(({ path, Page, allowed }) => {
+            const element = (
+              <RequireRole allowed={allowed}>
+                <Page />
+              </RequireRole>
+            );
+            return path === '/' ? <Route key={path} index element={element} /> : <Route key={path} path={path.slice(1)} element={element} />;
+          })}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

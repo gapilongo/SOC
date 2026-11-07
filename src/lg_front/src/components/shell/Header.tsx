@@ -1,6 +1,5 @@
 import { Building2, Menu } from 'lucide-react';
 import { forwardRef } from 'react';
-import { useLocation } from 'react-router-dom';
 
 import { useMe } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
@@ -8,7 +7,6 @@ import { isTenantOverride } from '../../auth/roles';
 import { useLive } from '../../live/LiveProvider';
 import { TenantSwitcher } from '../TenantSwitcher';
 import { Button, ThemeSwitch, cx } from '../ui';
-import { pageLabel } from './nav';
 import { UserMenu } from './UserMenu';
 
 /**
@@ -68,17 +66,15 @@ function TenantLabel({ label }: { label: string }) {
 
 /**
  * The one header of every page: tenant (switcher for platform admins),
- * breadcrumb, live status, theme switch and the account menu. On phones a top
+ * breadcrumb (`page`, the current page's name), live status, theme switch and the account menu. On phones a top
  * bar with the menu button and the page name comes first.
  */
-export const Header = forwardRef<HTMLButtonElement, { menuOpen: boolean; onOpenMenu: () => void; onSignOut: () => void }>(function Header(
-  { menuOpen, onOpenMenu, onSignOut },
-  menuButtonRef,
-) {
+export const Header = forwardRef<
+  HTMLButtonElement,
+  { page: string | null; menuOpen: boolean; onOpenMenu: () => void; onSignOut: () => void }
+>(function Header({ page, menuOpen, onOpenMenu, onSignOut }, menuButtonRef) {
   const { principal } = useAuth();
-  const location = useLocation();
   const tenantLabel = useTenantLabel();
-  const page = pageLabel(location.pathname);
 
   return (
     <header className="sticky top-0 z-30 bg-canvas/95 backdrop-blur">

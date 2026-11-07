@@ -6,7 +6,7 @@ import { useDashboardSummary } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { usePollInterval } from '../../lib/visibility';
 import { CountChip, cx } from '../ui';
-import { navCounts, navFor, roleNote } from './nav';
+import { navCounts, navFor, roleNote, type NavGroup } from './nav';
 
 /** The dashboard window the counts come from (the overview page's default, so the query is shared). */
 const COUNT_WINDOW_HOURS = 24;
@@ -18,15 +18,16 @@ export function useNavCounts() {
 }
 
 /**
- * The sidebar: brand, role-filtered groups of links (the current page has
+ * The sidebar: brand, role-filtered groups of links (`groups` is the route
+ * table's nav, NAV_GROUPS in src/routes.tsx) (the current page has
  * aria-current="page", set by NavLink), counts with their meaning for screen
  * readers, and a note on the role that explains hidden pages.
  */
-export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+export function Sidebar({ groups: allGroups, onNavigate }: { groups: readonly NavGroup[]; onNavigate?: () => void }) {
   const { principal } = useAuth();
   const counts = useNavCounts();
   const idPrefix = useId();
-  const groups = navFor(principal);
+  const groups = navFor(allGroups, principal);
 
   return (
     <nav aria-label="Main" className="flex min-h-full flex-col gap-5 px-3 pb-5 pt-3.5 text-sm">

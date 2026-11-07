@@ -79,6 +79,8 @@ export const can = {
   admin: (p: Principal | null) => roleAtLeast(p?.role, 'admin'),
   grantPlatformAdmin: (p: Principal | null) => Boolean(p?.isPlatformAdmin),
   platform: (p: Principal | null) => Boolean(p?.isPlatformAdmin) && !isTenantOverride(p),
+  /** Account security (password, MFA) is about the signed-in person: not while acting on another tenant. */
+  account: (p: Principal | null) => can.view(p) && !isTenantOverride(p),
 };
 
 /** Why deciding this escalation is unavailable, for disabled-button hints. */

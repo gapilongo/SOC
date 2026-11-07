@@ -5,12 +5,11 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { logoutUrl } from '../auth/oidc';
 import { getConfig } from '../config';
+import { NAV_GROUPS, pageLabel } from '../routes';
 import { Header } from './shell/Header';
 import { Sidebar } from './shell/Sidebar';
 import { ActingTenantBanner } from './TenantSwitcher';
 import { Button, LoadingState } from './ui';
-
-export { NAV_GROUPS, NAV_ITEMS, navFor, type NavGroup, type NavItem } from './shell/nav';
 
 /**
  * The app shell: sidebar (a drawer on phones, below 768 px), one header on
@@ -70,7 +69,7 @@ export function Layout() {
         Skip to main content
       </a>
       <aside className="fixed inset-y-0 left-0 hidden w-[232px] overflow-y-auto border-r border-subtle bg-sidebar md:block">
-        <Sidebar />
+        <Sidebar groups={NAV_GROUPS} />
       </aside>
 
       {menuOpen && (
@@ -93,14 +92,14 @@ export function Layout() {
               />
             </div>
             <div className="flex-1">
-              <Sidebar onNavigate={() => setMenuOpen(false)} />
+              <Sidebar groups={NAV_GROUPS} onNavigate={() => setMenuOpen(false)} />
             </div>
           </div>
         </div>
       )}
 
       <div className="min-w-0 md:pl-[232px]">
-        <Header ref={menuButtonRef} menuOpen={menuOpen} onOpenMenu={() => setMenuOpen(true)} onSignOut={() => void signOut()} />
+        <Header ref={menuButtonRef} page={pageLabel(location.pathname)} menuOpen={menuOpen} onOpenMenu={() => setMenuOpen(true)} onSignOut={() => void signOut()} />
         <ActingTenantBanner />
         <main id="main" ref={mainRef} tabIndex={-1} className="mx-auto w-full max-w-[1600px] px-4 py-6 focus:outline-none md:px-6">
           <Suspense fallback={<LoadingState />}>
