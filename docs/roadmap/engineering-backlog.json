@@ -1,0 +1,4858 @@
+{
+ "generated": "2026-11-07",
+ "epics": [
+  {
+   "id": "ARCH-E1",
+   "title": "Upgrade, recovery and release safety",
+   "goal": "graph_version, N-1 upgrade test, PITR, HA, and weekly signed partner trains with an LTS candidate (ARCH-E1.5, CR5).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E2",
+   "title": "Quality and contract gates",
+   "goal": "Eval gate (now fed by the attack-emulation corpus) and OpenAPI gate; OTel tracing Could.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1"
+   ]
+  },
+  {
+   "id": "ARCH-E3",
+   "title": "10x scale hygiene",
+   "goal": "Scheduler jobs, shared LLM rate limiter, roll-ups, checkpoint compaction, load test (H3).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E4",
+   "title": "MSSP and enterprise identity",
+   "goal": "Organisation model split into 4 reviewable T3 stories (~20 SP, delivery #1) and frozen on the pentest tag; SAML/SCIM/KMS in H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E5",
+   "title": "Case model",
+   "goal": "Cut to H3 by CR7 (no UI ships to nobody); split into 5.1a-c when re-added on partner request. PRD-1 replaces ARCH-E5.4.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E6",
+   "title": "Investigation runtime: Splunk only",
+   "goal": "Kept only for Splunk SPL; registry and Microsoft tools live in AI-E2.",
+   "priority": "Could",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E2"
+   ]
+  },
+  {
+   "id": "ARCH-E7",
+   "title": "SDK and content packs",
+   "goal": "Plugin registry, conformance kit, signed content packs (H3).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E8",
+   "title": "Durable events and storage tiers",
+   "goal": "domain_events, webhook replay, object store, partitioning, WORM export (H3). ARCH-E8.3 merged into AI-E5.2.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": []
+  },
+  {
+   "id": "ARCH-E9",
+   "title": "Control plane and cells",
+   "goal": "Metering export bought back for the first paid deployment; control plane waits for the month-15 gate.",
+   "priority": "Should",
+   "horizon": "H1",
+   "depends_on": [
+    "ARCH-E4"
+   ]
+  },
+  {
+   "id": "AI-E1",
+   "title": "Evaluation and trace foundation",
+   "goal": "Measure first, now with an attack-emulation ground-truth corpus (AI-E1.8, CR2); shadow mode split; CIs kept, ECE/Brier cut (CR7).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "AI-E2",
+   "title": "Tool registry and Microsoft read tools",
+   "goal": "Registry in the burst; Entra and mail-trace tools gated on the SKU matrix (INT1.10); Defender AH stays cut unless SKUs allow (CR6).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "INT1"
+   ]
+  },
+  {
+   "id": "AI-E3",
+   "title": "Investigation subgraph",
+   "goal": "Built now, promoted on calendar time (CR3): 2 Wazuh classes first, then 4 more; shadow from the first install.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "AI-E2",
+    "INT9"
+   ]
+  },
+  {
+   "id": "AI-E4",
+   "title": "Tenant memory and feedback",
+   "goal": "Calibrator, entity context, prevalence, similar cases (H3; need partner data).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E1"
+   ]
+  },
+  {
+   "id": "AI-E5",
+   "title": "Economics and sovereignty",
+   "goal": "Per-task routing, per-tenant model profile (absorbs ARCH-E8.3), cost per investigation: bought back.",
+   "priority": "Should",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1"
+   ]
+  },
+  {
+   "id": "AI-E6",
+   "title": "Safety hardening and compliance",
+   "goal": "Adversarial corpus v2 and system card; L0-L4 autonomy UI cut by CR7.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "AI-E7",
+   "title": "Ecosystem (MCP-in)",
+   "goal": "Governed MCP-in adapter (H3). AI-E7.2 estimated once as INT5.4.",
+   "priority": "Could",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E2"
+   ]
+  },
+  {
+   "id": "PRD-1",
+   "title": "Case workspace",
+   "goal": "H3 with the case model (CR7).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E5",
+    "ARCH-E8"
+   ]
+  },
+  {
+   "id": "PRD-2",
+   "title": "Narrative and agent transparency",
+   "goal": "Cited narrative (PRD-2.1) pulled into the burst (CR3); the rest H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "AI-E3",
+    "AI-E4"
+   ]
+  },
+  {
+   "id": "PRD-3",
+   "title": "Structured needs-more-information",
+   "goal": "Typed information gaps (owner choice C8), H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E2",
+    "AI-E3",
+    "PRD-14"
+   ]
+  },
+  {
+   "id": "PRD-4",
+   "title": "Search and entity pivots",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E4",
+    "AI-E2"
+   ]
+  },
+  {
+   "id": "PRD-5",
+   "title": "MSSP organisation console",
+   "goal": "Cross-tenant queue and grants UI on the split organisation model; in pen-test scope.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "ARCH-E4",
+    "SEC6"
+   ]
+  },
+  {
+   "id": "PRD-6",
+   "title": "White-labelling",
+   "goal": "Branding and white-label shell bought back for the paid edition; branded artefacts H3.",
+   "priority": "Should",
+   "horizon": "H1",
+   "depends_on": [
+    "ARCH-E4"
+   ]
+  },
+  {
+   "id": "PRD-7",
+   "title": "Content-pack UX",
+   "goal": "H3.",
+   "priority": "Could",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E7"
+   ]
+  },
+  {
+   "id": "PRD-8",
+   "title": "Per-tenant model and autonomy",
+   "goal": "Model-profile UI bought back; four-eyes promotion kept; autonomy matrix H3.",
+   "priority": "Should",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E5"
+   ]
+  },
+  {
+   "id": "PRD-9",
+   "title": "Billing view",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E9"
+   ]
+  },
+  {
+   "id": "PRD-10",
+   "title": "KPIs and AI scorecard",
+   "goal": "Blind audit sampling pulled to the burst (CR2); scorecard page bought back.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1"
+   ]
+  },
+  {
+   "id": "PRD-11",
+   "title": "Proof-of-value report",
+   "goal": "PoV run and signed report (absorbs GTM3.3); CSV history fallback; Microsoft history import bought back.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "INT1"
+   ]
+  },
+  {
+   "id": "PRD-12",
+   "title": "NIS2 and DORA",
+   "goal": "H3 (absorbs SEC7.1/7.2).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E6",
+    "SEC7"
+   ]
+  },
+  {
+   "id": "PRD-13",
+   "title": "Onboarding and time to value",
+   "goal": "Guided connectors split by source (delivery #6); Observe mode; graduation gate; install rehearsal on every train.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "INT1"
+   ]
+  },
+  {
+   "id": "PRD-14",
+   "title": "Notifications and on-call",
+   "goal": "H3 (absorbs INT6.5).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E8"
+   ]
+  },
+  {
+   "id": "PRD-15",
+   "title": "Accessibility, i18n and docs",
+   "goal": "Axe gate and docs site bought back; i18n H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "SEC1",
+   "title": "Supply-chain and release integrity",
+   "goal": "Signing, SBOM/VEX, Trivy gate on the tag.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "SEC2",
+   "title": "Vulnerability management (CRA-ready)",
+   "goal": "Disclosure, CVE and CRA Art. 14 runbook in the burst.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "SEC3",
+   "title": "Assurance documents and pen test",
+   "goal": "Threat model, SSDF (agent-built, human-governed, risk-tiered review), whitepaper; vendor booked week 1, retest by early March. SEC3.4b deleted.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "ARCH-E4",
+    "SEC6"
+   ]
+  },
+  {
+   "id": "SEC4",
+   "title": "Hardening benchmark and posture attestation",
+   "goal": "Hardening guide on the tag; posture and hardened Helm H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "SEC5",
+   "title": "Keys and tokens",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E4"
+   ]
+  },
+  {
+   "id": "SEC6",
+   "title": "MSSP identity hardening",
+   "goal": "Per-tenant IdP and customer grant register on the split org model.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "ARCH-E4"
+   ]
+  },
+  {
+   "id": "SEC7",
+   "title": "Regulatory product features",
+   "goal": "GDPR kit and supplier pack; control matrix SEC7.7 cut (CR7).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E6"
+   ]
+  },
+  {
+   "id": "SEC8",
+   "title": "CRA conformity",
+   "goal": "Legal opinion week 2; technical file split into Annex I, risk assessment, Annex VII and an external review; declaration (SEC8.3) waits for the opinion (CR7).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "SEC1",
+    "SEC3"
+   ]
+  },
+  {
+   "id": "SEC9",
+   "title": "AI safety evidence",
+   "goal": "Invariants incl. cross-tenant leakage, signed safety scorecard, kill switches.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "AI-E6"
+   ]
+  },
+  {
+   "id": "SEC10",
+   "title": "Company trust",
+   "goal": "Support bundle bought back; ISMS-lite and tabletop later.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "INT1",
+   "title": "Microsoft lab-tenant validation",
+   "goal": "Tenant bought day 1; SKU matrix (INT1.10); spike plus evidence-backed fixes; licence-expiry tracker (INT1.11); validated mid-Dec to mid-Jan.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "INT2",
+   "title": "Microsoft for MSSPs",
+   "goal": "H3 (Microsoft is a second source, C6).",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "INT1"
+   ]
+  },
+  {
+   "id": "INT3",
+   "title": "Wazuh first",
+   "goal": "Live 4.14 tests, tenant scoping raised to 8 SP with DLS negative tests, Wazuh 5 split (gates nothing), Wazuh evidence tools in the burst.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "INT4",
+   "title": "Second-wave breadth",
+   "goal": "Elastic ingestion pulled into the burst (CR6); the rest H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "INT3",
+    "AI-E2"
+   ]
+  },
+  {
+   "id": "INT5",
+   "title": "MCP ecosystem",
+   "goal": "H3/Later.",
+   "priority": "Could",
+   "horizon": "H3",
+   "depends_on": [
+    "AI-E7"
+   ]
+  },
+  {
+   "id": "INT6",
+   "title": "Partner events and hand-off",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E8"
+   ]
+  },
+  {
+   "id": "INT7",
+   "title": "SDK ecosystem",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E7"
+   ]
+  },
+  {
+   "id": "INT8",
+   "title": "Source content packs",
+   "goal": "H3.",
+   "priority": "Should",
+   "horizon": "H3",
+   "depends_on": [
+    "ARCH-E7"
+   ]
+  },
+  {
+   "id": "INT9",
+   "title": "Data standards",
+   "goal": "Evidence-fact schema in the burst (CR3); OCSF export H3.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  },
+  {
+   "id": "GTM1",
+   "title": "Licensing and packaging",
+   "goal": "Charter, LICENSE hygiene, ee/ licence and wheel, licence key, usage report, name.",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "GTM6"
+   ]
+  },
+  {
+   "id": "GTM3",
+   "title": "PoV kit and execution",
+   "goal": "Playbook, pov profile, agreement, lab report, sizing guide, and three 2-week PoV executions (lane B).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "AI-E1",
+    "PRD-11"
+   ]
+  },
+  {
+   "id": "GTM5",
+   "title": "Sales and marketing assets",
+   "goal": "Website, demo video, trust page, GitHub hygiene, honest scorecard page. FIC and comparison pages cut (CR7).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": [
+    "GTM1"
+   ]
+  },
+  {
+   "id": "GTM7",
+   "title": "Metrics and operating system",
+   "goal": "KPI dashboard, founder time log with founder-out runbook, GitHub Projects board and sync (delivery operating model).",
+   "priority": "Must",
+   "horizon": "H1",
+   "depends_on": []
+  }
+ ],
+ "stories": [
+  {
+   "id": "ARCH-E1.1",
+   "epic": "ARCH-E1",
+   "title": "graph_version on workflow_runs; worker keeps the N-1 graph to drain waiting runs",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "A run interrupted on graph N-1 resumes and is decided after upgrade to N, in an automated test"
+  },
+  {
+   "id": "ARCH-E1.2",
+   "epic": "ARCH-E1",
+   "title": "CI upgrade test: N-1 database with waiting runs, migrate, resume and decide",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 2,
+   "gate": "M3",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E1.1"
+   ],
+   "acceptance": "CI job fails the build if any waiting run from N-1 cannot be resumed and decided after migration"
+  },
+  {
+   "id": "ARCH-E1.3",
+   "epic": "ARCH-E1",
+   "title": "RPO/RTO targets, PITR, automated restore drill in the nightly run",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [],
+   "acceptance": "Nightly drill restores PITR to a timestamp within the stated RTO and passes smoke tests"
+  },
+  {
+   "id": "ARCH-E1.4",
+   "epic": "ARCH-E1",
+   "title": "HA reference: managed Postgres, Redis persistence, PgBouncer validated (B10)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "ARCH-E1.3"
+   ],
+   "acceptance": "Failover test on the HA reference loses no alerts and recovers within the stated RTO"
+  },
+  {
+   "id": "ARCH-E1.5",
+   "epic": "ARCH-E1",
+   "title": "Release trains: weekly signed partner train, monthly LTS candidate, security-relevant changelog, N-1 upgrade test and install rehearsal on every train (CR5, delivery #8)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E1.2",
+    "SEC1.1"
+   ],
+   "acceptance": "release-train workflow cuts a signed tag only when the N-1 upgrade test and install rehearsal pass"
+  },
+  {
+   "id": "ARCH-E2.1",
+   "epic": "ARCH-E2",
+   "title": "Eval gate in CI: synthetic and phishing sets, fake model per PR plus pinned real-model run",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.1",
+    "AI-E1.8"
+   ],
+   "acceptance": "A deliberate regression on the eval set fails CI; pinned EU/local real-model run recorded nightly"
+  },
+  {
+   "id": "ARCH-E2.2",
+   "epic": "ARCH-E2",
+   "title": "OpenAPI stability tags, oasdiff breaking-change gate, Deprecation and Sunset headers",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "oasdiff blocks a breaking change to a stable operation; header behaviour covered by tests"
+  },
+  {
+   "id": "ARCH-E2.3",
+   "epic": "ARCH-E2",
+   "title": "OpenTelemetry tracing export (demoted to Could: AI-E1.3 is the trace store)",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "Optional OTel exporter emits spans per node, LLM call and tool; off by default"
+  },
+  {
+   "id": "ARCH-E3.1",
+   "epic": "ARCH-E3",
+   "title": "Leader enqueues polls, outbox delivery and verification as jobs; workers run them",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "300 pull sources polled at 60 s interval with the leader doing no I/O"
+  },
+  {
+   "id": "ARCH-E3.2",
+   "epic": "ARCH-E3",
+   "title": "Cluster-wide LLM token bucket per provider and model, in Redis",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Load test with 4 workers never exceeds the configured provider rate"
+  },
+  {
+   "id": "ARCH-E3.3",
+   "epic": "ARCH-E3",
+   "title": "Hourly roll-up table for the dashboard (B7) and composite indexes (B8)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "30-day dashboard p95 < 500 ms at 9M alerts"
+  },
+  {
+   "id": "ARCH-E3.4",
+   "epic": "ARCH-E3",
+   "title": "Checkpoint compaction for waiting runs; durability=exit where safe (B9)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Checkpoint bytes per waiting run reduced >= 50% with crash tests green"
+  },
+  {
+   "id": "ARCH-E3.5",
+   "epic": "ARCH-E3",
+   "title": "Load test at 1M alerts/day with real-provider latency",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E3.1",
+    "ARCH-E3.2"
+   ],
+   "acceptance": "Recorded run at 1M/day with no lost alerts and published sizing"
+  },
+  {
+   "id": "ARCH-E4.1a",
+   "epic": "ARCH-E4",
+   "title": "Organisation model (a): schema, grants table, RLS policies (delivery split; risk:authz)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "test_org_rls: grant rows invisible across orgs; RLS catalog test covers new tables"
+  },
+  {
+   "id": "ARCH-E4.1b",
+   "epic": "ARCH-E4",
+   "title": "Organisation model (b): read paths under grants across all routers",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1a"
+   ],
+   "acceptance": "test_grant_reads: every GET route returns 403 without a grant and data with one"
+  },
+  {
+   "id": "ARCH-E4.1c",
+   "epic": "ARCH-E4",
+   "title": "Organisation model (c): write paths and decisions under grants with dual audit",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 2,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1b"
+   ],
+   "acceptance": "test_grant_writes: decide in a granted tenant writes one entry to each audit chain"
+  },
+  {
+   "id": "ARCH-E4.1d",
+   "epic": "ARCH-E4",
+   "title": "Organisation model (d): WS, MCP and API keys under grants plus cross-tenant leak suite over every route",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1c"
+   ],
+   "acceptance": "test_cross_tenant_leak: generated suite hits every route, WS channel and MCP tool; zero leaks"
+  },
+  {
+   "id": "ARCH-E4.2",
+   "epic": "ARCH-E4",
+   "title": "SAML SSO",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E4.1d"
+   ],
+   "acceptance": "SAML login against a test IdP maps roles; signature and replay tests pass"
+  },
+  {
+   "id": "ARCH-E4.3",
+   "epic": "ARCH-E4",
+   "title": "SCIM provisioning",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E4.1d"
+   ],
+   "acceptance": "SCIM create/disable round-trip with a test IdP; disabled user loses access within 60 s"
+  },
+  {
+   "id": "ARCH-E4.4",
+   "epic": "ARCH-E4",
+   "title": "Per-tenant data keys wrapped by KMS or Vault; crypto-shred on erasure",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Erased tenant's data unreadable from a restored backup once its key is destroyed"
+  },
+  {
+   "id": "ARCH-E5.1a",
+   "epic": "ARCH-E5",
+   "title": "Cases (a): table, RLS, dual-write behind a flag",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "test_cases_dual_write: flag on writes both shapes; RLS test covers cases"
+  },
+  {
+   "id": "ARCH-E5.1b",
+   "epic": "ARCH-E5",
+   "title": "Cases (b): backfill and decision-inheritance tests",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.1a"
+   ],
+   "acceptance": "test_case_backfill: inheritance rules (architecture.md:254-258) hold after backfill"
+  },
+  {
+   "id": "ARCH-E5.1c",
+   "epic": "ARCH-E5",
+   "title": "Cases (c): read switch",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.1b"
+   ],
+   "acceptance": "e2e green with the flag on and off"
+  },
+  {
+   "id": "ARCH-E5.2",
+   "epic": "ARCH-E5",
+   "title": "Case API v1 and case events",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.1c"
+   ],
+   "acceptance": "Case endpoints in OpenAPI tagged beta; case.opened/updated/closed events emitted"
+  },
+  {
+   "id": "ARCH-E5.3",
+   "epic": "ARCH-E5",
+   "title": "Investigation run per case; alerts attach to it",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.2"
+   ],
+   "acceptance": "Attaching an alert to an open case re-uses its run; e2e green with the flag on and off"
+  },
+  {
+   "id": "ARCH-E6.4",
+   "epic": "ARCH-E6",
+   "title": "Evidence tool: Splunk SPL templates (ARCH-E6 keeps only Splunk; Microsoft tools live in AI-E2)",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E2.1"
+   ],
+   "acceptance": "Templated SPL queries return typed facts against a Splunk dev instance with row caps"
+  },
+  {
+   "id": "ARCH-E7.1",
+   "epic": "ARCH-E7",
+   "title": "Plugin registry: entry points plus manifest enforced by the egress kernel",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "An undeclared egress host from a plugin is refused at request time (test)"
+  },
+  {
+   "id": "ARCH-E7.2",
+   "epic": "ARCH-E7",
+   "title": "Conformance kit and an external example connector (TheHive)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.1"
+   ],
+   "acceptance": "External connector built from the template passes the kit in its own repo"
+  },
+  {
+   "id": "ARCH-E7.3",
+   "epic": "ARCH-E7",
+   "title": "Content-pack format, signing, versioned install",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Unsigned or tampered pack refused; signed pack installs with a version record"
+  },
+  {
+   "id": "ARCH-E7.4",
+   "epic": "ARCH-E7",
+   "title": "Pack diff, apply and rollback; bulk apply for MSSPs",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.3"
+   ],
+   "acceptance": "Rollback restores the prior pack version exactly across 50 tenants"
+  },
+  {
+   "id": "ARCH-E8.1",
+   "epic": "ARCH-E8",
+   "title": "domain_events log with a CloudEvents envelope",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Every case and alert state change appears once in domain_events with a CloudEvents envelope"
+  },
+  {
+   "id": "ARCH-E8.2",
+   "epic": "ARCH-E8",
+   "title": "Webhook subscriptions with a replay cursor",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E8.1"
+   ],
+   "acceptance": "Subscriber replays from a cursor after an outage with no gaps"
+  },
+  {
+   "id": "ARCH-E8.4",
+   "epic": "ARCH-E8",
+   "title": "Object-store adapter (S3/MinIO) for raw payloads and evidence packs",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Raw payloads land in MinIO in air-gapped compose; Postgres holds references only"
+  },
+  {
+   "id": "ARCH-E8.5a",
+   "epic": "ARCH-E8",
+   "title": "Monthly partitioning of alerts (split from 6-point story)",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "alerts partitioned monthly via online migration; retention drops partitions"
+  },
+  {
+   "id": "ARCH-E8.5b",
+   "epic": "ARCH-E8",
+   "title": "Parquet archive of closed alerts (split from 6-point story)",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E8.5a",
+    "ARCH-E8.4"
+   ],
+   "acceptance": "Closed alerts older than N days exported to Parquet and readable by the eval runner"
+  },
+  {
+   "id": "ARCH-E8.6",
+   "epic": "ARCH-E8",
+   "title": "WORM audit export with chain anchors",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Exported audit segment verifies offline against its anchor"
+  },
+  {
+   "id": "ARCH-E9.1",
+   "epic": "ARCH-E9",
+   "title": "Tenant-to-cell registry and provisioning that calls each cell",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Control plane provisions a tenant in a chosen cell end to end"
+  },
+  {
+   "id": "ARCH-E9.2",
+   "epic": "ARCH-E9",
+   "title": "Tenant move between cells from export and import",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E9.1"
+   ],
+   "acceptance": "Tenant moved between two cells with audit chain intact"
+  },
+  {
+   "id": "ARCH-E9.3",
+   "epic": "ARCH-E9",
+   "title": "Metering export for billing",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [],
+   "acceptance": "Monthly per-tenant metering export (alerts, investigations, declared band) generated and signed"
+  },
+  {
+   "id": "ARCH-E9.4",
+   "epic": "ARCH-E9",
+   "title": "Release channels and cell-by-cell rollout",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E9.1"
+   ],
+   "acceptance": "Canary cell upgraded first; rollout halts on failed health gate"
+  },
+  {
+   "id": "AI-E1.1",
+   "epic": "AI-E1",
+   "title": "Real-model baseline run and scorecard template (EU/local model; DeepSeek on synthetic only, never published)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Scorecard v1 committed from an EU or local model run on synthetic and phishing sets"
+  },
+  {
+   "id": "AI-E1.2",
+   "epic": "AI-E1",
+   "title": "Prompt/model registry with version hash in provenance and reports",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Every LLM call records prompt hash and model ID; reports show both"
+  },
+  {
+   "id": "AI-E1.3",
+   "epic": "AI-E1",
+   "title": "Investigation trace store in Postgres (LLM and tool calls, hashes, tokens) shown in the evidence pack",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 2,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.2"
+   ],
+   "acceptance": "Every LLM and tool step of a run is in the trace store and in its evidence pack"
+  },
+  {
+   "id": "AI-E1.4",
+   "epic": "AI-E1",
+   "title": "Record/replay of tool observations (cassettes)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 3,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "Replaying a recorded run yields the same verdict with zero network calls"
+  },
+  {
+   "id": "AI-E1.5a",
+   "epic": "AI-E1",
+   "title": "Shadow mode (a): side-effect sink plus a test that enumerates every egress (executor, outbox, Slack, mail, webhooks, tickets, WS)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 3,
+   "gate": "M3",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "test_shadow_no_side_effects: enumerated egress list is complete and every path is sunk in shadow"
+  },
+  {
+   "id": "AI-E1.5b",
+   "epic": "AI-E1",
+   "title": "Shadow mode (b): agreement report current vs candidate",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.5a"
+   ],
+   "acceptance": "test_agreement_report: report shows agreement rate with n and CI from a fixture run"
+  },
+  {
+   "id": "AI-E1.6",
+   "epic": "AI-E1",
+   "title": "GUIDE converter and ExCyTIn adapter",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.1"
+   ],
+   "acceptance": "GUIDE sample converts and runs through eval; baseline re-run on GUIDE with an EU/local model"
+  },
+  {
+   "id": "AI-E1.7",
+   "epic": "AI-E1",
+   "title": "Confidence intervals (Wilson, n shown) on every rate in eval and PoV reports (ECE/Brier cut, CR7)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 2,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.1"
+   ],
+   "acceptance": "test_report_cis: every rate in eval and PoV reports renders n and a 95% Wilson interval"
+  },
+  {
+   "id": "AI-E1.8",
+   "epic": "AI-E1",
+   "title": "Attack-emulation ground-truth corpus: Wazuh 4.14 lab, Atomic Red Team/Caldera scenarios plus replayed benign noise (CR2)",
+   "points": 8,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "INT3.1",
+    "AI-E1.4"
+   ],
+   "acceptance": "corpus_v1: >=500 labelled alerts recorded as cassettes and run by the ARCH-E2.1 eval gate"
+  },
+  {
+   "id": "AI-E2.1",
+   "epic": "AI-E2",
+   "title": "Tool protocol and registry: risk class, schemas, per-tenant enablement, egress, row caps (absorbs ARCH-E6 registry and query safety)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "TI providers run through the registry; a tool missing caps or schema fails to load"
+  },
+  {
+   "id": "AI-E2.2",
+   "epic": "AI-E2",
+   "title": "Defender advanced hunting templated queries (process tree, device timeline, file prevalence) (H3; re-add only if INT1.10 shows partner SKUs carry advanced hunting, CR6)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E2.1",
+    "INT1.3"
+   ],
+   "acceptance": "Templates return typed facts in the lab tenant; cassettes recorded via INT1.2"
+  },
+  {
+   "id": "AI-E2.3",
+   "epic": "AI-E2",
+   "title": "Entra sign-ins and risky users evidence tool",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 2,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "AI-E2.1",
+    "INT1.3",
+    "INT1.10"
+   ],
+   "acceptance": "Sign-in and risk facts returned for a lab user; cassettes recorded"
+  },
+  {
+   "id": "AI-E2.4",
+   "epic": "AI-E2",
+   "title": "Sentinel KQL templates",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E2.1",
+    "INT1.7"
+   ],
+   "acceptance": "Templated KQL returns typed facts from the lab workspace with row caps"
+  },
+  {
+   "id": "AI-E2.5",
+   "epic": "AI-E2",
+   "title": "Mail message trace evidence tool",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 16,
+   "wave_date": "2026-11-30",
+   "cycle": 2,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "AI-E2.1",
+    "INT1.4",
+    "INT1.10"
+   ],
+   "acceptance": "Message trace facts returned for a lab phishing send"
+  },
+  {
+   "id": "AI-E2.6",
+   "epic": "AI-E2",
+   "title": "Lab-tenant validation of the Microsoft evidence tools (5 pts: INT1 provides the harness)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 16,
+   "wave_date": "2026-11-30",
+   "cycle": 3,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "AI-E2.3",
+    "AI-E2.5",
+    "INT1.2"
+   ],
+   "acceptance": "Each shipped Microsoft tool marked validated with date on the Validated integrations page"
+  },
+  {
+   "id": "AI-E3.1a",
+   "epic": "AI-E3",
+   "title": "Hypothesis schema plus recipes for 2 Wazuh classes (endpoint malware, identity/auth) (CR3)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 2,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E2.1"
+   ],
+   "acceptance": "eval_recipes_v1: both classes match or beat the scorecard baseline recall on the AI-E1.8 lab corpus"
+  },
+  {
+   "id": "AI-E3.1b",
+   "epic": "AI-E3",
+   "title": "Recipes for 2 more classes (phishing, lateral movement)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E3.1a"
+   ],
+   "acceptance": "eval_recipes_v2: both classes match or beat baseline recall on the lab corpus"
+  },
+  {
+   "id": "AI-E3.1c",
+   "epic": "AI-E3",
+   "title": "Recipes for the last 2 classes (cloud, exfiltration)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 2,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E3.1b"
+   ],
+   "acceptance": "eval_recipes_v3: both classes match or beat baseline recall on the lab corpus"
+  },
+  {
+   "id": "AI-E3.2",
+   "epic": "AI-E3",
+   "title": "Quarantined reader producing typed facts",
+   "points": 8,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 1,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E2.1",
+    "INT9.2"
+   ],
+   "acceptance": "Injection payloads in tool output never reach the planner (adversarial test)"
+  },
+  {
+   "id": "AI-E3.3",
+   "epic": "AI-E3",
+   "title": "Planner and executor with budgets (steps, tokens, money)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 2,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E3.1a",
+    "AI-E3.2"
+   ],
+   "acceptance": "Investigation stops at each budget limit and escalates; median cost logged"
+  },
+  {
+   "id": "AI-E3.4",
+   "epic": "AI-E3",
+   "title": "Critic with deterministic citation check; unsupported claims escalate",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 3,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E3.3"
+   ],
+   "acceptance": "A narrative with an uncited claim is escalated in test; citation faithfulness metric reported"
+  },
+  {
+   "id": "AI-E3.5",
+   "epic": "AI-E3",
+   "title": "Corroboration weights for tool-observed facts",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 11,
+   "wave_date": "2026-11-23",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E3.2"
+   ],
+   "acceptance": "Tool-observed fact corroborates; the same claim from the model alone does not (test)"
+  },
+  {
+   "id": "AI-E3.6",
+   "epic": "AI-E3",
+   "title": "Per-tenant flag and promotion via shadow mode",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E3.4",
+    "AI-E1.5b"
+   ],
+   "acceptance": "Subgraph runs only for flagged tenants; promotion requires a passing shadow scorecard"
+  },
+  {
+   "id": "AI-E4.1",
+   "epic": "AI-E4",
+   "title": "Entity context store (assets, VIPs, identities from Entra and Defender, manual)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Entity context appears in investigations for a lab tenant; RLS-scoped"
+  },
+  {
+   "id": "AI-E4.2",
+   "epic": "AI-E4",
+   "title": "Prevalence baselines from indicator_sightings",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Prevalence per indicator per tenant available to tools with 30-day window"
+  },
+  {
+   "id": "AI-E4.3",
+   "epic": "AI-E4",
+   "title": "Similar-case retrieval with pgvector and RLS, analyst-confirmed only",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E4.1"
+   ],
+   "acceptance": "Retrieval returns only analyst-decided cases from the same tenant"
+  },
+  {
+   "id": "AI-E4.4",
+   "epic": "AI-E4",
+   "title": "Per-tenant calibrator driving auto-close thresholds",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E1.7"
+   ],
+   "acceptance": "Auto-close threshold derived from a target precision per tenant; ECE improves on holdout"
+  },
+  {
+   "id": "AI-E4.5",
+   "epic": "AI-E4",
+   "title": "Analyst feedback on reasoning steps",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "Step feedback stored with trace-step ID and exported"
+  },
+  {
+   "id": "AI-E5.1",
+   "epic": "AI-E5",
+   "title": "Per-task model routing",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [],
+   "acceptance": "Each task (triage, analysis, reader, critic) can use a different configured model"
+  },
+  {
+   "id": "AI-E5.2",
+   "epic": "AI-E5",
+   "title": "Per-tenant model profile: BYO key, local or EU model, egress checks (absorbs ARCH-E8.3)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 12,
+   "wave_date": "2026-11-24",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "AI-E5.1"
+   ],
+   "acceptance": "Two tenants on one install use different providers; non-matching residency refused"
+  },
+  {
+   "id": "AI-E5.3",
+   "epic": "AI-E5",
+   "title": "Cost-per-investigation metric and per-investigation budget",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "AI-E1.3"
+   ],
+   "acceptance": "Median cost per investigation in scorecard; budget breach escalates"
+  },
+  {
+   "id": "AI-E6.1",
+   "epic": "AI-E6",
+   "title": "Adversarial corpus v2: log-field persona hijacks, tool-output injection, response steering",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Adversarial split runs in the eval gate; zero outcome changes from injection"
+  },
+  {
+   "id": "AI-E6.2",
+   "epic": "AI-E6",
+   "title": "AI system card plus AI Act / NIS2 mapping",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "System card published in docs listing invariants, models and limits"
+  },
+  {
+   "id": "AI-E6.3",
+   "epic": "AI-E6",
+   "title": "Autonomy levels L0-L4 mapped onto the autonomy map; docs",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Autonomy policy expressed as L0-L4 per action risk; existing tests pass"
+  },
+  {
+   "id": "AI-E6.4",
+   "epic": "AI-E6",
+   "title": "Free-form query guard (KQL linting, read-only, row and time caps), tenant opt-in",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Write or unbounded KQL refused by the guard in tests"
+  },
+  {
+   "id": "AI-E7.1",
+   "epic": "AI-E7",
+   "title": "MCP-in adapter: allow-listed tools, quarantined outputs",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E2.1"
+   ],
+   "acceptance": "Allow-listed MCP tool output reaches facts only through the quarantined reader"
+  },
+  {
+   "id": "PRD-1.1",
+   "epic": "PRD-1",
+   "title": "Case queue: saved views, SLA order, owner and tenant columns, bulk claim (replaces ARCH-E5.4)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.2"
+   ],
+   "acceptance": "Sorted by SLA; filters in the URL; /escalations links still resolve"
+  },
+  {
+   "id": "PRD-1.2",
+   "epic": "PRD-1",
+   "title": "Case view shell with decision panel reusing DecisionForm",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.1"
+   ],
+   "acceptance": "Ported DecisionPage tests pass (claim, version conflict); axe passes"
+  },
+  {
+   "id": "PRD-1.3",
+   "epic": "PRD-1",
+   "title": "Unified timeline across attached alerts, AI/human/system filter",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2",
+    "ARCH-E8.1"
+   ],
+   "acceptance": "Events from every alert in time order; filter survives reload"
+  },
+  {
+   "id": "PRD-1.4",
+   "epic": "PRD-1",
+   "title": "Notes: Markdown, @mentions that notify, pinning",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2"
+   ],
+   "acceptance": "Mention creates a notification; no raw HTML rendered; audited"
+  },
+  {
+   "id": "PRD-1.5",
+   "epic": "PRD-1",
+   "title": "Assign to user or queue; reassign with mandatory handover note",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2"
+   ],
+   "acceptance": "Reassign without note refused; both owners notified; audited"
+  },
+  {
+   "id": "PRD-1.6",
+   "epic": "PRD-1",
+   "title": "Shift handover report with AI shift summary",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2",
+    "AI-E3.4"
+   ],
+   "acceptance": "Each AI sentence cited or labelled AI-drafted"
+  },
+  {
+   "id": "PRD-1.7",
+   "epic": "PRD-1",
+   "title": "Attach/detach alerts, merge/split cases",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2",
+    "ARCH-E5.3"
+   ],
+   "acceptance": "Both audit trails kept; grouping inheritance rules hold"
+  },
+  {
+   "id": "PRD-1.8",
+   "epic": "PRD-1",
+   "title": "Note attachments",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.4",
+    "ARCH-E8.4"
+   ],
+   "acceptance": "Type-checked, size-capped, RLS-scoped"
+  },
+  {
+   "id": "PRD-1.9",
+   "epic": "PRD-1",
+   "title": "Escalation-to-case redirects, e2e, axe",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2"
+   ],
+   "acceptance": "Full triage e2e passes on cases"
+  },
+  {
+   "id": "PRD-2.1",
+   "epic": "PRD-2",
+   "title": "Narrative with citation chips and fact drawer",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E1.3",
+    "AI-E3.2",
+    "AI-E3.4"
+   ],
+   "acceptance": "Every chip resolves to a ledger entry; hostile-payload XSS test passes"
+  },
+  {
+   "id": "PRD-2.2",
+   "epic": "PRD-2",
+   "title": "Provenance badges, unsupported-claim styling, calibrated confidence",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-2.1",
+    "AI-E4.4"
+   ],
+   "acceptance": "Critic-flagged claims marked; no calibrator shows uncalibrated"
+  },
+  {
+   "id": "PRD-2.3",
+   "epic": "PRD-2",
+   "title": "Agent-steps tree with cost, model, prompt version",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-2.1"
+   ],
+   "acceptance": "Totals match the trace store; keyboard-operable"
+  },
+  {
+   "id": "PRD-2.4",
+   "epic": "PRD-2",
+   "title": "Per-step and per-fact feedback (feeds AI-E4.5)",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-2.3"
+   ],
+   "acceptance": "Stored with trace-step ID; in feedback export"
+  },
+  {
+   "id": "PRD-2.5",
+   "epic": "PRD-2",
+   "title": "Shadow comparison panel (current vs candidate)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E1.5b"
+   ],
+   "acceptance": "Shown only when a shadow run exists; shows the disagreement reason"
+  },
+  {
+   "id": "PRD-2.6",
+   "epic": "PRD-2",
+   "title": "Evidence pack v2 with narrative, citations, steps",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-2.1"
+   ],
+   "acceptance": "Signature verifies; HTML is script-free"
+  },
+  {
+   "id": "PRD-3.1",
+   "epic": "PRD-3",
+   "title": "Gap model; pending_info status with sub-clock and optional SLA pause",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E3.1a"
+   ],
+   "acceptance": "Pause audited; SLA sweep honours it; NIS2/DORA clocks never pause"
+  },
+  {
+   "id": "PRD-3.2",
+   "epic": "PRD-3",
+   "title": "Gap panel, Run suggested query",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-3.1",
+    "AI-E2.1"
+   ],
+   "acceptance": "Registry recipes only; budget-checked; results attach as facts"
+  },
+  {
+   "id": "PRD-3.3",
+   "epic": "PRD-3",
+   "title": "Ask-a-human with signed one-time answer link",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-3.1",
+    "AI-E3.2",
+    "PRD-14.1"
+   ],
+   "acceptance": "Link expires <=72 h, single use; answer labelled attested; via quarantined reader only"
+  },
+  {
+   "id": "PRD-3.4",
+   "epic": "PRD-3",
+   "title": "Incremental re-investigation, reminders, timeout to next tier",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-3.2",
+    "AI-E3.3"
+   ],
+   "acceptance": "Only affected hypotheses re-run; timeout escalates once"
+  },
+  {
+   "id": "PRD-4.1",
+   "epic": "PRD-4",
+   "title": "Global search (Ctrl/Cmd-K) over cases, alerts, entities, indicators",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "p95 < 1 s at 9M alerts; RLS-scoped"
+  },
+  {
+   "id": "PRD-4.2",
+   "epic": "PRD-4",
+   "title": "Entity page: user, host, IP, domain, hash, mailbox",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E4.1",
+    "AI-E4.2"
+   ],
+   "acceptance": "Context, prevalence, related cases; prior analyst verdicts only"
+  },
+  {
+   "id": "PRD-4.3",
+   "epic": "PRD-4",
+   "title": "Pivot menu on every entity chip: open, search, run recipe",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-4.2",
+    "AI-E3.1a"
+   ],
+   "acceptance": "Recipe output attaches to the case as cited facts"
+  },
+  {
+   "id": "PRD-4.4",
+   "epic": "PRD-4",
+   "title": "MSSP indicator sweep: seen in N of your tenants",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E4.1d"
+   ],
+   "acceptance": "Counts only, granted tenants only, SECURITY DEFINER aggregate; audited"
+  },
+  {
+   "id": "PRD-5.1",
+   "epic": "PRD-5",
+   "title": "Cross-tenant case queue, decide in place under grants",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1c"
+   ],
+   "acceptance": "No tenant switch; audit in org and tenant; no grant gives 403"
+  },
+  {
+   "id": "PRD-5.2",
+   "epic": "PRD-5",
+   "title": "Tenant health grid",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-5.1"
+   ],
+   "acceptance": "Each red cell links to its cause"
+  },
+  {
+   "id": "PRD-5.3",
+   "epic": "PRD-5",
+   "title": "Grants UI: staff x tenant x role, time-boxed, justified; customer-visible page (UI over SEC6.2)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1c",
+    "SEC6.2"
+   ],
+   "acceptance": "Expired grant stops working within 15 s; customer admin sees all grants"
+  },
+  {
+   "id": "PRD-5.4",
+   "epic": "PRD-5",
+   "title": "Org roll-up: hours saved, MTTR, FN rate by tenant",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-5.1"
+   ],
+   "acceptance": "Computed from sums, never averaged averages"
+  },
+  {
+   "id": "PRD-6.1",
+   "epic": "PRD-6",
+   "title": "Branding (org default, tenant override): name, logo, accent, support contact",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "ARCH-E4.1d"
+   ],
+   "acceptance": "Rejects scripted SVG and accents below 4.5:1 contrast in either theme"
+  },
+  {
+   "id": "PRD-6.2",
+   "epic": "PRD-6",
+   "title": "White-label shell, login, title, favicon",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "PRD-6.1"
+   ],
+   "acceptance": "Scripted check: no product name visible to a branded tenant"
+  },
+  {
+   "id": "PRD-6.3",
+   "epic": "PRD-6",
+   "title": "Branded reports, PoV, evidence packs, regulator drafts, emails, cards",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-6.1"
+   ],
+   "acceptance": "Signed artefacts still verify; powered-by line set per licence"
+  },
+  {
+   "id": "PRD-6.4",
+   "epic": "PRD-6",
+   "title": "Custom hostname per org (Helm values, docs)",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-6.1"
+   ],
+   "acceptance": "Two-host e2e shows two brands"
+  },
+  {
+   "id": "PRD-7.1",
+   "epic": "PRD-7",
+   "title": "Content-pack catalogue and detail",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.3"
+   ],
+   "acceptance": "Unsigned or bad-signature pack shown as blocked"
+  },
+  {
+   "id": "PRD-7.2",
+   "epic": "PRD-7",
+   "title": "Pack diff against tenant; drift indicator",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-7.1",
+    "ARCH-E7.4"
+   ],
+   "acceptance": "Field-level diff; drift visible in the health grid"
+  },
+  {
+   "id": "PRD-7.3",
+   "epic": "PRD-7",
+   "title": "Bulk-apply wizard: filter, preview, canary, rollback",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-7.2"
+   ],
+   "acceptance": "Rollback restores the prior version exactly; audited per tenant"
+  },
+  {
+   "id": "PRD-8.1",
+   "epic": "PRD-8",
+   "title": "Model profile UI: model per task, residency label, BYO key, test, cost (keeps PRD residency checks)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 12,
+   "wave_date": "2026-11-24",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "AI-E5.2"
+   ],
+   "acceptance": "Residency policy blocks providers that do not match; China-hosted never default and always flagged"
+  },
+  {
+   "id": "PRD-8.2",
+   "epic": "PRD-8",
+   "title": "Autonomy matrix L0-L4 x risk with what-would-have-happened (last 30 days)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-8.3"
+   ],
+   "acceptance": "Counts come from ledger or shadow data"
+  },
+  {
+   "id": "PRD-8.3",
+   "epic": "PRD-8",
+   "title": "Four-eyes to raise autonomy or disable dry-run; MSSP lock",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [],
+   "acceptance": "Second admin required; self-approval gives 403; audited"
+  },
+  {
+   "id": "PRD-9.1",
+   "epic": "PRD-9",
+   "title": "Endpoint-band counting from connectors (Defender devices, Wazuh agents)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E9.3"
+   ],
+   "acceptance": "Monthly maximum with its source shown"
+  },
+  {
+   "id": "PRD-9.2",
+   "epic": "PRD-9",
+   "title": "Billing per tenant and month; month-close lock",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-9.1"
+   ],
+   "acceptance": "Closed month immutable; audited"
+  },
+  {
+   "id": "PRD-9.3",
+   "epic": "PRD-9",
+   "title": "PSA export (HaloPSA, Autotask, ConnectWise)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-9.2"
+   ],
+   "acceptance": "Formula injection escaped"
+  },
+  {
+   "id": "PRD-10.1",
+   "epic": "PRD-10",
+   "title": "Scorecard page by model and prompt version",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "AI-E1.2",
+    "AI-E1.7"
+   ],
+   "acceptance": "Every metric shows n, a CI and an insufficient-data state"
+  },
+  {
+   "id": "PRD-10.2",
+   "epic": "PRD-10",
+   "title": "Blind audit sampling of auto-closed alerts, verdict hidden (absorbs GTM3.4 labelling flow)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.7"
+   ],
+   "acceptance": "Unbiased production FN estimate with CI; usable as the PoV random-sample flow (CLI and UI)"
+  },
+  {
+   "id": "PRD-10.3",
+   "epic": "PRD-10",
+   "title": "Measured hours saved from claim-to-decide durations",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Both measured and flat estimates shown with method named"
+  },
+  {
+   "id": "PRD-10.4",
+   "epic": "PRD-10",
+   "title": "Manager dashboard: backlog, SLA, workload; aggregated by default",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Per-analyst view opt-in only"
+  },
+  {
+   "id": "PRD-11.1",
+   "epic": "PRD-11",
+   "title": "PoV run object and wizard: window, backtest plus shadow period",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 2,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "AI-E1.4",
+    "AI-E1.5b"
+   ],
+   "acceptance": "PoV created without any CLI step; read-only like the backtest"
+  },
+  {
+   "id": "PRD-11.2",
+   "epic": "PRD-11",
+   "title": "Labelled history import: closed Sentinel incidents and Defender alerts with TP/FP (Must again if C8 = Microsoft-heavy)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 2,
+   "gate": "M4",
+   "needed_by": "2027-02-26",
+   "depends_on": [
+    "PRD-11.1",
+    "INT1.7"
+   ],
+   "acceptance": ">=500 labelled lab items imported; mapping tested; no side effects"
+  },
+  {
+   "id": "PRD-11.3",
+   "epic": "PRD-11",
+   "title": "PoV report content: FN first with CI, agreement, auto-handling, hours, cost, noisy detections, cited samples",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 3,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-11.1",
+    "AI-E1.7"
+   ],
+   "acceptance": "Every figure shows n; insufficient-data wording reused"
+  },
+  {
+   "id": "PRD-11.4",
+   "epic": "PRD-11",
+   "title": "PoV signing, branding, methodology and limits appendix (absorbs GTM3.3 report generator)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-11.3"
+   ],
+   "acceptance": "Report verifies with the evidence-pack verifier"
+  },
+  {
+   "id": "PRD-11.5",
+   "epic": "PRD-11",
+   "title": "PoV technical runbook and synthetic demo tenant; CI grep for DeepSeek in assets",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "CI grep fails on any DeepSeek reference in demo assets"
+  },
+  {
+   "id": "PRD-11.6",
+   "epic": "PRD-11",
+   "title": "CSV labelled-history import fallback for the first PoV (from PRD risk 2 mitigation; keeps Wazuh PoVs unblocked)",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-11.1"
+   ],
+   "acceptance": "A CSV export of >=500 decided alerts with TP/FP labels imports and backtests with no side effects"
+  },
+  {
+   "id": "PRD-12.1",
+   "epic": "PRD-12",
+   "title": "Regulatory incident record: NIS2 significant / DORA major classification wizard (absorbs SEC7.1 classification, RTS 2024/1772)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E6.2"
+   ],
+   "acceptance": "Audited; reclassification keeps history"
+  },
+  {
+   "id": "PRD-12.2",
+   "epic": "PRD-12",
+   "title": "Reporting clocks in the case header with pre-deadline alerts (absorbs SEC7.2)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-12.1",
+    "PRD-1.2"
+   ],
+   "acceptance": "NIS2 24 h/72 h/1 month and DORA stages tracked; legal review before GA"
+  },
+  {
+   "id": "PRD-12.3",
+   "epic": "PRD-12",
+   "title": "DORA drafts mapped to ESA templates per RTS 2025/301 (absorbs SEC7.1)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-12.1"
+   ],
+   "acceptance": "Each mandatory field sourced or marked; fixture yields all three stages"
+  },
+  {
+   "id": "PRD-12.4",
+   "epic": "PRD-12",
+   "title": "Quarterly supplier assurance report MSSP to customer: incidents, SLA, AI oversight, audit-chain verification",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC7.8"
+   ],
+   "acceptance": "Signed report verifies; renders per tenant"
+  },
+  {
+   "id": "PRD-12.5",
+   "epic": "PRD-12",
+   "title": "French and German regulator labels",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-12.3",
+    "PRD-15.1"
+   ],
+   "acceptance": "Both locales render every field"
+  },
+  {
+   "id": "PRD-13.1",
+   "epic": "PRD-13",
+   "title": "First-run wizard: admin, org/tenant, LLM profile (EU or local default, tested), samples; ends at first PoV",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Fresh install triages in <=30 min in rehearsal"
+  },
+  {
+   "id": "PRD-13.2a",
+   "epic": "PRD-13",
+   "title": "Guided connector: Wazuh (for PoV installs)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-13.1"
+   ],
+   "acceptance": "e2e_guided_wazuh: each misconfiguration names the missing permission or index"
+  },
+  {
+   "id": "PRD-13.2b",
+   "epic": "PRD-13",
+   "title": "Guided connector: Microsoft admin consent, least privilege (after lab validation)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 3,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "PRD-13.1",
+    "INT1.8"
+   ],
+   "acceptance": "e2e_guided_ms: consent link scopes match the validated runbook; every failure names the permission"
+  },
+  {
+   "id": "PRD-13.2c",
+   "epic": "PRD-13",
+   "title": "Guided connector: Sentinel",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "PRD-13.1",
+    "INT1.7"
+   ],
+   "acceptance": "e2e_guided_sentinel: workspace and role errors are named"
+  },
+  {
+   "id": "PRD-13.2d",
+   "epic": "PRD-13",
+   "title": "Connector readiness score",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-13.2a"
+   ],
+   "acceptance": "test_readiness_score: score derived from connection-test results; documented"
+  },
+  {
+   "id": "PRD-13.3",
+   "epic": "PRD-13",
+   "title": "Tenant mode Observe/Assist/Autonomous over shadow mode",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E1.5a"
+   ],
+   "acceptance": "Observe mode: no actions, no customer notifications (tested)"
+  },
+  {
+   "id": "PRD-13.4",
+   "epic": "PRD-13",
+   "title": "Daily shadow digest; graduation criteria gate promotion",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 2,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "PRD-13.3",
+    "PRD-8.3",
+    "AI-E1.7"
+   ],
+   "acceptance": "Promotion impossible while any criterion is unmet"
+  },
+  {
+   "id": "PRD-13.5",
+   "epic": "PRD-13",
+   "title": "Local time-to-value timestamps; no phone-home",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-13.1"
+   ],
+   "acceptance": "Egress test shows no outbound call"
+  },
+  {
+   "id": "PRD-13.6",
+   "epic": "PRD-13",
+   "title": "Install-to-PoV rehearsal on a clean VM plus lab, every release",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 2,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "PRD-13.1",
+    "PRD-11.4",
+    "GTM3.2"
+   ],
+   "acceptance": "Under 8 working hours, recorded in the release notes"
+  },
+  {
+   "id": "PRD-14.1",
+   "epic": "PRD-14",
+   "title": "Per-user notification preferences, quiet hours",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E8.1"
+   ],
+   "acceptance": "Quiet hours never mute critical or regulatory-clock alerts"
+  },
+  {
+   "id": "PRD-14.2",
+   "epic": "PRD-14",
+   "title": "Slack thread per case with Claim and Assign",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-1.2"
+   ],
+   "acceptance": "Same signature and replay checks as today; audited"
+  },
+  {
+   "id": "PRD-14.3",
+   "epic": "PRD-14",
+   "title": "Teams interactive approve and claim via Azure Bot (absorbs INT6.5)",
+   "points": 8,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Same MFA and role checks as Slack"
+  },
+  {
+   "id": "PRD-14.4",
+   "epic": "PRD-14",
+   "title": "PagerDuty Events v2 plus generic on-call webhook",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E8.2"
+   ],
+   "acceptance": "Dedup key = case ID; closing the case resolves the page"
+  },
+  {
+   "id": "PRD-14.5",
+   "epic": "PRD-14",
+   "title": "Email shift-handover and SLA-at-risk digests",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-14.1"
+   ],
+   "acceptance": "Values escaped; plain-text part present"
+  },
+  {
+   "id": "PRD-15.1",
+   "epic": "PRD-15",
+   "title": "i18n framework: ICU messages, extraction, pseudo-locale CI",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "CI fails on a new hard-coded string"
+  },
+  {
+   "id": "PRD-15.2",
+   "epic": "PRD-15",
+   "title": "Extract strings: shell and analyst pages",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-15.1"
+   ],
+   "acceptance": "No raw English under the pseudo-locale"
+  },
+  {
+   "id": "PRD-15.3",
+   "epic": "PRD-15",
+   "title": "Extract strings: admin, MSSP and settings pages",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-15.1"
+   ],
+   "acceptance": "No raw English under the pseudo-locale"
+  },
+  {
+   "id": "PRD-15.4",
+   "epic": "PRD-15",
+   "title": "French and German translations with native security reviewer",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-15.2",
+    "PRD-15.3"
+   ],
+   "acceptance": "100% key coverage; glossary consistency checked by script"
+  },
+  {
+   "id": "PRD-15.5",
+   "epic": "PRD-15",
+   "title": "Localised monthly report, PoV, evidence pack, notifications",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-15.4"
+   ],
+   "acceptance": "Language follows tenant locale; signed content records its language"
+  },
+  {
+   "id": "PRD-15.6",
+   "epic": "PRD-15",
+   "title": "Axe WCAG 2.2 AA gate on every new page; keyboard map; screen-reader citations",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M9",
+   "needed_by": "2027-04-09",
+   "depends_on": [
+    "PRD-11.4"
+   ],
+   "acceptance": "e2e axe run covers scorecard, PoV and the cited-narrative drawer with zero WCAG 2.2 AA violations"
+  },
+  {
+   "id": "PRD-15.7",
+   "epic": "PRD-15",
+   "title": "Versioned docs site from docs/ (absorbs GTM5.2)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M4",
+   "needed_by": "2027-02-26",
+   "depends_on": [],
+   "acceptance": "Built in CI; broken links fail the build"
+  },
+  {
+   "id": "PRD-15.8",
+   "epic": "PRD-15",
+   "title": "Narrative in the tenant's language",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E3.4",
+    "PRD-15.4"
+   ],
+   "acceptance": "Eval: fact IDs and entities unchanged"
+  },
+  {
+   "id": "PRD-15.9",
+   "epic": "PRD-15",
+   "title": "FR/DE docs and EN 301 549 conformance report",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-15.7",
+    "PRD-15.4"
+   ],
+   "acceptance": "Published on the docs site"
+  },
+  {
+   "id": "SEC1.1",
+   "epic": "SEC1",
+   "title": "Cosign keyless image signing and build-provenance attestations (SLSA Build L3)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "cosign verify passes in deploy.yml and docs for every release image"
+  },
+  {
+   "id": "SEC1.2",
+   "epic": "SEC1",
+   "title": "CycloneDX SBOMs (Python, npm, image) and OpenVEX as release assets",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "Release page carries SBOMs and VEX; schema-validated in CI"
+  },
+  {
+   "id": "SEC1.3",
+   "epic": "SEC1",
+   "title": "Trivy gate; base images pinned by digest; --require-hashes lock files",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "Fixable critical/high CVE fails CI; Dockerfile FROM lines use digests"
+  },
+  {
+   "id": "SEC1.4",
+   "epic": "SEC1",
+   "title": "Signed air-gapped bundle and Helm chart as signed OCI artifact",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC1.1"
+   ],
+   "acceptance": "Bundle verifies offline against the published release key"
+  },
+  {
+   "id": "SEC1.5",
+   "epic": "SEC1",
+   "title": "CodeQL, OpenSSF Scorecard, licence scan with allowlist",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Scorecard published; disallowed licence fails CI"
+  },
+  {
+   "id": "SEC2.2",
+   "epic": "SEC2",
+   "title": "Security-release runbook incl. CRA Art. 14 reporting (24 h / 72 h / 14 days to ENISA)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "SEC2.1"
+   ],
+   "acceptance": "Runbook dry-run on a dummy advisory completes all CRA steps"
+  },
+  {
+   "id": "SEC2.3",
+   "epic": "SEC2",
+   "title": "Dependency policy and admission checklist",
+   "points": 1,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Policy merged; Dependabot and triage SLAs match patch SLAs"
+  },
+  {
+   "id": "SEC3.1",
+   "epic": "SEC3",
+   "title": "Threat model v2: STRIDE per component, OWASP Agentic Top 10, ATLAS; gate per epic",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "docs/threat-model.md covers MCP, MSSP delegation, evidence tools, CI/CD"
+  },
+  {
+   "id": "SEC3.3",
+   "epic": "SEC3",
+   "title": "Security whitepaper with shared-responsibility matrix",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2027-02-19",
+   "depends_on": [
+    "SEC3.1"
+   ],
+   "acceptance": "Whitepaper published and linked from the trust page"
+  },
+  {
+   "id": "SEC4.1",
+   "epic": "SEC4",
+   "title": "Hardening guide: CIS-style numbered controls, L1/L2 profiles",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "Guide covers compose, Helm, Postgres, Redis and proxy with numbered controls"
+  },
+  {
+   "id": "SEC4.2",
+   "epic": "SEC4",
+   "title": "lg-sotf posture: automated benchmark and signed attestation",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC4.1"
+   ],
+   "acceptance": "Signed JSON/HTML posture report; flags non-EU provider on an EU-only tenant"
+  },
+  {
+   "id": "SEC4.3",
+   "epic": "SEC4",
+   "title": "Hardened Helm profile",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC4.1"
+   ],
+   "acceptance": "Default-deny NetworkPolicy and restricted PSA pass a kind-cluster test"
+  },
+  {
+   "id": "SEC5.1",
+   "epic": "SEC5",
+   "title": "KEK providers and per-tenant KEK so crypto-shred survives backups",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E4.4"
+   ],
+   "acceptance": "Restored backup cannot decrypt an erased tenant"
+  },
+  {
+   "id": "SEC5.2",
+   "epic": "SEC5",
+   "title": "Asymmetric JWT (EdDSA/ES256), kid rotation, JWKS",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Tokens verify via JWKS; rotation without logout"
+  },
+  {
+   "id": "SEC5.3",
+   "epic": "SEC5",
+   "title": "Rotation automation, crypto-period posture checks, audit events",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC5.1"
+   ],
+   "acceptance": "Overdue key flagged by posture check"
+  },
+  {
+   "id": "SEC6.1",
+   "epic": "SEC6",
+   "title": "One OIDC IdP per tenant; tenant bound to issuer",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 9,
+   "wave_date": "2026-11-19",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1a"
+   ],
+   "acceptance": "Token from tenant A's issuer refused in tenant B"
+  },
+  {
+   "id": "SEC6.2",
+   "epic": "SEC6",
+   "title": "Delegated-access controls: customer grant register and revoke, expiry, JIT reason, co-approval, dual audit",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "ARCH-E4.1c"
+   ],
+   "acceptance": "Customer revoke takes effect within 15 s; both audit chains record it"
+  },
+  {
+   "id": "SEC6.3",
+   "epic": "SEC6",
+   "title": "Per-tenant session policy",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "SEC6.1"
+   ],
+   "acceptance": "Idle and absolute timeouts and IP allowlist enforced per tenant"
+  },
+  {
+   "id": "SEC6.4",
+   "epic": "SEC6",
+   "title": "WebAuthn/passkeys, required for platform admins",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Platform admin cannot log in without a passkey"
+  },
+  {
+   "id": "SEC6.5",
+   "epic": "SEC6",
+   "title": "Break-glass procedure, alert on use, drill",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "Break-glass use alerts all platform admins; drill documented"
+  },
+  {
+   "id": "SEC7.3",
+   "epic": "SEC7",
+   "title": "ICT third-party and data-flow register export (ITS 2024/2956)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Per-tenant export lists LLM provider, region, TI providers, connectors"
+  },
+  {
+   "id": "SEC7.5a",
+   "epic": "SEC7",
+   "title": "Per-data-subject search, export and pseudonymisation",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Subject export returns all rows for an identifier across tables"
+  },
+  {
+   "id": "SEC7.5b",
+   "epic": "SEC7",
+   "title": "Optional pseudonymisation before the LLM call, per tenant",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E5.2"
+   ],
+   "acceptance": "With the flag on, no raw identifier appears in LLM request logs"
+  },
+  {
+   "id": "SEC7.6",
+   "epic": "SEC7",
+   "title": "AI Act deployer pack: Art. 4 literacy module with audited acknowledgement",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E6.2"
+   ],
+   "acceptance": "Each user's acknowledgement audited"
+  },
+  {
+   "id": "SEC7.7",
+   "epic": "SEC7",
+   "title": "ISO 27001:2022 Annex A, NIS2 CIR 2024/2690 and DORA control matrix (cut by CR7; returns on partner request)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Every control row points to evidence in code or docs"
+  },
+  {
+   "id": "SEC7.8",
+   "epic": "SEC7",
+   "title": "Supplier-assurance pack, static part per release, white-labelable",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "SEC3.3",
+    "AI-E6.2",
+    "SEC1.2"
+   ],
+   "acceptance": "Pack generated per release; pen-test letter slot filled when SEC3.4c lands"
+  },
+  {
+   "id": "SEC8.2a",
+   "epic": "SEC8",
+   "title": "CRA Annex I essential-requirements mapping",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M11",
+   "needed_by": "2027-03-24",
+   "depends_on": [
+    "SEC8.1",
+    "SEC3.1"
+   ],
+   "acceptance": "docs/cra/annex-i.md maps every requirement to code, test or process evidence"
+  },
+  {
+   "id": "SEC8.2b",
+   "epic": "SEC8",
+   "title": "CRA cybersecurity risk assessment",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 2,
+   "gate": "M11",
+   "needed_by": "2027-03-24",
+   "depends_on": [
+    "SEC8.2a"
+   ],
+   "acceptance": "docs/cra/risk-assessment.md covers every threat-model component"
+  },
+  {
+   "id": "SEC8.2c",
+   "epic": "SEC8",
+   "title": "CRA Annex VII technical file assembly",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 3,
+   "gate": "M11",
+   "needed_by": "2027-03-24",
+   "depends_on": [
+    "SEC8.2b",
+    "SEC1.2"
+   ],
+   "acceptance": "Technical file bundle generated per release from docs/cra and the SBOMs"
+  },
+  {
+   "id": "SEC8.4",
+   "epic": "SEC8",
+   "title": "Secure-by-default audit and documentation",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M11",
+   "needed_by": "2027-03-24",
+   "depends_on": [
+    "SEC8.1"
+   ],
+   "acceptance": "Defaults (dry run, approvals, MFA) documented and tested"
+  },
+  {
+   "id": "SEC9.1",
+   "epic": "SEC9",
+   "title": "Invariant registry, tests/invariants, CI gate, lg-sotf verify-invariants",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M7",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "verify-invariants passes on a fresh install in a dry-run tenant"
+  },
+  {
+   "id": "SEC9.2",
+   "epic": "SEC9",
+   "title": "Signed per-release safety scorecard",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 7,
+   "wave_date": "2026-11-17",
+   "cycle": 1,
+   "gate": "M4",
+   "needed_by": "2027-02-26",
+   "depends_on": [
+    "SEC9.1",
+    "AI-E6.1",
+    "AI-E1.1"
+   ],
+   "acceptance": "Scorecard attached to the release and signature verifies"
+  },
+  {
+   "id": "SEC9.3",
+   "epic": "SEC9",
+   "title": "Per-tenant kill switches (LLM off, autonomy to approval), audited",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [],
+   "acceptance": "Kill switch takes effect on the next alert; audited"
+  },
+  {
+   "id": "SEC10.2",
+   "epic": "SEC10",
+   "title": "Redacted support bundle; no vendor remote access (absorbs GTM6.7b)",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [],
+   "acceptance": "Bundle contains no alert payloads or secrets (test)"
+  },
+  {
+   "id": "SEC10.5",
+   "epic": "SEC10",
+   "title": "Fix stale security docs (erasure statement, security.md:333-335)",
+   "points": 1,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "security.md describes the existing export and erasure features"
+  },
+  {
+   "id": "INT1.2",
+   "epic": "INT1",
+   "title": "live_ms harness plus cassette recorder that feeds the fakes",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.1"
+   ],
+   "acceptance": "Weekly protected workflow runs live tests; cassettes replace hand-written fakes"
+  },
+  {
+   "id": "INT1.3",
+   "epic": "INT1",
+   "title": "Microsoft open questions: 1-day spike; each answer files a story citing lab evidence (delivery split)",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.2"
+   ],
+   "acceptance": "Spike notes filed; one issue per open question with lab request/response evidence attached"
+  },
+  {
+   "id": "INT1.4",
+   "epic": "INT1",
+   "title": "Mail end to end: execute, verify, roll back",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 16,
+   "wave_date": "2026-11-30",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.2"
+   ],
+   "acceptance": "Purge/restore/notify validated live with date"
+  },
+  {
+   "id": "INT1.5",
+   "epic": "INT1",
+   "title": "Entra end to end",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 16,
+   "wave_date": "2026-11-30",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.2"
+   ],
+   "acceptance": "Disable/enable/revoke/reset/risk validated live with date"
+  },
+  {
+   "id": "INT1.6",
+   "epic": "INT1",
+   "title": "Defender end to end",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 16,
+   "wave_date": "2026-11-30",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.2"
+   ],
+   "acceptance": "Isolate/release, indicators, stop-and-quarantine, forensics validated live"
+  },
+  {
+   "id": "INT1.7",
+   "epic": "INT1",
+   "title": "Live ingestion validation; remove tenant-supplied auth and API URLs",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.2"
+   ],
+   "acceptance": "Lag and paging measured live; fixed cloud table only"
+  },
+  {
+   "id": "INT1.8",
+   "epic": "INT1",
+   "title": "Connection-test truth table, least-privilege runbook, Validated integrations page",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 2,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [
+    "INT1.3",
+    "INT1.4",
+    "INT1.5",
+    "INT1.6",
+    "INT1.7"
+   ],
+   "acceptance": "Each broken consent, RBAC or licence case reported by the connection test"
+  },
+  {
+   "id": "INT1.9",
+   "epic": "INT1",
+   "title": "Weekly drift run",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 17,
+   "wave_date": "2026-12-01",
+   "cycle": 3,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "INT1.8"
+   ],
+   "acceptance": "Contract change opens an issue automatically"
+  },
+  {
+   "id": "INT1.10",
+   "epic": "INT1",
+   "title": "Microsoft SKU coverage matrix (Business Premium, E3, E5) for every evidence and response API (CR6)",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 4,
+   "wave_date": "2026-11-12",
+   "cycle": 1,
+   "gate": "M6",
+   "needed_by": "2026-12-30",
+   "depends_on": [],
+   "acceptance": "docs/microsoft-skus.md lists each API x SKU with source link and lab evidence where available"
+  },
+  {
+   "id": "INT2.1",
+   "epic": "INT2",
+   "title": "Defender XDR incident and alert ingestion via Graph (Must if first partner is Microsoft-heavy, see C8)",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT1.7"
+   ],
+   "acceptance": "Defender XDR incidents ingested from a tenant without Sentinel"
+  },
+  {
+   "id": "INT2.2",
+   "epic": "INT2",
+   "title": "Scripted per-customer single-tenant app onboarding",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT1.8"
+   ],
+   "acceptance": "New customer tenant onboarded in <=10 minutes"
+  },
+  {
+   "id": "INT3.1",
+   "epic": "INT3",
+   "title": "Wazuh 4.14 container in test-services; live ingestion contract tests",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 1,
+   "wave_date": "2026-11-09",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Live contract tests pass against Wazuh 4.14 in CI"
+  },
+  {
+   "id": "INT3.2",
+   "epic": "INT3",
+   "title": "Tenant scoping on shared Wazuh clusters (agent group/label filter), DLS role per tenant, DLS negative test per tenant (CR4)",
+   "points": 8,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 10,
+   "wave_date": "2026-11-20",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "INT3.1"
+   ],
+   "acceptance": "test_wazuh_tenant_scope: two customers on one cluster; negative DLS test per tenant proves zero cross-over"
+  },
+  {
+   "id": "INT3.3a",
+   "epic": "INT3",
+   "title": "Wazuh 5.0 RC container and findings fixtures in test-services (delivery split)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 1,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT3.1"
+   ],
+   "acceptance": "test-services brings up 5.0 RC; fixture set of findings per category committed"
+  },
+  {
+   "id": "INT3.3b",
+   "epic": "INT3",
+   "title": "Wazuh 5.x findings connector plus ECS/WCS mapper (gates nothing, CR6)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 2,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT3.3a"
+   ],
+   "acceptance": "test_wazuh5_findings: RC fixtures normalise to valid CanonicalAlerts"
+  },
+  {
+   "id": "INT3.3c",
+   "epic": "INT3",
+   "title": "Re-validate the 5.x connector when Wazuh 5.0 GA ships (trigger: GA)",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H2",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT3.3b"
+   ],
+   "acceptance": "Contract tests re-run green against the GA image; packs re-pinned"
+  },
+  {
+   "id": "INT3.4",
+   "epic": "INT3",
+   "title": "Wazuh evidence tools: host timeline, auth events, FIM, process, network (investigation v0, shadow)",
+   "points": 8,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 5,
+   "wave_date": "2026-11-13",
+   "cycle": 2,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [
+    "AI-E2.1",
+    "INT3.1"
+   ],
+   "acceptance": "Five templated Wazuh tools return typed facts in shadow on the lab"
+  },
+  {
+   "id": "INT3.5",
+   "epic": "INT3",
+   "title": "Wazuh manager-API context: agent inventory, packages, ports, vulnerabilities",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT3.1"
+   ],
+   "acceptance": "Agent context available to tools for a lab agent"
+  },
+  {
+   "id": "INT3.6",
+   "epic": "INT3",
+   "title": "Wazuh active response through the ledger, with verify",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT3.1"
+   ],
+   "acceptance": "Active response executed and verified via the ledger in the lab"
+  },
+  {
+   "id": "INT4.1",
+   "epic": "INT4",
+   "title": "Elastic alerts ingestion reusing the ECS mapper (CR6: the PoV promises Elastic)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 3,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [
+    "INT3.3b"
+   ],
+   "acceptance": "Elastic security alerts normalise via the shared mapper"
+  },
+  {
+   "id": "INT4.2",
+   "epic": "INT4",
+   "title": "Elastic ES-QL evidence templates",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT4.1",
+    "AI-E2.1"
+   ],
+   "acceptance": "Templated queries return typed facts"
+  },
+  {
+   "id": "INT4.3",
+   "epic": "INT4",
+   "title": "Live validation of Splunk, Jira, ServiceNow and Slack on free/dev instances",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Each marked validated with date"
+  },
+  {
+   "id": "INT4.4",
+   "epic": "INT4",
+   "title": "CrowdStrike live validation with a partner Falcon tenant",
+   "points": 2,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Validated with date"
+  },
+  {
+   "id": "INT4.5",
+   "epic": "INT4",
+   "title": "SentinelOne threats ingestion",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Threats normalise to CanonicalAlerts"
+  },
+  {
+   "id": "INT4.6",
+   "epic": "INT4",
+   "title": "Okta System Log evidence tool",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E2.1"
+   ],
+   "acceptance": "Sign-in facts returned"
+  },
+  {
+   "id": "INT4.7",
+   "epic": "INT4",
+   "title": "GCP SCC via Pub/Sub push; AWS Security Hub normalizer",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Findings normalise from both"
+  },
+  {
+   "id": "INT5.1",
+   "epic": "INT5",
+   "title": "Sentinel MCP vetted catalogue and adversarial cassettes",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E7.1"
+   ],
+   "acceptance": "Catalogue passes adversarial cassettes"
+  },
+  {
+   "id": "INT5.2",
+   "epic": "INT5",
+   "title": "Google SecOps mcp-security vetted catalogue",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E7.1"
+   ],
+   "acceptance": "Read tools only; cassettes pass"
+  },
+  {
+   "id": "INT5.3",
+   "epic": "INT5",
+   "title": "falcon-mcp per-tenant sidecar packaging",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "AI-E7.1"
+   ],
+   "acceptance": "Sidecar runs read-only with mTLS"
+  },
+  {
+   "id": "INT5.4a",
+   "epic": "INT5",
+   "title": "Remote MCP-out keys only: spike and endpoint (split from 21; absorbs AI-E7.2)",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Remote MCP endpoint serves read tools with mcp_only keys"
+  },
+  {
+   "id": "INT5.4b",
+   "epic": "INT5",
+   "title": "Remote MCP-out: delegating executor and allowlists",
+   "points": 8,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT5.4a"
+   ],
+   "acceptance": "Allowlists enforced per key"
+  },
+  {
+   "id": "INT5.4c",
+   "epic": "INT5",
+   "title": "Remote MCP-out: audit, kill switches, recipes",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT5.4b"
+   ],
+   "acceptance": "Every remote call audited; kill switch tested"
+  },
+  {
+   "id": "INT6.1",
+   "epic": "INT6",
+   "title": "Event catalogue v2, JSON Schemas, CloudEvents mapping",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E8.1"
+   ],
+   "acceptance": "Schemas published; v1 still flows"
+  },
+  {
+   "id": "INT6.2",
+   "epic": "INT6",
+   "title": "update_source_alert action plus Sentinel and Defender write-back",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT6.1",
+    "INT1.8"
+   ],
+   "acceptance": "Write-back goes through the ledger and is validated live"
+  },
+  {
+   "id": "INT6.3",
+   "epic": "INT6",
+   "title": "Wazuh and Splunk ES write-back",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT6.2"
+   ],
+   "acceptance": "Status written back in lab"
+  },
+  {
+   "id": "INT6.4",
+   "epic": "INT6",
+   "title": "TheHive 5 hand-off (ticketing kind)",
+   "points": 3,
+   "priority": "Could",
+   "horizon": "Later",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [],
+   "acceptance": "Case with observables created in TheHive"
+  },
+  {
+   "id": "INT7.1",
+   "epic": "INT7",
+   "title": "Port in-tree sources, Microsoft capabilities and ticketing onto manifests",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.1"
+   ],
+   "acceptance": "All first-party connectors load via manifests"
+  },
+  {
+   "id": "INT7.2",
+   "epic": "INT7",
+   "title": "Contribution tiers, guide, lg-sotf plugin verify",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.2"
+   ],
+   "acceptance": "plugin verify reports tier for a sample plugin"
+  },
+  {
+   "id": "INT7.3",
+   "epic": "INT7",
+   "title": "Sigstore plugin signing, plugins.allowed, per-plugin SBOM, load audit",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T3",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.1",
+    "SEC1.1"
+   ],
+   "acceptance": "Unsigned plugin refused unless allowed explicitly"
+  },
+  {
+   "id": "INT7.4",
+   "epic": "INT7",
+   "title": "Vendor-version compatibility matrix in CI",
+   "points": 2,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T1",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT7.1"
+   ],
+   "acceptance": "Matrix published per release"
+  },
+  {
+   "id": "INT8.1",
+   "epic": "INT8",
+   "title": "Wazuh content pack v1",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.3"
+   ],
+   "acceptance": "Pack installs and its cassettes pass"
+  },
+  {
+   "id": "INT8.2",
+   "epic": "INT8",
+   "title": "Microsoft content pack v1",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E7.3"
+   ],
+   "acceptance": "Pack installs and its cassettes pass"
+  },
+  {
+   "id": "INT8.3",
+   "epic": "INT8",
+   "title": "Sigma and Wazuh rule-tuning proposals from verdicts",
+   "points": 5,
+   "priority": "Could",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "INT8.1"
+   ],
+   "acceptance": "Proposal patch generated from FP verdicts"
+  },
+  {
+   "id": "INT9.1",
+   "epic": "INT9",
+   "title": "OCSF export (2004, 2005) and published schemas",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "ARCH-E5.2"
+   ],
+   "acceptance": "Export validates against OCSF schemas"
+  },
+  {
+   "id": "INT9.2",
+   "epic": "INT9",
+   "title": "Evidence-fact schema v1, shared with AI-E3.2",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 3,
+   "wave_date": "2026-11-11",
+   "cycle": 1,
+   "gate": "M5",
+   "needed_by": "2026-11-27",
+   "depends_on": [],
+   "acceptance": "Schema published with SemVer and CI breaking-change check"
+  },
+  {
+   "id": "GTM1.4",
+   "epic": "GTM1",
+   "title": "ee/ wheel, entry-point loading, import-linter contract, one image with ee dormant (includes minimal hook, not full ARCH-E7.1)",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 15,
+   "wave_date": "2026-11-27",
+   "cycle": 1,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "GTM1.1"
+   ],
+   "acceptance": "Core imports nothing from ee (import-linter); image runs with ee dormant"
+  },
+  {
+   "id": "GTM1.5",
+   "epic": "GTM1",
+   "title": "Offline Ed25519 licence file, verifier, entitlements, banner and grace; never fails closed",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T3",
+   "wave": 15,
+   "wave_date": "2026-11-27",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "GTM1.4"
+   ],
+   "acceptance": "Expired key shows banner; triage and response keep running (test)"
+  },
+  {
+   "id": "GTM1.6",
+   "epic": "GTM1",
+   "title": "Signed monthly usage report for true-up",
+   "points": 3,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 15,
+   "wave_date": "2026-11-27",
+   "cycle": 2,
+   "gate": "M8",
+   "needed_by": "2027-04-16",
+   "depends_on": [
+    "ARCH-E9.3",
+    "GTM1.4"
+   ],
+   "acceptance": "Usage report signed and verifiable offline"
+  },
+  {
+   "id": "GTM3.2",
+   "epic": "GTM3",
+   "title": "pov install profile: read-only sources, response disabled by policy, egress allow-list, one command",
+   "points": 5,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T2",
+   "wave": 2,
+   "wave_date": "2026-11-10",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "One command installs pov profile; response execution blocked (test)"
+  },
+  {
+   "id": "GTM3.7",
+   "epic": "GTM3",
+   "title": "PoV sizing guide (CPU, RAM, optional GPU)",
+   "points": 2,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "Guide published"
+  },
+  {
+   "id": "GTM5.3",
+   "epic": "GTM5",
+   "title": "Public read-only demo tenant, synthetic data, local model, nightly reset",
+   "points": 5,
+   "priority": "Should",
+   "horizon": "H3",
+   "tier": "T2",
+   "wave": null,
+   "wave_date": null,
+   "cycle": null,
+   "gate": null,
+   "needed_by": null,
+   "depends_on": [
+    "PRD-11.5",
+    "ARCH-E1.2"
+   ],
+   "acceptance": "Demo resets nightly; isolated from everything else"
+  },
+  {
+   "id": "GTM5.11",
+   "epic": "GTM5",
+   "title": "Public per-release scorecard page",
+   "points": 1,
+   "priority": "Should",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 8,
+   "wave_date": "2026-11-18",
+   "cycle": 1,
+   "gate": "M4",
+   "needed_by": "2027-02-26",
+   "depends_on": [
+    "AI-E1.1",
+    "SEC9.2"
+   ],
+   "acceptance": "Scorecard page built by the release workflow; refuses synthetic-only data and always shows CI width (CR2)"
+  },
+  {
+   "id": "GTM7.3",
+   "epic": "GTM7",
+   "title": "GitHub Projects v2 board plus tools/sync_board.py (idempotent upsert by story ID; nightly status export)",
+   "points": 3,
+   "priority": "Must",
+   "horizon": "H1",
+   "tier": "T1",
+   "wave": 6,
+   "wave_date": "2026-11-16",
+   "cycle": 1,
+   "gate": "M3",
+   "needed_by": "2027-01-22",
+   "depends_on": [],
+   "acceptance": "sync_board.py --dry-run shows zero diff after a second run; checker runs in CI"
+  }
+ ],
+ "milestones": [
+  {
+   "id": "M14",
+   "name": "Frozen pentest-1.x tag and first signed partner train",
+   "date": "2026-11-27",
+   "criteria": "Org model, tenant scoping, supply chain and invariants merged; tag frozen for fieldwork; weekly train live."
+  },
+  {
+   "id": "M5",
+   "name": "Investigator v0 in shadow on the Wazuh lab",
+   "date": "2026-12-11",
+   "criteria": "Registry, 5 Wazuh tools, 2 recipe classes, reader and critic scored on the attack-emulation corpus."
+  },
+  {
+   "id": "M6",
+   "name": "Microsoft lab validated",
+   "date": "2027-01-15",
+   "criteria": "Every Microsoft action marked validated with date; SKU matrix published; open-question issues closed."
+  },
+  {
+   "id": "M7",
+   "name": "Pen-test letter",
+   "date": "2027-03-05",
+   "criteria": "Third-party test (incl. AI red team) on the frozen tag; criticals/highs fixed via Expedite; retest letter published."
+  },
+  {
+   "id": "M11",
+   "name": "CRA technical file complete",
+   "date": "2027-04-09",
+   "criteria": "Annex I mapping, risk assessment and Annex VII file assembled and externally reviewed (deadline 2027-12-11)."
+  },
+  {
+   "id": "M9",
+   "name": "Investigator promoted for a partner tenant",
+   "date": "2027-04-23",
+   "criteria": "n >= 300 shadow decisions, FN upper bound within target, four-eyes promotion for >= 1 partner tenant."
+  }
+ ]
+}
