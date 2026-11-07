@@ -22,7 +22,7 @@ Set `LG_SOTF_DEV_API` to proxy to another API address. The API's
 (`configs/development.yaml` already lists `http://localhost:5173` and
 `http://localhost:3000`).
 
-Node 20.19+ or 22.12+ is required.
+Node 22.12+ is required.
 
 ## End-to-end tests (Playwright)
 

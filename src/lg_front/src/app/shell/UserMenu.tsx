@@ -116,6 +116,7 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
 
   const role = roleLabel(principal.role, principal.isPlatformAdmin);
   const email = principal.email ?? 'Signed in';
+  const avatar = initials(principal.email);
   const ownAccount = can.account(principal);
 
   return (
@@ -126,13 +127,15 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        aria-label={`Account: ${email}, ${role}`}
+        // The visible initials are part of the name (WCAG 2.5.3 Label in Name), so a speech-input
+        // user can say what they see.
+        aria-label={`Account: ${email}, ${role}, initials ${avatar}`}
         onClick={() => (open ? close() : show('first'))}
         onKeyDown={onButtonKey}
         className="flex h-8 items-center gap-2 rounded-control pl-0.5 pr-1.5 text-fg hover:bg-raised-2 touch:min-h-11"
       >
         <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-full bg-selected text-xs font-semibold text-link">
-          {initials(principal.email)}
+          {avatar}
         </span>
         <ChevronDown className="h-3.5 w-3.5 text-secondary" strokeWidth={2} aria-hidden="true" />
       </button>

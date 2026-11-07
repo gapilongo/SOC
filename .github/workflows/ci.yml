@@ -414,7 +414,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: steps.detect.outputs.present == 'true'
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: src/lg_front/package-lock.json
       - name: Install, lint, test, build
