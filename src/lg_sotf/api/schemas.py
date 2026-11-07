@@ -352,15 +352,15 @@ class EscalationOut(Out):
     id: str
     tenant_id: str
     alert_id: str
-    level: str
-    status: str
+    level: EscalationLevelStr
+    status: EscalationStatusStr
     reason: str
     priority: int
     summary: Dict[str, Any] = Field(default_factory=dict)
     related_alert_ids: List[str] = Field(default_factory=list)
     assigned_to: Optional[UUID] = None
     sla_deadline: Optional[datetime] = None
-    decision: Optional[str] = None
+    decision: Optional[DecisionStr] = None
     decision_notes: Optional[str] = None
     approved_actions: List[str] = Field(default_factory=list)
     decided_by: Optional[UUID] = None
@@ -371,7 +371,7 @@ class EscalationOut(Out):
     updated_at: datetime
     assigned_to_email: Optional[str] = None
     decided_by_email: Optional[str] = None
-    alert_severity: Optional[str] = None
+    alert_severity: Optional[SeverityStr] = None
     rule: Optional[str] = Field(default=None, description="The alert's detection rule name, else its title.")
     source_id: Optional[str] = None
     source_name: Optional[str] = None

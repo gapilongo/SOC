@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from lg_sotf.api.schemas import EscalationOut, In, SuppressionOut
+from lg_sotf.api.schemas import AutonomyModeStr, EscalationOut, In, RiskLevelStr, SuppressionOut
 from lg_sotf.services.triage import MAX_BULK
 
 # ----------------------------------------------------------------- grouping
@@ -143,13 +143,13 @@ class PreviewActionOut(BaseModel):
     action_type: str
     target: str
     description: str
-    risk: str
+    risk: RiskLevelStr
     reversible: bool
     inverse_action: Optional[str] = None
     irreversible_note: Optional[str] = None
     connector: PreviewConnectorOut
     guardrail: PreviewGuardrailOut
-    autonomy: str = Field(description="The tenant's autonomy mode for this risk: auto, approval or disabled.")
+    autonomy: AutonomyModeStr = Field(description="The tenant's autonomy mode for this risk.")
     without_preapproval: Literal["automatic", "awaiting_approval", "blocked"]
     can_preapprove: bool = Field(description="Your role may pre-approve it with a true_positive decision.")
     role_lock: Optional[Literal["admin", "disabled"]] = Field(

@@ -2824,6 +2824,13 @@
           "alert_severity": {
             "anyOf": [
               {
+                "enum": [
+                  "info",
+                  "low",
+                  "medium",
+                  "high",
+                  "critical"
+                ],
                 "type": "string"
               },
               {
@@ -2917,6 +2924,12 @@
           "decision": {
             "anyOf": [
               {
+                "enum": [
+                  "true_positive",
+                  "false_positive",
+                  "benign_positive",
+                  "needs_more_info"
+                ],
                 "type": "string"
               },
               {
@@ -2951,6 +2964,11 @@
             "type": "string"
           },
           "level": {
+            "enum": [
+              "L1",
+              "L2",
+              "L3"
+            ],
             "title": "Level",
             "type": "string"
           },
@@ -3026,6 +3044,13 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "open",
+              "claimed",
+              "decided",
+              "expired",
+              "cancelled"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -4873,7 +4898,12 @@
             "type": "string"
           },
           "autonomy": {
-            "description": "The tenant's autonomy mode for this risk: auto, approval or disabled.",
+            "description": "The tenant's autonomy mode for this risk.",
+            "enum": [
+              "auto",
+              "approval",
+              "disabled"
+            ],
             "title": "Autonomy",
             "type": "string"
           },
@@ -4919,6 +4949,12 @@
             "type": "boolean"
           },
           "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Risk",
             "type": "string"
           },

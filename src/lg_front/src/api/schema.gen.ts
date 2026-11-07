@@ -2478,7 +2478,7 @@ export interface components {
             /** Alert Id */
             alert_id: string;
             /** Alert Severity */
-            alert_severity?: string | null;
+            alert_severity?: ("info" | "low" | "medium" | "high" | "critical") | null;
             /** Approved Actions */
             approved_actions?: string[];
             /** Assigned To */
@@ -2499,14 +2499,17 @@ export interface components {
             /** Decided By Email */
             decided_by_email?: string | null;
             /** Decision */
-            decision?: string | null;
+            decision?: ("true_positive" | "false_positive" | "benign_positive" | "needs_more_info") | null;
             /** Decision Notes */
             decision_notes?: string | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Id */
             id: string;
-            /** Level */
-            level: string;
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "L1" | "L2" | "L3";
             /** Priority */
             priority: number;
             /** Reason */
@@ -2525,8 +2528,11 @@ export interface components {
             source_id?: string | null;
             /** Source Name */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "claimed" | "decided" | "expired" | "cancelled";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -3208,9 +3214,10 @@ export interface components {
             approval_entry: string;
             /**
              * Autonomy
-             * @description The tenant's autonomy mode for this risk: auto, approval or disabled.
+             * @description The tenant's autonomy mode for this risk.
+             * @enum {string}
              */
-            autonomy: string;
+            autonomy: "auto" | "approval" | "disabled";
             /**
              * Can Preapprove
              * @description Your role may pre-approve it with a true_positive decision.
@@ -3226,8 +3233,11 @@ export interface components {
             irreversible_note?: string | null;
             /** Reversible */
             reversible: boolean;
-            /** Risk */
-            risk: string;
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "low" | "medium" | "high" | "critical";
             /**
              * Role Lock
              * @description admin: high and critical risk need an admin; disabled: nobody may approve it.

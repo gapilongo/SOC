@@ -39,6 +39,13 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("AlertDetailOut", "disposition", v.DISPOSITIONS),
     ("AlertEventOut", "actor_type", EVENT_ACTOR_TYPES),
     ("ReprocessOut", "status", v.ALERT_STATUSES),
+    # escalations: review queue, triage and response preview
+    ("EscalationOut", "level", v.ESCALATION_LEVELS),
+    ("EscalationOut", "status", v.ESCALATION_STATUSES),
+    ("EscalationOut", "decision", v.DECISIONS),
+    ("EscalationOut", "alert_severity", v.SEVERITIES),
+    ("PreviewActionOut", "risk", v.RISK_LEVELS),
+    ("PreviewActionOut", "autonomy", v.AUTONOMY_MODES),
 ]
 
 
