@@ -1,4 +1,7 @@
-/** Save a Blob as a file download (evidence packs, reports, tenant exports). */
+/**
+ * File downloads: the one place that creates object URLs (ESLint bans `URL.createObjectURL`
+ * elsewhere), so every download gets the same safe filename and URL revocation.
+ */
 
 /** Keep only characters that are safe in a filename on every platform. */
 export function safeFilename(name: string): string {
@@ -15,6 +18,15 @@ export function downloadBlob(filename: string, blob: Blob): void {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+/**
+ * Save `text` as a file. CSV (`text/csv…`) gets a UTF-8 byte-order mark so spreadsheet apps
+ * detect the encoding; every other type is written as is.
+ */
+export function downloadText(filename: string, text: string, type = 'text/plain;charset=utf-8'): void {
+  const parts = type.startsWith('text/csv') ? ['\uFEFF', text] : [text];
+  downloadBlob(filename, new Blob(parts, { type }));
 }
 
 /**

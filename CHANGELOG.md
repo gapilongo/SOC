@@ -93,9 +93,25 @@ All notable changes to this project are documented here. The format follows
   in the "expected one of" message when a user is created or updated with
   an unknown role. Before, these two listed `admin, analyst, viewer`. The
   roles themselves and the `admin` default are unchanged.
+- Web UI: an error on one page no longer replaces the whole app. Each page
+  has its own error screen, and the sidebar and header stay usable. When a
+  new version has been deployed and an old page bundle can no longer be
+  loaded, the page says "A new version is available" and offers a reload.
+- Web UI: the LLM usage page checks the date window (start before end,
+  within the allowed range) before it sends the request, with the same
+  message as the reports page.
+- Web UI: while the phone menu is open, keyboard focus stays inside it, and
+  Escape closes it.
 
 ### Fixed
 
+- Web UI: `/account` (account security) is no longer reachable by typing
+  the URL while a platform admin acts on another tenant. The account menu
+  already hid it in that case.
+- Web UI: an integration of a kind this version does not know is listed
+  with its own name and cannot be edited, instead of opening the Slack
+  form. Tenant quotas the API does not report show "-" in the quota
+  dialog, which no longer writes the text "undefined".
 - A worker could hang on graceful shutdown until it was killed. It
   cancelled its liveness and usage-flush loops only once, and a cancel can
   be swallowed inside a Redis command on Python 3.11, leaving those loops
