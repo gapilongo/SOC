@@ -7,7 +7,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
-from lg_sotf.services import response as response_module
 from lg_sotf.services.response import (
     ACTION_CATALOG,
     DEFAULT_BLAST_RADIUS,
@@ -24,6 +23,7 @@ from lg_sotf.services.response import (
     validate_response_settings,
     validate_target,
 )
+from lg_sotf.services.response import policy as policy_module
 from lg_sotf.settings import Settings
 
 PROTECTED: Dict[str, Any] = {
@@ -238,7 +238,7 @@ def test_malformed_guardrail_settings_fail_closed_and_are_logged(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     recorder = RecordingLog()
-    monkeypatch.setattr(response_module, "log", recorder)
+    monkeypatch.setattr(policy_module, "log", recorder)
     policy = policy_for(make_settings, {"response": {"allowed_actions": "create_ticket", "blast_radius": []}})
     assert policy.problems and any("allowed_actions" in p for p in policy.problems)
     logged = dict(recorder.warnings)
