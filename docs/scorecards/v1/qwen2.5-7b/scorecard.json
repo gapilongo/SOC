@@ -1,0 +1,341 @@
+{
+  "scorecard_version": 1,
+  "title": "Scorecard v1: qwen2.5:7b (local, Ollama)",
+  "internal_only": false,
+  "model": {
+    "llm_provider": "ollama",
+    "fast_model": "qwen2.5:7b",
+    "deep_model": "qwen2.5:7b"
+  },
+  "prompt_version": "prompts as shipped in lg-sotf 1.2.3, commit 3026d805 (no per-prompt hashes yet)",
+  "lg_sotf_versions": [
+    "1.2.3"
+  ],
+  "generated_at": [
+    "2026-11-07T20:49:38.039302+00:00",
+    "2026-11-07T21:15:49.241638+00:00"
+  ],
+  "datasets": [
+    {
+      "dataset": {
+        "path": "tests/fixtures/eval/synthetic_v1.jsonl",
+        "sha256": "a665f0d0d1a719d727a12e7c37a425b90da0368897f073533fd537d9a27fcc63",
+        "items": 64,
+        "synthetic": true,
+        "splits": {
+          "adversarial": 16,
+          "standard": 48
+        }
+      },
+      "selection": {
+        "splits": [],
+        "tags": [],
+        "limit": null,
+        "isolation": "splits"
+      },
+      "scored": 64,
+      "errors": 0,
+      "malicious_false_negative": {
+        "k": 0,
+        "n": 35,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0989
+        ]
+      },
+      "missed_malicious_ids": [],
+      "auto_close_precision": {
+        "k": 6,
+        "n": 6,
+        "rate": 1.0,
+        "ci95": [
+          0.6097,
+          1.0
+        ]
+      },
+      "auto_close": {
+        "k": 6,
+        "n": 64,
+        "rate": 0.09375,
+        "ci95": [
+          0.0437,
+          0.1898
+        ]
+      },
+      "escalation": {
+        "k": 44,
+        "n": 64,
+        "rate": 0.6875,
+        "ci95": [
+          0.5661,
+          0.7877
+        ]
+      },
+      "approval_request": {
+        "k": 14,
+        "n": 64,
+        "rate": 0.21875,
+        "ci95": [
+          0.135,
+          0.3343
+        ]
+      },
+      "error": {
+        "k": 0,
+        "n": 64,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0566
+        ]
+      },
+      "per_class": {
+        "malicious": {
+          "precision": 1.0,
+          "recall": 0.5714285714285714,
+          "f1": 0.7272727272727273,
+          "support": 35,
+          "predicted": 20
+        },
+        "benign": {
+          "precision": 0.8076923076923077,
+          "recall": 1.0,
+          "f1": 0.8936170212765957,
+          "support": 21,
+          "predicted": 26
+        },
+        "inconclusive": {
+          "precision": 0.3888888888888889,
+          "recall": 0.875,
+          "f1": 0.5384615384615385,
+          "support": 8,
+          "predicted": 18
+        }
+      },
+      "macro_f1": 0.7197837623369537,
+      "cost_per_item_usd": 0.0,
+      "total_cost_usd": 0.0,
+      "tokens_per_item": 2378.34375,
+      "llm_calls_per_item": 1.71875,
+      "latency_s": {
+        "mean": 27.94286797098539,
+        "p50": 26.1284185689874,
+        "p95": 53.33787350321946,
+        "max": 60.62045254401164
+      },
+      "splits": {
+        "adversarial": {
+          "items": 16,
+          "malicious_false_negative": {
+            "k": 0,
+            "n": 13,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.2281
+            ]
+          },
+          "escalation": {
+            "k": 16,
+            "n": 16,
+            "rate": 1.0,
+            "ci95": [
+              0.8064,
+              1.0
+            ]
+          }
+        },
+        "standard": {
+          "items": 48,
+          "malicious_false_negative": {
+            "k": 0,
+            "n": 22,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.1487
+            ]
+          },
+          "escalation": {
+            "k": 28,
+            "n": 48,
+            "rate": 0.5833333333333334,
+            "ci95": [
+              0.4428,
+              0.7115
+            ]
+          }
+        }
+      }
+    },
+    {
+      "dataset": {
+        "path": "tests/fixtures/eval/phishing_v1.jsonl",
+        "sha256": "5e12e74b9380d09802bd74a3a976ffd1478327439ae74258a997ca84c4b9b263",
+        "items": 39,
+        "synthetic": true,
+        "splits": {
+          "adversarial": 7,
+          "standard": 32
+        }
+      },
+      "selection": {
+        "splits": [],
+        "tags": [],
+        "limit": null,
+        "isolation": "splits"
+      },
+      "scored": 39,
+      "errors": 0,
+      "malicious_false_negative": {
+        "k": 0,
+        "n": 24,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.138
+        ]
+      },
+      "missed_malicious_ids": [],
+      "auto_close_precision": {
+        "k": 5,
+        "n": 5,
+        "rate": 1.0,
+        "ci95": [
+          0.5655,
+          1.0
+        ]
+      },
+      "auto_close": {
+        "k": 5,
+        "n": 39,
+        "rate": 0.1282051282051282,
+        "ci95": [
+          0.056,
+          0.2671
+        ]
+      },
+      "escalation": {
+        "k": 25,
+        "n": 39,
+        "rate": 0.6410256410256411,
+        "ci95": [
+          0.4842,
+          0.7726
+        ]
+      },
+      "approval_request": {
+        "k": 9,
+        "n": 39,
+        "rate": 0.23076923076923078,
+        "ci95": [
+          0.1265,
+          0.3834
+        ]
+      },
+      "error": {
+        "k": 0,
+        "n": 39,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0897
+        ]
+      },
+      "per_class": {
+        "malicious": {
+          "precision": 1.0,
+          "recall": 0.8333333333333334,
+          "f1": 0.9090909090909091,
+          "support": 24,
+          "predicted": 20
+        },
+        "benign": {
+          "precision": 0.5,
+          "recall": 0.5454545454545454,
+          "f1": 0.5217391304347826,
+          "support": 11,
+          "predicted": 12
+        },
+        "inconclusive": {
+          "precision": 0.2857142857142857,
+          "recall": 0.5,
+          "f1": 0.36363636363636365,
+          "support": 4,
+          "predicted": 7
+        }
+      },
+      "macro_f1": 0.5981554677206851,
+      "cost_per_item_usd": 0.0,
+      "total_cost_usd": 0.0,
+      "tokens_per_item": 4329.4358974358975,
+      "llm_calls_per_item": 2.128205128205128,
+      "latency_s": {
+        "mean": 39.87539480366738,
+        "p50": 38.95608461997472,
+        "p95": 58.49328711050912,
+        "max": 73.48344620602438
+      },
+      "splits": {
+        "adversarial": {
+          "items": 7,
+          "malicious_false_negative": {
+            "k": 0,
+            "n": 6,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.3903
+            ]
+          },
+          "escalation": {
+            "k": 6,
+            "n": 7,
+            "rate": 0.8571428571428571,
+            "ci95": [
+              0.4869,
+              0.9743
+            ]
+          }
+        },
+        "standard": {
+          "items": 32,
+          "malicious_false_negative": {
+            "k": 0,
+            "n": 18,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.1759
+            ]
+          },
+          "escalation": {
+            "k": 19,
+            "n": 32,
+            "rate": 0.59375,
+            "ci95": [
+              0.4226,
+              0.7448
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Hardware: one laptop, NVIDIA RTX 4050 Laptop GPU (6 GB) with 23 of 29 model layers on the GPU and the rest on the CPU; items ran one at a time. Latency reflects this machine, not a sized deployment.",
+    "Model: qwen2.5:7b (Q4_K_M) on Ollama 0.35.0, the same model for the fast and deep tiers, json_schema structured output, 16k context. Every model call returned HTTP 200, and the run logged no unusable-output or refusal warnings (no agent fell back to rules only).",
+    "No enrichment providers (VirusTotal, AbuseIPDB) were configured: verdicts rest on the alert content, the rules and the model.",
+    "Single run: a local model at default temperature is not fully deterministic, so a rerun can move a few items."
+  ],
+  "limitations": [
+    "The data is synthetic: hand-written alerts with labels assigned by construction, a few dozen items per set. It shows how the pipeline and model behave on scenarios we wrote, not accuracy on real telemetry.",
+    "Small samples: read the 95% Wilson intervals, not the point estimates. Two models whose intervals overlap have not been shown to differ.",
+    "Escalated items were not reviewed (the harness never invents an analyst decision). The false-negative rate counts only malicious items automation closed as benign; an escalated malicious item is not a miss.",
+    "Hardware: one laptop, NVIDIA RTX 4050 Laptop GPU (6 GB) with 23 of 29 model layers on the GPU and the rest on the CPU; items ran one at a time. Latency reflects this machine, not a sized deployment.",
+    "Model: qwen2.5:7b (Q4_K_M) on Ollama 0.35.0, the same model for the fast and deep tiers, json_schema structured output, 16k context. Every model call returned HTTP 200, and the run logged no unusable-output or refusal warnings (no agent fell back to rules only).",
+    "No enrichment providers (VirusTotal, AbuseIPDB) were configured: verdicts rest on the alert content, the rules and the model.",
+    "Single run: a local model at default temperature is not fully deterministic, so a rerun can move a few items."
+  ]
+}
