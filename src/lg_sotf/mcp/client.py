@@ -36,6 +36,7 @@ import httpx
 from lg_sotf import __version__
 from lg_sotf.errors import SourceConfigError
 from lg_sotf.net.egress import DestinationPolicy
+from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.observability.logging import get_logger
 
 log = get_logger(__name__)
@@ -228,17 +229,9 @@ class LgSotfApiClient:
         )
         response = await self._client.send(request, stream=True)
         try:
-            declared = response.headers.get("content-length")
-            if declared is not None and declared.isdigit() and int(declared) > self._max_bytes:
-                raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit")
-            chunks = []
-            size = 0
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > self._max_bytes:
-                    raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit")
-                chunks.append(chunk)
-            return response.status_code, response.headers, b"".join(chunks)
+            return response.status_code, response.headers, await read_capped(response, self._max_bytes)
+        except ResponseTooLarge:
+            raise ApiCallError(f"the API response is larger than the {self._max_bytes}-byte limit") from None
         finally:
             await response.aclose()
 

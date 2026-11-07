@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.net.retry import parse_retry_after
 
 USER_AGENT = "lg-sotf-enrichment/1"
@@ -98,17 +99,10 @@ class JsonHttpClient:
                     retry_after = None
                     if response.status_code in (429, 503):
                         retry_after = parse_retry_after(response.headers.get("Retry-After"))
-                    declared = response.headers.get("Content-Length")
-                    if declared is not None and declared.isdigit() and int(declared) > self.max_response_bytes:
-                        raise ProviderHTTPError(f"{self.provider}: response larger than the configured limit")
-                    chunks = []
-                    size = 0
-                    async for chunk in response.aiter_bytes():
-                        size += len(chunk)
-                        if size > self.max_response_bytes:
-                            raise ProviderHTTPError(f"{self.provider}: response larger than the configured limit")
-                        chunks.append(chunk)
+                    raw = await read_capped(response, self.max_response_bytes)
                     status = response.status_code
+        except ResponseTooLarge:
+            raise ProviderHTTPError(f"{self.provider}: response larger than the configured limit") from None
         except TimeoutError as exc:
             raise ProviderHTTPError(f"{self.provider}: request timed out") from exc
         except httpx.TimeoutException as exc:
@@ -116,7 +110,6 @@ class JsonHttpClient:
         except httpx.HTTPError as exc:
             raise ProviderHTTPError(f"{self.provider}: request failed ({type(exc).__name__})") from exc
         body: Optional[Any] = None
-        raw = b"".join(chunks)
         if raw:
             try:
                 body = json.loads(raw)

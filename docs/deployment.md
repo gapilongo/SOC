@@ -220,7 +220,7 @@ api, frontend, postgres, redis, scheduler, worker: running (healthy); migrate: e
 ==> Playwright suite (src/lg_front/e2e)
   ok  security headers on every document, and the admin signs in under the CSP
   ok  the admin creates an API key, an analyst and a viewer in the UI
-  ok  the dashboard updates live when alerts arrive through the ingest API
+  ok  the Overview updates live when alerts arrive through the ingest API
   ok  alerts: filters, pagination and the alert timeline
   ok  a viewer reads everything but sees no administration
   ok  an analyst has no administration either

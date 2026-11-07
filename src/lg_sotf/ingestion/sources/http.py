@@ -44,7 +44,8 @@ from lg_sotf.ingestion.errors import (
     SourceUnavailable,
 )
 from lg_sotf.ingestion.metrics import record_http_retry
-from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, Resolver
+from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import Verify
 
@@ -198,8 +199,6 @@ class SourceHttpClient:
             raise SourceConfigError(f"{source_type} base URL must be http(s)")
         if policy is not None:
             policy.check_url(base_url)
-            inner = transport or httpx.AsyncHTTPTransport(verify=verify)
-            transport = GuardedTransport(inner, policy, resolver or system_resolve, pin=transport is None)
         self.source_type = source_type
         self.auth: AuthStrategy = auth or NoAuth()
         self._timeout_s = timeout_s
@@ -210,13 +209,16 @@ class SourceHttpClient:
         self._max_response_bytes = max_response_bytes
         self._sleep = sleep
         self._rand = rand
-        self._client = httpx.AsyncClient(
-            base_url=base_url,
+        self._client = guarded_client(
+            policy=policy,
             verify=verify,
+            user_agent=USER_AGENT,
             timeout=httpx.Timeout(timeout_s, connect=min(connect_timeout_s, timeout_s)),
-            headers={"User-Agent": USER_AGENT, **(headers or {})},
+            base_url=base_url,
             transport=transport,
-            follow_redirects=False,
+            resolver=resolver,
+            pin=transport is None,
+            headers=headers,
         )
 
     async def aclose(self) -> None:
@@ -309,18 +311,14 @@ class SourceHttpClient:
         async with asyncio.timeout(self._timeout_s):
             response = await self._client.send(request, stream=True)
             try:
-                chunks = []
-                total = 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if total > self._max_response_bytes:
-                        raise SourceResponseTooLarge(
-                            f"{self.source_type} response exceeded {self._max_response_bytes} bytes"
-                        )
-                    chunks.append(chunk)
+                body = await read_capped(response, self._max_response_bytes)
+            except ResponseTooLarge:
+                raise SourceResponseTooLarge(
+                    f"{self.source_type} response exceeded {self._max_response_bytes} bytes"
+                ) from None
             finally:
                 await response.aclose()
-        return HttpResponse(response.status_code, response.headers, b"".join(chunks))
+        return HttpResponse(response.status_code, response.headers, body)
 
 
 def _path(url: str) -> str:

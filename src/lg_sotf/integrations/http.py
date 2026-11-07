@@ -7,7 +7,8 @@ only in staging and production, loopback / link-local / metadata addresses
 always refused, private ranges only when the install sets
 ``ingestion.allow_private_destinations``, and the connection pinned to the
 address that was checked. Redirects are never followed, every request has a
-timeout, and response bodies are read up to a cap. TLS contexts come from
+timeout, and response bodies are read up to a cap (the client and the read
+come from :mod:`lg_sotf.net.http`). TLS contexts come from
 :class:`~lg_sotf.net.tls.TlsContexts` (one per CA, not one per request).
 
 Errors are raised as :class:`DeliveryError` with a message that is safe to
@@ -27,7 +28,8 @@ from typing import Any, Awaitable, Callable, Mapping, Optional
 import httpx
 
 from lg_sotf.errors import SourceConfigError
-from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, egress_policy, system_resolve
+from lg_sotf.net.egress import DestinationPolicy, Resolver, egress_policy, system_resolve
+from lg_sotf.net.http import ResponseTooLarge, guarded_client, read_capped
 from lg_sotf.net.retry import exp_backoff, parse_retry_after
 from lg_sotf.net.tls import PROCESS_TLS, TlsContexts, Verify, build_verify
 from lg_sotf.security.redaction import redact_text
@@ -76,10 +78,6 @@ class HttpResult:
             return json.loads(self.body)
         except ValueError:
             return None
-
-
-class _TooLarge(Exception):
-    pass
 
 
 def error_snippet(body: bytes) -> str:
@@ -134,15 +132,14 @@ class IntegrationHttp:
             raise DeliveryError(f"destination rejected: {exc}", retryable=False, code="destination_refused") from exc
 
     def _client(self, verify: Verify) -> httpx.AsyncClient:
-        verify = self._tls.resolve(verify)
-        inner = self._transport or httpx.AsyncHTTPTransport(verify=verify)
-        guarded = GuardedTransport(inner, self._policy, self._resolver, pin=self._transport is None)
-        return httpx.AsyncClient(
-            verify=verify,
+        return guarded_client(
+            policy=self._policy,
+            verify=self._tls.resolve(verify),
+            user_agent=USER_AGENT,
             timeout=httpx.Timeout(self._timeout_s, connect=min(5.0, self._timeout_s)),
-            transport=guarded,
-            follow_redirects=False,
-            headers={"User-Agent": USER_AGENT},
+            transport=self._transport,
+            resolver=self._resolver,
+            pin=self._transport is None,
         )
 
     async def request(
@@ -180,7 +177,7 @@ class IntegrationHttp:
                 except SourceConfigError as exc:
                     raise DeliveryError("destination refused by the network policy", retryable=False,
                                         code="destination_refused") from exc
-                except _TooLarge:
+                except ResponseTooLarge:
                     raise DeliveryError("response too large", retryable=False, code="response_too_large") from None
                 except (httpx.TransportError, TimeoutError) as exc:
                     if attempt < retries and (idempotent or isinstance(exc, _NOT_SENT)):
@@ -220,16 +217,10 @@ class IntegrationHttp:
         async with asyncio.timeout(self._timeout_s + 1.0):
             response = await client.send(request, auth=auth, stream=True)
             try:
-                chunks = []
-                total = 0
-                async for chunk in response.aiter_bytes():
-                    total += len(chunk)
-                    if total > self._max_response_bytes:
-                        raise _TooLarge()
-                    chunks.append(chunk)
+                body = await read_capped(response, self._max_response_bytes)
             finally:
                 await response.aclose()
-        return HttpResult(response.status_code, response.headers, b"".join(chunks))
+        return HttpResult(response.status_code, response.headers, body)
 
 
 def raise_for_status(result: HttpResult) -> None:
