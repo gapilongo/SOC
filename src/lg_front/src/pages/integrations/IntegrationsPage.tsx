@@ -72,7 +72,7 @@ export default function IntegrationsPage() {
         <EmptyState title="No integrations yet">Add a channel so analysts hear about escalations and approvals where they work.</EmptyState>
       )}
       {q.data && q.data.length > 0 && (
-        <div className="overflow-x-auto rounded-card border border-subtle bg-raised">
+        <div className="relative overflow-x-auto rounded-card border border-subtle bg-raised">
           <table className="w-full min-w-[900px] text-left text-sm">
             <caption className="sr-only">Integrations</caption>
             <thead className="border-b border-subtle text-xs uppercase tracking-wide text-muted">
@@ -91,16 +91,16 @@ export default function IntegrationsPage() {
                 return (
                   <tr key={i.id} className="border-b border-subtle align-top">
                     <td className="px-3 py-2">
-                      <div className="font-medium text-fg">{i.name}</div>
+                      <div className="min-w-[10rem] font-medium text-fg">{i.name}</div>
                       {!i.enabled && <Badge>disabled</Badge>}
                     </td>
                     <td className="px-3 py-2 text-body">{kindSpec(i.kind)?.label ?? i.kind}</td>
-                    <td className="px-3 py-2 text-xs text-secondary">
+                    <td className="min-w-[12rem] px-3 py-2 text-xs text-secondary">
                       {i.events.length ? i.events.map((e) => EVENT_LABELS[e] ?? e).join(', ') : <span className="text-muted">none</span>}
                     </td>
                     <td className="px-3 py-2 capitalize text-body">{i.min_severity}</td>
                     <td className="px-3 py-2">
-                      {missing.length ? <Badge tone="warn">missing {missing.join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
+                      {missing.length ? <Badge tone="warn">missing {missing.map((m) => m.replace(/_/g, ' ')).join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
                     </td>
                     <td className="px-3 py-2">
                       <div className="flex justify-end gap-1.5">
