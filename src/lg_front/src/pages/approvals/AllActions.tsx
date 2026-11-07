@@ -6,9 +6,9 @@ import { ACTION_STATUSES, RISK_LEVELS, VERIFICATION_STATES, type ActionOut } fro
 import { useAuth } from '../../auth/AuthContext';
 import { RiskBadge, StatusBadge } from '../../components/Badge';
 import { ListNotice } from '../../components/ListNotice';
-import { ActionControls, ActionDetails } from '../../components/actions/ActionDetails';
-import type { PendingDecision } from '../../components/actions/ApprovalDialog';
-import { VerificationBadge } from '../../components/actions/VerificationBadge';
+import { ActionControls, ActionDetails } from '../actions/ActionDetails';
+import type { PendingDecision } from '../actions/ApprovalDialog';
+import { VerificationBadge } from '../actions/VerificationBadge';
 import { Button, EmptyState, ErrorMessage, FilterChip, LoadingState, type FilterOption } from '../../components/ui';
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../../lib/csv';
 import { formatDateTime, humanize, shortId } from '../../lib/format';

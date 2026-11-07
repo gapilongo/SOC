@@ -6,11 +6,8 @@
  */
 
 import { text } from '../../api/fields';
-import type { AlertDetailOut, EscalationOut, JsonObject } from '../../api/types';
-
-export function obj(value: unknown): JsonObject | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
-}
+import type { AlertDetailOut, EscalationOut } from '../../api/types';
+import { asObjectOrNull } from '../../lib/json';
 
 export function strings(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -60,10 +57,10 @@ const tagged = (values: string[], by: IndicatorBy): Indicator[] => values.map((t
 
 /** The digest of the alert's analysis, falling back to the escalation's summary for the conclusion and verdict. */
 export function readEvidence(alert: Pick<AlertDetailOut, 'summary'> | undefined, escalation: Pick<EscalationOut, 'summary'>): EvidenceDigest {
-  const summary = obj(alert?.summary) ?? {};
-  const esc = obj(escalation.summary) ?? {};
-  const triage = obj(summary.triage);
-  const analysis = obj(summary.analysis);
+  const summary = asObjectOrNull(alert?.summary) ?? {};
+  const esc = asObjectOrNull(escalation.summary) ?? {};
+  const triage = asObjectOrNull(summary.triage);
+  const analysis = asObjectOrNull(summary.analysis);
   const score = analysis?.threat_score ?? esc.threat_score;
   const llm = typeof analysis?.llm_used === 'boolean' ? analysis.llm_used : typeof esc.llm_used === 'boolean' ? esc.llm_used : null;
   return {
@@ -88,7 +85,7 @@ export function readEvidence(alert: Pick<AlertDetailOut, 'summary'> | undefined,
 
 /** The alert's extracted entities by kind (`normalized.entities`), non-empty kinds only. */
 export function readEntities(alert: Pick<AlertDetailOut, 'normalized'> | undefined): Array<[string, string[]]> {
-  const entities = obj(obj(alert?.normalized)?.entities);
+  const entities = asObjectOrNull(asObjectOrNull(alert?.normalized)?.entities);
   if (!entities) return [];
   return Object.entries(entities).flatMap(([kind, values]): Array<[string, string[]]> => {
     const list = strings(values);

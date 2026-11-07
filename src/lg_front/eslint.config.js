@@ -32,6 +32,18 @@ const INVALIDATE = [
   },
 ];
 
+// Property bans, grouped the same way (ESLint replaces the whole `no-restricted-properties` list per file).
+const STORAGE_PROPS = [
+  { object: 'window', property: 'localStorage', message: 'Credentials must never be persisted.' },
+];
+const OBJECT_URL = [
+  {
+    object: 'URL',
+    property: 'createObjectURL',
+    message: 'Download or open files through lib/download.ts (safe filename, URL revoked afterwards).',
+  },
+];
+
 // The palette is the design tokens (src/theme/tokens.css, tailwind.config.js): Tailwind's default
 // greys and hues are not generated, so a class such as `bg-slate-900` would silently do nothing.
 const PALETTE_RE =
@@ -43,8 +55,33 @@ const PALETTE = [
   },
 ];
 
+// Layer boundaries (README "Structure", roadmap FE9): app -> pages -> components -> shared kernel
+// (api, auth, live, lib, theme). Imports point down only. Tests are exempt: they compose layers.
+const UP_TO_PAGES_OR_APP = {
+  regex: '^(\\.\\./)+(pages|app)(/|$)',
+  message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
+};
+// The generated OpenAPI types (npm run gen:api) are read only by src/api: types.ts stays the app's
+// vocabulary and contract.check.ts holds it to the schema.
+const SCHEMA_GEN = {
+  regex: '(^|/)api/schema\\.gen$',
+  message: 'Import API types from api/types.ts; only src/api reads the generated schema (contract.check.ts).',
+};
+const DATA_IN_COMPONENTS = {
+  regex: '^(\\.\\./)+api/endpoints$',
+  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+};
+const REACT_QUERY_IN_COMPONENTS = {
+  name: '@tanstack/react-query',
+  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+};
+const UP_TO_COMPONENTS = {
+  regex: '^(\\.\\./)+components(/|$)',
+  message: 'Layer boundary: the shared kernel (api, auth, live, lib, theme) must not import components.',
+};
+
 export default tseslint.config(
-  { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report'] },
+  { ignores: ['dist', 'coverage', 'node_modules', 'public/config.js', 'test-results', 'playwright-report', 'src/api/schema.gen.ts'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended, jsxA11y.flatConfigs.recommended],
     files: ['**/*.{ts,tsx}'],
@@ -67,13 +104,29 @@ export default tseslint.config(
         'error',
         { name: 'localStorage', message: 'Credentials must never be persisted; keep tokens in memory.' },
       ],
-      'no-restricted-properties': [
-        'error',
-        { object: 'window', property: 'localStorage', message: 'Credentials must never be persisted.' },
-      ],
+      'no-restricted-properties': ['error', ...STORAGE_PROPS, ...OBJECT_URL],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
+      'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
+    },
+  },
+  {
+    files: ['src/{auth,live,lib,theme}/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS, SCHEMA_GEN] }],
+    },
+  },
+  {
+    files: ['src/api/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS] }],
+    },
+  },
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [REACT_QUERY_IN_COMPONENTS], patterns: [UP_TO_PAGES_OR_APP, DATA_IN_COMPONENTS, SCHEMA_GEN] }],
     },
   },
   {
@@ -94,7 +147,14 @@ export default tseslint.config(
     // The one owner of browser storage: display preferences only (theme, row density), never credentials.
     files: ['src/lib/prefs.ts'],
     rules: {
-      'no-restricted-properties': 'off',
+      'no-restricted-properties': ['error', ...OBJECT_URL],
+    },
+  },
+  {
+    // The one owner of object URLs.
+    files: ['src/lib/download.ts'],
+    rules: {
+      'no-restricted-properties': ['error', ...STORAGE_PROPS],
     },
   },
   {
@@ -105,6 +165,9 @@ export default tseslint.config(
       'no-restricted-properties': 'off',
       // Tests build and tear down their own query clients.
       'no-restricted-syntax': 'off',
+      // Tests compose layers (a page inside the shell, a guard around a page), but read API types
+      // from api/types.ts like the app.
+      'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
     },
   },
   {
