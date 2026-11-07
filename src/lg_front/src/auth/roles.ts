@@ -3,16 +3,17 @@
  * the authority; the UI only hides or disables what the API would refuse.
  */
 
+import type { Role } from '../api/types';
 import type { Principal } from './store';
 
-export const ROLE_ORDER = ['viewer', 'analyst', 'admin'] as const;
-export type RoleName = (typeof ROLE_ORDER)[number];
+/** Roles from least to most privileged. */
+export const ROLE_ORDER = ['viewer', 'analyst', 'admin'] as const satisfies readonly Role[];
 
 export function roleRank(role: string | null | undefined): number {
-  return role ? ROLE_ORDER.indexOf(role as RoleName) : -1;
+  return role ? ROLE_ORDER.indexOf(role as Role) : -1;
 }
 
-export function roleAtLeast(role: string | null | undefined, minimum: RoleName): boolean {
+export function roleAtLeast(role: string | null | undefined, minimum: Role): boolean {
   const rank = roleRank(role);
   return rank >= 0 && rank >= ROLE_ORDER.indexOf(minimum);
 }
@@ -31,7 +32,7 @@ function personalDecision(p: Principal | null): boolean {
   return Boolean(p && p.userId && !isTenantOverride(p));
 }
 
-export function approvalRoleFor(risk: string): RoleName | null {
+export function approvalRoleFor(risk: string): Role | null {
   if (risk === 'low' || risk === 'medium') return 'analyst';
   if (risk === 'high' || risk === 'critical') return 'admin';
   return null;
@@ -79,6 +80,8 @@ export const can = {
   admin: (p: Principal | null) => roleAtLeast(p?.role, 'admin'),
   grantPlatformAdmin: (p: Principal | null) => Boolean(p?.isPlatformAdmin),
   platform: (p: Principal | null) => Boolean(p?.isPlatformAdmin) && !isTenantOverride(p),
+  /** Account security (password, MFA) is about the signed-in person: not while acting on another tenant. */
+  account: (p: Principal | null) => can.view(p) && !isTenantOverride(p),
 };
 
 /** Why deciding this escalation is unavailable, for disabled-button hints. */

@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { AppRoutes } from '../../App';
+import { AppRoutes } from '../../app/App';
 import type { ActionOut, UserOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
 import ApprovalsPage from './ApprovalsPage';

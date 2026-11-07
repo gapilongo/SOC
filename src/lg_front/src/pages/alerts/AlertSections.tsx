@@ -20,8 +20,8 @@ import { qk } from '../../api/queryKeys';
 import type { ActionOut, AlertDetailOut, AlertEventOut, EscalationOut, FindingOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
-import { ActionControls, ActionDetails } from '../../components/actions/ActionDetails';
-import { VerificationBadge } from '../../components/actions/VerificationBadge';
+import { ActionControls, ActionDetails } from '../actions/ActionDetails';
+import { VerificationBadge } from '../actions/VerificationBadge';
 import { RiskBadge, StatusBadge } from '../../components/Badge';
 import { ConfirmDialog } from '../../components/Dialog';
 import { TicketLinks } from '../../components/TicketLinks';
@@ -36,10 +36,7 @@ import { aiVerdict, escalationIdOf, evidenceFlags, isSimulatedFinding, kindWords
 import { EmailPanel, emailSection } from './EmailPanel';
 import { EvidenceActions } from './EvidenceActions';
 import { IncidentReportDialog } from './IncidentReportDialog';
-
-function obj(value: unknown): JsonObject | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : null;
-}
+import { asObjectOrNull } from '../../lib/json';
 
 function text(value: unknown): string | null {
   if (typeof value === 'string' && value.trim()) return value;
@@ -221,10 +218,10 @@ export function Findings({ alert }: { alert: AlertDetailOut }) {
 }
 
 function ScoreDetails({ summary }: { summary: JsonObject }) {
-  const triage = obj(summary.triage);
-  const correlation = obj(summary.correlation);
-  const analysis = obj(summary.analysis);
-  const response = obj(summary.response);
+  const triage = asObjectOrNull(summary.triage);
+  const correlation = asObjectOrNull(summary.correlation);
+  const analysis = asObjectOrNull(summary.analysis);
+  const response = asObjectOrNull(summary.response);
   if (!triage && !correlation && !analysis && !response) return null;
   return (
     <details className="rounded-control border border-subtle p-2 text-sm">
@@ -288,7 +285,7 @@ function ScoreDetails({ summary }: { summary: JsonObject }) {
 export function AutomatedTriage({ alert }: { alert: AlertDetailOut }) {
   const id = useId();
   const summary = alert.summary ?? {};
-  const analysis = obj(summary.analysis);
+  const analysis = asObjectOrNull(summary.analysis);
   const { verdict, confidence } = aiVerdict(alert);
   const flags = evidenceFlags(alert);
   const findings = readFindings(alert);
@@ -296,7 +293,7 @@ export function AutomatedTriage({ alert }: { alert: AlertDetailOut }) {
   const recommended = list(analysis?.recommended_actions);
   const budget = Boolean(summary.llm_budget_exceeded);
   const suppressedBy = text(summary.suppressed_by);
-  const hasAny = Boolean(analysis || obj(summary.triage) || obj(summary.correlation) || obj(summary.response) || suppressedBy || budget);
+  const hasAny = Boolean(analysis || asObjectOrNull(summary.triage) || asObjectOrNull(summary.correlation) || asObjectOrNull(summary.response) || suppressedBy || budget);
   const basis: string[] = [];
   if (analysis) {
     if (analysis.llm_used === true) basis.push('Written by the model');
@@ -374,9 +371,9 @@ const ENTITY_LABELS: Record<string, string> = {
 };
 
 function Entities({ normalized }: { normalized: JsonObject | null }) {
-  const entities = obj(normalized?.entities);
+  const entities = asObjectOrNull(normalized?.entities);
   const kinds = entities ? Object.keys(entities).filter((k) => list(entities[k]).length > 0) : [];
-  const mitre = obj(normalized?.mitre);
+  const mitre = asObjectOrNull(normalized?.mitre);
   const techniques = mitre ? [...list(mitre.tactics), ...list(mitre.techniques)] : [];
   return (
     <>
@@ -598,7 +595,7 @@ export function ReprocessButton({ alertId }: { alertId: string }) {
 export function AlertSections({ alert }: { alert: AlertDetailOut }) {
   const { principal } = useAuth();
   const [nis2, setNis2] = useState(false);
-  const normalized = obj(alert.normalized);
+  const normalized = asObjectOrNull(alert.normalized);
   const email = emailSection(normalized);
   const escalationId = escalationIdOf(alert);
   const flags = list(normalized?.flags);
@@ -612,7 +609,7 @@ export function AlertSections({ alert }: { alert: AlertDetailOut }) {
       </Section>
       {email && (
         <Section title="Email">
-          <EmailPanel section={email} phishing={obj(obj(alert.summary?.triage)?.phishing)} />
+          <EmailPanel section={email} phishing={asObjectOrNull(asObjectOrNull(alert.summary?.triage)?.phishing)} />
         </Section>
       )}
       <Section title="Timeline">

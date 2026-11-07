@@ -23,6 +23,8 @@ describe('report helpers', () => {
     expect(formatPct(0.5, 0)).toBe('50%');
     expect(formatRange(null)).toBe('');
     expect(formatRange([0.1, 0.25])).toBe('95% range 10.0% to 25.0%');
+    // The schema types the interval as a list; anything but a pair shows nothing.
+    expect(formatRange([0.1])).toBe('');
     expect(formatHours(null)).toBe('-');
     expect(formatHours(1.25)).toMatch(/^1\.3 h$|^1,3 h$/);
   });
