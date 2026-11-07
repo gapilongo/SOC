@@ -618,6 +618,10 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
    (`SELECT graph_version, count(*) FROM workflow_runs WHERE status IN
    ('waiting_human', 'waiting_approval', 'failed') GROUP BY 1`; NULL is graph 1).
    Such a run fails with `UnknownGraphVersion` and is never run on another graph.
+   CI rehearses this upgrade on every change (`scripts/ci/upgrade_rehearsal.sh`):
+   the previous release leaves runs waiting, the new release migrates the
+   database while the old one still runs, runs this check, and must resume and
+   close every waiting run.
 
 Migrations must be expand/contract (additive first, removals in a later
 release) so the previous release keeps working against the new schema during

@@ -229,6 +229,7 @@ def _ok(typ: Any, what: str) -> None:
 
 class ImapConnector(PullConnector):
     source_type = "imap"
+    writes_back = True
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)

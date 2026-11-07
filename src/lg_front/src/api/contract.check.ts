@@ -53,6 +53,9 @@ import type {
   IntegrationOut,
   IntegrationTestOut,
   IntegrationUpdateIn,
+  ConfiguredModelOut,
+  EnvVarOut,
+  LlmProfileOut,
   LlmTestOut,
   LlmTierCheckOut,
   MeOut,
@@ -90,6 +93,8 @@ import type {
   RouteOut,
   RoutingOut,
   SampleAlertsOut,
+  SetupIn,
+  SetupOut,
   SourceCreateIn,
   SourceOut,
   SourceTestOut,
@@ -201,6 +206,10 @@ export interface ResponseContract {
   RouteOut: Response<Wire<Schemas['RouteOut']>, RouteOut>;
   RoutingOut: Response<Wire<Schemas['RoutingOut']>, RoutingOut>;
   SampleAlertsOut: Response<Wire<Schemas['SampleAlertsOut']>, SampleAlertsOut>;
+  SetupOut: Response<Wire<Schemas['SetupOut']>, SetupOut>;
+  ConfiguredModelOut: Response<Wire<Schemas['ConfiguredModelOut']>, ConfiguredModelOut>;
+  EnvVarOut: Response<Wire<Schemas['EnvVarOut']>, EnvVarOut>;
+  LlmProfileOut: Response<Wire<Schemas['LlmProfileOut']>, LlmProfileOut>;
   SourceOut: Response<Wire<Schemas['SourceOut']>, SourceOut>;
   SourceTestOut: Response<Wire<Schemas['SourceTestOut']>, SourceTestOut>;
   SuppressionOut: Response<Wire<Schemas['SuppressionOut']>, SuppressionOut>;
@@ -239,6 +248,7 @@ export interface RequestContract {
   IntegrationCreateIn: Request<IntegrationCreateIn, Schemas['IntegrationCreateIn']>;
   IntegrationUpdateIn: Request<IntegrationUpdateIn, Schemas['IntegrationUpdateIn']>;
   ProposeSuppressionIn: Request<ProposeSuppressionIn, Schemas['ProposeSuppressionIn']>;
+  SetupIn: Request<SetupIn, Schemas['SetupIn']>;
   SourceCreateIn: Request<SourceCreateIn, Schemas['SourceCreateIn']>;
   SourceUpdateIn: Request<SourceUpdateIn, Schemas['SourceUpdateIn']>;
   SuppressionCreateIn: Request<SuppressionCreateIn, Schemas['SuppressionCreateIn']>;

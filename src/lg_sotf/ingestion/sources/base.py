@@ -76,6 +76,9 @@ class ConnectorDeps:
 
 class PullConnector(abc.ABC):
     source_type: ClassVar[str]
+    # The connector changes the source after reading (marks or moves messages); refused
+    # when the install sets ingestion.read_only_sources (the PoV profile).
+    writes_back: ClassVar[bool] = False
 
     def __init__(
         self,
@@ -92,8 +95,16 @@ class PullConnector(abc.ABC):
         self.settings = settings
         self.options = options.for_source(self.config)
         self.deps = deps or ConnectorDeps()
+        if options.read_only_sources and self.writes_back:
+            raise SourceConfigError(
+                f"{self.source_type} sources mark or move messages; this install reads sources only "
+                "(ingestion.read_only_sources)"
+            )
+        hosts = options.allowed_destination_hosts
         self.policy = DestinationPolicy(
-            require_https=settings.is_production, allow_private=options.allow_private_destinations
+            require_https=settings.is_production,
+            allow_private=options.allow_private_destinations,
+            allowed_hosts=None if hosts is None else frozenset(hosts),
         )
         self._clients: List[SourceHttpClient] = []
         self._destinations: List[str] = []

@@ -32,6 +32,9 @@ export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
 }
 
 /** Alerts with these filters (`severity`, `status`, `from` ...). */
+/** The proof-of-value page, where the first-run setup ends. */
+export const POV_HREF = '/pov';
+
 export function alertsHref(filters: Record<string, string | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value) params.append(key, value);

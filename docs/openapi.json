@@ -3191,6 +3191,60 @@
         "title": "ClaimIn",
         "type": "object"
       },
+      "ConfiguredModelOut": {
+        "properties": {
+          "deep_model": {
+            "title": "Deep Model",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "fast_model": {
+            "title": "Fast Model",
+            "type": "string"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The offered profile the configuration matches.",
+            "title": "Profile"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "residency": {
+            "description": "Where the configured model runs; cn is flagged in the UI.",
+            "enum": [
+              "eu",
+              "local",
+              "us",
+              "cn",
+              "offline",
+              "unknown"
+            ],
+            "title": "Residency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "enabled",
+          "fast_model",
+          "deep_model",
+          "residency"
+        ],
+        "title": "ConfiguredModelOut",
+        "type": "object"
+      },
       "DashboardOut": {
         "properties": {
           "acknowledged": {
@@ -3992,6 +4046,24 @@
         "title": "EntityRefOut",
         "type": "object"
       },
+      "EnvVarOut": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "EnvVarOut",
+        "type": "object"
+      },
       "ErasureStatusOut": {
         "properties": {
           "blockers": {
@@ -4581,6 +4653,12 @@
           "integrity": {
             "$ref": "#/components/schemas/EvidenceIntegrityOut"
           },
+          "investigation": {
+            "additionalProperties": true,
+            "description": "The investigation trace: every LLM and tool step (prompt and model or tool, tokens, latency, input and output SHA-256, redacted result digest) and totals.",
+            "title": "Investigation",
+            "type": "object"
+          },
           "lg_sotf_version": {
             "title": "Lg Sotf Version",
             "type": "string"
@@ -4620,6 +4698,7 @@
           "alert",
           "timeline",
           "agents",
+          "investigation",
           "enrichment",
           "correlation",
           "escalations",
@@ -5522,6 +5601,65 @@
         "title": "LLMTierCheckOut",
         "type": "object"
       },
+      "LlmProfileOut": {
+        "properties": {
+          "deep_model": {
+            "title": "Deep Model",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "env": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVarOut"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "fast_model": {
+            "title": "Fast Model",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          },
+          "residency": {
+            "enum": [
+              "eu",
+              "local",
+              "us",
+              "cn",
+              "offline",
+              "unknown"
+            ],
+            "title": "Residency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "residency",
+          "description",
+          "provider",
+          "fast_model",
+          "deep_model",
+          "env"
+        ],
+        "title": "LlmProfileOut",
+        "type": "object"
+      },
       "LoginIn": {
         "additionalProperties": false,
         "properties": {
@@ -6402,6 +6540,12 @@
               }
             ],
             "title": "Dismissed At"
+          },
+          "first_verdict": {
+            "default": false,
+            "description": "An alert (samples included) is closed or waits for an analyst or an approval.",
+            "title": "First Verdict",
+            "type": "boolean"
           },
           "samples_sent": {
             "title": "Samples Sent",
@@ -7684,6 +7828,132 @@
           "alert_ids"
         ],
         "title": "SampleAlertsOut",
+        "type": "object"
+      },
+      "SetupCompleteIn": {
+        "additionalProperties": false,
+        "properties": {
+          "skipped": {
+            "default": false,
+            "title": "Skipped",
+            "type": "boolean"
+          }
+        },
+        "title": "SetupCompleteIn",
+        "type": "object"
+      },
+      "SetupIn": {
+        "additionalProperties": false,
+        "properties": {
+          "llm_profile": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mistral_eu",
+                  "ollama_local",
+                  "self_hosted",
+                  "anthropic"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Profile"
+          },
+          "organisation": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Organisation",
+            "type": "string"
+          },
+          "tenant_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Tenant Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organisation",
+          "tenant_name"
+        ],
+        "title": "SetupIn",
+        "type": "object"
+      },
+      "SetupOut": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "configured_llm": {
+            "$ref": "#/components/schemas/ConfiguredModelOut"
+          },
+          "default_llm_profile": {
+            "title": "Default Llm Profile",
+            "type": "string"
+          },
+          "llm_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The profile picked in the wizard.",
+            "title": "Llm Profile"
+          },
+          "llm_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/LlmProfileOut"
+            },
+            "title": "Llm Profiles",
+            "type": "array"
+          },
+          "organisation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organisation"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tenant_name": {
+            "title": "Tenant Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "completed",
+          "tenant_id",
+          "tenant_name",
+          "default_llm_profile",
+          "configured_llm",
+          "llm_profiles"
+        ],
+        "title": "SetupOut",
         "type": "object"
       },
       "SourceCreateIn": {
@@ -12812,6 +13082,114 @@
           }
         },
         "summary": "Send the built-in sample alerts (idempotent)",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/onboarding/setup": {
+      "get": {
+        "operationId": "get_setup_api_v1_onboarding_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "First-run setup state (platform admin)",
+        "tags": [
+          "onboarding"
+        ]
+      },
+      "put": {
+        "operationId": "put_setup_api_v1_onboarding_setup_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save the organisation, tenant name and model profile",
+        "tags": [
+          "onboarding"
+        ]
+      }
+    },
+    "/api/v1/onboarding/setup/complete": {
+      "post": {
+        "operationId": "post_setup_complete_api_v1_onboarding_setup_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SetupCompleteIn"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mark the first-run setup done",
         "tags": [
           "onboarding"
         ]

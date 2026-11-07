@@ -16,6 +16,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.urls import database_name, to_libpq_url
+from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.settings import DatabaseSettings
 
 TENANT_A = "tenant-a"
@@ -62,6 +63,7 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 
 ALL_TABLES = (
+    "investigation_steps",
     "external_tickets",
     "notification_outbox",
     "integrations",
@@ -144,6 +146,7 @@ TENANT_TABLES = (
     "integrations",
     "notification_outbox",
     "external_tickets",
+    "investigation_steps",
 )
 
 
@@ -189,5 +192,10 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
     )
     await repos.tickets.add(
         tenant_id, integration.id, system="jira", alert_id=alert_id, escalation_id=esc.id, external_key="SOC-1"
+    )
+    await repos.investigation_steps.append(
+        tenant_id, alert_id, f"{tenant_id}:{alert_id}",
+        [NewTraceStep(agent="analysis", kind="tool", tool="history", input_hash=sha256_hex("in"), outcome="success",
+                      started_at=now)],
     )
     return alert_id

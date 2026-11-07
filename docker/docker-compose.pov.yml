@@ -1,0 +1,47 @@
+# Proof-of-value (PoV) profile: a prospect evaluates LG-SOTF on its own data.
+#
+#   scripts/pov.sh --siem-host wazuh.prospect.example     # or: make pov SIEM=wazuh.prospect.example
+#
+# Layered on docker-compose.yml + docker-compose.prod.yml (and docker-compose.ollama.yml
+# for a local model); scripts/pov.sh writes the env file and runs compose. docs/pov.md
+# explains every setting below. Values here are literal on purpose: they override the
+# same keys forwarded from .env or the shell by the production overlay, so the profile
+# cannot be loosened by a stray variable.
+#
+# * Response: the install kill switch (response.dry_run) routes every action to the
+#   dry-run connector, whatever a tenant admin sets; the default autonomy is
+#   "disabled" for every risk, so nothing is auto-executed or approvable unless a
+#   tenant overrides it, and even then it is only recorded as dry_run. No webhook,
+#   and outbound notifications and ticketing are off.
+# * Sources: ingestion.read_only_sources refuses the pull sources that write back
+#   (the m365_mailbox and imap sources mark or move messages).
+# * Egress: ingestion.allowed_destination_hosts is the allow-list for sources,
+#   integrations, webhooks, Microsoft Graph, enrichment providers and the LLM
+#   endpoint: only the prospect's SIEM host(s) and the chosen model endpoint.
+# * Model: the fake model is refused; scripts/pov.sh never configures DeepSeek.
+
+x-pov-environment: &pov-environment
+  LG_SOTF_RESPONSE__DRY_RUN: "true"
+  LG_SOTF_RESPONSE__DEFAULT_AUTONOMY: '{"low": "disabled", "medium": "disabled", "high": "disabled", "critical": "disabled"}'
+  LG_SOTF_INTEGRATIONS__ENABLED: "false"
+  LG_SOTF_INGESTION__READ_ONLY_SOURCES: "true"
+  LG_SOTF_INGESTION__ALLOWED_DESTINATION_HOSTS: ${POV_EGRESS_HOSTS:?set POV_EGRESS_HOSTS (scripts/pov.sh does)}
+  LG_SOTF_INGESTION__ALLOW_PRIVATE_DESTINATIONS: ${POV_ALLOW_PRIVATE:-false}
+  LG_SOTF_LLM__ALLOW_FAKE: "false"
+
+services:
+  migrate:
+    environment:
+      <<: *pov-environment
+
+  api:
+    environment:
+      <<: *pov-environment
+
+  worker:
+    environment:
+      <<: *pov-environment
+
+  scheduler:
+    environment:
+      <<: *pov-environment

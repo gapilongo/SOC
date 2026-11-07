@@ -35,7 +35,7 @@ import-lint`). What each package owns is in the
 
 | Layer (top to bottom) | Packages (`src/lg_sotf/`) | Owns |
 |---|---|---|
-| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, tenant-export, tenant-erase, evidence-verify, mcp, version |
+| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, mcp, version |
 | Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
 | Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
 | Workflow engine | `core` | graph, nodes, `WorkflowEngine`, retry policy |
@@ -144,6 +144,7 @@ next two partitions ahead and drops expired ones.
 | `integrations` | `id UUID` PK, `tenant_id`, `kind` (slack/teams/email/webhook/jira/servicenow), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `events TEXT[]`, `min_severity` (docs/integrations.md) |
 | `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
 | `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
+| `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
@@ -424,9 +425,11 @@ Everything else is per stack, on purpose:
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`.
-* No tracing: the unused OpenTelemetry exporter was removed
+* No OpenTelemetry tracing: the unused exporter was removed
   ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing
-  back). `observability.otlp_endpoint` is ignored and logs a warning.
+  back). `observability.otlp_endpoint` is ignored and logs a warning. The
+  LLM and tool calls of each investigation are recorded in Postgres instead
+  (`investigation_steps`, shown in evidence packs; docs/compliance.md).
 
 ## 14. Testing conventions
 
@@ -453,6 +456,9 @@ every guardrail has a test.
   report; exit code 1 means a violation, 2 that the run could not start.
 * `environment=production` is refused; point the settings at a dedicated
   evaluation database. See `docs/evaluation.md`.
+* `lg-sotf eval-scorecard <report.json>... --output <md>` turns the reports
+  of one model configuration into a scorecard (`lg_sotf.eval.scorecard`,
+  pure file processing: no database or model). See `docs/scorecards/`.
 * Clarifications (behaviour since the eval review): by default each split
   runs in its own fresh tenant (`<base>-<n>-<split>`, `--isolate splits`;
   `--isolate none` keeps one tenant). Database reachability, the migrated

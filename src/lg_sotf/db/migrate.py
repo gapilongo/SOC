@@ -78,6 +78,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "integrations": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     "notification_outbox": ("SELECT", "INSERT", "UPDATE"),
     "external_tickets": ("SELECT", "INSERT", "UPDATE"),
+    "investigation_steps": ("SELECT", "INSERT"),
 }
 CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),

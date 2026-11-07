@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -108,6 +109,33 @@ def test_image_job_runs_the_stack_smoke_test_on_the_built_image() -> None:
     assert job["timeout-minutes"] >= 20
     lint = next(s for s in steps() if s.get("name") == "Shellcheck")
     assert "scripts/smoke_stack.sh" in lint["run"]
+
+
+
+def test_upgrade_job_rehearses_the_previous_release_and_blocks_the_build() -> None:
+    """ARCH-E1.2: runs N-1 left waiting must resume and close on N, or the build fails."""
+    job = workflow()["jobs"]["upgrade"]
+    assert "continue-on-error" not in job
+    checkout = job["steps"][0]
+    assert checkout["uses"].startswith("actions/checkout@") and checkout["with"]["fetch-depth"] == 0  # the tags
+    assert job["steps"][-1]["run"].strip() == "scripts/ci/upgrade_rehearsal.sh"
+    lint = next(s for s in steps() if s.get("name") == "Shellcheck")
+    assert "scripts/ci/upgrade_rehearsal.sh" in lint["run"]
+
+    script = REPO_ROOT / "scripts" / "ci" / "upgrade_rehearsal.sh"
+    text = script.read_text()
+    assert os.access(script, os.X_OK) and os.access(script.with_suffix(".py"), os.X_OK)
+    assert "set -euo pipefail" in text and "trap cleanup EXIT" in text
+    assert 'chmod 700 "$WORK"' in text and 'install -m 600 /dev/null "$ENV_FILE"' in text
+    # Its own services, torn down with their data; the N-1 worktree is removed.
+    assert "docker/docker-compose.test.yml" in text and "down -v" in text and "git worktree remove" in text
+    # The production roles: migrations as the owner, the api and worker as the runtime role.
+    assert "docker/postgres/init-roles.sh" in text and "LG_SOTF_DATABASE__MIGRATION_URL" in text
+    # The drain check is the one operators run (docs/deployment.md section 7).
+    documented = re.search(r"`(SELECT graph_version[^`]*)`", (REPO_ROOT / "docs" / "deployment.md").read_text())
+    rehearsed = re.search(r'DRAIN_CHECK="([^"]*)"', text)
+    assert documented and rehearsed
+    assert " ".join(documented.group(1).split()) == rehearsed.group(1)
 
 
 WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))

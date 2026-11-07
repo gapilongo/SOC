@@ -152,6 +152,8 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     # Delivery summaries only (the outbox never stores the rendered message or credentials).
     ExportTable("notification_outbox.jsonl", "notification_outbox", "*", _ID_UUID),
     ExportTable("external_tickets.jsonl", "external_tickets", "*", _ID_UUID),
+    # The investigation trace: hashes, token counts and redacted, size-capped result digests.
+    ExportTable("investigation_steps.jsonl", "investigation_steps", "*", _ID_UUID),
     ExportTable("usage_daily.jsonl", "usage_daily", "*", (("day", "date"),)),
     ExportTable(
         "llm_usage_daily.jsonl", "llm_usage_daily", "*", (("day", "date"), ("model", "text"), ("agent", "text"))
