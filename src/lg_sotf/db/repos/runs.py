@@ -48,6 +48,8 @@ class WorkflowRun(Record):
     updated_at: datetime
     completed_at: Optional[datetime]
     """Set when the run reaches ``completed`` or ``dead_lettered``."""
+    graph_version: Optional[int] = None
+    """The graph its checkpointed thread started on; None: no thread yet, or one older than graph versions (1)."""
     claimed_from: Optional[str] = None
     """Only on :meth:`RunsRepo.start` results: the status the claim replaced (None if it created the run)."""
 
@@ -465,6 +467,18 @@ class RunsRepo(Repository):
         if worker_id is not None and run.status == "running" and run.worker_id != worker_id:
             raise LeaseLost(f"run {tenant_id}:{alert_id} is leased by another worker")
         raise InvalidTransition("workflow run", f"{tenant_id}:{alert_id}", run.status, to_status)
+
+    async def set_graph_version(
+        self, tenant_id: str, alert_id: str, version: int, *, conn: Optional[Connection] = None
+    ) -> None:
+        """Record the graph version a fresh thread starts on (no run row, as in an eval run: nothing to stamp)."""
+        async with self._tenant(tenant_id, conn) as c:
+            await c.execute(
+                "UPDATE workflow_runs SET graph_version = $3 WHERE tenant_id = $1 AND alert_id = $2",
+                tenant_id,
+                alert_id,
+                version,
+            )
 
     async def get(self, tenant_id: str, alert_id: str, *, conn: Optional[Connection] = None) -> WorkflowRun:
         async with self._tenant(tenant_id, conn) as c:

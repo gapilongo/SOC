@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 from typing import Any, Dict, List
 
+import pytest
 import yaml
 
 from tests.deploy._support import REPO_ROOT
@@ -267,3 +268,147 @@ def test_compare_junit_requires_the_same_tests_and_outcomes(tmp_path: Path) -> N
     assert "serial: 2 tests, passed 1, failure 0, error 0, skipped 1" in ok.stdout
     bad = subprocess.run([sys.executable, str(script), str(serial), str(other)], capture_output=True, text=True)
     assert bad.returncode == 1 and "only in the parallel run: tests.b::test_new" in bad.stdout
+
+
+# --------------------------------------------------------------------------- SEC1.1: signed images
+
+RELEASE = REPO_ROOT / ".github" / "workflows" / "release-images.yml"
+DEPLOY = REPO_ROOT / ".github" / "workflows" / "deploy.yml"
+COSIGN_INSTALLER = re.compile(r"^sigstore/cosign-installer@[0-9a-f]{40}$")
+SIGNER = "https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main"
+ISSUER = "https://token.actions.githubusercontent.com"
+VERIFY_STEP = "Verify image signatures and provenance"
+
+
+def _load(path: Path) -> Dict[str, Any]:
+    data = yaml.safe_load(path.read_text())
+    assert isinstance(data, dict)
+    return data
+
+
+def test_release_and_deploy_pin_every_action_with_its_version() -> None:
+    for path in (RELEASE, DEPLOY):
+        for line in path.read_text().splitlines():
+            if re.match(r"^\s*(- )?uses: [^.]", line):
+                assert re.search(r"@[0-9a-f]{40} # v\d+\.\d+\.\d+$", line), f"{path.name}: {line.strip()}"
+
+
+def test_release_images_sign_the_digests_and_attest_provenance() -> None:
+    jobs = _load(RELEASE)["jobs"]
+    sign = jobs["sign"]
+    assert sign["needs"] == "build"
+    uses = [s["uses"] for s in sign["steps"] if "uses" in s]
+    assert any(COSIGN_INSTALLER.match(u) for u in uses)
+    # The signing job runs no repository code: no checkout, no build.
+    assert not any(u.startswith(("actions/checkout@", "docker/build-push-action@")) for u in uses)
+    run = "\n".join(s.get("run", "") for s in sign["steps"])
+    assert 'cosign sign --yes "$APP_REPO@$APP_DIGEST"' in run
+    assert 'cosign sign --yes "$FRONTEND_REPO@$FRONTEND_DIGEST"' in run
+    assert len(re.findall(r"cosign sign ", run)) == 2, "sign digests, never tags"
+    attests = [s for s in sign["steps"] if s.get("uses", "").startswith("actions/attest@")]
+    assert {a["with"]["subject-digest"] for a in attests} == {
+        "${{ needs.build.outputs.app_digest }}", "${{ needs.build.outputs.frontend_digest }}",
+    }
+    assert {a["with"]["subject-name"] for a in attests} == {"${{ env.APP_REPO }}", "${{ env.FRONTEND_REPO }}"}
+    assert all(a["with"]["push-to-registry"] is True for a in attests)
+    assert jobs["deploy-dev"]["needs"] == ["build", "sign"], "nothing deploys before it is signed"
+
+
+def test_id_token_write_is_scoped_to_the_signing_job_only() -> None:
+    """The OIDC token mints signing certificates: only the job that runs no build step may hold it."""
+    holders = []
+    for path in WORKFLOWS:
+        if path.name.startswith("claude"):  # the Claude review bot's own OIDC login; it signs nothing
+            continue
+        wf = _load(path)
+        assert "id-token" not in (wf.get("permissions") or {}), path.name
+        holders += [f"{path.name}:{n}" for n, j in wf["jobs"].items() if (j.get("permissions") or {}).get("id-token")]
+    assert holders == ["release-images.yml:sign"]
+    assert _load(RELEASE)["jobs"]["sign"]["permissions"] == {
+        "contents": "read", "packages": "write", "id-token": "write", "attestations": "write",
+    }
+
+
+def test_deploy_verifies_signature_and_provenance_before_touching_the_host() -> None:
+    wf = _load(DEPLOY)
+    assert wf["env"]["SIGNER_IDENTITY"] == SIGNER
+    assert wf["env"]["SIGNER_OIDC_ISSUER"] == ISSUER
+    assert wf["env"]["SIGNER_REPO"] == "gapilongo/SOC"
+    steps_ = wf["jobs"]["deploy"]["steps"]
+    names = [s.get("name", s.get("uses", "")) for s in steps_]
+    verify = steps_[names.index(VERIFY_STEP)]
+    assert not any("continue-on-error" in s for s in steps_) and "if" not in verify, "fail closed, always"
+    run = verify["run"]
+    assert '--certificate-identity "$SIGNER_IDENTITY"' in run and '--certificate-oidc-issuer "$SIGNER_OIDC_ISSUER"' in run
+    assert '--cert-identity "$SIGNER_IDENTITY"' in run and "--predicate-type https://slsa.dev/provenance/v1" in run
+    assert "regex" not in run, "an exact identity, not a pattern"
+    assert verify["env"]["APP_REF"] == "${{ steps.images.outputs.app_ref }}"  # repo@sha256:digest
+    i = names.index(VERIFY_STEP)
+    assert names.index("Resolve image digests and source commit") < i < names.index("Build the deploy bundle")
+    assert i < names.index("Configure SSH (pinned host key)")
+    assert COSIGN_INSTALLER.match(steps_[i - 1]["uses"])
+
+
+def test_signing_and_verifying_use_the_same_cosign() -> None:
+    def installer(steps_: List[Dict[str, Any]]) -> Dict[str, Any]:
+        return next(s for s in steps_ if COSIGN_INSTALLER.match(s.get("uses", "")))
+
+    signer = installer(_load(RELEASE)["jobs"]["sign"]["steps"])
+    verifier = installer(_load(DEPLOY)["jobs"]["deploy"]["steps"])
+    assert signer["uses"] == verifier["uses"] and signer["with"] == verifier["with"]
+    assert re.fullmatch(r"v3\.\d+\.\d+", signer["with"]["cosign-release"])
+
+
+def _run_verify(tmp_path: Path, cosign_rc: int = 0, gh_rc: int = 0) -> subprocess.CompletedProcess[str]:
+    """Run the verify step the way GitHub does, with stub cosign, gh and docker that log their arguments."""
+    wf = _load(DEPLOY)
+    step = next(s for s in wf["jobs"]["deploy"]["steps"] if s.get("name") == VERIFY_STEP)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool, body in (("cosign", f"exit {cosign_rc}"), ("gh", f"exit {gh_rc}"), ("docker", "cat >/dev/null")):
+        stub = bin_dir / tool
+        stub.write_text(f'#!/usr/bin/env bash\necho "{tool} $*" >> "{tmp_path}/calls"\n{body}\n')
+        stub.chmod(0o755)
+    script = tmp_path / "step.sh"
+    script.write_text(step["run"])
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(tmp_path), "GH_TOKEN": "test-only-token", "ACTOR": "ci",
+        "APP_REF": "ghcr.io/gapilongo/lg-sotf@sha256:" + "a" * 64,
+        "FRONTEND_REF": "ghcr.io/gapilongo/lg-sotf-frontend@sha256:" + "b" * 64,
+        **{k: v for k, v in wf["env"].items() if k.startswith("SIGNER_")},
+    }
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],  # noqa: S607 - GitHub's bash invocation
+        capture_output=True, text=True, timeout=30, env=env, stdin=subprocess.DEVNULL,
+    )
+
+
+def test_verify_step_checks_both_digests_with_the_exact_identity(tmp_path: Path) -> None:
+    proc = _run_verify(tmp_path)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    calls = (tmp_path / "calls").read_text().splitlines()
+    for digest in ("a" * 64, "b" * 64):
+        [cosign] = [c for c in calls if c.startswith("cosign verify ") and digest in c]
+        assert f"--certificate-identity {SIGNER} --certificate-oidc-issuer {ISSUER}" in cosign
+        [gh] = [c for c in calls if c.startswith("gh attestation verify oci://") and digest in c]
+        assert f"--repo gapilongo/SOC --cert-identity {SIGNER} --cert-oidc-issuer {ISSUER}" in gh
+        assert "--deny-self-hosted-runners" in gh
+    assert "test-only-token" not in proc.stdout + proc.stderr + "\n".join(calls)
+
+
+def test_docs_show_customers_the_same_exact_identity() -> None:
+    security = (REPO_ROOT / "docs" / "security.md").read_text()
+    airgap = (REPO_ROOT / "docs" / "air-gapped.md").read_text()
+    for text in (security, airgap):
+        assert f"SIGNER={SIGNER}" in text and f"ISSUER={ISSUER}" in text
+        assert 'cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER"' in text
+        assert "gh attestation verify" in text
+    assert "cosign save --dir" in airgap and "--trusted-root" in airgap and "--local-image" in airgap
+
+
+@pytest.mark.parametrize(("cosign_rc", "gh_rc", "error"), [(1, 0, "no valid signature"), (0, 1, "no valid build provenance")])
+def test_verify_step_fails_closed(tmp_path: Path, cosign_rc: int, gh_rc: int, error: str) -> None:
+    proc = _run_verify(tmp_path, cosign_rc=cosign_rc, gh_rc=gh_rc)
+    assert proc.returncode == 1
+    assert "::error::" in proc.stdout and error in proc.stdout
+    assert "verified:" not in proc.stdout, "the first failure stops the step"

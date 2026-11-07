@@ -21,6 +21,13 @@ All notable changes to this project are documented here. The format follows
   enrichment providers and the LLM endpoint (unset by default, so nothing
   changes for existing installs), and `ingestion.read_only_sources`, which
   refuses the `m365_mailbox` and `imap` sources.
+- Runs waiting for an analyst or an approval now survive upgrades that change
+  the workflow graph. Each run records the graph version it started on
+  (`workflow_runs.graph_version`, migration 0010), and workers keep the
+  previous graph next to the current one, so a waiting run resumes and is
+  decided on the graph it started on. A run on a graph version the worker
+  does not have fails with `UnknownGraphVersion` and is retried, then
+  dead-lettered; it is never run on a different graph.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable
@@ -264,6 +271,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Published images are signed. Each `ghcr.io/gapilongo/lg-sotf` and
+  `lg-sotf-frontend` digest now carries a keyless cosign signature and a SLSA
+  build-provenance attestation, both from the `Release images` workflow on
+  `main`. The deploy workflow verifies both before it deploys, and stops if
+  either check fails. This means the workflow can no longer deploy images
+  built before this change; roll back to those on the VM instead. To verify
+  an image yourself, including on an air-gapped host, see `docs/security.md`
+  (section 9) and `docs/air-gapped.md`.
 - Failure logs never carry the exception message (ADR-0005). An unhandled
   API error (`api.unhandled_error`) is no longer logged with a traceback,
   which quoted the message of the exception and of every exception chained

@@ -8,6 +8,7 @@
   "lg_sotf.api.errors.ApiError": ["<instance>", "<instance>"],
   "lg_sotf.api.errors.BodyTooLarge": [413, "payload_too_large"],
   "lg_sotf.compliance.tenant_data.ErasureRefused": [500, "internal_error"],
+  "lg_sotf.core.workflow.UnknownGraphVersion": [500, "internal_error"],
   "lg_sotf.db.errors.AlreadyInState": [409, "already_in_state"],
   "lg_sotf.db.errors.Conflict": [409, "conflict"],
   "lg_sotf.db.errors.DatabaseError": [500, "internal_error"],

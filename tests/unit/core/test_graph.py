@@ -11,6 +11,8 @@ from typing import Any, Dict
 import pytest
 
 from lg_sotf.core.graph import (
+    GRAPH_BUILDERS,
+    GRAPH_VERSION,
     MAX_ALERT_JSON_CHARS,
     MAX_NOTES,
     NODE_NAMES,
@@ -114,3 +116,9 @@ class Nodes:
 def test_graph_has_the_contract_nodes() -> None:
     compiled = build_graph(Nodes(), RoutingThresholds()).compile()
     assert set(NODE_NAMES) <= set(compiled.get_graph().nodes)
+
+
+def test_every_kept_graph_builds_and_the_newest_is_the_current_version() -> None:
+    assert max(GRAPH_BUILDERS) == GRAPH_VERSION
+    for build in GRAPH_BUILDERS.values():
+        build(Nodes(), RoutingThresholds()).compile()

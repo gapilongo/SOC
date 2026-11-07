@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
 import pytest
@@ -20,17 +20,16 @@ from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine._support import RecordingEvents, undeclared_keys
+from tests.integration.engine._support import (
+    SUSPICIOUS_ENTITIES,
+    RecordingEvents,
+    analyst,
+    decide,
+    suspicious_alert,
+    undeclared_keys,
+)
 
 pytestmark = pytest.mark.integration
-
-SUSPICIOUS_ENTITIES = {
-    "ips": ["185.220.101.44", "10.0.0.5"],
-    "hosts": ["ws-042"],
-    "users": ["jdoe"],
-    "hashes": ["44d88612fea8a8f36de82e1278abb02f"],
-    "processes": ["powershell.exe"],
-}
 
 
 async def benign_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
@@ -40,18 +39,6 @@ async def benign_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs:
         title="Scheduled backup maintenance test job",
         severity="low",
         normalized={"entities": {"hosts": ["backup-01"]}},
-        **kwargs,
-    )
-
-
-async def suspicious_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
-    return await make_alert(
-        repos,
-        tenant_id,
-        title="Possible C2 beacon from workstation",
-        severity="medium",
-        normalized={"entities": SUSPICIOUS_ENTITIES},
-        raw={"vendor": "edr"},
         **kwargs,
     )
 
@@ -66,33 +53,6 @@ def count_calls(monkeypatch: pytest.MonkeyPatch, obj: Any, name: str) -> List[in
 
     monkeypatch.setattr(obj, name, spy)
     return calls
-
-
-async def analyst(repos: Repositories, tenant_id: str = TENANT_A) -> str:
-    user = await repos.users.create(tenant_id, f"analyst-{uuid4().hex[:8]}@example.com", "analyst")
-    return str(user.id)
-
-
-async def decide(
-    engine: WorkflowEngine, repos: Repositories, alert_id: str, escalation_id: str, decision: str, user_id: str,
-    tenant_id: str = TENANT_A, **extra: Any,
-):
-    """What the API does: record the decision with the analyst's version, then resume."""
-    esc = await repos.escalations.get(tenant_id, escalation_id)
-    await repos.escalations.decide(
-        tenant_id, escalation_id, decision=decision, decided_by=UUID(user_id),
-        expected_version=esc.version,
-    )
-    payload: Dict[str, Any] = {
-        "type": "analyst_decision",
-        "escalation_id": escalation_id,
-        "decision": decision,
-        "approved_actions": [],
-        "decided_by": user_id,
-        "notes": "",
-    }
-    payload.update(extra)
-    return await engine.resume(tenant_id, alert_id, payload)
 
 
 async def test_benign_alert_is_closed(engine: WorkflowEngine, repos: Repositories, events: RecordingEvents) -> None:
