@@ -7,12 +7,12 @@ mcp/tester.py	965
 services/reporting.py	852
 
 # Functions
-agents/correlation/base.py::CorrelationAgent._run	88
+agents/correlation/base.py::CorrelationAgent._run	86
 compliance/evidence.py::build_evidence_pack	101
-compliance/evidence_html.py::render_evidence_html	193
+compliance/evidence_html.py::render_evidence_html	187
 db/repos/actions.py::ActionsRepo.transition	94
 db/retention.py::purge_expired	148
-eval/report.py::render_markdown	111
+eval/report.py::render_markdown	109
 eval/runner.py::run_evaluation	110
 ingestion/email/parser.py::parse_email	93
 integrations/microsoft/http.py::MicrosoftApi._send	118

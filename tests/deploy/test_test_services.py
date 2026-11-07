@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 import yaml
 
 from tests.deploy._support import DOCKER_DIR, REPO_ROOT, compose_config, requires_compose
+from tests.fixtures.wazuh_lab import WAZUH_VERSION
 
 TEST_COMPOSE = DOCKER_DIR / "docker-compose.test.yml"
 ROLE_SQL = "scripts/ci/create_test_role.sql"
@@ -73,3 +74,38 @@ def test_make_test_integration_points_at_the_compose_services() -> None:
 def test_the_compose_file_resolves() -> None:
     cfg = compose_config(str(TEST_COMPOSE), env={})
     assert set(cfg["services"]) == {"postgres", "redis"}
+
+
+# ------------------------------------------------- the Wazuh lab (INT3.1, docker/docker-compose.wazuh-test.yml)
+
+WAZUH_COMPOSE = DOCKER_DIR / "docker-compose.wazuh-test.yml"
+
+
+def test_the_wazuh_lab_is_a_pinned_4_14_indexer_on_tmpfs_and_a_local_port() -> None:
+    services = yaml.safe_load(WAZUH_COMPOSE.read_text())["services"]
+    assert set(services) == {"indexer"}
+    indexer = services["indexer"]
+    # The template the lab installs (tests/fixtures/wazuh_lab) is pinned to the image's 4.14 release line.
+    assert re.fullmatch(r"wazuh/wazuh-indexer:4\.14\.\d+@sha256:[0-9a-f]{64}", indexer["image"])
+    assert WAZUH_VERSION.startswith("4.14.")
+    assert indexer["tmpfs"] and "healthcheck" in indexer and "volumes" not in indexer
+    assert all(port.startswith("127.0.0.1:") for port in indexer["ports"])
+
+
+def test_make_and_ci_run_the_wazuh_contract_tests() -> None:
+    make = (REPO_ROOT / "Makefile").read_text()
+    for target in ("test-wazuh-up:", "test-wazuh:", "test-wazuh-down:"):
+        assert target in make, target
+    job = yaml.safe_load((WORKFLOWS / "ci.yml").read_text())["jobs"]["wazuh-contract"]
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert any(r.startswith("make test-wazuh-up") for r in runs)
+    assert any(r.startswith("make test-wazuh ") for r in runs)
+    stop = next(step for step in job["steps"] if step.get("run") == "make test-wazuh-down")
+    assert stop["if"] == "always()"
+
+
+@requires_compose
+def test_the_wazuh_lab_compose_file_resolves() -> None:
+    cfg = compose_config(str(WAZUH_COMPOSE), env={})
+    assert cfg["name"] == "lg-sotf-test-wazuh" and set(cfg["services"]) == {"indexer"}
+    assert cfg["services"]["indexer"]["ports"][0]["published"] == "59200"

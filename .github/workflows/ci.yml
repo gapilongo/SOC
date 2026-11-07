@@ -240,6 +240,46 @@ jobs:
       - name: Same tests, same outcomes
         run: python3 scripts/ci/compare_junit.py junit.xml junit-parallel.xml
 
+  wazuh-contract:
+    name: Wazuh 4.14 live contract tests (non-blocking trial)
+    # Roadmap INT3.1: the real Wazuh connector against a Wazuh 4.14 indexer seeded with the template
+    # Wazuh publishes (docker/docker-compose.wazuh-test.yml, tests/live/wazuh). Non-blocking while the
+    # 2.5 GB image pull and the lab's start time settle; locally: `make test-wazuh-up test-wazuh`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install -r requirements-dev.txt
+          pip install --no-deps -e .
+      - name: Start and seed the Wazuh lab
+        run: make test-wazuh-up PYTHON=python
+      - name: Pytest (tests/live/wazuh)
+        run: make test-wazuh PYTHON=python PYTEST_ARGS="--junitxml=junit-wazuh.xml"
+      - name: Indexer logs
+        if: failure()
+        run: docker compose -f docker/docker-compose.wazuh-test.yml logs --tail=200 indexer
+      - name: Stop the Wazuh lab
+        if: always()
+        run: make test-wazuh-down
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-wazuh
+          path: junit-wazuh.xml
+          retention-days: 14
+          if-no-files-found: ignore
+
   security:
     name: Security scans
     runs-on: ubuntu-latest

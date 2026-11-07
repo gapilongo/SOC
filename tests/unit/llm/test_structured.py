@@ -21,6 +21,7 @@ from lg_sotf.llm.client import PROVIDER_KEY, SERVER_FALLBACK_BETA, STRUCTURED_KE
 from lg_sotf.llm.errors import LLMBudgetExceeded, LLMOutputError, LLMRefusal
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.llm.prompting import build_messages
+from lg_sotf.llm.registry import PromptTemplate, unregistered_hash
 from lg_sotf.llm.structured import ainvoke_structured, estimate_input_tokens, structured_method
 from lg_sotf.llm.usage import get_usage_recorder
 from lg_sotf.settings import Settings
@@ -556,7 +557,8 @@ async def test_log_events_of_a_retried_then_failed_call(make_settings: Callable[
     with capture_logs() as logs, pytest.raises(_StatusError):
         await ainvoke_structured(stub, Verdict, _msgs(s), agent="analysis", tier="deep", tenant_id="t1", settings=s, tally=tally)
     common = {"agent": "analysis", "tier": "deep", "model": "claude-opus-5-5", "error_type": "_StatusError", "attempt": 1,
-              "error": "_StatusError", "cause_types": []}
+              "error": "_StatusError", "cause_types": [], "prompt_name": "unregistered",
+              "prompt_hash": unregistered_hash(_msgs(s))}
     assert _llm_events(logs) == [
         {**common, "event": "llm.call_retrying", "retry": 1, "log_level": "warning"},
         {**common, "event": "llm.call_retrying", "retry": 2, "log_level": "warning"},
@@ -570,8 +572,11 @@ async def test_log_events_of_a_retried_then_failed_call(make_settings: Callable[
 async def test_log_events_of_a_successful_call(make_settings: Callable[..., Settings]) -> None:
     s = make_settings()
     stub = StubModel(result=_ok_result())
+    prompt = PromptTemplate(name="test.verdict", system="You are a SOC analyst.", task="Return a verdict.", schema=Verdict)
     with capture_logs() as logs:
-        await ainvoke_structured(stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s)
+        await ainvoke_structured(
+            stub, Verdict, _msgs(s), agent="triage", tier="fast", tenant_id="t1", settings=s, prompt=prompt
+        )
     (event,) = _llm_events(logs)
     assert event == {
         "event": "llm.call",
@@ -579,6 +584,8 @@ async def test_log_events_of_a_successful_call(make_settings: Callable[..., Sett
         "agent": "triage",
         "tier": "fast",
         "model": "claude-opus-5-5",
+        "prompt_name": "test.verdict",
+        "prompt_hash": prompt.hash,
         "outcome": "success",
         "input_tokens": 120,
         "output_tokens": 30,

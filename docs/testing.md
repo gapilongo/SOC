@@ -37,6 +37,7 @@ python -m pytest tests/integration/runtime -k lease -q      # needs the two vari
 | Unit | `tests/unit` | nothing | Hermetic. **Every warning is an error** (`tests/unit/conftest.py`), with no ignore list. A unit test that requests `db`, `repos`, `redis_client`, `redis_url`, `database_url` or `migrated_database_url` fails collection: the fast CI job has no services, so it would never run. |
 | Deploy | `tests/deploy` | optional `helm`, `docker` | Packaging: Dockerfile, compose files, Helm chart, CI workflows, deploy scripts. Tests needing a missing binary skip. |
 | Integration | `tests/integration` | PostgreSQL 16, Redis 7 | Real services, the real app, the real worker and workflow engine, the fake LLM. |
+| Live | `tests/live` | a vendor lab (`make test-wazuh-up`) | Marked `live`; the real connector against a real vendor product. Skipped unless the lab's variables are set, so `pytest` and the unit tier never need it. See [The Wazuh lab](#the-wazuh-lab). |
 
 Suite-wide (`pyproject.toml`): `RuntimeWarning`, `ResourceWarning` and
 `PytestUnraisableExceptionWarning` are errors everywhere; `--strict-markers`;
@@ -48,7 +49,9 @@ coverage, one process; the total floor and the per-package floors in
 `scripts/ci/coverage_floors.py` only go up). `test-parallel` runs the suite on
 four xdist workers and `parallel-parity` checks that both runs saw the same
 tests with the same outcomes; both are non-blocking until about ten green
-runs. `.github/workflows/nightly.yml` runs the suite in a random order
+runs. `wazuh-contract` starts the Wazuh lab and runs `tests/live/wazuh`;
+it is non-blocking while its image pull and start time settle.
+`.github/workflows/nightly.yml` runs the suite in a random order
 (pinned `pytest-randomly`).
 
 `upgrade` runs `scripts/ci/upgrade_rehearsal.sh`: the previous release (the
@@ -80,6 +83,64 @@ them. `scripts/ci/create_test_role.sql` creates the role
   database `base + k`, refused above 15. With base 5 and four workers that is
   5 to 8.
 
+## The Wazuh lab
+
+`docker/docker-compose.wazuh-test.yml` runs one Wazuh 4.14 indexer, the
+OpenSearch build every Wazuh 4.x deployment stores its alerts in, pinned by
+digest. It runs as the image ships it: TLS with the image's demo
+certificates (`CN=demo.indexer`) and the security plugin with its demo
+users. There is no manager and no dashboard, because the connector only reads the
+indexer. Data is on tmpfs; the project is `lg-sotf-test-wazuh` and the
+port is `127.0.0.1:59200`, so it runs beside the dev stack and
+`make test-services`.
+
+```bash
+make test-wazuh-up      # start, wait until healthy, copy the CA to build/wazuh-lab, seed
+make test-wazuh         # tests/live/wazuh (PYTEST_ARGS=... passes options through)
+make test-wazuh-down
+make test-wazuh-up WAZUH_LAB_PROJECT=my-lab WAZUH_LAB_PORT=59210   # a second lab beside the first
+```
+
+Seeding (`python -m tests.fixtures.wazuh_lab seed`) installs the `wazuh`
+index template that Wazuh publishes for 4.14, the one Filebeat installs on a
+real manager. It is downloaded at a pinned tag and checked against its
+SHA-256; it is GPLv2, so it is not vendored. Seeding then loads the sample alerts in
+`tests/fixtures/wazuh_lab/alerts_4_14.json` into
+`wazuh-alerts-4.x-2026.11.02`.
+
+How the tests reach the lab: the connector's egress policy always refuses
+loopback, so the tests do not use the published port. They connect to the
+indexer's Docker bridge address (`LG_SOTF_TEST_WAZUH_ADDRESS`, which
+`make test-wazuh` reads with `docker inspect`), with
+`ingestion.allow_private_destinations`. The connector names the host
+`demo.indexer`, the egress policy pins it to that address, and TLS is
+verified against the lab CA (`LG_SOTF_TEST_WAZUH_CA`). The host must be able
+to reach bridge addresses: a Linux or WSL Docker engine and GitHub runners
+can, Docker Desktop on macOS cannot. Each test creates its own
+`wazuh-alerts-4.x-lgsotf-<hex>` index (mapped by the same template) and
+deletes it afterwards. Each session creates its own reader users (a role
+with read access to `wazuh-alerts-*` only, and a user with no role), with
+passwords generated at run time. Alerts loaded into the lab therefore never
+change what a test sees.
+
+### Loading more alerts
+
+```bash
+python -m tests.fixtures.wazuh_lab load my-alerts.json                 # into wazuh-alerts-4.x-<day of each alert>
+python -m tests.fixtures.wazuh_lab load alerts.json --index wazuh-alerts-4.x-atomic
+python -m tests.fixtures.wazuh_lab --url https://127.0.0.1:59210 load my-alerts.json   # another lab
+```
+
+A file is either `{"events": [...]}` JSON, like the sample file, or the
+manager's own `/var/ossec/logs/alerts/alerts.json`, with one alert per line.
+Alerts recorded on a real Wazuh lab, such as Atomic Red Team runs, load
+unchanged. Each alert is routed by its `timestamp` to the daily index Filebeat
+would use. A document the template refuses (a mapped field of the wrong type)
+is reported and makes the command exit 1. Committed fixtures must be
+synthetic (documentation address ranges, `example.com`) and marked
+`_synthetic`, like `tests/fixtures/vendors`. `tests.fixtures.wazuh_lab.WazuhLab`
+is the same client in Python, for tests that seed their own data.
+
 ## Fixtures and helpers
 
 Fixtures live in conftests; **helpers live in `_support.py` modules**. A test
@@ -97,7 +158,8 @@ into the nearest `_support.py` instead.
 | `tests/integration/e2e/_support.py` | `Stack` (ingest, dispatch, engine, worker), `running(worker)`, `eventually(predicate)`, shared events. |
 | `tests/integration/runtime/_support.py` | `FakeEngine`, `make_worker`, `dispatch_alert`, `running`, `eventually`, `ManualClock`. |
 | `tests/integration/integrations/_support.py`, `.../microsoft/_support.py` | `Receiver` (scripted HTTP receiver), `add_integration`, `MicrosoftEnv`. |
-| `tests/fixtures/` | Vendor payloads, `FakeMicrosoft`, the evaluation datasets. |
+| `tests/fixtures/` | Vendor payloads, `FakeMicrosoft`, the evaluation datasets, the Wazuh lab client and sample alerts (`wazuh_lab`). |
+| `tests/live/wazuh/conftest.py`, `_support.py` | `lab`, `lab_admin`, `reader`, `no_access_user`, `alert_index` (one index per test), `wazuh(**config)` (the real connector for the lab), `collect`. |
 
 ## The fake LLM
 
