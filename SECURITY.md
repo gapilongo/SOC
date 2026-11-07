@@ -11,6 +11,9 @@ we treat vulnerabilities in it seriously. Thank you for reporting responsibly.
 | 1.1.x and 1.0.x | No: upgrade to 1.2.x |
 | Earlier proof-of-concept code (before the 0.2.0 rebuild) | No |
 
+Release channels (weekly partner candidates, stable, LTS), their support
+windows and which fixes are backported: [docs/releases.md](docs/releases.md).
+
 ## Reporting a vulnerability
 
 **Do not open a public issue, pull request or discussion for a security

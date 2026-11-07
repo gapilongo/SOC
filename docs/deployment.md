@@ -621,11 +621,19 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
    CI rehearses this upgrade on every change (`scripts/ci/upgrade_rehearsal.sh`):
    the previous release leaves runs waiting, the new release migrates the
    database while the old one still runs, runs this check, and must resume and
-   close every waiting run.
+   close every waiting run. It does the same from the latest LTS release, so
+   upgrading from the LTS line straight to the new release is tested too
+   ([releases.md](releases.md)).
 
 Migrations must be expand/contract (additive first, removals in a later
 release) so the previous release keeps working against the new schema during
-the rollout. `lg-sotf migrate` is idempotent and
+the rollout. A migration that changes a table makes the statements the
+running pods have prepared on it stale, and the first transaction to use one
+fails with `InvalidCachedStatementError`. A worker runs its run transactions
+again once, in a new transaction for the same tenant (log event
+`db.stale_statement_retry`, metric `lgsotf_db_stale_statement_retries_total`),
+so in-flight runs finish normally. An API request that hits it is not retried
+and fails once; the client can send it again. `lg-sotf migrate` is idempotent and
 safe to re-run. Rolling back the application is `helm rollback`; schema
 downgrades are not automatic; restore from backup if the release notes say a
 migration is not backward compatible.

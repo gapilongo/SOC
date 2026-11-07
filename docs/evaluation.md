@@ -198,8 +198,17 @@ See docs/reporting.md ("Backtest").
 ## Metrics
 
 Rates are fractions; a rate with an empty denominator is reported as `null`
-("n/a"), never as 0. Items whose ingestion or run failed count in
-`error_rate` and are excluded from every other rate.
+("Not enough data (n=0)"), never as 0. Items whose ingestion or run failed
+count in `error_rate` and are excluded from every other rate.
+
+Every rate also comes with its sample size and a 95% Wilson score interval:
+`metrics.intervals.<rate>` is `{rate, n, ci_low, ci_high}` for each rate
+below (and `auto_close_rate`, `accuracy`), and
+`metrics.per_class_intervals.<class>.precision` / `.recall` the same for
+the per-class scores. The Markdown report writes each rate as
+`25.0% (1 of 4; 95% CI 4.6% to 69.9%)`. F1, kappa, cost and latency are not
+proportions and have no interval. With a few dozen items the interval is
+wide; read it before comparing two runs.
 
 | Metric | Definition |
 |---|---|
@@ -237,13 +246,16 @@ usage, cost and latency.
   concurrency, duration, `selection`: splits, tags, limit, isolation),
   `notes`, `metrics`, `splits`, `llm_provenance`, `items` and, with
   thresholds, `gate`. Keep it as the next run's `--baseline`.
+  `metrics.intervals` holds each rate's `n` and 95% Wilson interval (see
+  [Metrics](#metrics)).
   `llm_provenance` lists each agent, provider, model, prompt name and prompt
   hash the run called, with the number of items; each item carries the same
   per-agent fields under `llm_provenance`. A changed prompt hash between two
   reports means the prompt text or schema changed (see
   [compliance](compliance.md#model-provenance)).
 * Markdown (`--markdown`, default next to the JSON): notices, run facts,
-  the models and prompts used, gate result, headline table per split, per-class scores, confusion matrix,
+  the models and prompts used, gate result, headline table per split (each rate with `k of n` and its 95%
+  Wilson interval), per-class scores (precision and recall likewise), confusion matrix,
   inter-annotator agreement and the item table with missed malicious items
   marked `MISSED`.
 * Scorecard: `lg-sotf eval-scorecard synthetic.json phishing.json --output
@@ -265,6 +277,7 @@ metrics:                             # absolute bounds on report paths
   high_severity_auto_closed_benign: {max: 0}
   benign_auto_close_rate: {min: 0.30}
   per_class.malicious.recall: {min: 0.85}
+  intervals.malicious_false_negative_rate.ci_high: {max: 0.10}   # the upper bound, not the estimate
   cost_per_alert_usd: {max: 0.05}
   latency_s.p95: {max: 240}
 regressions:                         # only with --baseline <previous report>

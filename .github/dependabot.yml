@@ -1,14 +1,24 @@
 # Keeps the SHA-pinned GitHub Actions and digest-pinned images current.
 # Dependabot updates both the SHA and the trailing "# vX.Y.Z" comment.
+#
+# docs/dependency-policy.md: every ecosystem is checked weekly on Monday, so merged updates ship
+# on Thursday's partner train (docs/releases.md); Python and production npm minor and patch updates
+# come grouped, their majors one per pull request. Security updates (Settings > Code security) open
+# at once, whatever this schedule, and are never grouped. Triage within 2 business days; patch SLAs:
+# critical 7 days, high 14, medium 30, low the next minor release.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
     groups:
       actions:
         patterns: ["*"]
+    labels: [dependencies, github_actions]
     commit-message:
       prefix: ci
 
@@ -16,11 +26,15 @@ updates:
     directory: /docker
     schedule:
       interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
     ignore:
       # The Wazuh lab (docker-compose.wazuh-test.yml) is the 4.14 contract lab: patches only.
       # Wazuh 5 gets its own lab (roadmap INT3.3a), not a bump of this one.
       - dependency-name: wazuh/wazuh-indexer
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    labels: [dependencies, docker]
     commit-message:
       prefix: docker
 
@@ -28,6 +42,10 @@ updates:
     directory: /src/lg_front
     schedule:
       interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
+    labels: [dependencies, docker]
     commit-message:
       prefix: docker
 
@@ -35,10 +53,16 @@ updates:
     directory: /src/lg_front
     schedule:
       interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
     open-pull-requests-limit: 5
     groups:
       frontend-dev:
         dependency-type: development
+      frontend-prod:
+        dependency-type: production
+        update-types: [minor, patch]
     # Held updates, each with the reason; drop an entry once its reason is gone.
     ignore:
       # eslint 10: eslint-plugin-jsx-a11y (6.10.2, its latest) peers on eslint <=9, so npm ci fails.
@@ -64,6 +88,7 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@vitejs/plugin-react"
         update-types: ["version-update:semver-major"]
+    labels: [dependencies, javascript]
     commit-message:
       prefix: deps
 
@@ -71,11 +96,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "05:00"
+      timezone: Etc/UTC
     open-pull-requests-limit: 5
+    groups:
+      python:
+        patterns: ["*"]
+        update-types: [minor, patch]
     ignore:
       # langsmith (required by langchain-core) pins uuid-utils<1.0, so 1.x cannot
       # resolve. Drop this once langsmith allows it.
       - dependency-name: uuid-utils
         update-types: ["version-update:semver-major"]
+    labels: [dependencies, python]
     commit-message:
       prefix: deps

@@ -34,6 +34,10 @@ Definitions (``scored`` = items that did not error; rates are fractions in
   p50/p95/max. ``total_cost_usd`` and ``total_tokens`` include errored items
   (model calls made before a failure are still billed);
   ``errored_cost_usd`` is their share.
+* ``intervals``: every rate above (``RATE_KEYS``) as ``{rate, n, ci_low,
+  ci_high}`` with its 95% Wilson interval; ``per_class_intervals`` the same
+  for each class's precision and recall. F1, kappa, cost and latency are
+  not proportions and get no interval.
 """
 
 from __future__ import annotations
@@ -42,15 +46,13 @@ import math
 from itertools import combinations
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from lg_sotf.domain.rates import rate_interval
+from lg_sotf.domain.rates import ratio as ratio
 from lg_sotf.eval.dataset import DISPOSITIONS
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.models.vocabulary import HIGH_SEVERITIES
 
 Pair = Tuple[str, str]
-
-
-def ratio(numerator: int, denominator: int) -> Optional[float]:
-    return None if denominator == 0 else numerator / denominator
 
 
 def confusion_matrix(pairs: Iterable[Pair], classes: Sequence[str] = DISPOSITIONS) -> Dict[str, Dict[str, int]]:
@@ -156,59 +158,106 @@ def _mean(values: Sequence[float]) -> Optional[float]:
     return (sum(values) / len(values)) if values else None
 
 
+def _pairs(scored: Sequence[ItemResult]) -> List[Pair]:
+    return [(r.expected, r.predicted or "inconclusive") for r in scored]
+
+
+def missed_malicious(malicious: Sequence[ItemResult]) -> List[ItemResult]:
+    """Expected-malicious items automation closed as benign on its own (the headline false negatives)."""
+    return [r for r in malicious if r.auto_closed and r.disposition == "benign"]
+
+
+def rate_counts(results: Sequence[ItemResult]) -> Dict[str, Tuple[int, int]]:
+    """``(numerator, denominator)`` of every rate :func:`compute_metrics` reports, keyed as in ``RATE_KEYS``."""
+    scored = [r for r in results if r.scored]
+    malicious = [r for r in scored if r.expected == "malicious"]
+    benign = [r for r in scored if r.expected == "benign"]
+    pairs = _pairs(scored)
+    routed = [r for r in scored if r.expected_route is not None]
+    escalation_labelled = [r for r in scored if r.expected_escalation is not None]
+    return {
+        "error_rate": (len(results) - len(scored), len(results)),
+        "malicious_false_negative_rate": (len(missed_malicious(malicious)), len(malicious)),
+        "benign_auto_close_rate": (sum(1 for r in benign if r.auto_closed and r.disposition == "benign"), len(benign)),
+        "benign_auto_response_rate": (sum(1 for r in benign if r.route == "plan_response"), len(benign)),
+        "auto_close_rate": (sum(1 for r in scored if r.auto_closed), len(scored)),
+        "escalation_rate": (sum(1 for r in scored if r.escalated), len(scored)),
+        "approval_request_rate": (sum(1 for r in scored if r.approval_requested), len(scored)),
+        "inconclusive_rate": (sum(1 for _, p in pairs if p == "inconclusive"), len(scored)),
+        "model_refusal_rate": (sum(1 for r in scored if r.model_refused), len(scored)),
+        "accuracy": (sum(1 for e, p in pairs if e == p), len(pairs)),
+        "route_accuracy": (sum(1 for r in routed if r.route == r.expected_route), len(routed)),
+        "escalation_accuracy": (
+            sum(1 for r in escalation_labelled if (r.escalated or r.approval_requested) == r.expected_escalation),
+            len(escalation_labelled),
+        ),
+    }
+
+
+RATE_KEYS: Tuple[str, ...] = tuple(rate_counts([]))
+
+
+def per_class_intervals(pairs: Sequence[Pair], classes: Sequence[str] = DISPOSITIONS) -> Dict[str, Dict[str, Any]]:
+    """Each class's precision (``tp`` of predicted) and recall (``tp`` of expected) with a Wilson interval."""
+    out: Dict[str, Dict[str, Any]] = {}
+    for cls in classes:
+        tp = sum(1 for e, p in pairs if e == cls and p == cls)
+        predicted = sum(1 for _, p in pairs if p == cls)
+        expected = sum(1 for e, _ in pairs if e == cls)
+        out[cls] = {
+            "precision": rate_interval(tp, predicted).model_dump(),
+            "recall": rate_interval(tp, expected).model_dump(),
+        }
+    return out
+
+
 def compute_metrics(results: Sequence[ItemResult]) -> Dict[str, Any]:
     """Every metric of one result set (see the module docstring for definitions)."""
     total = len(results)
     scored = [r for r in results if r.scored]
-    errors = total - len(scored)
     malicious = [r for r in scored if r.expected == "malicious"]
-    benign = [r for r in scored if r.expected == "benign"]
-    pairs: List[Pair] = [(r.expected, r.predicted or "inconclusive") for r in scored]
+    pairs = _pairs(scored)
     scores = per_class_scores(pairs)
-
-    missed = [r for r in malicious if r.auto_closed and r.disposition == "benign"]
-    benign_closed = [r for r in benign if r.auto_closed and r.disposition == "benign"]
-    benign_response = [r for r in benign if r.route == "plan_response"]
-    routed = [r for r in scored if r.expected_route is not None]
-    escalation_labelled = [r for r in scored if r.expected_escalation is not None]
+    counts = rate_counts(results)
+    rates = {key: ratio(*c) for key, c in counts.items()}
+    missed = missed_malicious(malicious)
     latencies = [r.latency_s for r in scored]
 
     return {
         "items": total,
         "scored": len(scored),
-        "errors": errors,
-        "error_rate": ratio(errors, total),
+        "errors": total - len(scored),
+        "error_rate": rates["error_rate"],
         "malicious_items": len(malicious),
-        "benign_items": len(benign),
+        "benign_items": sum(1 for r in scored if r.expected == "benign"),
         "malicious_false_negatives": len(missed),
-        "malicious_false_negative_rate": ratio(len(missed), len(malicious)),
+        "malicious_false_negative_rate": rates["malicious_false_negative_rate"],
         "missed_malicious_ids": [r.item_id for r in missed],
-        "benign_auto_close_rate": ratio(len(benign_closed), len(benign)),
-        "benign_auto_response_rate": ratio(len(benign_response), len(benign)),
+        "benign_auto_close_rate": rates["benign_auto_close_rate"],
+        "benign_auto_response_rate": rates["benign_auto_response_rate"],
         "high_severity_auto_closed_benign": sum(
             1 for r in scored if r.auto_closed and r.severity in HIGH_SEVERITIES and r.disposition != "malicious"
         ),
         "high_severity_auto_closed_malicious": sum(
             1 for r in scored if r.auto_closed and r.severity in HIGH_SEVERITIES and r.disposition == "malicious"
         ),
-        "auto_close_rate": ratio(sum(1 for r in scored if r.auto_closed), len(scored)),
-        "escalation_rate": ratio(sum(1 for r in scored if r.escalated), len(scored)),
-        "approval_request_rate": ratio(sum(1 for r in scored if r.approval_requested), len(scored)),
-        "inconclusive_rate": ratio(sum(1 for _, p in pairs if p == "inconclusive"), len(scored)),
-        "model_refusal_rate": ratio(sum(1 for r in scored if r.model_refused), len(scored)),
-        "accuracy": ratio(sum(1 for e, p in pairs if e == p), len(pairs)),
+        "auto_close_rate": rates["auto_close_rate"],
+        "escalation_rate": rates["escalation_rate"],
+        "approval_request_rate": rates["approval_request_rate"],
+        "inconclusive_rate": rates["inconclusive_rate"],
+        "model_refusal_rate": rates["model_refusal_rate"],
+        "accuracy": rates["accuracy"],
         "per_class": scores,
         "macro_f1": macro_f1(scores),
         "confusion_matrix": confusion_matrix(pairs),
         "kappa_vs_expected": cohen_kappa([e for e, _ in pairs], [p for _, p in pairs]),
         "inter_annotator_kappa": inter_annotator_kappa(results),
-        "route_accuracy": ratio(sum(1 for r in routed if r.route == r.expected_route), len(routed)),
-        "route_labelled_items": len(routed),
-        "escalation_accuracy": ratio(
-            sum(1 for r in escalation_labelled if (r.escalated or r.approval_requested) == r.expected_escalation),
-            len(escalation_labelled),
-        ),
-        "escalation_labelled_items": len(escalation_labelled),
+        "route_accuracy": rates["route_accuracy"],
+        "route_labelled_items": counts["route_accuracy"][1],
+        "escalation_accuracy": rates["escalation_accuracy"],
+        "escalation_labelled_items": counts["escalation_accuracy"][1],
+        "intervals": {key: rate_interval(*c).model_dump() for key, c in counts.items()},
+        "per_class_intervals": per_class_intervals(pairs),
         "total_cost_usd": round(sum(r.cost_usd for r in results), 6),
         "errored_cost_usd": round(sum(r.cost_usd for r in results if not r.scored), 6),
         "total_tokens": sum(r.total_tokens for r in results),
