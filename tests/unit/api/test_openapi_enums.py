@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 import pytest
 
 from lg_sotf.api import schemas
+from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
 from lg_sotf.models import vocabulary as v
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -29,6 +30,15 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("MeOut", "scopes", v.SCOPES),
     ("ApiKeyOut", "scopes", v.SCOPES),
     ("ApiKeyCreatedOut", "scopes", v.SCOPES),
+    # alerts
+    ("AlertOut", "severity", v.SEVERITIES),
+    ("AlertOut", "status", v.ALERT_STATUSES),
+    ("AlertOut", "disposition", v.DISPOSITIONS),
+    ("AlertDetailOut", "severity", v.SEVERITIES),
+    ("AlertDetailOut", "status", v.ALERT_STATUSES),
+    ("AlertDetailOut", "disposition", v.DISPOSITIONS),
+    ("AlertEventOut", "actor_type", EVENT_ACTOR_TYPES),
+    ("ReprocessOut", "status", v.ALERT_STATUSES),
 ]
 
 

@@ -652,6 +652,11 @@
           "disposition": {
             "anyOf": [
               {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
                 "type": "string"
               },
               {
@@ -717,6 +722,13 @@
             "type": "object"
           },
           "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Severity",
             "type": "string"
           },
@@ -741,6 +753,15 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -804,6 +825,11 @@
             "title": "Actor Id"
           },
           "actor_type": {
+            "enum": [
+              "system",
+              "user",
+              "agent"
+            ],
             "title": "Actor Type",
             "type": "string"
           },
@@ -913,6 +939,11 @@
           "disposition": {
             "anyOf": [
               {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
                 "type": "string"
               },
               {
@@ -961,6 +992,13 @@
             "title": "Priority"
           },
           "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Severity",
             "type": "string"
           },
@@ -985,6 +1023,15 @@
             "title": "Source Name"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -5195,6 +5242,15 @@
             "type": "string"
           },
           "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
             "title": "Status",
             "type": "string"
           }

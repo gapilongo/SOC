@@ -277,10 +277,10 @@ class AlertOut(Out):
     source_alert_id: str
     fingerprint: str
     title: str
-    severity: str
+    severity: SeverityStr
     category: Optional[str] = None
-    status: str
-    disposition: Optional[str] = None
+    status: AlertStatusStr
+    disposition: Optional[DispositionStr] = None
     confidence: Optional[float] = None
     threat_score: Optional[float] = None
     priority: Optional[int] = None
@@ -307,7 +307,7 @@ class AlertEventOut(Out):
     ts: datetime
     node: Optional[str] = None
     event_type: str
-    actor_type: str
+    actor_type: EventActorTypeStr
     actor_id: Optional[str] = None
     data: Dict[str, Any] = Field(default_factory=dict)
 
@@ -326,7 +326,7 @@ class NoteIn(In):
 
 class ReprocessOut(BaseModel):
     alert_id: str
-    status: str
+    status: AlertStatusStr
     entry_id: str
 
 

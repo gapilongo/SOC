@@ -1659,7 +1659,7 @@ export interface components {
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
-            disposition?: string | null;
+            disposition?: ("malicious" | "benign" | "inconclusive") | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Findings */
             findings?: components["schemas"]["FindingOut"][];
@@ -1687,8 +1687,11 @@ export interface components {
             raw?: {
                 [key: string]: unknown;
             };
-            /** Severity */
-            severity: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
             /** Source Alert Id */
             source_alert_id: string;
             /** Source Id */
@@ -1698,8 +1701,11 @@ export interface components {
              * @description The source's name; null once it is deleted.
              */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -1720,8 +1726,11 @@ export interface components {
         AlertEventOut: {
             /** Actor Id */
             actor_id?: string | null;
-            /** Actor Type */
-            actor_type: string;
+            /**
+             * Actor Type
+             * @enum {string}
+             */
+            actor_type: "system" | "user" | "agent";
             /** Alert Id */
             alert_id: string;
             /** Data */
@@ -1753,7 +1762,7 @@ export interface components {
             /** Confidence */
             confidence?: number | null;
             /** Disposition */
-            disposition?: string | null;
+            disposition?: ("malicious" | "benign" | "inconclusive") | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Fingerprint */
             fingerprint: string;
@@ -1771,8 +1780,11 @@ export interface components {
             occurred_at: string;
             /** Priority */
             priority?: number | null;
-            /** Severity */
-            severity: string;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
             /** Source Alert Id */
             source_alert_id: string;
             /** Source Id */
@@ -1782,8 +1794,11 @@ export interface components {
              * @description The source's name; null once it is deleted.
              */
             source_name?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
             /** Summary */
             summary?: {
                 [key: string]: unknown;
@@ -3327,8 +3342,11 @@ export interface components {
             alert_id: string;
             /** Entry Id */
             entry_id: string;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
         };
         /** ResponsePreviewOut */
         ResponsePreviewOut: {
