@@ -46,7 +46,7 @@ import-lint`). What each package owns is in the
 | Domain (no I/O) | `domain` | routing, phishing and suppression policy, URL facts, indicator extraction; the event publisher and connector ports |
 | Value types | `models` | canonical alert and domain vocabulary |
 | Network kernel | `net` | SSRF egress policy (`net/egress.py`), TLS verification and the shared context cache (`net/tls.py`), Retry-After (`net/retry.py`) |
-| Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics, tracing; crypto, hashing, redaction, webhook signing; typed settings |
+| Kernel | `errors` : `observability` : `security` : `settings` | root errors; logging, metrics; crypto, hashing, redaction, webhook signing; typed settings |
 
 Some modules still sit in the wrong layer (for example the action catalog
 in `services/response.py`); `pyproject.toml` lists each such import as an
@@ -387,9 +387,9 @@ everywhere. Every transition is written to `audit_log`.
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`.
-* Tracing: an OpenTelemetry tracer provider with an OTLP exporter is set up when
-  `observability.otlp_endpoint` is set, but no code creates spans yet and no
-  library instrumentation is installed, so nothing is exported today.
+* No tracing: the unused OpenTelemetry exporter was removed
+  ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing
+  back). `observability.otlp_endpoint` is ignored and logs a warning.
 
 ## 14. Testing conventions
 

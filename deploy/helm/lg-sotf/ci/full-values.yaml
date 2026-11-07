@@ -25,8 +25,8 @@ settings:
     cors_origins: ["https://soc.example.com"]
 
 extraEnv:
-  - name: LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT
-    value: http://otel-collector.observability:4318
+  - name: HTTPS_PROXY
+    value: http://proxy.internal:3128
 
 serviceAccount:
   annotations:

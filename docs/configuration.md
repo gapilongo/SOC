@@ -278,15 +278,15 @@ Application keys. Required in staging and production.
 
 ### `observability`
 
-Logging, tracing and metrics.
+Logging and metrics.
 
 | Setting | Environment variable | Type | Default | Description |
 |---|---|---|---|---|
 | `observability.log_level` | `LG_SOTF_OBSERVABILITY__LOG_LEVEL` | string | `INFO` | Log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
 | `observability.log_format` | `LG_SOTF_OBSERVABILITY__LOG_FORMAT` | `json` \| `console` | `json` | `json` (default) or `console`. |
 | `observability.metrics_enabled` | `LG_SOTF_OBSERVABILITY__METRICS_ENABLED` | boolean | `true` | Reserved. Not read by any process in this release: metrics are always exposed (API `/metrics` behind `api.metrics_token`, worker/scheduler health port). |
-| `observability.otlp_endpoint` | `LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT` | string (optional) | unset | OTLP/HTTP endpoint for traces; tracing is off when unset. |
-| `observability.service_name` | `LG_SOTF_OBSERVABILITY__SERVICE_NAME` | string | `lg-sotf` | `service.name` of traces and a static field of every log line. |
+| `observability.otlp_endpoint` | `LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT` | string (optional) | unset | Deprecated and ignored: tracing was removed (ADR-0008). A value is still accepted and logs a warning at startup. |
+| `observability.service_name` | `LG_SOTF_OBSERVABILITY__SERVICE_NAME` | string | `lg-sotf` | A static field of every log line and the Redis client name. |
 
 ### `response`
 

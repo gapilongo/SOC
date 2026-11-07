@@ -103,6 +103,23 @@ All notable changes to this project are documented here. The format follows
 - Web UI: while the phone menu is open, keyboard focus stays inside it, and
   Escape closes it.
 
+### Deprecated
+
+- `observability.otlp_endpoint` (`LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT`) is
+  ignored. It is still accepted, so existing configurations load, and every
+  process logs `observability.otlp_endpoint_deprecated` at startup while it
+  is set. Remove it; a later release drops the setting.
+
+### Removed
+
+- OpenTelemetry tracing. The exporter it configured never sent anything: no
+  code created spans. The OpenTelemetry packages (and their protobuf
+  dependencies) are no longer installed, and `configs/*.yaml`, the
+  production compose file, `.env.example` and the Helm example no longer
+  mention an OTLP endpoint. Logs and Prometheus metrics are unchanged.
+  `docs/adr/0008-remove-tracing.md` records the decision and how tracing
+  would be added back.
+
 ### Fixed
 
 - An LLM call that failed unexpectedly no longer leaves its token estimate
