@@ -88,6 +88,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Building the web app from source (`src/lg_front`) now needs Node.js
+  22.12 or later; Node 20 is no longer supported. The frontend image
+  already built on Node 22, so container deployments are unaffected.
 - The command line now applies the API's password policy to the
   passwords it sets (`lg-sotf create-admin`, `lg-sotf create-tenant
   --admin-email` and the bootstrap admin that `lg-sotf migrate` creates

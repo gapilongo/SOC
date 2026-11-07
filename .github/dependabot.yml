@@ -41,17 +41,8 @@ updates:
         update-types: ["version-update:semver-major"]
       - dependency-name: "@eslint/js"
         update-types: ["version-update:semver-major"]
-      # Need Node >=22; the Frontend build job runs Node 20.
-      - dependency-name: vitest
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@vitest/coverage-v8"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@testing-library/jest-dom"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "@axe-core/playwright"
-        versions: [">=4.14.0"]
       # jsdom 27+ computes accessible names without the spaces between inline elements that
-      # the component tests assert; needs an accessible-name review (30+ also needs Node 22).
+      # the component tests assert; needs an accessible-name review (30+ also needs Node 22.22+).
       - dependency-name: jsdom
         update-types: ["version-update:semver-major"]
       # TypeScript 6/7: openapi-typescript 7.13 peers on typescript ^5, typescript-eslint on <6.1.
