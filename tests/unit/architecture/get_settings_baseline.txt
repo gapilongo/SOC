@@ -21,5 +21,3 @@ queue/dlq.py::DeadLetterQueue.__init__
 queue/events.py::EventBus.__init__
 queue/producer.py::WorkQueue.__init__
 queue/redis.py::create_redis
-security/crypto.py::SecretBox.from_settings
-security/hashing.py::indicator_hmac_key

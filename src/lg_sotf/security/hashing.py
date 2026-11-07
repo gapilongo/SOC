@@ -20,7 +20,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 
 from lg_sotf.security.insecure import is_insecure_secret
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 API_KEY_PREFIX = "lgk"
 _API_KEY_RE = re.compile(r"^lgk_(?P<id>[0-9a-f]{32})_(?P<secret>[A-Za-z0-9_-]{32,128})$")
@@ -85,14 +85,13 @@ def normalize_indicator(indicator_type: str, value: str) -> str:
     return v
 
 
-def indicator_hmac_key(settings: Optional[Settings] = None) -> bytes:
-    s = settings or get_settings()
-    if s.security.indicator_hmac_key is None:
+def indicator_hmac_key(settings: Settings) -> bytes:
+    if settings.security.indicator_hmac_key is None:
         raise SecurityConfigError("security.indicator_hmac_key is not configured")
-    value = s.security.indicator_hmac_key.get_secret_value()
+    value = settings.security.indicator_hmac_key.get_secret_value()
     if len(value.encode("utf-8")) < 16:
         raise SecurityConfigError("security.indicator_hmac_key must be at least 16 bytes")
-    if s.is_production and is_insecure_secret(value):
+    if settings.is_production and is_insecure_secret(value):
         raise SecurityConfigError(
             "security.indicator_hmac_key is a published development/test key; generate a new one"
         )
@@ -106,8 +105,16 @@ def hmac_indicator(
     key: Optional[bytes] = None,
     settings: Optional[Settings] = None,
 ) -> str:
-    """HMAC-SHA256 of a normalised indicator, domain-separated by type."""
-    k = key if key is not None else indicator_hmac_key(settings)
+    """HMAC-SHA256 of a normalised indicator, domain-separated by type.
+
+    Keyed by ``key``, or else by the ``indicator_hmac_key`` of ``settings``; one of them is required.
+    """
+    if key is not None:
+        k = key
+    elif settings is not None:
+        k = indicator_hmac_key(settings)
+    else:
+        raise TypeError("hmac_indicator() needs key= or settings=")
     itype = indicator_type.strip().lower()
     msg = f"{itype}\x1f{normalize_indicator(itype, value)}".encode()
     return hmac.new(k, msg, hashlib.sha256).hexdigest()

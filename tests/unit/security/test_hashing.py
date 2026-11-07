@@ -84,6 +84,11 @@ def test_hmac_key_from_settings(make_settings: Callable[..., Settings]) -> None:
     )
 
 
+def test_hmac_needs_a_key_or_settings() -> None:
+    with pytest.raises(TypeError, match="key= or settings="):
+        hmac_indicator("ip", "1.2.3.4")
+
+
 def test_missing_or_weak_hmac_key(make_settings: Callable[..., Settings]) -> None:
     with pytest.raises(SecurityConfigError):
         hmac_indicator("ip", "1.2.3.4", settings=Settings(_env_file=None))
