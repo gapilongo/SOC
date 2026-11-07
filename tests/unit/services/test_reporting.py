@@ -14,6 +14,7 @@ import pytest
 
 from lg_sotf.db.repos.feedback import FeedbackStats
 from lg_sotf.db.repos.reports import AccuracyGroupRow, DetectionRow, EscalationDayRow, ValueDayRow
+from lg_sotf.domain.rates import ratio
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.services.report_render import (
     REPORT_CSP,
@@ -39,12 +40,10 @@ from lg_sotf.services.reporting import (
     hours_saved,
     model_key,
     month_window,
-    ratio,
     resolve_reporting_policy,
     resolve_window,
     suppression_match,
     value_metrics,
-    wilson_interval,
 )
 
 NOW = datetime(2026, 9, 30, 12, tzinfo=UTC)
@@ -58,18 +57,6 @@ def test_ratio_and_hours_saved_edges() -> None:
     assert ratio(0, 4) == 0.0 and ratio(3, 4) == 0.75
     assert hours_saved(0, 15) == 0.0 and hours_saved(-3, 15) == 0.0 and hours_saved(10, 0) == 0.0
     assert hours_saved(10, 15) == 2.5 and hours_saved(7, 20) == pytest.approx(2.33)
-
-
-def test_wilson_interval() -> None:
-    assert wilson_interval(0, 0) is None
-    lo, hi = wilson_interval(0, 10)  # type: ignore[misc]
-    assert lo == 0.0 and 0.25 < hi < 0.35
-    lo, hi = wilson_interval(10, 10)  # type: ignore[misc]
-    assert 0.65 < lo < 0.75 and hi == 1.0
-    lo, hi = wilson_interval(50, 100)  # type: ignore[misc]
-    assert lo == pytest.approx(0.4038, abs=1e-3) and hi == pytest.approx(0.5962, abs=1e-3)
-    with pytest.raises(ValueError):
-        wilson_interval(3, 2)
 
 
 def test_reporting_policy_defaults_and_validation() -> None:

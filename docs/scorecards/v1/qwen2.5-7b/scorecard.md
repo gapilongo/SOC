@@ -34,17 +34,17 @@ Auto-close precision: of the items automation closed on its own, the share whose
 
 ## Per class
 
-Predicted disposition against the expected one (an escalated item counts as the analysis verdict, `inconclusive` without one).
+Predicted disposition against the expected one (an escalated item counts as the analysis verdict, `inconclusive` without one). Precision and recall carry k of n and a 95% Wilson interval; F1 is not a proportion and has none.
 
 | Dataset | Class | Precision | Recall | F1 | Support | Predicted |
 |---|---|---|---|---|---|---|
-| `synthetic_v1` | malicious | 1.000 | 0.571 | 0.727 | 35 | 20 |
-| `synthetic_v1` | benign | 0.808 | 1.000 | 0.894 | 21 | 26 |
-| `synthetic_v1` | inconclusive | 0.389 | 0.875 | 0.538 | 8 | 18 |
+| `synthetic_v1` | malicious | 100.0% (20 of 20; 95% CI 83.9% to 100.0%) | 57.1% (20 of 35; 95% CI 40.9% to 72.0%) | 0.727 | 35 | 20 |
+| `synthetic_v1` | benign | 80.8% (21 of 26; 95% CI 62.1% to 91.5%) | 100.0% (21 of 21; 95% CI 84.5% to 100.0%) | 0.894 | 21 | 26 |
+| `synthetic_v1` | inconclusive | 38.9% (7 of 18; 95% CI 20.3% to 61.4%) | 87.5% (7 of 8; 95% CI 52.9% to 97.8%) | 0.538 | 8 | 18 |
 | `synthetic_v1` | macro F1 | | | 0.720 | | |
-| `phishing_v1` | malicious | 1.000 | 0.833 | 0.909 | 24 | 20 |
-| `phishing_v1` | benign | 0.500 | 0.545 | 0.522 | 11 | 12 |
-| `phishing_v1` | inconclusive | 0.286 | 0.500 | 0.364 | 4 | 7 |
+| `phishing_v1` | malicious | 100.0% (20 of 20; 95% CI 83.9% to 100.0%) | 83.3% (20 of 24; 95% CI 64.1% to 93.3%) | 0.909 | 24 | 20 |
+| `phishing_v1` | benign | 50.0% (6 of 12; 95% CI 25.4% to 74.6%) | 54.5% (6 of 11; 95% CI 28.0% to 78.7%) | 0.522 | 11 | 12 |
+| `phishing_v1` | inconclusive | 28.6% (2 of 7; 95% CI 8.2% to 64.1%) | 50.0% (2 of 4; 95% CI 15.0% to 85.0%) | 0.364 | 4 | 7 |
 | `phishing_v1` | macro F1 | | | 0.598 | | |
 
 ## Cost and latency per item

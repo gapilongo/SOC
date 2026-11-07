@@ -69,6 +69,10 @@ function block(overrides: Partial<AccuracyBlock> = {}): AccuracyBlock {
     false_positive_rate: 1 / 3,
     ai_inconclusive: 1,
     ai_inconclusive_rate: 1 / 6,
+    agreement_rate_ci: { rate: 2 / 6, n: 6, ci_low: 0.0968, ci_high: 0.7004 },
+    false_negative_rate_ci: { rate: 2 / 3, n: 3, ci_low: 0.2077, ci_high: 0.9384 },
+    false_positive_rate_ci: { rate: 1 / 3, n: 3, ci_low: 0.0616, ci_high: 0.7923 },
+    ai_inconclusive_rate_ci: { rate: 1 / 6, n: 6, ci_low: 0.0301, ci_high: 0.5636 },
     ...overrides,
   };
 }
@@ -81,13 +85,13 @@ const ACCURACY: AccuracyReportOut = {
   low_score_below: 30,
   high_score_from: 80,
   overall: block(),
-  by_model: [{ model: 'anthropic/claude-x', accuracy: block({ samples: 2 }) }],
+  by_model: [{ model: 'anthropic/claude-x', accuracy: block({ samples: 2, agreement_rate_ci: undefined, false_negative_rate_ci: undefined }) }],
   feedback: {
     total: 8,
     by_decision: {},
-    triage_correct: { rate: 2 / 3, samples: 3, status: 'insufficient_data' },
+    triage_correct: { rate: 2 / 3, samples: 3, status: 'insufficient_data', n: 3, ci_low: 0.2077, ci_high: 0.9384 },
     analysis_accurate: { rate: 0.5, samples: 2, status: 'insufficient_data' },
-    correlation_helpful: { rate: null, samples: 0, status: 'insufficient_data' },
+    correlation_helpful: { rate: null, samples: 0, status: 'insufficient_data', n: 0, ci_low: null, ci_high: null },
     avg_review_duration_s: null,
   },
   notes: [],
@@ -102,6 +106,7 @@ function detection(overrides: Partial<DetectionOut> = {}): DetectionOut {
     decided: 12,
     benign: 12,
     benign_rate: 1,
+    benign_rate_ci: { rate: 1, n: 12, ci_low: 0.7576, ci_high: 1 },
     malicious: 0,
     auto_closed: 8,
     analyst_false_positive: 4,
@@ -155,7 +160,14 @@ describe('ReportsPage', () => {
   it('flags insufficient accuracy data and shows the confusion matrix', async () => {
     await renderPage('viewer');
     await userEvent.click(screen.getByRole('tab', { name: 'Accuracy' }));
-    expect(await screen.findByText(/Insufficient data: 6 analyst-decided alerts/)).toBeInTheDocument();
+    expect(await screen.findByText(/Not enough data \(n=6; at least 30 needed\)/)).toBeInTheDocument();
+    // Every rate shows n and its 95% Wilson interval; a model block without one (older API) shows the bare rate.
+    expect(screen.getByText(/2 of 3 alerts an analyst confirmed malicious\. 95% CI 20\.8% to 93\.8%/)).toBeInTheDocument();
+    expect(screen.getByText(/2 of 6 decisions\. 95% CI 9\.7% to 70\.0%/)).toBeInTheDocument();
+    expect(screen.getByText(/Inconclusive on 16\.7% \(1 of 6; 95% CI 3\.0% to 56\.4%\) of all/)).toBeInTheDocument();
+    expect(screen.getByText('2 of 3; 95% CI 20.8% to 93.8%')).toBeInTheDocument();
+    expect(screen.getByText('Not enough data (n=2; at least 30 needed)')).toBeInTheDocument();
+    expect(screen.getByText('Not enough data (n=0)')).toBeInTheDocument();
     expect(screen.getAllByText('66.7%').length).toBeGreaterThan(0);
     expect(screen.getByText('anthropic/claude-x')).toBeInTheDocument();
     expect(screen.getByText(/false negatives/)).toBeInTheDocument();
@@ -177,5 +189,6 @@ describe('ReportsPage', () => {
     await userEvent.click(screen.getByRole('tab', { name: 'Detections' }));
     await screen.findByText('Noisy rule');
     expect(screen.queryByRole('button', { name: 'Propose suppression' })).toBeNull();
+    expect(screen.getAllByText('12 of 12; 95% CI 75.8% to 100.0%')).toHaveLength(2);
   });
 });

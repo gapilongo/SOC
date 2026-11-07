@@ -30,7 +30,7 @@ they were ingested.
 | `handled_without_human` | Closed, with no analyst decision on the alert and no person approving or rejecting one of its response actions. Includes alerts closed by a suppression rule or by a cached analyst verdict. |
 | `needed_human` | An analyst decided it, a person approved or rejected one of its actions, or it is waiting for an analyst or for an approval. |
 | `in_progress` | Neither yet: new, queued, processing or failed. |
-| `handled_without_human_rate` | `handled_without_human / (handled_without_human + needed_human)`. Alerts in progress are left out, not counted either way. `null` when the denominator is 0. |
+| `handled_without_human_rate` | `handled_without_human / (handled_without_human + needed_human)`. Alerts in progress are left out, not counted either way. `null` when the denominator is 0. `handled_without_human_rate_ci` adds `n` and the 95% Wilson interval. |
 | `analyst_hours_saved` | `handled_without_human x reporting.minutes_per_alert / 60` (see below). |
 | `auto_closed_benign` | Handled without a human and closed as benign. |
 | `auto_contained` | Handled without a human and closed as malicious after a policy-chosen response whose actions completed through a connector. |
@@ -93,10 +93,15 @@ other than `needs_more_info`) was recorded in the window.
 * `agreement_rate`: AI class equals analyst class, over all samples (an
   inconclusive AI verdict never agrees). `false_positive_rate`: AI said
   malicious on analyst-benign samples. `ai_inconclusive_rate`.
-* Rates come with a **95% Wilson interval** (`*_ci95`) and their
-  denominators. Fewer than **30** samples is `status: "insufficient_data"`:
-  the numbers are shown but the UI and the monthly report say plainly that
-  they should not be relied on.
+* Every rate comes with its sample size and a **95% Wilson interval**: next
+  to each `<name>_rate` field is `<name>_rate_ci`, `{rate, n, ci_low,
+  ci_high}` (`agreement_rate_ci`, `false_negative_rate_ci`,
+  `false_positive_rate_ci`, `ai_inconclusive_rate_ci`; the feedback rates
+  carry `n`, `ci_low` and `ci_high` themselves). The older
+  `agreement_ci95` and `false_negative_ci95` pairs are unchanged. Fewer than
+  **30** samples is `status: "insufficient_data"`: the numbers are shown,
+  and the UI and the monthly report say "Not enough data (n=12; at least 30
+  needed)", the wording every report uses for a small sample.
 * **By model:** `provider/model` of the analysis agent (else the triage
   agent) recorded on the alert. Since this release every agent's provider
   and model are stored in `alerts.summary.llm_usage.by_agent.<agent>`
@@ -120,7 +125,7 @@ automation would close.
 A **detection** is a source plus its rule name (`normalized.rule_name`; the
 alert title when the source sends none, shown as such). For alerts ingested
 in the window, per detection: `volume`, `decided` (a disposition exists),
-`benign`, `benign_rate` (benign / decided), `malicious`, `auto_closed`
+`benign`, `benign_rate` (benign / decided; `benign_rate_ci` adds `n` and the 95% Wilson interval), `malicious`, `auto_closed`
 (closed benign without an analyst), `analyst_false_positive`,
 `analyst_benign_positive`, `analyst_true_positive`, the median and maximum
 severity and the highest severity an analyst confirmed benign. The 200
@@ -161,7 +166,8 @@ in the window.
   monthly report* shows a printable page (Print or save as PDF) and
   *Download HTML* saves the self-contained file.
 * `format=csv` on `/reports/value` (one row per day, every value metric) and
-  `/reports/detections` (one row per detection). Text cells that a
+  `/reports/detections` (one row per detection). A rate's interval is three
+  columns at the end, `<rate>_n`, `<rate>_ci_low` and `<rate>_ci_high`. Text cells that a
   spreadsheet could evaluate as a formula (starting with `=`, `+`, `-`, `@`,
   tab or carriage return) are prefixed with `'`.
 
