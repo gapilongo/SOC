@@ -34,9 +34,24 @@ import math
 import random
 import re
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Type, TypeVar
+from typing import (
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -507,6 +522,29 @@ def _call_event(
     }
 
 
+@dataclass
+class _Spent:
+    """The tokens a call has used so far: what its reservation is settled with."""
+
+    tokens: int = 0
+
+
+@asynccontextmanager
+async def _reserved(budget: Optional[TokenBudget], reservation: Optional[Reservation]) -> AsyncIterator[_Spent]:
+    """Settle ``reservation`` with the tokens spent, however the call ends.
+
+    Settling in ``finally`` covers a result, a refusal, a provider error, cancellation (a node
+    timeout: the tokens used so far) and an exception raised after the model answered, so no
+    outcome leaves the estimate counted against the tenant's daily budget.
+    """
+    spent = _Spent()
+    try:
+        yield spent
+    finally:
+        if budget is not None and reservation is not None:
+            await _settle(budget, reservation, spent.tokens)
+
+
 async def _run_attempts(
     plan: _InvokePlan,
     schema: Type[T],
@@ -515,15 +553,14 @@ async def _run_attempts(
     settings: Settings,
     meter: _CallMeter,
     log: BoundLogger,
-    settle: Callable[[int], Awaitable[None]],
+    spent: _Spent,
 ) -> T:
     """The attempts of one call (a repair attempt only on the JSON text path), each metered and logged.
 
-    ``settle`` receives the tokens used so far whenever the call ends, cancellation included.
+    ``spent`` counts each reply's tokens as soon as they are known, before the reply is classified.
     """
     agent, model_id = meter.agent, meter.model_id
     attempt_messages = plan.messages
-    used_tokens = 0
     attempt = 0
     while True:
         attempt += 1
@@ -533,30 +570,27 @@ async def _run_attempts(
                 plan, attempt_messages, tier=tier, settings=settings, meter=meter, log=log, attempt=attempt
             )
         except BaseException as exc:
-            # Cancellation (node timeouts) must also hand the reservation back.
+            # Cancellation (node timeouts) is neither metered nor logged; _reserved settles it.
             if not isinstance(exc, asyncio.CancelledError):
                 _call_failed(exc, start, attempt, meter=meter, log=log)
-            await settle(used_tokens)
             raise
         latency_ms = round((time.perf_counter() - start) * 1000)
 
         if not isinstance(result, Mapping):
             meter.no_usage("invalid_output")
-            await settle(used_tokens)
             raise LLMOutputError(
                 f"{agent}: structured runnable returned {type(result).__name__}, expected a mapping", model=model_id
             )
-        outcome, value, error = _classify(result, schema, model_id, agent)
         samples = meter.samples(result.get("raw"))
+        spent.tokens += sum(sample.total_tokens for sample in samples)
+        outcome, value, error = _classify(result, schema, model_id, agent)
         cost = meter.call(samples, outcome)
-        used_tokens += sum(sample.total_tokens for sample in samples)
 
         event = _call_event(outcome, latency_ms, samples, cost, model_id)
         if plan.max_attempts > 1:
             event["attempt"] = attempt
         if error is None and value is not None:
             log.info("llm.call", **event)
-            await settle(used_tokens)
             return value
         if isinstance(error, LLMRefusal):
             event["refusal_category"] = error.category
@@ -564,7 +598,6 @@ async def _run_attempts(
         if attempt < plan.max_attempts and isinstance(error, LLMOutputError) and _repairable(error):
             attempt_messages = [*attempt_messages, repair_message(error, reply_text(result.get("raw")))]
             continue
-        await settle(used_tokens)
         raise error or LLMOutputError(f"{agent}: no structured output", model=model_id)
 
 
@@ -604,13 +637,9 @@ async def ainvoke_structured(
     reservation = await _reserve(
         budget, tenant_id, messages, getattr(s.llm, tier).max_tokens, budget_limit, meter=meter, log=log
     )
-    plan = _plan_invoke(model, schema, messages)
-
-    async def settle(tokens: int) -> None:
-        if reservation is not None and budget is not None:
-            await _settle(budget, reservation, tokens)
-
-    return await _run_attempts(plan, schema, tier=tier, settings=s, meter=meter, log=log, settle=settle)
+    async with _reserved(budget, reservation) as spent:
+        plan = _plan_invoke(model, schema, messages)
+        return await _run_attempts(plan, schema, tier=tier, settings=s, meter=meter, log=log, spent=spent)
 
 
 async def _settle(budget: TokenBudget, reservation: Reservation, actual: int) -> None:
