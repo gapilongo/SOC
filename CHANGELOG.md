@@ -84,7 +84,19 @@ All notable changes to this project are documented here. The format follows
   can create or revoke them, the organisation can only read its own, and no
   other tenant sees them (row-level security). Tenant exports include them
   (`tenant_grants.jsonl`, `organisations.jsonl`,
-  `organisation_members.jsonl`). Nothing uses grants yet.
+  `organisation_members.jsonl`).
+- MSSP organisation model, part 2 (reading under grants): a member of an
+  organisation acts in a customer tenant by sending `X-Tenant-ID` with their
+  own sign-in, when the customer granted the organisation access. Every read
+  route serves the customer's data under the grant's role (capped at the
+  member's own role) and answers 403 without a live grant; revoking a grant
+  takes effect on the next request, and each request is recorded in the
+  customer's audit log (`grant.tenant_access`). New endpoints:
+  `PUT /platform/organisations/{tenant_id}`, `/organisation/members`,
+  `GET /organisation/grants`, and `GET`/`POST /tenant/grants` with
+  `POST /tenant/grants/{id}/revoke` for the customer's admins. Giving and
+  revoking a grant is audited in both the customer's and the organisation's
+  chain. `GET /auth/me` returns `grant_id`. See docs/mssp.md.
 - OpenAI-compatible cloud APIs that refuse OpenAI's tool calling, such as
   DeepSeek's V4 thinking models, now work with the `openai` provider: set
   `llm.base_url` and `llm.structured_output: json_mode` (deploy variable

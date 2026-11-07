@@ -26,7 +26,9 @@ class Principal:
     """``{user_id | api_key_id, tenant_id, role, scopes, is_platform_admin}`` (contract section 10).
 
     ``tenant_id`` is the tenant the request acts on; it differs from
-    ``home_tenant_id`` only when a platform admin used ``X-Tenant-ID``.
+    ``home_tenant_id`` only when ``X-Tenant-ID`` was honoured: for a member
+    of an MSSP organisation acting under a grant (``grant_id`` set, the
+    grant's role, no platform powers), or for a platform admin.
     Users have a ``role``; API keys have ``scopes`` and no role. An OIDC
     identity without a provisioned local account has no ``user_id``.
     """
@@ -44,6 +46,7 @@ class Principal:
     is_platform_admin: bool = False
     expires_at: Optional[datetime] = None
     token_id: Optional[str] = None
+    grant_id: Optional[UUID] = None
 
     @property
     def is_user(self) -> bool:
@@ -56,6 +59,11 @@ class Principal:
     @property
     def overridden(self) -> bool:
         return self.tenant_id != self.home_tenant_id
+
+    @property
+    def delegated(self) -> bool:
+        """Acting in another tenant under a grant to the caller's organisation."""
+        return self.grant_id is not None
 
     @property
     def local_user_id(self) -> Optional[UUID]:
@@ -96,3 +104,7 @@ class Principal:
 
     def acting_on(self, tenant_id: str) -> Principal:
         return replace(self, tenant_id=tenant_id)
+
+    def under_grant(self, tenant_id: str, grant_id: UUID, role: Role) -> Principal:
+        """This principal acting in ``tenant_id`` through a grant: ``role`` and nothing more."""
+        return replace(self, tenant_id=tenant_id, grant_id=grant_id, role=role, is_platform_admin=False)

@@ -211,6 +211,8 @@ class MeOut(BaseModel):
     email: Optional[str] = None
     is_platform_admin: bool = False
     expires_at: Optional[datetime] = None
+    #: Set while acting in ``tenant_id`` under an MSSP organisation's grant (``role`` is the grant's).
+    grant_id: Optional[UUID] = None
 
 
 # ----------------------------------------------------------------- ingest

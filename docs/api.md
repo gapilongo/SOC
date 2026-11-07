@@ -127,11 +127,18 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
 
 ### Tenants and platform admins
 
-A principal acts on its own tenant. A platform admin
-(`users.is_platform_admin`) may send `X-Tenant-ID: <tenant>` to act on
-another tenant; every such request is recorded in that tenant's audit log
-(`platform_admin.tenant_access`). Anyone else sending a different
-`X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
+A principal acts on its own tenant. Two kinds of caller may send
+`X-Tenant-ID: <tenant>` to act on another tenant, and every such request is
+recorded in that tenant's audit log:
+
+* a member of an MSSP organisation that holds a live grant to that tenant
+  (`grant.tenant_access`): the caller has the grant's role, capped at their
+  own role, and no platform-admin powers (see docs/mssp.md, "Delegated
+  access"); `GET /auth/me` returns the `grant_id`;
+* otherwise a platform admin (`users.is_platform_admin`), with their own
+  role (`platform_admin.tenant_access`).
+
+Anyone else sending a different `X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
 get `403 tenant_suspended` (see docs/mssp.md). Under an
 override, rows the admin creates (suppression rules, API keys) carry no
 `created_by` (the admin's account belongs to the home tenant; the audit log

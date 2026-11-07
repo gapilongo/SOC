@@ -4911,6 +4911,153 @@
         "title": "FindingOut",
         "type": "object"
       },
+      "GrantIn": {
+        "additionalProperties": false,
+        "properties": {
+          "expires_at": {
+            "description": "In the future, at most 365 days ahead.",
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "organisation_id": {
+            "description": "The organisation's home tenant id.",
+            "pattern": "^[a-z0-9][a-z0-9_-]{1,62}$",
+            "title": "Organisation Id",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why, e.g. a contract or ticket reference.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "role": {
+            "description": "The role its staff get in this tenant (never above their own role).",
+            "enum": [
+              "viewer",
+              "analyst",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Grant one member of the organisation only.",
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "organisation_id",
+          "role",
+          "reason",
+          "expires_at"
+        ],
+        "title": "GrantIn",
+        "type": "object"
+      },
+      "GrantOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "organisation_id": {
+            "title": "Organisation Id",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "revoked_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked By"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "analyst",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "The customer tenant the grant opens.",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "organisation_id",
+          "role",
+          "reason",
+          "created_by",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "GrantOut",
+        "type": "object"
+      },
       "GuardrailOut": {
         "description": "Guardrail verdict: checked now for an action awaiting approval, as recorded for a blocked one.",
         "properties": {
@@ -5736,6 +5883,18 @@
             ],
             "title": "Expires At"
           },
+          "grant_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Id"
+          },
           "home_tenant_id": {
             "title": "Home Tenant Id",
             "type": "string"
@@ -5816,6 +5975,42 @@
           "auth_method"
         ],
         "title": "MeOut",
+        "type": "object"
+      },
+      "MemberOut": {
+        "properties": {
+          "added_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "user_id",
+          "created_at"
+        ],
+        "title": "MemberOut",
         "type": "object"
       },
       "MfaChallengeOut": {
@@ -6600,6 +6795,47 @@
           "available"
         ],
         "title": "OnboardingStepOut",
+        "type": "object"
+      },
+      "OrganisationIn": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "OrganisationIn",
+        "type": "object"
+      },
+      "OrganisationOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "The organisation's home tenant: its staff accounts and its audit chain.",
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "name",
+          "created_at"
+        ],
+        "title": "OrganisationOut",
         "type": "object"
       },
       "PageOut_ActionOut_": {
@@ -13216,6 +13452,133 @@
         ]
       }
     },
+    "/api/v1/organisation/grants": {
+      "get": {
+        "operationId": "organisation_grants_api_v1_organisation_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GrantOut"
+                  },
+                  "title": "Response Organisation Grants Api V1 Organisation Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "The tenants your organisation may act in",
+        "tags": [
+          "grants"
+        ]
+      }
+    },
+    "/api/v1/organisation/members": {
+      "get": {
+        "operationId": "list_members_api_v1_organisation_members_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MemberOut"
+                  },
+                  "title": "Response List Members Api V1 Organisation Members Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Staff who may act under the grants",
+        "tags": [
+          "grants"
+        ]
+      }
+    },
+    "/api/v1/organisation/members/{user_id}": {
+      "delete": {
+        "operationId": "remove_member_api_v1_organisation_members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove a staff account (and its own grants)",
+        "tags": [
+          "grants"
+        ]
+      },
+      "put": {
+        "operationId": "add_member_api_v1_organisation_members__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add a staff account",
+        "tags": [
+          "grants"
+        ]
+      }
+    },
     "/api/v1/platform/escalations": {
       "get": {
         "operationId": "list_escalations_api_v1_platform_escalations_get",
@@ -13290,6 +13653,58 @@
           }
         },
         "summary": "Open and claimed escalations of every tenant, soonest SLA first",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/organisations/{tenant_id}": {
+      "put": {
+        "operationId": "save_organisation_api_v1_platform_organisations__tenant_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrganisationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganisationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Make a tenant an MSSP organisation",
         "tags": [
           "platform"
         ]
@@ -14431,6 +14846,114 @@
         "summary": "Update or enable/disable a rule",
         "tags": [
           "suppressions"
+        ]
+      }
+    },
+    "/api/v1/tenant/grants": {
+      "get": {
+        "operationId": "list_grants_api_v1_tenant_grants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GrantOut"
+                  },
+                  "title": "Response List Grants Api V1 Tenant Grants Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Every grant this tenant gave (revoked included)",
+        "tags": [
+          "grants"
+        ]
+      },
+      "post": {
+        "description": "404 when the organisation (or ``user_id`` as one of its members) does not exist.",
+        "operationId": "create_grant_api_v1_tenant_grants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GrantIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Give an MSSP organisation a role here",
+        "tags": [
+          "grants"
+        ]
+      }
+    },
+    "/api/v1/tenant/grants/{grant_id}/revoke": {
+      "post": {
+        "operationId": "revoke_grant_api_v1_tenant_grants__grant_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "grant_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Grant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrantOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revoke a grant (effective at once)",
+        "tags": [
+          "grants"
         ]
       }
     },

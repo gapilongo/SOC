@@ -19,8 +19,16 @@ credential fingerprint). A credential that verifies is always accepted, so
 clients sharing a proxy address cannot lock each other out; a failing request
 from an address over its failure budget gets 429 instead of 401, and a
 credential that keeps failing is refused before it is checked again.
-A platform admin may act on another tenant with ``X-Tenant-ID``; every such
-request is written to that tenant's audit log.
+``X-Tenant-ID`` acts on another tenant for two kinds of caller, and every
+such request is written to that tenant's audit log:
+
+* a member of an MSSP organisation holding a live grant to that tenant
+  (``grant.tenant_access``). The grant is read on every request, so a
+  revoked or expired grant stops working at once. The caller gets the
+  grant's role, capped at their own role in the organisation, and no
+  platform-admin powers;
+* otherwise a platform admin (``platform_admin.tenant_access``), with their
+  own role, unchanged from before grants existed.
 """
 
 from __future__ import annotations
@@ -395,25 +403,54 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
     requested = conn.headers.get(TENANT_HEADER)
     if requested is None or requested == principal.home_tenant_id:
         return principal
-    if not principal.is_platform_admin:
-        raise forbidden("X-Tenant-ID is only honoured for platform admins")
     if not is_valid_tenant_id(requested):
         raise ApiError(400, "invalid_tenant", "X-Tenant-ID is not a valid tenant id")
+    delegated = await _under_grant(ctx, principal, requested)
+    if delegated is not None:
+        await _record_access(
+            ctx, conn, delegated, "grant.tenant_access",
+            organisation_id=principal.home_tenant_id, grant_id=str(delegated.grant_id), role=delegated.role,
+        )
+        log.info("auth.grant_access", home_tenant_id=principal.home_tenant_id, tenant_id=requested)
+        return delegated
+    if not principal.is_platform_admin:
+        raise forbidden("X-Tenant-ID needs a live grant to that tenant")
     tenant = await ctx.tenants.get(requested)
     if tenant is None:
         raise ApiError(404, "not_found", "tenant not found")
+    overridden = principal.acting_on(requested)
+    await _record_access(ctx, conn, overridden, "platform_admin.tenant_access")
+    log.info("auth.tenant_override", home_tenant_id=principal.home_tenant_id, tenant_id=requested)
+    return overridden
+
+
+async def _under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
+    """``principal`` acting in ``tenant_id`` under its organisation's strongest live grant, else ``None``."""
+    if principal.user_id is None or principal.role is None:
+        return None
+    grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, principal.user_id)
+    if grant is None:
+        return None
+    await _require_active_tenant(ctx, tenant_id)
+    role = min(grant.role, principal.role, key=lambda r: ROLE_RANK[r])
+    return principal.under_grant(tenant_id, grant.id, cast(Role, role))
+
+
+async def _record_access(
+    ctx: ApiContext, conn: HTTPConnection, principal: Principal, action: str, **details: object
+) -> None:
+    """Audit a request acting on another tenant, in that tenant's chain."""
     await AuditLogger(ctx.repos).record_event(
-        requested,
-        "platform_admin.tenant_access",
+        principal.tenant_id,
+        action,
         "tenant",
-        requested,
+        principal.tenant_id,
         actor_type=principal.actor_type,
         actor_id=principal.actor_id,
         details={
             "home_tenant_id": principal.home_tenant_id,
             "method": conn.scope.get("method", "WS"),
             "path": conn.url.path,
+            **details,
         },
     )
-    log.info("auth.tenant_override", home_tenant_id=principal.home_tenant_id, tenant_id=requested)
-    return principal.acting_on(requested)

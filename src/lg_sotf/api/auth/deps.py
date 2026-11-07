@@ -10,6 +10,8 @@ Access rules (contract section 10):
   escalations, approving actions) also need a provisioned user account, and
   refuse a platform admin acting on another tenant via ``X-Tenant-ID`` (the
   decision must be made by a member of that tenant);
+* endpoints that administer delegated access refuse a principal acting
+  under a grant (``no_grant``): only the customer gives or reads grants;
 * platform endpoints (tenant provisioning) need an admin user with the
   platform-admin flag.
 """
@@ -39,6 +41,7 @@ class Access:
     any_api_key: bool = False
     home_tenant_only: bool = False
     platform_admin: bool = False
+    no_grant: bool = False
     bucket: str = API_BUCKET
 
     def check(self, principal: Principal) -> None:
@@ -60,6 +63,8 @@ class Access:
             raise forbidden("requires a platform admin")
         if self.home_tenant_only and principal.overridden:
             raise forbidden("this action cannot be performed with an X-Tenant-ID override")
+        if self.no_grant and principal.delegated:
+            raise forbidden("this action is not available under a grant")
 
 
 def _limit(ctx: ApiContext, bucket: str) -> int:

@@ -222,6 +222,7 @@ async def me(request: Request, principal: Principal = Depends(require(ANY))) -> 
         email=principal.email,
         is_platform_admin=principal.is_platform_admin,
         expires_at=principal.expires_at,
+        grant_id=principal.grant_id,
     )
 
 

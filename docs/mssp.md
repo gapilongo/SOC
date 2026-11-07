@@ -38,6 +38,46 @@ you act on another tenant, an amber banner says so, every request carries
 (`platform_admin.tenant_access`), and live updates are off. **Return to ...**
 goes back to your home tenant.
 
+## Delegated access (organisations and grants)
+
+MSSP analysts do not need an account in every customer tenant. Their
+company is an *organisation*: a tenant of its own (its *home tenant*) whose
+staff accounts may act in customer tenants that granted it access.
+
+1. A platform admin makes the MSSP's tenant an organisation:
+   `PUT /platform/organisations/{tenant_id}` with `{"name": ...}`.
+2. An admin of that tenant lists the staff who may use its grants:
+   `PUT /organisation/members/{user_id}` (an account of the home tenant),
+   `DELETE /organisation/members/{user_id}`, `GET /organisation/members`.
+3. A customer's admin gives the organisation a role in their tenant:
+   `POST /tenant/grants` with `organisation_id`, `role`, `reason` and
+   `expires_at` (at most 365 days ahead), and optionally `user_id` to grant
+   one member only. `GET /tenant/grants` lists every grant the tenant gave,
+   revoked and expired ones included; `POST /tenant/grants/{id}/revoke`
+   ends one.
+4. A member sees where they may act (`GET /organisation/grants`) and acts
+   there by sending `X-Tenant-ID: <customer>` with their own sign-in.
+
+Under a grant the member has the grant's role, never more than their own
+role in the home tenant, and no platform-admin powers (a platform admin who
+is also a member and holds a grant acts under the grant). The grant is read
+on every request: a revoked or expired grant, a removed member or a
+suspended customer gets 403 on the next request. Every request is written to
+the customer's audit log (`grant.tenant_access`, with the grant and the
+organisation). Giving and revoking a grant is recorded in both chains: the
+customer's (`grant.created`, `grant.revoked`) and the organisation's
+(`grant.received`, `grant.revoked`).
+
+Grants belong to the customer. Only the customer's own admin accounts give,
+list and revoke them: never someone acting under a grant, and a platform
+admin's `X-Tenant-ID` may list them but not give or revoke one. Row-level
+security enforces the same split: the organisation can read its own grants
+and nothing else, and cannot create, extend or revoke one.
+
+The platform admin's tenant override (below) is unchanged and stays
+separate: it is not expressed as a grant, it keeps the admin's own role, and
+it still cannot claim or decide.
+
 ## API
 
 | Method | Path | What |

@@ -119,6 +119,14 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", f"/api/v1/integrations/{U}/test", "admin", None),
     ("GET", f"/api/v1/integrations/{U}/deliveries", "admin", None),
     ("GET", "/api/v1/tickets", "viewer", None),
+    ("GET", "/api/v1/tenant/grants", "admin", None),
+    ("POST", "/api/v1/tenant/grants", "admin_user", {}),
+    ("POST", f"/api/v1/tenant/grants/{U}/revoke", "admin_user", None),
+    ("GET", "/api/v1/organisation/grants", "self", None),
+    ("GET", "/api/v1/organisation/members", "self", None),
+    ("PUT", f"/api/v1/organisation/members/{U}", "admin_user", None),
+    ("DELETE", f"/api/v1/organisation/members/{U}", "admin_user", None),
+    ("PUT", "/api/v1/platform/organisations/no-such-tenant", "platform_admin", {"name": "n"}),
 ]
 # Reachable without a bearer token (login, cookie-based refresh/logout); covered by test_auth.
 PUBLIC_ENDPOINTS = {
