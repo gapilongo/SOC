@@ -170,6 +170,8 @@ describe('severity, state and counts', () => {
     expect(screen.getByText('pending')).toBeInTheDocument();
     expect(screen.getByText('healthy')).toHaveAttribute('data-tone', 'ok');
     expect(statusTone('awaiting_approval')).toBe('approval');
+    // Only the map's own keys count: an inherited property is an unknown status.
+    expect(statusTone('toString')).toBe('neutral');
   });
 
   it('gives a count chip its meaning for screen readers', () => {

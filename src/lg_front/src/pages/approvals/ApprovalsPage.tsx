@@ -16,7 +16,7 @@ import { useDashboardSummary } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { can, roleAtLeast } from '../../auth/roles';
 import type { Principal } from '../../auth/store';
-import { ApprovalDialog, type PendingDecision } from '../../components/actions/ApprovalDialog';
+import { ApprovalDialog, type PendingDecision } from '../actions/ApprovalDialog';
 import { Button, ErrorMessage, LoadingState, PageHeader, Segmented } from '../../components/ui';
 import { formatInt, humanize } from '../../lib/format';
 import { usePollInterval } from '../../lib/visibility';

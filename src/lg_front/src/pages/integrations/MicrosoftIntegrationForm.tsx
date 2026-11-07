@@ -12,6 +12,7 @@ import { useToast } from '../../components/Toast';
 import { Button, Checkbox, ErrorMessage, LoadingState, SelectField, TextAreaField, TextField } from '../../components/ui';
 import { formatDateTime } from '../../lib/format';
 import { capabilitiesConfig, initialStates, MicrosoftCapabilities, type CapabilityStates } from './MicrosoftCapabilities';
+import { asObject } from '../../lib/json';
 
 export const CLOUD_LABELS: Record<string, string> = {
   global: 'Global (commercial and GCC)',
@@ -31,10 +32,6 @@ export interface MicrosoftFormValues {
   credential: Credential;
   certificate_pem: string;
   defender_geo: string;
-}
-
-function obj(value: unknown): JsonObject {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
 }
 
 function str(value: unknown): string {
@@ -95,12 +92,12 @@ export function MicrosoftIntegrationForm({ integration, onClose }: { integration
   const [states, setStates] = useState<CapabilityStates | null>(null);
   const [error, setError] = useState<unknown>(null);
   const capabilities = catalog.data?.capabilities ?? [];
-  const current = states ?? initialStates(capabilities, obj(stored?.capabilities));
+  const current = states ?? initialStates(capabilities, asObject(stored?.capabilities));
   const field = secretField(values.credential);
   const configured = Boolean(integration?.secrets?.[field]);
   const rebind = bindingChanged(stored, values);
   const needSecret = !configured || rebind;
-  const certificate = obj(stored?.certificate);
+  const certificate = asObject(stored?.certificate);
   const set = (patch: Partial<MicrosoftFormValues>) => setValues({ ...values, ...patch });
 
   const m = useMutation({

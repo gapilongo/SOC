@@ -6,6 +6,7 @@ import { Badge } from '../../components/Badge';
 import { ConfirmDialog } from '../../components/Dialog';
 import { Checkbox, SelectField, TextAreaField, TextField } from '../../components/ui';
 import { humanize } from '../../lib/format';
+import { asObject } from '../../lib/json';
 
 /** Stored state of one capability (config.capabilities[key]). */
 export interface CapabilityState {
@@ -29,10 +30,6 @@ export interface OptionField {
   choices?: string[];
 }
 
-function obj(value: unknown): JsonObject {
-  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
-}
-
 function num(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -44,8 +41,8 @@ function num(value: unknown): number | undefined {
  */
 export function optionFields(schema: JsonObject): OptionField[] {
   const out: OptionField[] = [];
-  for (const [key, raw] of Object.entries(obj(schema.properties))) {
-    const prop = obj(raw);
+  for (const [key, raw] of Object.entries(asObject(schema.properties))) {
+    const prop = asObject(raw);
     const label = typeof prop.title === 'string' ? prop.title : humanize(key);
     const description = typeof prop.description === 'string' ? prop.description : undefined;
     const base = { key, label, description };
@@ -53,7 +50,7 @@ export function optionFields(schema: JsonObject): OptionField[] {
     else if (prop.type === 'boolean') out.push({ ...base, kind: 'bool' });
     else if (prop.type === 'integer') out.push({ ...base, kind: 'int', min: num(prop.minimum), max: num(prop.maximum) });
     else if (prop.type === 'string') out.push({ ...base, kind: 'text', maxLength: num(prop.maxLength) });
-    else if (prop.type === 'array' && obj(prop.items).type === 'string') out.push({ ...base, kind: 'list', maxLength: num(prop.maxItems) });
+    else if (prop.type === 'array' && asObject(prop.items).type === 'string') out.push({ ...base, kind: 'list', maxLength: num(prop.maxItems) });
   }
   return out;
 }
@@ -85,14 +82,14 @@ export function capabilitiesConfig(states: CapabilityStates): JsonObject {
 /** Initial states from the stored config, with each capability's option defaults. */
 export function initialStates(catalog: MicrosoftCapabilityOut[], stored: JsonObject | undefined): CapabilityStates {
   const out: CapabilityStates = {};
-  const saved = obj(stored);
+  const saved = asObject(stored);
   for (const spec of catalog) {
-    const entry = obj(saved[spec.key]);
+    const entry = asObject(saved[spec.key]);
     if (!Object.keys(entry).length) continue;
     out[spec.key] = {
       enabled: entry.enabled === true,
       live: entry.live === true,
-      options: { ...obj(spec.options_defaults), ...obj(entry.options) },
+      options: { ...asObject(spec.options_defaults), ...asObject(entry.options) },
     };
   }
   return out;
@@ -292,7 +289,7 @@ export function MicrosoftCapabilities({
   return (
     <div className="space-y-3">
       {catalog.map((spec) => {
-        const state = states[spec.key] ?? { enabled: false, live: false, options: { ...obj(spec.options_defaults) } };
+        const state = states[spec.key] ?? { enabled: false, live: false, options: { ...asObject(spec.options_defaults) } };
         const conflicts = state.enabled
           ? catalog
               .filter((other) => other.key !== spec.key && states[other.key]?.enabled)

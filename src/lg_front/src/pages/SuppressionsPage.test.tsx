@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SuppressionOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
-import SuppressionsPage from './SuppressionsPage';
+import SuppressionsPage, { buildMatch } from './SuppressionsPage';
 
 function rule(overrides: Partial<SuppressionOut> = {}): SuppressionOut {
   return {
@@ -120,5 +120,18 @@ describe('SuppressionsPage', () => {
     await userEvent.click(form.getByRole('button', { name: 'Create rule' }));
     expect(await form.findByText(/Add at least one condition/)).toBeInTheDocument();
     expect(calls.filter((c) => c.method !== 'GET')).toEqual([]);
+  });
+});
+
+describe('suppression predicates', () => {
+  it('builds suppression predicates', () => {
+    expect(
+      buildMatch([
+        { path: 'title', op: 'regex', value: '.*backup.*' },
+        { path: 'entities.ips', op: 'cidr', value: '10.0.0.0/8, 192.168.0.0/16' },
+        { path: 'severity', op: 'in', value: 'low,info' },
+        { path: 'category', op: 'eq', value: '' },
+      ]),
+    ).toEqual({ title: { regex: '.*backup.*' }, 'entities.ips': { cidr: ['10.0.0.0/8', '192.168.0.0/16'] }, severity: { in: ['low', 'info'] } });
   });
 });
