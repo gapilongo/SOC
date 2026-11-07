@@ -21,6 +21,12 @@ All notable changes to this project are documented here. The format follows
   enrichment providers and the LLM endpoint (unset by default, so nothing
   changes for existing installs), and `ingestion.read_only_sources`, which
   refuses the `m365_mailbox` and `imap` sources.
+- Every model call now records which prompt version it sent. Each prompt has
+  a name (such as `triage.assess`) and a short hash of its text and output
+  schema, so a changed hash means the model was asked something different.
+  The alert's model provenance, evidence packs (JSON and HTML), the
+  `llm.call` log event and evaluation reports (a new "Models and prompts"
+  section) show the prompt name and hash next to the provider and model.
 - Runs waiting for an analyst or an approval now survive upgrades that change
   the workflow graph. Each run records the graph version it started on
   (`workflow_runs.graph_version`, migration 0010), and workers keep the
@@ -105,6 +111,13 @@ All notable changes to this project are documented here. The format follows
   connector that would run it, the guardrail verdict, whether it would run
   automatically or wait for approval, and whether your role may pre-approve
   it (high and critical risk need an admin).
+- The Wazuh connector is now tested against a real Wazuh 4.14 indexer, not
+  only a fake: `make test-wazuh-up` starts a Wazuh indexer lab with the alert
+  index template Wazuh publishes and sample 4.14 alerts, and `make
+  test-wazuh` runs live contract tests for authentication, paging and
+  resuming, severity mapping, empty windows and malformed documents. CI runs
+  them in a new, non-blocking job. More alerts can be loaded into the lab
+  with `python -m tests.fixtures.wazuh_lab load` (docs/testing.md).
 
 ### Changed
 

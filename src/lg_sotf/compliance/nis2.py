@@ -54,6 +54,7 @@ from lg_sotf.llm import (
 )
 from lg_sotf.llm.client import Tier
 from lg_sotf.llm.provenance import model_provenance
+from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_str
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.settings import Settings
@@ -403,6 +404,10 @@ NARRATIVE_TASKS = {
     "final": "Write a narrative for the final report: a detailed description, the likely threat type, and the "
     "mitigation measures applied.",
 }
+NARRATIVE_PROMPTS = {
+    stage: register_prompt(f"nis2.narrative.{stage}", system=NARRATIVE_SYSTEM, task=task, schema=IncidentNarrative)
+    for stage, task in NARRATIVE_TASKS.items()
+}
 
 
 def narrative_input(case: CaseData) -> Dict[str, Any]:
@@ -459,17 +464,19 @@ async def draft_narrative(
     tier: Tier = "fast"
     try:
         model = model_factory(tier, settings)
-        prompt = build_prompt(NARRATIVE_SYSTEM, NARRATIVE_TASKS[stage], narrative_input(case), settings=settings)
+        prompt = NARRATIVE_PROMPTS[stage]
+        bundle = build_prompt(prompt.system, prompt.task, narrative_input(case), settings=settings)
         result = await ainvoke_structured(
             model,
             IncidentNarrative,
-            prompt.messages,
+            bundle.messages,
             agent="nis2_report",
             tier=tier,
             tenant_id=tenant_id,
             settings=settings,
             budget=budget,
             budget_limit=budget_limit,
+            prompt=prompt,
         )
     except LLMBudgetExceeded:
         return NarrativeResult(None, "the tenant's daily LLM token budget is exhausted")
@@ -481,13 +488,15 @@ async def draft_narrative(
     except Exception as exc:  # noqa: BLE001 - provider/transport errors must not fail the deterministic draft
         log_failure(log, "nis2.narrative_failed", exc, level="warning", error_type=type(exc).__name__)
         return NarrativeResult(None, "the model could not be reached")
-    provenance = model_provenance(model, tier)
+    provenance = model_provenance(model, tier, prompt)
     return NarrativeResult(
         {
             "text": str(result.narrative).strip(),
             "label": AI_LABEL,
             "provider": provenance["provider"],
             "model": provenance["model"],
+            "prompt_name": provenance["prompt_name"],
+            "prompt_hash": provenance["prompt_hash"],
         },
         None,
     )
@@ -623,6 +632,7 @@ __all__ = [
     "CaseData",
     "DraftField",
     "IncidentNarrative",
+    "NARRATIVE_PROMPTS",
     "NARRATIVE_SYSTEM",
     "NarrativeResult",
     "NARRATIVE_TASKS",
