@@ -13,6 +13,7 @@ import { ConfirmDialog, Modal } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextField, cx } from '../components/ui';
 import { formatDateTime, formatInt, localInputToIso } from '../lib/format';
+import { isJsonObject } from '../lib/json';
 
 type Op = 'eq' | 'in' | 'regex' | 'cidr';
 interface Predicate {
@@ -42,8 +43,8 @@ export function buildMatch(rows: Predicate[]): JsonObject {
 function describeMatch(match: JsonObject): string {
   return Object.entries(match)
     .map(([path, pred]) => {
-      if (pred && typeof pred === 'object' && !Array.isArray(pred)) {
-        const [op, arg] = Object.entries(pred as JsonObject)[0] ?? ['?', ''];
+      if (isJsonObject(pred)) {
+        const [op, arg] = Object.entries(pred)[0] ?? ['?', ''];
         return `${path} ${op} ${Array.isArray(arg) ? arg.join(', ') : String(arg)}`;
       }
       return `${path} = ${Array.isArray(pred) ? pred.join(', ') : String(pred)}`;

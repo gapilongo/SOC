@@ -2,9 +2,9 @@ import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { ActionOut, Page } from '../api/types';
-import { NAV_ITEMS } from '../components/Layout';
 import { RequireRole } from '../components/Guards';
 import ApprovalsPage from '../pages/approvals/ApprovalsPage';
+import { NAV_GROUPS } from '../app/routes';
 import { fakeApi, renderWithSession, signedInSession } from '../test/helpers';
 import { approvalRoleFor, can, decisionBlockedReason, escalationDecisionBlockedReason, roleAtLeast } from './roles';
 import type { Principal } from './store';
@@ -80,7 +80,7 @@ describe('role checks mirror the API RBAC', () => {
   });
 
   it('shows admin navigation only to admins and the platform page only to platform admins', () => {
-    const labels = (p: Principal) => NAV_ITEMS.filter((i) => i.allowed(p)).map((i) => i.label);
+    const labels = (p: Principal) => NAV_GROUPS.flatMap((g) => g.items).filter((i) => i.allowed(p)).map((i) => i.label);
     expect(labels(principal({ role: 'viewer' }))).toEqual(['Overview', 'Escalations', 'Approvals', 'Alerts', 'Suppressions', 'Reports']);
     expect(labels(principal({ role: 'admin' }))).toContain('Audit log');
     expect(labels(principal({ role: 'admin' }))).toContain('Getting started');
