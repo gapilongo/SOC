@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import random
-import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict
@@ -11,22 +10,16 @@ from typing import Any, Dict
 import pytest
 
 from lg_sotf.domain.suppression import (
-    MAX_DFA_CACHE,
-    MAX_DFA_CACHE_STATES,
-    MAX_EVALUATION_WORK,
     MAX_SUBJECT_CHARS,
     InvalidRule,
-    SafePattern,
-    WorkBudget,
-    WorkBudgetExceeded,
     alert_match_view,
     compile_pattern,
     evaluate_predicate,
     explain_rule,
     first_matching_rule,
-    validate_regex,
     validate_rule_match,
 )
+from lg_sotf.security.safe_regex import MAX_EVALUATION_WORK, WorkBudget
 
 VIEW = alert_match_view(
     title="Known scanner sweep from Qualys",
@@ -47,89 +40,6 @@ VIEW = alert_match_view(
 )
 
 
-@pytest.mark.parametrize(
-    ("pattern", "subject", "expected"),
-    [
-        (".*scanner.*", "Known scanner sweep", True),
-        (".*scanner.*", "Known sweep", False),
-        (".*qualys.*", "Known scanner sweep from Qualys", False),
-        ("(?i).*qualys.*", "Known scanner sweep from Qualys", True),
-        (".*\\.exe", "C:\\Windows\\svchost.exe", True),
-        (".*a.*b.*c.*", "xaxbxcx", True),
-        (".*a.*b.*c.*", "xcxbxax", False),
-        ("^svc-[a-z]+$", "svc-scan", True),
-        ("svc-.+", "svc-", False),
-        (".+", "", False),
-        ("host-[0-9]{2,4}", "host-12345", False),
-        ("host-[0-9]{2,4}", "host-123", True),
-        ("[^0-9]*", "abc", True),
-        ("[^0-9]*", "ab1", False),
-        (r"\d{1,3}(\.\d{1,3}){3}", "10.1.2.3", True),
-        (r"\w+@\w+\.com", "a_b@corp.com", True),
-        (r"\s*x\s*", "  x  ", True),
-        ("(ab|cd)?x", "cdx", True),
-        ("(ab|cd)?x", "abcdx", False),
-        ("(?s)a.b", "a\nb", True),
-        ("a.b", "a\nb", False),
-        ("(?i:ab)c", "ABc", True),
-        ("(?i:ab)c", "ABC", False),
-        ("[a-f]+", "DEAD", False),
-        ("(?i)[a-f]+", "DEAD", True),
-    ],
-)
-def test_matches_agree_with_python_regex(pattern: str, subject: str, expected: bool) -> None:
-    assert compile_pattern(pattern).fullmatch(subject) is expected
-    assert (re.fullmatch(pattern, subject) is not None) is expected
-
-
-def test_randomised_agreement_with_python_regex() -> None:
-    rng = random.Random(20260929)
-    patterns = [
-        ".*ab.*", "a*b", "(ab|a)c", "[a-c]+d?", "a{1,3}b{0,2}", ".*b.*a", "(?i)A.*B", "x?y?z?", "[^a]*a",
-        r"\d+-\w*", "(a|b|c)d", "a.{0,5}b", "(?:ab)?(?:cd)?", ".+c", "a*",
-    ]
-    alphabet = "abcdxyz-1 "
-    for pattern in patterns:
-        compiled = compile_pattern(pattern)
-        for _ in range(300):
-            subject = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 12)))
-            assert compiled.fullmatch(subject) == (re.fullmatch(pattern, subject) is not None), (pattern, subject)
-
-
-def test_wildcards_are_accepted_but_other_unbounded_quantifiers_are_limited() -> None:
-    for pattern in (".*scanner.*", ".*a.*b.*c.*d.*", ".+foo.+", "prefix.*"):
-        assert validate_regex(pattern) == pattern
-        validate_rule_match({"title": {"regex": pattern}})
-    for pattern in ("[a-z]*[a-z]*[a-z]*!", "(a+)+$", "(x*)*y", "a{0,256}a{0,256}a{0,256}!"):
-        with pytest.raises(InvalidRule):
-            validate_regex(pattern)
-
-
-@pytest.mark.parametrize(
-    ("pattern", "reason"),
-    [
-        ("(a)\\1", "backreferences"),
-        ("(?=a)a", "lookarounds"),
-        ("\\bfoo\\b", "anchors and word boundaries"),
-        ("a$b", "anchors"),
-        ("a*+b", "possessive"),
-        ("(?>a)b", "possessive quantifiers or atomic groups"),
-        ("(?a)\\w+", "unsupported flags"),
-        ("x" * 300, "longer than"),
-        ("[", "invalid regex"),
-    ],
-)
-def test_constructs_outside_the_subset_are_rejected_with_a_reason(pattern: str, reason: str) -> None:
-    with pytest.raises(InvalidRule, match=reason.split(" or ")[0]):
-        validate_regex(pattern)
-
-
-@pytest.mark.parametrize("bad", [None, 3, "", ["a"], {"x": 1}])
-def test_non_string_patterns_are_invalid(bad: Any) -> None:
-    with pytest.raises(InvalidRule):
-        compile_pattern(bad)
-
-
 def test_matching_is_linear_on_adversarial_subjects() -> None:
     """Patterns that are catastrophic for a backtracking engine stay fast (no timeouts involved)."""
     subject = "a" * MAX_SUBJECT_CHARS
@@ -143,12 +53,6 @@ def test_matching_is_linear_on_adversarial_subjects() -> None:
     started = time.perf_counter()
     assert not compile_pattern(".*h.*g.*f.*e.*d.*zz").fullmatch(varied)
     assert time.perf_counter() - started < 1.0
-
-
-def test_state_budget_is_enforced() -> None:
-    assert compile_pattern("a{0,16}b{0,16}c").state_count < 100
-    with pytest.raises(InvalidRule, match="matcher states"):
-        SafePattern("((x{0,16}){0,16}){0,16}")
 
 
 def test_subjects_over_the_limit_never_match() -> None:
@@ -242,7 +146,7 @@ def test_bounded_wildcard_ranges_are_not_exempt_from_the_limits(pattern: str, re
 
 
 def test_unbounded_wildcards_stay_exempt() -> None:
-    for pattern in (".*foo.*", ".+bar.+", ".*a.*b.*c.*d.*", "(?i).*scanner.*sweep.*", ".*x.{0,200}!"):
+    for pattern in (".*foo.*", ".+bar.+", ".*a.*b.*c.*d.*", "(?i).*scanner.*sweep.*", ".*x.{0,200}!", "prefix.*"):
         validate_rule_match({"title": {"regex": pattern}})
 
 
@@ -251,17 +155,11 @@ WORST_ACCEPTED = [".*a.{0,120}.{0,120}b", ".*.{0,250}!", ".*[a-m].{0,120}[a-m].{
 
 
 @pytest.mark.parametrize("pattern", WORST_ACCEPTED)
-def test_one_subject_costs_a_bounded_amount_of_work(pattern: str) -> None:
-    compiled = compile_pattern(pattern)
+def test_running_out_of_work_on_one_subject_is_no_match(pattern: str) -> None:
     rng = random.Random(7)
     subject = "".join(rng.choice("ab") for _ in range(MAX_SUBJECT_CHARS))
-    started = time.perf_counter()
-    with pytest.raises(WorkBudgetExceeded):
-        compiled.fullmatch(subject)
-    assert time.perf_counter() - started < 0.5
-    entries, states = compiled.cache_size
-    assert entries <= MAX_DFA_CACHE and states <= MAX_DFA_CACHE_STATES
-    # As a predicate, running out of work is simply "no match".
+    # The engine raises WorkBudgetExceeded (tests/unit/security/test_safe_regex.py); as a predicate,
+    # running out of work is simply "no match".
     assert not evaluate_predicate({"regex": pattern}, subject)
     explained = explain_rule({"title": {"regex": pattern}}, dict(VIEW, title=subject)).predicates[0]
     assert (explained.matched, explained.reason) == (False, "work_budget_exceeded")
@@ -294,7 +192,3 @@ def test_a_legitimate_wildcard_rule_still_matches_long_values() -> None:
         assert evaluate_predicate({"regex": "(?i).*qualys.*"}, subject)
     assert time.perf_counter() - started < 1.0
 
-
-def test_work_budget_validates_its_size() -> None:
-    with pytest.raises(ValueError):
-        WorkBudget(0)
