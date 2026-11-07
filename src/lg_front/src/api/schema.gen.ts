@@ -2282,16 +2282,22 @@ export interface components {
              * Format: date-time
              */
             next_attempt_at: string;
-            /** Operation */
-            operation: string;
+            /**
+             * Operation
+             * @enum {string}
+             */
+            operation: "notify" | "ticket_create" | "ticket_update" | "test";
             /** Result */
             result?: {
                 [key: string]: unknown;
             } | null;
             /** Sent At */
             sent_at?: string | null;
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "sent" | "failed" | "dead";
             /** Title */
             title?: string | null;
         };
@@ -2776,16 +2782,22 @@ export interface components {
             /** Enabled */
             enabled: boolean;
             /** Events */
-            events: string[];
+            events: ("escalation.created" | "escalation.sla_breached" | "escalation.decided" | "action.awaiting_approval" | "action.executed" | "action.failed" | "action.verification_failed" | "alert.critical_received")[];
             /**
              * Id
              * Format: uuid
              */
             id: string;
-            /** Kind */
-            kind: string;
-            /** Min Severity */
-            min_severity: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "slack" | "teams" | "email" | "webhook" | "jira" | "servicenow" | "microsoft";
+            /**
+             * Min Severity
+             * @enum {string}
+             */
+            min_severity: "info" | "low" | "medium" | "high" | "critical";
             /** Name */
             name: string;
             /**
@@ -3913,8 +3925,11 @@ export interface components {
             resolved: boolean;
             /** Resolved By */
             resolved_by?: string | null;
-            /** System */
-            system: string;
+            /**
+             * System
+             * @enum {string}
+             */
+            system: "jira" | "servicenow";
         };
         /** TokenCheck */
         TokenCheck: {

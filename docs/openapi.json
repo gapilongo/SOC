@@ -2279,6 +2279,12 @@
             "type": "string"
           },
           "operation": {
+            "enum": [
+              "notify",
+              "ticket_create",
+              "ticket_update",
+              "test"
+            ],
             "title": "Operation",
             "type": "string"
           },
@@ -2307,6 +2313,12 @@
             "title": "Sent At"
           },
           "status": {
+            "enum": [
+              "pending",
+              "sent",
+              "failed",
+              "dead"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -3677,6 +3689,16 @@
           },
           "events": {
             "items": {
+              "enum": [
+                "escalation.created",
+                "escalation.sla_breached",
+                "escalation.decided",
+                "action.awaiting_approval",
+                "action.executed",
+                "action.failed",
+                "action.verification_failed",
+                "alert.critical_received"
+              ],
               "type": "string"
             },
             "title": "Events",
@@ -3688,10 +3710,26 @@
             "type": "string"
           },
           "kind": {
+            "enum": [
+              "slack",
+              "teams",
+              "email",
+              "webhook",
+              "jira",
+              "servicenow",
+              "microsoft"
+            ],
             "title": "Kind",
             "type": "string"
           },
           "min_severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
             "title": "Min Severity",
             "type": "string"
           },
@@ -6697,6 +6735,10 @@
             "title": "Resolved By"
           },
           "system": {
+            "enum": [
+              "jira",
+              "servicenow"
+            ],
             "title": "System",
             "type": "string"
           }

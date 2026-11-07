@@ -19,7 +19,10 @@ import pytest
 
 from lg_sotf.api import schemas
 from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
+from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
+from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
+from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
 from lg_sotf.models import vocabulary as v
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -60,6 +63,13 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("SourceOut", "health", SOURCE_HEALTH),
     # suppressions
     ("SuppressionOut", "disposition", v.DISPOSITIONS),
+    # integrations, deliveries and tickets
+    ("IntegrationOut", "kind", INTEGRATION_KINDS),
+    ("IntegrationOut", "events", INTEGRATION_EVENT_TYPES),
+    ("IntegrationOut", "min_severity", v.SEVERITIES),
+    ("DeliveryOut", "operation", OUTBOX_OPERATIONS),
+    ("DeliveryOut", "status", OUTBOX_STATUSES),
+    ("TicketOut", "system", TICKETING_KINDS),
 ]
 
 
