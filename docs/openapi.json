@@ -6382,6 +6382,10 @@
             "type": "object"
           },
           "status": {
+            "enum": [
+              "active",
+              "suspended"
+            ],
             "title": "Status",
             "type": "string"
           },

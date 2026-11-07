@@ -657,7 +657,7 @@ class RetentionLimitsOut(BaseModel):
 class TenantSettingsOut(BaseModel):
     tenant_id: str
     name: str
-    status: str
+    status: TenantStatusStr
     settings: Dict[str, Any]
     updated_at: datetime
     retention_limits: Optional[RetentionLimitsOut] = None

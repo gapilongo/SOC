@@ -3766,8 +3766,11 @@ export interface components {
             settings: {
                 [key: string]: unknown;
             };
-            /** Status */
-            status: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "suspended";
             /** Tenant Id */
             tenant_id: string;
             /**

@@ -22,6 +22,7 @@ from lg_sotf.db.repos.alert_events import EVENT_ACTOR_TYPES
 from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
 from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
+from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
 from lg_sotf.models import vocabulary as v
 
@@ -70,6 +71,8 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("DeliveryOut", "operation", OUTBOX_OPERATIONS),
     ("DeliveryOut", "status", OUTBOX_STATUSES),
     ("TicketOut", "system", TICKETING_KINDS),
+    # tenant settings
+    ("TenantSettingsOut", "status", TENANT_STATUSES),
 ]
 
 
