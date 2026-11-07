@@ -15,7 +15,7 @@ edited afterwards except to mark it superseded by a newer one.
 | [0005](0005-exception-text-never-logged.md) | Exception text is never logged | Accepted |
 | [0006](0006-encryption-keys-validated-at-startup.md) | Encryption keys are validated at startup in every role | Accepted |
 | [0007](0007-egress-policy-in-net.md) | Egress policy lives in `lg_sotf.net`, with one strict and one lenient reader of the ingestion section | Accepted |
-| 0008 | Tracing: instrument at choke points, or remove | Reserved (X5) |
+| [0008](0008-remove-tracing.md) | Remove tracing until someone consumes traces | Accepted |
 | [0009](0009-api-contract-tolerant-reader.md) | API contract: committed OpenAPI snapshot, tolerant reader | Accepted |
 | 0010 | Frontend structure and boundaries | Reserved (FE9) |
 | [0011](0011-rls-per-tenant.md) | Postgres RLS per tenant and the non-BYPASSRLS runtime role | Accepted |

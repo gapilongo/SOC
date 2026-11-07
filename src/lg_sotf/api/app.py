@@ -45,7 +45,6 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.ingestion.email import EmailLimits
 from lg_sotf.observability.logging import configure_logging, get_logger, is_configured, log_failure
-from lg_sotf.observability.tracing import setup_tracing, shutdown_tracing
 from lg_sotf.settings import Settings, get_settings
 
 log = get_logger(__name__)
@@ -161,10 +160,8 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         s.assert_safe()
-        if configure_observability:
-            if not is_configured():
-                configure_logging(s)
-            setup_tracing(s)
+        if configure_observability and not is_configured():
+            configure_logging(s)
         ctx = await build_context(s, http_transport=http_transport)
         app.state.ctx = ctx
         log.info(
@@ -175,8 +172,6 @@ def create_app(
         finally:
             app.state.ctx = None
             await close_context(ctx)
-            if configure_observability:
-                shutdown_tracing()
             log.info("api.stopped")
 
     docs = s.api.docs_enabled

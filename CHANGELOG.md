@@ -131,8 +131,31 @@ All notable changes to this project are documented here. The format follows
 - Web UI: while the phone menu is open, keyboard focus stays inside it, and
   Escape closes it.
 
+### Deprecated
+
+- `observability.otlp_endpoint` (`LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT`) is
+  ignored. It is still accepted, so existing configurations load, and every
+  process logs `observability.otlp_endpoint_deprecated` at startup while it
+  is set. Remove it; a later release drops the setting.
+
+### Removed
+
+- OpenTelemetry tracing. The exporter it configured never sent anything: no
+  code created spans. The OpenTelemetry SDK and OTLP exporter (and their
+  protobuf dependencies) are no longer installed; `opentelemetry-api` stays,
+  as a dependency of FastAPI and the Anthropic client. `configs/*.yaml`, the
+  production compose file, `.env.example` and the Helm example no longer
+  mention an OTLP endpoint. Logs and Prometheus metrics are unchanged.
+  `docs/adr/0008-remove-tracing.md` records the decision and how tracing
+  would be added back.
+
 ### Fixed
 
+- `lg-sotf mcp` now honours every form of `Retry-After` the LG-SOTF API (or a
+  proxy in front of it) can send when it retries a read: fractional seconds
+  (`1.5`) and HTTP dates, as well as whole seconds. Before, only whole seconds
+  were understood and anything else fell back to the exponential backoff.
+  The wait is still at most 10 seconds; a negative value means retry now.
 - An LLM call that failed unexpectedly no longer leaves its token estimate
   counted against the tenant's daily LLM budget. Each call reserves an
   estimate first and settles it with the tokens actually used, but an
@@ -222,7 +245,7 @@ All notable changes to this project are documented here. The format follows
   to it, and the source line of every frame. The record keeps `error_type`
   and now carries `error` (the same type name), `stack` (the innermost 15
   frames as `module:lineno in func`, one per line, without source text)
-  and `cause_types`. The worker, scheduler, services, integrations, MCP,
+  and `cause_types`. The workflow, worker, scheduler, services, integrations, MCP,
   eval, ingestion, queue, LLM and other API failure logs, which already
   logged only the type, gain the same three fields; their event names and
   existing fields are unchanged. To find where a 500 came from, search

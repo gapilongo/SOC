@@ -270,7 +270,7 @@ def test_every_process_loads_the_settings_file(full_manifests: List[Manifest]) -
     for m in lg_sotf_pods(full_manifests):
         env = {e["name"]: e.get("value") for e in container(m)["env"]}
         assert env["LG_SOTF_CONFIG_FILE"] == "/etc/lg-sotf/settings.yaml"
-        assert env["LG_SOTF_OBSERVABILITY__OTLP_ENDPOINT"] == "http://otel-collector.observability:4318"
+        assert env["HTTPS_PROXY"] == "http://proxy.internal:3128"  # extraEnv reaches every process
 
 
 def test_image_digest_takes_precedence(full_manifests: List[Manifest]) -> None:

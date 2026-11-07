@@ -8,7 +8,6 @@ services/reporting.py	852
 
 # Functions
 agents/correlation/base.py::CorrelationAgent._run	88
-api/app.py::create_app	82
 compliance/evidence.py::build_evidence_pack	101
 compliance/evidence_html.py::render_evidence_html	193
 db/repos/actions.py::ActionsRepo.transition	94

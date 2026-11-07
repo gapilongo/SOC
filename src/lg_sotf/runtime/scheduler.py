@@ -649,7 +649,6 @@ class Scheduler:
 
 async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
     """Process entry point for ``lg-sotf scheduler``."""
-    from lg_sotf.observability.tracing import shutdown_tracing
     from lg_sotf.queue.events import EventBus
     from lg_sotf.queue.redis import create_redis
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
@@ -691,4 +690,3 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
     finally:
         await redis.aclose()
         await db.close()
-        shutdown_tracing()

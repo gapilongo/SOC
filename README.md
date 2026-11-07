@@ -191,7 +191,7 @@ flowchart LR
 * Operations: API, worker, scheduler and migrate roles in one image;
   Redis Streams queue with dead-letter queue and CLI; crash recovery via
   leases and checkpoints; retention and partition maintenance; Prometheus
-  metrics, JSON logs, OpenTelemetry tracing; Docker Compose and a Helm chart
+  metrics, JSON logs; Docker Compose and a Helm chart
   (HPA, KEDA, PDBs, NetworkPolicies, ServiceMonitors).
 * Evaluation harness (`lg-sotf eval`) with a synthetic labelled dataset,
   adversarial prompt-injection cases, metrics and a CI regression gate.
