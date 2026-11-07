@@ -26,6 +26,7 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
   ['afterIntegrationTest', (c) => policies.afterIntegrationTest(c, 'i-1'), [['integrations', 'i-1', 'deliveries']]],
   ['afterTenantSettingsChange', policies.afterTenantSettingsChange, [['onboarding-status']]],
   ['afterOnboardingChange', policies.afterOnboardingChange, [['onboarding-status']]],
+  ['afterSetupSaved', policies.afterSetupSaved, [['me'], ['platform-tenants']]],
   ['afterUserChange', policies.afterUserChange, [['users']]],
   ['afterApiKeyChange', policies.afterApiKeyChange, [['api-keys']]],
   ['afterMfaChange', policies.afterMfaChange, [['mfa-status'], ['users']]],

@@ -891,6 +891,56 @@ export interface OnboardingStatusOut {
   dismissed: boolean;
   dismissed_at?: string | null;
   samples_sent: boolean;
+  /** An alert (samples included) is closed or waits for an analyst or an approval. */
+  first_verdict: boolean;
+}
+
+/** Where a language model runs: `cn` (hosted in China) is never offered and is flagged when configured. */
+export type LlmResidency = 'eu' | 'local' | 'us' | 'cn' | 'offline' | 'unknown';
+export type LlmProfileId = 'mistral_eu' | 'ollama_local' | 'self_hosted' | 'anthropic';
+
+export interface EnvVarOut {
+  name: string;
+  value: string;
+}
+
+export interface LlmProfileOut {
+  id: string;
+  label: string;
+  residency: Open<LlmResidency>;
+  description: string;
+  provider: string;
+  fast_model: string;
+  deep_model: string;
+  env: EnvVarOut[];
+}
+
+export interface ConfiguredModelOut {
+  provider: string;
+  enabled: boolean;
+  fast_model: string;
+  deep_model: string;
+  residency: Open<LlmResidency>;
+  profile?: string | null;
+}
+
+/** First-run setup wizard (`/onboarding/setup`, the install's platform admin). */
+export interface SetupOut {
+  completed: boolean;
+  completed_at?: string | null;
+  tenant_id: string;
+  tenant_name: string;
+  organisation?: string | null;
+  llm_profile?: string | null;
+  default_llm_profile: string;
+  configured_llm: ConfiguredModelOut;
+  llm_profiles: LlmProfileOut[];
+}
+
+export interface SetupIn {
+  organisation: string;
+  tenant_name: string;
+  llm_profile?: LlmProfileId | null;
 }
 
 export interface SampleAlertsOut {
