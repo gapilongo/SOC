@@ -89,6 +89,7 @@
   "lg_sotf.mcp.client.ApiConfigError": [400, "invalid_request"],
   "lg_sotf.mcp.protocol._RpcError": [500, "internal_error"],
   "lg_sotf.net.egress.DestinationRefused": [422, "invalid_source"],
+  "lg_sotf.net.http.ResponseTooLarge": [500, "internal_error"],
   "lg_sotf.queue.events.SubscriberLimitReached": [500, "internal_error"],
   "lg_sotf.queue.events.SubscriberQuotaReached": [500, "internal_error"],
   "lg_sotf.queue.streams.MalformedMessage": [400, "invalid_request"],
