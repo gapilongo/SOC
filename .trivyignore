@@ -1,0 +1,22 @@
+# Reviewed exceptions to the image CVE gate (Trivy in .github/workflows/ci.yml: fixable critical and
+# high findings fail the build; docs/security.md, section 9).
+#
+# Rules (tests/deploy/test_supply_chain.py enforces them):
+# * Fix first: bump the base-image digest or the pinned package. An entry is for a finding that
+#   has no fix in the newest base image yet, or that does not affect the product.
+# * Every entry carries `exp:YYYY-MM-DD`, at most 90 days out; Trivy stops ignoring it that day,
+#   so CI fails again and someone re-reviews it.
+# * The comment line right above each entry says who reviewed it and why.
+# * A "not affected" entry has a matching not_affected statement in security/vex.json, which is
+#   what customers' scanners read.
+
+# not affected (security/vex.json): zlib gzip-file API only; nothing in the backend image calls
+# gzwrite/gzprintf. Debian fix deb13u1 is not in python:3.11-slim yet. Reviewed 2026-11-07 (maintainers).
+CVE-2026-76844 exp:2026-12-07
+# not affected (security/vex.json): zlib gz_vacate via gzwrite/gzprintf, unused by CPython and nginx.
+# Debian deb13u1 / Alpine 1.3.2-r1 are not in the pinned bases yet. Reviewed 2026-11-07 (maintainers).
+CVE-2026-85091 exp:2026-12-07
+# not affected (security/vex.json): musl regcomp with an attacker-supplied regex; the frontend
+# image compiles only constant patterns. Alpine musl 1.2.6-r3 is not in nginx-unprivileged yet.
+# Reviewed 2026-11-07 (maintainers).
+CVE-2026-107891 exp:2026-12-07

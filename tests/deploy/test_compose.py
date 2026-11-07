@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict
@@ -48,11 +49,11 @@ def test_every_service_declares_a_healthcheck(compose: Dict[str, Any]) -> None:
 
 def test_datastores(compose: Dict[str, Any]) -> None:
     services = compose["services"]
-    assert services["postgres"]["image"].endswith("postgres:16-alpine}")
+    assert re.fullmatch(r"\$\{POSTGRES_IMAGE:-postgres:16-alpine@sha256:[0-9a-f]{64}\}", services["postgres"]["image"])
     assert "pgdata:/var/lib/postgresql/data" in services["postgres"]["volumes"]
     redis_cmd = services["redis"]["command"]
     assert redis_cmd[redis_cmd.index("--appendonly") + 1] == "yes"
-    assert services["redis"]["image"].endswith("redis:7-alpine}")
+    assert re.fullmatch(r"\$\{REDIS_IMAGE:-redis:7-alpine@sha256:[0-9a-f]{64}\}", services["redis"]["image"])
     assert "redisdata:/data" in services["redis"]["volumes"]
     assert set(compose["volumes"]) == {"pgdata", "redisdata"}
 
@@ -78,7 +79,8 @@ def test_app_containers_are_hardened_and_share_one_image(compose: Dict[str, Any]
         assert any(t.startswith("/tmp") for t in svc["tmpfs"]), name
         assert svc["command"] == [name], name
     assert services["migrate"]["build"]["dockerfile"] == "docker/Dockerfile"
-    assert services["migrate"]["build"]["args"]["BASE_IMAGE"] == "${PYTHON_BASE_IMAGE:-python:3.11-slim}"
+    # Unset: docker/Dockerfile's digest-pinned base.
+    assert services["migrate"]["build"]["args"]["BASE_IMAGE"] == "${PYTHON_BASE_IMAGE:-}"
 
 
 def test_fake_llm_is_the_default_and_ports_bind_locally(compose: Dict[str, Any]) -> None:

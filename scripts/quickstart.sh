@@ -174,7 +174,7 @@ build_app() {
   version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/lg_sotf/__init__.py)"
   revision="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   docker build -f docker/Dockerfile -t "$APP_IMAGE" \
-    --build-arg BASE_IMAGE="${PYTHON_BASE_IMAGE:-python:3.11-slim}" \
+    --build-arg BASE_IMAGE="${PYTHON_BASE_IMAGE:-}" \
     --build-arg VERSION="$version" \
     --build-arg REVISION="$revision" \
     --build-arg CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

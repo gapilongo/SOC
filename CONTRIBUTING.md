@@ -15,7 +15,7 @@ application.
 ```sh
 git clone https://github.com/gapilongo/SOC.git && cd SOC
 python3.11 -m venv .venv && . .venv/bin/activate
-make dev          # pinned dependencies from requirements-dev.txt, editable install
+make dev          # hash-locked dependencies from requirements-dev.txt, editable install (make lock re-locks)
 pre-commit install --hook-type pre-commit --hook-type pre-push
 make check        # what CI's lint and fast jobs run: ruff, mypy, import contracts, unit + deploy tests
 

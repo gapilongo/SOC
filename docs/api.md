@@ -39,6 +39,54 @@ enqueues work for the workers. It never runs a workflow itself.
 * Multi-valued filters repeat the parameter: `?status=queued&status=failed`.
 * Timestamps are ISO 8601; query timestamps without an offset are UTC.
 
+## Stability and deprecation
+
+Every operation in the OpenAPI document carries `x-stability`. Build
+integrations on `stable` operations. The MCP server (docs/mcp.md) and the
+WebSocket events are outside this document and versioned separately.
+
+| Tier | Promise | Operations |
+|---|---|---|
+| `stable` | No breaking change without a deprecation period first (below). New optional fields, parameters, enum values and operations may appear at any time: ignore what you do not know (tolerant reader, ADR-0009). | `/auth` (login, refresh, logout, me), `/ingest/*`, `/alerts`, `/escalations` (list, read, claim, decision, response preview), `/actions`, `/sources`, `/suppressions`, `/users`, `/api-keys`, `/audit`, `/healthz`, `/readyz` |
+| `beta` | May change in a minor release; breaking changes are listed in the changelog. | `/auth/mfa`, `/escalations/groups` and `/escalations/bulk/*`, `/tenant/*`, `/usage/llm`, `/platform/*`, `/alerts/{id}/evidence`, `/alerts/{id}/incident-report`, `/integrations/*`, `/tickets`, `/reports/*`, `/metrics` |
+| `internal` | Screens of the bundled UI; may change or disappear in any release. | `/dashboard/summary`, `/onboarding/*` |
+
+A breaking change is one that can make a working client fail: removing an
+operation, a response field or an enum value of a request; adding a required
+parameter or request field; narrowing a type or a limit. CI compares each
+change's `docs/openapi.json` with the base branch's using oasdiff and fails
+on a breaking change to a `stable` operation (`scripts/ci/check_api_compat.py`).
+Moving an operation from `stable` to `beta` or `internal` counts as removing it.
+
+**Deprecation window.** A stable operation is deprecated at least 6 months
+(180 days), and over at least two minor releases, before it is removed or
+changed incompatibly. The changelog announces the deprecation under
+`Deprecated`. For the whole window the operation keeps working and every
+response from it, errors included, carries:
+
+| Header | Example | Meaning |
+|---|---|---|
+| `Deprecation` (RFC 9745) | `Deprecation: @1794182400` | Deprecated since this time (Unix seconds; here 2026-11-09 00:00 UTC). |
+| `Sunset` (RFC 8594) | `Sunset: Mon, 10 May 2027 00:00:00 GMT` | It may be removed from this time on. |
+| `Link` | `Link: <https://github.com/gapilongo/SOC/blob/main/docs/api.md#stability-and-deprecation>; rel="deprecation"; type="text/html"` | What replaces it and how to migrate. |
+
+In the OpenAPI document the operation has `deprecated: true`, `x-sunset`
+(the date), `x-deprecated-since` and `externalDocs` (the same link). The
+three headers are exposed to browsers through CORS. To find deprecated calls
+before the sunset, log or alert on any response with a `Deprecation` header.
+Beta operations are deprecated the same way when practical, with no minimum
+window. No operation is deprecated today.
+
+In code a route is deprecated with `lg_sotf.api.stability.route_contract`:
+
+```python
+@router.get("/old", **route_contract(deprecation=Deprecation(since=date(2026, 11, 9), sunset=date(2027, 5, 10))))
+```
+
+A router's tier is set where it is mounted (`api_routers` in
+`lg_sotf/api/app.py`); `route_contract(stability=...)` overrides it for one
+route. A unit test fails if any operation has no tier.
+
 ## Authentication
 
 Three kinds of credentials are accepted. All of them resolve to a

@@ -74,8 +74,12 @@ def test_only_publishing_jobs_may_write_packages() -> None:
     for name, job in wf["jobs"].items():
         perms = job.get("permissions")
         assert perms is not None, f"{name}: declare job permissions explicitly"
+        if name == "publish-release-assets":  # uploads the SBOMs and VEX: test_supply_chain.py
+            assert perms == {"contents": "write"}
+            continue
         assert perms.get("contents") == "read", name
-        if name != "sign":  # the signing job's OIDC and attestation rights: test_ci_workflow.py
+        # The signing jobs' OIDC and attestation rights: test_ci_workflow.py.
+        if name not in {"sign", "attest-release-assets"}:
             assert set(perms) <= {"contents", "packages", "attestations"}, name
             assert perms.get("attestations", "read") == "read", name
 

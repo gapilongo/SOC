@@ -11,7 +11,10 @@ name: Release images
 #   provenance does not verify (docs/security.md, section 9).
 # * A release tag vX.Y.Z is pushed -> nothing is rebuilt: the sha-<7 hex>
 #   manifests of the tagged commit (which went through main CI) are re-tagged
-#   vX.Y.Z and that same digest is deployed to the `uat` environment.
+#   vX.Y.Z and that same digest is deployed to the `uat` environment. The
+#   release also gets its SBOMs (Python, npm, both images per platform) and
+#   the OpenVEX document as assets, each with a build-provenance attestation
+#   (docs/security.md, section 9).
 
 on:
   workflow_run:
@@ -33,6 +36,8 @@ env:
   APP_REPO: ghcr.io/gapilongo/lg-sotf
   FRONTEND_REPO: ghcr.io/gapilongo/lg-sotf-frontend
   PLATFORMS: linux/amd64,linux/arm64
+  # The Trivy release that writes the image SBOMs; the same one as ci.yml's CVE gate.
+  TRIVY_VERSION: v0.76.1
 
 jobs:
   build:
@@ -281,6 +286,96 @@ jobs:
             echo "| \`$APP_REPO:$TAG\` | \`$app\` |"
             echo "| \`$FRONTEND_REPO:$TAG\` | \`$fe\` |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  release-assets:
+    name: Build release SBOMs and VEX
+    needs: promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.promote.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Install SBOM tooling
+        run: pip install --require-hashes -r scripts/ci/requirements-tools.txt
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: ${{ env.TRIVY_VERSION }}
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: SBOMs (Python, npm, each image and platform) and VEX, validated
+        env:
+          TAG: ${{ needs.promote.outputs.image_tag }}
+          APP_DIGEST: ${{ needs.promote.outputs.app_digest }}
+          FRONTEND_DIGEST: ${{ needs.promote.outputs.frontend_digest }}
+        run: |
+          for d in "$APP_DIGEST" "$FRONTEND_DIGEST"; do
+            [[ "$d" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::unexpected digest '$d'"; exit 1; }
+          done
+          # The SBOMs describe exactly the digests the tag points at.
+          PLATFORMS="${PLATFORMS//,/ }" scripts/ci/release_assets.sh release-assets "$TAG" \
+            "lg-sotf=$APP_REPO@$APP_DIGEST" "lg-sotf-frontend=$FRONTEND_REPO@$FRONTEND_DIGEST"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 7
+
+  attest-release-assets:
+    name: Attest release SBOMs and VEX
+    needs: release-assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Like `sign`: no checkout, no repository code, only pinned actions on the files the
+    # release-assets job produced. Customers verify the files with `gh attestation verify`.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Build provenance for every asset
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: release-assets/*.json
+
+  publish-release-assets:
+    name: Attach SBOMs and VEX to the GitHub release
+    needs: [promote, attest-release-assets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the release if needed, upload its assets
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Upload to the release (created from the tag if it does not exist yet)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.promote.outputs.image_tag }}
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --generate-notes
+          gh release upload "$TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
 
   deploy-uat:
     name: Deploy uat

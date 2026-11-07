@@ -138,6 +138,21 @@ def test_upgrade_job_rehearses_the_previous_release_and_blocks_the_build() -> No
     assert " ".join(documented.group(1).split()) == rehearsed.group(1)
 
 
+def test_api_compat_job_runs_a_pinned_oasdiff_and_blocks_the_build() -> None:
+    """ARCH-E2.2: a breaking change to a stable operation of docs/openapi.json fails CI."""
+    wf = workflow()
+    job = wf["jobs"]["api-compat"]
+    assert "continue-on-error" not in job
+    assert job["steps"][0]["with"]["fetch-depth"] == 0  # the base branch's document
+    assert re.fullmatch(r"\d+\.\d+\.\d+", wf["env"]["OASDIFF_VERSION"])
+    assert re.fullmatch(r"[0-9a-f]{64}", wf["env"]["OASDIFF_SHA256"])
+    runs = [s.get("run", "") for s in job["steps"]]
+    assert any('"${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -' in r for r in runs)
+    assert "python scripts/ci/check_api_compat.py --self-test docs/openapi.json" in runs
+    assert any("check_api_compat.py /tmp/openapi-base.json docs/openapi.json" in r for r in runs)
+    assert os.access(REPO_ROOT / "scripts" / "ci" / "check_api_compat.py", os.X_OK)
+
+
 WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))
 
 
@@ -217,7 +232,7 @@ def test_ci_and_make_type_check_the_same_files() -> None:
 
 
 def test_pre_commit_ruff_matches_the_pinned_ruff() -> None:
-    pinned = re.search(r"^ruff==(\S+)$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
+    pinned = re.search(r"^ruff==([^\s\\]+) \\$", (REPO_ROOT / "requirements-dev.txt").read_text(), re.MULTILINE)
     hooks = yaml.safe_load((REPO_ROOT / ".pre-commit-config.yaml").read_text())
     [ruff] = [r for r in hooks["repos"] if r["repo"].endswith("/ruff-pre-commit")]
     assert pinned and ruff["rev"] == f"v{pinned.group(1)}"
@@ -272,9 +287,11 @@ def test_the_parallel_tier_runs_beside_the_serial_job_until_it_is_proven() -> No
 
 def test_a_nightly_job_runs_the_suite_in_random_order_with_a_pinned_plugin() -> None:
     nightly = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "nightly.yml").read_text())
-    assert re.fullmatch(r"\d+\.\d+\.\d+", nightly["env"]["PYTEST_RANDOMLY_VERSION"])
+    lock = (REPO_ROOT / "scripts" / "ci" / "requirements-nightly.txt").read_text()
+    assert re.search(r"^pytest-randomly==\d+\.\d+\.\d+ \\\n    --hash=sha256:[0-9a-f]{64}", lock, re.MULTILINE)
     runs = " ".join(s.get("run", "") for s in nightly["jobs"]["random-order"]["steps"])
-    assert '"pytest-randomly==${PYTEST_RANDOMLY_VERSION}"' in runs and "pytest -p randomly" in runs
+    assert "pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt" in runs
+    assert "pytest -p randomly" in runs
     # Installed, pytest-randomly shuffles every run: it stays out of the dev requirements.
     assert "pytest-randomly" not in (REPO_ROOT / "requirements-dev.txt").read_text()
 
@@ -351,10 +368,17 @@ def test_id_token_write_is_scoped_to_the_signing_job_only() -> None:
         wf = _load(path)
         assert "id-token" not in (wf.get("permissions") or {}), path.name
         holders += [f"{path.name}:{n}" for n, j in wf["jobs"].items() if (j.get("permissions") or {}).get("id-token")]
-    assert holders == ["release-images.yml:sign"]
-    assert _load(RELEASE)["jobs"]["sign"]["permissions"] == {
+    assert holders == ["release-images.yml:sign", "release-images.yml:attest-release-assets"]
+    jobs = _load(RELEASE)["jobs"]
+    assert jobs["sign"]["permissions"] == {
         "contents": "read", "packages": "write", "id-token": "write", "attestations": "write",
     }
+    # SEC1.2: the release SBOMs and VEX are attested by a job that, like `sign`, runs only pinned
+    # actions on files another job produced: no checkout, no shell step.
+    attest = jobs["attest-release-assets"]
+    assert attest["permissions"] == {"contents": "read", "id-token": "write", "attestations": "write"}
+    assert all("run" not in s for s in attest["steps"])
+    assert [s["uses"].split("@")[0] for s in attest["steps"]] == ["actions/download-artifact", "actions/attest"]
 
 
 def test_deploy_verifies_signature_and_provenance_before_touching_the_host() -> None:

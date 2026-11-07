@@ -23,8 +23,8 @@
 # restore registry digests.
 #
 # Environment overrides: APP_IMAGE (lg-sotf:dev), FRONTEND_IMAGE
-# (lg-sotf-frontend:dev), POSTGRES_IMAGE (postgres:16-alpine), REDIS_IMAGE
-# (redis:7-alpine), OLLAMA_IMAGE (the pin in docker/docker-compose.ollama.yml),
+# (lg-sotf-frontend:dev), POSTGRES_IMAGE and REDIS_IMAGE (the pins in
+# docker/docker-compose.yml), OLLAMA_IMAGE (the pin in docker/docker-compose.ollama.yml),
 # OLLAMA_VOLUME (lg-sotf_ollama-models).
 
 set -euo pipefail
@@ -62,10 +62,18 @@ command -v sha256sum >/dev/null || fail "sha256sum is not installed"
 pinned_ollama="$(sed -n 's/^x-ollama-image: &ollama-image \${OLLAMA_IMAGE:-\(.*\)}$/\1/p' docker/docker-compose.ollama.yml)"
 [ -n "$pinned_ollama" ] || fail "could not read the Ollama image pin from docker/docker-compose.ollama.yml"
 
+# Likewise the PostgreSQL and Redis digest pins live in docker/docker-compose.yml.
+compose_pin() {
+  local pin
+  pin="$(sed -n "s/^    image: \${$1:-\(.*\)}\$/\1/p" docker/docker-compose.yml)"
+  [ -n "$pin" ] || fail "could not read the $1 pin from docker/docker-compose.yml"
+  printf '%s' "$pin"
+}
+
 APP_IMAGE="${APP_IMAGE:-lg-sotf:dev}"
 FRONTEND_IMAGE="${FRONTEND_IMAGE:-lg-sotf-frontend:dev}"
-POSTGRES_IMAGE="${POSTGRES_IMAGE:-postgres:16-alpine}"
-REDIS_IMAGE="${REDIS_IMAGE:-redis:7-alpine}"
+POSTGRES_IMAGE="${POSTGRES_IMAGE:-$(compose_pin POSTGRES_IMAGE)}"
+REDIS_IMAGE="${REDIS_IMAGE:-$(compose_pin REDIS_IMAGE)}"
 OLLAMA_IMAGE="${OLLAMA_IMAGE:-$pinned_ollama}"
 OLLAMA_VOLUME="${OLLAMA_VOLUME:-lg-sotf_ollama-models}"
 
