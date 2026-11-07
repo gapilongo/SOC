@@ -12,7 +12,7 @@ import importlib.util
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Sequence, Tuple, get_args
 from uuid import uuid4
 
 import pytest
@@ -25,8 +25,11 @@ from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
 from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
+from lg_sotf.domain.actions import ACTION_CATALOG, TargetKind
 from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
 from lg_sotf.models import vocabulary as v
+
+ACTION_TYPES = tuple(ACTION_CATALOG)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = REPO_ROOT / "scripts" / "export_openapi.py"
@@ -61,6 +64,10 @@ ENUM_FIELDS: List[Tuple[str, str, Sequence[str]]] = [
     ("ActionOut", "execution_owner", v.EXECUTION_OWNERS),
     ("ActionOut", "verification", v.VERIFICATION_STATES),
     ("RollbackEligibilityOut", "risk", v.RISK_LEVELS),
+    ("ActionOut", "action_type", ACTION_TYPES),
+    ("RollbackEligibilityOut", "action_type", ACTION_TYPES),
+    ("PreviewActionOut", "action_type", ACTION_TYPES),
+    ("BlastRadiusOut", "target_kind", get_args(TargetKind)),
     # sources
     ("SourceOut", "type", v.SOURCE_TYPES),
     ("SourceOut", "health", SOURCE_HEALTH),

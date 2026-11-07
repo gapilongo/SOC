@@ -224,6 +224,33 @@
       "ActionOut": {
         "properties": {
           "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
             "title": "Action Type",
             "type": "string"
           },
@@ -1509,6 +1536,18 @@
           "target_kind": {
             "anyOf": [
               {
+                "enum": [
+                  "ip",
+                  "domain",
+                  "url",
+                  "hash",
+                  "user",
+                  "host",
+                  "process",
+                  "alert",
+                  "email",
+                  "message"
+                ],
                 "type": "string"
               },
               {
@@ -5007,6 +5046,33 @@
       "PreviewActionOut": {
         "properties": {
           "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
             "title": "Action Type",
             "type": "string"
           },
@@ -5534,6 +5600,33 @@
           "action_type": {
             "anyOf": [
               {
+                "enum": [
+                  "block_ip",
+                  "block_domain",
+                  "block_url",
+                  "isolate_host",
+                  "terminate_process",
+                  "quarantine_file",
+                  "disable_user",
+                  "reset_password",
+                  "revoke_sessions",
+                  "collect_forensics",
+                  "create_ticket",
+                  "send_alert",
+                  "block_sender",
+                  "purge_message",
+                  "notify_reporter",
+                  "confirm_compromised",
+                  "release_host",
+                  "unblock_ip",
+                  "unblock_domain",
+                  "unblock_url",
+                  "unblock_file",
+                  "unblock_sender",
+                  "enable_user",
+                  "restore_message",
+                  "dismiss_user_risk"
+                ],
                 "type": "string"
               },
               {

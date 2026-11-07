@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Any, Dict, Generic, Iterable, List, Literal, Optional, TypeVar
+from typing import Annotated, Any, Dict, Generic, Iterable, List, Literal, Optional, TypeVar, get_args
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, WithJsonSchema, field_validator
@@ -15,6 +15,7 @@ from lg_sotf.db.repos.integrations import INTEGRATION_KINDS, TICKETING_KINDS
 from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
+from lg_sotf.domain.actions import ACTION_CATALOG, TargetKind
 from lg_sotf.integrations.events import EVENT_TYPES as INTEGRATION_EVENT_TYPES
 from lg_sotf.models.vocabulary import (
     ACTION_STATUSES,
@@ -66,6 +67,9 @@ AutonomyModeStr = Annotated[str, WithJsonSchema(vocabulary_schema(AUTONOMY_MODES
 VerificationStateStr = Annotated[str, WithJsonSchema(vocabulary_schema(VERIFICATION_STATES))]
 ExecutionOwnerStr = Annotated[str, WithJsonSchema(vocabulary_schema(EXECUTION_OWNERS))]
 SourceTypeStr = Annotated[str, WithJsonSchema(vocabulary_schema(SOURCE_TYPES))]
+# The response action catalog (domain/actions.py): its action types and their target kinds.
+ActionTypeStr = Annotated[str, WithJsonSchema(vocabulary_schema(ACTION_CATALOG))]
+TargetKindStr = Annotated[str, WithJsonSchema(vocabulary_schema(get_args(TargetKind)))]
 # Value sets owned by one repository or adapter (each checked against its database CHECK constraint).
 SourceHealthStr = Annotated[str, WithJsonSchema(vocabulary_schema(SOURCE_HEALTH))]
 TenantStatusStr = Annotated[str, WithJsonSchema(vocabulary_schema(TENANT_STATUSES))]
@@ -420,7 +424,7 @@ class RollbackEligibilityOut(BaseModel):
     """Whether the action can be rolled back now, with the inverse type and its risk; ``reason`` when not."""
 
     available: bool = False
-    action_type: Optional[str] = None
+    action_type: Optional[ActionTypeStr] = None
     risk: Optional[RiskLevelStr] = None
     until: Optional[datetime] = None
     reason: Optional[str] = None
@@ -439,7 +443,7 @@ class GuardrailOut(BaseModel):
 class BlastRadiusOut(BaseModel):
     """What the action changes; the hourly limits are given for actions awaiting approval only."""
 
-    target_kind: Optional[str] = None
+    target_kind: Optional[TargetKindStr] = None
     scope_hosts: List[str] = Field(default_factory=list)
     hourly_limit: Optional[int] = Field(default=None, description="Per-type executions allowed per hour.")
     executed_last_hour: Optional[int] = None
@@ -451,7 +455,7 @@ class ActionOut(Out):
     id: UUID
     tenant_id: str
     alert_id: str
-    action_type: str
+    action_type: ActionTypeStr
     target: str
     params: Dict[str, Any] = Field(default_factory=dict)
     risk_level: RiskLevelStr

@@ -7,7 +7,7 @@ from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from lg_sotf.api.schemas import AutonomyModeStr, EscalationOut, In, RiskLevelStr, SuppressionOut
+from lg_sotf.api.schemas import ActionTypeStr, AutonomyModeStr, EscalationOut, In, RiskLevelStr, SuppressionOut
 from lg_sotf.services.triage import MAX_BULK
 
 # ----------------------------------------------------------------- grouping
@@ -140,7 +140,7 @@ class PreviewConnectorOut(BaseModel):
 
 
 class PreviewActionOut(BaseModel):
-    action_type: str
+    action_type: ActionTypeStr
     target: str
     description: str
     risk: RiskLevelStr

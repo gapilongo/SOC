@@ -1519,8 +1519,11 @@ export interface components {
         };
         /** ActionOut */
         ActionOut: {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
             /** Alert Id */
             alert_id: string;
             /** Approved At */
@@ -1963,7 +1966,7 @@ export interface components {
             /** Scope Hosts */
             scope_hosts?: string[];
             /** Target Kind */
-            target_kind?: string | null;
+            target_kind?: ("ip" | "domain" | "url" | "hash" | "user" | "host" | "process" | "alert" | "email" | "message") | null;
             /** Tenant Executed Last Hour */
             tenant_executed_last_hour?: number | null;
             /** Tenant Hourly Cap */
@@ -3242,8 +3245,11 @@ export interface components {
         };
         /** PreviewActionOut */
         PreviewActionOut: {
-            /** Action Type */
-            action_type: string;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
             /**
              * Approval Entry
              * @description The approved_actions entry naming exactly this action.
@@ -3450,7 +3456,7 @@ export interface components {
          */
         RollbackEligibilityOut: {
             /** Action Type */
-            action_type?: string | null;
+            action_type?: ("block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk") | null;
             /**
              * Available
              * @default false
