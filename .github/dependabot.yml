@@ -34,6 +34,40 @@ updates:
     groups:
       frontend-dev:
         dependency-type: development
+    # Held updates, each with the reason; drop an entry once its reason is gone.
+    ignore:
+      # eslint 10: eslint-plugin-jsx-a11y (6.10.2, its latest) peers on eslint <=9, so npm ci fails.
+      - dependency-name: eslint
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
+      # Need Node >=22; the Frontend build job runs Node 20.
+      - dependency-name: vitest
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitest/coverage-v8"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@testing-library/jest-dom"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@axe-core/playwright"
+        versions: [">=4.14.0"]
+      # jsdom 27+ computes accessible names without the spaces between inline elements that
+      # the component tests assert; needs an accessible-name review (30+ also needs Node 22).
+      - dependency-name: jsdom
+        update-types: ["version-update:semver-major"]
+      # TypeScript 6/7: openapi-typescript 7.13 peers on typescript ^5, typescript-eslint on <6.1.
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      # Types follow the oldest Node the frontend runs on, not the newest.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+      # Migrations rather than bumps: Tailwind 4 (CSS-first config), Vite 8 (Rolldown/Oxc;
+      # plugin-react 6 needs it).
+      - dependency-name: tailwindcss
+        update-types: ["version-update:semver-major"]
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: deps
 
