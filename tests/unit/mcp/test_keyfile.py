@@ -9,8 +9,9 @@ from typing import Any
 import pytest
 from click.testing import CliRunner
 
+from lg_sotf.cli import cli
 from lg_sotf.mcp.client import ApiConfigError
-from lg_sotf.mcp.command import MAX_KEY_FILE_BYTES, mcp_command, read_api_key_file, resolve_api_key
+from lg_sotf.mcp.command import MAX_KEY_FILE_BYTES, read_api_key_file, resolve_api_key
 from lg_sotf.settings import MCPSettings, Settings
 from tests.unit.mcp._support import fake_key
 
@@ -127,7 +128,7 @@ def test_a_key_pasted_in_place_of_the_path_is_refused_without_echoing_it(tmp_pat
 def test_command_refuses_a_key_in_the_key_file_variable_without_echoing_it(settings_env: Any) -> None:
     key = fake_key()
     settings_env(LG_SOTF_MCP__API_KEY=None, LG_SOTF_MCP__API_KEY_FILE=key, LG_SOTF_MCP__API_URL="https://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2 and "holds an API key, not a file path" in result.output
     assert key not in result.output and key[37:] not in result.output
 
@@ -149,7 +150,7 @@ def test_command_refuses_a_readable_key_file_with_exit_code_2(settings_env: Any,
     path = _key_file(tmp_path, key, 0o644)
     settings_env(LG_SOTF_MCP__API_KEY=None, LG_SOTF_MCP__API_KEY_FILE=str(path),
                  LG_SOTF_MCP__API_URL="https://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2 and "chmod 600" in result.output and key not in result.output
 
 
@@ -159,7 +160,7 @@ def test_command_takes_the_key_from_the_file(settings_env: Any, tmp_path: Path) 
     # The key file is accepted; the plain-http remote URL is then refused (exit 2), before any connection.
     settings_env(LG_SOTF_MCP__API_KEY=None, LG_SOTF_MCP__API_KEY_FILE=str(path),
                  LG_SOTF_MCP__API_URL="http://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2 and "https" in result.output and key not in result.output
 
 
@@ -168,10 +169,10 @@ def test_command_refuses_both_variables(settings_env: Any, tmp_path: Path) -> No
     path = _key_file(tmp_path, key)
     settings_env(LG_SOTF_MCP__API_KEY=key, LG_SOTF_MCP__API_KEY_FILE=str(path),
                  LG_SOTF_MCP__API_URL="https://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2 and "not both" in result.output and key not in result.output
 
 
 def test_help_names_the_key_file_variable() -> None:
-    result = CliRunner().invoke(mcp_command, ["--help"])
+    result = CliRunner().invoke(cli, ["mcp", "--help"])
     assert result.exit_code == 0 and "LG_SOTF_MCP__API_KEY_FILE" in result.output

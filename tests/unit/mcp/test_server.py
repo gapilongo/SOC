@@ -10,8 +10,8 @@ import httpx
 import pytest
 from click.testing import CliRunner
 
+from lg_sotf.cli import cli
 from lg_sotf.mcp.client import LgSotfApiClient
-from lg_sotf.mcp.command import mcp_command
 from lg_sotf.mcp.protocol import McpServer
 from lg_sotf.mcp.server import MAX_CONCURRENT_REQUESTS, MAX_LINE_BYTES, serve
 from tests.unit.mcp._support import API_URL, StubApi, fake_key, make_server, no_sleep, request
@@ -252,7 +252,7 @@ async def test_oversized_line_is_discarded_and_session_continues() -> None:
 
 def test_command_refuses_to_start_without_a_key(settings_env: Any) -> None:
     settings_env(LG_SOTF_MCP__API_KEY=None, LG_SOTF_MCP__API_URL="https://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2
     assert "LG_SOTF_MCP__API_KEY" in result.output
 
@@ -260,16 +260,16 @@ def test_command_refuses_to_start_without_a_key(settings_env: Any) -> None:
 def test_command_refuses_a_plain_http_remote_url(settings_env: Any) -> None:
     key = fake_key()
     settings_env(LG_SOTF_MCP__API_KEY=key, LG_SOTF_MCP__API_URL="http://soc.example.com")
-    result = CliRunner().invoke(mcp_command, [], input="")
+    result = CliRunner().invoke(cli, ["mcp"], input="")
     assert result.exit_code == 2 and "https" in result.output and key not in result.output
 
 
 def test_command_takes_no_key_argument() -> None:
-    result = CliRunner().invoke(mcp_command, ["--api-key", "x"])
+    result = CliRunner().invoke(cli, ["mcp", "--api-key", "x"])
     assert result.exit_code != 0
 
 
 def test_help_names_the_environment_variables() -> None:
-    result = CliRunner().invoke(mcp_command, ["--help"])
+    result = CliRunner().invoke(cli, ["mcp", "--help"])
     assert result.exit_code == 0
     assert "LG_SOTF_MCP__API_URL" in result.output and "LG_SOTF_MCP__API_KEY" in result.output

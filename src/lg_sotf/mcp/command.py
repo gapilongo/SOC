@@ -13,7 +13,7 @@ from lg_sotf.mcp.client import ApiConfigError, LgSotfApiClient
 from lg_sotf.mcp.protocol import McpServer
 from lg_sotf.mcp.server import run_stdio
 from lg_sotf.security.redaction import redact_text
-from lg_sotf.settings import Settings, get_settings
+from lg_sotf.settings import Settings
 
 KEY_FILE_VARIABLE = "LG_SOTF_MCP__API_KEY_FILE"
 MAX_KEY_FILE_BYTES = 4_096
@@ -125,21 +125,16 @@ async def _main(settings: Settings, api_key: str) -> None:
         await api.aclose()
 
 
-@click.command("mcp")
-def mcp_command() -> None:
-    """Run the Model Context Protocol server over stdio.
+def run_mcp(settings: Settings) -> None:
+    """Run the Model Context Protocol server over stdio (``lg-sotf mcp``).
 
-    A thin client of the LG-SOTF REST API: set LG_SOTF_MCP__API_URL (the API's
-    base URL; https, or http for localhost) and either LG_SOTF_MCP__API_KEY or
-    LG_SOTF_MCP__API_KEY_FILE (a file holding the key that only its owner can
-    read or write) in the environment of the MCP client's server entry. The
-    key needs the 'read' scope, plus 'write' for add_note or 'ingest' for test
-    alerts. It is never accepted as an argument. Logs go to stderr; stdout
-    carries protocol messages only.
+    A thin client of the LG-SOTF REST API, configured by ``settings.mcp``: the
+    API's base URL and either an API key or a key file. Logs go to stderr;
+    stdout carries protocol messages only. Configuration errors exit with
+    status 2.
     """
     from lg_sotf.observability.logging import configure_logging
 
-    settings = get_settings()
     configure_logging(settings, stream=sys.stderr)
     try:
         key = resolve_api_key(settings)
@@ -155,4 +150,4 @@ def mcp_command() -> None:
         pass
 
 
-__all__ = ["mcp_command", "read_api_key_file", "resolve_api_key"]
+__all__ = ["read_api_key_file", "resolve_api_key", "run_mcp"]

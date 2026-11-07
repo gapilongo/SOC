@@ -489,10 +489,9 @@ def mcp() -> None:
     never accepted as an argument. Logs go to stderr; stdout carries protocol
     messages only. See docs/mcp.md.
     """
-    from lg_sotf.mcp.command import mcp_command
+    from lg_sotf.mcp.command import run_mcp
 
-    assert mcp_command.callback is not None
-    mcp_command.callback()
+    run_mcp(get_settings())
 
 
 def main() -> None:
