@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List
 
 import pytest
 
@@ -12,6 +12,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.runtime import scheduler as scheduler_module
 from lg_sotf.runtime import worker as worker_module
 from lg_sotf.security.crypto import SecretBox, generate_key
+from lg_sotf.security.hashing import SecurityConfigError
 from lg_sotf.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -26,17 +27,6 @@ class Stop(Exception):
 class _NoRedis:
     async def aclose(self) -> None:
         return None
-
-
-class RecordingLog:
-    def __init__(self) -> None:
-        self.events: List[Tuple[str, Dict[str, Any]]] = []
-
-    def warning(self, event: str, **kw: Any) -> None:
-        self.events.append((event, kw))
-
-    def info(self, event: str, **kw: Any) -> None:
-        self.events.append((event, kw))
 
 
 @pytest.fixture
@@ -91,18 +81,23 @@ async def test_the_scheduler_injects_the_box_it_built(
     assert await _scheduler_box(make_settings(security={"encryption_keys": None}), monkeypatch) is None
 
 
-@pytest.mark.usefixtures("no_services")
-async def test_invalid_keys_leave_the_worker_and_scheduler_without_a_box(
+async def test_invalid_keys_stop_the_worker_and_scheduler_before_they_connect(
     make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """ADR-0006: every role refuses to start on invalid encryption keys, as the API does."""
     settings = make_settings(security={"encryption_keys": INVALID_KEYS})
-    worker_log, scheduler_log = RecordingLog(), RecordingLog()
-    monkeypatch.setattr(worker_module, "log", worker_log)
-    monkeypatch.setattr(scheduler_module, "log", scheduler_log)
-    assert await _worker_box(settings, monkeypatch) is None
-    assert await _scheduler_box(settings, monkeypatch) is None
-    assert worker_log.events == [("worker.secret_box_unavailable", {"error_type": "SecurityConfigError"})]
-    assert scheduler_log.events == [("scheduler.secret_box_unavailable", {"error_type": "SecurityConfigError"})]
+    opened: List[str] = []
+
+    async def record_open(self: Database) -> None:
+        opened.append(self._application_name)
+
+    monkeypatch.setattr(Database, "open", record_open)
+    monkeypatch.setattr("lg_sotf.queue.redis.create_redis", lambda settings: _NoRedis())
+    with pytest.raises(SecurityConfigError, match="not a valid Fernet key"):
+        await worker_module.run_worker(settings, metrics_host="127.0.0.1", metrics_port=0)
+    with pytest.raises(SecurityConfigError, match="not a valid Fernet key"):
+        await scheduler_module.run_scheduler(settings, metrics_host="127.0.0.1", metrics_port=0)
+    assert opened == []
 
 
 def test_the_scheduler_forwards_its_box_to_the_services_it_builds(make_settings: Callable[..., Settings]) -> None:

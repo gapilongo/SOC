@@ -88,6 +88,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- The worker and the scheduler now refuse to start when
+  `security.encryption_keys` is set but holds a key that is not a valid
+  Fernet key, as the API already did: `lg-sotf worker` and
+  `lg-sotf scheduler` exit with the configuration error. Before, they ran
+  without a key, and every action, notification, ticket and source poll that
+  needed a stored credential failed later. Unset keys still start every role.
+  Each process now builds its key set once at startup and passes it to the
+  components that decrypt credentials (ADR-0006).
 - Roles are now listed from least to most privileged (`viewer`, `analyst`,
   `admin`) everywhere: in the choices of `lg-sotf create-admin --role` and
   in the "expected one of" message when a user is created or updated with

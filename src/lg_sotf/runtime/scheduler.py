@@ -655,15 +655,9 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
     from lg_sotf.runtime.shutdown import GracefulShutdown, cancel_current_task
     from lg_sotf.security.crypto import load_secret_box
-    from lg_sotf.security.hashing import SecurityConfigError
 
-    box: Optional[SecretBox]
-    try:
-        box = load_secret_box(settings)
-    except SecurityConfigError as exc:
-        # Invalid keys: run without a box (integration secrets cannot be decrypted), as before D7.
-        log.warning("scheduler.secret_box_unavailable", error_type=type(exc).__name__)
-        box = None
+    # Invalid encryption keys stop the scheduler here, as they stop the API (ADR-0006).
+    box = load_secret_box(settings)
     db = Database(settings.database, dsn=owner_dsn(settings), application_name="lg-sotf-scheduler")
     redis = create_redis(settings)
     try:
@@ -674,9 +668,7 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
         def ingestion_factory() -> IngestionLike:
             from lg_sotf.ingestion.service import IngestionService
             from lg_sotf.llm import TokenBudget
-            from lg_sotf.security.crypto import load_secret_box
 
-            box = load_secret_box(settings)
             # LLM normalization fallback during polls is charged to the tenant's daily budget.
             budget = TokenBudget(redis, settings, usage_seed=Repositories.create(db).llm_usage.day_tokens)
             service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=budget)
