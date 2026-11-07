@@ -398,7 +398,7 @@ export default function SourcesPage() {
                 <tr key={s.id} className="border-b border-subtle align-top">
                   <td className="px-3 py-2">
                     <div className="min-w-[10rem] font-medium text-fg">{s.name}</div>
-                    <Truncated value={s.id} mono className="max-w-[14rem] text-xs text-muted" />
+                    <Truncated value={s.id} mono className="max-w-[10rem] text-xs text-muted" />
                     {!s.enabled && healthTone(s) !== 'disabled' && <Badge>disabled</Badge>}
                   </td>
                   <td className="px-3 py-2 text-body">{SOURCE_SPECS[s.type as SourceType]?.label ?? s.type}</td>
@@ -407,7 +407,7 @@ export default function SourcesPage() {
                     {s.consecutive_failures ? <div className="mt-1 text-xs text-danger-fg">{s.consecutive_failures} consecutive failures</div> : null}
                     {s.last_error && (
                       // At most three lines in the table; the whole error is the tooltip.
-                      <div className="mt-1 line-clamp-3 max-w-xs break-words text-xs text-danger-fg" title={s.last_error}>
+                      <div className="mt-1 line-clamp-3 max-w-[14rem] break-words text-xs text-danger-fg" title={s.last_error}>
                         {s.last_error}
                       </div>
                     )}
@@ -418,7 +418,8 @@ export default function SourcesPage() {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">{s.has_secret ? <Badge tone="good">configured</Badge> : <Badge>none</Badge>}</td>
                   <td className="px-3 py-2">
-                    <div className="flex justify-end gap-1.5 whitespace-nowrap">
+                    {/* Two buttons a row, so the table fits at 1280 px. */}
+                    <div className="ml-auto flex w-[11rem] flex-wrap justify-end gap-1.5">
                       <Button size="sm" onClick={() => void test(s)} busy={testing === s.id} icon={<PlugZap className="h-3.5 w-3.5" aria-hidden="true" />}>
                         Test
                       </Button>

@@ -156,12 +156,12 @@ function FragmentRow({ e, open, onToggle }: { e: AuditEntryOut; open: boolean; o
         <td className="whitespace-nowrap px-3 py-2 text-secondary">{formatDateTime(e.ts)}</td>
         <td className="px-3 py-2 text-body">
           {e.actor_type}
-          {e.actor_id && <Truncated value={e.actor_id} mono className="max-w-[16rem] text-xs text-muted" />}
+          {e.actor_id && <Truncated value={e.actor_id} mono className="max-w-[10rem] text-xs text-muted" />}
         </td>
         <td className="px-3 py-2 font-mono text-xs text-fg">{e.action}</td>
         <td className="px-3 py-2 text-body">
           {e.resource_type}
-          {e.resource_id && <Truncated value={e.resource_id} mono className="max-w-[16rem] text-xs text-muted" />}
+          {e.resource_id && <Truncated value={e.resource_id} mono className="max-w-[10rem] text-xs text-muted" />}
         </td>
         <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-muted" title={e.hash}>
           {e.hash.slice(0, 12)}

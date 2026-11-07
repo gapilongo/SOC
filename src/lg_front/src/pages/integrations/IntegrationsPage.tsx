@@ -103,7 +103,8 @@ export default function IntegrationsPage() {
                       {missing.length ? <Badge tone="warn">missing {missing.map((m) => m.replace(/_/g, ' ')).join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
                     </td>
                     <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1.5">
+                      {/* Two buttons a row, so the table fits at 1280 px. */}
+                      <div className="ml-auto flex w-[11rem] flex-wrap justify-end gap-1.5">
                         <Button size="sm" onClick={() => void test(i)} busy={testing === i.id} icon={<PlugZap className="h-3.5 w-3.5" aria-hidden="true" />} aria-label={`Test ${i.name}`}>
                           Test
                         </Button>
