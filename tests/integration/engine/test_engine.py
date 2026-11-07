@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from lg_sotf.core.state import AlertSummary, EscalationSummary
 from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.tenancy import thread_id_for
@@ -19,7 +20,7 @@ from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine._support import RecordingEvents
+from tests.integration.engine._support import RecordingEvents, undeclared_keys
 
 pytestmark = pytest.mark.integration
 
@@ -104,6 +105,7 @@ async def test_benign_alert_is_closed(engine: WorkflowEngine, repos: Repositorie
     assert (alert.status, alert.disposition) == ("closed", "benign")
     assert alert.closed_at is not None
     assert alert.summary["verdict"] == "benign" and alert.summary["close_reason"] == "triage:false_positive"
+    assert undeclared_keys(alert.summary, AlertSummary) == []
     nodes = [e.node for e in (await repos.alert_events.list_for_alert(TENANT_A, alert_id)).items]
     assert nodes == ["gate", "triage", "close"]
     assert await repos.escalations.get_active_for_alert(TENANT_A, alert_id) is None
@@ -167,8 +169,12 @@ async def test_suspicious_alert_full_lifecycle(
     tools = alert.summary["analysis"]["tools"]
     assert alert.summary["analysis"]["simulated_evidence"] is bool(tools)
     assert all(t["simulated"] for t in tools)
+    # T3.3: every key the workflow wrote is declared by the summary TypedDicts.
+    assert {"triage", "correlation", "analysis", "response", "escalation_id", "decision"} <= set(alert.summary)
+    assert undeclared_keys(alert.summary, AlertSummary) == []
     esc = await repos.escalations.get(TENANT_A, escalation_id)
     assert esc.status == "decided"
+    assert "routing" in esc.summary and undeclared_keys(esc.summary, EscalationSummary) == []
     audit = (await repos.audit.list(TENANT_A, resource_type="response_action", limit=200)).items
     audited = {e.action for e in audit}
     assert {"response_action.proposed", "response_action.executing", "response_action.dry_run"} <= audited
@@ -313,6 +319,7 @@ async def test_suppression_rule_closes_before_triage(
     alert = await repos.alerts.get(TENANT_A, alert_id)
     assert alert.disposition == "benign"
     assert alert.summary["suppressed_by"] == {"type": "suppression_rule", "rule_id": rule.id, "name": "known scanner"}
+    assert undeclared_keys(alert.summary, AlertSummary) == []
     assert (await repos.suppressions.get(TENANT_A, rule.id)).hit_count == 1
 
 

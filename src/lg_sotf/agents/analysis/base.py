@@ -85,7 +85,7 @@ from lg_sotf.tools.enrichment import (
 )
 
 if TYPE_CHECKING:
-    from lg_sotf.core.state import AnalysisDigest, LlmRefusal
+    from lg_sotf.core.state import AnalysisDigest, AnalysisSummary, LlmRefusal, ToolObservation
 
 SEVERITY_BOOST = {"critical": 25, "high": 20, "medium": 10, "low": 0, "info": -10}
 # Classic backdoor/C2 listener ports (8080 is ordinary proxy/alt-HTTP traffic, not evidence).
@@ -193,12 +193,12 @@ class AnalysisResult:
             out["llm_refusal"] = cast("LlmRefusal", self.llm_refusal)
         return out
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> AnalysisSummary:
         """For ``alerts.summary.analysis``: the digest plus the evidence behind it."""
         return {
             **self.digest(),
             "threat_indicators": self.threat_indicators,
-            "tools": self.observations,
+            "tools": cast("List[ToolObservation]", self.observations),
             "history": self.history,
             "reasoning": self.reasoning,
         }

@@ -32,7 +32,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Callable, Dict, Iterable, List, Literal, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, cast
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from pydantic import BaseModel, ConfigDict
@@ -57,6 +57,9 @@ from lg_sotf.llm.provenance import model_provenance
 from lg_sotf.llm.schema import clipped_str
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.settings import Settings
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary
 
 log = get_logger(__name__)
 
@@ -146,6 +149,11 @@ def _obj(value: Any) -> Dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _summary(alert: Alert) -> AlertSummary:
+    """The alert's summary document (empty when malformed); its values are read defensively."""
+    return cast("AlertSummary", _obj(alert.summary))
+
+
 def _strings(value: Any, limit: int) -> List[str]:
     if not isinstance(value, (list, tuple)):
         return []
@@ -187,7 +195,7 @@ def _mitre(normalized: Mapping[str, Any]) -> tuple[List[str], List[str]]:
 
 def _malicious_assessment(case: CaseData) -> str:
     alert = case.alert
-    summary = _obj(alert.summary)
+    summary = _summary(alert)
     analysis = _obj(summary.get("analysis"))
     decided = _decided(case.escalations)
     parts: List[str] = []
@@ -259,7 +267,7 @@ def _actions_text(actions: Iterable[ResponseAction], statuses: frozenset[str]) -
 
 
 def _threat_type(case: CaseData) -> Optional[str]:
-    summary = _obj(case.alert.summary)
+    summary = _summary(case.alert)
     triage = _obj(summary.get("triage"))
     response = _obj(summary.get("response"))
     tactics, techniques = _mitre(_obj(case.alert.normalized))
@@ -319,7 +327,7 @@ def build_draft_fields(case: CaseData, stage: str) -> List[DraftField]:
         raise ValueError(f"unknown NIS2 report stage: {stage!r}")
     alert = case.alert
     normalized = _obj(alert.normalized)
-    analysis = _obj(_obj(alert.summary).get("analysis"))
+    analysis = _obj(_summary(alert).get("analysis"))
     cross_border = DraftField(
         "cross_border_impact", "Cross-border impact", None, "requires_human",
         help="Whether other Member States are or could be affected. Affected assets from the case: "
@@ -400,7 +408,7 @@ NARRATIVE_TASKS = {
 def narrative_input(case: CaseData) -> Dict[str, Any]:
     """Alert-derived case data for the model (goes into the untrusted data block)."""
     alert = case.alert
-    summary = _obj(alert.summary)
+    summary = _summary(alert)
     analysis = _obj(summary.get("analysis"))
     normalized = _obj(alert.normalized)
     data: Dict[str, Any] = jsonable(  # a mapping comes back as a dict

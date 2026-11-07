@@ -8,24 +8,34 @@ from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Set, get_t
 import pytest
 
 from lg_sotf.agents.analysis.base import AnalysisResult
+from lg_sotf.agents.analysis.react import Candidate, Observation
 from lg_sotf.agents.correlation.base import CorrelationResult
 from lg_sotf.agents.triage.base import TriageResult
 from lg_sotf.core.graph import WorkflowState, build_graph
+from lg_sotf.core.nodes import _escalation_summary
 from lg_sotf.core.state import (
+    AlertSummary,
     AnalysisDigest,
+    AnalysisSummary,
     AnalystInput,
     ApprovalInput,
     CorrelationDigest,
     DecisionDigest,
+    EscalationSummary,
     GateDigest,
     LlmRefusal,
     PhishingDigest,
     PlanDigest,
+    ResponseSummary,
+    ReviewBand,
+    RoutingDigest,
+    ToolObservation,
     TriageDigest,
 )
 from lg_sotf.domain.phishing import PhishingAssessment
-from lg_sotf.domain.routing import Decision, RoutingThresholds
+from lg_sotf.domain.routing import Decision, RoutingThresholds, routing_digest
 from lg_sotf.services.response.planner import PlanResult
+from lg_sotf.tools.enrichment import EnrichmentResult
 
 pytestmark = pytest.mark.unit
 
@@ -117,6 +127,37 @@ def test_decision_and_plan_digest_keys_are_declared() -> None:
 
 def test_refusal_digest_keys_are_declared() -> None:
     assert set(REFUSAL) == declared(LlmRefusal)
+
+
+def test_analysis_summary_and_tool_observation_keys_are_declared() -> None:
+    observation = Observation(
+        Candidate("i1", "ip", "203.0.113.7", ["abuseipdb"]),
+        [EnrichmentResult.ok("abuseipdb", "ip", "malicious", {"score": 90})],
+    )
+    tool = observation.digest()
+    assert_declared(tool, ToolObservation, complete=True)
+    summary = analysis(llm_refusal=dict(REFUSAL), observations=[dict(tool)]).summary()
+    assert_declared(summary, AnalysisSummary, complete=True)
+
+
+def test_escalation_summary_keys_are_declared() -> None:
+    state: Dict[str, Any] = {"alert": {"title": "t"}, "severity": "high", "analysis": analysis().digest()}
+    summary = _escalation_summary(state, routing_digest("grey_zone", 50.0, RoutingThresholds()))
+    assert set(summary) <= declared(EscalationSummary)
+    assert set(summary["routing"]) == declared(RoutingDigest)
+    assert set(summary["routing"]["band"] or {}) == declared(ReviewBand)
+
+
+def test_alert_summary_declares_what_the_close_node_writes() -> None:
+    """The keys the close node writes (the full set is checked against real runs in the engine tests)."""
+    closed = {
+        "verdict", "close_reason", "confidence", "threat_score", "decision", "analyst_decision", "escalation_id",
+        "actions", "dry_run", "simulated_evidence", "llm_budget_exceeded", "suppressed_by",
+    }
+    accounting = {"llm_usage", "llm_models", "llm_refusals", "llm_budget_exceeded"}
+    nodes = {"triage", "correlation", "analysis", "response", "escalation_attached", "detached_from"}
+    assert closed | accounting | nodes == declared(AlertSummary)
+    assert declared(ResponseSummary) == {"threat_type", "evidence", "auto", "awaiting", "blocked", "done"}
 
 
 class GateClosesNodes:

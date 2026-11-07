@@ -14,21 +14,28 @@ This module imports only :mod:`typing` and the domain vocabulary, so any layer
 may reference it (lower layers under ``TYPE_CHECKING``, ADR-0001).
 """
 
-from typing import Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Optional, TypedDict
 
 from lg_sotf.models.vocabulary import Decision, Route
 
 __all__ = [
+    "AlertSummary",
     "AnalysisDigest",
+    "AnalysisSummary",
     "AnalystInput",
     "ApprovalInput",
     "CorrelationDigest",
     "DecisionDigest",
+    "EscalationSummary",
     "GateDigest",
     "LlmRefusal",
     "PhishingDigest",
     "PlanDigest",
+    "ResponseSummary",
+    "ReviewBand",
+    "RoutingDigest",
     "SuppressedBy",
+    "ToolObservation",
     "TriageDigest",
 ]
 
@@ -166,3 +173,114 @@ class ApprovalInput(TypedDict, total=False):
     rejected_action_ids: List[str]
     decided_by: str
     reject_remaining: bool
+
+
+# --------------------------------------------------------------- alerts.summary
+
+
+class ToolObservation(TypedDict, total=False):
+    """One reputation lookup of the analysis agent (``alerts.summary.analysis.tools``)."""
+
+    tool: str
+    kind: str
+    target: str
+    results: List[Dict[str, Any]]
+    simulated: bool
+    #: ISO 8601: when the platform received the results.
+    checked_at: str
+
+
+class AnalysisSummary(AnalysisDigest, total=False):
+    """``alerts.summary.analysis``: the analysis digest plus the evidence behind it."""
+
+    threat_indicators: List[str]
+    tools: List[ToolObservation]
+    #: Analyst-confirmed history lookups: kind, value, the lookup result and ``checked_at``.
+    history: List[Dict[str, Any]]
+    reasoning: List[str]
+
+
+class ResponseSummary(TypedDict, total=False):
+    """``alerts.summary.response``: the response plan's playbook, evidence and action counts."""
+
+    threat_type: str
+    evidence: str
+    auto: int
+    awaiting: int
+    blocked: int
+    done: int
+
+
+class AlertSummary(TypedDict, total=False):
+    """The ``alerts.summary`` document. Writers shallow-merge a subset of these keys (``AlertsRepo.update``).
+
+    Rows written by an older release may lack keys or hold other shapes, so
+    readers stay defensive; nothing validates this at runtime.
+    """
+
+    # The agents' digests (triage, correlation) and the full analysis.
+    triage: TriageDigest
+    correlation: CorrelationDigest
+    analysis: AnalysisSummary
+    # LLM accounting (lg_sotf.agents.base.persist_llm_accounting).
+    llm_usage: Dict[str, Any]
+    llm_models: Dict[str, Dict[str, str]]
+    llm_refusals: List[LlmRefusal]
+    llm_budget_exceeded: bool
+    # Escalation (escalate and await_analyst nodes).
+    escalation_id: Optional[str]
+    escalation_attached: bool
+    detached_from: str
+    # The response plan (plan_response node).
+    response: ResponseSummary
+    # The outcome (close node).
+    verdict: str
+    close_reason: str
+    confidence: Optional[float]
+    threat_score: Optional[float]
+    decision: Optional[DecisionDigest]
+    analyst_decision: Optional[str]
+    actions: Dict[str, int]
+    dry_run: bool
+    simulated_evidence: bool
+    suppressed_by: Optional[SuppressedBy]
+
+
+# ---------------------------------------------------------- escalations.summary
+
+
+class ReviewBand(TypedDict):
+    min: int
+    max: int
+
+
+class RoutingDigest(TypedDict):
+    """The routing outcome that created an escalation (``escalations.summary.routing``)."""
+
+    code: str
+    confidence: float
+    band: Optional[ReviewBand]
+
+
+class EscalationSummary(TypedDict, total=False):
+    """What the workflow writes to ``escalations.summary`` (the database adds ``attached_count``)."""
+
+    title: str
+    severity: str
+    confidence: float
+    threat_score: Optional[int]
+    verdict: Optional[str]
+    conclusion: str
+    simulated_evidence: bool
+    recommended_actions: List[str]
+    #: Whether ``conclusion`` was written by the model (else by the rules); null without an analysis.
+    llm_used: Optional[bool]
+    routing: RoutingDigest
+    # Added by EscalationService and the escalations repository.
+    correlated_alert_ids: List[str]
+    attached_count: int
+    # A detached escalation (an attached alert that needs its own decision).
+    detached_from: str
+    parent_alert_id: str
+    parent_decision: str
+    own_review_reason: str

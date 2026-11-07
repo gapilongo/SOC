@@ -27,7 +27,7 @@ Lists are capped; ``limits`` records whether anything was left out.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Mapping, Optional, Sequence, Tuple, cast
 
 from lg_sotf import __version__
 from lg_sotf.compliance import html as h
@@ -38,6 +38,9 @@ from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
 
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary
+
 EVIDENCE_FORMAT = "lg-sotf.evidence-pack"
 EVIDENCE_VERSION = 1
 MAX_TIMELINE_EVENTS = 5_000
@@ -47,7 +50,7 @@ MAX_AUDIT_ENTRIES = 2_000
 MAX_SIGHTINGS = 1_000
 PAGE_SIZE = 200
 
-AGENT_STEPS = ("triage", "correlation", "analysis")
+AGENT_STEPS: Tuple[Literal["triage", "correlation", "analysis"], ...] = ("triage", "correlation", "analysis")
 AUTOMATED_NODES = ("gate", "triage", "correlation", "analysis", "decide", "escalate", "plan_response",
                    "execute_actions", "close")
 AI_MALICIOUS = frozenset({"malicious", "suspicious"})
@@ -129,7 +132,7 @@ async def _audit_entries(
     return entries[:MAX_AUDIT_ENTRIES], len(entries) > MAX_AUDIT_ENTRIES
 
 
-def _agents(summary: Mapping[str, Any], events: Sequence[AlertEvent]) -> Dict[str, Any]:
+def _agents(summary: AlertSummary, events: Sequence[AlertEvent]) -> Dict[str, Any]:
     """Per-step reasoning, verdict and confidence, with the provider/model that step called."""
     models = _obj(summary.get("llm_models"))
     usage_by_agent = _obj(_obj(summary.get("llm_usage")).get("by_agent"))
@@ -243,7 +246,7 @@ def _feedback_view(f: Feedback) -> Dict[str, Any]:
 
 
 def human_oversight(
-    summary: Mapping[str, Any],
+    summary: AlertSummary,
     events: Sequence[AlertEvent],
     escalations: Sequence[Escalation],
     actions: Sequence[ResponseAction],
@@ -387,7 +390,7 @@ async def build_evidence_pack(
         )
     chain_since = audit[0]["ts"] if audit else None
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
-    summary = _obj(alert.summary)
+    summary = cast("AlertSummary", _obj(alert.summary))
     rollbacks = _rollback_links(actions)
     raw_redacted, raw_redactions = redact(alert.raw)
     analysis = _obj(summary.get("analysis"))

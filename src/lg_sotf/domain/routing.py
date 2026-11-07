@@ -24,7 +24,7 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Literal, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
         DecisionDigest,
         GateDigest,
         PlanDigest,
+        RoutingDigest,
         TriageDigest,
     )
 
@@ -223,7 +224,7 @@ def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[
     return None
 
 
-def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> Dict[str, Any]:
+def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> RoutingDigest:
     """What an escalation records about the routing that created it: the code, the confidence and the band."""
     band = review_band(code, confidence, t)
     return {
