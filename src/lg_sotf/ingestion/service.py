@@ -58,9 +58,9 @@ import re
 import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Awaitable, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import httpx
 
@@ -68,6 +68,7 @@ from lg_sotf.db.errors import NotFound
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import NewAlert, Repositories, Source
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.ingestion.batch import IngestResult, PreparedEvent, assemble_result, dedupe_batch
 from lg_sotf.ingestion.email import EmailLimits, EmailParseError, parse_email
 from lg_sotf.ingestion.errors import (
     IngestionError,
@@ -97,7 +98,7 @@ from lg_sotf.ingestion.sources import (
 )
 from lg_sotf.llm import USE_DEFAULT, BudgetLimit, TokenBudget
 from lg_sotf.llm.errors import LLMBudgetExceeded
-from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, IngestedAlert, cap_mapping, json_size
+from lg_sotf.models.alert import TRUNCATED_MARKER, CanonicalAlert, cap_mapping, json_size
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import redact, redact_text
@@ -119,56 +120,12 @@ EMAIL_SOURCE_PREFIX = "email:"
 PUSH_TYPES = PUSH_ONLY_TYPES
 UNREACHABLE_DETAIL = "source is unreachable or did not respond"
 
-ItemStatus = Literal["inserted", "duplicate", "rejected"]
 ConnectorFactory = Callable[[Source, Mapping[str, Any]], PullConnector]
-
-
-@dataclass(frozen=True)
-class RejectedEvent:
-    index: int
-    reason: str
-
-
-@dataclass(frozen=True)
-class IngestItem:
-    """Per-event outcome, in input order (``POST /ingest/*`` returns these)."""
-
-    index: int
-    status: ItemStatus
-    alert_id: Optional[str] = None
-    reason: Optional[str] = None
-
-
-@dataclass
-class IngestResult:
-    inserted: List[IngestedAlert] = field(default_factory=list)
-    duplicates: int = 0
-    rejected: List[RejectedEvent] = field(default_factory=list)
-    items: List[IngestItem] = field(default_factory=list)
-    # poll_source only: pages committed, whether the page cap stopped the poll, and the failure (secret-free).
-    pages: int = 0
-    more_pending: bool = False
-    error: Optional[str] = None
-
-    def extend(self, other: IngestResult) -> None:
-        offset = len(self.items)
-        self.inserted.extend(other.inserted)
-        self.duplicates += other.duplicates
-        self.rejected.extend(RejectedEvent(r.index + offset, r.reason) for r in other.rejected)
-        self.items.extend(
-            IngestItem(i.index + offset, i.status, i.alert_id, i.reason) for i in other.items
-        )
-
-
-@dataclass
-class _Prepared:
-    index: int
-    row: NewAlert
 
 
 @dataclass
 class _Outcome:
-    prepared: Optional[_Prepared] = None
+    prepared: Optional[PreparedEvent] = None
     reason: Optional[str] = None
     # Redacted event waiting for the LLM fallback, and how many values redaction replaced in it.
     pending_llm: Optional[Dict[str, Any]] = None
@@ -575,7 +532,7 @@ class IngestionService:
             return _Outcome(reason=str(exc))
         return _Outcome(prepared=self._finish(index, alert, redacted, redactions))
 
-    def _finish(self, index: int, alert: CanonicalAlert, redacted: Mapping[str, Any], redactions: int) -> _Prepared:
+    def _finish(self, index: int, alert: CanonicalAlert, redacted: Mapping[str, Any], redactions: int) -> PreparedEvent:
         raw = cap_mapping(redacted, self._options.max_raw_bytes)
         flags = list(alert.flags)
         if TRUNCATED_MARKER in raw and TRUNCATED_MARKER not in redacted:
@@ -596,7 +553,7 @@ class IngestionService:
             raw=raw,
             normalized=alert.normalized_document(),
         )
-        return _Prepared(index, row)
+        return PreparedEvent(index, row)
 
     async def _llm_prepare(
         self,
@@ -665,57 +622,16 @@ class IngestionService:
                 results[index] = _Outcome(reason="unrecognized event format (LLM normalization timed out)")
         return results
 
-    async def _ingest(
+    async def _persist(
         self,
         tenant_id: str,
         source_id: str,
-        source_type: str,
-        fmt: str,
-        config: Mapping[str, Any],
-        events: Sequence[Any],
-        *,
+        unique: Sequence[PreparedEvent],
+        in_batch_dupes: Mapping[int, str],
         page: Optional[FetchedPage],
-    ) -> IngestResult:
-        normalizer = get_normalizer(fmt)
-        now = datetime.now(UTC)
-        ctx = NormalizeContext(
-            source_id=source_id,
-            source_type=source_type,
-            config=config or {},
-            now=now,
-            max_future=timedelta(seconds=self._options.max_future_skew_s),
-        )
-        prepared: List[_Prepared] = []
-        reasons: Dict[int, str] = {}
-        pending: List[Tuple[int, Dict[str, Any], int]] = []
-        outcomes: List[Tuple[int, _Outcome]] = []
-        for index, event in enumerate(events):
-            outcome = await self._prepare_event(index, event, ctx, normalizer)
-            waiting = outcome.pending_llm
-            if waiting is not None:
-                if len(pending) >= self._options.llm_fallback_max_per_call:
-                    outcome = _Outcome(reason="unrecognized event format (LLM fallback limit reached for this batch)")
-                else:
-                    pending.append((index, waiting, outcome.redactions))
-                    continue
-            outcomes.append((index, outcome))
-        outcomes.extend((await self._llm_phase(tenant_id, pending, ctx)).items())
-        for index, outcome in sorted(outcomes, key=lambda pair: pair[0]):
-            if outcome.prepared is not None:
-                prepared.append(outcome.prepared)
-            else:
-                reasons[index] = outcome.reason or "rejected"
-
-        unique: List[_Prepared] = []
-        seen: Dict[str, int] = {}
-        in_batch_dupes: Dict[int, str] = {}
-        for p in prepared:
-            if p.row.source_alert_id in seen:
-                in_batch_dupes[p.index] = p.row.source_alert_id
-                continue
-            seen[p.row.source_alert_id] = p.index
-            unique.append(p)
-
+    ) -> Tuple[set[str], Dict[str, str]]:
+        """One tenant transaction: insert, count usage, look up the duplicates' stored ids and, for a pulled
+        page, queue the new alerts' runs and move the cursor. Returns (inserted ids, stored id by key)."""
         inserted_ids: set[str] = set()
         existing: Dict[str, str] = {}
         async with self._db.tenant_tx(tenant_id) as conn:
@@ -744,26 +660,52 @@ class IngestionService:
                 )
                 if not advanced:
                     log.warning("ingestion.cursor_not_advanced", tenant_id=tenant_id, source_id=source_id)
+        return inserted_ids, existing
 
-        result = IngestResult()
-        by_index = {p.index: p for p in unique}
-        for index in range(len(events)):
-            if index in reasons:
-                result.rejected.append(RejectedEvent(index, reasons[index]))
-                result.items.append(IngestItem(index, "rejected", reason=reasons[index]))
-            elif index in in_batch_dupes:
-                result.duplicates += 1
-                result.items.append(IngestItem(index, "duplicate", alert_id=existing.get(in_batch_dupes[index])))
-            else:
-                p = by_index[index]
-                if p.row.id in inserted_ids:
-                    result.inserted.append(IngestedAlert(alert_id=p.row.id, severity=p.row.severity))
-                    result.items.append(IngestItem(index, "inserted", alert_id=p.row.id))
+    async def _ingest(
+        self,
+        tenant_id: str,
+        source_id: str,
+        source_type: str,
+        fmt: str,
+        config: Mapping[str, Any],
+        events: Sequence[Any],
+        *,
+        page: Optional[FetchedPage],
+    ) -> IngestResult:
+        normalizer = get_normalizer(fmt)
+        now = datetime.now(UTC)
+        ctx = NormalizeContext(
+            source_id=source_id,
+            source_type=source_type,
+            config=config or {},
+            now=now,
+            max_future=timedelta(seconds=self._options.max_future_skew_s),
+        )
+        prepared: List[PreparedEvent] = []
+        reasons: Dict[int, str] = {}
+        pending: List[Tuple[int, Dict[str, Any], int]] = []
+        outcomes: List[Tuple[int, _Outcome]] = []
+        for index, event in enumerate(events):
+            outcome = await self._prepare_event(index, event, ctx, normalizer)
+            waiting = outcome.pending_llm
+            if waiting is not None:
+                if len(pending) >= self._options.llm_fallback_max_per_call:
+                    outcome = _Outcome(reason="unrecognized event format (LLM fallback limit reached for this batch)")
                 else:
-                    result.duplicates += 1
-                    result.items.append(
-                        IngestItem(index, "duplicate", alert_id=existing.get(p.row.source_alert_id))
-                    )
+                    pending.append((index, waiting, outcome.redactions))
+                    continue
+            outcomes.append((index, outcome))
+        outcomes.extend((await self._llm_phase(tenant_id, pending, ctx)).items())
+        for index, outcome in sorted(outcomes, key=lambda pair: pair[0]):
+            if outcome.prepared is not None:
+                prepared.append(outcome.prepared)
+            else:
+                reasons[index] = outcome.reason or "rejected"
+
+        unique, in_batch_dupes = dedupe_batch(prepared)
+        inserted_ids, existing = await self._persist(tenant_id, source_id, unique, in_batch_dupes, page)
+        result = assemble_result(len(events), reasons, in_batch_dupes, unique, inserted_ids, existing)
         record_events(source_type, "inserted", len(result.inserted))
         record_events(source_type, "duplicate", result.duplicates)
         record_events(source_type, "rejected", len(result.rejected))
