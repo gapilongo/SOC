@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
@@ -40,6 +40,9 @@ from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import AgentError
 from lg_sotf.llm.schema import clipped_list, clipped_str
 from lg_sotf.security.hashing import hmac_indicator
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import CorrelationDigest
 
 MAX_RELATED = 20
 MAX_DIGESTS = 10
@@ -85,12 +88,12 @@ class CorrelationResult:
     campaign_indicators: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
-    def digest(self) -> Dict[str, Any]:
+    def digest(self) -> CorrelationDigest:
         data = asdict(self)
         data.pop("notes")
         if data["llm_refusal"] is None:
             data.pop("llm_refusal")
-        return data
+        return cast("CorrelationDigest", data)
 
 
 def frequency_level(alerts_per_hour: float) -> str:

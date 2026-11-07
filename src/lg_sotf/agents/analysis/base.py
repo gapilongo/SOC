@@ -49,7 +49,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 from pydantic import BaseModel, Field
 
@@ -83,6 +83,9 @@ from lg_sotf.tools.enrichment import (
     public_ip,
     public_url,
 )
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AnalysisDigest, LlmRefusal
 
 SEVERITY_BOOST = {"critical": 25, "high": 20, "medium": 10, "low": 0, "info": -10}
 # Classic backdoor/C2 listener ports (8080 is ordinary proxy/alt-HTTP traffic, not evidence).
@@ -167,9 +170,9 @@ class AnalysisResult:
         """Kept for summaries and nodes: no evidence source is simulated, so this is always False."""
         return any(o.get("simulated") for o in self.observations)
 
-    def digest(self) -> Dict[str, Any]:
+    def digest(self) -> AnalysisDigest:
         """Small enough for graph state."""
-        out: Dict[str, Any] = {
+        out: AnalysisDigest = {
             "threat_score": self.threat_score,
             "certainty": self.certainty,
             "verdict": self.verdict,
@@ -187,7 +190,7 @@ class AnalysisResult:
             "simulated_evidence": self.simulated_evidence,
         }
         if self.llm_refusal is not None:
-            out["llm_refusal"] = self.llm_refusal
+            out["llm_refusal"] = cast("LlmRefusal", self.llm_refusal)
         return out
 
     def summary(self) -> Dict[str, Any]:

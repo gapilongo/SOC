@@ -51,6 +51,9 @@ BUDGETS: list[tuple[str, str]] = [
     ("lg_sotf.db.migrate", "langgraph"),
     # C7: notification webhooks sign with lg_sotf.security.signing, not through the response connectors.
     ("lg_sotf.integrations.channels", "lg_sotf.services"),
+    # T3: the workflow digest types are a leaf that lower layers reference under TYPE_CHECKING.
+    ("lg_sotf.core.state", "langgraph"),
+    ("lg_sotf.core.state", "lg_sotf.core.graph"),
 ]
 
 # Imports nothing but ``sys`` before the module under test, and reports one loaded

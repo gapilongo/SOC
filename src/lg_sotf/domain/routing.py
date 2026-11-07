@@ -24,12 +24,15 @@ Safety rules enforced here (contract section 8):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
 from lg_sotf.models.vocabulary import Route as DecideRoute
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import DecisionDigest
 
 GateRoute = Literal["triage", "close"]
 TriageRoute = Literal["correlation", "close"]
@@ -74,7 +77,7 @@ class Decision:
     disposition: Optional[str]
     code: str
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> DecisionDigest:
         return {"route": self.route, "reason": self.reason, "disposition": self.disposition, "code": self.code}
 
 
