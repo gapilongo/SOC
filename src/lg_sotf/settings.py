@@ -123,6 +123,9 @@ class LLMTierSettings(BaseModel):
     # every run in flight can call the model at once; set a number only to respect a provider
     # rate limit.
     max_concurrency: Optional[int] = Field(default=None, ge=1)
+    # Concurrent calls of this tier per process for shadow runs (AI-E1.5d): their own slots, never
+    # production's, so a shadow run cannot make a live call wait.
+    shadow_max_concurrency: int = Field(default=1, ge=1)
 
 
 class FastTierSettings(LLMTierSettings):

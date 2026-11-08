@@ -147,6 +147,7 @@ Fast tier: triage, correlation and ingestion fallback calls. Setting one key of 
 | `llm.fast.timeout_s` | `LG_SOTF_LLM__FAST__TIMEOUT_S` | number | `60.0` | Per-call timeout. |
 | `llm.fast.max_retries` | `LG_SOTF_LLM__FAST__MAX_RETRIES` | integer | `2` | Client retries for transient provider errors. |
 | `llm.fast.max_concurrency` | `LG_SOTF_LLM__FAST__MAX_CONCURRENCY` | integer (optional) | unset | Concurrent calls of this tier per process; unset = `worker.concurrency`. Set it only to respect a provider rate limit (waits show in `lgsotf_llm_slot_wait_seconds`). |
+| `llm.fast.shadow_max_concurrency` | `LG_SOTF_LLM__FAST__SHADOW_MAX_CONCURRENCY` | integer | `1` | Concurrent calls of this tier per process for shadow runs, in slots of their own: a shadow call never takes, or waits for, a production slot. |
 
 ### `llm.deep`
 
@@ -161,6 +162,7 @@ Deep tier: the analysis agent's investigation. Setting one key of the tier keeps
 | `llm.deep.timeout_s` | `LG_SOTF_LLM__DEEP__TIMEOUT_S` | number | `300.0` | Per-call timeout. |
 | `llm.deep.max_retries` | `LG_SOTF_LLM__DEEP__MAX_RETRIES` | integer | `2` | Client retries for transient provider errors. |
 | `llm.deep.max_concurrency` | `LG_SOTF_LLM__DEEP__MAX_CONCURRENCY` | integer (optional) | unset | Concurrent calls of this tier per process; unset = `worker.concurrency`. Set it only to respect a provider rate limit (waits show in `lgsotf_llm_slot_wait_seconds`). |
+| `llm.deep.shadow_max_concurrency` | `LG_SOTF_LLM__DEEP__SHADOW_MAX_CONCURRENCY` | integer | `1` | Concurrent calls of this tier per process for shadow runs, in slots of their own: a shadow call never takes, or waits for, a production slot. |
 
 ### `auth`
 

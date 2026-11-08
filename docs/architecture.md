@@ -345,6 +345,8 @@ Rules:
   mark `summary.llm_budget_exceeded`.
 * Per-model concurrency semaphores (`llm.<tier>.max_concurrency`, default
   `worker.concurrency`; waits exported as `lgsotf_llm_slot_wait_seconds`).
+  Shadow runs take separate slots (`llm.<tier>.shadow_max_concurrency`,
+  default 1), so a live call never waits on a shadow call.
 
 ## 10. API
 
