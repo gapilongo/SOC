@@ -74,14 +74,25 @@ VEX document, and deploys uat. Last, the workflow moves the channel tags.
   same *Release images* path (docs/cicd.md, section 10). It does not check
   the gates or move any channel, so use the workflow.
 
-Set up once, in the repository settings:
+These repository settings are in place:
 
-* Settings > Environments > `release`: under *Deployment branches and tags*,
-  allow the branch `main` only. Add required reviewers if promotion should
-  need a second person. A scheduled train then also waits for approval.
-* Tag rulesets: restrict creating, updating and deleting `v*` tags to
-  maintainers and the GitHub Actions app. Restrict updating `lts-*` tags to
-  the GitHub Actions app.
+* **Environment `release`** (Settings > Environments): deploys from `main`
+  only. To make promotion need a second person, add required reviewers;
+  a scheduled train then also waits for approval.
+* **Ruleset `Release tags v*`** (Settings > Rules > Rulesets): blocks
+  updating and deleting `v*` tags, so a release tag never moves. Creating
+  them is allowed, because the train creates them with the workflow token.
+  Only a repository admin can bypass the ruleset.
+* **Ruleset `LTS channel tags lts-*`**: blocks deleting `lts-*` tags.
+  Updating them is allowed, because the train moves `lts-X.Y` forward. Only
+  a repository admin can bypass the ruleset.
+* **Dependabot**: alerts and security updates are on
+  ([dependency-policy.md](dependency-policy.md)).
+
+The repository belongs to a personal account, and GitHub does not accept
+the GitHub Actions app as a bypass actor there. An organisation-owned
+repository can also restrict creating `v*` tags and updating `lts-*` tags
+to the GitHub Actions app.
 
 ## Support windows
 

@@ -175,6 +175,25 @@ describe('escalation queue rows', () => {
     expect(await screen.findByText(/Someone else changed this escalation first/)).toBeInTheDocument();
   });
 
+  it('says a decided escalation is no longer claimable, and repeated failures show one notice', async () => {
+    const user = userEvent.setup();
+    const { calls } = await renderQueue(items(), {
+      handler: (method, path) => {
+        if (method === 'POST' && path === '/escalations/late/claim') throw apiError(409, 'invalid_transition');
+        return undefined;
+      },
+    });
+    await waitFor(() => row('Escalation late'));
+    const claim = () => within(row('Escalation late')).getByRole('button', { name: 'Claim Escalation late' });
+    await user.click(claim());
+    expect(await screen.findByText('This escalation is already decided or closed; the list has been refreshed.')).toBeInTheDocument();
+    expect(screen.queryByText(/Someone else changed this escalation first/)).not.toBeInTheDocument();
+    await waitFor(() => expect(claim()).toBeEnabled());
+    await user.click(claim());
+    await waitFor(() => expect(calls.filter((c) => c.path === '/escalations/late/claim')).toHaveLength(2));
+    expect(screen.getAllByText(/already decided or closed/)).toHaveLength(1);
+  });
+
   it('gives a viewer neither checkboxes nor bulk actions nor claims', async () => {
     await renderQueue(items(), { role: 'viewer' });
     await waitFor(() => row('Escalation late'));

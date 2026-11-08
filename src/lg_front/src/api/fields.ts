@@ -8,6 +8,7 @@
  */
 
 import { shortId } from '../lib/format';
+import { ApiError } from './client';
 import {
   BULK_MAX_ITEMS,
   ENTITY_KINDS,
@@ -125,6 +126,17 @@ export function escalationTitle(e: Pick<EscalationOut, 'summary' | 'rule'>): str
 /** The alert's severity (newer APIs), else the one in the summary, else null. */
 export function escalationSeverity(e: Pick<EscalationOut, 'alert_severity' | 'summary'>): string | null {
   return text(e.alert_severity) ?? text(e.summary?.severity);
+}
+
+/**
+ * The info notice for a 409 on an escalation claim, or null for any other error.
+ * A state error (already decided or closed) is told apart from a version race (changed meanwhile);
+ * `refreshed` says what was reloaded, e.g. "the list has been refreshed".
+ */
+export function escalationConflictNotice(err: unknown, refreshed: string): string | null {
+  if (!(err instanceof ApiError) || err.status !== 409) return null;
+  if (err.isStateConflict) return `This escalation is already decided or closed; ${refreshed}.`;
+  return `Someone else changed this escalation first; ${refreshed}.`;
 }
 
 export type OwnerKind = 'you' | 'other' | 'none';

@@ -279,8 +279,10 @@ tenant's `ingest`+`read` key can, from Claude Code:
    `{"alert": <canonical alert>, "expected": {"disposition", "route",
    "escalation"}, "id", "split"}`; a line of
    `tests/fixtures/eval/synthetic_v1.jsonl` or of your own labelled dataset
-   fits as is (`tags`, `notes` and annotators' `labels` are ignored; 28 of
-   synthetic_v1's 64 items are canonical). The result is a `run_handle`
+   fits as is (`tags`, `notes`, annotators' `labels` and the adversarial
+   corpus's `family`, `injection` and `tool_fixtures` are ignored: canned tool
+   answers apply only to `lg-sotf eval`; 28 of synthetic_v1's 64 items are
+   canonical). The result is a `run_handle`
    (`run_<32 hex>`) and the alert id of each item. An item whose source
    alert id repeats an earlier item's is a `duplicate` (with `duplicate_of`)
    and gets no alert of its own: give each item its own id to send a line

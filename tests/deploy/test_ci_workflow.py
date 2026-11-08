@@ -255,7 +255,7 @@ def test_a_fast_job_runs_the_unit_and_deploy_tiers_without_services() -> None:
     fast = jobs["fast"]
     assert "services" not in fast and not any(k.startswith("LG_SOTF_TEST_") for k in (fast.get("env") or {}))
     runs = [s.get("run", "") for s in fast["steps"]]
-    assert "pytest tests/unit tests/deploy" in runs
+    assert "pytest tests/unit tests/invariants tests/deploy" in runs
     # The service-backed job still runs the whole suite, so coverage stays complete.
     assert any(r.startswith("pytest") and "tests/" not in r for r in (s.get("run", "") for s in jobs["test"]["steps"]))
 

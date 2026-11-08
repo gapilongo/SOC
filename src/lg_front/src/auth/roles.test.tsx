@@ -55,7 +55,10 @@ describe('role checks mirror the API RBAC', () => {
     const analyst = principal({ role: 'analyst', userId: 'u-1' });
     const admin = principal({ role: 'admin', userId: 'u-9' });
     const open = { status: 'open', assigned_to: null };
-    const expired = { status: 'expired', assigned_to: 'u-2' };
+    const expired = { status: 'expired', assigned_to: null };
+    // Claimed (before or after the SLA expired) by another analyst: held like a claim.
+    const expiredTheirs = { status: 'expired', assigned_to: 'u-2' };
+    const expiredMine = { status: 'expired', assigned_to: 'u-1' };
     const mine = { status: 'claimed', assigned_to: 'u-1' };
     const theirs = { status: 'claimed', assigned_to: 'u-2' };
     const decided = { status: 'decided', assigned_to: 'u-1' };
@@ -63,6 +66,9 @@ describe('role checks mirror the API RBAC', () => {
     expect(can.claimEscalation(analyst, open)).toBe(true);
     // An SLA-expired escalation can still be claimed.
     expect(can.claimEscalation(analyst, expired)).toBe(true);
+    expect(can.claimEscalation(analyst, expiredMine)).toBe(false);
+    expect(can.claimEscalation(analyst, expiredTheirs)).toBe(false);
+    expect(can.claimEscalation(admin, expiredTheirs)).toBe(true);
     expect(can.claimEscalation(analyst, mine)).toBe(false);
     // Taking over another analyst's claim is admin only.
     expect(can.claimEscalation(analyst, theirs)).toBe(false);
@@ -72,6 +78,9 @@ describe('role checks mirror the API RBAC', () => {
     expect(can.decideEscalation(analyst, mine)).toBe(true);
     expect(can.decideEscalation(analyst, open)).toBe(true);
     expect(can.decideEscalation(analyst, expired)).toBe(true);
+    expect(can.decideEscalation(analyst, expiredMine)).toBe(true);
+    expect(can.decideEscalation(analyst, expiredTheirs)).toBe(false);
+    expect(can.decideEscalation(admin, expiredTheirs)).toBe(true);
     expect(can.decideEscalation(analyst, theirs)).toBe(false);
     expect(escalationDecisionBlockedReason(analyst, theirs)).toMatch(/Claimed by another analyst/);
     expect(can.decideEscalation(admin, theirs)).toBe(true);

@@ -22,7 +22,9 @@ that control is in the code. Each control is one of the following:
 
 How to use it: the security model and the controls themselves are described
 in [security.md](security.md). Deployment hardening is in
-[hardening.md](hardening.md). The MCP design is in
+[hardening.md](hardening.md). The safety invariants that cut across these
+rows, each with the tests that prove it, are in [invariants.md](invariants.md).
+The MCP design is in
 [design/mcp-architecture.md](design/mcp-architecture.md), and its threat
 table (section 8.1) is the detailed source for the planned remote MCP
 endpoint.
@@ -194,7 +196,7 @@ adds a planner that never sees raw tool output.
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
 | TM-EVT-1 | I | Injected text makes the agent send arbitrary values to a third party | Lookup targets restricted to candidate ids built from extracted indicators (`src/lg_sotf/agents/analysis/react.py:24-27`); indicators validated and reduced, private addresses and internal domains never sent (`src/lg_sotf/tools/enrichment/providers.py:1-20`) | In place |
-| TM-EVT-2 | T | Tool output carries instructions (indirect injection through evidence) | Results go in a separate `<tool_data>` block marked as untrusted (`src/lg_sotf/llm/prompting.py:421-427`); the model's reading of a result is never rule evidence | Partial. Quarantined reader producing typed facts planned (AI-E3.2); adversarial tool-output corpus planned (AI-E6.1) |
+| TM-EVT-2 | T | Tool output carries instructions (indirect injection through evidence) | Results go in a separate `<tool_data>` block marked as untrusted (`src/lg_sotf/llm/prompting.py:421-427`); the model's reading of a result is never rule evidence | Partial. Quarantined reader producing typed facts planned (AI-E3.2); tool-output injection measured by the adversarial corpus v2 (AI-E6.1) |
 | TM-EVT-3 | E | A tool performs a write or an unbounded query | Current tools are read-only HTTP lookups | Planned: tool registry with risk class, schemas, per-tenant enablement, egress and row caps (AI-E2.1); free-form query guard (AI-E6.4) |
 | TM-EVT-4 | I | One tenant's evidence returned to another | Enrichment caches keyed per tenant; history queries under `tenant_tx` | In place. Per-tenant tool credentials planned (AI-E2.1) |
 | TM-EVT-5 | D | Query cost or throttling exhausts a customer's API quota | ReAct step and wall-clock budgets (`src/lg_sotf/agents/analysis/react.py:8-19`) | Partial: per-investigation money budgets planned (AI-E3.3) |
@@ -272,12 +274,12 @@ organisations and grants.
 
 | ID | Risk | Where it applies | Controls | Status |
 |---|---|---|---|---|
-| ASI01 | Agent Goal Hijack | Alert text and tool output steering triage, analysis or the MCP client | TM-WRK-1, TM-WRK-2, TM-EVT-2, TM-MCP-1, TM-MCP-2. The model cannot close high-severity alerts or contain on its own | In place; adversarial corpus v2 planned (AI-E6.1) |
-| ASI02 | Tool Misuse & Exploitation | Threat-intel lookups, future evidence tools, MCP tools | Candidate-only lookups (TM-EVT-1); read-only MCP catalogue; no write tool for decisions | Partial: tool registry with risk classes (AI-E2.1) |
+| ASI01 | Agent Goal Hijack | Alert text and tool output steering triage, analysis or the MCP client | TM-WRK-1, TM-WRK-2, TM-EVT-2, TM-MCP-1, TM-MCP-2. The model cannot close high-severity alerts or contain on its own | In place; measured by the adversarial corpus v2 in CI (AI-E6.1, [evaluation.md](evaluation.md#adversarial-corpus-v2)) |
+| ASI02 | Tool Misuse & Exploitation | Threat-intel lookups, future evidence tools, MCP tools | Candidate-only lookups (TM-EVT-1); read-only MCP catalogue; no write tool for decisions | Partial: tool registry with risk classes (AI-E2.1). Tool-output and response-steering families of the adversarial corpus v2 (AI-E6.1) |
 | ASI03 | Identity & Privilege Abuse | API keys held by agents, MSSP operators, platform admins | Scoped keys refused on decisions (TM-API-2); `home_tenant_only` (TM-MSP-3) | Partial: grants (ARCH-E4.1), per-tenant IdP (SEC6.1), WebAuthn for platform admins (SEC6.4) |
 | ASI04 | Agentic Supply Chain Vulnerabilities | LangChain and LangGraph, MCP SDK, model providers, external MCP servers | Pinned dependencies and scanners (TM-CI-2); signed images (TM-CI-1); MCP-in not built | Partial: SBOM/VEX (SEC1.2), Trivy (SEC1.3), dependency admission policy (SEC2.3) |
 | ASI05 | Unexpected Code Execution (RCE) | Model output, normaliser output | The model selects no code path: structured output only (TM-WRK-7); no tool runs code or shell; read-only root filesystem | In place |
-| ASI06 | Memory & Context Poisoning | Verdict cache, suppression suggestions, future tenant memory | Verdict cache only from analyst decisions, bounded to the decided severity, cleared on a true positive (security.md section 5) | In place for the cache. Tenant memory admits analyst-confirmed cases only, planned (AI-E4.1, AI-E4.3) |
+| ASI06 | Memory & Context Poisoning | Verdict cache, suppression suggestions, future tenant memory | Verdict cache only from analyst decisions, bounded to the decided severity, cleared on a true positive (security.md section 5) | In place for the cache. Injected history answers are in the adversarial corpus v2 (AI-E6.1). Tenant memory admits analyst-confirmed cases only, planned (AI-E4.1, AI-E4.3) |
 | ASI07 | Insecure Inter-Agent Communication | Agents pass state through the LangGraph state, not messages; MCP client to server | State is typed and checkpointed under RLS; MCP over stdio to the REST API with an API key | In place. A2A is out of scope (not built) |
 | ASI08 | Cascading Failures | Model outage, provider throttling, Redis loss | Refusals and failures escalate to an analyst; rules-only fallback when the budget is exhausted; orphan sweep (TM-RD-3) | In place |
 | ASI09 | Human-Agent Trust Exploitation | Analysts over-trusting a plausible narrative | Reasoning shown as untrusted text; model-only containment needs approval; rule evidence shown separately | Partial: critic with citation check (AI-E3.4), AI system card (AI-E6.2) |
@@ -298,7 +300,7 @@ organisations and grants.
 | AML.T0070 RAG Poisoning | Not applicable today (no retrieval); similar-case retrieval planned | Analyst-confirmed cases only (AI-E4.3) |
 | AML.T0034 Cost Harvesting | Alert floods, long investigations | TM-WRK-6, TM-EVT-5 |
 | AML.T0029 Denial of AI Service | Provider outage or throttling | ASI08 row; failures escalate |
-| AML.T0015 Evade AI Model | Attacker shapes activity to look benign | Rules decide what text cannot; high severity never auto-closes; measured by the adversarial eval split |
+| AML.T0015 Evade AI Model | Attacker shapes activity to look benign | Rules decide what text cannot; high severity never auto-closes; measured by the adversarial eval split. Known gap: benign words from attacker-named objects in a trusted title (title-camouflage family, AI-E6.1) |
 | AML.T0010 AI Supply Chain Compromise | Model provider, SDKs, images | TM-CI-1, TM-CI-2; model provenance recorded per step |
 
 ATLAS IDs follow the public ATLAS matrix as of 2026-11; check
@@ -357,7 +359,7 @@ covers it. The gate has three steps:
 | SEC1 Supply chain and release integrity | CI, images, bundles | TM-CI-1 to TM-CI-6 | Rows present |
 | SEC5 Keys and tokens | KEKs, JWT signing | TM-API-1, TM-DB-4, TM-KEY-* | Rows present (planned) |
 | SEC6 MSSP identity hardening | IdP per tenant, grants UX, break-glass | TM-MSP-5 to TM-MSP-7 | Rows present (planned) |
-| SEC9 AI safety evidence | Invariants, kill switches | ASI10 | Rows present (planned) |
+| SEC9 AI safety evidence | Invariants ([invariants.md](invariants.md)), kill switches | ASI10 | Rows present; invariant registry in place (SEC9.1) |
 | INT1–INT4 connectors | New sources and response targets | TM-ING-*, TM-RSP-* | Add a row per new connector that holds credentials |
 
 Stories of tier T3 (authorisation, RLS, migrations, signing, response

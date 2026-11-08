@@ -290,11 +290,11 @@ class ReviewService:
         role: str = "analyst",
         now: Optional[datetime] = None,
     ) -> Escalation:
-        """Assign the escalation to ``user``. :class:`~lg_sotf.db.errors.Conflict` when the version moved."""
+        """Assign the escalation (active or SLA-expired) to ``user``; ``Conflict`` when the version moved."""
         _require_role(role)
         user_id = _user_uuid(user)
         current = await self._repos.escalations.get(tenant_id, escalation_id)
-        if current.status == "claimed" and current.assigned_to not in (None, user_id) and role != "admin":
+        if current.held_by_other(user_id) and role != "admin":
             raise ReviewDenied("the escalation is claimed by another analyst; only an admin may take it over")
         async with self._repos.db.tenant_tx(tenant_id) as conn:
             claimed = await self._repos.escalations.claim(
@@ -307,7 +307,8 @@ class ReviewService:
                 escalation_id,
                 actor_type="user",
                 actor_id=str(user_id),
-                details={"alert_id": claimed.alert_id, "version": claimed.version, "previous_assignee": _s(current.assigned_to)},
+                details={"alert_id": claimed.alert_id, "version": claimed.version, "previous_assignee": _s(current.assigned_to),
+                         "after_sla_expiry": current.status == "expired"},
                 conn=conn,
             )
         await self._publish_escalation(tenant_id, claimed, {"status": claimed.status, "assigned_to": str(user_id)})
@@ -352,7 +353,7 @@ class ReviewService:
         tenant = await self._repos.tenants.get(tenant_id)
         _authorise_approvals(request.requested, role, self._responses.policy(tenant.settings).autonomy)
         current = await self._repos.escalations.get(tenant_id, escalation_id)
-        if current.status == "claimed" and current.assigned_to not in (None, user_id) and role != "admin":
+        if current.held_by_other(user_id) and role != "admin":
             raise ReviewDenied("the escalation is claimed by another analyst")
         approved = await self._resolve_approvals(tenant_id, current.alert_id, request.requested)
         actor = _Actor(user_id, role)

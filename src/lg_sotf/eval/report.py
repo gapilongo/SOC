@@ -14,8 +14,9 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf import __version__
 from lg_sotf.domain.rates import RateInterval, format_rate
+from lg_sotf.eval.adversarial import family_lines
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset
-from lg_sotf.eval.metrics import compute_metrics, metrics_by_split
+from lg_sotf.eval.metrics import compute_metrics, metrics_by_family, metrics_by_split
 from lg_sotf.eval.results import PROVENANCE_FIELDS, ItemResult
 
 REPORT_SCHEMA_VERSION = 1
@@ -56,7 +57,8 @@ def build_report(
     if dataset.synthetic:
         notes.insert(0, SYNTHETIC_NOTE)
     splits = metrics_by_split(results)
-    return {
+    families = metrics_by_family(results)
+    report: Dict[str, Any] = {
         "schema_version": REPORT_SCHEMA_VERSION,
         "generated_at": (generated_at or datetime.now(UTC)).isoformat(),
         "lg_sotf_version": __version__,
@@ -75,6 +77,10 @@ def build_report(
         "llm_provenance": provenance_rows(results),
         "items": [r.as_dict() for r in results],
     }
+    if families:
+        report["dataset"]["families"] = dataset.families()
+        report["families"] = {name: {"metrics": m} for name, m in families.items()}
+    return report
 
 
 def provenance_rows(results: Sequence[ItemResult]) -> List[Dict[str, Any]]:
@@ -158,6 +164,9 @@ HEADLINE_ROWS = (
     ("Approval request rate", "approval_request_rate", _pct),
     ("Inconclusive rate", "inconclusive_rate", _pct),
     ("Model refusal rate", "model_refusal_rate", _pct),
+    ("Malicious closed by automation (any disposition)", "malicious_auto_close_rate", _pct),
+    ("Benign escalated (false escalations)", "benign_escalation_rate", _pct),
+    ("Model followed injected text", "injection_followed_rate", _pct),
     ("Error rate", "error_rate", _pct),
     ("Accuracy (predicted vs expected)", "accuracy", _pct),
     ("Macro F1", "macro_f1", _num),
@@ -241,6 +250,7 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
         if gate["violations"]:
             lines.append("")
     lines.extend(_headline_lines(report))
+    lines.extend(family_lines(report))
     lines.append(
         f"Items: {m['items']} ({m['scored']} scored, {m['errors']} errors); "
         f"expected malicious {m['malicious_items']}, benign {m['benign_items']}. "
@@ -309,6 +319,12 @@ def summary_lines(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]] =
         out.append(
             f"split {name}: {sm['items']} items, malicious FNR {_pct(sm['malicious_false_negative_rate'])}, "
             f"escalation {_pct(sm['escalation_rate'])}"
+        )
+    for name, family in (report.get("families") or {}).items():
+        fm = family["metrics"]
+        out.append(
+            f"family {name}: {fm['items']} items, malicious FNR {_metric_cell(fm, 'malicious_false_negative_rate', _pct)}, "
+            f"injection followed {_pct(fm.get('injection_followed_rate'))}"
         )
     if gate is not None:
         out.append(f"gate {'PASSED' if gate['passed'] else 'FAILED'} ({gate['checked']} checks)")

@@ -68,8 +68,8 @@ import-lint: ## Layer and package dependency contracts (pyproject.toml [tool.imp
 	lint-imports
 
 .PHONY: test-fast
-test-fast: ## Unit and deploy tests only (no PostgreSQL or Redis needed)
-	$(PYTHON) -m pytest tests/unit tests/deploy
+test-fast: ## Unit, invariant and deploy tests only (no PostgreSQL or Redis needed)
+	$(PYTHON) -m pytest tests/unit tests/invariants tests/deploy
 
 .PHONY: check
 check: lint typecheck import-lint test-fast ## Everything CI's lint and fast jobs run
@@ -101,6 +101,10 @@ test-services: ## Start the test PostgreSQL (:55433) and Redis (:56380) on tmpfs
 .PHONY: test-integration
 test-integration: ## Integration tier against `make test-services` (PYTEST_ARGS="-n 4 --dist loadfile" for parallel)
 	$(TEST_SERVICES_ENV) $(PYTHON) -m pytest tests/integration $(PYTEST_ARGS)
+
+.PHONY: eval-cassettes
+eval-cassettes: ## Record the committed evaluation cassettes again (fake model) against `make test-services`
+	$(TEST_SERVICES_ENV) LG_SOTF_RECORD_CASSETTES=1 $(PYTHON) -m pytest tests/integration/eval/test_cassettes.py -k committed
 
 .PHONY: test-services-down
 test-services-down: ## Stop and remove the test services (their data was on tmpfs)

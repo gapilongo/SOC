@@ -160,8 +160,9 @@ Manual steps:
 
 The scheduler's `sla` job runs every `scheduler.sla_sweep_interval_s`
 (default 60 s): escalations past `sla_deadline` move up a level (L1 -> L2 -> L3)
-and at the top level expire. Expiry never strands an alert: a decision on an
-expired escalation is still accepted and audited with `after_sla_expiry`.
+and at the top level expire. Expiry never strands an alert: a claim or a
+decision on an expired escalation is still accepted and audited with
+`after_sla_expiry`.
 
 * Alert when `lgsotf_escalations_open` grows for more than an hour or when
   many escalations reach L3 (analyst capacity problem, not a platform fault).
