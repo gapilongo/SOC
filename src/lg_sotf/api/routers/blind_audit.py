@@ -11,7 +11,10 @@
   ``benign``, ``unsure``), once; the response reveals the AI's side and the
   agreement. ``malicious`` opens a normal escalation for the alert.
 * ``GET /blind-audit/runs`` (viewers) and ``POST /blind-audit/runs``
-  (admins): sampling runs with their seed, frame and counts; a run on demand.
+  (the tenant's own admins, not under an MSSP grant): sampling runs with
+  their seed, frame and counts; a run on demand (server seed, contiguous with
+  the last run), or a dry run that records nothing (the only place for a
+  caller's seed).
 * ``GET /reports/blind-audit`` (viewers): the production false-negative
   estimate over the runs of a window, with its interval and ``n``.
 
@@ -21,13 +24,13 @@ All beta (:func:`lg_sotf.api.app.api_routers`).
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Union
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from lg_sotf.api.auth.deps import ADMIN, REVIEWER, VIEWER, require
+from lg_sotf.api.auth.deps import ADMIN_NOT_UNDER_GRANT, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import aware, invalidate_verdicts
 from lg_sotf.api.context import ApiContext, get_ctx
@@ -41,6 +44,7 @@ from lg_sotf.models.vocabulary import AuditLabel, Disposition
 from lg_sotf.services.blind_audit import (
     MAX_MIN_PER_WEEK,
     MAX_NOTES_CHARS,
+    BlindAuditDraw,
     BlindAuditReport,
     BlindAuditService,
     SampleRequest,
@@ -56,9 +60,9 @@ MAX_CONCLUSION_CHARS = 2_000
 
 
 class BlindAlertOut(BaseModel):
-    """The alert as its source sent it: nothing the AI concluded."""
+    """The alert as its source sent it: nothing the AI concluded, and not its id (the item id is the
+    handle; the alert's own routes withhold its AI side until the label exists anyway)."""
 
-    id: str
     title: str
     severity: SeverityStr
     source_id: str
@@ -110,13 +114,18 @@ class BlindAuditLabelOut(BaseModel):
 
 
 class BlindAuditSampleIn(In):
-    """A run on demand: alerts closed in ``[from, to)`` (default: since the last run, or the last 7 days, to now)."""
+    """A run on demand: alerts closed from where the last run ended (the tenant's first run: ``from``, default
+    7 days back) to ``to`` (default and at most: 5 minutes before now). ``dry_run`` draws without recording
+    anything and is the only way to pass a ``seed`` (with it, ``from`` may be any time)."""
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     start: Optional[datetime] = Field(default=None, alias="from")
     end: Optional[datetime] = Field(default=None, alias="to")
-    seed: Optional[int] = Field(default=None, ge=0, le=MAX_SEED, description="Default: a fresh random seed.")
+    dry_run: bool = Field(default=False, description="Draw and return the sample without recording a run.")
+    seed: Optional[int] = Field(
+        default=None, ge=0, le=MAX_SEED, description="Dry runs only (a recorded run's seed is the server's)."
+    )
     sample_rate: Optional[float] = Field(default=None, gt=0, le=1, description="Default: the tenant setting.")
     min_per_week: Optional[int] = Field(default=None, ge=0, le=MAX_MIN_PER_WEEK)
     size: Optional[int] = Field(
@@ -131,7 +140,6 @@ def service(ctx: ApiContext) -> BlindAuditService:
 def item_out(item: BlindAuditItem, reveal: Optional[Reveal] = None) -> BlindAuditItemOut:
     preview = entities_preview(item.entities)
     alert = BlindAlertOut(
-        id=item.alert_id,
         title=item.title,
         severity=item.severity,
         source_id=item.source_id,
@@ -195,7 +203,7 @@ async def label_item(
     ctx = get_ctx(request)
     result = await service(ctx).label(
         principal.tenant_id, item_id, body.label, notes=body.notes, actor=principal.actor,
-        user_id=principal.local_user_id,
+        user_id=principal.local_user_id, organisation=principal.home_tenant_id if principal.delegated else None,
     )
     if body.label == "malicious":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.item.alert_id])
@@ -219,18 +227,31 @@ async def list_runs(
     return PageOut[BlindAuditRunSummary](items=page.items, next_cursor=page.next_cursor)
 
 
-@router.post("/runs", response_model=BlindAuditRunSummary, status_code=201, summary="Sample auto-closed alerts now")
+@router.post(
+    "/runs",
+    response_model=Union[BlindAuditRunSummary, BlindAuditDraw],
+    status_code=201,
+    summary="Sample auto-closed alerts now (or draw without recording: dry_run)",
+)
 async def create_run(
-    body: BlindAuditSampleIn, request: Request, principal: Principal = Depends(require(ADMIN))
-) -> BlindAuditRunSummary:
+    body: BlindAuditSampleIn,
+    request: Request,
+    response: Response,
+    principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT)),
+) -> Union[BlindAuditRunSummary, BlindAuditDraw]:
     sample = SampleRequest(
         since=aware(body.start), until=aware(body.end), seed=body.seed, sample_rate=body.sample_rate,
         min_per_week=body.min_per_week, size=body.size,
     )
+    svc = service(get_ctx(request))
     try:
-        run = await service(get_ctx(request)).sample(principal.tenant_id, sample, trigger="api", actor=principal.actor)
+        if body.dry_run:
+            response.status_code = 200
+            return await svc.dry_run(principal.tenant_id, sample)
+        run = await svc.sample(principal.tenant_id, sample, trigger="api", actor=principal.actor)
     except SamplingError as exc:
-        raise ApiError(409 if exc.code == "window_already_sampled" else 400, exc.code, str(exc)) from exc
+        status = 409 if exc.code in ("window_already_sampled", "window_not_contiguous") else 400
+        raise ApiError(status, exc.code, str(exc)) from exc
     # A new run: every sample is waiting for its label.
     return BlindAuditRunSummary.model_validate({**run.model_dump(), "sampled": run.sample_size})
 

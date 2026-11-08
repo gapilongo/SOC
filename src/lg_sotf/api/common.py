@@ -11,7 +11,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from datetime import UTC, datetime
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 from uuid import UUID
 
 from fastapi import Request, Response
@@ -23,6 +23,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
+from lg_sotf.domain.blind_audit import HIDDEN, HIDDEN_ALERT_FIELDS, HIDDEN_KEY
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
@@ -62,21 +63,33 @@ def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[
         raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
 
 
-def alert_out(alert: AlertListItem) -> AlertOut:
+def alert_out(alert: AlertListItem, *, hidden: bool = False) -> AlertOut:
+    """``hidden``: the alert waits for its blind-audit label, so its AI side is withheld."""
     preview = entities_preview(alert.entities)
-    return AlertOut.model_validate(alert).model_copy(
+    out = AlertOut.model_validate(alert).model_copy(
         update={"entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None}
     )
+    return out.model_copy(update=_hidden_fields()) if hidden else out
 
 
-def alert_detail_out(alert: Alert) -> AlertDetailOut:
+def alert_detail_out(alert: Alert, *, hidden: bool = False) -> AlertDetailOut:
     preview = entities_preview(alert.entities)
-    return AlertDetailOut.model_validate(alert).model_copy(
+    out = AlertDetailOut.model_validate(alert).model_copy(
         update={
             "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
             "findings": [FindingOut.model_validate(f) for f in findings(alert.summary)],
         }
     )
+    return out.model_copy(update={**_hidden_fields(), "findings": []}) if hidden else out
+
+
+def _hidden_fields() -> Dict[str, Any]:
+    return {**{key: None for key in HIDDEN_ALERT_FIELDS}, "summary": dict(HIDDEN), HIDDEN_KEY: True}
+
+
+async def hidden_alert_ids(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> Set[str]:
+    """The alerts among ``alert_ids`` that wait for a blind-audit label: nobody in the tenant sees their AI side."""
+    return await ctx.repos.blind_audit.pending_alert_ids(tenant_id, alert_ids)
 
 
 def escalation_out(escalation: Escalation, view: Optional[EscalationView]) -> EscalationOut:

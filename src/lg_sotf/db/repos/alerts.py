@@ -321,6 +321,11 @@ class AlertsRepo(Repository):
         dispositions = check_choices(disposition, DISPOSITIONS, "disposition")
         if dispositions:
             where.append(f"disposition = ANY({params.add(dispositions)}::text[])")
+            # A sample waiting for its blind-audit label: filtering on its verdict would reveal it.
+            where.append(
+                "NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id "
+                "AND b.alert_id = alerts.id AND b.label IS NULL)"
+            )
         if source_id is not None:
             where.append(f"source_id = {params.add(source_id)}")
         if assigned_to is not None:

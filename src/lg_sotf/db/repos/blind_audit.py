@@ -15,7 +15,7 @@ callers use once the item has a label.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from uuid import UUID
 
 from pydantic import Field
@@ -55,7 +55,7 @@ WITH frame AS (
             AND (r.status IN ('awaiting_approval', 'rejected')
                  OR (r.approved_by IS NOT NULL AND r.approved_by <> $7))
       )
-      AND NOT EXISTS (SELECT 1 FROM blind_audit_items i WHERE i.tenant_id = a.tenant_id AND i.alert_id = a.id)
+      AND ($8 OR NOT EXISTS (SELECT 1 FROM blind_audit_items i WHERE i.tenant_id = a.tenant_id AND i.alert_id = a.id))
 ),
 ranked AS (
     SELECT id, disposition,
@@ -69,7 +69,7 @@ SELECT id AS alert_id, disposition, rank, frame_size FROM ranked WHERE rank <= $
 # What the queue may show of an alert: the source's data, never the AI's.
 _ITEM_SELECT = """
 SELECT i.id, i.tenant_id, i.run_id, i.alert_id, i.sample_rank, i.label, i.notes, i.labelled_by,
-       i.labelled_by_actor, i.labelled_at, i.escalation_id, i.created_at,
+       i.labelled_by_actor, i.labelled_by_org, i.labelled_at, i.escalation_id, i.created_at,
        a.title, a.severity, a.source_id, s.name AS source_name, a.category, a.occurred_at, a.ingested_at,
        COALESCE(a.normalized->'entities', '{{}}'::jsonb) AS entities{detail}
 FROM blind_audit_items i
@@ -92,6 +92,16 @@ GROUP BY r.id
 """
 
 
+class OrganisationLabels(Record):
+    """Labels given by one organisation (``None``: the tenant's own people)."""
+
+    organisation: Optional[str]
+    labelled: int
+    malicious: int
+    benign: int
+    unsure: int
+
+
 class FrameAlert(Record):
     alert_id: str
     disposition: Optional[str]
@@ -104,6 +114,7 @@ class BlindAuditRun(Record):
     window_start: datetime
     window_end: datetime
     seed: int
+    seed_source: str = "server"
     sample_rate: Optional[float]
     min_sample: int
     fixed_size: Optional[int]
@@ -136,6 +147,7 @@ class BlindAuditItem(Record):
     notes: Optional[str]
     labelled_by: Optional[UUID]
     labelled_by_actor: Optional[str]
+    labelled_by_org: Optional[str] = None
     labelled_at: Optional[datetime]
     escalation_id: Optional[str]
     created_at: datetime
@@ -186,14 +198,19 @@ class BlindAuditRepo(Repository):
 
     async def frame(
         self, tenant_id: str, since: datetime, until: datetime, *, seed: int, limit: int,
-        conn: Optional[Connection] = None,
+        include_sampled: bool = False, conn: Optional[Connection] = None,
     ) -> Tuple[int, List[FrameAlert]]:
-        """``(frame size, the first `limit` alerts of the draw)`` for a window and seed (``limit`` >= 1)."""
+        """``(frame size, the first `limit` alerts of the draw)`` for a window and seed (``limit`` >= 1).
+
+        ``include_sampled`` keeps alerts an earlier run sampled (a dry run re-drawing a recorded run's window).
+        """
         require_aware(since, "since")
         require_aware(until, "until")
         check_limit(limit, MAX_FRAME_ROWS)
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_FRAME_SQL, tenant_id, since, until, SAMPLE_SOURCE_ID, seed, limit, POLICY_APPROVER)
+            rows = await c.fetch(
+                _FRAME_SQL, tenant_id, since, until, SAMPLE_SOURCE_ID, seed, limit, POLICY_APPROVER, include_sampled
+            )
         # The window count runs over the whole frame, so any returned row carries its size; no row: an empty frame.
         return (int(rows[0]["frame_size"]), to_models(FrameAlert, rows)) if rows else (0, [])
 
@@ -320,6 +337,7 @@ class BlindAuditRepo(Repository):
         labelled_by_actor: str,
         escalation_id: Optional[str],
         now: datetime,
+        labelled_by_org: Optional[str] = None,
         conn: Optional[Connection] = None,
     ) -> bool:
         """Record the label of an unlabelled item; ``False`` when it already has one."""
@@ -330,10 +348,11 @@ class BlindAuditRepo(Repository):
                 """
                 UPDATE blind_audit_items
                 SET label = $3, notes = $4, agreement = $5, labelled_by = $6, labelled_by_actor = $7,
-                    labelled_at = $8, escalation_id = $9
+                    labelled_at = $8, escalation_id = $9, labelled_by_org = $10
                 WHERE tenant_id = $1 AND id = $2 AND label IS NULL
                 """,
                 tenant_id, item_id, label, notes, agreement, labelled_by, labelled_by_actor[:200], now, escalation_id,
+                labelled_by_org,
             )
         return status.endswith(" 1")
 
@@ -356,11 +375,55 @@ class BlindAuditRepo(Repository):
     async def runs_in_window(
         self, tenant_id: str, since: datetime, until: datetime, *, conn: Optional[Connection] = None
     ) -> List[BlindAuditRunSummary]:
-        """Runs whose window starts in ``[since, until)``, with their counts (at most :data:`MAX_RUNS_IN_WINDOW`)."""
+        """Runs whose window overlaps ``[since, until)``, with their counts (at most :data:`MAX_RUNS_IN_WINDOW`)."""
         query = (
-            _RUN_COUNTS.format(where="AND r.window_start >= $2 AND r.window_start < $3")
+            _RUN_COUNTS.format(where="AND r.window_start < $3 AND r.window_end > $2")
             + f"ORDER BY r.window_start, r.id LIMIT {MAX_RUNS_IN_WINDOW}"
         )
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(query, tenant_id, since, until)
         return to_models(BlindAuditRunSummary, rows)
+
+    async def labels_by_organisation(
+        self, tenant_id: str, run_ids: Sequence[UUID], *, conn: Optional[Connection] = None
+    ) -> List[OrganisationLabels]:
+        """Labels of these runs by who gave them: the tenant's own people (``organisation`` null) or an MSSP."""
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT labelled_by_org AS organisation, count(*) AS labelled,
+                       count(*) FILTER (WHERE label = 'malicious') AS malicious,
+                       count(*) FILTER (WHERE label = 'benign') AS benign,
+                       count(*) FILTER (WHERE label = 'unsure') AS unsure
+                FROM blind_audit_items
+                WHERE tenant_id = $1 AND run_id = ANY($2::uuid[]) AND label IS NOT NULL
+                GROUP BY labelled_by_org
+                ORDER BY labelled_by_org NULLS FIRST
+                """,
+                tenant_id,
+                list(run_ids),
+            )
+        return to_models(OrganisationLabels, rows)
+
+    async def pending_alert_ids(
+        self, tenant_id: str, alert_ids: Sequence[str], *, conn: Optional[Connection] = None
+    ) -> Set[str]:
+        """The alerts among ``alert_ids`` that wait for a blind-audit label (their AI side stays hidden)."""
+        if not alert_ids:
+            return set()
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                "SELECT alert_id FROM blind_audit_items WHERE tenant_id = $1 AND label IS NULL "
+                "AND alert_id = ANY($2::text[])",
+                tenant_id,
+                list(dict.fromkeys(alert_ids)),
+            )
+        return {str(r["alert_id"]) for r in rows}
+
+    async def db_now(self, tenant_id: str, *, conn: Optional[Connection] = None) -> datetime:
+        """The database's clock (windows end before closes that are still committing)."""
+        async with self._tenant(tenant_id, conn) as c:
+            value = await c.fetchval("SELECT now()")
+        if not isinstance(value, datetime):
+            raise RuntimeError("the database returned no time")
+        return value

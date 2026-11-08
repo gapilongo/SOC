@@ -55,6 +55,7 @@ from lg_sotf.models.vocabulary import RiskLevel as Risk
 from lg_sotf.models.vocabulary import VerificationState as Verification
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.action_views import ActionView, action_views
+from lg_sotf.services.blind_audit import BlindAuditService
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import enqueue_resumes
 from lg_sotf.services.rollback import RollbackService
@@ -200,6 +201,12 @@ async def decide(
     )
     if body.decision == "true_positive":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])
+    # A blind-audit escalation of an alert whose run has ended: re-triage, the new run starts at this decision.
+    severity = await BlindAuditService(ctx.repos).requeue_after_decision(
+        principal.tenant_id, result.escalation, principal.actor
+    )
+    if severity is not None:
+        await ctx.queue.enqueue_process(principal.tenant_id, result.escalation.alert_id, severity)
     ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, result)
     return DecisionOut(
         escalation=await one_escalation_out(ctx, principal.tenant_id, result.escalation),

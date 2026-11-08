@@ -596,11 +596,11 @@ class Scheduler:
         service = BlindAuditService(self._repos)
         for tenant in await self._repos.tenants.list_all_tenants(status="active"):
             try:
-                run = await service.sample_due(tenant.id)
+                runs = await service.sample_due(tenant.id)
             except Exception as exc:  # noqa: BLE001 - one tenant's failure must not stop the others
                 log_failure(log, "scheduler.blind_audit_failed", exc, error_type=type(exc).__name__)
                 continue
-            if run is not None:
+            for run in runs:
                 log.info("scheduler.blind_audit_sampled", frame_size=run.frame_size, sample_size=run.sample_size)
 
     # -- integrations ----------------------------------------------------------

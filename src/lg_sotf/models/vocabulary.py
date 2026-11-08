@@ -74,6 +74,10 @@ AUDIT_LABELS: Tuple[AuditLabel, ...] = get_args(AuditLabel)
 AuditTrigger = Literal["schedule", "cli", "api"]
 AUDIT_TRIGGERS: Tuple[AuditTrigger, ...] = get_args(AuditTrigger)
 
+#: Who chose a recorded run's seed: always the server (an operator's seed is for dry runs only).
+SeedSource = Literal["server"]
+SEED_SOURCES: Tuple[SeedSource, ...] = get_args(SeedSource)
+
 # ---------------------------------------------------------------- response
 
 ActionStatus = Literal[
@@ -152,6 +156,7 @@ __all__ = [
     "RUN_STATUSES",
     "SCHEDULER_OWNER",
     "SCOPES",
+    "SEED_SOURCES",
     "SEVERITIES",
     "SEVERITY_RANK",
     "SOURCE_TYPES",
@@ -175,6 +180,7 @@ __all__ = [
     "Route",
     "RunStatus",
     "Scope",
+    "SeedSource",
     "Severity",
     "SourceType",
     "VerificationState",

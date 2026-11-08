@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection
@@ -23,7 +23,7 @@ from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.hashing import ahash_password
 from lg_sotf.security.passwords import password_problem
-from lg_sotf.services.blind_audit import BlindAuditService, SampleRequest, SamplingError
+from lg_sotf.services.blind_audit import BlindAuditDraw, BlindAuditService, SampleRequest, SamplingError
 from lg_sotf.services.tenancy import TenantRequest, provision_tenant
 from lg_sotf.settings import Settings
 
@@ -360,8 +360,11 @@ async def enqueue_lost_resume(settings: Settings, *, tenant_id: str, alert_id: s
         await db.close()
 
 
-async def audit_sample(settings: Settings, *, tenant_id: str, request: SampleRequest) -> BlindAuditRun:
-    """Draw a blind-audit sample of a tenant's auto-closed alerts now (``lg-sotf audit-sample``; audited as cli)."""
+async def audit_sample(
+    settings: Settings, *, tenant_id: str, request: SampleRequest, dry_run: bool = False
+) -> Union[BlindAuditRun, BlindAuditDraw]:
+    """Draw a blind-audit sample of a tenant's auto-closed alerts now (``lg-sotf audit-sample``; audited as cli),
+    or, with ``dry_run``, what a run over the window and seed would draw (recorded nowhere)."""
     if not is_valid_tenant_id(tenant_id):
         raise OperationError(f"invalid tenant id {tenant_id!r}")
     db = owner_database(settings, "lg-sotf-cli")
@@ -373,7 +376,10 @@ async def audit_sample(settings: Settings, *, tenant_id: str, request: SampleReq
         except NotFound as exc:
             raise OperationError(f"tenant {tenant_id!r} does not exist") from exc
         try:
-            return await BlindAuditService(repos).sample(tenant_id, request, trigger="cli", actor=Actor("system", "cli"))
+            service = BlindAuditService(repos)
+            if dry_run:
+                return await service.dry_run(tenant_id, request)
+            return await service.sample(tenant_id, request, trigger="cli", actor=Actor("system", "cli"))
         except SamplingError as exc:
             raise OperationError(str(exc)) from exc
     finally:

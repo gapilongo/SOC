@@ -324,8 +324,24 @@ class WorkflowEngine:
             initial = await self._initial_state(tenant_id, alert)
             # Stamped before the thread's first checkpoint: no checkpoint is ever on an unrecorded graph.
             await self.repos.runs.set_graph_version(tenant_id, alert_id, self.graph_version)
+            review = alert.summary.get("blind_audit_review")
+            if isinstance(review, str) and review:
+                return await self._start_at_review(tenant_id, alert_id, initial, review, config)
             log.info("workflow.started", graph_version=self.graph_version)
             return await self._invoke(self.graph, tenant_id, alert_id, initial, config)
+
+    async def _start_at_review(
+        self, tenant_id: str, alert_id: str, initial: WorkflowState, escalation_id: str, config: RunnableConfig
+    ) -> RunOutcome:
+        """Re-triage after a blind audit: an analyst labelled this auto-closed alert malicious and an
+        escalation was opened for it. The run starts as if it had escalated to that escalation, so it waits
+        for (or, once decided, receives) the analyst's decision and goes on like any other run from there:
+        disposition, ``analyst_decision`` and a response where the policy allows."""
+        state: WorkflowState = {**initial, "escalation_id": escalation_id}
+        await self.graph.aupdate_state(config, state, as_node="escalate")
+        await self.repos.alerts.update(tenant_id, alert_id, summary={"blind_audit_review": None})
+        log.info("workflow.started_at_review", graph_version=self.graph_version, reason="blind_audit")
+        return await self._invoke(self.graph, tenant_id, alert_id, None, config)
 
     async def resume(self, tenant_id: str, alert_id: str, payload: Mapping[str, Any]) -> RunOutcome:
         """Deliver an analyst decision or approval to the run's pending interrupt."""

@@ -38,6 +38,7 @@ from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
 from lg_sotf.compliance.evidence_html import AGENT_STEPS, render_evidence_html
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Feedback, Repositories, ResponseAction, TraceStep
+from lg_sotf.domain.blind_audit import hidden_evidence_pack
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
@@ -467,6 +468,12 @@ def human_oversight(
     }
 
 
+def _sealed(pack: Dict[str, Any], settings: Settings, *, hidden: bool) -> Dict[str, Any]:
+    """The sealed pack. ``hidden``: the alert waits for its blind-audit label, so the pack withholds the AI's
+    side, like every other view of the alert (:func:`lg_sotf.domain.blind_audit.hidden_evidence_pack`)."""
+    return seal(jsonable(hidden_evidence_pack(pack) if hidden else pack), optional_signing_key(settings))
+
+
 async def build_evidence_pack(
     repos: Repositories,
     settings: Settings,
@@ -488,6 +495,7 @@ async def build_evidence_pack(
         audit, audit_truncated = await _audit_entries(
             conn, tenant_id, alert_id, [e.id for e in escalations], [str(a.id) for a in actions]
         )
+        hidden = bool(await repos.blind_audit.pending_alert_ids(tenant_id, [alert_id], conn=conn))
     chain_since = audit[0]["ts"] if audit else None
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
     summary = cast("AlertSummary", _obj(alert.summary))
@@ -545,8 +553,7 @@ async def build_evidence_pack(
             "investigation_truncated": len(trace) > MAX_TRACE_STEPS,
         },
     }
-    document = jsonable(pack)
-    return seal(document, optional_signing_key(settings))
+    return _sealed(pack, settings, hidden=hidden)
 
 
 __all__ = [
