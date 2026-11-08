@@ -13,6 +13,7 @@ from lg_sotf.db.repos._base import (
     Connection,
     Record,
     Repository,
+    affected,
     fetch_one,
     require_aware,
     set_clauses,
@@ -35,6 +36,8 @@ class SuppressionRule(Record):
     enabled: bool
     created_at: datetime
     updated_at: datetime
+    #: The MSSP grant the rule was written under (its expiry is capped at the grant's).
+    grant_id: Optional[UUID] = None
 
 
 def _check_match(match: Mapping[str, Any]) -> Dict[str, Any]:
@@ -55,6 +58,7 @@ class SuppressionsRepo(Repository):
         source_feedback_id: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         enabled: bool = True,
+        grant_id: Optional[UUID] = None,
         conn: Optional[Connection] = None,
     ) -> SuppressionRule:
         require_aware(expires_at, "expires_at")
@@ -63,8 +67,8 @@ class SuppressionsRepo(Repository):
                 c,
                 """
                 INSERT INTO suppression_rules (tenant_id, name, match, created_by, source_feedback_id,
-                                               expires_at, enabled)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                               expires_at, enabled, grant_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *
                 """,
                 tenant_id,
@@ -74,6 +78,7 @@ class SuppressionsRepo(Repository):
                 source_feedback_id,
                 expires_at,
                 enabled,
+                grant_id,
             )
         return SuppressionRule.model_validate(dict(row))
 
@@ -124,20 +129,42 @@ class SuppressionsRepo(Repository):
     async def list_active(
         self, tenant_id: str, *, now: Optional[datetime] = None, conn: Optional[Connection] = None
     ) -> List[SuppressionRule]:
-        """Enabled, unexpired rules (what the gate node evaluates)."""
+        """Enabled, unexpired rules (what the gate node evaluates).
+
+        A rule written under an MSSP grant counts only while that grant is live
+        (revocation also expires it; this is the second line of defence).
+        """
         require_aware(now, "now")
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(
                 """
-                SELECT * FROM suppression_rules
-                WHERE tenant_id = $1 AND enabled
-                  AND (expires_at IS NULL OR expires_at > COALESCE($2::timestamptz, now()))
-                ORDER BY created_at, id
+                SELECT * FROM suppression_rules r
+                WHERE r.tenant_id = $1 AND r.enabled
+                  AND (r.expires_at IS NULL OR r.expires_at > COALESCE($2::timestamptz, now()))
+                  AND (r.grant_id IS NULL OR EXISTS (
+                      SELECT 1 FROM tenant_grants g
+                      WHERE g.tenant_id = r.tenant_id AND g.id = r.grant_id AND g.revoked_at IS NULL
+                        AND g.expires_at > COALESCE($2::timestamptz, now())
+                  ))
+                ORDER BY r.created_at, r.id
                 """,
                 tenant_id,
                 now,
             )
         return to_models(SuppressionRule, rows)
+
+    async def expire_for_grant(self, tenant_id: str, grant_id: UUID, *, conn: Optional[Connection] = None) -> int:
+        """End now every still-live rule written under ``grant_id``; returns how many."""
+        async with self._tenant(tenant_id, conn) as c:
+            status = await c.execute(
+                """
+                UPDATE suppression_rules SET expires_at = now()
+                WHERE tenant_id = $1 AND grant_id = $2 AND (expires_at IS NULL OR expires_at > now())
+                """,
+                tenant_id,
+                grant_id,
+            )
+        return affected(status)
 
     async def update(
         self,
@@ -148,6 +175,7 @@ class SuppressionsRepo(Repository):
         match: Mapping[str, Any] = UNSET,
         enabled: bool = UNSET,
         expires_at: Optional[datetime] = UNSET,
+        grant_id: Optional[UUID] = UNSET,
         conn: Optional[Connection] = None,
     ) -> SuppressionRule:
         if expires_at not in (UNSET, None):
@@ -159,6 +187,7 @@ class SuppressionsRepo(Repository):
                 "match": _check_match(match) if match is not UNSET else UNSET,
                 "enabled": enabled,
                 "expires_at": expires_at,
+                "grant_id": grant_id,
             },
             params,
         )

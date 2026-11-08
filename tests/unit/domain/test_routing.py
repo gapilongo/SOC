@@ -91,14 +91,17 @@ def test_fp_signals_come_only_from_trusted_fields() -> None:
     from lg_sotf.agents.triage.base import rule_indicators
 
     fp, tp = rule_indicators({**ADVERSARIAL, "severity": "medium"})
-    assert fp == ["scheduled_detected"]
+    assert fp == []  # the title is never false-positive evidence (AI-E6.3)
     assert {"mimikatz_detected", "persistence_detected"} <= set(tp)
+    ruled, _ = rule_indicators({**ADVERSARIAL, "rule_name": "Scheduled task persistence", "severity": "medium"})
+    assert ruled == ["scheduled_detected"]
     raw_only, _ = rule_indicators(
         {"title": "Outbound connection", "severity": "low", "source_id": "fw-prod",
          "raw": {"note": "test update backup scan maintenance scheduled", "user_agent": "scanner bot"}}
     )
     assert raw_only == []
-    latest, _ = rule_indicators({"title": "Latest attestation update-check failed", "severity": "low", "source_id": "x"})
+    latest, _ = rule_indicators({"title": "Latest attestation check", "rule_name": "Latest attestation check failed",
+                                 "severity": "low", "source_id": "x"})
     assert latest == []
     env, _ = rule_indicators({"title": "Login", "severity": "low", "source_id": "splunk-staging"})
     assert env == ["test_environment"]

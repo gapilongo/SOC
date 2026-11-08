@@ -175,11 +175,24 @@ When `auth.oidc_issuer` is set, bearer tokens from that issuer are accepted:
 
 ### Tenants and platform admins
 
-A principal acts on its own tenant. A platform admin
-(`users.is_platform_admin`) may send `X-Tenant-ID: <tenant>` to act on
-another tenant; every such request is recorded in that tenant's audit log
-(`platform_admin.tenant_access`). Anyone else sending a different
-`X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
+A principal acts on its own tenant. Two kinds of caller may send
+`X-Tenant-ID: <tenant>` to act on another tenant, and every such request is
+recorded in that tenant's audit log:
+
+* a member of an MSSP organisation that holds a live grant to that tenant
+  (`grant.tenant_access`): the caller has the grant's role, capped at their
+  own role, and no platform-admin powers (see docs/mssp.md, "Delegated
+  access"); `GET /auth/me` returns the `grant_id`. They may decide
+  escalations and approve actions, but not claim, and not create or change
+  users, API keys or grants. Every audit entry they cause is also recorded
+  in their organisation's chain (`delegated.<action>`). An API key of the
+  organisation acts under a grant to the whole organisation, with `read`
+  (viewer grant) or `read` and `write` (analyst or admin grant) at most. On
+  the WebSocket the customer is named with `?tenant=<id>`;
+* otherwise a platform admin (`users.is_platform_admin`), with their own
+  role (`platform_admin.tenant_access`).
+
+Anyone else sending a different `X-Tenant-ID` gets 403. Requests of a suspended tenant's users and API keys
 get `403 tenant_suspended` (see docs/mssp.md). Under an
 override, rows the admin creates (suppression rules, API keys) carry no
 `created_by` (the admin's account belongs to the home tenant; the audit log
@@ -445,8 +458,12 @@ over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 install's `retention.tenant_min_days`..`tenant_max_days`, which responses
 return as `retention_limits`), `security` (`require_mfa`: force TOTP MFA
 for local accounts), `reporting` (`minutes_per_alert`, 1-480, default 15:
-the value report's hours-saved estimate) and `phishing` (`protected_brands`,
-`executives`, `trusted_authserv_ids`; see `docs/phishing.md`). Secrets
+the value report's hours-saved estimate), `phishing` (`protected_brands`,
+`executives`, `trusted_authserv_ids`; see `docs/phishing.md`) and `triage`
+(`known_scanners`: up to 256 host names, IP addresses or CIDR ranges of the
+tenant's own vulnerability scanners; an alert whose host or IP entities
+include one gets the `known_scanner` false-positive signal; the section is
+replaced whole). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
@@ -543,6 +560,8 @@ browser connections must come from an allowed CORS origin). After a
 `{"type": "hello"}` message the socket receives the tenant's events
 (`alert.created`, `alert.updated`, `escalation.created`,
 `escalation.updated`, `action.updated`) and periodic `{"type": "ping"}`.
+Add `&tenant=<id>` to stream a customer tenant under an MSSP grant; a
+revoked or expired grant closes the socket with 1008.
 Delivery is at-most-once: after a reconnect, re-read state from the REST
 API. The server closes the socket with code 4401 when the token expires or
 is revoked by a logout (reconnect with a fresh token), 1013 when the client

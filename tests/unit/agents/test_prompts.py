@@ -37,7 +37,7 @@ ALERT: Dict[str, Any] = {
     "category": "network",
     "source_id": "fw-prod",
     "occurred_at": "2026-09-01T10:00:00+00:00",
-    "entities": {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "hashes": ["44d88612fea8a8f36de82e1278abb02f"]},
+    "entities": {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "hashes": ["d41d8cd98f00b204e9800998ecf8427e"]},
     "raw": {"destination_port": 8443, "command_line": "curl.exe https://185.220.101.44/x -H 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz'"},
 }
 OTHER_ALERT: Dict[str, Any] = {

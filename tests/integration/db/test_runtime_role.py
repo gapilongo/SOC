@@ -208,6 +208,14 @@ async def test_grants_are_least_privilege(app_db: Database, migrated_database_ur
         assert not await can("tenants", "INSERT") and not await can("tenants", "DELETE")
         assert await can("checkpoints", "INSERT") and await can("checkpoint_writes", "DELETE")
         assert not await can("alembic_version", "UPDATE")
+        # MSSP grants (ARCH-E4.1e): organisations are written through lgsotf_save_organisation only, and a
+        # grant row can only be revoked (column privilege plus the tenant_grants_only_revoke trigger).
+        assert await can("organisations", "SELECT") and not await can("organisations", "INSERT")
+        assert not await can("organisations", "UPDATE") and not await can("tenant_grants", "DELETE")
+        for column, allowed in (("revoked_at", True), ("revoked_by", True), ("expires_at", False), ("role", False)):
+            assert await conn.fetchval(
+                "SELECT has_column_privilege('tenant_grants', $1, 'UPDATE')", column
+            ) is allowed, column
     owner = await asyncio.to_thread(_schema_owner, migrated_database_url)
     with pytest.raises(ValueError):
         await asyncio.to_thread(grant_runtime_privileges, owner, migrated_database_url, DatabaseSettings())

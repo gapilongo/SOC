@@ -24,6 +24,9 @@ How to use it: the security model and the controls themselves are described
 in [security.md](security.md). Deployment hardening is in
 [hardening.md](hardening.md). The safety invariants that cut across these
 rows, each with the tests that prove it, are in [invariants.md](invariants.md).
+The AI system card, [ai-system-card.md](ai-system-card.md), describes the
+models, the agents and their tools, the human oversight design and the
+evaluation evidence that the AI rows here rely on.
 The MCP design is in
 [design/mcp-architecture.md](design/mcp-architecture.md), and its threat
 table (section 8.1) is the detailed source for the planned remote MCP
@@ -132,7 +135,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
 | TM-WRK-1 | T | Prompt injection in alert fields changes the verdict | Untrusted-data blocks with escaped `<` and `>` (`src/lg_sotf/llm/prompting.py:365-400`); injection detection voids false-positive signals (`src/lg_sotf/agents/triage/base.py:125-131`); the injection signal blocks corroboration (`src/lg_sotf/agents/analysis/base.py:15-28`) | In place |
-| TM-WRK-2 | T | A fooled model closes a dangerous alert | High and critical alerts are never auto-closed; low and medium need rule corroboration; refusals escalate (`src/lg_sotf/domain/routing.py:1-21`) | In place; measured by `high_severity_auto_closed_benign` = 0 in CI |
+| TM-WRK-2 | T | A fooled model closes a dangerous alert, or the attacker names objects so the rules corroborate a benign close (title camouflage) | High and critical alerts are never auto-closed; low and medium need rule corroboration; refusals escalate (`src/lg_sotf/domain/routing.py:1-21`). Rule false-positive evidence comes only from the detection rule name with attacker-named values masked, EICAR hashes, the tenant's `triage.known_scanners` and the source id, never from titles, entity names, command lines, user agents or email subjects (`src/lg_sotf/domain/benign_evidence.py`, AI-E6.3) | In place; measured by `high_severity_auto_closed_benign` = 0 and the gated `title-camouflage` family of the adversarial corpus v2 in CI |
 | TM-WRK-3 | E | A fooled model triggers containment | Containment on model-only evidence always waits for approval (`src/lg_sotf/services/response/planner.py:328-329`); tenant autonomy, with unknown values read as `disabled` (`src/lg_sotf/services/response/policy.py:215-226`) | In place |
 | TM-WRK-4 | I | Alert data or secrets sent to the model provider | Secrets redacted before storage and before the model; personal data is **not** redacted | Partial: per-tenant pseudonymisation before the LLM call is planned (SEC7.5b) |
 | TM-WRK-5 | I | Model endpoint pointed at an internal or metadata address | `llm.base_url` egress check (`src/lg_sotf/llm/endpoint.py:80-100`), enforced at start-up (`src/lg_sotf/settings.py:519-524`) | In place |
@@ -300,7 +303,7 @@ organisations and grants.
 | AML.T0070 RAG Poisoning | Not applicable today (no retrieval); similar-case retrieval planned | Analyst-confirmed cases only (AI-E4.3) |
 | AML.T0034 Cost Harvesting | Alert floods, long investigations | TM-WRK-6, TM-EVT-5 |
 | AML.T0029 Denial of AI Service | Provider outage or throttling | ASI08 row; failures escalate |
-| AML.T0015 Evade AI Model | Attacker shapes activity to look benign | Rules decide what text cannot; high severity never auto-closes; measured by the adversarial eval split. Known gap: benign words from attacker-named objects in a trusted title (title-camouflage family, AI-E6.1) |
+| AML.T0015 Evade AI Model | Attacker shapes activity to look benign | Rules decide what text cannot; high severity never auto-closes; measured by the adversarial eval split. Benign words from attacker-named objects in a title are not evidence (TM-WRK-2; title-camouflage family, gated since AI-E6.3) |
 | AML.T0010 AI Supply Chain Compromise | Model provider, SDKs, images | TM-CI-1, TM-CI-2; model provenance recorded per step |
 
 ATLAS IDs follow the public ATLAS matrix as of 2026-11; check

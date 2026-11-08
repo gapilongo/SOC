@@ -17,7 +17,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from lg_sotf.api.auth.deps import ANALYST, REVIEWER, VIEWER, require
+from lg_sotf.api.auth.deps import ANALYST, CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import escalations_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
@@ -116,7 +116,7 @@ async def _bulk_out(ctx: ApiContext, tenant_id: str, outcomes: List[triage.ItemO
 
 
 @router.post("/bulk/claim", response_model=BulkOut, summary="Claim several escalations (per-item results)")
-async def bulk_claim(body: BulkClaimIn, request: Request, principal: Principal = Depends(require(REVIEWER))) -> BulkOut:
+async def bulk_claim(body: BulkClaimIn, request: Request, principal: Principal = Depends(require(CLAIMER))) -> BulkOut:
     """Each item is ``POST /escalations/{id}/claim`` with its ``version``; failures are reported per item."""
     ctx = get_ctx(request)
     assert principal.user_id is not None and principal.role is not None
@@ -148,6 +148,7 @@ async def bulk_close(body: BulkCloseIn, request: Request, principal: Principal =
         decision=body.decision,
         notes=body.notes,
         suggest_suppression=False if body.propose_suppression else None,
+        delegated=principal.delegated,
     )
     out = await _bulk_out(ctx, principal.tenant_id, outcomes)
     closed = [o.escalation_id for o in outcomes if o.error is None]

@@ -12,7 +12,8 @@ API key never crosses a network unencrypted.
 
 Every request:
 
-* sends the API key in ``X-API-Key`` (never logged, never in error text);
+* sends the API key in ``X-API-Key`` (never logged, never in error text),
+  and ``X-Tenant-ID`` when the server is pinned to a customer tenant;
 * has a total timeout (``settings.mcp.timeout_s``);
 * never follows redirects, so the key cannot be forwarded to another host;
 * reads at most ``settings.mcp.max_response_bytes`` of the body;
@@ -139,6 +140,7 @@ class LgSotfApiClient:
         max_response_bytes: int = 4_194_304,
         transport: Optional[httpx.AsyncBaseTransport] = None,
         sleep: Sleep = asyncio.sleep,
+        tenant_id: Optional[str] = None,
     ) -> None:
         if not api_key or not api_key.strip():
             raise ApiConfigError(f"{API_KEY_SOURCES} is not set")
@@ -149,6 +151,7 @@ class LgSotfApiClient:
         self._max_retries = max(0, max_retries)
         self._max_bytes = max_response_bytes
         self._sleep = sleep
+        self._tenant = {"X-Tenant-ID": tenant_id} if tenant_id else {}
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(timeout_s),
             follow_redirects=False,
@@ -223,7 +226,7 @@ class LgSotfApiClient:
     async def _send(
         self, method: str, path: str, query: Sequence[Tuple[str, str]], body: Optional[Mapping[str, Any]]
     ) -> Tuple[int, httpx.Headers, bytes]:
-        headers = {"X-API-Key": self._key, "X-Request-ID": f"mcp-{uuid.uuid4().hex}"}
+        headers = {"X-API-Key": self._key, "X-Request-ID": f"mcp-{uuid.uuid4().hex}", **self._tenant}
         request = self._client.build_request(
             method,
             self._base + path,
