@@ -87,7 +87,7 @@ jobs:
         with:
           version: ${{ env.HELM_VERSION }}
       - name: Pytest (unit and deploy)
-        run: pytest tests/unit tests/deploy
+        run: pytest tests/unit tests/invariants tests/deploy
 
   api-compat:
     name: API compatibility (oasdiff)

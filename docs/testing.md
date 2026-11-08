@@ -35,6 +35,7 @@ python -m pytest tests/integration/runtime -k lease -q      # needs the two vari
 | Tier | Path | Needs | Rules |
 |---|---|---|---|
 | Unit | `tests/unit` | nothing | Hermetic. **Every warning is an error** (`tests/unit/conftest.py`), with no ignore list. A unit test that requests `db`, `repos`, `redis_client`, `redis_url`, `database_url` or `migrated_database_url` fails collection: the fast CI job has no services, so it would never run. |
+| Invariants | `tests/invariants` | nothing | Proofs of the safety invariants ([invariants.md](invariants.md)) that had no test elsewhere; same rules as the unit tier. Every test here is named by an invariant in `src/lg_sotf/invariants/registry.py`, and `tests/deploy/test_invariants.py` fails when a named proof is missing or an enforced one is skipped. |
 | Deploy | `tests/deploy` | optional `helm`, `docker` | Packaging: Dockerfile, compose files, Helm chart, CI workflows, deploy scripts. Tests needing a missing binary skip. |
 | Integration | `tests/integration` | PostgreSQL 16, Redis 7 | Real services, the real app, the real worker and workflow engine, the fake LLM. |
 | Live | `tests/live` | a vendor lab (`make test-wazuh-up`) | Marked `live`; the real connector against a real vendor product. Skipped unless the lab's variables are set, so `pytest` and the unit tier never need it. See [The Wazuh lab](#the-wazuh-lab). |
@@ -44,7 +45,7 @@ Suite-wide (`pyproject.toml`): `RuntimeWarning`, `ResourceWarning` and
 `asyncio_mode = "auto"`.
 
 CI (`.github/workflows/ci.yml`) runs `lint` (ruff, mypy, import contracts),
-`fast` (unit + deploy, no services), and `test` (the whole suite with
+`fast` (unit + invariants + deploy, no services), and `test` (the whole suite with
 coverage, one process; the total floor and the per-package floors in
 `scripts/ci/coverage_floors.py` only go up). `test-parallel` runs the suite on
 four xdist workers and `parallel-parity` checks that both runs saw the same

@@ -17,6 +17,8 @@ Two companion documents:
 * [hardening.md](hardening.md) is the deployment hardening benchmark: numbered
   L1 and L2 controls for Docker Compose, Helm, PostgreSQL, Redis and the
   reverse proxy.
+* [invariants.md](invariants.md) lists the safety invariants, each with the
+  tests that prove it; section 11 explains how to check them on your install.
 
 ## 1. Threat model
 
@@ -555,3 +557,46 @@ a base-image update ships the fix.
   applies).
 * No third-party penetration test or certification (SOC 2, ISO 27001) has
   been performed on this release.
+
+## 11. Safety invariants
+
+The rules LG-SOTF holds for every alert, tenant and release (tenant
+isolation, approval before action, no automatic close of high-severity
+alerts, an append-only audit log, redacted logs, verifiable evidence packs,
+signed images and more) are listed in [invariants.md](invariants.md). Each
+one names its owner epic, the threat-model rows it answers and the tests that
+prove it. CI fails when a named test is missing, or when a test that proves
+an enforced invariant is marked skip or xfail
+(`tests/deploy/test_invariants.py`).
+
+Check the ones that depend on your database and settings on your own install:
+
+```bash
+lg-sotf verify-invariants          # or --json
+```
+
+It connects with `database.url`, as the API and workers do, and runs
+read-only checks in a synthetic dry-run tenant that owns no data:
+
+* every tenant table, partition and checkpoint table is under
+  `FORCE ROW LEVEL SECURITY` with a policy;
+* the runtime role is not a superuser, has no `BYPASSRLS` and is not a member
+  of the schema owner;
+* `app.bypass_rls` is not honoured for the runtime role, and the probe tenant
+  sees no row in any tenant table (tables estimated above 200,000 rows are
+  not read, because RLS makes each read a full scan; the catalog check
+  covers them);
+* the audit log's triggers are enabled and the runtime role holds no
+  `UPDATE`, `DELETE` or `TRUNCATE` on it;
+* a dry-run tenant is always rehearsed and the install kill switch
+  (`response.dry_run`) overrides every tenant;
+* with your routing thresholds, a benign model verdict closes no high or
+  critical alert;
+* log redaction is active and removes the known credential shapes;
+* an evidence pack sealed with your key verifies, and a changed one does not.
+
+It writes nothing and calls no connector. Exit code 0 means no check failed;
+1 means at least one did. On a single-role install (no
+`database.runtime_role`), the two runtime-role checks report `SKIP`: the
+schema owner may bypass RLS by design, so use a separate runtime role in
+production ([deployment.md](deployment.md)).

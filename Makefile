@@ -68,8 +68,8 @@ import-lint: ## Layer and package dependency contracts (pyproject.toml [tool.imp
 	lint-imports
 
 .PHONY: test-fast
-test-fast: ## Unit and deploy tests only (no PostgreSQL or Redis needed)
-	$(PYTHON) -m pytest tests/unit tests/deploy
+test-fast: ## Unit, invariant and deploy tests only (no PostgreSQL or Redis needed)
+	$(PYTHON) -m pytest tests/unit tests/invariants tests/deploy
 
 .PHONY: check
 check: lint typecheck import-lint test-fast ## Everything CI's lint and fast jobs run

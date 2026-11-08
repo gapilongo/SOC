@@ -35,8 +35,8 @@ import-lint`). What each package owns is in the
 
 | Layer (top to bottom) | Packages (`src/lg_sotf/`) | Owns |
 |---|---|---|
-| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, mcp, version |
-| Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
+| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, verify-invariants, mcp, version |
+| Interfaces | `api` \| `mcp` \| `eval` \| `invariants` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness; the safety-invariant registry and runtime checks |
 | Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
 | Workflow engine | `core` | graph, nodes, `WorkflowEngine`, retry policy |
 | Application | `services` \| `compliance` \| `onboarding` \| `agents` \| `ingestion` | escalation, review, response, reporting; evidence, NIS2, export; onboarding; triage, correlation and analysis agents; sources and normalizers |

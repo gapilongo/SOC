@@ -277,6 +277,7 @@ def test_only_useful_scripts_remain() -> None:
         "demo/alerts.json",
         "demo/seed_demo.py",
         "e2e_ui_stack.sh",
+        "export_invariants.py",
         "export_openapi.py",
         "export_schemas.py",
         "generate_secrets.py",
