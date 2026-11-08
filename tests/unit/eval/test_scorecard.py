@@ -26,10 +26,11 @@ from tests.unit.eval._support import result
 pytestmark = pytest.mark.unit
 
 
-def report(provider: str = "ollama", model: str = "qwen2.5:7b", **run: Any) -> Dict[str, Any]:
+def report(provider: str = "ollama", model: str = "qwen2.5:7b", synthetic: bool = True, **run: Any) -> Dict[str, Any]:
     rows = [{"id": f"i{n}", "source_type": "canonical", "alert": {"title": "t"}, "expected": {"disposition": "benign"}}
             for n in range(6)]
-    dataset = parse_dataset('{"_meta": {"synthetic": true}}\n' + "\n".join(json.dumps(r) for r in rows), path="x.jsonl")
+    meta = json.dumps({"_meta": {"synthetic": synthetic}})
+    dataset = parse_dataset(meta + "\n" + "\n".join(json.dumps(r) for r in rows), path="x.jsonl")
     results = [
         result("m1", "malicious", "closed", disposition="benign"),  # a miss
         result("m2", "malicious", "waiting_human", split="adversarial"),
@@ -96,11 +97,24 @@ def test_prompt_versions_come_from_the_report_or_the_option() -> None:
     assert "| Prompt version | commit 1234 |" in render_scorecard(card)
 
 
-def test_deepseek_scorecards_are_marked_internal_only() -> None:
-    card = build_scorecard([report(provider="openai", model="deepseek-chat")], ScorecardOptions())
+def test_deepseek_scorecards_on_data_that_is_not_synthetic_are_marked_internal_only() -> None:
+    card = build_scorecard([report(provider="openai", model="deepseek-chat", synthetic=False)], ScorecardOptions())
     assert card["internal_only"] is True
     assert "INTERNAL ONLY: not for publication" in render_scorecard(card)
+    one_real = [
+        report(provider="openai", model="deepseek-chat"),
+        report(provider="openai", model="deepseek-chat", synthetic=False),
+    ]
+    assert build_scorecard(one_real, ScorecardOptions())["internal_only"] is True
     assert build_scorecard([report()], ScorecardOptions(internal=True))["internal_only"] is True
+
+
+def test_deepseek_scorecards_on_synthetic_data_only_are_publishable() -> None:
+    card = build_scorecard([report(provider="openai", model="deepseek-v4-pro")], ScorecardOptions())
+    assert card["internal_only"] is False
+    assert "INTERNAL" not in render_scorecard(card)
+    forced = build_scorecard([report(provider="openai", model="deepseek-v4-pro")], ScorecardOptions(internal=True))
+    assert forced["internal_only"] is True
 
 
 def test_reports_from_different_models_do_not_make_one_scorecard() -> None:

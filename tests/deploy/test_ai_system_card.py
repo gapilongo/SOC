@@ -129,7 +129,7 @@ def test_the_regulatory_mapping_names_its_articles_and_caveats() -> None:
 def test_the_evaluation_section_states_synthetic_data_small_samples_and_known_gaps() -> None:
     evaluation = section(card_text(), "7. Evaluation evidence")
     for needle in ("synthetic", "small samples", "95%", "scorecards/v1/qwen2.5-7b/scorecard.md",
-                   "adversarial_v2.jsonl", "title-camouflage", "#299"):
+                   "scorecards/v2/deepseek-v4/scorecard.md", "adversarial_v2.jsonl", "title-camouflage", "#299"):
         assert needle in evaluation, needle
 
 

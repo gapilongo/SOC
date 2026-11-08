@@ -776,6 +776,18 @@ nothing on its own and sends every benign alert to a human or to an approval:
 the gate measures the routing policy, not a model. A real model's numbers on
 this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
 
+**The first real model on it** is
+[scorecard v2](scorecards/v2/deepseek-v4/scorecard.md), DeepSeek V4 through
+the hosted API.
+* **Results.** 0 of 208 malicious alerts closed, 0 of 312 benign alerts
+  closed, and 33 benign alerts given a response plan.
+* **The replay compresses time.** The eval sends the twelve days through in
+  about 100 minutes, and correlation counts related alerts against
+  wall-clock time. As a result, 205 of the 312 benign alerts were decided on
+  correlation alone, without the deep model.
+* **Read [its RUN.md](scorecards/v2/deepseek-v4/RUN.md)** before you compare
+  correlation-driven numbers from this corpus.
+
 ```sh
 python -m tests.fixtures.attack_corpus generate --out ~/lg-sotf-eval/corpus_v1.jsonl   # or use the .gz as is
 LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.jsonl.gz \

@@ -25,7 +25,8 @@ from lg_sotf.eval.results import ItemResult
 SCORECARD_VERSION = 1
 # report.run keys that may carry prompt identities (AI-E1.2 adds prompt hashes to reports).
 PROMPT_KEYS = ("prompt_hashes", "prompts", "prompt_versions")
-# Models whose results are for internal comparison only (lead decision: synthetic data, never published).
+# Models hosted where customer data may not go (DeepSeek: China). A scorecard of one is internal only unless
+# every dataset is synthetic: then no customer data was sent, and the open weights can be self-hosted.
 INTERNAL_ONLY_MODELS = ("deepseek",)
 NOT_RECORDED = "not recorded in the report"
 # A synthetic set this large is a generated corpus (corpus_v1), not a hand-written one.
@@ -133,13 +134,11 @@ def build_scorecard(reports: Sequence[Mapping[str, Any]], options: ScorecardOpti
     for report in reports[1:]:
         if _model(report) != model:
             raise ScorecardError(f"the reports come from different models: {model} and {_model(report)}")
-    names = " ".join(str(v or "") for v in model.values()).lower()
-    internal = options.internal or any(tag in names for tag in INTERNAL_ONLY_MODELS)
     cards = [dataset_card(report) for report in reports]
     return {
         "scorecard_version": SCORECARD_VERSION,
         "title": options.title or f"Scorecard v{SCORECARD_VERSION}: {model['fast_model'] or 'unknown model'}",
-        "internal_only": internal,
+        "internal_only": _internal_only(model, cards, options),
         "model": model,
         "prompt_version": _prompts(reports, options),
         "lg_sotf_versions": sorted({str(r.get("lg_sotf_version")) for r in reports}),
@@ -148,6 +147,14 @@ def build_scorecard(reports: Sequence[Mapping[str, Any]], options: ScorecardOpti
         "notes": list(options.notes),
         "limitations": _limitations(reports, cards, model, options),
     }
+
+
+def _internal_only(model: Mapping[str, Any], cards: Sequence[Mapping[str, Any]], options: ScorecardOptions) -> bool:
+    """Asked for, or an internal-only model measured on any dataset that is not synthetic."""
+    names = " ".join(str(v or "") for v in model.values()).lower()
+    restricted = any(tag in names for tag in INTERNAL_ONLY_MODELS)
+    all_synthetic = all((card["dataset"] or {}).get("synthetic") is True for card in cards)
+    return options.internal or (restricted and not all_synthetic)
 
 
 def _limitations(
@@ -253,7 +260,7 @@ def _header(card: Mapping[str, Any]) -> List[str]:
         prompts = json.dumps(prompts, sort_keys=True)
     lines = [f"# {card['title']}", ""]
     if card["internal_only"]:
-        lines += ["> **INTERNAL ONLY: not for publication.** Internal comparison on synthetic data.", ""]
+        lines += ["> **INTERNAL ONLY: not for publication.** Internal comparison only.", ""]
     lines += [
         "| Field | Value |",
         "|---|---|",
