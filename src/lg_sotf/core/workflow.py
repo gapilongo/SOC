@@ -63,6 +63,7 @@ from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.response import Connector, ResponseService
 from lg_sotf.settings import Settings
@@ -192,6 +193,7 @@ class WorkflowEngine:
         """The services the nodes run with (a :class:`~lg_sotf.core.shadow.ShadowRunner` reuses them)."""
 
     @classmethod
+    @egress("database_connection", REFUSE)
     async def create(
         cls,
         *,

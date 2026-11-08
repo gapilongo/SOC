@@ -27,13 +27,15 @@ in the source and fails when one is not inside a registered boundary.
 
 from __future__ import annotations
 
-import enum
 import functools
 import inspect
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, Callable, Dict, Iterator, List, Literal, Mapping, Optional, Tuple, TypeVar, cast, get_args
+
+from lg_sotf.run_mode import RunMode, _enter, _leave, run_mode
 
 F = TypeVar("F", bound=Callable[..., Any])
 Arguments = Mapping[str, Any]
@@ -48,11 +50,6 @@ _NOT_DETAIL = frozenset({"self", "conn", "tenant_id"})
 
 EffectOutcome = Literal["sunk", "refused"]
 EFFECT_OUTCOMES: Tuple[str, ...] = get_args(EffectOutcome)
-
-
-class RunMode(enum.StrEnum):
-    LIVE = "live"
-    SHADOW = "shadow"
 
 
 class ShadowEgressRefused(RuntimeError):
@@ -110,6 +107,15 @@ class ShadowRun:
     sink: ShadowSink = field(default_factory=ShadowSink)
     trace: List[Any] = field(default_factory=list)
     """Trace steps the agents recorded (kept here: the trace store is not written in shadow mode)."""
+    llm_calls: int = 0
+    llm_tokens: int = 0
+    llm_cost_usd: Decimal = Decimal(0)
+    """The run's LLM use (never a billing row of the tenant: ``lg_sotf.llm.usage``)."""
+
+    def add_llm_usage(self, tokens: int, cost_usd: Decimal) -> None:
+        self.llm_calls += 1
+        self.llm_tokens += tokens
+        self.llm_cost_usd += cost_usd
 
 
 _RUN: ContextVar[Optional[ShadowRun]] = ContextVar("lg_sotf_shadow_run", default=None)
@@ -117,10 +123,6 @@ _RUN: ContextVar[Optional[ShadowRun]] = ContextVar("lg_sotf_shadow_run", default
 
 def active_shadow_run() -> Optional[ShadowRun]:
     return _RUN.get()
-
-
-def run_mode() -> RunMode:
-    return RunMode.LIVE if _RUN.get() is None else RunMode.SHADOW
 
 
 def in_shadow() -> bool:
@@ -141,9 +143,11 @@ def shadow_scope(run: ShadowRun) -> Iterator[ShadowRun]:
     if _RUN.get() is not None:
         raise RuntimeError("a shadow run cannot start inside another shadow run")
     token = _RUN.set(run)
+    mode = _enter(RunMode.SHADOW)
     try:
         yield run
     finally:
+        _leave(mode)
         _RUN.reset(token)
 
 
@@ -189,6 +193,17 @@ class EgressPoint:
 
 EGRESS_POINTS: Dict[str, EgressPoint] = {}
 """Every registered boundary, by ``module:qualname``."""
+
+
+def refuse_in_shadow(boundary: str, operation: str) -> None:
+    """In a shadow run, record ``operation`` as refused and raise; live, do nothing.
+
+    For boundaries that decide per call (a Redis command, an SQL statement) rather than per function.
+    """
+    run = _RUN.get()
+    if run is not None:
+        run.sink.record(boundary, operation, "refused", {})
+        raise ShadowEgressRefused(boundary, operation)
 
 
 def _divert(run: ShadowRun, boundary: str, operation: str, policy: ShadowPolicy, arguments: Arguments) -> Any:
@@ -252,6 +267,7 @@ __all__ = [
     "egress",
     "in_shadow",
     "passed_arguments",
+    "refuse_in_shadow",
     "run_mode",
     "shadow_run_id",
     "shadow_scope",

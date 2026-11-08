@@ -75,6 +75,7 @@ from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
 from lg_sotf.models.vocabulary import DISPOSITIONS as AI_CLASSES
 from lg_sotf.models.vocabulary import Disposition as AiClass
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import REFUSE, egress
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Repositories
@@ -759,10 +760,8 @@ class ReportService:
         self._ttl = ttl_s
 
     def cache_key(self, tenant_id: str, kind: str, window: ReportWindow, extra: str = "") -> str:
-        return (
-            f"{self._prefix}:t:{tenant_id}:cache:reports:{kind}:"
-            f"{window.start.isoformat()}:{window.end.isoformat()}{':' + extra if extra else ''}"
-        )
+        span = f"{window.start.isoformat()}:{window.end.isoformat()}{':' + extra if extra else ''}"
+        return f"{self._prefix}:t:{tenant_id}:cache:reports:{kind}:{span}"
 
     async def _cached(self, key: str, model: Type[M]) -> Optional[M]:
         try:
@@ -772,6 +771,7 @@ class ReportService:
             log_failure(log, "reports.cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
             return None
 
+    @egress("report_cache", REFUSE)
     async def _store(self, key: str, value: BaseModel) -> None:
         try:
             await self._redis.set(key, value.model_dump_json().encode(), ex=self._ttl)

@@ -54,6 +54,7 @@ class StreamStats:
     """Entries not yet delivered to the group; ``None`` when Redis cannot tell."""
 
 
+@egress("queue", REFUSE)
 async def ensure_groups(redis: Redis, streams: QueueStreams) -> None:
     """Create the ``workers`` group on each work stream (idempotent)."""
     for stream in streams.work:
@@ -162,6 +163,7 @@ class StreamConsumer:
                 )
         return messages
 
+    @egress("queue", REFUSE)
     async def announce_alive(self, ttl_s: float) -> None:
         """Mark this consumer live for ``ttl_s``; the owner refreshes it well within ``ttl_s`` while it runs.
 
@@ -174,6 +176,7 @@ class StreamConsumer:
             self._dead_scan_interval_s = min(ttl_s / 3.0, _MAX_DEAD_SCAN_INTERVAL_S)
         self._alive_ttl_ms = ttl_ms
 
+    @egress("queue", REFUSE)
     async def withdraw(self) -> None:
         """Drop the liveness key (clean shutdown): entries this consumer still holds are claimable at once."""
         await self._redis.delete(self._streams.consumer_alive(self._name))
@@ -217,6 +220,7 @@ class StreamConsumer:
             log.warning("queue.own_pending_requeued", consumer=self._name, count=requeued)
         return requeued
 
+    @egress("queue", REFUSE)
     async def _reclaim(self, max_count: int) -> List[Message]:
         found = await self._claim_from_dead(max_count)
         for stream in self._streams.work:
@@ -246,6 +250,7 @@ class StreamConsumer:
                 log.info("queue.reclaimed", stream=self._streams.label(stream), count=len(entries))
         return found
 
+    @egress("queue", REFUSE)
     async def _claim_from_dead(self, max_count: int) -> List[Message]:
         """Claim entries pending for consumers whose liveness key has expired (at most every few seconds)."""
         now = time.monotonic()
@@ -293,6 +298,7 @@ class StreamConsumer:
         await self._forget_dead_consumers()
         return found
 
+    @egress("queue", REFUSE)
     async def _forget_dead_consumers(self) -> int:
         """Delete group consumers that are dead (no liveness key), hold nothing and have been idle
         for a while: every killed worker process leaves one behind otherwise, and the group's
@@ -327,6 +333,7 @@ class StreamConsumer:
                 counts[entry_id] = int(rows[0]["times_delivered"])
         return counts
 
+    @egress("queue", REFUSE)
     async def _read_new(self, streams: Dict[str, str], count: int, *, block_ms: Optional[int]) -> List[Message]:
         response: Any = await self._redis.xreadgroup(
             CONSUMER_GROUP,
@@ -367,6 +374,7 @@ class StreamConsumer:
             await self._move_to_dlq(stream, entry_id, decode_fields(fields), f"malformed: {exc}", deliveries)
             return None
 
+    @egress("queue", REFUSE)
     async def ack(self, msg: Message) -> bool:
         """Acknowledge and delete the entry; False if it was no longer pending for the group."""
         pipe = self._redis.pipeline(transaction=True)
@@ -375,6 +383,7 @@ class StreamConsumer:
         acked, _deleted = await pipe.execute()
         return bool(acked)
 
+    @egress("queue", REFUSE)
     async def touch(self, msg: Message) -> bool:
         """Reset the entry's idle time so it is not reclaimed while still being processed.
 
@@ -444,6 +453,7 @@ class StreamConsumer:
                     total += int(consumer["pending"])
         return total
 
+    @egress("queue", REFUSE)
     async def remove_if_idle(self) -> bool:
         """Delete this consumer from the group when it holds no pending entries (clean shutdown).
 

@@ -143,7 +143,7 @@ Manual steps:
    none of the sweeps run. Check the owner DB credentials and that the
    scheduler pods are Ready.
 2. Look for runs waiting on a node timeout (`worker.node_timeout_s`,
-   `analysis_timeout_s`, `run_timeout_s`): `lgsotf_node_seconds` p99 close to
+   `analysis_timeout_s`, `run_timeout_s`): `lgsotf_node_seconds{mode="live"}` p99 close to
    the timeout usually means the LLM provider is slow or rate limiting.
 3. Inspect in SQL (owner connection):
    ```sql
@@ -250,7 +250,7 @@ compromise, and expect reduced correlation for that window.
 2. **Dependencies**: `/readyz` on each role; PostgreSQL (connections,
    `max_connections`, locks, disk), Redis (memory, `maxmemory` evictions,
    persistence), LLM provider status and 429/5xx rates
-   (`lgsotf_llm_calls_total{outcome!="success"}`).
+   (`lgsotf_llm_calls_total{mode="live",outcome!="success"}`).
 3. **Contain**:
    * Stop automated response everywhere: set `settings.response.dry_run=true`
      (or `LG_SOTF_RESPONSE__DRY_RUN=true`) and roll workers.
@@ -284,12 +284,17 @@ startup while it is set; remove it from your configuration. Metrics are Promethe
 | Dashboard | Panels (PromQL sketches) |
 |---|---|
 | Overview | request rate and 5xx ratio `sum(rate(lgsotf_http_requests_total{status=~"5.."}[5m])) / sum(rate(lgsotf_http_requests_total[5m]))`; p95 latency `histogram_quantile(0.95, sum by (le, route) (rate(lgsotf_http_request_seconds_bucket[5m])))`; pod restarts |
-| Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket[15m])))`; worker replicas; transactions retried after a migration `increase(lgsotf_db_stale_statement_retries_total[1h])` (expected only around an upgrade) |
-| LLM | calls by model/agent/outcome; tokens `sum by (model, kind) (rate(lgsotf_llm_tokens_total[1h]))`; spend `sum by (model) (increase(lgsotf_llm_cost_usd_total[1d]))`; refusals and skipped calls by reason |
+| Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket{mode="live"}[15m])))`; worker replicas; transactions retried after a migration `increase(lgsotf_db_stale_statement_retries_total[1h])` (expected only around an upgrade) |
+| LLM | calls by model/agent/outcome; tokens `sum by (model, kind) (rate(lgsotf_llm_tokens_total{mode="live"}[1h]))`; spend `sum by (model) (increase(lgsotf_llm_cost_usd_total{mode="live"}[1d]))`; refusals and skipped calls by reason; shadow runs: the same series with `mode="shadow"` |
 | Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))` |
 | Ingestion | `lgsotf_ingest_events_total`, `lgsotf_source_polls_total` by outcome, `lgsotf_source_poll_seconds` |
 
 ### Alerts to create
+
+The pipeline series (nodes, LLM calls, tokens, cost, refusals, skipped calls,
+enrichment lookups) carry `mode` (`live`, or `shadow` for shadow runs of a
+candidate pipeline). Alerts and dashboards select `mode="live"`, so shadow
+runs never page anyone.
 
 | Alert | Condition (starting point) | Severity |
 |---|---|---|
@@ -300,8 +305,8 @@ startup while it is set; remove it from your configuration. Metrics are Promethe
 | Dead letters | `increase(lgsotf_queue_depth{stream="dlq"}[15m]) > 0` | ticket (page if > 20) |
 | Run failures | `rate(lgsotf_runs_total{outcome=~"failed|dead_lettered"}[15m]) / rate(lgsotf_runs_total[15m]) > 0.05` | page |
 | No scheduler leader | no scheduler pod logged leadership in 5 m, or `lgsotf_queue_depth` stops updating | page |
-| LLM errors | `rate(lgsotf_llm_calls_total{outcome=~"error|invalid_output"}[10m]) / rate(lgsotf_llm_calls_total[10m]) > 0.1` | page |
-| LLM spend | daily `increase(lgsotf_llm_cost_usd_total[1d])` above budget | ticket |
+| LLM errors | `rate(lgsotf_llm_calls_total{mode="live",outcome=~"error|invalid_output"}[10m]) / rate(lgsotf_llm_calls_total{mode="live"}[10m]) > 0.1` | page |
+| LLM spend | daily `increase(lgsotf_llm_cost_usd_total{mode="live"}[1d])` above budget | ticket |
 | Escalation backlog | `lgsotf_escalations_open` above analyst capacity for 1 h | ticket |
 | Source polling failing | `increase(lgsotf_source_polls_total{outcome="error"}[30m]) > 0` for a source type | ticket |
 | Pod restarts / OOM | `kube_pod_container_status_restarts_total` increase, `OOMKilled` | ticket |

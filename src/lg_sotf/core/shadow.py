@@ -10,7 +10,15 @@ only (see :mod:`lg_sotf.security.shadow`). The run:
   id (``shadow/<hex>``), which the agents' contexts carry;
 * keeps its checkpoints in memory (production checkpoints are untouched) and
   stops at the first interrupt: no analyst or approver answers a shadow run;
-* never reserves or charges the tenant's LLM token budget;
+* never reserves or charges the tenant's LLM token budget, and its LLM use
+  is never a billing row (``llm_usage_daily``, which also seeds the budget):
+  the tokens and cost stay on the run (:class:`ShadowOutcome`);
+* reads Redis through a client that refuses every write
+  (:class:`~lg_sotf.queue.redis.ShadowSafeRedis`, on the same connection pool);
+* answers threat-intelligence lookups from the cache only: a miss is
+  ``skipped``, so a shadow verdict can see fewer threat-intelligence answers
+  than production's;
+* moves only the ``mode="shadow"`` metric series;
 * writes one thing, after it has left shadow mode: its would-be effects, to
   ``shadow_effects`` (append-only, read by no API endpoint).
 
@@ -22,6 +30,7 @@ from __future__ import annotations
 
 import dataclasses
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Dict, Optional, Tuple
 from uuid import uuid4
 
@@ -34,6 +43,7 @@ from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
 from lg_sotf.core.workflow import RECURSION_LIMIT
 from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.observability.logging import bound_context, get_logger
+from lg_sotf.queue.redis import ShadowSafeRedis
 from lg_sotf.security.shadow import SHADOW_RUN_PREFIX, ShadowEffect, ShadowRun, shadow_scope
 
 log = get_logger(__name__)
@@ -49,6 +59,9 @@ class ShadowOutcome:
     effects: Tuple[ShadowEffect, ...]
     trace: Tuple[Any, ...]
     """The LLM and tool steps the agents recorded (not written to the trace store)."""
+    llm_calls: int = 0
+    llm_tokens: int = 0
+    llm_cost_usd: Decimal = Decimal(0)
 
 
 def _interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
@@ -64,7 +77,8 @@ class ShadowRunner:
     def __init__(
         self, deps: NodeDeps, *, agents: Optional[AgentSet] = None, graph_builder: GraphBuilder = build_graph
     ) -> None:
-        self._deps = dataclasses.replace(deps, agents=agents or deps.agents, budget=None)
+        verdicts = deps.verdicts.with_redis(ShadowSafeRedis(connection_pool=deps.verdicts.redis.connection_pool))
+        self._deps = dataclasses.replace(deps, agents=agents or deps.agents, budget=None, verdicts=verdicts)
         self._checkpoints = InMemorySaver()
         graph = graph_builder(WorkflowNodes(self._deps), self._deps.thresholds)
         self._graph = graph.compile(checkpointer=self._checkpoints)
@@ -92,4 +106,7 @@ class ShadowRunner:
             interrupt=_interrupt(snapshot),
             effects=run.sink.effects,
             trace=tuple(run.trace),
+            llm_calls=run.llm_calls,
+            llm_tokens=run.llm_tokens,
+            llm_cost_usd=run.llm_cost_usd,
         )

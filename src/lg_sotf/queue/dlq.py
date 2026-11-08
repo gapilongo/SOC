@@ -81,6 +81,7 @@ class DeadLetterQueue:
         new_id, _deleted = await pipe.execute()
         return _text(new_id)
 
+    @egress("queue", REFUSE)
     async def delete(self, entry_id: str) -> bool:
         return bool(await self._redis.xdel(self._streams.dlq, entry_id))
 

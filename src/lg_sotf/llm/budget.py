@@ -22,6 +22,7 @@ from typing import Awaitable, Callable, Final, Literal, Optional, Union
 from redis.asyncio import Redis
 
 from lg_sotf.llm.errors import LLMBudgetExceeded
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 _KEY_TTL_S = 2 * 24 * 3600
@@ -73,6 +74,7 @@ class TokenBudget:
         value = await self._redis.get(self.key(tenant_id, day))
         return int(value) if value is not None else 0
 
+    @egress("token_budget", REFUSE)
     async def _incr(self, key: str, amount: int) -> int:
         async with self._redis.pipeline(transaction=True) as pipe:
             pipe.incrby(key, amount)

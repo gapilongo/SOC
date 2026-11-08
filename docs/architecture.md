@@ -271,13 +271,21 @@ Rules:
   It is enforced at the egress boundaries, never in the agents: every
   function decorated with `@egress` refuses in shadow mode, or records the
   call in the run's sink and returns a stand-in ("would have done X"), or,
-  for the read-only threat-intelligence lookups, runs. Every database
-  transaction of a shadow run is read only, so a write no boundary diverted
-  fails instead of committing. After the run, the sink is written to
-  `shadow_effects`, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
-  finds the egress call sites (HTTP clients, SMTP, sockets, Redis publish
-  and streams, WebSocket sends, connector execution, outbox inserts) with
-  the AST and fails on any outside a registered boundary.
+  for the local health listener only, runs. Every database transaction of
+  a shadow run is read only, and its connection refuses the statements that
+  would reach past it (`COMMIT`, `SET TRANSACTION`, `NOTIFY`/`pg_notify`,
+  session settings and advisory locks); its Redis client
+  (`ShadowSafeRedis`) sends reads only. Threat-intelligence lookups answer
+  from the cache only (a miss is `skipped`: no provider call, no quota, no
+  production rate limit), so a shadow verdict can see fewer
+  threat-intelligence answers than production's. LLM use stays on the run
+  (never `llm_usage_daily`, which bills the tenant and seeds its budget),
+  and metrics are labelled `mode="shadow"`. After the run, the sink is
+  written to `shadow_effects`, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
+  finds the egress call sites (HTTP, SMTP, socket, database and Redis
+  clients, every Redis write command, WebSocket sends, connector execution,
+  outbox inserts) with the AST and fails on any outside a registered
+  boundary, and on any thread or fresh-context hop that drops the run mode.
 * A model refusal at any stage escalates with reason `model_refused`; no
   actions are planned from a refused analysis.
 * Related alerts (shared key entities or fingerprint within the grouping
@@ -436,8 +444,8 @@ Everything else is per stack, on purpose:
   `lgsotf_http_requests_total{route,method,status}`,
   `lgsotf_http_request_seconds`, `lgsotf_queue_depth{stream}`,
   `lgsotf_queue_pending{stream}`, `lgsotf_runs_total{outcome}`,
-  `lgsotf_node_seconds{node}`, `lgsotf_llm_calls_total{model,agent,outcome}`,
-  `lgsotf_llm_tokens_total{model,kind}`, `lgsotf_llm_cost_usd_total{model}`,
+  `lgsotf_node_seconds{node,mode}`, `lgsotf_llm_calls_total{model,agent,outcome,mode}`,
+  `lgsotf_llm_tokens_total{model,kind,mode}`, `lgsotf_llm_cost_usd_total{model,mode}`,
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,

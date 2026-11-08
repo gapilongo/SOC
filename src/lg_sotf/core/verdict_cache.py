@@ -21,7 +21,7 @@ from typing import Any, Dict, Optional
 from redis.asyncio import Redis
 
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITY_RANK
-from lg_sotf.security.shadow import egress, sink
+from lg_sotf.security.shadow import REFUSE, egress, sink
 
 VERDICT_TTL_S = 7 * 24 * 3600
 MAX_FINGERPRINT_CHARS = 256
@@ -44,6 +44,14 @@ class VerdictCache:
         self._redis = redis
         self._prefix = prefix
         self._ttl_s = ttl_s
+
+    @property
+    def redis(self) -> Redis:
+        return self._redis
+
+    def with_redis(self, redis: Redis) -> VerdictCache:
+        """The same cache read through another client (a shadow run's write-refusing one)."""
+        return VerdictCache(redis, self._prefix, ttl_s=self._ttl_s)
 
     def key(self, tenant_id: str, fingerprint: str) -> str:
         return f"{self._prefix}:t:{tenant_id}:verdict:{fingerprint[:MAX_FINGERPRINT_CHARS]}"
@@ -95,6 +103,7 @@ class VerdictCache:
             return False
         return bool(await self._redis.delete(self.key(tenant_id, fingerprint)))
 
+    @egress("verdict_cache", REFUSE)
     async def clear_tenant(self, tenant_id: str) -> int:
         """Remove every cached verdict of the tenant; returns how many were removed."""
         pattern = self.key(tenant_id, "*").replace("[", "\\[").replace("]", "\\]")

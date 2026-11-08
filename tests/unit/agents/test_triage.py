@@ -34,7 +34,7 @@ from tests.unit.agents._support import (
 
 
 def metric(name: str, **labels: str) -> float:
-    return REGISTRY.get_sample_value(name, labels) or 0.0
+    return REGISTRY.get_sample_value(name, {"mode": "live", **labels}) or 0.0
 
 
 def test_rule_scoring() -> None:

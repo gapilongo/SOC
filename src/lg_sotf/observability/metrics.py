@@ -3,6 +3,11 @@
 All metrics live on a module registry so importing this module twice, or
 running tests in the same process, never collides with the global default
 registry. Labels are low-cardinality only: never tenant, alert or user ids.
+
+The pipeline's series (nodes, LLM calls, tokens, cost, refusals, skipped
+calls, enrichment lookups) carry ``mode`` (``live`` or ``shadow``,
+:mod:`lg_sotf.run_mode`): a shadow run never moves a production series, and
+dashboards and alerts select ``mode="live"``.
 """
 
 from __future__ import annotations
@@ -12,6 +17,8 @@ from contextlib import contextmanager
 from typing import Iterator, Tuple
 
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Counter, Gauge, Histogram, generate_latest
+
+from lg_sotf.run_mode import run_mode
 
 REGISTRY = CollectorRegistry(auto_describe=True)
 
@@ -52,7 +59,7 @@ RUNS = Counter(
 NODE_SECONDS = Histogram(
     "lgsotf_node_seconds",
     "Workflow node execution time in seconds.",
-    ["node"],
+    ["node", "mode"],
     buckets=_NODE_BUCKETS,
     registry=REGISTRY,
 )
@@ -66,37 +73,37 @@ LLM_SLOT_WAIT_SECONDS = Histogram(
 LLM_CALLS = Counter(
     "lgsotf_llm_calls_total",
     "LLM calls, by model, calling agent and outcome.",
-    ["model", "agent", "outcome"],
+    ["model", "agent", "outcome", "mode"],
     registry=REGISTRY,
 )
 LLM_TOKENS = Counter(
     "lgsotf_llm_tokens_total",
     "LLM tokens, by model and kind (input, output, cache_read, cache_write).",
-    ["model", "kind"],
+    ["model", "kind", "mode"],
     registry=REGISTRY,
 )
 LLM_COST_USD = Counter(
     "lgsotf_llm_cost_usd_total",
     "Estimated LLM spend in US dollars, by model.",
-    ["model"],
+    ["model", "mode"],
     registry=REGISTRY,
 )
 LLM_REFUSALS = Counter(
     "lgsotf_llm_refusals_total",
     "LLM calls the model declined, by calling agent and refusal category.",
-    ["agent", "category"],
+    ["agent", "category", "mode"],
     registry=REGISTRY,
 )
 LLM_SKIPPED = Counter(
     "lgsotf_llm_skipped_total",
     "LLM calls an agent did not make, by agent and reason (rules decisive, budget, disabled, ...).",
-    ["agent", "reason"],
+    ["agent", "reason", "mode"],
     registry=REGISTRY,
 )
 ENRICHMENT_LOOKUPS = Counter(
     "lgsotf_enrichment_lookups_total",
     "Indicator enrichment lookups, by provider and result status (cache hits are status 'cached').",
-    ["provider", "status"],
+    ["provider", "status", "mode"],
     registry=REGISTRY,
 )
 ESCALATIONS_OPEN = Gauge(
@@ -138,7 +145,7 @@ def record_run(outcome: str) -> None:
 
 
 def observe_node(node: str, seconds: float) -> None:
-    NODE_SECONDS.labels(node=node).observe(seconds)
+    NODE_SECONDS.labels(node=node, mode=run_mode()).observe(seconds)
 
 
 @contextmanager
@@ -156,19 +163,19 @@ def record_llm_slot_wait(tier: str, seconds: float) -> None:
 
 
 def record_llm_call(model: str, agent: str, outcome: str) -> None:
-    LLM_CALLS.labels(model=model, agent=agent, outcome=outcome).inc()
+    LLM_CALLS.labels(model=model, agent=agent, outcome=outcome, mode=run_mode()).inc()
 
 
 def record_llm_tokens(model: str, kind: str, tokens: int) -> None:
     if kind not in LLM_TOKEN_KINDS:
         raise ValueError(f"unknown token kind {kind!r}")
     if tokens > 0:
-        LLM_TOKENS.labels(model=model, kind=kind).inc(tokens)
+        LLM_TOKENS.labels(model=model, kind=kind, mode=run_mode()).inc(tokens)
 
 
 def record_llm_cost(model: str, usd: float) -> None:
     if usd > 0:
-        LLM_COST_USD.labels(model=model).inc(usd)
+        LLM_COST_USD.labels(model=model, mode=run_mode()).inc(usd)
 
 
 # Refusal categories are an open set on the provider side; unknown values collapse to "other"
@@ -193,15 +200,16 @@ def refusal_category_label(category: object) -> str:
 
 
 def record_llm_refusal(agent: str, category: object) -> None:
-    LLM_REFUSALS.labels(agent=agent, category=refusal_category_label(category)).inc()
+    LLM_REFUSALS.labels(agent=agent, category=refusal_category_label(category), mode=run_mode()).inc()
 
 
 def record_llm_skipped(agent: str, reason: str) -> None:
-    LLM_SKIPPED.labels(agent=agent, reason=reason if reason in LLM_SKIP_REASONS else "other").inc()
+    LLM_SKIPPED.labels(agent=agent, reason=reason if reason in LLM_SKIP_REASONS else "other", mode=run_mode()).inc()
 
 
 def record_enrichment_lookup(provider: str, status: str) -> None:
-    ENRICHMENT_LOOKUPS.labels(provider=provider, status=status if status in ENRICHMENT_STATUSES else "other").inc()
+    status = status if status in ENRICHMENT_STATUSES else "other"
+    ENRICHMENT_LOOKUPS.labels(provider=provider, status=status, mode=run_mode()).inc()
 
 
 def set_escalations_open(count: int) -> None:

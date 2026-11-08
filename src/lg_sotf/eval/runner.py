@@ -56,6 +56,7 @@ from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_sou
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import safe_error_text
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -337,6 +338,7 @@ async def check_services(db: Any, redis: Any) -> None:
         raise EvalSetupError(f"redis unavailable: {safe_error_text(exc, 200)}") from exc
 
 
+@egress("database_connection", REFUSE)
 async def run_evaluation(
     settings: Settings,
     dataset: Dataset,
@@ -361,11 +363,11 @@ async def run_evaluation(
     ``secret_box`` (built by the CLI) decrypts tenant credentials, as in a worker.
     """
     import asyncpg
-    from redis.asyncio import Redis
 
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.db.pool import Database
     from lg_sotf.errors import OperationError
+    from lg_sotf.queue.redis import ShadowSafeRedis
     from lg_sotf.runtime.ops import create_tenant as ops_create_tenant
 
     if settings.environment == "production":
@@ -395,7 +397,7 @@ async def run_evaluation(
         except DatabaseError as exc:
             raise EvalSetupError(f"database unavailable: {exc}") from exc
         stack.push_async_callback(db.close)
-        redis = Redis.from_url(settings.redis.url.get_secret_value(), decode_responses=False)
+        redis = ShadowSafeRedis.from_url(settings.redis.url.get_secret_value(), decode_responses=False)
         stack.push_async_callback(redis.aclose)
         await check_services(db, redis)
 

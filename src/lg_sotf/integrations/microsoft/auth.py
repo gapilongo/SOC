@@ -71,6 +71,7 @@ from lg_sotf.integrations.microsoft.clouds import Api, CloudProfile
 from lg_sotf.integrations.microsoft.http import MicrosoftApiError, MicrosoftHttpFactory
 from lg_sotf.net.retry import parse_retry_after
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import REFUSE, egress
 
 log = get_logger(__name__)
 
@@ -316,6 +317,8 @@ class TokenProvider:
             return None
         return frozenset(str(r) for r in roles if isinstance(r, str))
 
+    # Refused before the shared in-flight fetch: a shadow run neither starts one nor joins a live one.
+    @egress("microsoft_token", REFUSE)
     async def token(self, creds: AppCredentials, api: Api, *, deadline: float) -> str:
         """A valid access token for ``api``; raises :class:`MicrosoftAuthError` (or ``deadline``)."""
         key = self.key(creds, api)

@@ -46,6 +46,7 @@ from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.queue.streams import CONSUMER_GROUP, FIELD_TENANT, QueueStreams
 from lg_sotf.security.redaction import redact
+from lg_sotf.security.shadow import REFUSE, egress
 
 log = get_logger(__name__)
 
@@ -383,6 +384,7 @@ async def erase_tenant_rows(db: Database, tenant_id: str, *, batch: int = ERASE_
         deleted[row["table_name"]] = deleted.get(row["table_name"], 0) + int(row["deleted"])
 
 
+@egress("tenant_purge", REFUSE)
 async def purge_tenant_redis(redis: Redis, prefix: str, tenant_id: str) -> Tuple[int, int]:
     """Remove the tenant's keys and queue entries; returns (keys, stream entries) removed."""
     validate_tenant_id(tenant_id)
@@ -402,6 +404,7 @@ async def purge_tenant_redis(redis: Redis, prefix: str, tenant_id: str) -> Tuple
     return keys, entries
 
 
+@egress("tenant_purge", REFUSE)
 async def _purge_stream(redis: Redis, stream: str, tenant_id: str, *, grouped: bool) -> int:
     removed = 0
     start = "-"

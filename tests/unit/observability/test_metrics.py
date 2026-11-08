@@ -13,18 +13,18 @@ CONTRACT_METRICS = {
     "lgsotf_queue_depth": ("stream",),
     "lgsotf_queue_pending": ("stream",),
     "lgsotf_runs_total": ("outcome",),
-    "lgsotf_node_seconds": ("node",),
-    "lgsotf_llm_calls_total": ("model", "agent", "outcome"),
+    "lgsotf_node_seconds": ("node", "mode"),
+    "lgsotf_llm_calls_total": ("model", "agent", "outcome", "mode"),
     "lgsotf_llm_slot_wait_seconds": ("tier",),
-    "lgsotf_llm_tokens_total": ("model", "kind"),
-    "lgsotf_llm_cost_usd_total": ("model",),
+    "lgsotf_llm_tokens_total": ("model", "kind", "mode"),
+    "lgsotf_llm_cost_usd_total": ("model", "mode"),
     "lgsotf_escalations_open": (),
     "lgsotf_actions_total": ("action_type", "status"),
     "lgsotf_db_stale_statement_retries_total": (),
     # LLM agent quality/cost (architecture section 13 addendum).
-    "lgsotf_llm_refusals_total": ("agent", "category"),
-    "lgsotf_llm_skipped_total": ("agent", "reason"),
-    "lgsotf_enrichment_lookups_total": ("provider", "status"),
+    "lgsotf_llm_refusals_total": ("agent", "category", "mode"),
+    "lgsotf_llm_skipped_total": ("agent", "reason", "mode"),
+    "lgsotf_enrichment_lookups_total": ("provider", "status", "mode"),
     # Integrations outbox and ticket sync (docs/integrations.md).
     "lgsotf_integration_deliveries_total": ("kind", "outcome"),
     "lgsotf_ticket_syncs_total": ("system", "outcome"),
@@ -32,7 +32,13 @@ CONTRACT_METRICS = {
 FORBIDDEN_LABELS = {"tenant_id", "alert_id", "user_id", "request_id", "thread_id"}
 
 
+MODED = ("lgsotf_node_seconds", "lgsotf_llm_calls_total", "lgsotf_llm_tokens_total", "lgsotf_llm_cost_usd_total", "lgsotf_llm_refusals_total", "lgsotf_llm_skipped_total", "lgsotf_enrichment_lookups_total")
+
+
 def _value(name: str, **labels: str) -> float:
+    """A sample; the pipeline series are read in ``mode="live"`` unless the test names another mode."""
+    if name.startswith(MODED):
+        labels.setdefault("mode", "live")
     return REGISTRY.get_sample_value(name, labels) or 0.0
 
 

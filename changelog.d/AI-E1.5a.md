@@ -14,5 +14,20 @@
   path (HTTP clients, so Slack, webhooks, tickets and Microsoft; mail; the
   notification outbox; response connectors; WebSocket events; the work
   queue) refuses or records the call in shadow mode, and every database
-  transaction it opens is read only. An architecture test finds the egress
-  call sites in the source and fails on any that is not covered.
+  transaction it opens is read only, with no way to commit, notify or keep
+  session state. Its Redis client sends reads only. An architecture test
+  finds the egress call sites in the source and fails on any that is not
+  covered.
+- A shadow run never bills the tenant or spends its LLM token budget, never
+  calls a threat-intelligence provider (it reads the lookup cache only, so
+  its verdicts can see fewer threat-intelligence answers), and never moves
+  production metrics.
+
+### Changed
+
+- The pipeline metrics (`lgsotf_node_seconds`, `lgsotf_llm_calls_total`,
+  `lgsotf_llm_tokens_total`, `lgsotf_llm_cost_usd_total`,
+  `lgsotf_llm_refusals_total`, `lgsotf_llm_skipped_total`,
+  `lgsotf_enrichment_lookups_total`) have a new `mode` label (`live` or
+  `shadow`). Add `mode="live"` to your alerts and dashboards; the examples in
+  `docs/operations.md` do.
