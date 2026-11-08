@@ -21,7 +21,10 @@ edited afterwards except to mark it superseded by a newer one.
 | [0011](0011-rls-per-tenant.md) | Postgres RLS per tenant and the non-BYPASSRLS runtime role | Accepted |
 | [0012](0012-redis-streams-queue.md) | Redis Streams work queue with DLQ | Accepted |
 | [0013](0013-configuration-through-settings.md) | Configuration only through `lg_sotf.settings` | Accepted |
+| [0014](0014-investigation-skills.md) | Investigate with versioned skills, and earn AI closure per skill and tenant | Proposed |
 
 Earlier design documents: [MCP architecture](../design/mcp-architecture.md)
 (read, safe writes and proposals over MCP; decisions are human-only) and the
 [refactor roadmap](../design/refactor-roadmap.md), which these ADRs implement.
+ADR 0014's stories and build order are in
+[investigation-skills-stories.md](../design/investigation-skills-stories.md).

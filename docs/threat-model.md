@@ -143,6 +143,10 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | TM-WRK-7 | T | A malformed or truncated model answer is used | Schema-validated structured output; refusal, truncation and invalid output are distinct errors (`src/lg_sotf/llm/structured.py:1-12`) | In place |
 | TM-WRK-8 | R | Nobody can say which prompt produced a decision | Prompt registry with a content hash per template (`src/lg_sotf/llm/registry.py:1-12`); model and provider per step in the alert summary | Partial: a full LLM and tool-call trace store is planned (AI-E1.3) |
 | TM-WRK-9 | T | LLM normaliser invents fields for an unknown event | Off by default; its output is grounded against the event and never auto-closed (`src/lg_sotf/ingestion/llm_fallback.py:1-5`) | In place |
+| TM-WRK-10 | T | A poisoned guidance note (insider, compromised analyst account or an AI draft) makes attacks close | Only the note's structured predicate yields facts, never its text; no bare wildcard scope; never for high, critical or never-close classes; a fact replay rejects a note that would close a labelled attack; second-person approval; mandatory expiry; audited ([ADR-0014](adr/0014-investigation-skills.md) section 4.2) | Planned (AI-E3.9) |
+| TM-WRK-11 | T | Skill drift: a skill, prompt or model change widens what closes | Contract hash per skill; `skill-diff` change classes with a CI version check; a widening change caps autonomy at `auto_full_audit`; per-skill corpus gate per PR and nightly; recall canaries; blind-audit miss estimate per skill (ADR-0014 sections 1.6, 8.2) | Planned (AI-E3.8a, AI-E3.8b, AI-E3.11) |
+| TM-WRK-12 | E | Autonomy gained without being earned: miscounted evidence, rubber-stamped labels, a self-approved promotion | Only skill-blind and AI-blind labels count; four-eyes promotion (PRD-8.3); demotion on any miss in the label's transaction; recall canaries (ADR-0014 section 6.3) | Planned (AI-E3.10) |
+| TM-WRK-13 | T | An attacker trains the AI with benign-looking repeats so memory vouches for the real attack | Only analyst decisions feed pattern memory and case memory; skill closures never do; the pattern key includes the command template; memory never proves a benign hypothesis alone (ADR-0014 sections 4.3, 8.3) | Planned (AI-E4.3, founder plan step 3) |
 
 ### 2.3 Scheduler (`lg-sotf scheduler`)
 
@@ -194,7 +198,9 @@ disclosure, **D**enial of service, **E**levation of privilege.
 Today the evidence tools are threat-intelligence lookups (VirusTotal and
 AbuseIPDB) and the tenant's own alert history. AI-E2 adds a tool registry
 and templated, read-only queries against Microsoft and SIEM sources. AI-E3
-adds a planner that never sees raw tool output.
+adds a planner that never sees raw tool output. [ADR-0014](adr/0014-investigation-skills.md)
+(proposed) adds investigation skills, templated Wazuh indexer queries and
+tenant reference material; rows TM-EVT-8 to TM-EVT-13 are its threats.
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
@@ -205,6 +211,12 @@ adds a planner that never sees raw tool output.
 | TM-EVT-5 | D | Query cost or throttling exhausts a customer's API quota | ReAct step and wall-clock budgets (`src/lg_sotf/agents/analysis/react.py:8-19`) | Partial: per-investigation money budgets planned (AI-E3.3) |
 | TM-EVT-6 | R | An investigation cannot be replayed | Evidence pack with signed digest (`src/lg_sotf/compliance/evidence.py:22`) | Partial: evidence ledger and record/replay cassettes planned (AI-E1.3, AI-E1.4) |
 | TM-EVT-7 | E | Claim from tool output treated as corroboration | Only rule-derived indicators corroborate (`src/lg_sotf/agents/analysis/base.py:15-28`) | In place. Weights for tool-observed facts planned (AI-E3.5) with the critic's citation check (AI-E3.4) |
+| TM-EVT-8 | T | Instructions in Wazuh fields (service name, command line, user or workstation name) steer the planner to a benign hypothesis | Facts rendered as untrusted data; closed action space (optional query ids and hypothesis ids only); a close rests on the deterministic proof and the checker, never on the model's words; a gated `wazuh-field-injection` adversarial family | Planned (INT3.4, AI-E3.4, AI-E3.8b) |
+| TM-EVT-9 | I | An evidence query reads another customer's events on a shared Wazuh cluster | Per-tenant indexer user and DLS role (INT3.2); a mandatory tenant scope filter in every template; a shared source without a scope is refused; negative DLS test per tenant | Planned (INT3.2, INT3.4) |
+| TM-EVT-10 | E | A parameter widens a Wazuh query, or a tool writes | Typed parameters; values only in `term`, `terms` and `range` filters; a DSL allow-list test over every template; `POST _search` only; read-only indexer role; row, time and window caps | Planned (AI-E2.1, INT3.4) |
+| TM-EVT-11 | D | Investigations overload the customer's indexer | Per-tenant concurrency, a per-investigation query budget, `timeout` and `terminate_after` on every query, a circuit breaker | Planned (AI-E3.3, INT3.4) |
+| TM-EVT-12 | T | A truncated, failed or premature query reads as "nothing happened" | `complete` computed per fact (timeouts, failed shards, row caps, cut aggregations, open windows); three-valued predicates fail closed; the settle delay; incomplete required evidence escalates | Planned (INT9.3, AI-E3.4) |
+| TM-EVT-13 | I | Case memory or guidance notes leak across tenants | Forced RLS (INV-01), reads under `tenant_tx`, no cross-tenant retrieval or embeddings; cross-tenant learning only through aggregated skill releases | Planned (AI-E4.3, AI-E3.9) |
 
 ### 2.9 MCP server
 
