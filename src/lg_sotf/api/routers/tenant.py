@@ -2,8 +2,8 @@
 """``/tenant/settings`` (admin): the tenant's policy sections.
 
 Autonomy, protected assets, LLM budget, review policy, tool keys, retention,
-sign-in security, reporting assumptions, phishing context and the triage
-context (the tenant's known vulnerability scanners).
+sign-in security, reporting assumptions, blind audit sampling, phishing context
+and the triage context (the tenant's known vulnerability scanners).
 
 ``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
 and deep model tiers and reports provider, model, latency and a sanitized
@@ -48,10 +48,10 @@ must stay within the install's ``retention.tenant_min_days`` ..
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, List, Mapping, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type
 
 from fastapi import APIRouter, Body, Depends, Request
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from lg_sotf.api.auth.deps import ADMIN, ADMIN_NOT_UNDER_GRANT, require
 from lg_sotf.api.auth.principal import Principal
@@ -77,6 +77,7 @@ from lg_sotf.models.tenant_settings import EDITABLE_KEYS, LLM_BUDGET_SETTING, to
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services import tenancy
+from lg_sotf.services.blind_audit import BlindAuditPolicy
 from lg_sotf.services.connectors.registry import encrypt_webhook_secret
 from lg_sotf.services.escalation import ReviewPolicy
 from lg_sotf.services.llm_check import check_llm
@@ -106,6 +107,8 @@ RESPONSE_KEYS = frozenset(
 )
 TOOL_KEYS = frozenset({"enabled", "api_key"})
 SECURITY_KEYS = frozenset({"require_mfa"})
+# Flat policy sections validated by their model (keys merge; null removes one).
+POLICY_SECTIONS: Dict[str, Type[BaseModel]] = {"reporting": ReportingPolicy, "blind_audit": BlindAuditPolicy}
 #: Sections replaced whole by a patch, with their validators.
 REPLACED_SECTIONS: Dict[str, Callable[[Any], Dict[str, Any]]] = {
     "phishing": validate_phishing_settings,
@@ -301,20 +304,23 @@ def _security_section(current: Any, patch: Any, problems: List[str]) -> Optional
     return section
 
 
-def _reporting_section(current: Any, patch: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
-    """``reporting`` (value report assumptions): keys merge; ``null`` removes one (back to the default)."""
+def _policy_section(
+    name: str, model: Type[BaseModel], current: Any, patch: Any, problems: List[str]
+) -> Optional[Dict[str, Any]]:
+    """A flat policy section (``reporting``, ``blind_audit``) validated by ``model``: keys merge; ``null`` removes
+    one (back to the default)."""
     if patch is None:
         return None
     if not isinstance(patch, Mapping):
-        problems.append("reporting: must be an object")
+        problems.append(f"{name}: must be an object")
         return None
     section = _merge(current if isinstance(current, Mapping) else {}, patch)
     try:
-        ReportingPolicy.model_validate(section)
+        model.model_validate(section)
     except ValidationError as exc:
         for error in exc.errors()[:5]:
-            where = ".".join(str(p) for p in error["loc"]) or "reporting"
-            problems.append(f"reporting.{where}: {error['msg']}"[:200])
+            where = ".".join(str(p) for p in error["loc"]) or name
+            problems.append(f"{name}.{where}: {error['msg']}"[:200])
     return section
 
 
@@ -348,8 +354,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _retention_section(ctx, current.get("retention"), value, problems)
         elif key == "security":
             patch[key] = _security_section(current.get("security"), value, problems)
-        elif key == "reporting":
-            patch[key] = _reporting_section(current.get("reporting"), value, problems)
+        elif key in POLICY_SECTIONS:
+            patch[key] = _policy_section(key, POLICY_SECTIONS[key], current.get(key), value, problems)
         elif key in REPLACED_SECTIONS:
             patch[key] = _replaced_section(value, REPLACED_SECTIONS[key], problems)
         elif key == LLM_BUDGET_SETTING:

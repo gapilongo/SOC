@@ -55,9 +55,9 @@ afterEach(() => {
 describe('navigation model', () => {
   it('groups the pages by role', () => {
     expect(titles(principal({ role: 'viewer' }))).toEqual(['Operate: Overview, Escalations, Approvals, Alerts, Suppressions', 'Report: Reports']);
-    expect(titles(principal())).toEqual(['Operate: Overview, Escalations, Approvals, Alerts, Suppressions', 'Report: Reports']);
+    expect(titles(principal())).toEqual(['Operate: Overview, Escalations, Approvals, Alerts, Suppressions, Blind audit', 'Report: Reports']);
     expect(titles(principal({ role: 'admin' }))).toEqual([
-      'Operate: Overview, Escalations, Approvals, Alerts, Suppressions',
+      'Operate: Overview, Escalations, Approvals, Alerts, Suppressions, Blind audit',
       'Report: Reports, LLM usage, Audit log',
       'Configure: Getting started, Sources, Integrations, Users and API keys, Tenant settings',
     ]);

@@ -20,6 +20,13 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
   ['afterBulkSuppressionProposal', policies.afterBulkSuppressionProposal, [['suppressions']]],
   ['afterActionChange', policies.afterActionChange, [['actions']]],
   ['afterActionDecision', policies.afterActionDecision, [['actions'], ['alerts'], ['dashboard']]],
+  ['afterBlindAuditLabel', (c) => policies.afterBlindAuditLabel(c, false), [['blind-audit'], ['report-blind-audit']]],
+  [
+    'afterBlindAuditLabel (an escalation was opened)',
+    (c) => policies.afterBlindAuditLabel(c, true),
+    [['blind-audit'], ['report-blind-audit'], ['escalations'], ['dashboard']],
+  ],
+  ['afterBlindAuditSample', policies.afterBlindAuditSample, [['blind-audit'], ['report-blind-audit']]],
   ['afterSourceChange', policies.afterSourceChange, [['sources']]],
   ['afterSuppressionChange', policies.afterSuppressionChange, [['suppressions']]],
   ['afterIntegrationChange', policies.afterIntegrationChange, [['integrations']]],

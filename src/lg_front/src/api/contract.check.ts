@@ -26,6 +26,17 @@ import type {
   AuditEntryOut,
   AuditVerifyOut,
   BlastRadiusOut,
+  BlindAlertOut,
+  BlindAuditEstimate,
+  BlindAuditItemOut,
+  BlindAuditLabelIn,
+  BlindAuditLabelOut,
+  BlindAuditReportOut,
+  BlindAuditRevealOut,
+  BlindAuditRunSummary,
+  BlindAuditSampleIn,
+  BlindAuditStratum,
+  OrganisationLabels,
   BulkClaimIn,
   BulkCloseIn,
   BulkErrorOut,
@@ -143,6 +154,15 @@ type Request<Hand extends Generated, Generated> = [Hand, Generated];
 export interface ResponseContract {
   AccuracyBlock: Response<Wire<Schemas['AccuracyBlock']>, AccuracyBlock>;
   AccuracyReportOut: Response<Wire<Schemas['AccuracyReport']>, AccuracyReportOut>;
+  BlindAlertOut: Response<Wire<Schemas['BlindAlertOut']>, BlindAlertOut>;
+  BlindAuditEstimate: Response<Wire<Schemas['BlindAuditEstimate']>, BlindAuditEstimate>;
+  BlindAuditItemOut: Response<Wire<Schemas['BlindAuditItemOut']>, BlindAuditItemOut>;
+  BlindAuditLabelOut: Response<Wire<Schemas['BlindAuditLabelOut']>, BlindAuditLabelOut>;
+  BlindAuditReportOut: Response<Wire<Schemas['BlindAuditReport']>, BlindAuditReportOut>;
+  BlindAuditRevealOut: Response<Wire<Schemas['BlindAuditRevealOut']>, BlindAuditRevealOut>;
+  BlindAuditRunSummary: Response<Wire<Schemas['BlindAuditRunSummary']>, BlindAuditRunSummary>;
+  BlindAuditStratum: Response<Wire<Schemas['BlindAuditStratum']>, BlindAuditStratum>;
+  OrganisationLabels: Response<Wire<Schemas['OrganisationLabels']>, OrganisationLabels>;
   ActionOut: Response<Wire<Schemas['ActionOut']>, ActionOut>;
   AlertCountsOut: Response<Wire<Schemas['AlertCountsOut']>, AlertCountsOut>;
   AlertDetailOut: Response<Wire<Schemas['AlertDetailOut']>, AlertDetailOut>;
@@ -236,11 +256,15 @@ export interface ResponseContract {
   Page_AlertEventOut: Response<Wire<Schemas['PageOut_AlertEventOut_']>, Page<AlertEventOut>>;
   Page_AlertOut: Response<Wire<Schemas['PageOut_AlertOut_']>, Page<AlertOut>>;
   Page_AuditEntryOut: Response<Wire<Schemas['PageOut_AuditEntryOut_']>, Page<AuditEntryOut>>;
+  Page_BlindAuditItemOut: Response<Wire<Schemas['PageOut_BlindAuditItemOut_']>, Page<BlindAuditItemOut>>;
+  Page_BlindAuditRunSummary: Response<Wire<Schemas['PageOut_BlindAuditRunSummary_']>, Page<BlindAuditRunSummary>>;
   Page_EscalationOut: Response<Wire<Schemas['PageOut_EscalationOut_']>, Page<EscalationOut>>;
   Page_PlatformEscalationOut: Response<Wire<Schemas['PageOut_PlatformEscalationOut_']>, Page<PlatformEscalationOut>>;
 }
 
 export interface RequestContract {
+  BlindAuditLabelIn: Request<BlindAuditLabelIn, Schemas['BlindAuditLabelIn']>;
+  BlindAuditSampleIn: Request<BlindAuditSampleIn, Schemas['BlindAuditSampleIn']>;
   BulkClaimIn: Request<BulkClaimIn, Schemas['BulkClaimIn']>;
   BulkCloseIn: Request<BulkCloseIn, Schemas['BulkCloseIn']>;
   BulkItemIn: Request<BulkItemIn, Schemas['BulkItemIn']>;

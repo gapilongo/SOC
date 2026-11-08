@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from lg_sotf.api.auth.deps import ANALYST, CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import escalations_out, user_ref
+from lg_sotf.api.common import escalations_out, refuse_hidden, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError, describe_error
 from lg_sotf.api.schemas import SuppressionOut
@@ -237,6 +237,8 @@ async def preview(
 ) -> ResponsePreviewOut:
     """Nothing is written and no connector is called; ``can_preapprove`` and ``role_lock`` are for your role."""
     ctx = get_ctx(request)
+    escalation = await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
+    await refuse_hidden(ctx, principal.tenant_id, escalation.alert_id, "escalation", escalation_id)
     result = await response_preview(
         ctx.repos, ctx.review.responses, principal.tenant_id, escalation_id, role=principal.role
     )

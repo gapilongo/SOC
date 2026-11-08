@@ -240,6 +240,8 @@ class AlertSummary(TypedDict, total=False):
     threat_score: Optional[float]
     decision: Optional[DecisionDigest]
     analyst_decision: Optional[str]
+    # A blind-audit escalation a fresh run starts at (lg_sotf.services.blind_audit); cleared when it starts.
+    blind_audit_review: Optional[str]
     actions: Dict[str, int]
     dry_run: bool
     simulated_evidence: bool

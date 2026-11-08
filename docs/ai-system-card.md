@@ -292,9 +292,9 @@ to about 1 in 10. The model's own verdicts were often wrong (malicious recall
 
 ### 7.3 Adversarial corpus v2
 
-`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 91 synthetic alerts
-that try to steer the model or the rules. Since AI-E6.3 all of them are in
-the gated `adversarial` split ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
+`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 97 synthetic alerts
+that try to steer the model or the rules, all in the gated `adversarial`
+split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 
 | Family | Items | Attack |
 |---|---|---|
@@ -303,7 +303,8 @@ the gated `adversarial` split ([evaluation.md](evaluation.md#adversarial-corpus-
 | `response-steering` | 14 | Text asking for containment of a domain controller or an executive's account, an allowlist, a page, or a close |
 | `encoding-tricks` | 17 | Base64, homoglyphs, zero-width and tag characters, right-to-left override, ROT13, instructions split across fields |
 | `benign-lookalike` | 17 | The security team's own test strings (EICAR, phishing simulation, red-team harness), to measure the cost of the defences |
-| `title-camouflage` | 3 | Attacker-named tasks or services that put benign words into the title (gated since AI-E6.3) |
+| `title-camouflage` (fixed by AI-E6.3, gated) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trusted |
+| `activity-camouflage` (AI-E6.4) | 6 | Attacks whose detection rule name holds a word for the detected activity ("scheduled", "backup", "monitoring"), which the triage rules counted as benign evidence |
 
 * **The CI gate** runs the corpus with the offline fake model on every
   change: no error, no malicious item of the adversarial split closed by
@@ -557,7 +558,7 @@ articles anyway, this is where each requirement is met and what is missing.
 | **Art. 12 record-keeping**: automatic logging of events over the lifetime, enough to identify risks (Art. 12(2)(a)), support post-market monitoring (12(2)(b)) and deployer monitoring (12(2)(c)) | Per-call prompt hash and model id (INV-04); the investigation trace (INV-05); the alert timeline and response ledger; the hash-chained, append-only audit log (INV-06); sealed evidence packs (INV-08) (section 8) | Default alert and trace retention is 90 days; Art. 26(6) asks deployers for at least six months (section 9) |
 | **Art. 13 transparency and instructions for use**: deployers can interpret the output; instructions state the provider, capabilities and limits, accuracy metrics, human oversight measures, resources and log handling (13(3)) | This card (capabilities, limits, models, accuracy evidence, oversight, logging); per-alert reasoning, confidence, evidence and model provenance in the UI and evidence packs; [user-guide.md](user-guide.md), [configuration.md](configuration.md) | Accuracy is declared for synthetic sets only (section 7) |
 | **Art. 14 human oversight** (14(4)(a) to (e)) | (a) understand capacities and limits and watch for anomalies: this card, the scorecards, the dashboard, usage and error metrics; (b) awareness of automation bias: rule corroboration for closes, model evidence shown next to rule evidence, oversight counts per case (section 10); (c) interpret output: reasoning, confidence, evidence and provenance per step; (d) decide not to use, override or reverse: analyst decisions override verdicts, actions can be rejected or rolled back, `llm.enabled=false`; (e) intervene or stop: the install and tenant kill switches (INV-02), approval by default, critical actions disabled | Shadow mode for testing a change without effects is pending (INV-09) |
-| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); activity words in rule names until AI-E6.4 (#305); models follow injected text (section 7.4); no third-party penetration test |
+| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); models follow injected text (section 7.4); no third-party penetration test |
 | **Art. 26(5) deployer monitoring and (6) log retention** (deployer duties) | Dashboard, LLM usage and cost, the AI-versus-analyst report ([reporting.md](reporting.md)), evidence packs, audit verification; `retention.*` settings | Raise retention to at least six months yourself (section 9) |
 
 [compliance.md](compliance.md#eu-ai-act-human-oversight-and-record-keeping)

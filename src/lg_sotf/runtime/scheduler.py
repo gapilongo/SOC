@@ -60,6 +60,7 @@ from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.runtime.worker import EventPublisherLike, sanitize_error
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.background import BackgroundExecutor
+from lg_sotf.services.blind_audit import BlindAuditService
 from lg_sotf.services.dispatch import DispatchableAlert, dispatch_new_alerts
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.verification import VerificationService
@@ -174,6 +175,8 @@ class Scheduler:
                 ),
                 _Job("sla", cfg.sla_sweep_interval_s, self.sweep_sla),
                 _Job("maintenance", cfg.maintenance_interval_s, self.run_maintenance),
+                # Each tenant's weekly blind-audit run, due once its week is complete; idempotent per window.
+                _Job("blind_audit", cfg.maintenance_interval_s, self.sample_blind_audits),
                 _Job("metrics", METRICS_INTERVAL_S, self.export_metrics),
                 # Not gated by integrations.enabled: rollbacks, late approvals and verification need them.
                 _Job("response_background", response.background_interval_s, self.run_response_background),
@@ -587,6 +590,18 @@ class Scheduler:
         if not report.complete:
             return min(INCOMPLETE_MAINTENANCE_RETRY_S, self._settings.scheduler.maintenance_interval_s)
         return None
+
+    async def sample_blind_audits(self) -> None:
+        """The scheduled blind-audit runs of the active tenants that enabled them (lg_sotf.services.blind_audit)."""
+        service = BlindAuditService(self._repos)
+        for tenant in await self._repos.tenants.list_all_tenants(status="active"):
+            try:
+                runs = await service.sample_due(tenant.id)
+            except Exception as exc:  # noqa: BLE001 - one tenant's failure must not stop the others
+                log_failure(log, "scheduler.blind_audit_failed", exc, error_type=type(exc).__name__)
+                continue
+            for run in runs:
+                log.info("scheduler.blind_audit_sampled", frame_size=run.frame_size, sample_size=run.sample_size)
 
     # -- integrations ----------------------------------------------------------
 

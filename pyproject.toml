@@ -386,6 +386,7 @@ modules = [
     "lg_sotf.api.routers.alerts",
     "lg_sotf.api.routers.audit",
     "lg_sotf.api.routers.auth",
+    "lg_sotf.api.routers.blind_audit",
     "lg_sotf.api.routers.compliance",
     "lg_sotf.api.routers.dashboard",
     "lg_sotf.api.routers.health",

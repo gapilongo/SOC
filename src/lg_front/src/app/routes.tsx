@@ -13,6 +13,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  ClipboardCheck,
   FileClock,
   FileText,
   Filter,
@@ -51,6 +52,7 @@ const GettingStartedPage = lazy(() => import('../pages/GettingStartedPage'));
 const AccountSecurityPage = lazy(() => import('../pages/AccountSecurityPage'));
 const SetupWizardPage = lazy(() => import('../pages/setup/SetupWizardPage'));
 const PovPage = lazy(() => import('../pages/PovPage'));
+const BlindAuditPage = lazy(() => import('../pages/blindAudit/BlindAuditPage'));
 
 export type NavGroupId = 'operate' | 'report' | 'configure' | 'platform';
 
@@ -110,6 +112,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: '/actions', Page: LegacyActionsRedirect, allowed: can.view },
   { path: '/alerts', Page: AlertsPage, allowed: can.view, nav: { group: 'operate', label: 'Alerts', icon: Bell } },
   { path: '/suppressions', Page: SuppressionsPage, allowed: can.view, nav: { group: 'operate', label: 'Suppressions', icon: Filter } },
+  // Labelling is a person's decision, like deciding an escalation.
+  { path: '/blind-audit', Page: BlindAuditPage, allowed: can.decide, nav: { group: 'operate', label: 'Blind audit', icon: ClipboardCheck } },
   // Report
   { path: '/reports', Page: ReportsPage, allowed: can.view, nav: { group: 'report', label: 'Reports', icon: FileText } },
   { path: '/usage', Page: UsagePage, allowed: can.admin, nav: { group: 'report', label: 'LLM usage', icon: BarChart3 } },

@@ -106,6 +106,16 @@ class FakeSteps:
         return [row[3] for row in self.rows]
 
 
+class FakeBlindAudit:
+    """No alert waits for a blind-audit label unless ``pending`` names it."""
+
+    def __init__(self, pending: Sequence[str] = ()) -> None:
+        self.pending = set(pending)
+
+    async def pending_alert_ids(self, tenant_id: str, alert_ids: Sequence[str], **_: Any) -> set[str]:
+        return self.pending & set(alert_ids)
+
+
 class FakeDb:
     def __init__(self) -> None:
         self.transactions = 0
@@ -128,7 +138,7 @@ def fake_repos(
     store.add("t1", current or StoredAlert(id="a1", status="processing"))
     return SimpleNamespace(
         alerts=store, indicators=FakeIndicators(related), tenants=FakeTenants(tenant_settings), db=FakeDb(),
-        investigation_steps=FakeSteps(),
+        investigation_steps=FakeSteps(), blind_audit=FakeBlindAudit(),
     )
 
 

@@ -29,6 +29,7 @@ from lg_sotf.db.repos.alert_events import AlertEvent, AlertEventsRepo, NewAlertE
 from lg_sotf.db.repos.alerts import Alert, AlertListItem, AlertsRepo, DashboardCounts, NewAlert, ResponseTimes
 from lg_sotf.db.repos.api_keys import ApiKey, ApiKeysRepo
 from lg_sotf.db.repos.audit import AuditEntry, AuditRepo, ChainVerification
+from lg_sotf.db.repos.blind_audit import BlindAuditItem, BlindAuditRepo, BlindAuditRun, BlindAuditRunSummary
 from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
@@ -90,6 +91,7 @@ class Repositories:
     views: ViewsRepo
     organisations: OrganisationsRepo
     grants: GrantsRepo
+    blind_audit: BlindAuditRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -122,6 +124,7 @@ class Repositories:
             views=ViewsRepo(db),
             organisations=OrganisationsRepo(db),
             grants=GrantsRepo(db),
+            blind_audit=BlindAuditRepo(db),
         )
 
 
@@ -137,6 +140,9 @@ __all__ = [
     "ApiKeysRepo",
     "AuditEntry",
     "AuditRepo",
+    "BlindAuditItem",
+    "BlindAuditRepo",
+    "BlindAuditRun",
     "ChainVerification",
     "DashboardCounts",
     "Escalation",
@@ -173,6 +179,7 @@ __all__ = [
     "Repositories",
     "ResponseAction",
     "ResponseTimes",
+    "BlindAuditRunSummary",
     "RunsRepo",
     "ShadowEffectsRepo",
     "Source",
