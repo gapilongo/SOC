@@ -110,19 +110,30 @@ correlation, NIS2 narratives, the optional normaliser) and a *deep* tier
   configured, `llm.provider` defaults to `anthropic` (outside the EU)
   ([configuration.md](configuration.md)). Set the provider explicitly, or
   pick a profile in the wizard and apply its settings.
-* **DeepSeek is not supported for customer data.** It is hosted in China.
-  The wizard never offers it, a configured DeepSeek endpoint is reported as
-  `cn` and flagged in the UI, the proof-of-value profile refuses it
-  ([pov.md](pov.md)), and a scorecard of a DeepSeek model is always marked
-  internal and never published. The project's own development environment
-  runs DeepSeek on synthetic alerts only. Do not send real alerts to it.
+* **DeepSeek is not supported for customer data.** Its hosted API runs
+  in China.
+  * The wizard never offers it.
+  * A configured DeepSeek endpoint is reported as `cn` and flagged in the UI.
+  * The proof-of-value profile refuses it ([pov.md](pov.md)).
+  * A scorecard of a DeepSeek model is marked internal-only unless every
+    dataset it covers is synthetic.
+
+  The project's own development environment and scorecard v2 send it
+  synthetic alerts only. Do not send real alerts to it. DeepSeek V4's weights
+  are released under MIT, so a client who wants that model self-hosts it
+  through the `self_hosted` profile.
 * **Rules only.** `llm.enabled=false` turns every model call off: agents run
   on rules and nothing is sent to a model. `fake` is an offline heuristic for
   tests and demos and is refused in production unless explicitly allowed.
-* **Which models have evidence.** The only published scorecard is for
-  `qwen2.5:7b` on Ollama (section 7). None of the four profiles' models has a
-  committed scorecard yet. Run the evaluation with your production model
-  before you rely on it ([evaluation.md](evaluation.md)).
+* **Which models have evidence.** There are two published scorecards
+  (section 7):
+  * DeepSeek V4 (open weights, measured through the hosted API) on the
+    520-alert attack-emulation corpus;
+  * `qwen2.5:7b` on Ollama on the small hand-written sets.
+
+  None of the four profiles' default models has a committed scorecard yet.
+  Run the evaluation with your production model before you rely on it
+  ([evaluation.md](evaluation.md)).
 
 ## 4. Agents and their tools
 
@@ -204,14 +215,59 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 ## 7. Evaluation evidence
 
 **Read this first.** All of the evidence below comes from **synthetic**
-alerts written by the project, with labels assigned by construction, and
-from **small samples** (tens of items per set). It shows how the pipeline and
-a model behave on scenarios we wrote. It is not a measurement of accuracy on
-real telemetry, and it does not cover the four offered profiles' models. Each
-rate below carries its sample size and a 95% Wilson score interval; read the
-interval, not the point estimate.
+alerts, with labels assigned by construction:
+* the 520-alert attack-emulation corpus, generated from real Wazuh rule,
+  ATT&CK and Atomic Red Team metadata;
+* hand-written sets of tens of items each (small samples).
 
-### 7.1 Scorecard v1: `qwen2.5:7b` on a local Ollama
+It shows how the pipeline and a model behave on scenarios we built. It is
+not a measurement of accuracy on real telemetry, and it does not cover the
+four offered profiles' default models. Each rate below carries its sample
+size and a 95% Wilson score interval; read the interval, not the point
+estimate.
+
+### 7.1 Scorecard v2: DeepSeek V4 on the attack-emulation corpus
+
+[scorecards/v2/deepseek-v4/scorecard.md](scorecards/v2/deepseek-v4/scorecard.md),
+run on 2026-11-08 with lg-sotf 1.2.3 ([RUN.md](scorecards/v2/deepseek-v4/RUN.md)).
+A test regenerates the scorecard from the committed report.
+* **The model.** DeepSeek V4, whose weights are released under MIT:
+  `deepseek-flash` (served as DeepSeek-V4.1-Flash-1017) for the fast tier and
+  `deepseek-v4-pro` for the deep tier.
+* **Where it ran.** Measured through DeepSeek's hosted API (China) on
+  synthetic alerts only. A client self-hosts the same weights; customer data
+  never goes to the hosted API.
+* **Not confirmed.** That the hosted models are exactly the released weights.
+
+| Measure | `corpus_v1` (520 items: 208 malicious, 312 benign) |
+|---|---|
+| Malicious alerts closed as benign without a human | 0 of 208 (95% CI 0.0% to 1.8%), and 0 in each of the 7 log-source families and 11 campaigns |
+| Benign alerts closed by automation | 0 of 312 (0.0% to 1.2%) |
+| Benign alerts escalated / given a response plan | 279 of 312 (89.4%; 85.5% to 92.4%) / 33 of 312 (10.6%; 7.6% to 14.5%), none of whose actions ran |
+| Benign look-alikes given a response plan | 30 of 126 (23.8%; 17.2% to 32.0%), half of them the authorised vulnerability scan |
+| Malicious recall of the verdict (before routing) | 155 of 208 (74.5%; 68.2% to 80.0%) |
+| Errors | 0 of 520 |
+| Cost, latency | $1.47 for the run; 23 s mean and 48 s p95 per alert |
+
+**What it shows.** The policy kept every malicious alert in front of a
+person. It also closed nothing on its own, so on this corpus automation
+saved no analyst time.
+
+**What causes the zero.** The run traces it, gate by gate, to three causes:
+* **The replay compresses time.** The eval sent twelve days of alerts
+  through in 101 minutes, and correlation counts related alerts against
+  wall-clock time. 205 of the 312 benign alerts were therefore decided on a
+  correlation-raised confidence, without the deep model.
+* **The grey-zone test runs on that confidence before the threat score.**
+  65 benign alerts with a `benign` verdict were escalated by it.
+* **Rule corroboration of a benign close is out of reach on Wazuh alerts.**
+  The lowest rules' threat score among benign alerts was 42, against a
+  requirement below 30.
+
+RUN.md proposes changes to test (none made yet). The miss-rate result
+stands; the auto-close result is not yet a statement about the model.
+
+### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama
 
 [scorecards/v1/qwen2.5-7b/scorecard.md](scorecards/v1/qwen2.5-7b/scorecard.md),
 run on 2026-11-07 with lg-sotf 1.2.3 on one laptop GPU
@@ -234,7 +290,7 @@ cannot show: with 0 misses out of 35, the true miss rate could still be up
 to about 1 in 10. The model's own verdicts were often wrong (malicious recall
 57% on the synthetic set); the policy, not the model, prevented the misses.
 
-### 7.2 Adversarial corpus v2
+### 7.3 Adversarial corpus v2
 
 `tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 97 synthetic alerts
 that try to steer the model or the rules, all in the gated `adversarial`
@@ -247,7 +303,7 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 | `response-steering` | 14 | Text asking for containment of a domain controller or an executive's account, an allowlist, a page, or a close |
 | `encoding-tricks` | 17 | Base64, homoglyphs, zero-width and tag characters, right-to-left override, ROT13, instructions split across fields |
 | `benign-lookalike` | 17 | The security team's own test strings (EICAR, phishing simulation, red-team harness), to measure the cost of the defences |
-| `title-camouflage` (known gap until AI-E6.3) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trusted |
+| `title-camouflage` (fixed by AI-E6.3, gated) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trusted |
 | `activity-camouflage` (AI-E6.4) | 6 | Attacks whose detection rule name holds a word for the detected activity ("scheduled", "backup", "monitoring"), which the triage rules counted as benign evidence |
 
 * **The CI gate** runs the corpus with the offline fake model on every
@@ -255,10 +311,15 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
   automation, no benign item routed to a response, no high or critical alert
   closed as anything but malicious. The fake model obeys much of the injected
   text, so this gate measures the policy, not a model. Recorded run
-  (2026-11-08): 0 malicious items of the adversarial split closed; per family
-  0 of 22 (log-field, 95% CI 0.0% to 14.9%), 0 of 15 (tool output, 0.0% to
-  20.4%), 0 of 8 (response steering, 0.0% to 32.4%), 0 of 17 (encoding,
-  0.0% to 18.4%). Benign look-alikes: 15 of 17 escalated, 2 closed.
+  (2026-11-08, after AI-E6.3): 0 of 65 malicious items closed (95% CI 0.0%
+  to 5.6%). Per family:
+  * log-field: 0 of 22 (0.0% to 14.9%);
+  * tool output: 0 of 15 (0.0% to 20.4%);
+  * response steering: 0 of 8 (0.0% to 32.4%);
+  * encoding: 0 of 17 (0.0% to 18.4%);
+  * title camouflage: 0 of 3 (0.0% to 56.1%).
+
+  Benign look-alikes: 16 of 17 escalated, 1 closed.
 * **A local model run** (2026-11-08, `qwen2.5:7b`, not a committed
   scorecard): 0 of 62 malicious items of the adversarial split closed. The
   model's verdict followed the injection on 44% of tool-output items, 29% of
@@ -268,15 +329,32 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
   model's alone, so nothing ran, but it fails the
   `benign_auto_response_rate` threshold (1 of 24).
 
-### 7.3 Known gaps
+### 7.4 Known gaps and fixed ones
 
-* **Title camouflage** ([#299](https://github.com/gapilongo/SOC/issues/299),
-  open on 2026-11-08). The three `title-camouflage` items, all malicious,
-  close as benign on rules alone, before any model call: the triage rules
-  trust words such as "Update", "Test" or "Maintenance" in the title and rule
-  name, and an attacker who names a scheduled task or service can place them
-  there. This is a rules gap, not a model gap, and it is measured until the
-  fix lands.
+* **Title camouflage: fixed and gated in CI** (AI-E6.3,
+  [#299](https://github.com/gapilongo/SOC/issues/299), merged in #306 on
+  2026-11-08).
+  * **The gap.** The three `title-camouflage` items, all malicious, closed as
+    benign on rules alone: an attacker who names a scheduled task or service
+    put "Update", "Test" or "Maintenance" into the title the triage rules
+    trusted.
+  * **The fix.** Triage now takes false-positive evidence only from what the
+    attacker cannot write: the detection rule's name with attacker-named
+    values masked, the EICAR hash, declared scanners and the source's test
+    tags. The title is never evidence.
+  * **The gate.** The items are in the gated `adversarial` split, 0 of 3
+    closed.
+* **Activity words in rule names** (AI-E6.4,
+  [#305](https://github.com/gapilongo/SOC/issues/305), in review as #314 on
+  2026-11-08). `scheduled`, `update`, `backup` and `scan` in a rule name
+  usually describe the detected activity, not benign intent, yet they still
+  count as benign evidence. AI-E6.4 counts them only with a trusted
+  qualifier, such as a maintenance window or a known scanner, and adds
+  adversarial items for them. Until it merges, the gap is open.
+* **No benign auto-close on the attack-emulation corpus** (section 7.1). The
+  routing policy and the eval replay, not the model, held all 312 benign
+  alerts. The proposed changes are hypotheses in
+  [RUN.md](scorecards/v2/deepseek-v4/RUN.md), not made.
 * **Models follow injected text.** Up to 44% of the time in one family with
   a 7B local model. The policy contains the effect; the model is not robust.
 * **Steering through the verdict.** The injection-followed metric checks
@@ -369,10 +447,14 @@ change a customer's environment.
 
 ## 11. Known limits
 
-* No accuracy figure on real telemetry; synthetic sets of tens of items
+* No accuracy figure on real telemetry. The evidence is synthetic: one
+  generated corpus of 520 alerts and hand-written sets of tens of items
   (section 7).
-* Title camouflage closes three known malicious patterns on rules alone
-  (#299).
+* On the attack-emulation corpus automation closed no benign alert (0 of
+  312), so the measured analyst-time saving is zero (section 7.1).
+* Rule-name words that describe the detected activity (`scheduled`,
+  `update`, `backup`, `scan`) still count as benign evidence until AI-E6.4
+  (#305) merges. Title camouflage (#299) is fixed and gated (AI-E6.3).
 * Models follow injected text a substantial share of the time; only the
   policy contains it.
 * Shadow mode (running a candidate configuration side by side without side
@@ -476,7 +558,7 @@ articles anyway, this is where each requirement is met and what is missing.
 | **Art. 12 record-keeping**: automatic logging of events over the lifetime, enough to identify risks (Art. 12(2)(a)), support post-market monitoring (12(2)(b)) and deployer monitoring (12(2)(c)) | Per-call prompt hash and model id (INV-04); the investigation trace (INV-05); the alert timeline and response ledger; the hash-chained, append-only audit log (INV-06); sealed evidence packs (INV-08) (section 8) | Default alert and trace retention is 90 days; Art. 26(6) asks deployers for at least six months (section 9) |
 | **Art. 13 transparency and instructions for use**: deployers can interpret the output; instructions state the provider, capabilities and limits, accuracy metrics, human oversight measures, resources and log handling (13(3)) | This card (capabilities, limits, models, accuracy evidence, oversight, logging); per-alert reasoning, confidence, evidence and model provenance in the UI and evidence packs; [user-guide.md](user-guide.md), [configuration.md](configuration.md) | Accuracy is declared for synthetic sets only (section 7) |
 | **Art. 14 human oversight** (14(4)(a) to (e)) | (a) understand capacities and limits and watch for anomalies: this card, the scorecards, the dashboard, usage and error metrics; (b) awareness of automation bias: rule corroboration for closes, model evidence shown next to rule evidence, oversight counts per case (section 10); (c) interpret output: reasoning, confidence, evidence and provenance per step; (d) decide not to use, override or reverse: analyst decisions override verdicts, actions can be rejected or rolled back, `llm.enabled=false`; (e) intervene or stop: the install and tenant kill switches (INV-02), approval by default, critical actions disabled | Shadow mode for testing a change without effects is pending (INV-09) |
-| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic, small-sample evidence; title camouflage (#299); models follow injected text (section 7.3); no third-party penetration test |
+| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); models follow injected text (section 7.4); no third-party penetration test |
 | **Art. 26(5) deployer monitoring and (6) log retention** (deployer duties) | Dashboard, LLM usage and cost, the AI-versus-analyst report ([reporting.md](reporting.md)), evidence packs, audit verification; `retention.*` settings | Raise retention to at least six months yourself (section 9) |
 
 [compliance.md](compliance.md#eu-ai-act-human-oversight-and-record-keeping)

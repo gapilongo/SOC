@@ -9502,6 +9502,383 @@
         "title": "SetupOut",
         "type": "object"
       },
+      "ShadowAgreementReport": {
+        "properties": {
+          "agreement": {
+            "$ref": "#/components/schemas/RateInterval",
+            "description": "Agreement over every alert with a production verdict; failed or degraded runs disagree."
+          },
+          "agreement_text": {
+            "title": "Agreement Text",
+            "type": "string"
+          },
+          "agreement_usable": {
+            "$ref": "#/components/schemas/RateInterval",
+            "description": "Agreement over the usable candidate verdicts only."
+          },
+          "agreement_usable_text": {
+            "title": "Agreement Usable Text",
+            "type": "string"
+          },
+          "alerts": {
+            "description": "Alerts replayed.",
+            "title": "Alerts",
+            "type": "integer"
+          },
+          "by_class": {
+            "items": {
+              "$ref": "#/components/schemas/ShadowClassAgreement"
+            },
+            "title": "By Class",
+            "type": "array"
+          },
+          "candidate": {
+            "title": "Candidate",
+            "type": "string"
+          },
+          "candidate_degraded": {
+            "description": "Candidate runs whose model answer was unusable or refused.",
+            "title": "Candidate Degraded",
+            "type": "integer"
+          },
+          "candidate_failed": {
+            "description": "Candidate runs that raised: no verdict.",
+            "title": "Candidate Failed",
+            "type": "integer"
+          },
+          "candidate_failures": {
+            "$ref": "#/components/schemas/ShadowCaseList"
+          },
+          "compared": {
+            "description": "Alerts with a production verdict and a usable candidate verdict.",
+            "title": "Compared",
+            "type": "integer"
+          },
+          "confusion": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "description": "Production route -> candidate route -> alerts.",
+            "title": "Confusion",
+            "type": "object"
+          },
+          "cost_usd": {
+            "$ref": "#/components/schemas/ShadowDelta"
+          },
+          "data_warnings": {
+            "description": "Why the report is not enough_data, if it is not.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Warnings",
+            "type": "array"
+          },
+          "enough_data": {
+            "title": "Enough Data",
+            "type": "boolean"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Labels",
+            "type": "array"
+          },
+          "latency_ms": {
+            "$ref": "#/components/schemas/ShadowDelta"
+          },
+          "limitations": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Limitations",
+            "type": "array"
+          },
+          "max_failure_rate": {
+            "title": "Max Failure Rate",
+            "type": "number"
+          },
+          "min_samples": {
+            "title": "Min Samples",
+            "type": "integer"
+          },
+          "new_escalations": {
+            "$ref": "#/components/schemas/ShadowCaseList"
+          },
+          "no_production_verdict": {
+            "title": "No Production Verdict",
+            "type": "integer"
+          },
+          "plan_differences": {
+            "$ref": "#/components/schemas/ShadowCaseList"
+          },
+          "potential_misses": {
+            "$ref": "#/components/schemas/ShadowCaseList"
+          },
+          "report_id": {
+            "title": "Report Id",
+            "type": "string"
+          },
+          "routing_differences": {
+            "$ref": "#/components/schemas/ShadowCaseList",
+            "description": "escalate <-> plan_response, production escalate -> candidate plan_response first."
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/ShadowDelta"
+          }
+        },
+        "required": [
+          "report_id",
+          "tenant_id",
+          "candidate",
+          "alerts",
+          "compared",
+          "candidate_failed",
+          "candidate_degraded",
+          "no_production_verdict",
+          "min_samples",
+          "max_failure_rate",
+          "enough_data",
+          "data_warnings",
+          "agreement",
+          "agreement_text",
+          "agreement_usable",
+          "agreement_usable_text",
+          "by_class",
+          "labels",
+          "confusion",
+          "potential_misses",
+          "routing_differences",
+          "candidate_failures",
+          "new_escalations",
+          "plan_differences",
+          "cost_usd",
+          "tokens",
+          "latency_ms",
+          "limitations"
+        ],
+        "title": "ShadowAgreementReport",
+        "type": "object"
+      },
+      "ShadowCase": {
+        "description": "One alert on which the two verdicts differ, as the report lists it.",
+        "properties": {
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "candidate_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Candidate Actions",
+            "type": "array"
+          },
+          "candidate_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Confidence"
+          },
+          "candidate_degraded": {
+            "default": 0,
+            "title": "Candidate Degraded",
+            "type": "integer"
+          },
+          "candidate_disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Disposition"
+          },
+          "candidate_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Error"
+          },
+          "candidate_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Route"
+          },
+          "production_actions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Production Actions",
+            "type": "array"
+          },
+          "production_confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Production Confidence"
+          },
+          "production_disposition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Production Disposition"
+          },
+          "production_route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Production Route"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          }
+        },
+        "required": [
+          "alert_id",
+          "severity",
+          "production_route",
+          "candidate_route",
+          "production_disposition",
+          "candidate_disposition",
+          "production_confidence",
+          "candidate_confidence",
+          "production_actions",
+          "candidate_actions"
+        ],
+        "title": "ShadowCase",
+        "type": "object"
+      },
+      "ShadowCaseList": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "items": {
+            "description": "Worst first, at most 100.",
+            "items": {
+              "$ref": "#/components/schemas/ShadowCase"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "items"
+        ],
+        "title": "ShadowCaseList",
+        "type": "object"
+      },
+      "ShadowClassAgreement": {
+        "properties": {
+          "agreement": {
+            "$ref": "#/components/schemas/RateInterval"
+          },
+          "production_route": {
+            "title": "Production Route",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "production_route",
+          "agreement",
+          "text"
+        ],
+        "title": "ShadowClassAgreement",
+        "type": "object"
+      },
+      "ShadowDelta": {
+        "description": "Per-alert means over the usable comparisons; ``delta`` is candidate minus production.",
+        "properties": {
+          "candidate_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Mean"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta"
+          },
+          "production_mean": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Production Mean"
+          }
+        },
+        "required": [
+          "production_mean",
+          "candidate_mean",
+          "delta"
+        ],
+        "title": "ShadowDelta",
+        "type": "object"
+      },
       "SourceCreateIn": {
         "additionalProperties": false,
         "properties": {
@@ -15406,6 +15783,64 @@
           }
         },
         "summary": "Make a tenant an MSSP organisation",
+        "tags": [
+          "platform"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/platform/shadow/reports/{run_id}": {
+      "get": {
+        "operationId": "shadow_report_api_v1_platform_shadow_reports__run_id__get",
+        "parameters": [
+          {
+            "description": "The report id lg-sotf shadow-run printed.",
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "description": "The report id lg-sotf shadow-run printed.",
+              "pattern": "^shr_[0-9a-f]{32}$",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The tenant the report was run on.",
+            "in": "query",
+            "name": "tenant_id",
+            "required": true,
+            "schema": {
+              "description": "The tenant the report was run on.",
+              "pattern": "^[a-z0-9][a-z0-9_-]{1,62}$",
+              "title": "Tenant Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShadowAgreementReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "A shadow agreement report: a candidate's verdicts against production's (read-only)",
         "tags": [
           "platform"
         ],

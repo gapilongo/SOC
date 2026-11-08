@@ -507,7 +507,11 @@ def eval_command(
 @click.option("--title", default=None, help="Title (default: 'Scorecard v1: <fast model>').")
 @click.option("--prompt-version", default=None, help="Prompt version or hashes, when the reports do not record them.")
 @click.option("--note", "notes", multiple=True, help="An extra limitation to list (repeatable), e.g. the hardware.")
-@click.option("--internal", is_flag=True, help="Mark the scorecard internal only (automatic for DeepSeek models).")
+@click.option(
+    "--internal",
+    is_flag=True,
+    help="Mark the scorecard internal only (automatic for DeepSeek models on data that is not synthetic).",
+)
 def eval_scorecard(
     reports: List[str],
     output: str,
@@ -620,6 +624,84 @@ def verify_invariants(as_json: bool) -> None:
         )
     if failed:
         sys.exit(1)
+
+
+@cli.command("shadow-run")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant whose recent alerts are replayed.")
+@click.option(
+    "--candidate", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Candidate profile (YAML: name, llm, agents).",
+)
+@click.option("--window", default="7d", show_default=True, help="Alerts ingested in the last N hours or days (24h, 7d).")
+@click.option("--limit", type=click.IntRange(1, 2_000), default=200, show_default=True, help="Alerts replayed at most.")
+@click.option("--report", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write the JSON here.")
+@click.option("--markdown", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write Markdown.")
+@click.option(
+    "--i-understand-no-shadow-role", "no_shadow_role", is_flag=True,
+    help="Development only: run without the shadow database role (AI-E1.5c). Refused when the environment "
+    "setting is staging or production; it defaults to development, so this prevents accidents, it is not "
+    "access control.",
+)
+def shadow_run(
+    tenant_id: str, candidate: Path, window: str, limit: int, report: Optional[Path], markdown: Optional[Path],
+    no_shadow_role: bool,
+) -> None:
+    """Replay a tenant's recent decided alerts through a candidate model profile in shadow mode, then report.
+
+    Each alert runs through the candidate with no side effect (AI-E1.5a); its
+    verdict and production's are stored in shadow_verdicts under a new report
+    id, readable later at GET /platform/shadow/reports/{id}. Prints the
+    agreement report (Markdown). Failed runs, and runs whose model answer was
+    unusable so the rules decided, count as disagreement. The candidate's
+    model calls are real and billed to its provider, never to the tenant.
+
+    Production's verdict is read from its first decide event: keep the window
+    within retention.events_days (alert events can expire before the alerts),
+    or older alerts read as closed or as having no production verdict.
+    In the profile, ${VAR} works in llm.api_key only, from a CANDIDATE_
+    variable. See docs/evaluation.md ("Shadow agreement").
+    """
+    from lg_sotf.domain.shadow_agreement import render_markdown
+    from lg_sotf.errors import OperationError
+    from lg_sotf.runtime.shadow_replay import ShadowRunOptions, check_shadow_gate, parse_window, run_shadow_replay
+    from lg_sotf.security.crypto import load_secret_box
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    settings = _prepare()
+    try:
+        check_shadow_gate(settings, no_shadow_role)
+        options = ShadowRunOptions(
+            tenant_id=tenant_id, candidate=candidate, window=parse_window(window), limit=limit,
+            no_shadow_role_acknowledged=no_shadow_role,
+        )
+        # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
+        box = load_secret_box(settings)
+    except (OperationError, SecurityConfigError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _quiet_eval_logging(settings)
+    if options.window.days > settings.retention.events_days:
+        click.echo(
+            f"warning: --window is longer than retention.events_days ({settings.retention.events_days}); older "
+            "alerts may have no production decide event left",
+            err=True,
+        )
+    result = _run(
+        run_shadow_replay(
+            settings, options, secret_box=box,
+            progress=lambda done, total, row: click.echo(
+                f"[{done}/{total}] {row.alert_id}: production {row.production.route}, "
+                f"candidate {row.candidate.error or row.candidate.route}"
+                + (" (rules fallback)" if row.candidate.degraded else ""),
+                err=True,
+            ),
+        )
+    )
+    text = render_markdown(result)
+    if report is not None:
+        report.write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    if markdown is not None:
+        markdown.write_text(text, encoding="utf-8")
+    click.echo(text)
 
 
 @cli.command("mcp")

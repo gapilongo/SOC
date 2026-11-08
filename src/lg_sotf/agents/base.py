@@ -55,6 +55,7 @@ from lg_sotf.llm.registry import PromptTemplate
 from lg_sotf.llm.trace import TraceRecorder
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import record_llm_refusal, record_llm_skipped
+from lg_sotf.security.shadow import note_llm_shortfall
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -159,6 +160,7 @@ class BaseAgent:
     def skip_llm(self, reason: str, note: Optional[str] = None) -> LLMResult[Any]:
         """An LLM call deliberately not made (counted in ``lgsotf_llm_skipped_total``)."""
         record_llm_skipped(self.name, reason)
+        note_llm_shortfall("skipped")
         return LLMResult(skipped=reason, notes=[note] if note else [])
 
     async def call_llm(
@@ -202,9 +204,11 @@ class BaseAgent:
         except LLMBudgetExceeded:
             ctx.llm_budget_exceeded = True
             record_llm_skipped(agent, "budget_exceeded")
+            note_llm_shortfall("skipped")
             return LLMResult(skipped="budget_exceeded", notes=[f"{agent}: LLM budget exceeded, rules only"])
         except LLMRefusal as exc:
             record_llm_refusal(agent, exc.category)
+            note_llm_shortfall("refused")
             category = str(exc.category)[:32] if exc.category is not None else None
             if len(ctx.refusals) < MAX_REFUSALS_KEPT:
                 ctx.refusals.append({"agent": agent, "category": category})
@@ -212,6 +216,7 @@ class BaseAgent:
             return LLMResult(skipped="refusal", notes=[f"{agent}: {REFUSAL_NOTE}"], refusal_category=category)
         except LLMError as exc:
             log_failure(log, "agent.llm_unusable", exc, level="warning", agent=agent, error_type=type(exc).__name__)
+            note_llm_shortfall("unusable")
             return LLMResult(skipped=type(exc).__name__, notes=[f"{agent}: LLM output unusable, rules only"])
         return LLMResult(value=value)
 

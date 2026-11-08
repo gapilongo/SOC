@@ -66,6 +66,10 @@ class ShadowOutcome:
     llm_calls: int = 0
     llm_tokens: int = 0
     llm_cost_usd: Decimal = Decimal(0)
+    llm_skipped: int = 0
+    llm_unusable: int = 0
+    llm_refused: int = 0
+    """Agent steps that got no model answer: skipped on purpose, unusable output (rules fallback), refused."""
 
 
 def _interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
@@ -119,4 +123,7 @@ class ShadowRunner:
             llm_calls=run.llm_calls,
             llm_tokens=run.llm_tokens,
             llm_cost_usd=run.llm_cost_usd,
+            llm_skipped=run.llm_skipped,
+            llm_unusable=run.llm_unusable,
+            llm_refused=run.llm_refused,
         )

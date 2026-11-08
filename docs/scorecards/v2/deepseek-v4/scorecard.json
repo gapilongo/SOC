@@ -1,0 +1,208 @@
+{
+  "scorecard_version": 1,
+  "title": "Scorecard v2: DeepSeek V4 (open weights) on the attack-emulation corpus",
+  "internal_only": false,
+  "model": {
+    "llm_provider": "openai",
+    "fast_model": "deepseek-flash",
+    "deep_model": "deepseek-v4-pro"
+  },
+  "prompt_version": "triage.assess 6fb57c16961d611b, correlation.assess 7a3b85653a067ebe, analysis.verdict ba3e52da6cf9550c (lg-sotf 1.2.3; the hashes of main after #307)",
+  "lg_sotf_versions": [
+    "1.2.3"
+  ],
+  "generated_at": [
+    "2026-11-08T04:33:24.878842+00:00"
+  ],
+  "datasets": [
+    {
+      "dataset": {
+        "path": "tests/fixtures/eval/corpus_v1.jsonl.gz",
+        "sha256": "3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9",
+        "items": 520,
+        "synthetic": true,
+        "splits": {
+          "standard": 520
+        }
+      },
+      "selection": {
+        "splits": [],
+        "tags": [],
+        "limit": null,
+        "isolation": "splits"
+      },
+      "scored": 520,
+      "errors": 0,
+      "malicious_false_negative": {
+        "k": 0,
+        "n": 208,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0181
+        ]
+      },
+      "missed_malicious_ids": [],
+      "auto_close_precision": {
+        "k": 0,
+        "n": 0,
+        "rate": null,
+        "ci95": null
+      },
+      "auto_close": {
+        "k": 0,
+        "n": 520,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0073
+        ]
+      },
+      "escalation": {
+        "k": 335,
+        "n": 520,
+        "rate": 0.6442307692307693,
+        "ci95": [
+          0.6022,
+          0.6842
+        ]
+      },
+      "approval_request": {
+        "k": 185,
+        "n": 520,
+        "rate": 0.3557692307692308,
+        "ci95": [
+          0.3158,
+          0.3978
+        ]
+      },
+      "error": {
+        "k": 0,
+        "n": 520,
+        "rate": 0.0,
+        "ci95": [
+          0.0,
+          0.0073
+        ]
+      },
+      "per_class": {
+        "malicious": {
+          "precision": 0.824468085106383,
+          "recall": 0.7451923076923077,
+          "f1": 0.7828282828282829,
+          "support": 208,
+          "predicted": 188
+        },
+        "benign": {
+          "precision": 0.974025974025974,
+          "recall": 0.2403846153846154,
+          "f1": 0.3856041131105398,
+          "support": 312,
+          "predicted": 77
+        },
+        "inconclusive": {
+          "precision": 0.0,
+          "recall": null,
+          "f1": null,
+          "support": 0,
+          "predicted": 255
+        }
+      },
+      "per_class_intervals": {
+        "malicious": {
+          "precision": {
+            "rate": 0.824468085106383,
+            "n": 188,
+            "ci_low": 0.763748,
+            "ci_high": 0.872194
+          },
+          "recall": {
+            "rate": 0.7451923076923077,
+            "n": 208,
+            "ci_low": 0.681899,
+            "ci_high": 0.799593
+          }
+        },
+        "benign": {
+          "precision": {
+            "rate": 0.974025974025974,
+            "n": 77,
+            "ci_low": 0.910154,
+            "ci_high": 0.992848
+          },
+          "recall": {
+            "rate": 0.2403846153846154,
+            "n": 312,
+            "ci_low": 0.19631,
+            "ci_high": 0.290774
+          }
+        },
+        "inconclusive": {
+          "precision": {
+            "rate": 0.0,
+            "n": 255,
+            "ci_low": 0.0,
+            "ci_high": 0.014841
+          },
+          "recall": {
+            "rate": null,
+            "n": 0,
+            "ci_low": null,
+            "ci_high": null
+          }
+        }
+      },
+      "macro_f1": 0.3894774653129409,
+      "cost_per_item_usd": 0.0028268423076923074,
+      "total_cost_usd": 1.469958,
+      "tokens_per_item": 6403.707692307692,
+      "llm_calls_per_item": 2.175,
+      "latency_s": {
+        "mean": 23.38339249078921,
+        "p50": 19.542723778518848,
+        "p95": 47.56430819664966,
+        "max": 81.55762223299826
+      },
+      "splits": {
+        "standard": {
+          "items": 520,
+          "malicious_false_negative": {
+            "k": 0,
+            "n": 208,
+            "rate": 0.0,
+            "ci95": [
+              0.0,
+              0.0181
+            ]
+          },
+          "escalation": {
+            "k": 335,
+            "n": 520,
+            "rate": 0.6442307692307693,
+            "ci95": [
+              0.6022,
+              0.6842
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Model: DeepSeek V4 (open weights, MIT): deepseek-flash fast tier, deepseek-v4-pro deep tier. Measured through the hosted API (api.deepseek.com, China) on a synthetic corpus. A client self-hosts the same weights; customer data never goes to a hosted API.",
+    "Hosted ids and released weights: DeepSeek's API documentation says deepseek-flash is served by DeepSeek-V4.1-Flash-1017, whose weights are on Hugging Face under MIT; it names no checkpoint for deepseek-v4-pro (DeepSeek-V4-Pro and DeepSeek-V4-Pro-0813 are on Hugging Face under MIT). That the hosted models are exactly the released weights is not confirmed.",
+    "Run on 2026-11-08 (Sunday, off-peak pricing): eval and model concurrency 2, structured output json_mode, no enrichment providers, one tenant for the single split; 6,088 s for 520 items.",
+    "Correlation counts related alerts against wall-clock time. The replay put twelve days of alerts into 101 minutes, so 205 of 312 benign and 178 of 208 malicious items reached the decision on a strong correlation without the deep-tier analysis. RUN.md has the gate-by-gate breakdown.",
+    "No benign alert was closed by automation (0 of 312): every benign item went to an analyst or to an approval request. RUN.md traces which routing gate held each one."
+  ],
+  "limitations": [
+    "The data is synthetic: generated alerts (attack emulation and benign activity) labelled from the procedure that produced them. It shows how the pipeline and model behave on realistic alert shapes, not accuracy on a customer's real telemetry.",
+    "Small samples: read the 95% Wilson intervals, not the point estimates. Two models whose intervals overlap have not been shown to differ.",
+    "Escalated items were not reviewed (the harness never invents an analyst decision). The false-negative rate counts only malicious items automation closed as benign; an escalated malicious item is not a miss.",
+    "Model: DeepSeek V4 (open weights, MIT): deepseek-flash fast tier, deepseek-v4-pro deep tier. Measured through the hosted API (api.deepseek.com, China) on a synthetic corpus. A client self-hosts the same weights; customer data never goes to a hosted API.",
+    "Hosted ids and released weights: DeepSeek's API documentation says deepseek-flash is served by DeepSeek-V4.1-Flash-1017, whose weights are on Hugging Face under MIT; it names no checkpoint for deepseek-v4-pro (DeepSeek-V4-Pro and DeepSeek-V4-Pro-0813 are on Hugging Face under MIT). That the hosted models are exactly the released weights is not confirmed.",
+    "Run on 2026-11-08 (Sunday, off-peak pricing): eval and model concurrency 2, structured output json_mode, no enrichment providers, one tenant for the single split; 6,088 s for 520 items.",
+    "Correlation counts related alerts against wall-clock time. The replay put twelve days of alerts into 101 minutes, so 205 of 312 benign and 178 of 208 malicious items reached the decision on a strong correlation without the deep-tier analysis. RUN.md has the gate-by-gate breakdown.",
+    "No benign alert was closed by automation (0 of 312): every benign item went to an analyst or to an approval request. RUN.md traces which routing gate held each one."
+  ]
+}

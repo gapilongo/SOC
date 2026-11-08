@@ -196,7 +196,8 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/phishing_v
 dataset file: it replays the alerts analysts decided in tenant T in the last
 N days through the current pipeline and model, read-only and without any
 side effect, and reports with the same metrics, thresholds and baselines.
-See docs/reporting.md ("Backtest").
+See docs/reporting.md ("Backtest"). To compare a candidate model with
+production's own verdicts instead, see "Shadow agreement" below.
 
 ## Metrics
 
@@ -776,12 +777,122 @@ nothing on its own and sends every benign alert to a human or to an approval:
 the gate measures the routing policy, not a model. A real model's numbers on
 this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
 
+**The first real model on it** is
+[scorecard v2](scorecards/v2/deepseek-v4/scorecard.md), DeepSeek V4 through
+the hosted API.
+* **Results.** 0 of 208 malicious alerts closed, 0 of 312 benign alerts
+  closed, and 33 benign alerts given a response plan.
+* **The replay compresses time.** The eval sends the twelve days through in
+  about 100 minutes, and correlation counts related alerts against
+  wall-clock time. As a result, 205 of the 312 benign alerts were decided on
+  correlation alone, without the deep model.
+* **Read [its RUN.md](scorecards/v2/deepseek-v4/RUN.md)** before you compare
+  correlation-driven numbers from this corpus.
+
 ```sh
 python -m tests.fixtures.attack_corpus generate --out ~/lg-sotf-eval/corpus_v1.jsonl   # or use the .gz as is
 LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.jsonl.gz \
     --cassettes tests/fixtures/eval/cassettes/corpus_v1 \
     --thresholds tests/fixtures/eval/corpus_v1_thresholds.yaml --report ~/lg-sotf-eval/corpus-v1.json
 ```
+
+## Shadow agreement: a candidate beside production
+
+The backtest scores a model against analysts' decisions. A shadow replay
+answers a different question before a switch: on the alerts production
+handled recently, how often would the candidate have taken the same route,
+and where would it have done something else?
+
+```sh
+cat > local-llama.yaml <<'EOF'
+name: local llama 3.3 70b
+llm:
+  provider: openai_compatible
+  base_url: http://llm.internal:8000/v1
+  fast: {model: llama-3.3-70b}
+  deep: {model: llama-3.3-70b}
+EOF
+lg-sotf shadow-run --tenant acme --candidate local-llama.yaml --window 7d --limit 200 \
+    --report shadow.json --markdown shadow.md --i-understand-no-shadow-role
+```
+
+`lg-sotf shadow-run` is a platform-admin command; nothing in an alert can
+start or steer it. It takes the tenant's alerts ingested in the window
+(`24h`, `7d`, at most `90d`) that production has decided (closed, or waiting
+for an analyst or an approval), newest first, at most `--limit` (2000), and
+runs each through the candidate in shadow mode (AI-E1.5a: no notification,
+escalation, action, alert change or event leaves the run; its model calls
+are real and billed to the candidate's provider, never to the tenant). The
+candidate profile may set `name` (the report's label), `llm` and `agents`,
+merged over the configuration. Routing thresholds, tenant policy and
+services stay production's.
+
+The candidate's key: `${VAR}` is expanded in `llm.api_key` only, and only
+from a variable whose name starts with `CANDIDATE_` (`api_key:
+${CANDIDATE_API_KEY}`); anywhere else, `base_url` included, a `${...}` is
+refused. So a profile cannot pull a process secret (the JWT secret,
+production's LLM key) into a field or send it to an endpoint of its choice.
+A profile that changes `provider` or `base_url` never inherits production's
+API key, and a key equal to production's is refused even under another
+name: give the candidate its own (a self-hosted provider needs none).
+
+Each alert's pair of verdicts is stored in `shadow_verdicts` (append-only,
+tenant row-level security, deleted with the alert; in the tenant export, not
+in the evidence pack) under a report id `shr_<32 hex>`. The command prints
+the report in Markdown; platform admins read it later with
+`GET /api/v1/platform/shadow/reports/{id}?tenant_id=acme` (beta, audited as
+`platform.shadow_report_viewed`). The report shows:
+
+* **Agreement** on the routing decision (`close`, `plan_response`,
+  `escalate`), overall and per production route, as a rate with its sample
+  size n and 95% Wilson interval, over every alert production decided. A
+  candidate run with no usable verdict is a **failure** and counts as a
+  disagreement: the run raised (`candidate_failed`), or a model answer was
+  unusable or refused so the rules decided instead (`candidate_degraded`).
+  A candidate that cannot reach its model, or answers garbage, therefore
+  cannot score well. The agreement over the usable verdicts only
+  (`agreement_usable`) is shown next to the headline, never instead of it.
+* **Enough data?** `enough_data` is false, with the reasons in
+  `data_warnings`, below 30 alerts ("Not enough data (n=…; at least 30
+  needed)"), when more than 5% of the candidate runs failed, or when any
+  alert production escalated or responded to failed.
+* A **confusion matrix**, production routes in rows, candidate routes in
+  columns (`none`: no usable candidate verdict).
+* The cases that matter, worst first:
+  * **potential misses**: alerts production escalated or responded to that
+    the candidate would have closed with no human, most severe first. Any of
+    these deserves a look before promoting the candidate;
+  * **routing differences** between `escalate` and `plan_response`, both
+    ways; production `escalate` to candidate `plan_response` comes first (a
+    human was wanted, the candidate would act automatically);
+  * **candidate failures**, those on alerts production escalated or
+    responded to first, with the error or the number of rules-fallback steps;
+  * **new escalations** (production closed, the candidate would not have);
+  * **different response plans** (both responded automatically, with
+    different `action_type:target` sets).
+* **Cost and latency**: per-alert means of LLM cost, tokens and model-and-tool
+  time (the trace steps) over the usable comparisons, candidate minus
+  production.
+
+Limitations: the candidate stops at the first human step, while production's
+figures cover every run of the alert (re-analysis an analyst asked for
+included); shadow runs read threat intelligence from the cache only; the
+production verdict is the first routing decision, not the analyst's outcome.
+It is read from the alert's first `decide` event, and alert events follow
+`retention.events_days` while alerts follow `alerts_days`: keep the window
+within `events_days`, or older alerts closed without a remaining event read
+as `close` and open ones as having no production verdict (the command warns
+when the window is longer).
+
+**Gate (until AI-E1.5c).** Shadow runs should read through a separate,
+SELECT-only database role (issue #309). Until that role exists, `shadow-run`
+refuses to run unless `--i-understand-no-shadow-role` is passed, and refuses
+that flag in `staging` and `production` environments: use it on a
+development or evaluation copy of the database only. AI-E1.5c replaces the
+flag with its setting. The gate prevents accidents; it is not access
+control: it trusts the `environment` setting, which defaults to
+`development` when nothing sets it, and anyone who can run the CLI with the
+database credentials can pass the flag.
 
 ## Evaluating on your own labelled data
 

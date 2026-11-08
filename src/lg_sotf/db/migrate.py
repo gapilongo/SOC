@@ -85,6 +85,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "external_tickets": ("SELECT", "INSERT", "UPDATE"),
     "investigation_steps": ("SELECT", "INSERT"),
     "shadow_effects": ("SELECT", "INSERT"),
+    "shadow_verdicts": ("SELECT", "INSERT"),
     # Written through lgsotf_save_organisation (platform admins) only.
     "organisations": ("SELECT",),
     "organisation_members": ("SELECT", "INSERT", "DELETE"),

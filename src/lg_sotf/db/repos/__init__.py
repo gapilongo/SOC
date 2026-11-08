@@ -49,6 +49,7 @@ from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.reports import ReportsRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
 from lg_sotf.db.repos.shadow_effects import ShadowEffectsRepo, StoredShadowEffect
+from lg_sotf.db.repos.shadow_verdicts import ShadowVerdictsRepo, StoredVerdictRow
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
@@ -87,6 +88,7 @@ class Repositories:
     tickets: TicketsRepo
     investigation_steps: InvestigationStepsRepo
     shadow_effects: ShadowEffectsRepo
+    shadow_verdicts: ShadowVerdictsRepo
     reports: ReportsRepo
     views: ViewsRepo
     organisations: OrganisationsRepo
@@ -120,6 +122,7 @@ class Repositories:
             tickets=TicketsRepo(db),
             investigation_steps=InvestigationStepsRepo(db),
             shadow_effects=ShadowEffectsRepo(db),
+            shadow_verdicts=ShadowVerdictsRepo(db),
             reports=ReportsRepo(db),
             views=ViewsRepo(db),
             organisations=OrganisationsRepo(db),
@@ -182,10 +185,12 @@ __all__ = [
     "BlindAuditRunSummary",
     "RunsRepo",
     "ShadowEffectsRepo",
+    "ShadowVerdictsRepo",
     "Source",
     "SourcesRepo",
     "StaleRunSweep",
     "StoredShadowEffect",
+    "StoredVerdictRow",
     "SuppressionRule",
     "SuppressionsRepo",
     "Tenant",
