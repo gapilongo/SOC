@@ -19,6 +19,9 @@ Two companion documents:
   reverse proxy.
 * [invariants.md](invariants.md) lists the safety invariants, each with the
   tests that prove it; section 11 explains how to check them on your install.
+* [ai-system-card.md](ai-system-card.md) is the AI system card: the models
+  and where they run, what the AI decides and what people decide, the
+  evaluation evidence and its limits, and the EU AI Act and NIS2 mapping.
 
 ## 1. Threat model
 

@@ -24,6 +24,9 @@ How to use it: the security model and the controls themselves are described
 in [security.md](security.md). Deployment hardening is in
 [hardening.md](hardening.md). The safety invariants that cut across these
 rows, each with the tests that prove it, are in [invariants.md](invariants.md).
+The AI system card, [ai-system-card.md](ai-system-card.md), describes the
+models, the agents and their tools, the human oversight design and the
+evaluation evidence that the AI rows here rely on.
 The MCP design is in
 [design/mcp-architecture.md](design/mcp-architecture.md), and its threat
 table (section 8.1) is the detailed source for the planned remote MCP
