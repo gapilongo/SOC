@@ -25,6 +25,12 @@ the same per-item results as that split inside a full run. ``isolate="none"``
 runs every item in one tenant (the pre-0.2 behaviour; split metrics are then
 not independent).
 
+Cassettes (:mod:`lg_sotf.llm.cassette`): with a :class:`CassetteSet` each item
+runs with its own cassette active. ``record`` writes one file per item;
+``replay`` answers every tool and model call from it, so the run needs no
+network (a call the cassette lacks fails the item with ``CassetteMiss``);
+``replay-tools`` replays the tools and calls the configured model.
+
 :func:`run_evaluation` owns every resource (database pool, Redis client,
 engine, fresh tenants) for the CLI and checks the database, schema and Redis
 before the first item, so an unreachable service is a setup error rather
@@ -45,6 +51,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Awaitable, Callable, Dict, List, Literal, Mapping, Optional, Sequence, Tuple
 
+from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.workflow import RunOutcome, WorkflowEngine
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
@@ -53,6 +60,8 @@ from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult, llm_provenance
 from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
+from lg_sotf.llm.cassette import CassetteSet, recording_model_factory, replay_model_factory
+from lg_sotf.llm.trace import content_hash, use_tape
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import safe_error_text
@@ -106,6 +115,7 @@ class EvalRunner:
     engine: WorkflowEngine
     run_timeout_s: float = 900.0
     concurrency: int = 1
+    cassettes: Optional[CassetteSet] = None
     _sources: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _source_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
@@ -133,6 +143,15 @@ class EvalRunner:
         return [r for r in results if r is not None]
 
     async def evaluate(self, item: EvalItem) -> ItemResult:
+        if self.cassettes is None:
+            return await self._evaluate(item)
+        cassette = self.cassettes.open(item.id, content_hash(item.model_dump(mode="json")))
+        with use_tape(cassette):
+            result = await self._evaluate(item)
+        self.cassettes.save(cassette)
+        return result
+
+    async def _evaluate(self, item: EvalItem) -> ItemResult:
         result = ItemResult(
             item_id=item.id,
             split=item.split,
@@ -347,6 +366,7 @@ async def run_evaluation(
     progress: Optional[Progress] = None,
     create_tenant: Optional[Callable[[Settings, str], Awaitable[None]]] = None,
     secret_box: Optional[SecretBox] = None,
+    cassettes: Optional[CassetteSet] = None,
 ) -> EvalRun:
     """Evaluate ``dataset`` against the database and Redis named by ``settings``.
 
@@ -359,6 +379,7 @@ async def run_evaluation(
     checked before any tenant is created. Point the settings at a dedicated
     evaluation database: runs, escalations and alerts stay there afterwards.
     ``secret_box`` (built by the CLI) decrypts tenant credentials, as in a worker.
+    ``cassettes`` records each item's observations, or replays them (see the module docs).
     """
     import asyncpg
     from redis.asyncio import Redis
@@ -401,17 +422,7 @@ async def run_evaluation(
 
         ingestion = IngestionService(db, settings, secret_box=secret_box)
         stack.push_async_callback(ingestion.close)
-        try:
-            engine = await WorkflowEngine.create(
-                settings=settings,
-                db=db,
-                redis=redis,
-                events=None,
-                checkpoint_pool_size=max(2, min(concurrency + 1, settings.database.pool_max)),
-                secret_box=secret_box,
-            )
-        except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
-            raise EvalSetupError(f"cannot start the workflow engine: {type(exc).__name__}: {exc}") from exc
+        engine = await open_engine(settings, db, redis, concurrency, secret_box=secret_box, cassettes=cassettes)
         stack.push_async_callback(engine.close)
         # Tenants last: a configuration or service problem above leaves nothing behind.
         for tenant, _ in plan:
@@ -442,11 +453,56 @@ async def run_evaluation(
                 engine=engine,
                 run_timeout_s=settings.worker.run_timeout_s,
                 concurrency=concurrency,
+                cassettes=cassettes,
             )
             for result in await runner.run(group, progress=forward):
                 by_id[result.item_id] = result
         results = [by_id[item.id] for item in dataset.items if item.id in by_id]
-    return EvalRun(results=results, info=_run_info(settings, base, isolate, tenants, concurrency, started))
+    info = _run_info(settings, base, isolate, tenants, concurrency, started)
+    return EvalRun(results=results, info={**info, **cassette_info(cassettes)})
+
+
+async def open_engine(
+    settings: Settings,
+    db: Any,
+    redis: Any,
+    concurrency: int,
+    *,
+    secret_box: Optional[SecretBox] = None,
+    cassettes: Optional[CassetteSet] = None,
+) -> WorkflowEngine:
+    """The workflow engine of an evaluation; with ``cassettes`` its agents' model calls record or replay."""
+    import asyncpg
+
+    from lg_sotf.db.errors import DatabaseError
+    from lg_sotf.llm import get_chat_model
+
+    agents: Optional[AgentSet] = None
+    if cassettes is not None:
+        factories = {"record": recording_model_factory(get_chat_model), "replay": replay_model_factory}
+        agents = AgentSet.build(settings, secret_box=secret_box, model_factory=factories.get(cassettes.mode))
+    try:
+        return await WorkflowEngine.create(
+            settings=settings,
+            db=db,
+            redis=redis,
+            events=None,
+            agents=agents,
+            checkpoint_pool_size=max(2, min(concurrency + 1, settings.database.pool_max)),
+            secret_box=secret_box,
+        )
+    except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
+        raise EvalSetupError(f"cannot start the workflow engine: {type(exc).__name__}: {exc}") from exc
+
+
+def cassette_info(cassettes: Optional[CassetteSet]) -> Dict[str, Any]:
+    """``report.run`` fields of a cassette run: the mode and directory; a full replay calls no model."""
+    if cassettes is None:
+        return {}
+    info: Dict[str, Any] = {"cassettes": {"mode": cassettes.mode, "directory": str(cassettes.directory)}}
+    if cassettes.mode == "replay":
+        info.update(llm_provider="cassette", fast_model="cassette", deep_model="cassette")
+    return info
 
 
 def _run_info(

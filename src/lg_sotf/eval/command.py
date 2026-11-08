@@ -10,6 +10,10 @@ errored).
 With ``from_history`` the items are not read from a dataset file: the
 tenant's analyst-decided alerts are replayed read-only through the current
 pipeline (:mod:`lg_sotf.eval.history`); reporting and gating are the same.
+
+With ``cassettes`` (a directory) each item's tool observations and model
+replies are recorded there, or replayed from it so the run makes no network
+call (:mod:`lg_sotf.llm.cassette`).
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from lg_sotf.eval.report import (
 )
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.eval.runner import ISOLATION_MODES, EvalRun, EvalSetupError, Progress, run_evaluation
+from lg_sotf.llm.cassette import CASSETTE_MODES, CassetteError, CassetteMode, CassetteSet
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.settings import Settings
 
@@ -67,6 +72,8 @@ class EvalOptions:
     validate_only: bool = False
     from_history: bool = False
     days: int = 30
+    cassettes: Optional[str] = None
+    cassette_mode: str = "replay"
     # The process's SecretBox, built by cli.py (ADR-0006): enrichment reads tenant-encrypted tool keys with it.
     secret_box: Optional[SecretBox] = None
 
@@ -270,6 +277,19 @@ def execute(  # noqa: C901
     return EXIT_OK
 
 
+def cassette_set(options: EvalOptions, dataset: Dataset) -> Optional[CassetteSet]:
+    """The ``--cassettes`` directory in ``--cassette-mode``; a replay needs the directory to exist."""
+    if not options.cassettes:
+        return None
+    if options.cassette_mode not in CASSETTE_MODES:
+        raise EvalCommandError(f"--cassette-mode must be one of {', '.join(CASSETTE_MODES)}")
+    directory = Path(options.cassettes)
+    if options.cassette_mode != "record" and not directory.is_dir():
+        raise EvalCommandError(f"no cassette directory {directory}; record one with --cassette-mode record")
+    mode: CassetteMode = options.cassette_mode  # type: ignore[assignment]
+    return CassetteSet(directory, mode, source=f"lg-sotf eval {Path(options.dataset).name}", dataset_sha256=dataset.sha256)
+
+
 def _run_dataset(settings: Settings, dataset: Dataset, options: EvalOptions, progress: Progress) -> EvalRun:
     """Run the evaluation; setup, database and Redis failures become :class:`EvalCommandError` (exit 2)."""
     import asyncpg
@@ -279,6 +299,7 @@ def _run_dataset(settings: Settings, dataset: Dataset, options: EvalOptions, pro
     from lg_sotf.errors import OperationError
     from lg_sotf.security.hashing import SecurityConfigError
 
+    cassettes = cassette_set(options, dataset)
     try:
         return asyncio.run(
             run_evaluation(
@@ -289,9 +310,10 @@ def _run_dataset(settings: Settings, dataset: Dataset, options: EvalOptions, pro
                 isolate=options.isolate,  # type: ignore[arg-type]
                 progress=progress,
                 secret_box=options.secret_box,
+                cassettes=cassettes,
             )
         )
-    except (EvalSetupError, SecurityConfigError, OperationError) as exc:
+    except (EvalSetupError, SecurityConfigError, OperationError, CassetteError) as exc:
         raise EvalCommandError(str(exc)) from exc
     except DatabaseUnavailable as exc:
         raise EvalCommandError(f"database unavailable: {exc}") from exc
@@ -312,6 +334,8 @@ def execute_history(
 
     if options.dataset:
         raise EvalCommandError("--from-history replays the tenant's own alerts; do not pass --dataset")
+    if options.cassettes:
+        raise EvalCommandError("--cassettes applies to a --dataset run, not to --from-history")
     if not options.tenant_id:
         raise EvalCommandError("--from-history needs --tenant (the tenant whose decided alerts are replayed)")
     if options.splits or options.tags:

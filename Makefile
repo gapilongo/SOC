@@ -102,6 +102,10 @@ test-services: ## Start the test PostgreSQL (:55433) and Redis (:56380) on tmpfs
 test-integration: ## Integration tier against `make test-services` (PYTEST_ARGS="-n 4 --dist loadfile" for parallel)
 	$(TEST_SERVICES_ENV) $(PYTHON) -m pytest tests/integration $(PYTEST_ARGS)
 
+.PHONY: eval-cassettes
+eval-cassettes: ## Record the committed evaluation cassettes again (fake model) against `make test-services`
+	$(TEST_SERVICES_ENV) LG_SOTF_RECORD_CASSETTES=1 $(PYTHON) -m pytest tests/integration/eval/test_cassettes.py -k committed
+
 .PHONY: test-services-down
 test-services-down: ## Stop and remove the test services (their data was on tmpfs)
 	$(TEST_COMPOSE) down -v
