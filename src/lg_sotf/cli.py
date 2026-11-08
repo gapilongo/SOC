@@ -575,7 +575,9 @@ def verify_invariants(as_json: bool) -> None:
 @click.option("--markdown", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write Markdown.")
 @click.option(
     "--i-understand-no-shadow-role", "no_shadow_role", is_flag=True,
-    help="Development only: run without the shadow database role (AI-E1.5c). Refused in staging and production.",
+    help="Development only: run without the shadow database role (AI-E1.5c). Refused when the environment "
+    "setting is staging or production; it defaults to development, so this prevents accidents, it is not "
+    "access control.",
 )
 def shadow_run(
     tenant_id: str, candidate: Path, window: str, limit: int, report: Optional[Path], markdown: Optional[Path],
@@ -586,8 +588,15 @@ def shadow_run(
     Each alert runs through the candidate with no side effect (AI-E1.5a); its
     verdict and production's are stored in shadow_verdicts under a new report
     id, readable later at GET /platform/shadow/reports/{id}. Prints the
-    agreement report (Markdown). The candidate's model calls are real and
-    billed to its provider, never to the tenant. See docs/evaluation.md ("Shadow agreement").
+    agreement report (Markdown). Failed runs, and runs whose model answer was
+    unusable so the rules decided, count as disagreement. The candidate's
+    model calls are real and billed to its provider, never to the tenant.
+
+    Production's verdict is read from its first decide event: keep the window
+    within retention.events_days (alert events can expire before the alerts),
+    or older alerts read as closed or as having no production verdict.
+    In the profile, ${VAR} works in llm.api_key only, from a CANDIDATE_
+    variable. See docs/evaluation.md ("Shadow agreement").
     """
     from lg_sotf.domain.shadow_agreement import render_markdown
     from lg_sotf.errors import OperationError
@@ -607,12 +616,19 @@ def shadow_run(
     except (OperationError, SecurityConfigError) as exc:
         raise click.ClickException(str(exc)) from exc
     _quiet_eval_logging(settings)
+    if options.window.days > settings.retention.events_days:
+        click.echo(
+            f"warning: --window is longer than retention.events_days ({settings.retention.events_days}); older "
+            "alerts may have no production decide event left",
+            err=True,
+        )
     result = _run(
         run_shadow_replay(
             settings, options, secret_box=box,
             progress=lambda done, total, row: click.echo(
                 f"[{done}/{total}] {row.alert_id}: production {row.production.route}, "
-                f"candidate {row.candidate.route or row.candidate.error}",
+                f"candidate {row.candidate.error or row.candidate.route}"
+                + (" (rules fallback)" if row.candidate.degraded else ""),
                 err=True,
             ),
         )

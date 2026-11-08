@@ -17,7 +17,7 @@ from lg_sotf.db.repos.shadow_verdicts import REPORT_ID, check_report_id, product
 from lg_sotf.errors import OperationError
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.runtime.shadow_replay import NO_SHADOW_ROLE_FLAG, check_shadow_gate, load_candidate, parse_window
-from lg_sotf.security.shadow import ShadowEffect
+from lg_sotf.security.shadow import ShadowEffect, ShadowRun, note_llm_shortfall, shadow_scope
 from lg_sotf.settings import Settings
 
 pytestmark = pytest.mark.unit
@@ -78,9 +78,8 @@ def test_window_accepts_hours_and_days_up_to_90_days() -> None:
 
 
 def test_candidate_profile_overrides_only_llm_and_agents(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("CANDIDATE_MODEL", "candidate-fast-model")
     path = tmp_path / "local-model.yaml"
-    path.write_text("llm:\n  fast:\n    model: ${CANDIDATE_MODEL}\nagents:\n  triage:\n    llm_enabled: false\n")
+    path.write_text("llm:\n  fast:\n    model: candidate-fast-model\nagents:\n  triage:\n    llm_enabled: false\n")
     base = Settings(environment="test", llm={"provider": "fake"}, routing={"response_threshold": 70})
     label, candidate = load_candidate(base, path)
     assert label == "local-model"
@@ -160,6 +159,18 @@ def test_candidate_verdict_reads_the_routing_decision_plan_and_usage() -> None:
     assert (v.route, v.disposition, v.confidence) == ("plan_response", "malicious", 91.0)
     assert v.actions == ("block_ip:203.0.113.7", "isolate_host:ws-1")
     assert (v.tokens, v.cost_usd, v.latency_ms) == (1200, Decimal("0.0042"), 750)
+
+
+def test_unusable_or_refused_model_answers_make_the_verdict_degraded() -> None:
+    run = ShadowRun("shadow/count")
+    note_llm_shortfall("unusable")  # live: nothing to count, nothing raised
+    with shadow_scope(run):
+        for kind in ("skipped", "unusable", "unusable", "refused"):
+            note_llm_shortfall(kind)  # type: ignore[arg-type]
+    assert (run.llm_skipped, run.llm_unusable, run.llm_refused) == (1, 2, 1)
+    degraded = ShadowOutcome(run_id="shadow/x", state={"decision": {"route": "escalate"}}, interrupt=None, effects=(),
+                             trace=(), llm_skipped=1, llm_unusable=2, llm_refused=1)
+    assert candidate_verdict(degraded).degraded == 3  # a deliberate skip (rules decisive) is not degradation
 
 
 def test_candidate_verdict_without_a_decision() -> None:

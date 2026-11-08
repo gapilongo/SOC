@@ -768,11 +768,17 @@ runs each through the candidate in shadow mode (AI-E1.5a: no notification,
 escalation, action, alert change or event leaves the run; its model calls
 are real and billed to the candidate's provider, never to the tenant). The
 candidate profile may set `name` (the report's label), `llm` and `agents`,
-merged over the configuration; `${VAR}` references are expanded, so keys stay
-in the environment. A profile that changes `provider` or `base_url` never
-reuses production's API key: give it its own `llm.api_key` (a self-hosted
-provider needs none). Routing thresholds, tenant policy and services stay
-production's.
+merged over the configuration. Routing thresholds, tenant policy and
+services stay production's.
+
+The candidate's key: `${VAR}` is expanded in `llm.api_key` only, and only
+from a variable whose name starts with `CANDIDATE_` (`api_key:
+${CANDIDATE_API_KEY}`); anywhere else, `base_url` included, a `${...}` is
+refused. So a profile cannot pull a process secret (the JWT secret,
+production's LLM key) into a field or send it to an endpoint of its choice.
+A profile that changes `provider` or `base_url` never inherits production's
+API key, and a key equal to production's is refused even under another
+name: give the candidate its own (a self-hosted provider needs none).
 
 Each alert's pair of verdicts is stored in `shadow_verdicts` (append-only,
 tenant row-level security, deleted with the alert; in the tenant export, not
@@ -783,31 +789,54 @@ the report in Markdown; platform admins read it later with
 
 * **Agreement** on the routing decision (`close`, `plan_response`,
   `escalate`), overall and per production route, as a rate with its sample
-  size n and 95% Wilson interval. Below 30 compared alerts it reads
-  "Not enough data (n=…; at least 30 needed)" before the figure. Alerts whose
-  candidate run failed are counted apart (`candidate_failed`, the `none`
-  column), never as agreement.
-* A **confusion matrix**, production routes in rows, candidate routes in columns.
-* **Potential misses first**: alerts production escalated or responded to
-  that the candidate would have closed with no human, most severe first.
-  Any of these deserves a look before promoting the candidate. Then **new
-  escalations** (production closed, the candidate would not have) and
-  **different response plans** (both responded automatically, with
-  different `action_type:target` sets).
+  size n and 95% Wilson interval, over every alert production decided. A
+  candidate run with no usable verdict is a **failure** and counts as a
+  disagreement: the run raised (`candidate_failed`), or a model answer was
+  unusable or refused so the rules decided instead (`candidate_degraded`).
+  A candidate that cannot reach its model, or answers garbage, therefore
+  cannot score well. The agreement over the usable verdicts only
+  (`agreement_usable`) is shown next to the headline, never instead of it.
+* **Enough data?** `enough_data` is false, with the reasons in
+  `data_warnings`, below 30 alerts ("Not enough data (n=…; at least 30
+  needed)"), when more than 5% of the candidate runs failed, or when any
+  alert production escalated or responded to failed.
+* A **confusion matrix**, production routes in rows, candidate routes in
+  columns (`none`: no usable candidate verdict).
+* The cases that matter, worst first:
+  * **potential misses**: alerts production escalated or responded to that
+    the candidate would have closed with no human, most severe first. Any of
+    these deserves a look before promoting the candidate;
+  * **routing differences** between `escalate` and `plan_response`, both
+    ways; production `escalate` to candidate `plan_response` comes first (a
+    human was wanted, the candidate would act automatically);
+  * **candidate failures**, those on alerts production escalated or
+    responded to first, with the error or the number of rules-fallback steps;
+  * **new escalations** (production closed, the candidate would not have);
+  * **different response plans** (both responded automatically, with
+    different `action_type:target` sets).
 * **Cost and latency**: per-alert means of LLM cost, tokens and model-and-tool
-  time (the trace steps), candidate minus production.
+  time (the trace steps) over the usable comparisons, candidate minus
+  production.
 
 Limitations: the candidate stops at the first human step, while production's
 figures cover every run of the alert (re-analysis an analyst asked for
 included); shadow runs read threat intelligence from the cache only; the
 production verdict is the first routing decision, not the analyst's outcome.
+It is read from the alert's first `decide` event, and alert events follow
+`retention.events_days` while alerts follow `alerts_days`: keep the window
+within `events_days`, or older alerts closed without a remaining event read
+as `close` and open ones as having no production verdict (the command warns
+when the window is longer).
 
 **Gate (until AI-E1.5c).** Shadow runs should read through a separate,
 SELECT-only database role (issue #309). Until that role exists, `shadow-run`
 refuses to run unless `--i-understand-no-shadow-role` is passed, and refuses
 that flag in `staging` and `production` environments: use it on a
 development or evaluation copy of the database only. AI-E1.5c replaces the
-flag with its setting.
+flag with its setting. The gate prevents accidents; it is not access
+control: it trusts the `environment` setting, which defaults to
+`development` when nothing sets it, and anyone who can run the CLI with the
+database credentials can pass the flag.
 
 ## Evaluating on your own labelled data
 

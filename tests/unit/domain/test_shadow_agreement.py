@@ -60,7 +60,7 @@ def test_confusion_matrix_counts_every_pair_and_lists_every_label() -> None:
     assert sum(sum(r.values()) for r in matrix.values()) == len(rows)
 
 
-def test_agreement_is_over_alerts_with_both_verdicts_with_n_and_wilson_interval() -> None:
+def test_agreement_counts_failures_as_disagreement_with_n_and_wilson_interval() -> None:
     rows = [
         row("a1", "escalate", "close"),
         row("a2", "escalate", "escalate"),
@@ -71,15 +71,17 @@ def test_agreement_is_over_alerts_with_both_verdicts_with_n_and_wilson_interval(
     ]
     r = report(rows)
     assert (r.alerts, r.compared, r.candidate_failed, r.no_production_verdict) == (6, 4, 1, 1)
-    assert r.agreement == rate_interval(3, 4)
-    assert r.agreement.n == 4 and r.agreement.ci_low is not None and r.agreement.ci_high is not None
-    assert r.agreement.ci_low < 0.75 < r.agreement.ci_high
+    assert r.agreement == rate_interval(3, 5)
+    assert r.agreement.n == 5 and r.agreement.ci_low is not None and r.agreement.ci_high is not None
+    assert r.agreement.ci_low < 0.6 < r.agreement.ci_high
+    assert r.agreement_usable == rate_interval(3, 4)
     by_class = {c.production_route: c.agreement for c in r.by_class}
-    assert by_class["escalate"] == rate_interval(1, 2)
+    assert by_class["escalate"] == rate_interval(1, 3)
     assert by_class["close"] == rate_interval(1, 1)
     assert by_class["plan_response"] == rate_interval(1, 1)
     assert not r.enough_data
-    assert r.agreement_text.startswith("Not enough data (n=4; at least 30 needed): 75.0% (3 of 4; 95% CI")
+    assert r.agreement_text.startswith("Not enough data (n=5; at least 30 needed): 60.0% (3 of 5; 95% CI")
+    assert [c.alert_id for c in r.candidate_failures.items] == ["a5"]
 
 
 def test_rate_text_uses_the_shared_wording() -> None:

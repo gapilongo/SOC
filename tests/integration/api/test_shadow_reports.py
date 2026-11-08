@@ -109,14 +109,19 @@ async def test_agreement_report(api: ApiHarness) -> None:
     assert response.status_code == 200, response.text
     body = response.json()
 
-    # The agreement rate, with its sample size and Wilson interval: 3 of the 5 alerts both sides decided.
+    # The agreement rate, with its sample size and Wilson interval: 3 of the 6 alerts production decided (the
+    # failed candidate run counts as a disagreement); 3 of 5 over the usable candidate verdicts, shown beside it.
     assert (body["alerts"], body["compared"], body["candidate_failed"]) == (6, 5, 1)
-    expected = rate_interval(3, 5)
+    expected = rate_interval(3, 6)
     assert body["agreement"] == expected.model_dump()
-    assert body["agreement"]["n"] == 5 and body["agreement"]["ci_low"] < 0.6 < body["agreement"]["ci_high"]
-    assert body["agreement_text"].startswith("Not enough data (n=5; at least 30 needed): 60.0% (3 of 5; 95% CI ")
+    assert body["agreement"]["n"] == 6 and body["agreement"]["ci_low"] < 0.5 < body["agreement"]["ci_high"]
+    assert body["agreement_text"].startswith("Not enough data (n=6; at least 30 needed): 50.0% (3 of 6; 95% CI ")
+    assert body["agreement_usable"] == rate_interval(3, 5).model_dump()
+    assert not body["enough_data"] and body["data_warnings"][0] == "Not enough data (n=6; at least 30 needed)"
+    assert [c["alert_id"] for c in body["candidate_failures"]["items"]] == [failed]
+    assert body["candidate_failures"]["items"][0]["candidate_error"] == "TimeoutError"
     by_class = {c["production_route"]: c["agreement"] for c in body["by_class"]}
-    assert by_class["escalate"] == rate_interval(1, 2).model_dump()
+    assert by_class["escalate"] == rate_interval(1, 3).model_dump()
     assert by_class["close"] == rate_interval(1, 2).model_dump()
     assert by_class["plan_response"] == rate_interval(1, 1).model_dump()
 

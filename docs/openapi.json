@@ -8409,10 +8409,19 @@
       "ShadowAgreementReport": {
         "properties": {
           "agreement": {
-            "$ref": "#/components/schemas/RateInterval"
+            "$ref": "#/components/schemas/RateInterval",
+            "description": "Agreement over every alert with a production verdict; failed or degraded runs disagree."
           },
           "agreement_text": {
             "title": "Agreement Text",
+            "type": "string"
+          },
+          "agreement_usable": {
+            "$ref": "#/components/schemas/RateInterval",
+            "description": "Agreement over the usable candidate verdicts only."
+          },
+          "agreement_usable_text": {
+            "title": "Agreement Usable Text",
             "type": "string"
           },
           "alerts": {
@@ -8431,12 +8440,21 @@
             "title": "Candidate",
             "type": "string"
           },
+          "candidate_degraded": {
+            "description": "Candidate runs whose model answer was unusable or refused.",
+            "title": "Candidate Degraded",
+            "type": "integer"
+          },
           "candidate_failed": {
+            "description": "Candidate runs that raised: no verdict.",
             "title": "Candidate Failed",
             "type": "integer"
           },
+          "candidate_failures": {
+            "$ref": "#/components/schemas/ShadowCaseList"
+          },
           "compared": {
-            "description": "Alerts with a verdict on both sides: the agreement sample n.",
+            "description": "Alerts with a production verdict and a usable candidate verdict.",
             "title": "Compared",
             "type": "integer"
           },
@@ -8453,6 +8471,14 @@
           },
           "cost_usd": {
             "$ref": "#/components/schemas/ShadowDelta"
+          },
+          "data_warnings": {
+            "description": "Why the report is not enough_data, if it is not.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Warnings",
+            "type": "array"
           },
           "enough_data": {
             "title": "Enough Data",
@@ -8475,6 +8501,10 @@
             "title": "Limitations",
             "type": "array"
           },
+          "max_failure_rate": {
+            "title": "Max Failure Rate",
+            "type": "number"
+          },
           "min_samples": {
             "title": "Min Samples",
             "type": "integer"
@@ -8496,6 +8526,10 @@
             "title": "Report Id",
             "type": "string"
           },
+          "routing_differences": {
+            "$ref": "#/components/schemas/ShadowCaseList",
+            "description": "escalate <-> plan_response, production escalate -> candidate plan_response first."
+          },
           "tenant_id": {
             "title": "Tenant Id",
             "type": "string"
@@ -8511,15 +8545,22 @@
           "alerts",
           "compared",
           "candidate_failed",
+          "candidate_degraded",
           "no_production_verdict",
           "min_samples",
+          "max_failure_rate",
           "enough_data",
+          "data_warnings",
           "agreement",
           "agreement_text",
+          "agreement_usable",
+          "agreement_usable_text",
           "by_class",
           "labels",
           "confusion",
           "potential_misses",
+          "routing_differences",
+          "candidate_failures",
           "new_escalations",
           "plan_differences",
           "cost_usd",
@@ -8555,6 +8596,11 @@
             ],
             "title": "Candidate Confidence"
           },
+          "candidate_degraded": {
+            "default": 0,
+            "title": "Candidate Degraded",
+            "type": "integer"
+          },
           "candidate_disposition": {
             "anyOf": [
               {
@@ -8565,6 +8611,17 @@
               }
             ],
             "title": "Candidate Disposition"
+          },
+          "candidate_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Error"
           },
           "candidate_route": {
             "anyOf": [
@@ -8644,7 +8701,7 @@
             "type": "integer"
           },
           "items": {
-            "description": "Most severe first, at most 100.",
+            "description": "Worst first, at most 100.",
             "items": {
               "$ref": "#/components/schemas/ShadowCase"
             },
@@ -8682,7 +8739,7 @@
         "type": "object"
       },
       "ShadowDelta": {
-        "description": "Per-alert means over the compared alerts; ``delta`` is candidate minus production.",
+        "description": "Per-alert means over the usable comparisons; ``delta`` is candidate minus production.",
         "properties": {
           "candidate_mean": {
             "anyOf": [

@@ -37,6 +37,8 @@ def candidate_verdict(outcome: ShadowOutcome) -> Verdict:
     """What the candidate decided: its routing decision, else ``close`` when it closed before deciding.
 
     A run closes before ``decide`` when the gate suppressed the alert or triage closed it as a false positive.
+    ``degraded`` counts the agent steps whose model answer was unusable or refused (the rules decided instead):
+    the report treats such a run as a failure, not as the candidate's verdict.
     """
     state = outcome.state
     decision = _mapping(state.get("decision"))
@@ -57,6 +59,7 @@ def candidate_verdict(outcome: ShadowOutcome) -> Verdict:
         tokens=outcome.llm_tokens,
         cost_usd=outcome.llm_cost_usd,
         latency_ms=sum(int(getattr(step, "latency_ms", 0) or 0) for step in outcome.trace),
+        degraded=outcome.llm_unusable + outcome.llm_refused,
     )
 
 

@@ -6,7 +6,9 @@ report (``report_id``, ``shr_`` + 32 hex): the candidate's label, both
 routes (``close``, ``plan_response``, ``escalate``; ``NULL`` when that
 side has none), dispositions, confidences, planned actions
 (``action_type:target``), LLM tokens and cost and model-and-tool latency,
-and the error type of a candidate run that failed.
+the error type of a candidate run that failed, and ``cand_degraded``: the
+candidate's model answers that were unusable or refused (the run fell
+back to rules), which the report counts as failures.
 
 A separate table rather than more ``shadow_effects`` rows: an effect is one
 diverted call of a run (many per run, written by the sink), a verdict is one
@@ -55,6 +57,7 @@ CREATE TABLE shadow_verdicts (
     {_SIDE.format(p="prod")}
     {_SIDE.format(p="cand")}
     cand_error TEXT CHECK (length(cand_error) <= 128),
+    cand_degraded INTEGER NOT NULL DEFAULT 0 CHECK (cand_degraded >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT shadow_verdicts_report_alert_key UNIQUE (tenant_id, report_id, alert_id),
     CONSTRAINT shadow_verdicts_alert_fk FOREIGN KEY (tenant_id, alert_id)

@@ -4526,9 +4526,14 @@ export interface components {
         };
         /** ShadowAgreementReport */
         ShadowAgreementReport: {
+            /** @description Agreement over every alert with a production verdict; failed or degraded runs disagree. */
             agreement: components["schemas"]["RateInterval"];
             /** Agreement Text */
             agreement_text: string;
+            /** @description Agreement over the usable candidate verdicts only. */
+            agreement_usable: components["schemas"]["RateInterval"];
+            /** Agreement Usable Text */
+            agreement_usable_text: string;
             /**
              * Alerts
              * @description Alerts replayed.
@@ -4538,11 +4543,20 @@ export interface components {
             by_class: components["schemas"]["ShadowClassAgreement"][];
             /** Candidate */
             candidate: string;
-            /** Candidate Failed */
+            /**
+             * Candidate Degraded
+             * @description Candidate runs whose model answer was unusable or refused.
+             */
+            candidate_degraded: number;
+            /**
+             * Candidate Failed
+             * @description Candidate runs that raised: no verdict.
+             */
             candidate_failed: number;
+            candidate_failures: components["schemas"]["ShadowCaseList"];
             /**
              * Compared
-             * @description Alerts with a verdict on both sides: the agreement sample n.
+             * @description Alerts with a production verdict and a usable candidate verdict.
              */
             compared: number;
             /**
@@ -4555,6 +4569,11 @@ export interface components {
                 };
             };
             cost_usd: components["schemas"]["ShadowDelta"];
+            /**
+             * Data Warnings
+             * @description Why the report is not enough_data, if it is not.
+             */
+            data_warnings: string[];
             /** Enough Data */
             enough_data: boolean;
             /** Labels */
@@ -4562,6 +4581,8 @@ export interface components {
             latency_ms: components["schemas"]["ShadowDelta"];
             /** Limitations */
             limitations: string[];
+            /** Max Failure Rate */
+            max_failure_rate: number;
             /** Min Samples */
             min_samples: number;
             new_escalations: components["schemas"]["ShadowCaseList"];
@@ -4571,6 +4592,8 @@ export interface components {
             potential_misses: components["schemas"]["ShadowCaseList"];
             /** Report Id */
             report_id: string;
+            /** @description escalate <-> plan_response, production escalate -> candidate plan_response first. */
+            routing_differences: components["schemas"]["ShadowCaseList"];
             /** Tenant Id */
             tenant_id: string;
             tokens: components["schemas"]["ShadowDelta"];
@@ -4586,8 +4609,15 @@ export interface components {
             candidate_actions: string[];
             /** Candidate Confidence */
             candidate_confidence: number | null;
+            /**
+             * Candidate Degraded
+             * @default 0
+             */
+            candidate_degraded?: number;
             /** Candidate Disposition */
             candidate_disposition: string | null;
+            /** Candidate Error */
+            candidate_error?: string | null;
             /** Candidate Route */
             candidate_route: string | null;
             /** Production Actions */
@@ -4607,7 +4637,7 @@ export interface components {
             count: number;
             /**
              * Items
-             * @description Most severe first, at most 100.
+             * @description Worst first, at most 100.
              */
             items: components["schemas"]["ShadowCase"][];
         };
@@ -4621,7 +4651,7 @@ export interface components {
         };
         /**
          * ShadowDelta
-         * @description Per-alert means over the compared alerts; ``delta`` is candidate minus production.
+         * @description Per-alert means over the usable comparisons; ``delta`` is candidate minus production.
          */
         ShadowDelta: {
             /** Candidate Mean */

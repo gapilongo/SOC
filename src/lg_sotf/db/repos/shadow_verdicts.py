@@ -36,8 +36,8 @@ _INSERT_SQL = """
         tenant_id, alert_id, report_id, run_id, candidate,
         prod_route, prod_disposition, prod_confidence, prod_actions, prod_tokens, prod_cost_usd, prod_latency_ms,
         cand_route, cand_disposition, cand_confidence, cand_actions, cand_tokens, cand_cost_usd, cand_latency_ms,
-        cand_error
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        cand_error, cand_degraded
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
 """
 
 _LIST_SQL = """
@@ -99,6 +99,7 @@ class StoredVerdictRow(Record):
     cand_cost_usd: Decimal
     cand_latency_ms: int
     cand_error: Optional[str]
+    cand_degraded: int
     created_at: datetime
 
     def comparison(self) -> Comparison:
@@ -113,7 +114,7 @@ class StoredVerdictRow(Record):
             candidate=Verdict(
                 route=self.cand_route, disposition=self.cand_disposition, confidence=self.cand_confidence,
                 actions=tuple(self.cand_actions), tokens=self.cand_tokens, cost_usd=self.cand_cost_usd,
-                latency_ms=self.cand_latency_ms, error=self.cand_error,
+                latency_ms=self.cand_latency_ms, error=self.cand_error, degraded=self.cand_degraded,
             ),
         )
 
@@ -177,7 +178,7 @@ class ShadowVerdictsRepo(Repository):
                 p.route, p.disposition, p.confidence, list(p.actions[:MAX_ACTIONS]), p.tokens, p.cost_usd,
                 p.latency_ms,
                 k.route, k.disposition, k.confidence, list(k.actions[:MAX_ACTIONS]), k.tokens, k.cost_usd,
-                k.latency_ms, (k.error or "")[:MAX_ERROR_CHARS] or None,
+                k.latency_ms, (k.error or "")[:MAX_ERROR_CHARS] or None, k.degraded,
             )
 
     async def list_for_report(

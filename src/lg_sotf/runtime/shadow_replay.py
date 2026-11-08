@@ -13,17 +13,25 @@ and no shadow entry point may ship before it. Until it is, the command
 refuses to run unless the operator passes ``--i-understand-no-shadow-role``,
 and refuses that flag outright in staging and production
 (:func:`check_shadow_gate`). AI-E1.5c replaces the flag with its setting.
+The gate prevents accidents; it is not access control. It trusts the
+``environment`` setting, which defaults to ``development`` when nothing sets
+it, and anyone who can run the CLI with the database credentials can pass
+the flag.
 
 **Candidate profile.** A YAML file: ``name`` (the report's label; default:
 the file name) and the ``llm`` and ``agents`` sections to use instead of
-the configured ones (deep-merged, ``${VAR}`` references expanded as in the
-main configuration file). Nothing else can differ: routing thresholds,
-tenant policy and services stay production's. A profile that moves to
-another provider or ``base_url`` never inherits production's API key.
+the configured ones (deep-merged). Nothing else can differ: routing
+thresholds, tenant policy and services stay production's. ``${VAR}`` is
+expanded in ``llm.api_key`` only, and only from a variable named
+``CANDIDATE_...``: a profile cannot pull a process secret into a field or
+send it to an endpoint of its choice. A profile that moves to another
+provider or ``base_url`` never inherits production's API key and may not
+name it either (the values are compared).
 """
 
 from __future__ import annotations
 
+import hmac
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -31,7 +39,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 import yaml
-from pydantic import ValidationError
+from pydantic import SecretStr, ValidationError
 
 from lg_sotf.core.shadow import ShadowRunner
 from lg_sotf.core.shadow_replay import Progress, ShadowReplay
@@ -52,6 +60,7 @@ PROFILE_KEYS = frozenset({"name", "llm", "agents"})
 MAX_PROFILE_BYTES = 64 * 1024
 _WINDOW = re.compile(r"^([1-9][0-9]{0,4})([hd])$")
 _LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._:/+-]{0,127}$")
+_CANDIDATE_KEY_REF = re.compile(r"^\$\{(CANDIDATE_[A-Z0-9_]{1,64})\}$")
 
 
 @dataclass(frozen=True)
@@ -106,7 +115,7 @@ def load_candidate(settings: Settings, path: Path) -> Tuple[str, Settings]:
     if len(raw) > MAX_PROFILE_BYTES:
         raise OperationError("the candidate profile is larger than 64 KiB")
     try:
-        profile = _expand_env(yaml.safe_load(raw) or {})
+        profile = yaml.safe_load(raw) or {}
     except yaml.YAMLError as exc:
         raise OperationError(f"the candidate profile is not valid YAML: {exc}") from exc
     if not isinstance(profile, dict) or not set(profile) <= PROFILE_KEYS:
@@ -117,7 +126,42 @@ def load_candidate(settings: Settings, path: Path) -> Tuple[str, Settings]:
     llm, agents = profile.get("llm") or {}, profile.get("agents") or {}
     if not isinstance(llm, dict) or not isinstance(agents, dict):
         raise OperationError("the candidate profile's llm and agents sections are mappings")
+    llm = dict(llm)
+    if _references_env({**profile, "llm": {k: v for k, v in llm.items() if k != "api_key"}}):
+        raise OperationError(
+            "a candidate profile expands ${...} only in llm.api_key, from a CANDIDATE_ variable "
+            "(never in base_url or anywhere else)"
+        )
+    if "api_key" in llm:
+        llm["api_key"] = _candidate_api_key(llm["api_key"])
     return label, settings.model_copy(update={"llm": _candidate_llm(settings, llm), "agents": _merge(settings.agents, agents)})
+
+
+def _references_env(value: Any) -> bool:
+    if isinstance(value, str):
+        return "${" in value
+    if isinstance(value, Mapping):
+        return any(_references_env(k) or _references_env(v) for k, v in value.items())
+    if isinstance(value, list):
+        return any(_references_env(v) for v in value)
+    return False
+
+
+def _candidate_api_key(value: Any) -> Any:
+    """``${CANDIDATE_X}`` read from the environment (unset: no key); any other reference is refused.
+
+    Only ``CANDIDATE_`` variables, so a profile cannot name a process secret (the JWT secret, production's
+    LLM key) and send it to an endpoint of its choice.
+    """
+    if not isinstance(value, str) or "${" not in value:
+        return value
+    match = _CANDIDATE_KEY_REF.fullmatch(value)
+    if match is None:
+        raise OperationError(
+            "llm.api_key may only reference one environment variable whose name starts with CANDIDATE_, "
+            "e.g. api_key: ${CANDIDATE_API_KEY}"
+        )
+    return _expand_env(value)  # validated above: exactly one ${CANDIDATE_...} reference; unset is no key
 
 
 def _candidate_llm(settings: Settings, override: Mapping[str, Any]) -> LLMSettings:
@@ -135,7 +179,18 @@ def _candidate_llm(settings: Settings, override: Mapping[str, Any]) -> LLMSettin
             "the candidate profile changes the LLM provider or base_url: set its own llm.api_key "
             "(e.g. api_key: ${CANDIDATE_API_KEY})"
         )
+    if moved and _same_secret(candidate.api_key, settings.llm.api_key):
+        raise OperationError(
+            "the candidate's llm.api_key is production's key, and the candidate uses another provider or "
+            "base_url: give the candidate its own key"
+        )
     return candidate
+
+
+def _same_secret(a: Optional[SecretStr], b: Optional[SecretStr]) -> bool:
+    if a is None or b is None:
+        return False
+    return hmac.compare_digest(a.get_secret_value().encode(), b.get_secret_value().encode())
 
 
 async def run_shadow_replay(
