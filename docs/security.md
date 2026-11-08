@@ -404,7 +404,10 @@ incident before retention removes it.
   pinned by digest (see "Pinned inputs and the image CVE gate" below).
   `pip-audit` and Bandit run in CI, Gitleaks on every change and in a weekly
   full-history scan, and Dependabot keeps GitHub Actions, base-image digests,
-  and Python and npm dependencies current.
+  and Python and npm dependencies current. When a dependency may be added,
+  how updates are triaged, and the patch SLAs (critical 7 days, high 14,
+  medium 30, low the next minor release) are in
+  [dependency-policy.md](dependency-policy.md).
 * Both images are scanned with Trivy on every change: a fixable critical or
   high CVE fails CI.
 * Every release carries CycloneDX SBOMs and an OpenVEX document, each with
@@ -420,7 +423,10 @@ incident before retention removes it.
   `Release images` workflow on `main`, and both are recorded in the public
   Rekor transparency log. The signature covers the multi-arch image digest,
   not a tag. A release tag `vX.Y.Z` points at the same digest that `main`
-  built and signed, so it is covered too.
+  built and signed, so it is covered too. So do the release channels
+  (`:partner`, `:lts`, `:lts-X.Y`). The release train moves them only to
+  digests that first pass the same verification as a deploy
+  ([releases.md](releases.md)).
 * Signing runs in its own job. That job checks out no code and runs no build
   step; it only signs the digests that the build job pushed. It is the only
   job in the release path that can request an OIDC token. The images are

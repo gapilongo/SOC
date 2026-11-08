@@ -24,6 +24,7 @@ from tests.deploy._support import DOCKER_DIR, PROD_SECRETS, REPO_ROOT, compose_c
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 RELEASE = WORKFLOWS / "release-images.yml"
 DEPLOY = WORKFLOWS / "deploy.yml"
+TRAIN = WORKFLOWS / "release-train.yml"
 VM = REPO_ROOT / "deploy" / "vm"
 DOCS = REPO_ROOT / "docs" / "cicd.md"
 SCRIPTS = [VM / "bootstrap.sh", VM / "deploy.sh", VM / "backup.sh"]
@@ -54,7 +55,8 @@ def test_images_are_built_only_after_green_ci_on_main_and_promoted_on_tags() -> 
     on = triggers(wf)
     assert on["workflow_run"] == {"workflows": ["CI"], "types": ["completed"], "branches": ["main"]}
     assert on["push"] == {"tags": ["v*.*.*"]}
-    assert set(on) == {"workflow_run", "push"}, "no pull_request trigger: that would expose packages: write"
+    # workflow_dispatch: the release train starts it on the tag it created (docs/releases.md).
+    assert set(on) == {"workflow_run", "push", "workflow_dispatch"}, "no pull_request trigger: that would expose packages: write"
     build_if = wf["jobs"]["build"]["if"]
     for cond in (
         "github.event.workflow_run.conclusion == 'success'",
@@ -178,7 +180,7 @@ def test_ssh_pins_the_host_key() -> None:
     assert cleanup["if"] == "always()" and 'rm -rf "$RUNNER_TEMP/ssh"' in cleanup["run"]
 
 
-@pytest.mark.parametrize("path", [RELEASE, DEPLOY], ids=lambda p: p.name)
+@pytest.mark.parametrize("path", [RELEASE, DEPLOY, TRAIN], ids=lambda p: p.name)
 def test_no_expression_is_interpolated_into_scripts(path: Path) -> None:
     """Secrets, inputs and event data reach scripts only through env: (no injection, no echo)."""
     for job, step in steps(workflow(path)):
