@@ -84,7 +84,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "organisation_members": ("SELECT", "INSERT", "DELETE"),
     # Revoked grants stay (revoked_at): the customer's record of who could act in it.
     "tenant_grants": ("SELECT", "INSERT", "UPDATE (revoked_at, revoked_by)"),
-    # Blind audit (migration 0013): runs are a record; an item is labelled once (a trigger refuses other updates).
+    # Blind audit (migration 0014): runs are a record; an item is labelled once (a trigger refuses other updates).
     "blind_audit_runs": (
         "SELECT",
         "INSERT (tenant_id, window_start, window_end, seed, sample_rate, min_sample, fixed_size, frame_size, "

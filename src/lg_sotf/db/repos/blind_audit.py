@@ -1,4 +1,4 @@
-"""Blind audit runs and items (migration 0013; :mod:`lg_sotf.domain.blind_audit` defines the sampling).
+"""Blind audit runs and items (migration 0014; :mod:`lg_sotf.domain.blind_audit` defines the sampling).
 
 The sampling frame and the draw run in one statement: every alert of the
 frame is ranked by ``md5(seed || ':' || id)`` (ties by id) and the frame's
