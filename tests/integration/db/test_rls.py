@@ -106,9 +106,10 @@ async def test_self_references_cannot_point_into_another_tenant(db: Database, re
     async with db.system_tx() as conn:
         rows = await conn.fetch(
             "SELECT conname FROM pg_constraint WHERE contype = 'f' AND conrelid = ANY($1::regclass[]) "
-            "AND array_length(conkey, 1) = 1 AND confrelid <> 'tenants'::regclass",
+            "AND array_length(conkey, 1) = 1 AND confrelid NOT IN ('tenants'::regclass, 'organisations'::regclass)",
             list(TENANT_TABLES),
         )
+    # organisations is keyed by tenant id like tenants itself; a grant names its organisation on purpose.
     assert rows == [], "every intra-tenant foreign key must include tenant_id"
 
 

@@ -45,6 +45,7 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("sources", "type"): v.SOURCE_TYPES,
     ("sources", "health"): SOURCE_HEALTH,
     ("users", "role"): v.ROLES,
+    ("tenant_grants", "role"): v.ROLES,
     ("api_keys", "scopes"): v.SCOPES,
     ("integrations", "kind"): INTEGRATION_KINDS,
     ("integrations", "min_severity"): v.SEVERITIES,

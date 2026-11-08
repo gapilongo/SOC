@@ -24,10 +24,10 @@ In the web app, **MSSP console** (`/platform`) has four tabs:
   suspended.
 * **Escalation queue**: open and claimed escalations of every tenant, the
   soonest SLA deadline first. Opening one switches to its tenant and shows
-  its escalation queue. Deciding needs an account in that tenant: under a
-  tenant switch, claims, decisions and approvals are refused, because they
-  belong to the customer's analysts (or to your analysts' accounts in that
-  tenant).
+  its escalation queue. Under a platform admin's tenant switch, claims,
+  decisions and approvals are refused, because they belong to the
+  customer's analysts; an MSSP analyst the customer granted access to
+  decides there under the grant (see [Delegated access](#delegated-access-organisations-and-grants)).
 * **Usage**: invoicing figures per tenant for a month, with CSV export.
 * **Create tenant**: id, name, optional first admin, and the initial
   settings (see [Templates](#templates)).
@@ -37,6 +37,132 @@ you act on another tenant, an amber banner says so, every request carries
 `X-Tenant-ID` and is written to that tenant's audit log
 (`platform_admin.tenant_access`), and live updates are off. **Return to ...**
 goes back to your home tenant.
+
+## Delegated access (organisations and grants)
+
+MSSP analysts do not need an account in every customer tenant. Their
+company is an *organisation*: a tenant of its own (its *home tenant*) whose
+staff accounts may act in customer tenants that granted it access.
+
+1. A platform admin makes the MSSP's tenant an organisation:
+   `PUT /platform/organisations/{tenant_id}` with `{"name": ...}`.
+2. An admin of that tenant lists the staff who may use its grants:
+   `PUT /organisation/members/{user_id}` (an account of the home tenant),
+   `DELETE /organisation/members/{user_id}`, `GET /organisation/members`.
+3. A customer's admin gives the organisation a role in their tenant:
+   `POST /tenant/grants` with `organisation_id`, `role`, `reason` and
+   `expires_at` (at most 365 days ahead), and optionally `user_id` to grant
+   one member only and `allow_api_keys` (default `false`) to let the
+   organisation's API keys use a grant to the whole organisation. Any
+   organisation id is accepted, known or not, so the answer reveals nothing
+   about which organisations exist; a grant to an unknown one never works.
+   A tenant can give at most 10 grants a minute. `GET /tenant/grants` lists
+   every grant the tenant gave, revoked and expired ones included; `POST
+   /tenant/grants/{id}/revoke` ends one. A grant row can only be revoked,
+   once: nothing extends or re-opens it, and nothing the organisation does
+   (removing a member, deleting a staff account, erasing its tenant)
+   deletes it. Removing a member is not revocation: their personal grant
+   stops working, but re-adding the same account makes it work again until
+   it expires. Revoke the grant to end it for good.
+4. A member sees where they may act (`GET /organisation/grants`; members
+   and the home tenant's admins of an organisation only, without the
+   customer's `reason`) and acts there by sending `X-Tenant-ID: <customer>`
+   with their own sign-in.
+
+Under a grant the member has the grant's role, never more than their own
+role in the home tenant, and no platform-admin powers (a platform admin who
+is also a member and holds a grant acts under the grant). With the analyst
+role they decide escalations and approve, reject, roll back, retry and
+verify actions within the role's approval authority, and write notes and
+suppression rules. A suppression rule created under a grant names the grant
+(`grant_id`), expires with it at the latest, ends when the grant is revoked
+(in the revocation's transaction), and is ignored by the suppression gate
+once its grant is no longer live. Under a grant only such rules can be
+changed; the customer's own rules cannot be edited or deleted. Nothing
+created or changed under a grant may outlive the grant or act as a customer
+user, so even an admin grant cannot claim an escalation (it assigns it to an
+account of the customer; decide without claiming), create or change
+credentials (users, MFA resets, API keys, grants), or create or change
+channels and settings that would keep working after revocation:
+integrations of every kind (Slack, Teams, email, webhook, ticketing,
+Microsoft), sources (polling, mailboxes) and `PATCH /tenant/settings`. Nor
+can it delete what the customer configured: integrations, sources and
+suppression rules. A
+Slack app recorded as written under a grant never approves or rejects.
+
+Work queued under a grant still runs after the grant ends: actions it
+approved are executed, reprocessing it started finishes, and decisions it
+recorded stand. Revocation stops what the organisation can do next, not what
+it already did; both audit chains record what that was. Rows written under a
+grant leave the customer's user columns empty (`decided_by`, `created_by`):
+the member's account belongs to the organisation's tenant, and the audit log
+names them.
+
+Every audit entry written under a grant is recorded in both chains, in the
+same transaction: in the customer's, with `delegation` (the organisation and
+the grant) in its details, and in the organisation's as
+`delegated.<action>` (for example `delegated.escalation.decided`) with the
+customer, the grant, and the customer entry's id and hash, but never its
+details. Either side can show the other's entry exists and is unchanged.
+Reads are recorded the same way: each request's `grant.tenant_access` in the
+customer's chain has its `delegated.grant.tenant_access` in the
+organisation's. Under a grant, `GET /audit` hides the customer's grant
+register (`grant.*` entries) and other organisations' `delegation` details
+(such an entry carries `redacted: true` and no longer matches its hash;
+verify the chain with `GET /audit/verify`). Known limit: the evidence pack
+of an alert still shows the `delegation` details of its audit entries,
+other organisations' included, to anyone who can read it under a grant;
+redacting it is a follow-up story. The grant is read
+on every request: a revoked or expired grant, a removed member or a
+suspended customer gets 403 on the next request. Every request is written to
+the customer's audit log (`grant.tenant_access`, with the grant and the
+organisation). Giving and revoking a grant is recorded in both chains: the
+customer's (`grant.created`, `grant.revoked`) and the organisation's
+(`grant.received`, `grant.revoked`).
+
+Live updates, automation and MCP work under grants too:
+
+* **WebSocket**: `GET /ws?token=...&tenant=<customer>` streams the customer
+  tenant's events to a member holding a grant (browsers cannot set
+  `X-Tenant-ID` on a socket). The grant is re-checked every
+  `api.ws_revalidate_s`; a revoked or expired grant closes the socket with
+  1008, and so does a suspension of the organisation's own tenant. Nobody
+  else may name another tenant, platform admins included.
+* **API keys**: an API key of the organisation's home tenant acts with
+  `X-Tenant-ID` under a grant to the whole organisation (never one given to
+  a single member) only when the customer set `allow_api_keys`, and only
+  while the member who created the key is still a member with an active
+  account (removing, disabling or deleting them disables the key there).
+  Its scopes are capped by the lower of the grant's role and its creator's
+  current role: `read` for viewer, `read` and `write` for analyst and admin,
+  never `ingest`. Keys still never decide, approve or
+  administer. API keys do not expire on their own; a key acting under a
+  grant stops with the grant.
+* **MCP**: `LG_SOTF_MCP__TENANT_ID` pins `lg-sotf mcp` to one customer: every
+  call carries `X-Tenant-ID`. It is configuration, not a tool argument, so
+  nothing the model reads (an alert, a note) can point the server at another
+  tenant. Run one MCP server per customer.
+
+`tests/integration/api/test_cross_tenant_leak.py` checks the boundary on
+every release: every operation of the API contract (with minimal valid
+bodies built from the contract), the evidence pack as HTML, every MCP tool,
+both WebSocket paths and a validly signed Slack click, called by
+organisation members and keys with and without a grant, revoked and expired
+grant holders, a non-member of the organisation, a suspended organisation,
+the victim's own grantees and another customer, never return a victim
+tenant's data, answer anything but 403 where they must be refused, or change
+its rows. `test_grant_security_review.py` holds the security review's
+findings.
+
+Grants belong to the customer. Only the customer's own admin accounts give,
+list and revoke them: never someone acting under a grant, and a platform
+admin's `X-Tenant-ID` may list them but not give or revoke one. Row-level
+security enforces the same split: the organisation can read its own grants
+and nothing else, and cannot create, extend or revoke one.
+
+The platform admin's tenant override (below) is unchanged and stays
+separate: it is not expressed as a grant, it keeps the admin's own role, and
+it still cannot claim or decide.
 
 ## API
 

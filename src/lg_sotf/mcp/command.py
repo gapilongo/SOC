@@ -118,6 +118,7 @@ async def _main(settings: Settings, api_key: str) -> None:
         timeout_s=cfg.timeout_s,
         max_retries=cfg.max_retries,
         max_response_bytes=cfg.max_response_bytes,
+        tenant_id=cfg.tenant_id,
     )
     try:
         await run_stdio(McpServer(api, max_output_chars=cfg.max_output_chars))

@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 from uuid import UUID
 
-from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger, acting_under_grant, written_under_grant
 from lg_sotf.db.repos import Repositories, SuppressionRule
 
 RESOURCE = "suppression_rule"
@@ -34,8 +34,9 @@ async def create_rule(
 ) -> SuppressionRule:
     """Create a rule (audited ``suppression.created`` with the matched field names, never their values)."""
     async with repos.db.tenant_tx(tenant_id) as conn:
+        bound = written_under_grant(tenant_id, expires_at)  # under an MSSP grant: expires with the grant
         rule = await repos.suppressions.create(
-            tenant_id, name, match, created_by=created_by, expires_at=expires_at, enabled=enabled, conn=conn
+            tenant_id, name, match, created_by=created_by, enabled=enabled, conn=conn, **bound
         )
         await audit.record(
             tenant_id,
@@ -66,6 +67,9 @@ async def update_rule(
 ) -> SuppressionRule:
     """Apply ``changes`` (repository column values); audited ``suppression.updated`` with the field names."""
     async with repos.db.tenant_tx(tenant_id) as conn:
+        if acting_under_grant(tenant_id):  # a rule changed under an MSSP grant expires with the grant
+            current = await repos.suppressions.get(tenant_id, rule_id, conn=conn)
+            changes = {**changes, **written_under_grant(tenant_id, changes.get("expires_at", current.expires_at))}
         rule = await repos.suppressions.update(tenant_id, rule_id, **changes, conn=conn)
         await audit.record(
             tenant_id,

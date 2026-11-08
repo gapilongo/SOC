@@ -53,7 +53,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import ValidationError
 
-from lg_sotf.api.auth.deps import ADMIN, require
+from lg_sotf.api.auth.deps import ADMIN, ADMIN_NOT_UNDER_GRANT, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
@@ -395,7 +395,7 @@ async def get_settings(request: Request, principal: Principal = Depends(require(
 async def patch_settings(
     request: Request,
     body: Dict[str, Any] = Body(..., examples=[{"autonomy": {"low": "auto"}, "llm_daily_token_budget": 2_000_000}]),
-    principal: Principal = Depends(require(ADMIN)),
+    principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT)),
 ) -> TenantSettingsOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id

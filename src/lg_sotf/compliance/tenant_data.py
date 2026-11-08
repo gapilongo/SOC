@@ -159,6 +159,10 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
         "llm_usage_daily.jsonl", "llm_usage_daily", "*", (("day", "date"), ("model", "text"), ("agent", "text"))
     ),
     ExportTable("audit_log.jsonl", "audit_log", "*", _ID_BIGINT),
+    # Delegated access: the organisations this tenant let act in it (and, for an MSSP, its own members).
+    ExportTable("tenant_grants.jsonl", "tenant_grants", "*", _ID_UUID),
+    ExportTable("organisations.jsonl", "organisations", "*", (("tenant_id", "text"),)),
+    ExportTable("organisation_members.jsonl", "organisation_members", "*", (("user_id", "uuid"),)),
     # Indicator values as displayed (IPs, emails, user and host names) seen on each alert: personal data.
     ExportTable(
         "indicator_sightings.jsonl",

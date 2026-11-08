@@ -243,7 +243,9 @@ sign in (read-only work, notes) but cannot decide or approve.
 
 A token cannot make anyone a platform admin, whatever its claims and even if
 it is linked to a local platform-admin account: the OIDC principal always has
-`is_platform_admin: false`, and `X-Tenant-ID` overrides are refused. JIT
+`is_platform_admin: false`, and the platform-admin `X-Tenant-ID` override is
+refused (a provisioned SSO account that is a member of an MSSP organisation
+may still act under a grant, see docs/mssp.md). JIT
 provisioning never sets the flag. Platform admins sign in with a local
 account, protected by MFA (required by default in staging and production).
 
