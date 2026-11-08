@@ -8,7 +8,20 @@ per-item report committed next to it.
 
 | Scorecard | Model | Data | Status |
 |---|---|---|---|
-| [v1, qwen2.5 7B on Ollama](v1/qwen2.5-7b/scorecard.md) | `qwen2.5:7b` (local, Ollama) | synthetic and phishing sets | baseline |
+| [v2, DeepSeek V4](v2/deepseek-v4/scorecard.md) ([RUN.md](v2/deepseek-v4/RUN.md)) | DeepSeek V4, open weights under MIT: `deepseek-flash` (fast) and `deepseek-v4-pro` (deep), measured through the hosted API | `corpus_v1`, 520 generated Wazuh alerts (synthetic) | **current** |
+| [v1, qwen2.5 7B on Ollama](v1/qwen2.5-7b/scorecard.md) | `qwen2.5:7b` (local, Ollama) | synthetic and phishing sets (103 hand-written alerts) | history |
+
+**v2 in one line.**
+* **Misses.** 0 of 208 malicious alerts were closed without a human (95% CI
+  0.0% to 1.8%).
+* **Closes.** 0 of 312 benign alerts were closed by automation. Every benign
+  alert went to an analyst or to an approval request: 33 (10.6%) got a
+  response plan, and none of its actions ran.
+* **Cost.** $1.47 for the run.
+
+[RUN.md](v2/deepseek-v4/RUN.md) traces which routing gate held each benign
+alert and lists the changes to test next. A self-hosted copy of the weights
+is how a client runs this model; customer data never goes to the hosted API.
 
 ## Generating one
 
@@ -28,8 +41,10 @@ lg-sotf eval-scorecard synthetic.json phishing.json \
 * `--note` adds a limitation line (repeatable): the hardware, a subset, a
   known problem in the run.
 * `--internal` marks the scorecard **internal only**. It is automatic for
-  DeepSeek models: DeepSeek may be run on the synthetic sets for internal
-  comparison, and its results are never published.
+  a DeepSeek model whenever any dataset is not marked synthetic, because the
+  hosted API is in China and customer data must never go there. A DeepSeek
+  run on synthetic data only is publishable: no customer data was sent,
+  and the open weights can be self-hosted.
 
 The command reads files only; it needs no database or model.
 
@@ -66,13 +81,19 @@ Every scorecard has the same sections, in this order.
 
 ## Reading the intervals
 
-The shipped sets are small (35 and 24 expected-malicious items). With 0
-misses out of 35, the 95% interval still reaches 9.9%: the data cannot show
-that the true miss rate is below 1 in 10. Treat two scorecards as different
+The hand-written sets are small (35 and 24 expected-malicious items). With
+0 misses out of 35, the 95% interval still reaches 9.9%: the data cannot
+show that the true miss rate is below 1 in 10. `corpus_v1` has 208
+malicious items, so 0 misses bound the rate below 1.8%. Treat two scorecards as different
 only when their intervals do not overlap, and gate releases on the per-item
 results (`--thresholds`, `--baseline`), not on a scorecard.
 
-## Reproducing v1
+## Reproducing a scorecard
+
+`v2/deepseek-v4/` holds the eval report (`corpus_v1.json`), the scorecard,
+its JSON form and [RUN.md](v2/deepseek-v4/RUN.md).
+`tests/unit/eval/test_scorecard_v2.py` regenerates the scorecard from the
+committed report and fails if they disagree.
 
 `v1/<model>/` holds the two eval reports, the scorecard and its JSON form.
 `tests/unit/eval/test_scorecard_v1.py` regenerates the scorecard from the

@@ -108,8 +108,11 @@ Full list in the [changelog](CHANGELOG.md).
   image ([docs](docs/security.md#pinned-inputs-and-the-image-cve-gate)).
 * **Accuracy measured on a real model**: `lg-sotf eval-scorecard` turns
   evaluation runs into a one-page scorecard, false-negative rate first. The
-  first one is a local `qwen2.5:7b` on the synthetic and phishing sets
-  ([scorecard](docs/scorecards/v1/qwen2.5-7b/scorecard.md),
+  current one is DeepSeek V4 (open weights) on 520 generated Wazuh alerts:
+  0 of 208 malicious alerts closed without a human, and 0 of 312 benign
+  alerts closed by automation either
+  ([scorecard](docs/scorecards/v2/deepseek-v4/scorecard.md),
+  [why](docs/scorecards/v2/deepseek-v4/RUN.md),
   [how to read it](docs/scorecards/README.md)).
 * **Confidence intervals on every rate**: evaluation reports, scorecards and
   the Reports pages show each rate with its sample size and a 95% Wilson
@@ -547,13 +550,22 @@ to evaluate a real model ([docs/evaluation.md](docs/evaluation.md)).
 Every rate comes with its sample size and a 95% Wilson interval.
 
 `lg-sotf eval-scorecard` turns the reports of one model configuration into
-a one-page scorecard. The first baseline is a local `qwen2.5:7b` (Ollama) on
-the synthetic and phishing sets. It closed none of the 35 and 24
-expected-malicious items without a human, but with samples this small the
-95% upper bounds on the miss rate are still 9.9% and 13.8%. Read
-[the scorecard](docs/scorecards/v1/qwen2.5-7b/scorecard.md) and
-[how to read it](docs/scorecards/README.md). It is measured on synthetic
-data, not on customer alerts.
+a one-page scorecard.
+[Scorecard v2](docs/scorecards/v2/deepseek-v4/scorecard.md) runs DeepSeek V4
+(open weights under MIT, measured through the hosted API) on the 520 generated
+Wazuh alerts of the attack-emulation corpus.
+* **No misses.** It closed none of the 208 malicious alerts without a human,
+  which bounds the miss rate below 1.8% (95%).
+* **No benign closes either.** It also closed none of the 312 benign alerts.
+  Every one went to an analyst or to an approval request, so on this corpus
+  automation saves no analyst time yet.
+* **Why.** [RUN.md](docs/scorecards/v2/deepseek-v4/RUN.md) traces it to the
+  routing gates and to the replay, not to the model.
+
+The earlier v1 baseline, a local `qwen2.5:7b` on the small hand-written sets,
+is [kept for history](docs/scorecards/v1/qwen2.5-7b/scorecard.md). Read
+[how to read a scorecard](docs/scorecards/README.md). Both are measured on
+synthetic data, not on customer alerts.
 
 ## Development
 

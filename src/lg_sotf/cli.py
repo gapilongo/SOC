@@ -448,7 +448,11 @@ def eval_command(
 @click.option("--title", default=None, help="Title (default: 'Scorecard v1: <fast model>').")
 @click.option("--prompt-version", default=None, help="Prompt version or hashes, when the reports do not record them.")
 @click.option("--note", "notes", multiple=True, help="An extra limitation to list (repeatable), e.g. the hardware.")
-@click.option("--internal", is_flag=True, help="Mark the scorecard internal only (automatic for DeepSeek models).")
+@click.option(
+    "--internal",
+    is_flag=True,
+    help="Mark the scorecard internal only (automatic for DeepSeek models on data that is not synthetic).",
+)
 def eval_scorecard(
     reports: List[str],
     output: str,
