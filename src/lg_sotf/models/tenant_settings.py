@@ -44,6 +44,8 @@ class TenantSettingsDoc(TypedDict, total=False):
     security: Dict[str, Any]
     reporting: Dict[str, Any]
     phishing: Dict[str, Any]
+    #: Triage context (``known_scanners``; lg_sotf.domain.benign_evidence).
+    triage: Dict[str, Any]
     #: Set when the tenant's data was erased (compliance.tenant_data); never editable.
     erased_at: str
 
@@ -65,6 +67,7 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
         "security",
         "reporting",
         "phishing",
+        "triage",
     }
 )
 

@@ -7,9 +7,14 @@ Rule evidence comes from specific fields, never from a substring search over
 the whole serialised alert:
 
 * False-positive signals can close low/medium alerts, so they come only from
-  fields the attacker does not write: whole words of the detection title and
-  rule name, and environment tags in the configured source id. Raw event
-  fields, dict keys and command lines never produce them.
+  what the attacker does not write (:mod:`lg_sotf.domain.benign_evidence`):
+  words of the detection rule's name with every attacker-named value masked
+  out, an alert whose only file hashes are the EICAR test file's, one of the
+  tenant's configured scanners among the entities, and environment tags in
+  the configured source id. The title never produces them: integrations
+  build it from the names of the objects involved, and the attacker names
+  those ("Scheduled task created: Windows Update Test"). Raw event fields,
+  dict keys and command lines never produce them either.
 * True-positive signals may also use the description, category, MITRE tags,
   process names and command lines (entities and well-known raw fields), again
   as whole words. Because an attacker writes those fields, their words raise
@@ -48,7 +53,8 @@ raise the full rules score (like description keywords, never the trusted
 score), and the one benign signal (an internal sender whose SPF, DKIM and
 DMARC all pass) lowers both. Injected text voids the benign signal. The
 subject is in an email alert's title, so the alert is flagged
-``title_from_message`` and its title gives no keyword evidence.
+``title_from_message`` and neither its title nor its rule name gives keyword
+evidence.
 
 Cost: the LLM is called only when the rule score is in the ambiguous band.
 When the rules alone would close the alert (routing's obvious-false-positive
@@ -71,6 +77,7 @@ from pydantic import BaseModel, Field
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult, refusal_digest
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain import routing
+from lg_sotf.domain.benign_evidence import KnownScanners, attacker_values, detector_words, eicar_only
 from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.registry import register_prompt
@@ -88,10 +95,8 @@ TP_KEYWORD_WEIGHTS: Dict[str, int] = {
     "suspicious": 15,
     "anomaly": 10,
 }
-FP_KEYWORD_WEIGHTS: Dict[str, int] = {"test": -30, "scheduled": -20, "maintenance": -25}
-FP_KEYWORDS = ("test", "testing", "scheduled", "maintenance", "update", "backup", "scan", "health_check", "monitoring")
-# Tokens keep path and extension characters so "maintenance.exe" or "C:\\test\\x" never read as a word.
-_WORD_RE = re.compile(r"[a-z0-9_.\\/:-]+")
+FP_KEYWORD_WEIGHTS: Dict[str, int] = {"test": -30, "selftest": -30, "scheduled": -20, "maintenance": -25}
+FP_KEYWORDS = ("test", "testing", "selftest", "scheduled", "maintenance", "update", "backup", "scan", "health_check", "monitoring")
 # True-positive evidence is matched on plain alphanumeric words ("mimikatz.exe" -> "mimikatz", "exe").
 _TP_WORD_RE = re.compile(r"[a-z0-9]+")
 _SOURCE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
@@ -123,6 +128,9 @@ TP_TEXT_FIELDS = ("title", "rule_name", "description", "category")
 TP_RAW_FIELDS = ("process_name", "command_line", "commandline", "cmdline", "CommandLine", "parent_process", "image")
 MAX_TP_TEXT_CHARS = 8_000
 INJECTION_SIGNAL = "prompt_injection_suspected"
+# False-positive signals that come from content or configuration, not text (lg_sotf.domain.benign_evidence).
+EICAR_SIGNAL = "eicar_test_file"
+SCANNER_SIGNAL = "known_scanner"
 MAX_INJECTION_SCAN_CHARS = 32_000
 MAX_INJECTION_SCAN_DEPTH = 8
 # Heuristic markers of text written to steer a language model: extra true-positive evidence only.
@@ -265,15 +273,15 @@ def _untrusted_title(alert: Mapping[str, Any]) -> bool:
 
 
 def trusted_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
-    """Whole words of the detection title and rule name (the fields FP signals may come from).
+    """Words of the detection rule name, attacker-named values masked (the only text FP signals come from).
 
-    Empty for an LLM-normalised alert (a model chose those fields from
-    attacker-shaped text) and for an email alert (the title is the subject).
+    Never the title (see :mod:`lg_sotf.domain.benign_evidence`). Empty for an
+    LLM-normalised alert (a model chose those fields from attacker-shaped
+    text) and for an email alert (the title is the subject).
     """
     if _untrusted_title(alert):
         return frozenset()
-    text = " ".join(str(alert.get(k) or "") for k in TRUSTED_TEXT_FIELDS).lower()
-    return frozenset(t.strip(".:-") for t in _WORD_RE.findall(text))
+    return detector_words(alert.get("rule_name"), attacker_values(alert))
 
 
 def trusted_evidence_words(alert: Mapping[str, Any]) -> FrozenSet[str]:
@@ -362,6 +370,8 @@ def _score(alert: Mapping[str, Any], tp_words: FrozenSet[str], injected: bool, e
     score += sum(weight for keyword, weight in FP_KEYWORD_WEIGHTS.items() if keyword in words)
     if source_environment(alert) is not None:
         score -= 25
+    if eicar_only(alert):
+        score -= 25
     occurred = _parse_time(alert.get("occurred_at"))
     if occurred is not None and (occurred.hour < 6 or occurred.hour >= 18):
         score += 5
@@ -394,17 +404,24 @@ def trusted_rule_confidence(alert: Mapping[str, Any], *, phishing: Optional[Phis
 
 
 def rule_indicators(
-    alert: Mapping[str, Any], *, phishing: Optional[PhishingAssessment] = None
+    alert: Mapping[str, Any],
+    *,
+    phishing: Optional[PhishingAssessment] = None,
+    scanners: Optional[KnownScanners] = None,
 ) -> Tuple[List[str], List[str]]:
     raw = _raw(alert)
     words = trusted_words(alert)
     evidence = evidence_words(alert)
     injected = injection_suspected(alert)
     signals = _email_signals(phishing, injected)
-    # Injected text voids false-positive evidence taken from text; the configured source id still counts.
+    # Injected text voids false-positive evidence taken from text; the source id, hashes and configuration still count.
     fp = [f"{k}_detected" for k in FP_KEYWORDS if k in words] if not injected else []
     if source_environment(alert) is not None:
         fp.append("test_environment")
+    if eicar_only(alert):
+        fp.append(EICAR_SIGNAL)
+    if scanners is not None and scanners.matches(alert):
+        fp.append(SCANNER_SIGNAL)
     if signals is not None:
         fp += signals.fp
 
@@ -529,26 +546,37 @@ class TriageAgent(BaseAgent):
             return await self._run(ctx, alert)
 
     @staticmethod
-    async def phishing(ctx: AgentContext, alert: Mapping[str, Any]) -> Optional[PhishingAssessment]:
+    async def tenant_settings(ctx: AgentContext, alert: Mapping[str, Any]) -> Mapping[str, Any]:
+        """The tenant's settings, read only when the alert can use them (an email, or host or IP entities)."""
+        entities = alert.get("entities")
+        located = isinstance(entities, Mapping) and bool(entities.get("hosts") or entities.get("ips"))
+        wanted = isinstance(alert.get("email"), Mapping) or located
+        if ctx.repos is None or not wanted:
+            return {}
+        try:
+            return (await ctx.repos.tenants.get(ctx.tenant_id)).settings or {}
+        except NotFound:
+            return {}
+
+    @staticmethod
+    def phishing(
+        ctx: AgentContext, alert: Mapping[str, Any], tenant_settings: Mapping[str, Any]
+    ) -> Optional[PhishingAssessment]:
         """Phishing signals for an email alert against the tenant's profile; ``None`` for other alerts."""
         section = alert.get("email")
         if not isinstance(section, Mapping):
             return None
-        tenant_settings: Mapping[str, Any] = {}
-        if ctx.repos is not None:
-            try:
-                tenant_settings = (await ctx.repos.tenants.get(ctx.tenant_id)).settings or {}
-            except NotFound:
-                tenant_settings = {}
         profile = PhishingProfile.from_settings(tenant_settings, ctx.settings.tools)
         return _email_signals(assess(section, profile), injection_suspected(alert))
 
     async def _run(self, ctx: AgentContext, alert: Mapping[str, Any]) -> TriageResult:
         thresholds = RoutingThresholds.from_settings(ctx.settings.routing)
-        phishing = await self.phishing(ctx, alert)
+        tenant_settings = await self.tenant_settings(ctx, alert)
+        phishing = self.phishing(ctx, alert, tenant_settings)
         base = rule_confidence(alert, phishing=phishing)
         trusted = trusted_rule_confidence(alert, phishing=phishing)
-        rule_fp, rule_tp = rule_indicators(alert, phishing=phishing)
+        scanners = KnownScanners.from_settings(tenant_settings)
+        rule_fp, rule_tp = rule_indicators(alert, phishing=phishing, scanners=scanners)
         severity = str(alert.get("severity", "medium")).lower()
         decisive = decisive_reason(severity, base, rule_fp, rule_tp, ctx.settings.routing, trusted=trusted)
         llm: LLMResult[TriageAssessment]

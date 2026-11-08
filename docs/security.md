@@ -19,6 +19,9 @@ Two companion documents:
   reverse proxy.
 * [invariants.md](invariants.md) lists the safety invariants, each with the
   tests that prove it; section 11 explains how to check them on your install.
+* [ai-system-card.md](ai-system-card.md) is the AI system card: the models
+  and where they run, what the AI decides and what people decide, the
+  evaluation evidence and its limits, and the EU AI Act and NIS2 mapping.
 
 ## 1. Threat model
 
@@ -233,8 +236,15 @@ close a dangerous alert or trigger containment.
    false-positive signals taken from alert text are voided, a
    `prompt_injection_suspected` true-positive signal is added, and the rule
    score cannot corroborate an automatic response.
-4. **Rules decide what text cannot.** False-positive keywords count only from
-   the detection title and rule name, not from descriptions or command lines.
+4. **Rules decide what text cannot.** False-positive evidence comes only from
+   what the attacker cannot write: words of the detection rule's name (with
+   quoted spans and every attacker-named value masked out), an alert whose
+   only file hashes are the EICAR test file's, a host or address the tenant
+   lists in `triage.known_scanners`, and test-like tags in the configured
+   source id. Never from the title (integrations build it from the names of
+   the objects involved, and the attacker names those: "Scheduled task
+   created: Windows Update Test"), descriptions, entity names, command lines,
+   user agents or email subjects (AI-E6.3, `lg_sotf.domain.benign_evidence`).
    A low/medium benign close needs rule corroboration in addition to the
    model. The routing policy chooses to plan a response from the threat
    score; what then runs automatically is decided per action: automatic

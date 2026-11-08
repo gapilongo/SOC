@@ -109,13 +109,16 @@ INVARIANTS: Tuple[Invariant, ...] = (
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2"),
-        code=("src/lg_sotf/domain/routing.py",),
+        code=("src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/benign_evidence.py"),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
             "tests/unit/domain/test_routing.py::test_decide_never_closes_high_severity",
             "tests/unit/domain/test_routing.py::test_decide_closes_only_with_rule_corroboration",
             "tests/unit/domain/test_routing.py::test_attacker_controlled_fp_words_never_close_high_severity",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
+            "tests/unit/agents/test_title_camouflage.py::"
+            "test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules",
+            "tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence",
         ),
         checks=("routing_policy",),
         metric="high_severity_auto_closed_benign",

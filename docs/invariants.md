@@ -66,7 +66,7 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
 * **Status:** enforced
 * **Owner epic:** AI-E6
 * **Threats:** TM-WRK-1, TM-WRK-2
-* **Enforced in:** `src/lg_sotf/domain/routing.py`
+* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/benign_evidence.py`
 * **Runtime checks:** `routing_policy`
 * **Evaluation metric:** `high_severity_auto_closed_benign`
 * **Proved by:**
@@ -75,6 +75,8 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/domain/test_routing.py::test_decide_closes_only_with_rule_corroboration`
   * `tests/unit/domain/test_routing.py::test_attacker_controlled_fp_words_never_close_high_severity`
   * `tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert`
+  * `tests/unit/agents/test_title_camouflage.py::test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules`
+  * `tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence`
 
 ## INV-04: Every LLM call records its prompt hash and model id
 
