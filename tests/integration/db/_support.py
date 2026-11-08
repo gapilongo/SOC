@@ -64,6 +64,9 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 ALL_TABLES = (
     "investigation_steps",
+    "tenant_grants",
+    "organisation_members",
+    "organisations",
     "external_tickets",
     "notification_outbox",
     "integrations",
@@ -147,6 +150,9 @@ TENANT_TABLES = (
     "notification_outbox",
     "external_tickets",
     "investigation_steps",
+    "organisations",
+    "organisation_members",
+    "tenant_grants",
 )
 
 
@@ -197,5 +203,14 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         tenant_id, alert_id, f"{tenant_id}:{alert_id}",
         [NewTraceStep(agent="analysis", kind="tool", tool="history", input_hash=sha256_hex("in"), outcome="success",
                       started_at=now)],
+    )
+    # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
+    await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")
+    await repos.organisations.add_member(tenant_id, user.id)
+    mssp = f"{tenant_id}-mssp"
+    await repos.tenants.provision(mssp, "Another MSSP")
+    await repos.organisations.upsert(mssp, "Another MSSP")
+    await repos.grants.create(
+        tenant_id, mssp, "analyst", reason="seed", created_by="seed", expires_at=now + timedelta(days=1)
     )
     return alert_id

@@ -334,7 +334,7 @@ class EscalationsRepo(Repository):
         escalation_id: str,
         *,
         decision: str,
-        decided_by: UUID,
+        decided_by: Optional[UUID],
         expected_version: int,
         notes: Optional[str] = None,
         approved_actions: Sequence[str] = (),

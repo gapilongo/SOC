@@ -981,6 +981,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/organisation/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The tenants your organisation may act in */
+        get: operations["organisation_grants_api_v1_organisation_grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisation/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Staff who may act under the grants */
+        get: operations["list_members_api_v1_organisation_members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/organisation/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Add a staff account */
+        put: operations["add_member_api_v1_organisation_members__user_id__put"];
+        post?: never;
+        /** Remove a staff account (its grants stop working) */
+        delete: operations["remove_member_api_v1_organisation_members__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/escalations": {
         parameters: {
             query?: never;
@@ -991,6 +1043,23 @@ export interface paths {
         /** Open and claimed escalations of every tenant, soonest SLA first */
         get: operations["list_escalations_api_v1_platform_escalations_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/platform/organisations/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Make a tenant an MSSP organisation */
+        put: operations["save_organisation_api_v1_platform_organisations__tenant_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1259,6 +1328,46 @@ export interface paths {
         head?: never;
         /** Update or enable/disable a rule */
         patch: operations["update_rule_api_v1_suppressions__rule_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/tenant/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every grant this tenant gave (revoked included) */
+        get: operations["list_grants_api_v1_tenant_grants_get"];
+        put?: never;
+        /**
+         * Give an MSSP organisation a role here
+         * @description Any organisation id is accepted, known or not (the answer reveals nothing about which exist); a grant
+         *     to an unknown organisation, or naming someone who is not a member, simply never works.
+         *     ``allow_api_keys`` lets the organisation's API keys use a grant to the whole organisation.
+         */
+        post: operations["create_grant_api_v1_tenant_grants_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenant/grants/{grant_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke a grant (effective at once) */
+        post: operations["revoke_grant_api_v1_tenant_grants__grant_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/tenant/llm/test": {
@@ -2259,6 +2368,11 @@ export interface components {
             id: number;
             /** Prev Hash */
             prev_hash?: string | null;
+            /**
+             * Redacted
+             * @default false
+             */
+            redacted?: boolean;
             /** Resource Id */
             resource_id?: string | null;
             /** Resource Type */
@@ -3116,6 +3230,87 @@ export interface components {
             /** Verdict */
             verdict: string;
         };
+        /** GrantIn */
+        GrantIn: {
+            /**
+             * Allow Api Keys
+             * @description Let the organisation's API keys (whose creator is a member) use this grant; never for a grant to one member.
+             * @default false
+             */
+            allow_api_keys?: boolean;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description In the future, at most 365 days ahead.
+             */
+            expires_at: string;
+            /**
+             * Organisation Id
+             * @description The organisation's home tenant id.
+             */
+            organisation_id: string;
+            /**
+             * Reason
+             * @description Why, e.g. a contract or ticket reference.
+             */
+            reason: string;
+            /**
+             * Role
+             * @description The role its staff get in this tenant (never above their own role).
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
+            /**
+             * User Id
+             * @description Grant one member of the organisation only.
+             */
+            user_id?: string | null;
+        };
+        /** GrantOut */
+        GrantOut: {
+            /**
+             * Allow Api Keys
+             * @default false
+             */
+            allow_api_keys?: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /** Reason */
+            reason: string;
+            /** Revoked At */
+            revoked_at?: string | null;
+            /** Revoked By */
+            revoked_by?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
+            /**
+             * Tenant Id
+             * @description The customer tenant the grant opens.
+             */
+            tenant_id: string;
+            /** User Id */
+            user_id?: string | null;
+        };
         /**
          * GuardrailOut
          * @description Guardrail verdict: checked now for an action awaiting approval, as recorded for a blocked one.
@@ -3145,6 +3340,46 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeldGrantOut
+         * @description A grant as the organisation sees it: no ``reason`` (free text the customer controls).
+         */
+        HeldGrantOut: {
+            /**
+             * Allow Api Keys
+             * @default false
+             */
+            allow_api_keys?: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
+            /**
+             * Tenant Id
+             * @description The customer tenant the grant opens.
+             */
+            tenant_id: string;
+            /** User Id */
+            user_id?: string | null;
         };
         /** IncidentReportIn */
         IncidentReportIn: {
@@ -3406,6 +3641,8 @@ export interface components {
             email?: string | null;
             /** Expires At */
             expires_at?: string | null;
+            /** Grant Id */
+            grant_id?: string | null;
             /** Home Tenant Id */
             home_tenant_id: string;
             /**
@@ -3428,6 +3665,23 @@ export interface components {
             tenant_name?: string | null;
             /** User Id */
             user_id?: string | null;
+        };
+        /** MemberOut */
+        MemberOut: {
+            /** Added By */
+            added_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
         };
         /**
          * MfaChallengeOut
@@ -3730,6 +3984,26 @@ export interface components {
             done: boolean;
             /** Id */
             id: string;
+        };
+        /** OrganisationIn */
+        OrganisationIn: {
+            /** Name */
+            name: string;
+        };
+        /** OrganisationOut */
+        OrganisationOut: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Name */
+            name: string;
+            /**
+             * Tenant Id
+             * @description The organisation's home tenant: its staff accounts and its audit chain.
+             */
+            tenant_id: string;
         };
         /** PageOut[ActionOut] */
         PageOut_ActionOut_: {
@@ -6868,6 +7142,106 @@ export interface operations {
             };
         };
     };
+    organisation_grants_api_v1_organisation_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeldGrantOut"][];
+                };
+            };
+        };
+    };
+    list_members_api_v1_organisation_members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"][];
+                };
+            };
+        };
+    };
+    add_member_api_v1_organisation_members__user_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_member_api_v1_organisation_members__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_escalations_api_v1_platform_escalations_get: {
         parameters: {
             query?: {
@@ -6888,6 +7262,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PageOut_PlatformEscalationOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_organisation_api_v1_platform_organisations__tenant_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganisationIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganisationOut"];
                 };
             };
             /** @description Validation Error */
@@ -7626,6 +8035,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SuppressionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_grants_api_v1_tenant_grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"][];
+                };
+            };
+        };
+    };
+    create_grant_api_v1_tenant_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_grant_api_v1_tenant_grants__grant_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                grant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GrantOut"];
                 };
             };
             /** @description Validation Error */

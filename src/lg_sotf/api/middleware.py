@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable, Dict, List, MutableMapping, Optiona
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from lg_sotf.api.errors import BodyTooLarge, error_body
+from lg_sotf.audit.logger import act_under_grant
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_http_request
 
@@ -103,6 +104,7 @@ class RequestContextMiddleware:
         scope.setdefault("state", {})["request_id"] = rid
         started = time.perf_counter()
         status_holder = {"status": 0, "started": False}
+        act_under_grant(None)  # every request starts outside any grant; authentication sets one
 
         async def send_wrapper(message: Message) -> None:
             if message["type"] == "http.response.start":

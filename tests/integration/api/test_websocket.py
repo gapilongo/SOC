@@ -4,56 +4,26 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
-import socket
 from datetime import UTC, datetime, timedelta
-from typing import Any, AsyncIterator, Dict
+from typing import Any, AsyncIterator
 
 import pytest
 import pytest_asyncio
-import uvicorn
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from lg_sotf.queue.events import make_event
 from tests.integration.api._support import PASSWORD, TENANT_A, TENANT_B, UI_ORIGIN, ApiHarness
+from tests.integration.api._support import recv_json as _recv
+from tests.integration.api._support import serve_api as _serving
 
 pytestmark = pytest.mark.integration
-
-
-class _Server(uvicorn.Server):
-    def install_signal_handlers(self) -> None:  # pragma: no cover - uvicorn API differs by version
-        pass
 
 
 @pytest_asyncio.fixture
 async def served(api: ApiHarness) -> AsyncIterator[str]:
     async with _serving(api) as url:
         yield url
-
-
-@contextlib.asynccontextmanager
-async def _serving(api: ApiHarness) -> AsyncIterator[str]:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    server = _Server(uvicorn.Config(api.app, lifespan="off", log_config=None, access_log=False))
-    task = asyncio.create_task(server.serve(sockets=[sock]))
-    while not server.started:
-        if task.done():
-            task.result()
-        await asyncio.sleep(0.01)
-    try:
-        yield f"ws://127.0.0.1:{port}"
-    finally:
-        server.should_exit = True
-        await asyncio.wait_for(task, timeout=10)
-        sock.close()
-
-
-async def _recv(ws: Any, wait_s: float = 3.0) -> Dict[str, Any]:
-    return json.loads(await asyncio.wait_for(ws.recv(), wait_s))
 
 
 async def test_stream_delivers_only_the_principals_tenant(api: ApiHarness, served: str) -> None:

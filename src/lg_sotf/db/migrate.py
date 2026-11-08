@@ -79,6 +79,11 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "notification_outbox": ("SELECT", "INSERT", "UPDATE"),
     "external_tickets": ("SELECT", "INSERT", "UPDATE"),
     "investigation_steps": ("SELECT", "INSERT"),
+    # Written through lgsotf_save_organisation (platform admins) only.
+    "organisations": ("SELECT",),
+    "organisation_members": ("SELECT", "INSERT", "DELETE"),
+    # Revoked grants stay (revoked_at): the customer's record of who could act in it.
+    "tenant_grants": ("SELECT", "INSERT", "UPDATE (revoked_at, revoked_by)"),
 }
 CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),
@@ -102,6 +107,8 @@ PLATFORM_FUNCTIONS: Tuple[str, ...] = (
 )
 # Tenant erasure (platform admins, migration 0006): bounded batches of one suspended tenant's rows.
 ERASURE_FUNCTIONS: Tuple[str, ...] = ("lgsotf_erase_tenant_batch(text, integer)",)
+# MSSP organisations (platform admins, migration 0012).
+ORGANISATION_FUNCTIONS: Tuple[str, ...] = ("lgsotf_save_organisation(text, text)",)
 
 log = structlog.get_logger(__name__)
 
@@ -219,7 +226,9 @@ def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tabl
         )
     for seq in sequences:
         stmts.append(sql.SQL("GRANT USAGE ON SEQUENCE {} TO {}").format(sql.Identifier(*seq.split(".", 1)), who))
-    for fn in (*AUTH_LOOKUP_FUNCTIONS, *PROVISIONING_FUNCTIONS, *PLATFORM_FUNCTIONS, *ERASURE_FUNCTIONS):
+    for fn in (
+        *AUTH_LOOKUP_FUNCTIONS, *PROVISIONING_FUNCTIONS, *PLATFORM_FUNCTIONS, *ERASURE_FUNCTIONS, *ORGANISATION_FUNCTIONS
+    ):
         stmts.append(sql.SQL("GRANT EXECUTE ON FUNCTION {} TO {}").format(sql.SQL(fn), who))
     return stmts
 

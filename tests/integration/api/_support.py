@@ -6,13 +6,17 @@ The fixtures that build a harness (``make_api``, ``api``) live in
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import socket
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Tuple
 
 import httpx
 import jwt
+import uvicorn
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from fastapi import FastAPI
 from jwt.algorithms import ECAlgorithm, RSAAlgorithm
@@ -27,7 +31,7 @@ from tests.integration.db._support import TENANT_A, TENANT_B
 __all__ = [
     "API", "AUDIENCE", "BASE_URL", "ISSUER", "PASSWORD", "ROLE_MAP", "TENANT_A", "TENANT_B", "TEST_JWT_SECRET",
     "UI_ORIGIN", "ApiClock", "ApiHarness", "IdP", "TotpClock", "bearer", "challenge", "code_now", "enroll",
-    "jit_api", "jit_token", "login", "password_hash", "verify",
+    "jit_api", "jit_token", "login", "password_hash", "recv_json", "serve_api", "verify",
 ]
 
 API = "/api/v1"
@@ -254,3 +258,33 @@ def jit_token(idp: IdP, groups: List[str], **claims: Any) -> str:
     base: Dict[str, Any] = {"sub": "entra-oid-1", "email": "jit.user@a.example.com", "groups": groups, "roles": None}
     base.update(claims)
     return idp.token(**base)
+
+
+class _Server(uvicorn.Server):
+    def install_signal_handlers(self) -> None:  # pragma: no cover - uvicorn API differs by version
+        pass
+
+
+@contextlib.asynccontextmanager
+async def serve_api(api: ApiHarness) -> AsyncIterator[str]:
+    """The harness's app on a real uvicorn server (WebSocket tests); yields its ``ws://`` base URL."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = _Server(uvicorn.Config(api.app, lifespan="off", log_config=None, access_log=False))
+    task = asyncio.create_task(server.serve(sockets=[sock]))
+    while not server.started:
+        if task.done():
+            task.result()
+        await asyncio.sleep(0.01)
+    try:
+        yield f"ws://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        await asyncio.wait_for(task, timeout=10)
+        sock.close()
+
+
+async def recv_json(ws: Any, wait_s: float = 3.0) -> Dict[str, Any]:
+    return json.loads(await asyncio.wait_for(ws.recv(), wait_s))
