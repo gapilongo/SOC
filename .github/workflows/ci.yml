@@ -105,7 +105,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install oasdiff
         run: |
-          curl -fsSL -o /tmp/oasdiff.tgz \
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o /tmp/oasdiff.tgz \
             "https://github.com/oasdiff/oasdiff/releases/download/v${OASDIFF_VERSION}/oasdiff_${OASDIFF_VERSION}_linux_amd64.tar.gz"
           echo "${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -
           tar -xzf /tmp/oasdiff.tgz -C /tmp oasdiff
@@ -529,7 +529,7 @@ jobs:
           version: ${{ env.HELM_VERSION }}
       - name: Install kubeconform
         run: |
-          curl -fsSL -o /tmp/kubeconform.tgz \
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o /tmp/kubeconform.tgz \
             "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
           echo "${KUBECONFORM_SHA256}  /tmp/kubeconform.tgz" | sha256sum -c -
           tar -xzf /tmp/kubeconform.tgz -C /tmp kubeconform
