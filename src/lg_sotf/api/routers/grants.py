@@ -115,8 +115,8 @@ async def revoke_grant(grant_id: UUID, request: Request, principal: Principal = 
 async def organisation_grants(
     request: Request, principal: Principal = Depends(require(ORG_STAFF))
 ) -> List[HeldGrantOut]:
-    await _require_organisation(request, principal.tenant_id)
     await _require_staff(request, principal)
+    await _require_organisation(request, principal.tenant_id)
     grants = await get_ctx(request).repos.grants.list_for_organisation(principal.tenant_id)
     return [HeldGrantOut.model_validate(g) for g in grants]
 
