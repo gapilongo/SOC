@@ -289,13 +289,13 @@ async def test_a_persuaded_model_cannot_pull_an_alert_into_the_triage_close_regi
     from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
-    alert = {"title": "Scheduled job ran", "rule_name": "scheduled-job", "severity": "low", "source_id": "sysmon",
+    alert = {"title": "Maintenance job ran", "rule_name": "maintenance-job", "severity": "low", "source_id": "sysmon",
              "occurred_at": "2026-09-01T10:00:00Z"}
     benign = {**ASSESSMENT, "threat_likelihood": 0, "false_positive_indicators": ["a", "b", "c", "d"], "true_positive_indicators": []}
     result = await TriageAgent(settings=settings, model_factory=factory(scripted(TriageAssessment=[benign]))).run(ctx(settings), alert)
-    assert result.llm_used and result.rule_fp == ["scheduled_detected"]
+    assert result.llm_used and result.rule_fp == ["maintenance_detected"]
     t = RoutingThresholds()
-    assert result.confidence == 21  # blended 12, held above the close thresholds and human_review_min
+    assert result.confidence == 21  # blended 9, held above the close thresholds and human_review_min
     state = {"severity": "low", "confidence": result.confidence, "triage": result.digest(), "correlation": {"score": 0}}
     assert routing.route_after_triage(state, t) == "correlation"
     assert routing.route_after_correlation(state, t) == "analysis"
