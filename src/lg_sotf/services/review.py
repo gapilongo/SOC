@@ -328,7 +328,7 @@ class ReviewService:
         *,
         feedback: Optional[Mapping[str, Any]] = None,
         suggest_suppression: Optional[bool] = None,
-        delegated: bool = False,
+        delegated: bool = False,  # an MSSP analyst under a grant: decided_by stays empty, the audit names them
         now: Optional[datetime] = None,
     ) -> DecisionResult:
         """Record the analyst decision and return one resume message per waiting alert.
@@ -347,7 +347,6 @@ class ReviewService:
         An escalation the SLA sweep *expired* can still be decided (the
         alert's run keeps waiting on it); the audit entry records
         ``after_sla_expiry``. Decided and cancelled escalations cannot.
-        ``delegated`` (an MSSP analyst under a grant): ``decided_by`` stays empty; the audit log names them.
         """
         _require_role(role)
         user_id = _user_uuid(user)
