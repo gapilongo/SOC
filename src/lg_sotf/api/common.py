@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 from uuid import UUID
 
 from fastapi import Request, Response
+from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.authenticate import client_ip
 from lg_sotf.api.auth.principal import Principal
@@ -113,6 +114,27 @@ class BlindView:
 async def blind_view(ctx: ApiContext, tenant_id: str, alerts: Sequence[AlertListItem]) -> BlindView:
     ids = [a.id for a in alerts] + [r for a in alerts for r in related_alert_ids(a.summary)]
     return BlindView(await ctx.repos.blind_audit.pending_dispositions(tenant_id, ids))
+
+
+# Cached tenant figures that leave pending blind-audit samples out (dashboard summary, reports).
+FIGURE_CACHES = ("dashboard", "reports")
+
+
+def dashboard_cache_key(ctx: ApiContext, tenant_id: str, window_hours: int) -> str:
+    return f"{ctx.prefix}:t:{tenant_id}:cache:dashboard:{window_hours}"
+
+
+async def forget_cached_figures(ctx: ApiContext, tenant_id: str) -> None:
+    """Drop the tenant's cached dashboard and report figures: they leave pending blind-audit samples out, so a
+    run drawn or a sample labelled changes them, and a cached copy would show the counts from before.
+    Redis being unavailable only means the copies expire on their own (15 and 60 seconds)."""
+    try:
+        for kind in FIGURE_CACHES:
+            keys = [key async for key in ctx.redis.scan_iter(match=f"{ctx.prefix}:t:{tenant_id}:cache:{kind}:*")]
+            if keys:
+                await ctx.redis.unlink(*keys)
+    except (RedisError, OSError, TimeoutError) as exc:
+        log_failure(log, "api.figure_cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
 
 
 async def refuse_hidden(ctx: ApiContext, tenant_id: str, alert_id: str, resource: str, resource_id: str) -> None:

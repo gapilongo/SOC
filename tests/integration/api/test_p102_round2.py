@@ -55,6 +55,23 @@ async def test_R1_dashboard_window_differencing_does_not_reveal_a_pending_sample
     assert {k: v for k, v in diff.items() if v} == {}
 
 
+async def test_R1b_labelling_a_sample_refreshes_the_cached_dashboard_counts(api: ApiHarness) -> None:
+    """The e2e regression of round 2: the dashboard (cached 15 seconds) left the sample out while it was pending
+    and kept serving that count after the label. Drawing a run and labelling drop the cached figures."""
+    viewer = await api.login_headers(TENANT_A, "viewer")
+    before = (await api.client.get(f"{API}/dashboard/summary", headers=viewer)).json()["alerts_total"]
+    await _one_sample(api, ingested_hours_ago=3)  # a new alert (+1), then drawn (-1, pending)
+    pending = (await api.client.get(f"{API}/dashboard/summary", headers=viewer)).json()["alerts_total"]
+    assert pending == before  # cached before the alert existed, or recounted without the pending sample
+    analyst = await api.login_headers(TENANT_A, "analyst")
+    [item] = await queue(api, analyst)
+    labelled = await api.client.post(f"{API}/blind-audit/items/{item['id']}/label", json={"label": "benign"},
+                                     headers=analyst)
+    assert labelled.status_code == 200
+    after = (await api.client.get(f"{API}/dashboard/summary", headers=viewer)).json()["alerts_total"]
+    assert after == before + 1  # counted again at once, not after the cache expires
+
+
 async def test_R2_another_alerts_correlation_digest_no_longer_names_the_pending_sample(api: ApiHarness) -> None:
     sampled = await _one_sample(api, ingested_hours_ago=3, disposition="benign")
     analyst = await api.login_headers(TENANT_A, "analyst")

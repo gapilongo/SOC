@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from lg_sotf.api.auth.deps import ADMIN_NOT_UNDER_GRANT, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import aware, invalidate_verdicts
+from lg_sotf.api.common import aware, forget_cached_figures, invalidate_verdicts
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import EntitiesPreviewOut, In, Out, PageOut, SeverityStr
@@ -40,6 +40,7 @@ from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.blind_audit import BlindAuditItem, BlindAuditRunSummary, Reveal
 from lg_sotf.domain.blind_audit import MAX_SAMPLE_PER_RUN, MAX_SEED
 from lg_sotf.domain.digests import entities_preview
+from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AuditLabel, Disposition
 from lg_sotf.services.blind_audit import (
     MAX_MIN_PER_WEEK,
@@ -207,6 +208,9 @@ async def label_item(
     )
     if body.label == "malicious":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.item.alert_id])
+    # The alert counts again in the dashboard and report figures (pending samples are left out of them).
+    await forget_cached_figures(ctx, principal.tenant_id)
+    await publish_event(ctx.events, "alert.updated", principal.tenant_id, result.item.alert_id, {"blind_audit": "labelled"})
     return BlindAuditLabelOut(
         item=item_out(result.item, result.reveal),
         escalation_id=result.escalation.id if result.escalation else None,
@@ -252,6 +256,8 @@ async def create_run(
     except SamplingError as exc:
         status = 409 if exc.code in ("window_already_sampled", "window_not_contiguous") else 400
         raise ApiError(status, exc.code, str(exc)) from exc
+    # The drawn samples leave the dashboard and report figures until they are labelled.
+    await forget_cached_figures(get_ctx(request), principal.tenant_id)
     # A new run: every sample is waiting for its label.
     return BlindAuditRunSummary.model_validate({**run.model_dump(), "sampled": run.sample_size})
 
