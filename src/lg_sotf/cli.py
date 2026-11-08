@@ -277,6 +277,16 @@ def dlq_requeue(entry_ids: List[str]) -> None:
         raise click.ClickException(f"{failed} of {len(results)} dead letters were not requeued")
 
 
+def _quiet_eval_logging(settings: Settings) -> None:
+    """Per-node INFO logs drown the eval progress lines; keep warnings unless a level was configured."""
+    if "log_level" in settings.observability.model_fields_set:
+        return
+    from lg_sotf.observability.logging import configure_logging
+
+    quiet = settings.model_copy(update={"observability": settings.observability.model_copy(update={"log_level": "WARNING"})})
+    configure_logging(quiet, stream=sys.stderr)
+
+
 @cli.command("eval")
 @click.option(
     "--dataset",
@@ -335,6 +345,20 @@ def dlq_requeue(entry_ids: List[str]) -> None:
     help="Compare with a baseline from a different dataset, selection or report schema (warns instead of exit 2).",
 )
 @click.option("--validate-only", is_flag=True, help="Check the dataset, thresholds and baseline; run nothing.")
+@click.option(
+    "--cassettes",
+    default=None,
+    type=click.Path(file_okay=False),
+    help="Directory of per-item cassettes: record each item's tool observations and model replies, or replay them.",
+)
+@click.option(
+    "--cassette-mode",
+    type=click.Choice(["replay", "replay-tools", "record"]),
+    default="replay",
+    show_default=True,
+    help="replay: tools and model from the cassettes, no network; replay-tools: tools replayed, model live; "
+    "record: a live run, written to the cassettes.",
+)
 def eval_command(
     dataset: Optional[str],
     from_history: bool,
@@ -351,6 +375,8 @@ def eval_command(
     isolate: str,
     allow_baseline_mismatch: bool,
     validate_only: bool,
+    cassettes: Optional[str],
+    cassette_mode: str,
 ) -> None:
     """Run a labelled dataset through ingestion and the workflow, report metrics and gate on thresholds.
 
@@ -366,6 +392,9 @@ def eval_command(
     no escalations, notifications, actions or alert updates) and scored
     against the analysts' decisions. Point the settings at the tenant's
     database; nothing is written to it.
+
+    With --cassettes DIR, --cassette-mode record writes each item's tool observations and model replies to
+    DIR; replay runs the dataset again from them without any network call.
     """
     from dataclasses import replace
 
@@ -393,16 +422,12 @@ def eval_command(
         validate_only=validate_only,
         from_history=from_history,
         days=days,
+        cassettes=cassettes,
+        cassette_mode=cassette_mode,
     )
     settings = get_settings() if validate_only else _prepare()
-    if not validate_only and "log_level" not in settings.observability.model_fields_set:
-        # Per-node INFO logs drown the progress lines; keep warnings unless a level was configured.
-        from lg_sotf.observability.logging import configure_logging
-
-        quiet = settings.model_copy(
-            update={"observability": settings.observability.model_copy(update={"log_level": "WARNING"})}
-        )
-        configure_logging(quiet, stream=sys.stderr)
+    if not validate_only:
+        _quiet_eval_logging(settings)
     try:
         # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
         options = replace(options, secret_box=None if validate_only else load_secret_box(settings))

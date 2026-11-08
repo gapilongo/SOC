@@ -289,6 +289,7 @@ class ReActReasoner:
                 providers=candidate.providers,
             ),
             lambda found: [r.as_dict() for r in found],
+            lambda rows: [EnrichmentResult.from_dict(candidate.kind, row) for row in rows],
         )
         run.observations.append(Observation(candidate, results))
         run.lookups += 1
