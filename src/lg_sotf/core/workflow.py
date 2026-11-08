@@ -164,6 +164,34 @@ def _retry_policies(settings: Settings) -> Dict[str, Any]:
     }
 
 
+async def build_node_deps(
+    *,
+    settings: Settings,
+    db: Database,
+    redis: Redis,
+    events: Optional[EventPublisher],
+    agents: Optional[AgentSet] = None,
+    connectors: Optional[Mapping[str, Connector]] = None,
+    secret_box: Optional[SecretBox] = None,
+) -> NodeDeps:
+    """The services the workflow nodes run with, agents initialised (see :meth:`WorkflowEngine.create`)."""
+    indicator_hmac_key(settings)
+    repos = Repositories.create(db)
+    agent_set = agents or AgentSet.build(settings, secret_box=secret_box)
+    await agent_set.initialize()
+    return NodeDeps(
+        settings=settings,
+        repos=repos,
+        agents=agent_set,
+        escalations=EscalationService(repos, events, settings),
+        responses=ResponseService(repos, settings, events, connectors=connectors, secret_box=secret_box),
+        verdicts=VerdictCache(redis, settings.redis.key_prefix),
+        thresholds=RoutingThresholds.from_settings(settings.routing),
+        events=events,
+        budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
+    )
+
+
 class WorkflowEngine:
     def __init__(
         self,
@@ -220,23 +248,12 @@ class WorkflowEngine:
         ``graph_builders`` maps each graph version to its builder; the highest
         version is the current graph.
         """
-        indicator_hmac_key(settings)
-        repos = Repositories.create(db)
-        agent_set = agents or AgentSet.build(settings, secret_box=secret_box)
-        await agent_set.initialize()
-        escalations = EscalationService(repos, events, settings)
-        responses = ResponseService(repos, settings, events, connectors=connectors, secret_box=secret_box)
-        deps = NodeDeps(
-            settings=settings,
-            repos=repos,
-            agents=agent_set,
-            escalations=escalations,
-            responses=responses,
-            verdicts=VerdictCache(redis, settings.redis.key_prefix),
-            thresholds=RoutingThresholds.from_settings(settings.routing),
-            events=events,
-            budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
+        deps = await build_node_deps(
+            settings=settings, db=db, redis=redis, events=events, agents=agents, connectors=connectors,
+            secret_box=secret_box,
         )
+        repos, agent_set = deps.repos, deps.agents
+        escalations = deps.escalations
         size = checkpoint_pool_size or max(2, min(settings.database.pool_max, settings.worker.concurrency))
         pool: AsyncConnectionPool = AsyncConnectionPool(
             conninfo=checkpointer_conninfo(settings),

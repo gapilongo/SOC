@@ -196,7 +196,8 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/phishing_v
 dataset file: it replays the alerts analysts decided in tenant T in the last
 N days through the current pipeline and model, read-only and without any
 side effect, and reports with the same metrics, thresholds and baselines.
-See docs/reporting.md ("Backtest").
+See docs/reporting.md ("Backtest"). To compare a candidate model with
+production's own verdicts instead, see "Shadow agreement" below.
 
 ## Metrics
 
@@ -738,6 +739,73 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.
     --cassettes tests/fixtures/eval/cassettes/corpus_v1 \
     --thresholds tests/fixtures/eval/corpus_v1_thresholds.yaml --report ~/lg-sotf-eval/corpus-v1.json
 ```
+
+## Shadow agreement: a candidate beside production
+
+The backtest scores a model against analysts' decisions. A shadow replay
+answers a different question before a switch: on the alerts production
+handled recently, how often would the candidate have taken the same route,
+and where would it have done something else?
+
+```sh
+cat > local-llama.yaml <<'EOF'
+name: local llama 3.3 70b
+llm:
+  provider: openai_compatible
+  base_url: http://llm.internal:8000/v1
+  fast: {model: llama-3.3-70b}
+  deep: {model: llama-3.3-70b}
+EOF
+lg-sotf shadow-run --tenant acme --candidate local-llama.yaml --window 7d --limit 200 \
+    --report shadow.json --markdown shadow.md --i-understand-no-shadow-role
+```
+
+`lg-sotf shadow-run` is a platform-admin command; nothing in an alert can
+start or steer it. It takes the tenant's alerts ingested in the window
+(`24h`, `7d`, at most `90d`) that production has decided (closed, or waiting
+for an analyst or an approval), newest first, at most `--limit` (2000), and
+runs each through the candidate in shadow mode (AI-E1.5a: no notification,
+escalation, action, alert change or event leaves the run; its model calls
+are real and billed to the candidate's provider, never to the tenant). The
+candidate profile may set `name` (the report's label), `llm` and `agents`,
+merged over the configuration; `${VAR}` references are expanded, so keys stay
+in the environment. Routing thresholds, tenant policy and services stay
+production's.
+
+Each alert's pair of verdicts is stored in `shadow_verdicts` (append-only,
+tenant row-level security, deleted with the alert; in the tenant export, not
+in the evidence pack) under a report id `shr_<32 hex>`. The command prints
+the report in Markdown; platform admins read it later with
+`GET /api/v1/platform/shadow/reports/{id}?tenant_id=acme` (beta, audited as
+`platform.shadow_report_viewed`). The report shows:
+
+* **Agreement** on the routing decision (`close`, `plan_response`,
+  `escalate`), overall and per production route, as a rate with its sample
+  size n and 95% Wilson interval. Below 30 compared alerts it reads
+  "Not enough data (n=…; at least 30 needed)" before the figure. Alerts whose
+  candidate run failed are counted apart (`candidate_failed`, the `none`
+  column), never as agreement.
+* A **confusion matrix**, production routes in rows, candidate routes in columns.
+* **Potential misses first**: alerts production escalated or responded to
+  that the candidate would have closed with no human, most severe first.
+  Any of these deserves a look before promoting the candidate. Then **new
+  escalations** (production closed, the candidate would not have) and
+  **different response plans** (both responded automatically, with
+  different `action_type:target` sets).
+* **Cost and latency**: per-alert means of LLM cost, tokens and model-and-tool
+  time (the trace steps), candidate minus production.
+
+Limitations: the candidate stops at the first human step, while production's
+figures cover every run of the alert (re-analysis an analyst asked for
+included); shadow runs read threat intelligence from the cache only; the
+production verdict is the first routing decision, not the analyst's outcome.
+
+**Gate (until AI-E1.5c).** Shadow runs should read through a separate,
+SELECT-only database role (issue #309). Until that role exists, `shadow-run`
+refuses to run unless `--i-understand-no-shadow-role` is passed, and refuses
+that flag in `staging` and `production` environments: use it on a
+development or evaluation copy of the database only. AI-E1.5c replaces the
+flag with its setting.
 
 ## Evaluating on your own labelled data
 

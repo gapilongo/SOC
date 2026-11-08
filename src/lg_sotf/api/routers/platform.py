@@ -25,6 +25,8 @@
   tenant, soonest SLA deadline first.
 * ``GET /platform/usage``: invoicing figures per tenant for a month (JSON or
   CSV).
+* ``GET /platform/shadow/reports/{id}?tenant_id=``: a shadow agreement report
+  (``lg-sotf shadow-run``, AI-E1.5b), read-only, in the named tenant's scope.
 
 Every cross-tenant read is audited in the platform admin's home tenant;
 changes to a tenant are audited in that tenant and in the home tenant.
@@ -40,7 +42,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Path, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -64,11 +66,14 @@ from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import Tenant, TenantStats
 from lg_sotf.db.repos.runs import MAX_QUEUED_LISTED
+from lg_sotf.db.repos.shadow_verdicts import REPORT_ID_PATTERN as SHADOW_REPORT_ID_PATTERN
 from lg_sotf.db.repos.users import normalize_email
 from lg_sotf.db.tenancy import TENANT_ID_PATTERN
+from lg_sotf.domain.shadow_agreement import ShadowAgreementReport
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.hashing import ahash_password
 from lg_sotf.services import tenancy
+from lg_sotf.services.shadow_reports import stored_report
 from lg_sotf.services.tenancy import (
     Profile,
     TenantRequest,
@@ -484,3 +489,28 @@ async def usage_report(
         for column in USAGE_CSV_COLUMNS[3:]
     }
     return UsageReportOut(month=month, start=start, end=end, generated_at=now, tenants=rows, totals=totals)
+
+
+# ----------------------------------------------------------- shadow reports
+
+
+@router.get(
+    "/shadow/reports/{run_id}",
+    response_model=ShadowAgreementReport,
+    summary="A shadow agreement report: a candidate's verdicts against production's (read-only)",
+)
+async def shadow_report(
+    request: Request,
+    run_id: str = Path(pattern=SHADOW_REPORT_ID_PATTERN, description="The report id lg-sotf shadow-run printed."),
+    tenant_id: str = Query(pattern=TENANT_ID_PATTERN, description="The tenant the report was run on."),
+    principal: Principal = Depends(require(PLATFORM_ADMIN)),
+) -> ShadowAgreementReport:
+    ctx = get_ctx(request)
+    report = await stored_report(ctx.repos, tenant_id, run_id)
+    await record_platform_access(
+        AuditLogger(ctx.repos), principal.actor, principal.home_tenant_id, "platform.shadow_report_viewed",
+        tenant_id, report_id=run_id, found=report is not None,
+    )
+    if report is None:
+        raise ApiError(404, "not_found", "shadow report not found")
+    return report

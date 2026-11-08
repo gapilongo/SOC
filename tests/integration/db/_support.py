@@ -16,6 +16,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.urls import database_name, to_libpq_url
+from lg_sotf.domain.shadow_agreement import Comparison, Verdict
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.security.shadow import ShadowEffect
 from lg_sotf.settings import DatabaseSettings
@@ -64,6 +65,7 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 
 ALL_TABLES = (
+    "shadow_verdicts",
     "shadow_effects",
     "investigation_steps",
     "tenant_grants",
@@ -153,10 +155,14 @@ TENANT_TABLES = (
     "external_tickets",
     "investigation_steps",
     "shadow_effects",
+    "shadow_verdicts",
     "organisations",
     "organisation_members",
     "tenant_grants",
 )
+
+
+SEED_REPORT_ID = "shr_" + "0" * 32
 
 
 def sha256_hex(value: str) -> str:
@@ -209,6 +215,12 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
     )
     await repos.shadow_effects.append(
         tenant_id, alert_id, "shadow/seed", [ShadowEffect(0, "outbox", "enqueue_on", "sunk", {"rows": 1})]
+    )
+    await repos.shadow_verdicts.append(
+        tenant_id, SEED_REPORT_ID, "seed-candidate",
+        Comparison(alert_id=alert_id, severity="high", production=Verdict(route="escalate"),
+                   candidate=Verdict(route="close", disposition="benign")),
+        run_id="shadow/seed",
     )
     # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
     await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")

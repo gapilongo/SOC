@@ -1067,6 +1067,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/shadow/reports/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A shadow agreement report: a candidate's verdicts against production's (read-only) */
+        get: operations["shadow_report_api_v1_platform_shadow_reports__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/tenants": {
         parameters: {
             query?: never;
@@ -4507,6 +4524,113 @@ export interface components {
             /** Tenant Name */
             tenant_name: string;
         };
+        /** ShadowAgreementReport */
+        ShadowAgreementReport: {
+            agreement: components["schemas"]["RateInterval"];
+            /** Agreement Text */
+            agreement_text: string;
+            /**
+             * Alerts
+             * @description Alerts replayed.
+             */
+            alerts: number;
+            /** By Class */
+            by_class: components["schemas"]["ShadowClassAgreement"][];
+            /** Candidate */
+            candidate: string;
+            /** Candidate Failed */
+            candidate_failed: number;
+            /**
+             * Compared
+             * @description Alerts with a verdict on both sides: the agreement sample n.
+             */
+            compared: number;
+            /**
+             * Confusion
+             * @description Production route -> candidate route -> alerts.
+             */
+            confusion: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            cost_usd: components["schemas"]["ShadowDelta"];
+            /** Enough Data */
+            enough_data: boolean;
+            /** Labels */
+            labels: string[];
+            latency_ms: components["schemas"]["ShadowDelta"];
+            /** Limitations */
+            limitations: string[];
+            /** Min Samples */
+            min_samples: number;
+            new_escalations: components["schemas"]["ShadowCaseList"];
+            /** No Production Verdict */
+            no_production_verdict: number;
+            plan_differences: components["schemas"]["ShadowCaseList"];
+            potential_misses: components["schemas"]["ShadowCaseList"];
+            /** Report Id */
+            report_id: string;
+            /** Tenant Id */
+            tenant_id: string;
+            tokens: components["schemas"]["ShadowDelta"];
+        };
+        /**
+         * ShadowCase
+         * @description One alert on which the two verdicts differ, as the report lists it.
+         */
+        ShadowCase: {
+            /** Alert Id */
+            alert_id: string;
+            /** Candidate Actions */
+            candidate_actions: string[];
+            /** Candidate Confidence */
+            candidate_confidence: number | null;
+            /** Candidate Disposition */
+            candidate_disposition: string | null;
+            /** Candidate Route */
+            candidate_route: string | null;
+            /** Production Actions */
+            production_actions: string[];
+            /** Production Confidence */
+            production_confidence: number | null;
+            /** Production Disposition */
+            production_disposition: string | null;
+            /** Production Route */
+            production_route: string | null;
+            /** Severity */
+            severity: string;
+        };
+        /** ShadowCaseList */
+        ShadowCaseList: {
+            /** Count */
+            count: number;
+            /**
+             * Items
+             * @description Most severe first, at most 100.
+             */
+            items: components["schemas"]["ShadowCase"][];
+        };
+        /** ShadowClassAgreement */
+        ShadowClassAgreement: {
+            agreement: components["schemas"]["RateInterval"];
+            /** Production Route */
+            production_route: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * ShadowDelta
+         * @description Per-alert means over the compared alerts; ``delta`` is candidate minus production.
+         */
+        ShadowDelta: {
+            /** Candidate Mean */
+            candidate_mean: number | null;
+            /** Delta */
+            delta: number | null;
+            /** Production Mean */
+            production_mean: number | null;
+        };
         /** SourceCreateIn */
         SourceCreateIn: {
             /** Config */
@@ -7297,6 +7421,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganisationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shadow_report_api_v1_platform_shadow_reports__run_id__get: {
+        parameters: {
+            query: {
+                /** @description The tenant the report was run on. */
+                tenant_id: string;
+            };
+            header?: never;
+            path: {
+                /** @description The report id lg-sotf shadow-run printed. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShadowAgreementReport"];
                 };
             };
             /** @description Validation Error */

@@ -563,6 +563,68 @@ def verify_invariants(as_json: bool) -> None:
         sys.exit(1)
 
 
+@cli.command("shadow-run")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant whose recent alerts are replayed.")
+@click.option(
+    "--candidate", required=True, type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    help="Candidate profile (YAML: name, llm, agents).",
+)
+@click.option("--window", default="7d", show_default=True, help="Alerts ingested in the last N hours or days (24h, 7d).")
+@click.option("--limit", type=click.IntRange(1, 2_000), default=200, show_default=True, help="Alerts replayed at most.")
+@click.option("--report", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write the JSON here.")
+@click.option("--markdown", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write Markdown.")
+@click.option(
+    "--i-understand-no-shadow-role", "no_shadow_role", is_flag=True,
+    help="Development only: run without the shadow database role (AI-E1.5c). Refused in staging and production.",
+)
+def shadow_run(
+    tenant_id: str, candidate: Path, window: str, limit: int, report: Optional[Path], markdown: Optional[Path],
+    no_shadow_role: bool,
+) -> None:
+    """Replay a tenant's recent decided alerts through a candidate model profile in shadow mode, then report.
+
+    Each alert runs through the candidate with no side effect (AI-E1.5a); its
+    verdict and production's are stored in shadow_verdicts under a new report
+    id, readable later at GET /platform/shadow/reports/{id}. Prints the
+    agreement report (Markdown). The candidate's model calls are real and
+    billed to its provider, never to the tenant. See docs/evaluation.md ("Shadow agreement").
+    """
+    from lg_sotf.domain.shadow_agreement import render_markdown
+    from lg_sotf.errors import OperationError
+    from lg_sotf.runtime.shadow_replay import ShadowRunOptions, check_shadow_gate, parse_window, run_shadow_replay
+    from lg_sotf.security.crypto import load_secret_box
+    from lg_sotf.security.hashing import SecurityConfigError
+
+    settings = _prepare()
+    try:
+        check_shadow_gate(settings, no_shadow_role)
+        options = ShadowRunOptions(
+            tenant_id=tenant_id, candidate=candidate, window=parse_window(window), limit=limit,
+            no_shadow_role_acknowledged=no_shadow_role,
+        )
+        # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
+        box = load_secret_box(settings)
+    except (OperationError, SecurityConfigError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _quiet_eval_logging(settings)
+    result = _run(
+        run_shadow_replay(
+            settings, options, secret_box=box,
+            progress=lambda done, total, row: click.echo(
+                f"[{done}/{total}] {row.alert_id}: production {row.production.route}, "
+                f"candidate {row.candidate.route or row.candidate.error}",
+                err=True,
+            ),
+        )
+    )
+    text = render_markdown(result)
+    if report is not None:
+        report.write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    if markdown is not None:
+        markdown.write_text(text, encoding="utf-8")
+    click.echo(text)
+
+
 @cli.command("mcp")
 def mcp() -> None:
     """Run the Model Context Protocol server over stdio.
