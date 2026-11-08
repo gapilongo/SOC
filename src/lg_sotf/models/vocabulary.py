@@ -64,6 +64,20 @@ ESCALATION_STATUSES: Tuple[EscalationStatus, ...] = get_args(EscalationStatus)
 EscalationLevel = Literal["L1", "L2", "L3"]
 ESCALATION_LEVELS: Tuple[EscalationLevel, ...] = get_args(EscalationLevel)
 
+# ------------------------------------------------------------- blind audit
+
+#: An analyst's label on a blind-audit sample (an auto-closed alert shown without the AI verdict).
+AuditLabel = Literal["malicious", "benign", "unsure"]
+AUDIT_LABELS: Tuple[AuditLabel, ...] = get_args(AuditLabel)
+
+#: What started a blind-audit sampling run.
+AuditTrigger = Literal["schedule", "cli", "api"]
+AUDIT_TRIGGERS: Tuple[AuditTrigger, ...] = get_args(AuditTrigger)
+
+#: Who chose a recorded run's seed: always the server (an operator's seed is for dry runs only).
+SeedSource = Literal["server"]
+SEED_SOURCES: Tuple[SeedSource, ...] = get_args(SeedSource)
+
 # ---------------------------------------------------------------- response
 
 ActionStatus = Literal[
@@ -119,6 +133,8 @@ PUSH_SOURCE_TYPES: Tuple[SourceType, ...] = ("webhook", "guardduty")
 __all__ = [
     "ACTION_STATUSES",
     "ALERT_STATUSES",
+    "AUDIT_LABELS",
+    "AUDIT_TRIGGERS",
     "AUTONOMY_MODES",
     "BENIGN_DECISIONS",
     "COMPLETED_ACTION_STATUSES",
@@ -140,6 +156,7 @@ __all__ = [
     "RUN_STATUSES",
     "SCHEDULER_OWNER",
     "SCOPES",
+    "SEED_SOURCES",
     "SEVERITIES",
     "SEVERITY_RANK",
     "SOURCE_TYPES",
@@ -150,6 +167,8 @@ __all__ = [
     "WORKFLOW_OWNER",
     "ActionStatus",
     "AlertStatus",
+    "AuditLabel",
+    "AuditTrigger",
     "AutonomyMode",
     "Decision",
     "Disposition",
@@ -161,6 +180,7 @@ __all__ = [
     "Route",
     "RunStatus",
     "Scope",
+    "SeedSource",
     "Severity",
     "SourceType",
     "VerificationState",

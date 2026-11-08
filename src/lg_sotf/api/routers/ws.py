@@ -28,8 +28,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 from fastapi import APIRouter, WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -44,11 +45,13 @@ from lg_sotf.api.auth.authenticate import (
     under_grant,
 )
 from lg_sotf.api.auth.principal import Principal, role_at_least
+from lg_sotf.api.common import hidden_alert_ids
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
 from lg_sotf.audit.logger import act_under_grant
 from lg_sotf.db.tenancy import is_valid_tenant_id
+from lg_sotf.domain.blind_audit import HIDDEN
 from lg_sotf.observability.logging import bind_context, get_logger, log_failure
 from lg_sotf.queue.events import SubscriberLimitReached, SubscriberQuotaReached
 
@@ -170,6 +173,38 @@ async def events_socket(websocket: WebSocket) -> None:
     log.info("ws.closed", code=code)
 
 
+class HiddenAlerts:
+    """Which alerts of the tenant wait for a blind-audit label (their events go out without data), cached a
+    few seconds per connection so a busy stream does not query the database for every event."""
+
+    TTL_S = 5.0
+    MAX_ENTRIES = 1_000
+
+    def __init__(self, ctx: ApiContext, tenant_id: str, clock: Callable[[], float] = time.monotonic) -> None:
+        self._ctx = ctx
+        self._tenant_id = tenant_id
+        self._clock = clock
+        self._known: Dict[str, Tuple[bool, float]] = {}
+
+    async def shown(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """The event as it goes out: without its data when its alert waits for a blind-audit label."""
+        alert_id = event.get("alert_id")
+        if isinstance(alert_id, str) and await self.contains(alert_id):
+            return {**event, "data": dict(HIDDEN)}
+        return event
+
+    async def contains(self, alert_id: str) -> bool:
+        now = self._clock()
+        cached = self._known.get(alert_id)
+        if cached is not None and cached[1] > now:
+            return cached[0]
+        if len(self._known) >= self.MAX_ENTRIES:
+            self._known.clear()
+        hidden = alert_id in await hidden_alert_ids(self._ctx, self._tenant_id, [alert_id])
+        self._known[alert_id] = (hidden, now + self.TTL_S)
+        return hidden
+
+
 async def _send(websocket: WebSocket, ctx: ApiContext, message: Dict[str, Any]) -> None:
     await asyncio.wait_for(
         websocket.send_text(json.dumps(message, separators=(",", ":"), default=str)), ctx.ws.send_timeout_s
@@ -181,11 +216,13 @@ async def _serve(
 ) -> Optional[int]:
     tenant_id = principal.tenant_id
 
+    hidden = HiddenAlerts(ctx, tenant_id)
+
     async def forward() -> int:
         async for event in subscription:
             if event.get("tenant_id") != tenant_id:
                 continue
-            await _send(websocket, ctx, event)
+            await _send(websocket, ctx, await hidden.shown(event))
         return CLOSE_TRY_AGAIN  # the subscription ended: this client lagged (or the bus closed)
 
     async def heartbeat() -> int:

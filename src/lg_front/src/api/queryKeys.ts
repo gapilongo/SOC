@@ -124,6 +124,17 @@ export const qk = {
     all: ['report-detections'] as const,
     range: (from: string, to: string) => ['report-detections', from, to] as const,
   },
+  reportBlindAudit: {
+    all: ['report-blind-audit'] as const,
+    range: (from: string, to: string) => ['report-blind-audit', from, to] as const,
+  },
+  /** The blind audit queue, one sample, and the sampling runs. */
+  blindAudit: {
+    all: ['blind-audit'] as const,
+    queue: (status: 'pending' | 'labelled') => ['blind-audit', 'items', status] as const,
+    item: (id: string) => ['blind-audit', 'item', id] as const,
+    runs: ['blind-audit', 'runs'] as const,
+  },
   reportMonthly: {
     all: ['report-monthly'] as const,
     month: (month: string) => ['report-monthly', month] as const,

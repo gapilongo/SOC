@@ -29,6 +29,7 @@ const ROUTING_LABELS: Record<string, string> = {
   analyst_request: 'Analyst request',
   response_review: 'Response review',
   group_review: 'Group review',
+  blind_audit: 'Blind audit',
 };
 
 export function routingLabel(code: string): string {
@@ -70,6 +71,8 @@ export function routingSentence(value: unknown): string | null {
       return 'Escalated so a person reviews the planned response.';
     case 'group_review':
       return 'Escalated for review together with similar alerts.';
+    case 'blind_audit':
+      return 'Escalated because an analyst labelled this auto-closed alert malicious in a blind audit.';
     default:
       return `Escalated: ${routingLabel(routing.code)}.`;
   }

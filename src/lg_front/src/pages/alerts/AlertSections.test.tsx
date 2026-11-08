@@ -100,6 +100,20 @@ async function renderPanel(alert: AlertDetailOut = ALERT, opts: { role?: string;
 }
 
 describe('alert panel sections', () => {
+  it('says when the verdict is hidden for a blind audit', async () => {
+    const hidden: AlertDetailOut = {
+      ...ALERT,
+      status: 'closed',
+      disposition: null,
+      confidence: null,
+      threat_score: null,
+      summary: { hidden_for_blind_audit: true },
+      hidden_for_blind_audit: true,
+    };
+    const { panel } = await renderPanel(hidden);
+    expect(within(panel).getByRole('status')).toHaveTextContent('Verdict hidden for a blind audit');
+  });
+
   it('keeps every section of the old drawer', async () => {
     const { panel } = await renderPanel();
     for (const name of ['Automated triage', 'Entities', 'Timeline', 'Response actions', 'Tickets', 'Notes', 'Evidence and reporting', 'Alert details']) {

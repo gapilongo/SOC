@@ -91,6 +91,13 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
         {"source_id": "s", "rule_field": "rule_name", "rule": "r"},
     ),
     ("GET", "/api/v1/reports/monthly", "viewer", None),
+    ("GET", "/api/v1/reports/blind-audit", "viewer", None),
+    # Blind audit: people label (user accounts, analyst and up); admins sample on demand.
+    ("GET", "/api/v1/blind-audit/items", "reviewer", None),
+    ("GET", f"/api/v1/blind-audit/items/{U}", "reviewer", None),
+    ("POST", f"/api/v1/blind-audit/items/{U}/label", "reviewer", {"label": "benign"}),
+    ("GET", "/api/v1/blind-audit/runs", "viewer", None),
+    ("POST", "/api/v1/blind-audit/runs", "admin", {"size": 1}),
     ("GET", "/api/v1/audit", "admin", None),
     ("GET", "/api/v1/audit/verify", "admin", None),
     ("POST", "/api/v1/platform/tenants", "platform_admin", {"id": "rbac-new", "name": "RBAC new"}),

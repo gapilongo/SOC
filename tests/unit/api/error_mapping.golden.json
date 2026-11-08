@@ -104,6 +104,7 @@
   "lg_sotf.security.safe_regex.WorkBudgetExceeded": [500, "internal_error"],
   "lg_sotf.security.shadow.ShadowEgressRefused": [500, "internal_error"],
   "lg_sotf.security.totp.InvalidSecret": [400, "invalid_request"],
+  "lg_sotf.services.blind_audit.SamplingError": [400, "invalid_request"],
   "lg_sotf.services.reporting.ReportWindowError": [400, "invalid_request"],
   "lg_sotf.services.response.ActionRequestError": [500, "internal_error"],
   "lg_sotf.services.response.policy.ResponsePolicyError": [422, "invalid_settings"],

@@ -43,6 +43,8 @@ class TenantSettingsDoc(TypedDict, total=False):
     retention: Dict[str, Any]
     security: Dict[str, Any]
     reporting: Dict[str, Any]
+    #: Blind audit sampling of auto-closed alerts (lg_sotf.services.blind_audit).
+    blind_audit: Dict[str, Any]
     phishing: Dict[str, Any]
     #: Triage context (``known_scanners``; lg_sotf.domain.benign_evidence).
     triage: Dict[str, Any]
@@ -66,6 +68,7 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
         "retention",
         "security",
         "reporting",
+        "blind_audit",
         "phishing",
         "triage",
     }
@@ -73,7 +76,9 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
 
 #: The policy keys a new tenant copies whole from another tenant (``copy_settings_from``).
 #: Never "phishing": its brands, executives and mail servers identify the customer.
-COPIED_KEYS: Tuple[str, ...] = ("autonomy", "review", LLM_BUDGET_SETTING, "retention", "reporting")
+COPIED_KEYS: Tuple[str, ...] = (
+    "autonomy", "review", LLM_BUDGET_SETTING, "retention", "reporting", "blind_audit",
+)
 
 
 def as_token_budget(value: object) -> Optional[int]:

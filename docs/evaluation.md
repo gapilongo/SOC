@@ -816,8 +816,10 @@ Know the biases before you trust the numbers:
 * **Selection bias.** Only escalated alerts have analyst decisions, so the
   export never contains alerts the platform closed on its own. To measure
   missed threats, have analysts label a random sample of automatically
-  closed alerts as well (add them to the JSONL by hand or from your case
-  system) and keep that sample as its own split.
+  closed alerts: the blind audit does this in the product (`lg-sotf
+  audit-sample`, the Blind audit page and Reports > Blind audit;
+  docs/reporting.md), with the verdict hidden from the analyst. Keep such
+  a sample as its own split if you also add it to the JSONL.
 * **Label noise.** Decisions made under time pressure are imperfect. For a
   gold set, have two analysts label the same items independently (two
   `labels` entries) and check `inter_annotator_kappa`; resolve disagreements

@@ -46,6 +46,13 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
     rule = await api.repos.suppressions.create(TENANT_B, "noisy", {"title": "x"})
     integration = await api.repos.integrations.create(TENANT_B, "email", "Mail", config={"recipients": ["a@b.co"]})
     user = await api.user(TENANT_B, "admin")
+    now = datetime.now(UTC)
+    sampled = await make_alert(api.repos, TENANT_B, title="B sampled")  # its escalations and actions stay hidden
+    await api.repos.blind_audit.create_run(
+        TENANT_B, since=now - timedelta(days=7), until=now, seed=1, sample_rate=0.02, min_sample=0, fixed_size=None,
+        frame_size=1, items=[(sampled, 1, "benign")], trigger="cli", created_by="seed",
+    )
+    item = (await api.repos.blind_audit.list_items(TENANT_B)).items[0]
     return {
         "alert_id": alert_id,
         "escalation_id": escalation.id,
@@ -55,6 +62,8 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
         "integration_id": str(integration.id),
         "user_id": str(user.id),
         "tenant_id": TENANT_B,
+        "item_id": str(item.id),
+        "sampled_alert_id": sampled,
     }
 
 
@@ -118,7 +127,7 @@ async def test_grant_reads(api: ApiHarness) -> None:
     leaked: Set[str] = {t for _, body in served.values() for t in _tenant_ids(body)} - {TENANT_B}
     assert leaked == set()
     alerts = served[f"{API}/alerts"][1]["items"]
-    assert [a["id"] for a in alerts] == [ids["alert_id"]]
+    assert sorted(a["id"] for a in alerts) == sorted([ids["alert_id"], ids["sampled_alert_id"]])
     me = served[f"{API}/auth/me"][1]
     assert (me["tenant_id"], me["home_tenant_id"], me["role"]) == (TENANT_B, ORG, "admin")
     assert me["grant_id"] is not None and me["is_platform_admin"] is False

@@ -13,6 +13,7 @@ from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
+from lg_sotf.api.common import dashboard_cache_key
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import DashboardOut, UsageDayOut, UsageOut
@@ -28,10 +29,6 @@ MAX_USAGE_DAYS = 400
 
 dashboard = APIRouter(prefix="/dashboard", tags=["dashboard"])
 usage = APIRouter(prefix="/usage", tags=["usage"])
-
-
-def cache_key(ctx: ApiContext, tenant_id: str, window_hours: int) -> str:
-    return f"{ctx.prefix}:t:{tenant_id}:cache:dashboard:{window_hours}"
 
 
 @dashboard.get("/summary", response_model=DashboardOut, summary="Counts, MTTA/MTTR, queue depth and LLM cost")
@@ -56,7 +53,7 @@ async def summary(
 
 
 async def _tenant_summary(ctx: ApiContext, tenant_id: str, window_hours: int) -> DashboardOut:
-    key = cache_key(ctx, tenant_id, window_hours)
+    key = dashboard_cache_key(ctx, tenant_id, window_hours)
     try:
         cached = await ctx.redis.get(key)
         if cached is not None:

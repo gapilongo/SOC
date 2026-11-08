@@ -10,18 +10,19 @@ bodies (writers guarantee this), so they are returned as stored.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from lg_sotf.api.auth.deps import ADMIN, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import aware
+from lg_sotf.api.common import aware, hidden_alert_ids
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AuditActorTypeStr, Out, PageOut
 from lg_sotf.db.pagination import API_MAX_LIMIT
+from lg_sotf.domain.blind_audit import HIDDEN
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -76,7 +77,21 @@ async def list_audit(
         cursor=cursor,
     )
     items = [_visible(AuditEntryOut.model_validate(e), principal) for e in page.items]
-    return PageOut[AuditEntryOut](items=[e for e in items if e is not None], next_cursor=page.next_cursor)
+    shown = [e for e in items if e is not None]
+    # Entries about an alert waiting for its blind-audit label: their details may name the verdict.
+    hidden = await hidden_alert_ids(get_ctx(request), principal.tenant_id, [a for e in shown for a in _alert_ids(e)])
+    shown = [
+        e.model_copy(update={"details": dict(HIDDEN), "redacted": True}) if hidden & set(_alert_ids(e)) else e
+        for e in shown
+    ]
+    return PageOut[AuditEntryOut](items=shown, next_cursor=page.next_cursor)
+
+
+def _alert_ids(entry: AuditEntryOut) -> List[str]:
+    """The alerts an audit entry is about: its resource, and an ``alert_id`` in its details."""
+    ids = [entry.resource_id] if entry.resource_type == "alert" and entry.resource_id else []
+    named = entry.details.get("alert_id")
+    return ids + ([named] if isinstance(named, str) else [])
 
 
 def _visible(entry: AuditEntryOut, principal: Principal) -> Optional[AuditEntryOut]:

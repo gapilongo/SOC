@@ -61,7 +61,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection, locks
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
@@ -75,9 +75,11 @@ from lg_sotf.security.shadow import Arguments, egress, sink
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
-    from lg_sotf.db.repos import Repositories
+    from lg_sotf.db.repos import Alert, Repositories
 
 log = get_logger(__name__)
+
+WORKFLOW_ACTOR = Actor("agent", "workflow")
 
 DEFAULT_SLA_MINUTES: Dict[str, int] = {"L1": 30, "L2": 60, "L3": 120}
 HIGH_PRIORITY_THRESHOLD = 8
@@ -95,6 +97,8 @@ REASON_WEIGHTS: Dict[str, int] = {
     "response_review": 1,
     "group_review": 1,
     "false_positive_review": 0,
+    # An analyst labelled an auto-closed alert malicious in a blind audit (lg_sotf.services.blind_audit).
+    "blind_audit": 5,
 }
 SEVERITY_WEIGHTS: Dict[str, int] = {"critical": 2, "high": 1, "medium": 0, "low": -1, "info": -2}
 MAX_RELATED = 50
@@ -686,6 +690,52 @@ class EscalationService:
         await self._publish(tenant_id, "escalation.updated", esc.alert_id, {"escalation_id": escalation_id, "status": updated.status})
         return updated
 
+    async def open_for_audit(
+        self, conn: Connection, alert: Alert, *, item_id: str, notes: Optional[str], actor: Actor, now: datetime
+    ) -> Tuple[Escalation, bool]:
+        """In the caller's transaction: the escalation a blind-audit ``malicious`` label opens for an auto-closed
+        alert (or the alert's active one), placed like any other with the ``blind_audit`` reason code.
+
+        The analyst who decides it sees the AI's verdict, as on every escalation; the audit was the blind part.
+        Callers publish it after the commit (:meth:`announce_after_commit`).
+        """
+        policy = await self.policy(alert.tenant_id)
+        threat, confidence = float(alert.threat_score or 0), float(alert.confidence or 50)
+        place = _place(policy, alert.severity, threat, confidence, 0, "blind_audit", now)
+        analysis = alert.summary.get("analysis") if isinstance(alert.summary.get("analysis"), Mapping) else {}
+        body: Dict[str, Any] = {
+            "routing": {"code": "blind_audit"},
+            "blind_audit_item_id": item_id,
+            "analyst_notes": notes,
+            "verdict": alert.disposition,
+            "confidence": alert.confidence,
+            "threat_score": alert.threat_score,
+            "conclusion": analysis.get("conclusion") if isinstance(analysis, Mapping) else None,
+            "correlated_alert_ids": [],
+        }
+        reason = "An analyst labelled this auto-closed alert malicious in a blind audit: it needs a decision."
+        await locks.tenant_xact_lock(conn, locks.ESCALATION_GROUP, alert.tenant_id)
+        escalation, created = await self._repos.escalations.create_or_attach(
+            alert.tenant_id, alert.id, reason=reason, level=place.level, priority=place.priority, summary=body,
+            related_alert_ids=[], sla_deadline=place.sla_deadline, conn=conn,
+        )
+        if created:
+            await self._announce_created(
+                conn, escalation, "escalation.created",
+                {"alert_id": alert.id, "level": place.level, "priority": place.priority, "reason_code": "blind_audit",
+                 "blind_audit_item_id": item_id},
+                {"confidence": alert.confidence, "threat_score": alert.threat_score, "verdict": alert.disposition},
+                actor=actor,
+            )
+        return escalation, created
+
+    async def announce_after_commit(self, escalation: Escalation) -> None:
+        """Publish a committed new escalation to the alert's viewers (``escalation.created``)."""
+        await self._publish(
+            escalation.tenant_id, "escalation.created", escalation.alert_id,
+            {"escalation_id": escalation.id, "level": escalation.level, "priority": escalation.priority},
+        )
+
     async def _announce_created(
         self,
         conn: Connection,
@@ -693,15 +743,17 @@ class EscalationService:
         audit_action: str,
         details: Mapping[str, Any],
         alert_overrides: Mapping[str, Any],
+        *,
+        actor: Actor = WORKFLOW_ACTOR,
     ) -> None:
-        """In the creating transaction: the agent's audit entry and the outbound ``escalation.created`` event."""
+        """In the creating transaction: the audit entry (the agent's by default) and the outbound event."""
         await self._audit.record(
             escalation.tenant_id,
             audit_action,
             "escalation",
             escalation.id,
-            actor_type="agent",
-            actor_id="workflow",
+            actor_type=actor.type,
+            actor_id=actor.id,
             details=details,
             conn=conn,
         )

@@ -17,6 +17,10 @@ one is driven by an existing per-tenant time index:
 Built-in sample alerts (:data:`SAMPLE_SOURCE_ID`) are left out of every
 alert-based figure, as they are out of usage and invoicing.
 
+Alerts waiting for their blind-audit label are left out of the value,
+automation and detection figures until they are labelled: per-day and per-rule
+counts would otherwise reveal the verdict the blind audit hides.
+
 Callers bound the window (the API allows at most 366 days) and cache the
 results; see :mod:`lg_sotf.services.reporting` for the metric definitions.
 """
@@ -69,6 +73,8 @@ flags AS (
           AND e.event_type = 'node.completed' AND e.node = 'triage'
     ) v ON true
     WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
+      AND NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id
+                      AND b.label IS NULL)
 ),
 classified AS (
     SELECT f.*,
@@ -127,6 +133,8 @@ flags AS (
     FROM alerts a
     LEFT JOIN human_actions h ON h.alert_id = a.id
     WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
+      AND NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id
+                      AND b.label IS NULL)
 )
 SELECT count(*) FILTER (WHERE status = 'closed' AND NOT analyst_decided AND NOT human_action) AS handled,
        count(*) FILTER (WHERE analyst_decided OR human_action OR status IN ('waiting_human', 'waiting_approval')
@@ -235,6 +243,8 @@ SELECT a.source_id,
 FROM alerts a
 CROSS JOIN LATERAL (SELECT array_position($4::text[], a.severity) - 1 AS rank) s
 WHERE a.tenant_id = $1 AND a.ingested_at >= $2 AND a.ingested_at < $3 AND a.source_id <> $5
+  AND NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = a.tenant_id AND b.alert_id = a.id
+                  AND b.label IS NULL)
   {filter}
 GROUP BY 1, 2, 3
 ORDER BY volume DESC, a.source_id, rule

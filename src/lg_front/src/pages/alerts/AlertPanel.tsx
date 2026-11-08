@@ -7,7 +7,7 @@ import { qk } from '../../api/queryKeys';
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
 import { statusTone } from '../../components/Badge';
-import { Button, ErrorMessage, LoadingState, SeverityTag, StatePill } from '../../components/ui';
+import { Banner, Button, ErrorMessage, LoadingState, SeverityTag, StatePill } from '../../components/ui';
 import { formatDateTime, formatRelative } from '../../lib/format';
 import { statusWords } from './alertSummary';
 import { AlertSections, ReprocessButton } from './AlertSections';
@@ -91,6 +91,12 @@ export function AlertSidePanel({ alertId, onClose }: { alertId: string; onClose:
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {a && (
         <>
+          {a.hidden_for_blind_audit && (
+            <Banner tone="info" role="status" className="mb-4" title="Verdict hidden for a blind audit">
+              This alert is in a blind-audit sample. Its verdict, scores and reasoning are hidden for everyone until an analyst
+              labels it on the Blind audit page.
+            </Banner>
+          )}
           <AlertSections alert={a} />
           {can.reprocess(principal) && (
             <div className="mt-4 border-t border-subtle pt-4">

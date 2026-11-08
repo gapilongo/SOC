@@ -14,6 +14,12 @@ import type {
   ApprovalOut,
   AuditEntryOut,
   AuditVerifyOut,
+  BlindAuditItemOut,
+  BlindAuditLabelIn,
+  BlindAuditLabelOut,
+  BlindAuditReportOut,
+  BlindAuditRunSummary,
+  BlindAuditSampleIn,
   BulkClaimIn,
   BulkCloseIn,
   BulkOut,
@@ -308,6 +314,21 @@ export const endpoints = {
     api.post<SuppressionOut>('/reports/detections/propose-suppression', body),
   monthlyReport: (api: ApiClient, month: string, signal?: AbortSignal) =>
     api.get<MonthlyReportOut>('/reports/monthly', { query: { month, format: 'json' }, signal }),
+  blindAuditReport: (api: ApiClient, from: string, to: string, signal?: AbortSignal) =>
+    api.get<BlindAuditReportOut>('/reports/blind-audit', { query: { from, to }, signal }),
+
+  /** The blind audit queue: samples waiting for a label (oldest first) or labelled ones (newest first). */
+  blindAuditItems: (api: ApiClient, status: 'pending' | 'labelled', cursor?: string, signal?: AbortSignal) =>
+    api.get<Page<BlindAuditItemOut>>('/blind-audit/items', { query: { status, cursor, limit: 50 }, signal }),
+  /** One sample with its evidence; `reveal` (the AI's verdict) only once it is labelled. */
+  blindAuditItem: (api: ApiClient, id: string, signal?: AbortSignal) =>
+    api.get<BlindAuditItemOut>(`/blind-audit/items/${enc(id)}`, { signal }),
+  labelBlindAuditItem: (api: ApiClient, id: string, body: BlindAuditLabelIn) =>
+    api.post<BlindAuditLabelOut>(`/blind-audit/items/${enc(id)}/label`, body),
+  blindAuditRuns: (api: ApiClient, signal?: AbortSignal) =>
+    api.get<Page<BlindAuditRunSummary>>('/blind-audit/runs', { query: { limit: 20 }, signal }),
+  sampleBlindAudit: (api: ApiClient, body: BlindAuditSampleIn) => api.post<BlindAuditRunSummary>('/blind-audit/runs', body),
+
   /** The self-contained monthly HTML report (to save and print). */
   monthlyReportHtml: (api: ApiClient, month: string) =>
     api.get<string>('/reports/monthly', { query: { month, format: 'html' }, responseType: 'text', headers: { Accept: 'text/html' } }),
