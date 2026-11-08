@@ -257,7 +257,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/blind-audit/items`, `/blind-audit/items/{id}` (the blind queue: no AI verdict before the label) | analyst (user accounts) |
 | POST | `/blind-audit/items/{id}/label` (`malicious`, `benign`, `unsure`; once; reveals the AI verdict) | analyst (user accounts) |
 | GET | `/blind-audit/runs` (sampling runs: window, seed, frame, counts) | viewer / `read` |
-| POST | `/blind-audit/runs` (draw a sample now) | admin |
+| POST | `/blind-audit/runs` (draw a sample now, server seed; `dry_run` records nothing) | admin, not under an MSSP grant |
 | GET | `/audit`, `/audit/verify` | admin |
 | GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
@@ -548,13 +548,27 @@ is labelled. `POST /blind-audit/items/{id}/label` with `{"label":
 after) and returns `{item, escalation_id, escalation_created}` with
 `item.reveal` (`ai_class`, `agreement`, `disposition`, `confidence`,
 `threat_score`, `close_reason`, `routing_code`, `conclusion`); a malicious
-label opens an escalation (routing code `blind_audit`). These need an
-analyst or admin signed in as themselves (no API keys, no platform
-override). `POST /blind-audit/runs` (admin) takes `from`/`to` (closed-at
-window, default since the last run), `seed`, `sample_rate`,
-`min_per_week` or `size`; `409 window_already_sampled` when another run
-covers part of the window. `GET /reports/blind-audit?from=&to=` returns
-the estimate (docs/reporting.md, "Blind audit").
+label opens an escalation (routing code `blind_audit`); deciding it
+re-queues an alert whose run has ended, and the new run starts at that
+decision. These need an analyst or admin signed in as themselves (no API
+keys, no platform override; MSSP staff under a grant may label, attributed
+to their organisation). `POST /blind-audit/runs` (the tenant's own admins,
+`ADMIN_NOT_UNDER_GRANT`) takes `to` (default and at most 5 minutes ago),
+`sample_rate`, `min_per_week` or `size`, and `from` only for the tenant's
+first run (a run starts where the last one ended: `409
+window_not_contiguous` otherwise); the seed is the server's (`seed_source`).
+With `"dry_run": true` it returns `{window_start, window_end, seed,
+frame_size, sample_size, alert_ids}` (200) and records nothing; only a dry
+run takes `seed` (`400 seed_needs_dry_run` otherwise). `GET
+/reports/blind-audit?from=&to=` returns the stratified estimate
+(docs/reporting.md, "Blind audit").
+
+While an alert waits for its blind-audit label, `GET /alerts`,
+`GET /alerts/{id}`, its events, its evidence pack and WebSocket events
+withhold its AI side for every caller: `hidden_for_blind_audit: true`,
+`disposition`, `confidence`, `threat_score` and `priority` null, `summary`
+`{"hidden_for_blind_audit": true}`, no `findings`, and a `disposition`
+filter leaves it out.
 
 ### Audit log
 

@@ -16,7 +16,7 @@ faith.
 | Backtest a model on your history | `lg-sotf eval --from-history --tenant T --days N` | operator (CLI) |
 | Blind audit: production false-negative rate among auto-closed alerts | `GET /api/v1/reports/blind-audit?from=&to=`, Reports > Blind audit | viewer |
 | Label blind-audit samples | Blind audit page, `/api/v1/blind-audit/items` | analyst (user accounts) |
-| Draw a blind-audit sample | `lg-sotf audit-sample --tenant T`, `POST /api/v1/blind-audit/runs`, Blind audit page | admin, operator (CLI) |
+| Draw a blind-audit sample | `lg-sotf audit-sample --tenant T`, `POST /api/v1/blind-audit/runs`, Blind audit page | admin (not under an MSSP grant), operator (CLI) |
 
 `from`/`to` are UTC dates (inclusive). The default window is the 30 days
 ending today; a window may cover at most 366 days (`400 invalid_window`
@@ -139,53 +139,90 @@ approving or rejecting one of its actions) and an AI disposition other than
 `malicious`. Built-in sample alerts and alerts sampled before are left out.
 Each alert of the frame gets the key `md5("<seed>:<alert id>")` and the run
 takes the alerts with the smallest keys, so every subset of the frame is
-equally likely and the draw is reproducible from the recorded seed and
-frame. The run stores its window, seed, size rule and `frame_size`. Windows
-of one tenant never overlap (`409 window_already_sampled`), so an alert is
-in one frame at most.
+equally likely. The **seed is chosen by the server** and recorded with the
+run (`seed_source: "server"`); nobody can pick a seed that steers what is
+drawn. The run stores its window, seed, size rule and `frame_size`.
+
+Runs **follow each other without gaps**: a run starts exactly where the
+tenant's last run ended (only the tenant's first run takes a `from`), so no
+alert is in two frames and no closed alert falls between runs; asking for
+another start is `409 window_not_contiguous`. A window ends at most 5
+minutes before the database's clock, so a close still committing is never
+missed. Time no run covers yet (before the first run, or since the last
+one) is listed in the report as `uncovered`.
 
 The size is `ceil(sample_rate x frame)`, at least `ceil(min_per_week x days
 / 7)`, at most the frame and 2,000 per run; an explicit `size` replaces both
 (for example "label 200 random alerts" in a proof of value). Runs start:
 
-* every complete week (Monday 00:00 UTC), from the scheduler, for tenants
-  with the setting on:
+* from the scheduler, week by week (Monday 00:00 UTC) from where the last
+  run ended, catching up missed weeks, for tenants with the setting on:
   `PATCH /tenant/settings {"blind_audit": {"enabled": true, "sample_rate": 0.02, "min_per_week": 5}}`
   (off by default; rate 2%, at least 5 a week);
-* on demand: `lg-sotf audit-sample --tenant T [--from 2026-10-01 --to
-  2026-10-08] [--size 200] [--seed N] [--json]`, or `POST
-  /api/v1/blind-audit/runs` (admins), or "Draw a sample now" on the Blind
-  audit page. The window defaults to "since the last run ended" (else the
-  last 7 days) up to now.
+* on demand: `lg-sotf audit-sample --tenant T [--to ...] [--size 200]
+  [--json]`, `POST /api/v1/blind-audit/runs` (the tenant's own admins; not
+  MSSP staff under a grant) or "Draw a sample now" on the Blind audit page.
+
+A **dry run** (`--dry-run`, or `"dry_run": true`) draws and returns the
+sample without recording anything; it is the only place for a seed of your
+choosing (`--seed`). It keeps alerts an earlier run sampled in its frame,
+so a recorded run's window and seed re-draw that run's sample exactly.
 
 **Labelling.** The Blind audit page (analysts and admins, signed in as
 themselves) shows each sample's source, times, entities, normalized fields
 and source event, and asks for `malicious`, `benign` or `unsure` (keys M,
-B, U; N for the next sample). `GET /blind-audit/items[/{id}]` never carries
-the alert's disposition, confidence, scores, routing, summary or reasoning
-before the label exists (`reveal` is `null`); the label response, and later
-reads, add `reveal`: the AI's class when the alert was sampled, the
-agreement, confidence, threat score, routing code, close reason and
-reasoning. A label is given once (`409` after). A **malicious** label opens
-a normal escalation for the alert (routing code `blind_audit`), drops the
-cached verdict of its fingerprint, and is audited (`blind_audit.labelled`,
-`escalation.created`); sampling is audited as `blind_audit.sampled`.
+B, U; N for the next sample). Items carry no alert id. **Until the label
+exists the alert's AI side is hidden everywhere, for everyone in the tenant,
+admins and platform admins included**: `GET /alerts/{id}` and `GET /alerts`
+return `hidden_for_blind_audit: true` with `disposition`, `confidence`,
+`threat_score` and `priority` null, `summary` `{"hidden_for_blind_audit":
+true}` and no `findings`; a `disposition` filter never returns the sample;
+the timeline keeps only ingestion and notes (other events carry the marker
+as data); the evidence pack withholds the alert's verdict, the timeline's
+workflow data, the agents, investigation, enrichment, correlation and
+oversight sections; MCP tools read the same routes; WebSocket events about
+the alert go out without data; and the value and detection reports leave
+the sample out. MSSP staff under a grant may label; their labels are
+attributed to their organisation.
+
+The label response, and later reads, add `reveal`: the AI's class when the
+alert was sampled, the agreement, confidence, threat score, routing code,
+close reason and reasoning. A label is given once (`409` after). A
+**malicious** label opens a normal escalation for the alert (routing code
+`blind_audit`), drops the cached verdict of its fingerprint, and is audited
+(`blind_audit.labelled`, `escalation.created`); sampling is audited as
+`blind_audit.sampled`. **Deciding that escalation re-triages the alert**: an
+alert whose run has ended is queued again through the reprocess path
+(`alert.reprocess_requested`), and its new run starts at the analyst's
+decision, so the alert gets the analyst's disposition and
+`analyst_decision`, and a response is planned where the autonomy policy
+allows (the value report and the history then count it as decided by a
+person).
 
 **The estimate** (`GET /reports/blind-audit`, Reports > Blind audit) covers
-the runs whose window starts in the report window:
+the runs whose window overlaps the report window. It is **stratified**: each
+run is a stratum weighted by its frame, because runs draw different shares
+of their frames (the weekly minimum, a proof-of-value size) and pooled
+labels would be biased:
 
-* `false_negative_rate`: malicious labels over malicious and benign labels
-  (`unsure` labels are counted but left out), with `n` and its 95% Wilson
-  interval; fewer than **30** such labels is `insufficient_data`, shown as
-  "Not enough data (n=12; at least 30 needed)";
-* `estimated_missed` (with `_low` and `_high`): the rate and its interval
-  scaled to the frames, the number of missed threats among the alerts the
-  runs drew from;
-* `agreement_rate`, the counts (`sampled`, `labelled`, `pending`) and the
-  runs with their seed, frame and counts.
-
-Pooling runs is exact when they drew the same share of their frame; samples
-not labelled yet are left out until they are.
+* `false_negative_rate`: `p = sum(N_h p_h) / sum(N_h)` over the runs with a
+  malicious-or-benign label, where `N_h` is a run's frame and `p_h` its
+  malicious labels over malicious and benign labels; `n` is the number of
+  such labels. Its 95% interval is Wilson's on Kish's effective sample size
+  `N^2 / sum(N_h^2 / n_h)` (`effective_n`): exact for one run, and still
+  above zero when no label was malicious. The variance behind it is
+  `sum((N_h/N)^2 p_h (1 - p_h) / n_h (1 - n_h/N_h))`. Fewer than **30**
+  labels is `insufficient_data`, shown as "Not enough data (n=12; at least
+  30 needed)";
+* `estimated_missed` (with `_low` and `_high`): `sum(N_h p_h)` and the
+  interval scaled to those frames (`estimated_frame`);
+* `worst_case_rate` and `worst_case_missed` (with `_high`): unsure and
+  pending samples counted as malicious;
+* `status` is `incomplete` (and `complete` false) until every sample of
+  every run is labelled;
+* `strata`: each run with its own rate and Wilson interval; `runs`;
+  `uncovered`; `labels_by_organisation` (`null` for the tenant's own people,
+  else the MSSP organisation that labelled under a grant).
 
 ## Detection tuning report
 
@@ -305,9 +342,10 @@ can take seconds the first time; prefer monthly windows for routine use.
 * **Accuracy** covers escalated alerts only and scores the first escalation's
   verdict; attached (grouped) alerts are not samples of their own.
 * **Model attribution** exists only for alerts processed after this release.
-* **Blind audit** labels apply to the alert as it was closed; the alert stays
-  closed when an analyst labels it malicious. The escalation it opens is where
-  the analyst decides and responds.
+* **Blind audit**: samples waiting for a label are left out of the value and
+  detection figures until labelled. The Overview's disposition counts (24-hour
+  aggregates) still include them, and another alert's correlation digest may
+  count them among related dispositions.
 * **Backtest context:** suppression rules and the verdict cache are skipped
   (both derive from the decisions being scored). Correlation and history
   lookups see the tenant's data as of each alert's ingestion (sightings

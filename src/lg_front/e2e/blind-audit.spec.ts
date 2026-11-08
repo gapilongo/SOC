@@ -43,6 +43,8 @@ function aiKeysIn(value: unknown, found: string[] = []): string[] {
 }
 
 test('auto-closed alerts are sampled and the API hides their verdict until labelled', async ({ request }) => {
+  // Up to about 8 minutes: a run only covers alerts closed at least 5 minutes ago.
+  test.setTimeout(600_000);
   const auth = await bearer(request);
   const created = await request.post(`${API}/api-keys`, { data: { name: `e2e blind audit ${run}`, scopes: ['ingest', 'read'] }, headers: auth });
   expect(created.status(), await created.text()).toBe(201);
@@ -53,6 +55,8 @@ test('auto-closed alerts are sampled and the API hides their verdict until label
     TITLES.map((title, i) => ({
       source_alert_id: `${run}-${i}`,
       title,
+      // Triage takes false-positive evidence from the detection rule's name, never the title (AI-E6.3).
+      rule_name: 'scheduled-backup-maintenance-test',
       description: 'Known scheduled backup update test; benign maintenance noise, informational.',
       severity: 'info',
       occurred_at: new Date().toISOString(),
@@ -64,19 +68,36 @@ test('auto-closed alerts are sampled and the API hides their verdict until label
     expect(alert.disposition).not.toBe('malicious');
   }
 
-  // A run on demand over everything closed since the last run: our alerts are in its frame.
-  const sampled = await request.post(`${API}/blind-audit/runs`, { data: { size: 2000 }, headers: auth });
-  expect(sampled.status(), await sampled.text()).toBe(201);
-  const runOut = (await sampled.json()) as { frame_size: number; sample_size: number; seed: number };
-  expect(runOut.frame_size).toBeGreaterThanOrEqual(2);
-  expect(runOut.sample_size).toBe(runOut.frame_size);
-
-  const queue = await request.get(`${API}/blind-audit/items?status=pending&limit=200`, { headers: auth });
-  expect(queue.status()).toBe(200);
-  const listed = (await queue.json()) as { items: Array<{ id: string; alert: { title: string } }> };
-  const ours = listed.items.filter((i) => i.alert.title.includes(run));
+  // Runs on demand, each from where the last one ended to 5 minutes ago (a close still committing is never
+  // missed): repeat until a run's frame holds our alerts.
+  type Item = { id: string; alert: Record<string, unknown> & { title: string } };
+  let ours: Item[] = [];
+  let listed: { items: Item[] } = { items: [] };
+  for (let attempt = 0; attempt < 16 && ours.length < 2; attempt += 1) {
+    const sampled = await request.post(`${API}/blind-audit/runs`, { data: { size: 2000 }, headers: auth });
+    expect([201, 400], await sampled.text()).toContain(sampled.status());
+    if (sampled.status() === 201) {
+      const runOut = (await sampled.json()) as { frame_size: number; sample_size: number; seed_source: string };
+      expect(runOut.sample_size).toBe(runOut.frame_size);
+      expect(runOut.seed_source).toBe('server');
+    }
+    const queue = await request.get(`${API}/blind-audit/items?status=pending&limit=200`, { headers: auth });
+    expect(queue.status()).toBe(200);
+    listed = (await queue.json()) as { items: Item[] };
+    ours = listed.items.filter((i) => i.alert.title.includes(run));
+    if (ours.length < 2) await new Promise((r) => setTimeout(r, 30_000));
+  }
   expect(ours).toHaveLength(2);
   expect(aiKeysIn(listed)).toEqual([]);
+  expect(ours.every((i) => !('id' in i.alert))).toBe(true);
+  // The alert's own route withholds the verdict too, for an admin's token and a read key alike.
+  for (const item of items) {
+    for (const headers of [auth, { 'X-API-Key': key }]) {
+      const alert = (await (await request.get(`${API}/alerts/${item.alert_id}`, { headers })).json()) as Record<string, unknown>;
+      expect(alert.hidden_for_blind_audit).toBe(true);
+      expect(alert.disposition).toBeNull();
+    }
+  }
   const detail = await request.get(`${API}/blind-audit/items/${ours[0].id}`, { headers: auth });
   const body = (await detail.json()) as { reveal: unknown };
   expect(body.reveal).toBeNull();
@@ -121,9 +142,13 @@ test('an admin labels samples with the keyboard and sees the verdict only afterw
   await expect(page.getByRole('heading', { name: 'Blind audit', level: 1 })).toBeVisible();
   await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  // Let the colour transitions settle: axe must read the light theme's final colours.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
   await assertAccessible(page, '/blind-audit (light theme)');
   await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
   await expect(page.getByRole('heading', { name: 'Blind audit', level: 1 })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);

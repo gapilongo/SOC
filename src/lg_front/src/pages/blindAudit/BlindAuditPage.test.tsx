@@ -22,7 +22,6 @@ function item(id: string, overrides: Partial<BlindAuditItemOut> = {}): BlindAudi
     escalation_id: null,
     created_at: '2026-10-12T00:00:00Z',
     alert: {
-      id: `alert-${id}`,
       title: `Logon from new device ${id}`,
       severity: 'high',
       source_id: 'splunk',
@@ -44,6 +43,7 @@ const RUN: BlindAuditRunSummary = {
   window_start: '2026-10-05T00:00:00Z',
   window_end: '2026-10-12T00:00:00Z',
   seed: 42,
+  seed_source: 'server',
   sample_rate: 0.02,
   min_sample: 5,
   fixed_size: null,
@@ -190,8 +190,12 @@ const REPORT: BlindAuditReportOut = {
   generated_at: '2026-10-31T00:00:00Z',
   estimate: {
     status: 'ok',
-    summary: '6.7% (2 of 30; 95% CI 1.8% to 21.3%)',
+    complete: true,
+    summary: '6.7% (stratified over 1 run(s); n=30; 95% CI 1.8% to 21.3%)',
+    method: 'stratified',
     frame_size: 3000,
+    estimated_frame: 3000,
+    effective_n: 30,
     sampled: 32,
     labelled: 31,
     pending: 1,
@@ -204,7 +208,29 @@ const REPORT: BlindAuditReportOut = {
     estimated_missed: 200,
     estimated_missed_low: 55.43,
     estimated_missed_high: 639.7,
+    worst_case_rate: 0.09375,
+    worst_case_rate_high: 0.24,
+    worst_case_missed: 281.25,
+    worst_case_missed_high: 720,
   },
+  strata: [
+    {
+      run_id: 'run-1',
+      window_start: RUN.window_start,
+      window_end: RUN.window_end,
+      frame_size: 3000,
+      sampled: 32,
+      labelled: 31,
+      pending: 1,
+      malicious: 2,
+      benign: 28,
+      unsure: 1,
+      complete: false,
+      false_negative_rate: { rate: 2 / 30, n: 30, ci_low: 0.018477, ci_high: 0.213235 },
+    },
+  ],
+  uncovered: [{ from: '2026-10-12T00:00:00Z', to: '2026-10-31T00:00:00Z' }],
+  labels_by_organisation: [{ organisation: 'mssp-org', labelled: 31, malicious: 2, benign: 28, unsure: 1 }],
   runs: [RUN],
   notes: ['Analysts label each sample without seeing the AI verdict.'],
 };
@@ -226,16 +252,34 @@ describe('Reports page, blind audit tab', () => {
     expect(await screen.findByText('6.7%')).toBeInTheDocument();
     expect(screen.getByText(/2 malicious of 30 labelled samples \(n\)\. 95% CI 1\.8% to 21\.3%/)).toBeInTheDocument();
     expect(screen.getByText('about 200 (55 to 640)')).toBeInTheDocument();
-    expect(screen.getByText(/3,000 auto-closed alerts were eligible/)).toBeInTheDocument();
+    expect(screen.getByText(/3,000 of 3,000 eligible auto-closed alerts/)).toBeInTheDocument();
+    expect(screen.getByText('9.4%')).toBeInTheDocument();
+    expect(screen.getByText('6.7% (2 of 30; 95% CI 1.8% to 21.3%)')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Uncovered time' })).toBeInTheDocument();
+    expect(screen.getByText(/MSSP mssp-org: 31 labels/)).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Blind audit sampling runs' })).toBeInTheDocument();
     expect(screen.queryByText(/Not enough data/)).toBeNull();
   });
 
   it('uses the small-sample wording', async () => {
     const e = { ...REPORT.estimate, status: 'insufficient_data' as const, summary: 'Not enough data (n=4; at least 30 needed)' };
-    await renderTab({ ...REPORT, estimate: e, runs: [] });
+    await renderTab({ ...REPORT, estimate: e, runs: [], strata: [], uncovered: [], labels_by_organisation: [] });
     expect(await screen.findByText(/Not enough data \(n=4; at least 30 needed\)/)).toBeInTheDocument();
     expect(screen.getByText('No sampling run in this range')).toBeInTheDocument();
     expect(missedText({ ...e, estimated_missed: null })).toBe('-');
+  });
+});
+
+describe('Reports page, blind audit tab, incomplete', () => {
+  it('says the estimate is incomplete while samples wait', async () => {
+    const fake = fakeApi((method, path) => {
+      if (path === '/reports/blind-audit') return { ...REPORT, estimate: { ...REPORT.estimate, status: 'incomplete', complete: false, pending: 1 } };
+      if (path === '/reports/value') return new Promise(() => undefined);
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const session = await signedInSession(fake.api, { role: 'viewer' });
+    renderWithSession(<ReportsPage />, session, { route: '/reports' });
+    await userEvent.click(screen.getByRole('tab', { name: 'Blind audit' }));
+    expect(await screen.findByText(/Incomplete: 1 sample\(s\) still wait for a label/)).toBeInTheDocument();
   });
 });

@@ -774,6 +774,12 @@
             "title": "Fingerprint",
             "type": "string"
           },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1019,6 +1025,16 @@
                 "type": "object"
               },
               "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "blind_audit_review": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -1693,6 +1709,12 @@
             "title": "Fingerprint",
             "type": "string"
           },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1928,6 +1950,16 @@
                 "type": "object"
               },
               "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "blind_audit_review": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -2906,7 +2938,7 @@
         "type": "object"
       },
       "BlindAlertOut": {
-        "description": "The alert as its source sent it: nothing the AI concluded.",
+        "description": "The alert as its source sent it: nothing the AI concluded, and not its id (the item id is the\nhandle; the alert's own routes withhold its AI side until the label exists anyway).",
         "properties": {
           "category": {
             "anyOf": [
@@ -2928,10 +2960,6 @@
                 "type": "null"
               }
             ]
-          },
-          "id": {
-            "title": "Id",
-            "type": "string"
           },
           "ingested_at": {
             "format": "date-time",
@@ -3001,7 +3029,6 @@
           }
         },
         "required": [
-          "id",
           "title",
           "severity",
           "source_id",
@@ -3011,14 +3038,77 @@
         "title": "BlindAlertOut",
         "type": "object"
       },
+      "BlindAuditDraw": {
+        "description": "A dry run: what a run over this window and seed draws, recorded nowhere.",
+        "properties": {
+          "alert_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Ids",
+            "type": "array"
+          },
+          "frame_size": {
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "seed",
+          "frame_size",
+          "sample_size",
+          "alert_ids"
+        ],
+        "title": "BlindAuditDraw",
+        "type": "object"
+      },
       "BlindAuditEstimate": {
-        "description": "The production false-negative estimate over a set of runs.",
+        "description": "The production false-negative estimate over a set of runs, each run a stratum (see :func:`estimate`).",
         "properties": {
           "agreement_rate": {
             "$ref": "#/components/schemas/RateInterval"
           },
           "benign": {
             "title": "Benign",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "effective_n": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective N"
+          },
+          "estimated_frame": {
+            "title": "Estimated Frame",
             "type": "integer"
           },
           "estimated_missed": {
@@ -3069,6 +3159,12 @@
             "title": "Malicious",
             "type": "integer"
           },
+          "method": {
+            "const": "stratified",
+            "default": "stratified",
+            "title": "Method",
+            "type": "string"
+          },
           "min_samples": {
             "title": "Min Samples",
             "type": "integer"
@@ -3084,7 +3180,8 @@
           "status": {
             "enum": [
               "ok",
-              "insufficient_data"
+              "insufficient_data",
+              "incomplete"
             ],
             "title": "Status",
             "type": "string"
@@ -3096,12 +3193,58 @@
           "unsure": {
             "title": "Unsure",
             "type": "integer"
+          },
+          "worst_case_missed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Missed"
+          },
+          "worst_case_missed_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Missed High"
+          },
+          "worst_case_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Rate"
+          },
+          "worst_case_rate_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Rate High"
           }
         },
         "required": [
           "status",
+          "complete",
           "summary",
           "frame_size",
+          "estimated_frame",
           "sampled",
           "labelled",
           "pending",
@@ -3109,11 +3252,16 @@
           "benign",
           "unsure",
           "min_samples",
+          "effective_n",
           "false_negative_rate",
           "agreement_rate",
           "estimated_missed",
           "estimated_missed_low",
-          "estimated_missed_high"
+          "estimated_missed_high",
+          "worst_case_rate",
+          "worst_case_rate_high",
+          "worst_case_missed",
+          "worst_case_missed_high"
         ],
         "title": "BlindAuditEstimate",
         "type": "object"
@@ -3301,6 +3449,13 @@
             "title": "Generated At",
             "type": "string"
           },
+          "labels_by_organisation": {
+            "items": {
+              "$ref": "#/components/schemas/OrganisationLabels"
+            },
+            "title": "Labels By Organisation",
+            "type": "array"
+          },
           "notes": {
             "items": {
               "type": "string"
@@ -3315,10 +3470,24 @@
             "title": "Runs",
             "type": "array"
           },
+          "strata": {
+            "items": {
+              "$ref": "#/components/schemas/BlindAuditStratum"
+            },
+            "title": "Strata",
+            "type": "array"
+          },
           "to": {
             "format": "date",
             "title": "To",
             "type": "string"
+          },
+          "uncovered": {
+            "items": {
+              "$ref": "#/components/schemas/UncoveredSpan"
+            },
+            "title": "Uncovered",
+            "type": "array"
           }
         },
         "required": [
@@ -3326,7 +3495,10 @@
           "to",
           "generated_at",
           "estimate",
+          "strata",
           "runs",
+          "uncovered",
+          "labels_by_organisation",
           "notes"
         ],
         "title": "BlindAuditReport",
@@ -3518,6 +3690,11 @@
             "title": "Seed",
             "type": "integer"
           },
+          "seed_source": {
+            "default": "server",
+            "title": "Seed Source",
+            "type": "string"
+          },
           "tenant_id": {
             "title": "Tenant Id",
             "type": "string"
@@ -3567,8 +3744,14 @@
       },
       "BlindAuditSampleIn": {
         "additionalProperties": false,
-        "description": "A run on demand: alerts closed in ``[from, to)`` (default: since the last run, or the last 7 days, to now).",
+        "description": "A run on demand: alerts closed from where the last run ended (the tenant's first run: ``from``, default\n7 days back) to ``to`` (default and at most: 5 minutes before now). ``dry_run`` draws without recording\nanything and is the only way to pass a ``seed`` (with it, ``from`` may be any time).",
         "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "Draw and return the sample without recording a run.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
           "from": {
             "anyOf": [
               {
@@ -3619,7 +3802,7 @@
                 "type": "null"
               }
             ],
-            "description": "Default: a fresh random seed.",
+            "description": "Dry runs only (a recorded run's seed is the server's).",
             "title": "Seed"
           },
           "size": {
@@ -3650,6 +3833,77 @@
           }
         },
         "title": "BlindAuditSampleIn",
+        "type": "object"
+      },
+      "BlindAuditStratum": {
+        "description": "One run as a stratum of the estimate, with its own rate and 95% Wilson interval.",
+        "properties": {
+          "benign": {
+            "title": "Benign",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "false_negative_rate": {
+            "$ref": "#/components/schemas/RateInterval"
+          },
+          "frame_size": {
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "labelled": {
+            "title": "Labelled",
+            "type": "integer"
+          },
+          "malicious": {
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sampled": {
+            "title": "Sampled",
+            "type": "integer"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "integer"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "window_start",
+          "window_end",
+          "frame_size",
+          "sampled",
+          "labelled",
+          "pending",
+          "malicious",
+          "benign",
+          "unsure",
+          "complete",
+          "false_negative_rate"
+        ],
+        "title": "BlindAuditStratum",
         "type": "object"
       },
       "BulkClaimIn": {
@@ -7724,6 +7978,47 @@
         "title": "OrganisationIn",
         "type": "object"
       },
+      "OrganisationLabels": {
+        "description": "Labels given by one organisation (``None``: the tenant's own people).",
+        "properties": {
+          "benign": {
+            "title": "Benign",
+            "type": "integer"
+          },
+          "labelled": {
+            "title": "Labelled",
+            "type": "integer"
+          },
+          "malicious": {
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "organisation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organisation"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organisation",
+          "labelled",
+          "malicious",
+          "benign",
+          "unsure"
+        ],
+        "title": "OrganisationLabels",
+        "type": "object"
+      },
       "OrganisationOut": {
         "properties": {
           "created_at": {
@@ -10433,6 +10728,27 @@
           "user"
         ],
         "title": "TokenOut",
+        "type": "object"
+      },
+      "UncoveredSpan": {
+        "description": "Time in the report's window that no run sampled: alerts closed then are in no frame.",
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "UncoveredSpan",
         "type": "object"
       },
       "UsageDayOut": {
@@ -13405,7 +13721,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BlindAuditRunSummary"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BlindAuditRunSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BlindAuditDraw"
+                    }
+                  ],
+                  "title": "Response Create Run Api V1 Blind Audit Runs Post"
                 }
               }
             },
@@ -13422,7 +13746,7 @@
             "description": "Validation Error"
           }
         },
-        "summary": "Sample auto-closed alerts now",
+        "summary": "Sample auto-closed alerts now (or draw without recording: dry_run)",
         "tags": [
           "blind-audit"
         ],

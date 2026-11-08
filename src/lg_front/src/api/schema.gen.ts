@@ -579,7 +579,7 @@ export interface paths {
         /** Sampling runs: window, seed, frame and label counts */
         get: operations["list_runs_api_v1_blind_audit_runs_get"];
         put?: never;
-        /** Sample auto-closed alerts now */
+        /** Sample auto-closed alerts now (or draw without recording: dry_run) */
         post: operations["create_run_api_v1_blind_audit_runs_post"];
         delete?: never;
         options?: never;
@@ -1909,6 +1909,12 @@ export interface components {
             findings?: components["schemas"]["FindingOut"][];
             /** Fingerprint */
             fingerprint: string;
+            /**
+             * Hidden For Blind Audit
+             * @description True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.
+             * @default false
+             */
+            hidden_for_blind_audit?: boolean;
             /** Id */
             id: string;
             /**
@@ -1998,6 +2004,7 @@ export interface components {
                     verdict?: string;
                 };
                 analyst_decision?: string | null;
+                blind_audit_review?: string | null;
                 close_reason?: string;
                 confidence?: number | null;
                 correlation?: {
@@ -2155,6 +2162,12 @@ export interface components {
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Fingerprint */
             fingerprint: string;
+            /**
+             * Hidden For Blind Audit
+             * @description True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.
+             * @default false
+             */
+            hidden_for_blind_audit?: boolean;
             /** Id */
             id: string;
             /**
@@ -2236,6 +2249,7 @@ export interface components {
                     verdict?: string;
                 };
                 analyst_decision?: string | null;
+                blind_audit_review?: string | null;
                 close_reason?: string;
                 confidence?: number | null;
                 correlation?: {
@@ -2503,14 +2517,13 @@ export interface components {
         };
         /**
          * BlindAlertOut
-         * @description The alert as its source sent it: nothing the AI concluded.
+         * @description The alert as its source sent it: nothing the AI concluded, and not its id (the item id is the
+         *     handle; the alert's own routes withhold its AI side until the label exists anyway).
          */
         BlindAlertOut: {
             /** Category */
             category?: string | null;
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
-            /** Id */
-            id: string;
             /**
              * Ingested At
              * Format: date-time
@@ -2548,13 +2561,43 @@ export interface components {
             title: string;
         };
         /**
+         * BlindAuditDraw
+         * @description A dry run: what a run over this window and seed draws, recorded nowhere.
+         */
+        BlindAuditDraw: {
+            /** Alert Ids */
+            alert_ids: string[];
+            /** Frame Size */
+            frame_size: number;
+            /** Sample Size */
+            sample_size: number;
+            /** Seed */
+            seed: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /**
          * BlindAuditEstimate
-         * @description The production false-negative estimate over a set of runs.
+         * @description The production false-negative estimate over a set of runs, each run a stratum (see :func:`estimate`).
          */
         BlindAuditEstimate: {
             agreement_rate: components["schemas"]["RateInterval"];
             /** Benign */
             benign: number;
+            /** Complete */
+            complete: boolean;
+            /** Effective N */
+            effective_n: number | null;
+            /** Estimated Frame */
+            estimated_frame: number;
             /** Estimated Missed */
             estimated_missed: number | null;
             /** Estimated Missed High */
@@ -2568,6 +2611,12 @@ export interface components {
             labelled: number;
             /** Malicious */
             malicious: number;
+            /**
+             * Method
+             * @default stratified
+             * @constant
+             */
+            method?: "stratified";
             /** Min Samples */
             min_samples: number;
             /** Pending */
@@ -2578,11 +2627,19 @@ export interface components {
              * Status
              * @enum {string}
              */
-            status: "ok" | "insufficient_data";
+            status: "ok" | "insufficient_data" | "incomplete";
             /** Summary */
             summary: string;
             /** Unsure */
             unsure: number;
+            /** Worst Case Missed */
+            worst_case_missed: number | null;
+            /** Worst Case Missed High */
+            worst_case_missed_high: number | null;
+            /** Worst Case Rate */
+            worst_case_rate: number | null;
+            /** Worst Case Rate High */
+            worst_case_rate_high: number | null;
         };
         /** BlindAuditItemOut */
         BlindAuditItemOut: {
@@ -2654,15 +2711,21 @@ export interface components {
              * Format: date-time
              */
             generated_at: string;
+            /** Labels By Organisation */
+            labels_by_organisation: components["schemas"]["OrganisationLabels"][];
             /** Notes */
             notes: string[];
             /** Runs */
             runs: components["schemas"]["BlindAuditRunSummary"][];
+            /** Strata */
+            strata: components["schemas"]["BlindAuditStratum"][];
             /**
              * To
              * Format: date
              */
             to: string;
+            /** Uncovered */
+            uncovered: components["schemas"]["UncoveredSpan"][];
         };
         /**
          * BlindAuditRevealOut
@@ -2744,6 +2807,11 @@ export interface components {
             sampled?: number;
             /** Seed */
             seed: number;
+            /**
+             * Seed Source
+             * @default server
+             */
+            seed_source?: string;
             /** Tenant Id */
             tenant_id: string;
             /**
@@ -2769,9 +2837,17 @@ export interface components {
         };
         /**
          * BlindAuditSampleIn
-         * @description A run on demand: alerts closed in ``[from, to)`` (default: since the last run, or the last 7 days, to now).
+         * @description A run on demand: alerts closed from where the last run ended (the tenant's first run: ``from``, default
+         *     7 days back) to ``to`` (default and at most: 5 minutes before now). ``dry_run`` draws without recording
+         *     anything and is the only way to pass a ``seed`` (with it, ``from`` may be any time).
          */
         BlindAuditSampleIn: {
+            /**
+             * Dry Run
+             * @description Draw and return the sample without recording a run.
+             * @default false
+             */
+            dry_run?: boolean;
             /** From */
             from?: string | null;
             /** Min Per Week */
@@ -2783,7 +2859,7 @@ export interface components {
             sample_rate?: number | null;
             /**
              * Seed
-             * @description Default: a fresh random seed.
+             * @description Dry runs only (a recorded run's seed is the server's).
              */
             seed?: number | null;
             /**
@@ -2793,6 +2869,44 @@ export interface components {
             size?: number | null;
             /** To */
             to?: string | null;
+        };
+        /**
+         * BlindAuditStratum
+         * @description One run as a stratum of the estimate, with its own rate and 95% Wilson interval.
+         */
+        BlindAuditStratum: {
+            /** Benign */
+            benign: number;
+            /** Complete */
+            complete: boolean;
+            false_negative_rate: components["schemas"]["RateInterval"];
+            /** Frame Size */
+            frame_size: number;
+            /** Labelled */
+            labelled: number;
+            /** Malicious */
+            malicious: number;
+            /** Pending */
+            pending: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Sampled */
+            sampled: number;
+            /** Unsure */
+            unsure: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
         };
         /** BulkClaimIn */
         BulkClaimIn: {
@@ -4369,6 +4483,22 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * OrganisationLabels
+         * @description Labels given by one organisation (``None``: the tenant's own people).
+         */
+        OrganisationLabels: {
+            /** Benign */
+            benign: number;
+            /** Labelled */
+            labelled: number;
+            /** Malicious */
+            malicious: number;
+            /** Organisation */
+            organisation: string | null;
+            /** Unsure */
+            unsure: number;
+        };
         /** OrganisationOut */
         OrganisationOut: {
             /**
@@ -5387,6 +5517,22 @@ export interface components {
              */
             token_type?: "bearer";
             user: components["schemas"]["UserOut"];
+        };
+        /**
+         * UncoveredSpan
+         * @description Time in the report's window that no run sampled: alerts closed then are in no frame.
+         */
+        UncoveredSpan: {
+            /**
+             * From
+             * Format: date-time
+             */
+            from: string;
+            /**
+             * To
+             * Format: date-time
+             */
+            to: string;
         };
         /** UsageDayOut */
         UsageDayOut: {
@@ -6829,7 +6975,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BlindAuditRunSummary"];
+                    "application/json": components["schemas"]["BlindAuditRunSummary"] | components["schemas"]["BlindAuditDraw"];
                 };
             };
             /** @description Validation Error */

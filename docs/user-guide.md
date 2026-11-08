@@ -172,9 +172,12 @@ sample shows the alert's source, times, entities and event, but not the
 AI's verdict: label it **Malicious**, **Benign** or **Unsure** from the
 evidence alone (keys M, B and U), with an optional note. The AI's verdict,
 confidence, routing and reasoning appear only after you label, with whether
-you agree; press N for the next sample. A malicious label opens a normal
-escalation for the alert, which you then decide in the queue. The results
-are under Reports > Blind audit.
+you agree; press N for the next sample. Until a sample is labelled, its
+alert shows "Verdict hidden for a blind audit" everywhere else too, for
+everyone. A malicious label opens a normal escalation for the alert; deciding
+it in the queue re-triages the alert with your decision (its disposition, and
+a response where the policy allows). The results are under Reports > Blind
+audit.
 
 ## Administrator workflows
 
@@ -305,10 +308,12 @@ rules with a tune-or-suppress suggestion; analysts can *Propose
 suppression*, which creates a disabled rule for an admin to enable) and
 *Blind audit* (the false-negative rate among auto-closed alerts, from
 analysts' blind labels of a random sample, with its interval and sample
-size). Admins turn on the weekly sample with the tenant setting
-`blind_audit` (`{"enabled": true}`), draw one now on the Blind audit
-page, or run `lg-sotf audit-sample --tenant <id> [--size 200]` (a
-proof-of-value random sample).
+size; stratified over the sampling runs, with a worst case and an
+"incomplete" mark until every sample is labelled). Admins turn on the weekly
+sample with the tenant setting `blind_audit` (`{"enabled": true}`), draw one
+now on the Blind audit page, or run `lg-sotf audit-sample --tenant <id>
+[--size 200]` (a proof-of-value random sample; runs follow each other
+without gaps and use a seed the server picks).
 *Export CSV* downloads the value series or the detections table; *Open
 monthly report* shows a printable page for the month. Admins set the
 minutes an analyst spends per alert under Tenant settings > Reporting. To

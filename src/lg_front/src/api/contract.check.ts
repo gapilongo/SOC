@@ -35,6 +35,8 @@ import type {
   BlindAuditRevealOut,
   BlindAuditRunSummary,
   BlindAuditSampleIn,
+  BlindAuditStratum,
+  OrganisationLabels,
   BulkClaimIn,
   BulkCloseIn,
   BulkErrorOut,
@@ -159,6 +161,8 @@ export interface ResponseContract {
   BlindAuditReportOut: Response<Wire<Schemas['BlindAuditReport']>, BlindAuditReportOut>;
   BlindAuditRevealOut: Response<Wire<Schemas['BlindAuditRevealOut']>, BlindAuditRevealOut>;
   BlindAuditRunSummary: Response<Wire<Schemas['BlindAuditRunSummary']>, BlindAuditRunSummary>;
+  BlindAuditStratum: Response<Wire<Schemas['BlindAuditStratum']>, BlindAuditStratum>;
+  OrganisationLabels: Response<Wire<Schemas['OrganisationLabels']>, OrganisationLabels>;
   ActionOut: Response<Wire<Schemas['ActionOut']>, ActionOut>;
   AlertCountsOut: Response<Wire<Schemas['AlertCountsOut']>, AlertCountsOut>;
   AlertDetailOut: Response<Wire<Schemas['AlertDetailOut']>, AlertDetailOut>;
