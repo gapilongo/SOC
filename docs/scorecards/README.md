@@ -57,28 +57,35 @@ Every scorecard has the same sections, in this order.
 
 1. **Header.** Provider, fast and deep model IDs, prompt version (or "not
    recorded"), lg-sotf version, when the reports were generated.
-2. **Malicious false-negative rate (the headline).** Expected-malicious items
+2. **Headline: closure.** Two numbers per dataset: the *benign closure
+   rate* (expected-benign items automation closed as benign, with `k` of `n`
+   and a 95% Wilson interval) and *malicious auto-close* (expected-malicious
+   items automation closed with any disposition, with `k` of `n` and the
+   exact one-sided 95% upper bound). Then the closes per mechanism (rules,
+   model, history, verdict cache, suppression, response) and the IDs of every
+   malicious item closed ([evaluation.md](../evaluation.md#the-headline-closure)).
+3. **Malicious false-negative rate.** Expected-malicious items
    automation closed as benign without a human, for each dataset and each
    split, as `k` missed of `n` with the rate and a 95% Wilson score interval,
    followed by the IDs of the missed items. An escalated malicious item is not
    a miss: a human sees it.
-3. **Automation.**
+4. **Automation.**
    * *Auto-close precision*: of the items automation closed on its own, the
      share whose closing disposition matches the expected one.
    * *Auto-close rate*, *escalation rate* (analyst review requested),
      *approval requests* (response actions waiting for approval) and *errors*.
    Each with counts and a 95% Wilson interval.
-4. **Per class.** Precision and recall (each with counts and a 95% Wilson
+5. **Per class.** Precision and recall (each with counts and a 95% Wilson
    interval), F1, support and predicted count for `malicious`, `benign` and
    `inconclusive`, plus macro F1. The predicted
    disposition of an escalated item is the analysis verdict (`inconclusive`
    without one), as in the eval report.
-5. **Cost and latency per item.** Mean cost, total cost, tokens and LLM calls
+6. **Cost and latency per item.** Mean cost, total cost, tokens and LLM calls
    per item; latency mean, p50, p95 and max from ingestion to the run's stop.
    Local models are metered at $0: their cost is the hardware.
-6. **Datasets.** Path, sha256 prefix, items, scored items, synthetic flag,
+7. **Datasets.** Path, sha256 prefix, items, scored items, synthetic flag,
    splits.
-7. **Limitations.** Generated from the reports (synthetic data, small
+8. **Limitations.** Generated from the reports (synthetic data, small
    samples, unreviewed escalations, subsets, errors, missing prompt versions)
    plus the `--note` lines.
 

@@ -28,10 +28,11 @@ CORPUS = ROOT / "tests" / "fixtures" / "eval" / "corpus_v1.jsonl.gz"
 
 
 def corpus_sha256_without_tenant_settings() -> str:
-    """The corpus v2 ran on: today's alerts, before AI-E1.9 declared the estate's scanner in ``_meta``."""
+    """The corpus v2 ran on: today's alerts, before AI-E1.9 and fatigue step 1 declared the estate in ``_meta``."""
     first, rest = gzip.decompress(CORPUS.read_bytes()).decode("utf-8").split("\n", 1)
     header = json.loads(first)
     assert header["_meta"].pop("tenant_settings") == {"triage": {"known_scanners": ["10.20.5.10"]}}
+    header["_meta"].pop("tenant_context")  # fatigue step 1: the declared estate facts, measured only
     text = json.dumps(header, ensure_ascii=False, separators=(",", ":")) + "\n" + rest
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 

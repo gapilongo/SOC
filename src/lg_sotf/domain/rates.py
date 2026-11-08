@@ -45,6 +45,45 @@ def wilson_interval(successes: int, n: int, z: float = Z_95) -> Optional[Tuple[f
     return low, high
 
 
+def _binomial_cdf(k: int, n: int, p: float) -> float:
+    """P(X <= k) for X ~ Binomial(n, p), summed in log space so large ``n`` does not underflow."""
+    if p <= 0.0:
+        return 1.0
+    if p >= 1.0:
+        return 1.0 if k >= n else 0.0
+    log_p, log_q = math.log(p), math.log1p(-p)
+    total = 0.0
+    for i in range(k + 1):
+        log_term = math.lgamma(n + 1) - math.lgamma(i + 1) - math.lgamma(n - i + 1) + i * log_p + (n - i) * log_q
+        total += math.exp(log_term)
+    return min(1.0, total)
+
+
+def upper_bound(successes: int, n: int, confidence: float = 0.95) -> Optional[float]:
+    """The exact one-sided (Clopper-Pearson) upper confidence bound of ``successes`` out of ``n``.
+
+    The largest rate still consistent with seeing at most ``successes``: at 0 of
+    300 it is about 1.0% (the "rule of three", 3/n). ``None`` when ``n`` is 0.
+    """
+    if n <= 0:
+        return None
+    if not 0 <= successes <= n:
+        raise ValueError("successes must be between 0 and n")
+    if successes == n:
+        return 1.0
+    alpha = 1.0 - confidence
+    if successes == 0:
+        return 1.0 - float(alpha ** (1.0 / n))
+    low, high = successes / n, 1.0
+    for _ in range(80):  # bisection: the CDF falls as p grows
+        mid = (low + high) / 2
+        if _binomial_cdf(successes, n, mid) > alpha:
+            low = mid
+        else:
+            high = mid
+    return high
+
+
 class RateInterval(BaseModel):
     """A rate with its sample size and 95% Wilson interval; ``rate`` and the bounds are ``None`` when ``n`` is 0."""
 

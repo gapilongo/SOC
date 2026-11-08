@@ -33,6 +33,110 @@
         "limit": null,
         "isolation": "splits"
       },
+      "closure": {
+        "headline": {
+          "benign_closure": {
+            "k": 6,
+            "rate": 0.2857142857142857,
+            "n": 21,
+            "ci_low": 0.138139,
+            "ci_high": 0.499564
+          },
+          "malicious_auto_close": {
+            "k": 0,
+            "n": 35,
+            "rate": 0.0,
+            "upper_95": 0.08203163585667039
+          }
+        },
+        "by_mechanism": [
+          {
+            "mechanism": "rules",
+            "benign": {
+              "k": 4,
+              "rate": 0.19047619047619047,
+              "n": 21,
+              "ci_low": 0.076676,
+              "ci_high": 0.400006
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "model",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 21,
+              "ci_low": 0.0,
+              "ci_high": 0.154639
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "history",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 21,
+              "ci_low": 0.0,
+              "ci_high": 0.154639
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "cache",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 21,
+              "ci_low": 0.0,
+              "ci_high": 0.154639
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "suppression",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 21,
+              "ci_low": 0.0,
+              "ci_high": 0.154639
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "response",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 21,
+              "ci_low": 0.0,
+              "ci_high": 0.154639
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "unattributed",
+            "benign": {
+              "k": 2,
+              "rate": 0.09523809523809523,
+              "n": 21,
+              "ci_low": 0.026519,
+              "ci_high": 0.289141
+            },
+            "malicious": 0,
+            "other": 0
+          }
+        ],
+        "malicious_closed": []
+      },
       "scored": 64,
       "errors": 0,
       "malicious_false_negative": {
@@ -229,6 +333,110 @@
         "tags": [],
         "limit": null,
         "isolation": "splits"
+      },
+      "closure": {
+        "headline": {
+          "benign_closure": {
+            "k": 5,
+            "rate": 0.45454545454545453,
+            "n": 11,
+            "ci_low": 0.212713,
+            "ci_high": 0.719908
+          },
+          "malicious_auto_close": {
+            "k": 0,
+            "n": 24,
+            "rate": 0.0,
+            "upper_95": 0.1173461561549487
+          }
+        },
+        "by_mechanism": [
+          {
+            "mechanism": "rules",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "model",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "history",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "cache",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "suppression",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "response",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 11,
+              "ci_low": 0.0,
+              "ci_high": 0.258833
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "unattributed",
+            "benign": {
+              "k": 5,
+              "rate": 0.45454545454545453,
+              "n": 11,
+              "ci_low": 0.212713,
+              "ci_high": 0.719908
+            },
+            "malicious": 0,
+            "other": 0
+          }
+        ],
+        "malicious_closed": []
       },
       "scored": 39,
       "errors": 0,

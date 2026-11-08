@@ -49,6 +49,7 @@ EXIT_OK = 0
 EXIT_GATE_FAILED = 1
 EXIT_CANNOT_RUN = 2
 MAX_CONCURRENCY = 32
+ORACLE_MODES = ("off", "propose", "accept")
 
 
 class EvalCommandError(Exception):
@@ -74,6 +75,8 @@ class EvalOptions:
     days: int = 30
     cassettes: Optional[str] = None
     cassette_mode: str = "replay"
+    # The analyst oracle (lg_sotf.eval.oracle): off, propose (suggested suppressions stay disabled) or accept.
+    oracle: str = "off"
     # The process's SecretBox, built by cli.py (ADR-0006): enrichment reads tenant-encrypted tool keys with it.
     secret_box: Optional[SecretBox] = None
 
@@ -85,13 +88,19 @@ def markdown_path(options: EvalOptions) -> Path:
 
 
 def selection(options: EvalOptions) -> Dict[str, Any]:
-    """What was evaluated beyond the dataset file; recorded in ``report.run`` and compared with a baseline."""
-    return {
+    """What was evaluated beyond the dataset file; recorded in ``report.run`` and compared with a baseline.
+
+    An oracle run is not comparable with a plain one, so its mode is part of the selection.
+    """
+    chosen: Dict[str, Any] = {
         "splits": sorted(options.splits),
         "tags": sorted(options.tags),
         "limit": options.limit,
         "isolation": options.isolate,
     }
+    if options.oracle != "off":
+        chosen["oracle"] = options.oracle
+    return chosen
 
 
 def check_writable(path: Path) -> None:
@@ -196,6 +205,18 @@ def _write_outputs(report: Dict[str, Any], gate_dict: Optional[Dict[str, Any]], 
         ) from exc
 
 
+def check_run_options(options: EvalOptions) -> None:
+    """The ``--dataset`` run's isolation and oracle options (:class:`EvalCommandError` when unusable)."""
+    if options.isolate not in ISOLATION_MODES:
+        raise EvalCommandError(f"--isolate must be one of {', '.join(ISOLATION_MODES)}")
+    if options.oracle not in ORACLE_MODES:
+        raise EvalCommandError(f"--oracle must be one of {', '.join(ORACLE_MODES)}")
+    if options.oracle != "off" and options.concurrency != 1:
+        raise EvalCommandError("--oracle decides alerts one at a time in event-time order; use --concurrency 1")
+    if options.oracle != "off" and options.from_history:
+        raise EvalCommandError("--oracle applies to a --dataset run, not to --from-history")
+
+
 def execute(  # noqa: C901
     settings: Settings,
     options: EvalOptions,
@@ -205,10 +226,9 @@ def execute(  # noqa: C901
     """Run the command; returns the process exit code. Raises :class:`EvalCommandError` for exit code 2."""
     if not 1 <= options.concurrency <= MAX_CONCURRENCY:
         raise EvalCommandError(f"--concurrency must be between 1 and {MAX_CONCURRENCY}")
+    check_run_options(options)
     if options.from_history:
         return execute_history(settings, options, echo, warn)
-    if options.isolate not in ISOLATION_MODES:
-        raise EvalCommandError(f"--isolate must be one of {', '.join(ISOLATION_MODES)}")
     try:
         dataset = load_dataset(options.dataset).select(splits=options.splits, tags=options.tags, limit=options.limit)
     except DatasetError as exc:
@@ -311,6 +331,8 @@ def _run_dataset(settings: Settings, dataset: Dataset, options: EvalOptions, pro
                 progress=progress,
                 secret_box=options.secret_box,
                 cassettes=cassettes,
+                oracle=options.oracle != "off",
+                accept_suppressions=options.oracle == "accept",
             )
         )
     except (EvalSetupError, SecurityConfigError, OperationError, CassetteError) as exc:
