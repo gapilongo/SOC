@@ -7,12 +7,16 @@ import contextvars
 from email.message import EmailMessage
 from typing import Any, List
 
+import httpx
 import pytest
 
 from lg_sotf.integrations.channels import _smtp_send
+from lg_sotf.integrations.microsoft.auth import TokenProvider
+from lg_sotf.integrations.microsoft.http import MicrosoftHttpFactory
 from lg_sotf.security.shadow import ShadowEgressRefused, ShadowRun, shadow_scope
 from lg_sotf.tools.enrichment.base import EnrichmentResult, LookupRequest
 from lg_sotf.tools.enrichment.service import EnrichmentService
+from tests.fixtures.microsoft import TOKEN_PATH, FakeMicrosoft, make_credentials, ms_settings, unsigned_token
 
 pytestmark = pytest.mark.unit
 
@@ -91,3 +95,26 @@ async def test_a_sync_boundary_holds_on_a_thread_that_carries_the_context(make_s
     assert sent == [], "the boundary never ran live in a thread"
     # A bare run_in_executor (which drops the context) is kept out of the source by
     # tests/unit/architecture/test_shadow_egress.py::test_no_code_drops_the_run_mode_on_a_thread_or_fresh_context.
+
+
+async def test_a_shadow_run_never_gets_a_microsoft_token_even_a_cached_one() -> None:
+    """Refused before the cache and the shared in-flight fetch: no token for a shadow run, none fetched for it."""
+    fake = FakeMicrosoft()
+    calls: List[int] = []
+
+    def issue(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, json={"token_type": "Bearer", "expires_in": 3599,
+                                         "access_token": unsigned_token({"roles": []})})
+
+    fake.route("POST", "login", TOKEN_PATH, issue)
+    http = MicrosoftHttpFactory(ms_settings(), transport=fake.transport(), resolver=fake.resolver())
+    tokens, creds = TokenProvider(http), make_credentials(fake)
+    deadline = asyncio.get_running_loop().time() + 30.0
+    live = await tokens.token(creds, "graph", deadline=deadline)
+    with shadow_scope(ShadowRun("shadow/ms")):
+        with pytest.raises(ShadowEgressRefused):
+            await tokens.token(creds, "graph", deadline=deadline)
+        with pytest.raises(ShadowEgressRefused):
+            await tokens.token(make_credentials(fake), "graph", deadline=deadline)
+    assert live and calls == [1]

@@ -83,6 +83,11 @@ class ShadowRunner:
         graph = graph_builder(WorkflowNodes(self._deps), self._deps.thresholds)
         self._graph = graph.compile(checkpointer=self._checkpoints)
 
+    @property
+    def deps(self) -> NodeDeps:
+        """What the shadow graph runs with: the candidate's agents, no token budget, the write-refusing Redis."""
+        return self._deps
+
     async def run(self, tenant_id: str, alert_id: str) -> ShadowOutcome:
         repos = self._deps.repos
         alert = await repos.alerts.get(tenant_id, alert_id)

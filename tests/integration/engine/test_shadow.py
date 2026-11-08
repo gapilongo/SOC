@@ -299,3 +299,22 @@ async def test_every_boundary_diverts_when_called_directly(
         ("GuardedTransport.handle_async_request", "refused"), ("guarded_client", "refused"),
         ("ResponseService.execute", "sunk"), ("Redis SET", "refused"), ("Redis pipeline", "refused"),
     }, done
+
+
+async def test_the_shadow_runner_reads_redis_through_a_write_refusing_client(
+    engine_factory: Any, redis_client: aioredis.Redis
+) -> None:
+    """Whatever client production injected (here a plain one), the shadow graph's Redis refuses writes."""
+    engine: WorkflowEngine = await engine_factory()
+    runner = ShadowRunner(engine.node_deps)
+    assert runner.deps.budget is None
+    shadow_redis = runner.deps.verdicts.redis
+    key = f"{engine.settings.redis.key_prefix}:probe"
+    await redis_client.set(key, b"live")
+    with shadow_scope(ShadowRun("shadow/redis")):
+        assert await shadow_redis.get(key) == b"live"
+        with pytest.raises(ShadowEgressRefused):
+            await shadow_redis.set(key, b"shadow")
+        with pytest.raises(ShadowEgressRefused):
+            await shadow_redis.delete(key)
+    assert await redis_client.get(key) == b"live"

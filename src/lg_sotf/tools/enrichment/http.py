@@ -77,6 +77,8 @@ class JsonHttpClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._lock = asyncio.Lock()
 
+    # Every request gets its client here, so this refuses a shadow run's request even on a client built live.
+    # A shadow run never gets this far: the enrichment service answers it from the cache only.
     @egress("enrichment_lookup", REFUSE)
     async def _get_client(self) -> httpx.AsyncClient:
         async with self._lock:
@@ -91,8 +93,6 @@ class JsonHttpClient:
                 )
             return self._client
 
-    # A shadow run never reaches a provider: the enrichment service answers it from the cache only.
-    @egress("enrichment_lookup", REFUSE)
     async def get_json(
         self, url: str, *, headers: Mapping[str, str], params: Optional[Mapping[str, Any]] = None
     ) -> HttpResponse:
