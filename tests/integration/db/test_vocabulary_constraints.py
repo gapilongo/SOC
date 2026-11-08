@@ -25,6 +25,7 @@ from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.db.urls import to_libpq_url
 from lg_sotf.models import vocabulary as v
 from lg_sotf.models.trace import STEP_KINDS, STEP_OUTCOMES
+from lg_sotf.security.shadow import EFFECT_OUTCOMES
 
 pytestmark = pytest.mark.asyncio
 
@@ -61,6 +62,7 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("blind_audit_runs", "seed_source"): v.SEED_SOURCES,
     ("blind_audit_items", "ai_class"): v.DISPOSITIONS,
     ("blind_audit_items", "label"): v.AUDIT_LABELS,
+    ("shadow_effects", "outcome"): EFFECT_OUTCOMES,
     # Suppression rules only ever close alerts as benign.
     ("suppression_rules", "disposition"): ("benign",),
 }

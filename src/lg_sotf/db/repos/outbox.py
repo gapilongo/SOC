@@ -28,6 +28,7 @@ from lg_sotf.db.repos._base import (
     to_models,
     truncate,
 )
+from lg_sotf.security.shadow import REFUSE, Arguments, egress, sink
 
 OUTBOX_STATUSES = ("pending", "sent", "failed", "dead")
 OUTBOX_OPERATIONS = ("notify", "ticket_create", "ticket_update", "test")
@@ -93,6 +94,12 @@ async def matching_enabled(conn: Connection, tenant_id: str, event_type: str) ->
     return [dict(r) for r in await conn.fetch(_INTEGRATIONS_SQL, tenant_id, event_type)]
 
 
+def _outbox_detail(args: Arguments) -> Dict[str, Any]:
+    entries: Sequence[NewOutboxEntry] = args["entries"]
+    return {"rows": len(entries), "events": sorted({f"{e.event_type}:{e.operation}" for e in entries})}
+
+
+@egress("outbox", sink(lambda a: 0, detail=_outbox_detail))
 async def enqueue_on(conn: Connection, tenant_id: str, entries: Sequence[NewOutboxEntry]) -> int:
     """Insert outbox rows on ``conn``; a (integration, ``dedupe_key``) already queued is skipped. Returns rows inserted."""
     if not entries:
@@ -115,6 +122,7 @@ class OutboxRepo(Repository):
         async with self._tenant(tenant_id, conn) as c:
             return await enqueue_on(c, tenant_id, entries)
 
+    @egress("outbox", REFUSE)
     async def record_test(
         self,
         tenant_id: str,

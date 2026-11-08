@@ -71,6 +71,7 @@ from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models.vocabulary import SEVERITY_RANK
 from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.security.shadow import Arguments, egress, sink
 from lg_sotf.settings import Settings
 
 if TYPE_CHECKING:
@@ -285,6 +286,18 @@ class EscalationTicket:
     version: int = 1
 
 
+SHADOW_TICKET_ID = "shadow"
+
+
+def _shadow_ticket(args: Arguments) -> EscalationTicket:
+    """What a shadow run's ``escalate`` node continues with: no escalation was opened."""
+    return EscalationTicket(SHADOW_TICKET_ID, "L1", 0, created=False, sla_deadline=None)
+
+
+def _ticket_detail(args: Arguments) -> Dict[str, Any]:
+    return {"reason_code": args.get("reason_code"), "severity": args.get("severity")}
+
+
 def own_review_reason(
     decision: str,
     *,
@@ -340,6 +353,7 @@ class EscalationService:
         tenant = await self._repos.tenants.get(tenant_id)
         return resolve_review_policy(tenant.settings, self._settings)
 
+    @egress("escalation", sink(_shadow_ticket, detail=_ticket_detail))
     async def open_or_attach(
         self,
         tenant_id: str,

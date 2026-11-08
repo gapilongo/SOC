@@ -7,10 +7,17 @@ reserved for the scheduler, retention and migrations; the policies honour it
 only for members of the schema owner role (``lgsotf_rls_bypass()``), so the
 API/worker runtime role cannot bypass isolation by setting the GUC.
 
+In a shadow run (:mod:`lg_sotf.security.shadow`) every transaction and bare
+connection is read only, whatever the caller asked for: a write that no
+egress boundary diverted fails instead of committing. Its connections also
+refuse the statements that would reach past a read-only transaction
+(:mod:`lg_sotf.db.shadow_connection`).
+
 :meth:`Database.run_tenant_tx` and :func:`retry_stale_statement` run a
 transaction again, once, when a migration made one of the pool's cached
 prepared statements stale (a rolling upgrade migrates while the previous
-release is still running).
+release is still running). The second attempt opens a new transaction, so in
+a shadow run it is read only too.
 """
 
 from __future__ import annotations
@@ -32,10 +39,12 @@ import asyncpg
 import structlog
 
 from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, SystemScopeDenied
+from lg_sotf.db.shadow_connection import shadow_connection
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.types import Connection
 from lg_sotf.db.urls import redact_url, to_libpq_url
 from lg_sotf.observability.metrics import record_stale_statement_retry
+from lg_sotf.security.shadow import REFUSE, egress, in_shadow
 from lg_sotf.settings import DatabaseSettings, Settings
 
 log = structlog.get_logger(__name__)
@@ -192,6 +201,7 @@ class Database:
     def is_open(self) -> bool:
         return self._pool is not None and not self._pool.is_closing()
 
+    @egress("database_connection", REFUSE)
     async def open(self) -> None:
         async with self._lock:
             if self._pool is not None:
@@ -243,11 +253,22 @@ class Database:
 
     @asynccontextmanager
     async def connection(self) -> AsyncIterator[Connection]:
-        """A pooled connection without a transaction or tenant scope.
+        """A pooled connection without a tenant scope (in a read-only transaction in a shadow run).
 
         Only for health checks and administrative statements; RLS makes
         tenant tables appear empty here.
         """
+        async with self._acquire() as conn:
+            if not in_shadow():
+                yield conn
+                return
+            async with conn.transaction(readonly=True):
+                # A first statement, so SET TRANSACTION READ WRITE can no longer follow the BEGIN.
+                await conn.execute("SELECT 1")
+                yield shadow_connection(conn)
+
+    @asynccontextmanager
+    async def _acquire(self) -> AsyncIterator[Connection]:
         pool = self._require_pool()
         try:
             conn = await pool.acquire(timeout=self._acquire_timeout_s)
@@ -264,10 +285,10 @@ class Database:
     async def tenant_tx(self, tenant_id: str, *, readonly: bool = False) -> AsyncIterator[Connection]:
         """Transaction scoped to one tenant via ``app.tenant_id``."""
         validate_tenant_id(tenant_id)
-        async with self.connection() as conn:
-            async with conn.transaction(readonly=readonly):
+        async with self._acquire() as conn:
+            async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.tenant_id', $1, true)", tenant_id)
-                yield conn
+                yield shadow_connection(conn) if in_shadow() else conn
 
     async def run_tenant_tx(
         self, tenant_id: str, work: Callable[[Connection], Awaitable[T]], *, readonly: bool = False
@@ -292,12 +313,12 @@ class Database:
         Raises :class:`SystemScopeDenied` when the connected role is not a
         member of the schema owner role, instead of silently seeing no rows.
         """
-        async with self.connection() as conn:
-            async with conn.transaction(readonly=readonly):
+        async with self._acquire() as conn:
+            async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.bypass_rls', 'on', true)")
                 if not self._system_scope_verified:
                     await self._verify_system_scope(conn)
-                yield conn
+                yield shadow_connection(conn) if in_shadow() else conn
 
     async def _verify_system_scope(self, conn: Connection) -> None:
         try:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import hashlib
 import hmac
 import ipaddress
@@ -216,8 +217,10 @@ def _password_executor() -> ThreadPoolExecutor:
 
 
 async def _run_bounded(fn: Callable[..., _T], *args: str) -> _T:
-    # A dedicated executor (not an asyncio.Semaphore) so the bound holds across event loops.
-    return await asyncio.get_running_loop().run_in_executor(_password_executor(), fn, *args)
+    # A dedicated executor (not an asyncio.Semaphore) so the bound holds across event loops. The caller's
+    # context goes along (run_in_executor drops it): code in the thread keeps its run mode.
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_password_executor(), contextvars.copy_context().run, fn, *args)
 
 
 def hash_password(password: str) -> str:

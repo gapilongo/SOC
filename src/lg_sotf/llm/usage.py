@@ -20,6 +20,7 @@ from langchain_core.messages import BaseMessage
 from lg_sotf.llm.pricing import ModelPrice, compute_cost, lookup_price, price_table
 from lg_sotf.observability import metrics
 from lg_sotf.observability.logging import get_logger
+from lg_sotf.security.shadow import active_shadow_run
 from lg_sotf.settings import Settings
 
 Outcome = Literal["success", "refusal", "invalid_output", "error", "budget_exceeded"]
@@ -228,6 +229,11 @@ class UsageRecorder:
 
         # Rows are billing records: no tenant (evals, tooling) or no call made means nothing to bill.
         if tenant_id is None or outcome == "budget_exceeded":
+            return cost
+        # A shadow run's calls are the run's own: never the tenant's billing rows, which also seed its budget.
+        shadow = active_shadow_run()
+        if shadow is not None:
+            shadow.add_llm_usage(sample.total_tokens, cost)
             return cost
         key: _Key = (tenant_id, day or datetime.now(UTC).date(), sample.model, agent)
         with self._lock:

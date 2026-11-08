@@ -580,7 +580,7 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
   single-organisation installs get the full concurrency). LLM calls can be
   further bounded **per process** by `llm.fast.max_concurrency` and
   `llm.deep.max_concurrency` (unset: `worker.concurrency`, i.e. no extra bound;
-  watch `lgsotf_llm_slot_wait_seconds` when you set them).
+  watch `lgsotf_llm_slot_wait_seconds{mode="live"}` when you set them).
 * Cluster-wide concurrent LLM calls are `worker replicas x max_concurrency`
   (or `x worker.concurrency` when unset) per tier. Keep that below your provider's concurrency and requests-per-minute
   limits; otherwise calls are retried (`max_retries`) and runs slow down rather
@@ -588,7 +588,7 @@ Throughput is bounded by LLM latency and provider rate limits, not CPU.
 * Approximate sustained throughput:
   `alerts/min ~= replicas x concurrency x 60 / average run seconds`. Most alerts
   stop at the gate or triage (seconds); those reaching deep analysis take
-  minutes. Measure with `lgsotf_node_seconds` and size from the p90.
+  minutes. Measure with `lgsotf_node_seconds{mode="live"}` and size from the p90.
 * Set `worker.keda.lagCount` close to `worker.concurrency` so one replica is
   added per full replica's worth of backlog.
 * Memory: start workers at 768Mi request / 2Gi limit with concurrency 16; raise

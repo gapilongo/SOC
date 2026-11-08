@@ -60,6 +60,7 @@ from lg_sotf.observability.logging import get_logger
 from lg_sotf.observability.metrics import record_enrichment_lookup
 from lg_sotf.security.crypto import DecryptionError, SecretBox
 from lg_sotf.security.hashing import normalize_indicator
+from lg_sotf.security.shadow import Arguments, egress, sink
 from lg_sotf.tools.enrichment.base import (
     CACHEABLE_STATUSES,
     EnrichmentProvider,
@@ -221,6 +222,17 @@ class RateLimiter:
             return max(window[0] + 60.0 - now, 0.1)
         window.append(now)
         return None
+
+
+SHADOW_CACHE_MISS = "shadow run: threat-intelligence answers come from the cache only"
+
+
+def _cache_miss_in_shadow(args: Arguments) -> EnrichmentResult:
+    return EnrichmentResult.failed(args["provider"].name, args["request"].kind, "skipped", SHADOW_CACHE_MISS)
+
+
+def _lookup_detail(args: Arguments) -> Dict[str, Any]:
+    return {"provider": args["provider"].name, "kind": args["request"].kind}
 
 
 @dataclass(frozen=True)
@@ -534,15 +546,6 @@ class EnrichmentService:
         cached = self.cache.get(tenant_id, cache_key)
         if isinstance(cached, EnrichmentResult):
             return replace(cached, cached=True)
-        scope = limit_scope(tenant_id, credentials)
-        if provider.external:
-            remaining = self.limiter.backoff_remaining(scope, provider.name)
-            if remaining is not None:
-                return EnrichmentResult.failed(provider.name, kind, "rate_limited", "backing off after HTTP 429", remaining)
-            per_minute = int(getattr(provider, "requests_per_minute", 0) or 0)
-            wait = self.limiter.try_acquire(scope, provider.name, per_minute)
-            if wait is not None:
-                return EnrichmentResult.failed(provider.name, kind, "rate_limited", "request budget used", wait)
         request = LookupRequest(
             tenant_id=tenant_id,
             kind=kind,
@@ -552,15 +555,41 @@ class EnrichmentService:
             repos=repos,
             exclude_alert_id=exclude_alert_id,
         )
-        try:
-            async with asyncio.timeout(self.lookup_timeout_s):
-                result = await provider.lookup(request)
-        except TimeoutError:
-            return EnrichmentResult.failed(provider.name, kind, "error", "lookup timed out")
-        if result.status == "rate_limited" and provider.external:
-            self.limiter.back_off(scope, provider.name, result.retry_after_s or 60.0)
+        if provider.external:
+            result = await self._ask_provider(provider, request)
+        else:
+            result = await self._ask(provider, request)
         if result.status in CACHEABLE_STATUSES:
             self.cache.set(tenant_id, cache_key, result, float(provider.cache_ttl_s))
+        return result
+
+    async def _ask(self, provider: EnrichmentProvider, request: LookupRequest) -> EnrichmentResult:
+        try:
+            async with asyncio.timeout(self.lookup_timeout_s):
+                return await provider.lookup(request)
+        except TimeoutError:
+            return EnrichmentResult.failed(provider.name, request.kind, "error", "lookup timed out")
+
+    @egress("enrichment_lookup", sink(_cache_miss_in_shadow, detail=_lookup_detail))
+    async def _ask_provider(self, provider: EnrichmentProvider, request: LookupRequest) -> EnrichmentResult:
+        """A third-party lookup under the provider's rate limit and 429 back-off.
+
+        A shadow run answers from the cache only (the caller's cache read): a miss is ``skipped``, so the
+        indicator never leaves the platform for a shadow run and production's request budget is untouched.
+        """
+        scope = limit_scope(request.tenant_id, request.credentials)
+        remaining = self.limiter.backoff_remaining(scope, provider.name)
+        if remaining is not None:
+            return EnrichmentResult.failed(
+                provider.name, request.kind, "rate_limited", "backing off after HTTP 429", remaining
+            )
+        per_minute = int(getattr(provider, "requests_per_minute", 0) or 0)
+        wait = self.limiter.try_acquire(scope, provider.name, per_minute)
+        if wait is not None:
+            return EnrichmentResult.failed(provider.name, request.kind, "rate_limited", "request budget used", wait)
+        result = await self._ask(provider, request)
+        if result.status == "rate_limited":
+            self.limiter.back_off(scope, provider.name, result.retry_after_s or 60.0)
         return result
 
     async def aclose(self) -> None:

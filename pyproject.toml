@@ -246,6 +246,7 @@ layers = [
     "models",
     "(net)",
     "(errors) : observability : security : settings",
+    "run_mode",
 ]
 ignore_imports = [
     # ADR-0001 accepted: lazy import inside Settings.production_problems

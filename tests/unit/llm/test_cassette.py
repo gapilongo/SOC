@@ -222,6 +222,20 @@ def test_a_cassette_set_writes_and_reads_one_file_per_item(tmp_path: Path) -> No
     assert sorted(p.name for p in tmp_path.iterdir()) == ["bad.jsonl", "syn_001.jsonl"]
 
 
+def test_a_compressed_cassette_set_writes_gzip_that_a_replay_reads(tmp_path: Path) -> None:
+    recorder = CassetteSet(tmp_path, "record", compress=True)
+    cassette = recorder.open("cv1-0001", "sha-a")
+    cassette.record_tool("history", {"host": "web-01"}, "hash-1", {"alerts": 2})
+    recorder.save(cassette)
+    packed = tmp_path / "cv1-0001.jsonl.gz"
+    assert [p.name for p in tmp_path.iterdir()] == [packed.name]
+    assert packed.read_bytes()[4:8] == b"\x00\x00\x00\x00"  # no timestamp: re-recording gives the same bytes
+    replay = CassetteSet(tmp_path, "replay").open("cv1-0001", "sha-a")
+    assert replay.problem is None and replay.replay_tool("history", "hash-1") == {"alerts": 2}
+    packed.write_bytes(packed.read_bytes()[:12])
+    assert "unreadable" in (CassetteSet(tmp_path, "replay").open("cv1-0001", "sha-a").problem or "")
+
+
 def test_enrichment_results_survive_the_round_trip() -> None:
     result = EnrichmentResult("virustotal", "hash", "rate_limited", "unknown", {}, "busy", 12.34, cached=True)
     assert EnrichmentResult.from_dict("hash", result.as_dict()) == EnrichmentResult(

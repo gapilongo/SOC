@@ -36,6 +36,7 @@ from typing import AbstractSet, Awaitable, Callable, FrozenSet, List, Optional, 
 import httpx
 
 from lg_sotf.errors import SourceConfigError
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import IngestionSection, Settings
 
 IPAddress = Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
@@ -207,6 +208,7 @@ class GuardedTransport(httpx.AsyncBaseTransport):
         self._resolver = resolver
         self._pin = pin
 
+    @egress("http", REFUSE)
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         host, port = self._policy.check_url(request.url)
         address = await self._policy.resolve_allowed(host, port, self._resolver)

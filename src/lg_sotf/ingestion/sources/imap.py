@@ -66,6 +66,7 @@ from lg_sotf.ingestion.errors import (
 from lg_sotf.ingestion.sources.base import CURSOR_VERSION, FetchedPage, PullConnector, SourceHealth
 from lg_sotf.net.egress import system_resolve
 from lg_sotf.net.tls import build_verify
+from lg_sotf.security.shadow import REFUSE, egress
 
 DEFAULT_PORT = 993
 DEFAULT_POLL_TIMEOUT_S = 900.0
@@ -198,6 +199,7 @@ class _PinnedIMAP4_SSL(BoundedIMAP4_SSL):
         self._pinned_address = address
         super().__init__(host, port, ssl_context, timeout, max_literal=max_literal, lifetime_s=lifetime_s)
 
+    @egress("mail_source", REFUSE)
     def _create_socket(self, timeout: Optional[float]) -> socket.socket:
         sock = socket.create_connection((self._pinned_address, self.port), timeout)
         return self.ssl_context.wrap_socket(sock, server_hostname=self.host)

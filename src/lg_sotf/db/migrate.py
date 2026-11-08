@@ -29,6 +29,7 @@ from lg_sotf.db import locks
 from lg_sotf.db.partitions import drop_expired_partitions, ensure_partitions
 from lg_sotf.db.pool import Database
 from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_query_params
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import DatabaseSettings
 
 __all__ = [
@@ -79,6 +80,7 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "notification_outbox": ("SELECT", "INSERT", "UPDATE"),
     "external_tickets": ("SELECT", "INSERT", "UPDATE"),
     "investigation_steps": ("SELECT", "INSERT"),
+    "shadow_effects": ("SELECT", "INSERT"),
     # Written through lgsotf_save_organisation (platform admins) only.
     "organisations": ("SELECT",),
     "organisation_members": ("SELECT", "INSERT", "DELETE"),
@@ -244,6 +246,7 @@ def runtime_grant_statements(role: str, *, sequences: List[str], checkpoint_tabl
     return stmts
 
 
+@egress("database_connection", REFUSE)
 def grant_runtime_privileges(role: str, database_url: str, database: DatabaseSettings) -> None:
     """Give the API/worker login role exactly the privileges it needs (idempotent).
 
@@ -288,6 +291,7 @@ def grant_runtime_privileges(role: str, database_url: str, database: DatabaseSet
     log.info("db.migrate.runtime_grants", role=role, checkpoint_tables=len(checkpoint_tables))
 
 
+@egress("database_connection", REFUSE)
 async def setup_checkpointer(database_url: str, database: DatabaseSettings) -> None:
     """Create or upgrade LangGraph's checkpoint tables and put them under tenant RLS (idempotent).
 

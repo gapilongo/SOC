@@ -20,6 +20,7 @@ from lg_sotf.db.repos._base import (
     to_model,
     to_models,
 )
+from lg_sotf.security.shadow import egress, sink
 
 
 class SuppressionRule(Record):
@@ -210,6 +211,7 @@ class SuppressionsRepo(Repository):
             )
         return status.endswith(" 1")
 
+    @egress("suppression_hit", sink())
     async def record_hit(
         self,
         tenant_id: str,

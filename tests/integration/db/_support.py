@@ -17,6 +17,7 @@ from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.urls import database_name, to_libpq_url
 from lg_sotf.models.trace import NewTraceStep
+from lg_sotf.security.shadow import ShadowEffect
 from lg_sotf.settings import DatabaseSettings
 
 TENANT_A = "tenant-a"
@@ -67,6 +68,7 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 ALL_TABLES = (
     "blind_audit_items",
     "blind_audit_runs",
+    "shadow_effects",
     "investigation_steps",
     "tenant_grants",
     "organisation_members",
@@ -154,6 +156,7 @@ TENANT_TABLES = (
     "notification_outbox",
     "external_tickets",
     "investigation_steps",
+    "shadow_effects",
     "organisations",
     "organisation_members",
     "tenant_grants",
@@ -220,6 +223,9 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         labelled_by_actor=str(user.id), escalation_id=None, now=now,
     )
     assert item.run_id == run.id
+    await repos.shadow_effects.append(
+        tenant_id, alert_id, "shadow/seed", [ShadowEffect(0, "outbox", "enqueue_on", "sunk", {"rows": 1})]
+    )
     # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
     await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")
     await repos.organisations.add_member(tenant_id, user.id)

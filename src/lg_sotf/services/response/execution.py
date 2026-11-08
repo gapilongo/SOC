@@ -41,6 +41,7 @@ from lg_sotf.domain.actions import ACTION_CATALOG, BLAST_RADIUS_REASON, HOURLY_C
 from lg_sotf.domain.connectors import call_deadline
 from lg_sotf.models.vocabulary import SCHEDULER_OWNER, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.services.connectors import (
     STATEFUL_CONNECTORS,
     Connector,
@@ -462,6 +463,7 @@ class ActionExecutor:
                 tenant_id, executing, "response_action.executing", {"connector": connector.name}, conn=conn
             )
 
+    @egress("connector", REFUSE)
     async def _run_connector(
         self, tenant_id: str, executing: ResponseAction, connector: Connector, *, timeout_s: Optional[float] = None
     ) -> str:

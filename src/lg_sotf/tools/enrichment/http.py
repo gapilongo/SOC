@@ -24,6 +24,7 @@ import httpx
 
 from lg_sotf.net.http import ResponseTooLarge, read_capped
 from lg_sotf.net.retry import parse_retry_after
+from lg_sotf.security.shadow import REFUSE, egress
 
 USER_AGENT = "lg-sotf-enrichment/1"
 DEFAULT_TIMEOUT_S = 10.0
@@ -76,6 +77,9 @@ class JsonHttpClient:
         self._client: Optional[httpx.AsyncClient] = None
         self._lock = asyncio.Lock()
 
+    # Every request gets its client here, so this refuses a shadow run's request even on a client built live.
+    # A shadow run never gets this far: the enrichment service answers it from the cache only.
+    @egress("enrichment_lookup", REFUSE)
     async def _get_client(self) -> httpx.AsyncClient:
         async with self._lock:
             if self._client is None:
