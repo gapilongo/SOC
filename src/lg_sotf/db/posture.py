@@ -9,7 +9,7 @@ runtime URL (``database.url``) the API and the workers use.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Dict, List, Optional, Sequence
 
 from lg_sotf.db.checkpointer import CHECKPOINT_RLS_TABLES
 from lg_sotf.db.types import Connection
@@ -34,10 +34,17 @@ _TENANT_TABLES_SQL = """
 SELECT c.relname AS name, c.relispartition AS partition, c.relrowsecurity AS rls, c.relforcerowsecurity AS forced,
        EXISTS (SELECT 1 FROM pg_catalog.pg_policy p WHERE p.polrelid = c.oid) AS policy,
        has_table_privilege(c.oid, 'SELECT') AS readable,
+       -- reltuples is -1 until the table (or any partition) is first analyzed: NULL means unknown.
        (CASE WHEN c.relkind = 'p'
-             THEN (SELECT COALESCE(sum(GREATEST(k.reltuples, 0)), 0) FROM pg_catalog.pg_inherits i
+             THEN (SELECT CASE WHEN bool_or(k.reltuples < 0) THEN NULL ELSE COALESCE(sum(k.reltuples), 0) END
+                   FROM pg_catalog.pg_inherits i
                    JOIN pg_catalog.pg_class k ON k.oid = i.inhrelid WHERE i.inhparent = c.oid)
-             ELSE GREATEST(c.reltuples, 0) END)::bigint AS estimated_rows
+             WHEN c.reltuples < 0 THEN NULL
+             ELSE c.reltuples END)::bigint AS estimated_rows,
+       (CASE WHEN c.relkind = 'p'
+             THEN (SELECT COALESCE(sum(pg_table_size(i.inhrelid)), 0) FROM pg_catalog.pg_inherits i
+                   WHERE i.inhparent = c.oid)
+             ELSE pg_table_size(c.oid) END)::bigint AS size_bytes
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
 WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p')
@@ -71,7 +78,8 @@ class TableSecurity:
     forced: bool
     policy: bool
     readable: bool
-    estimated_rows: int = 0
+    estimated_rows: Optional[int] = None  # None: never analyzed, no statistics
+    size_bytes: int = 0
 
     @property
     def isolated(self) -> bool:

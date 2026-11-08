@@ -20,6 +20,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional, Sequence, Tuple
 
 from lg_sotf.compliance.canonical import optional_signing_key, seal, verify
+from lg_sotf.db.errors import DatabaseUnavailable
 from lg_sotf.db.migrate import schema_is_current
 from lg_sotf.db.pool import Database
 from lg_sotf.db.posture import (
@@ -54,8 +55,11 @@ Outcome = Literal["pass", "fail", "skip"]
 PROBE_TENANT = "lgsotf-invariants-probe"
 PROBE_TENANT_SETTINGS: Dict[str, Any] = {"response": {"dry_run": True}}
 MUTATING_PRIVILEGES: Tuple[str, ...] = ("UPDATE", "DELETE", "TRUNCATE")
-# The probe reads a table only while its estimated size is below this: RLS hides every row, so each read is a scan.
+# RLS hides every row from the probe tenant, so each read is a full scan. The probe reads a table only while
+# its row estimate is below PROBE_MAX_ROWS or, without statistics (never analyzed), its size is below
+# PROBE_UNKNOWN_MAX_BYTES.
 PROBE_MAX_ROWS = 200_000
+PROBE_UNKNOWN_MAX_BYTES = 8 * 1024 * 1024
 SINGLE_ROLE = (
     "single-role install: database.url connects as the schema owner, which may bypass RLS by design; "
     "use a separate runtime role (docs/deployment.md) for this guarantee"
@@ -216,7 +220,45 @@ def check_runtime_role(role: RoleAttributes, settings: Settings) -> CheckResult:
     return _result("runtime_role", False, f"the runtime connection's role {role.name!r} is {', '.join(flags)}")
 
 
-def check_rls_probe(leaked: Sequence[str], probed: int, skipped: int, role: RoleAttributes, bypass: bool) -> CheckResult:
+@dataclass(frozen=True)
+class ProbePlan:
+    """Which tenant tables the probe reads, and how many it leaves to ``rls_catalog``."""
+
+    read: Tuple[str, ...]
+    large: int
+    no_statistics: int
+
+
+def probe_plan(tables: Sequence[TableSecurity]) -> ProbePlan:
+    read: List[str] = []
+    large = no_statistics = 0
+    for t in tables:
+        if not t.readable or t.partition:
+            continue
+        if t.estimated_rows is None:
+            if t.size_bytes <= PROBE_UNKNOWN_MAX_BYTES:
+                read.append(t.name)
+            else:
+                no_statistics += 1
+        elif t.estimated_rows < PROBE_MAX_ROWS:
+            read.append(t.name)
+        else:
+            large += 1
+    return ProbePlan(tuple(read), large, no_statistics)
+
+
+def _ignores_rls(role: RoleAttributes) -> bool:
+    """RLS does not apply to a superuser or a BYPASSRLS role at all: it sees every tenant's rows."""
+    return role.superuser or role.bypassrls
+
+
+def check_rls_probe(
+    leaked: Sequence[str], plan: ProbePlan, role: RoleAttributes, bypass: bool, settings: Settings
+) -> CheckResult:
+    if role.can_bypass_rls and not _single_role(settings):
+        return _result("rls_probe", False, f"the runtime role {role.name!r} can bypass RLS; the probe proves nothing")
+    if _ignores_rls(role):
+        return _result("rls_probe", None, f"{role.name!r} is a superuser or has BYPASSRLS; " + SINGLE_ROLE)
     problems = [f"the probe tenant sees rows of other tenants in: {', '.join(leaked)}"] if leaked else []
     if bypass and not role.can_bypass_rls:
         problems.append(f"app.bypass_rls is honoured for {role.name!r}")
@@ -225,8 +267,10 @@ def check_rls_probe(leaked: Sequence[str], probed: int, skipped: int, role: Role
     how = "app.bypass_rls not requested: this role may bypass RLS" if role.can_bypass_rls else (
         "even with app.bypass_rls set"
     )
-    large = f"; {skipped} large tables not read (rls_catalog covers them)" if skipped else ""
-    return _result("rls_probe", True, f"the probe tenant sees no row in {probed} tables ({how}){large}")
+    notes = [f"{plan.large} large tables not read"] if plan.large else []
+    notes += [f"{plan.no_statistics} tables without statistics (never analyzed) not read"] if plan.no_statistics else []
+    unread = f"; {', '.join(notes)} (rls_catalog covers them)" if notes else ""
+    return _result("rls_probe", True, f"the probe tenant sees no row in {len(plan.read)} tables ({how}){unread}")
 
 
 def check_audit_append_only(
@@ -255,14 +299,14 @@ async def database_checks(db: Database, settings: Settings) -> List[CheckResult]
         role = await current_role_attributes(conn)
         triggers = await audit_triggers(conn)
         privileges = await privileges_on(conn, "audit_log", MUTATING_PRIVILEGES)
-        readable = [t for t in tables if t.readable and not t.partition]
-        probed = [t.name for t in readable if t.estimated_rows < PROBE_MAX_ROWS]
+        plan = probe_plan(tables)
         bypass = False if role.can_bypass_rls else await bypass_honoured(conn)
-        leaked = await tables_with_visible_rows(conn, probed)
+        # A role that ignores RLS sees every tenant; reading would prove nothing and scan everything.
+        leaked = [] if _ignores_rls(role) else await tables_with_visible_rows(conn, plan.read)
     return [
         check_rls_catalog(tables),
         check_runtime_role(role, settings),
-        check_rls_probe(leaked, len(probed), len(readable) - len(probed), role, bypass),
+        check_rls_probe(leaked, plan, role, bypass, settings),
         check_audit_append_only(triggers, privileges, role, settings),
     ]
 
@@ -271,10 +315,12 @@ async def run_checks(settings: Settings, *, db: Optional[Database] = None) -> Li
     """Every runtime check, ordered by invariant. ``db`` defaults to a one-connection pool on ``database.url``."""
     results = [check(settings) for check in SETTINGS_CHECKS]
     database = db or Database(settings.database, application_name="lg-sotf-verify-invariants", min_size=0, max_size=1)
-    if db is None:
-        await database.open()
     try:
+        if db is None:
+            await database.open()
         results += await database_checks(database, settings)
+    except DatabaseUnavailable as exc:
+        results += [_result(name, False, f"database unavailable: {exc}") for name in DATABASE_CHECKS]
     finally:
         if db is None:
             await database.close()

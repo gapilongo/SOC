@@ -8,9 +8,11 @@ from typing import Any, Callable, Dict, Iterator, List
 
 import pytest
 import structlog
+from click.testing import CliRunner
 
+from lg_sotf.cli import cli
 from lg_sotf.db.posture import RoleAttributes, TableSecurity
-from lg_sotf.domain.routing import Decision
+from lg_sotf.domain.routing import Decision, RoutingThresholds, decide, route_after_triage
 from lg_sotf.invariants import checks
 from lg_sotf.invariants.checks import (
     CHECKS,
@@ -23,6 +25,7 @@ from lg_sotf.invariants.checks import (
     check_rls_probe,
     check_routing_policy,
     check_runtime_role,
+    probe_plan,
     run_checks,
 )
 from lg_sotf.observability.logging import clear_context, configure_logging
@@ -159,14 +162,57 @@ def test_runtime_role(make_settings: Callable[..., Settings]) -> None:
     assert result.outcome == "fail" and result.detail.endswith("'root' is superuser, BYPASSRLS")
 
 
-def test_rls_probe() -> None:
-    leak = check_rls_probe(["alerts"], 3, 0, APP, bypass=True)
+PLAN = checks.ProbePlan(read=("alerts", "users", "tenants"), large=0, no_statistics=0)
+SUPERUSER = RoleAttributes("postgres", superuser=True, bypassrls=False, owner_member=True)
+
+
+def test_rls_probe(make_settings: Callable[..., Settings]) -> None:
+    single, two = make_settings(), make_settings(database=TWO_ROLE)
+    leak = check_rls_probe(["alerts"], PLAN, APP, True, two)
     assert leak.outcome == "fail"
     assert leak.detail == "the probe tenant sees rows of other tenants in: alerts; app.bypass_rls is honoured for 'lgsotf_app'"
-    assert check_rls_probe([], 3, 0, APP, bypass=False).detail.endswith("(even with app.bypass_rls set)")
-    owner = check_rls_probe([], 3, 2, OWNER, bypass=False)
+    assert check_rls_probe([], PLAN, APP, False, two).detail.endswith("3 tables (even with app.bypass_rls set)")
+    unread = checks.ProbePlan(read=("tenants",), large=2, no_statistics=1)
+    owner = check_rls_probe([], unread, OWNER, False, single)
     assert owner.outcome == "pass" and "not requested" in owner.detail
-    assert owner.detail.endswith("; 2 large tables not read (rls_catalog covers them)")
+    assert owner.detail.endswith(
+        "; 2 large tables not read, 1 tables without statistics (never analyzed) not read (rls_catalog covers them)"
+    )
+    assert check_rls_probe(["alerts"], PLAN, OWNER, False, single).outcome == "fail"
+
+
+def test_a_role_that_ignores_rls_skips_the_probe_only_on_a_single_role_install(
+    make_settings: Callable[..., Settings],
+) -> None:
+    single = check_rls_probe([], PLAN, SUPERUSER, False, make_settings())
+    assert single.outcome == "skip" and single.detail.startswith("'postgres' is a superuser or has BYPASSRLS; single-role")
+    for role in (SUPERUSER, OWNER):
+        split = check_rls_probe([], PLAN, role, False, make_settings(database=TWO_ROLE))
+        assert split.outcome == "fail" and split.detail.endswith("can bypass RLS; the probe proves nothing"), role
+
+
+def test_probe_plan_reads_only_small_tables_and_unanalyzed_tiny_ones() -> None:
+    def t(name: str, rows: Any, size: int = 8192, **kw: Any) -> TableSecurity:
+        base = {"partition": False, "rls": True, "forced": True, "policy": True, "readable": True, **kw}
+        return TableSecurity(name, estimated_rows=rows, size_bytes=size, **base)
+
+    plan = probe_plan([
+        t("small", 10),
+        t("big", checks.PROBE_MAX_ROWS),
+        t("fresh", None),
+        t("loaded_never_analyzed", None, size=checks.PROBE_UNKNOWN_MAX_BYTES + 1),
+        t("alerts_p2026_11", 5, partition=True, readable=False),
+        t("no_select", 5, readable=False),
+    ])
+    assert plan == checks.ProbePlan(read=("small", "fresh"), large=1, no_statistics=1)
+
+
+def test_the_synthetic_routing_states_are_ones_the_policy_would_otherwise_close() -> None:
+    """Guards check_routing_policy against passing vacuously: the same benign, corroborated state closes at low severity."""
+    t = RoutingThresholds()
+    low = checks._benign_state("low", rule_threat=0)
+    assert route_after_triage(low, t) == "close" and decide(low, t).route == "close"
+    assert decide(checks._benign_state("high", rule_threat=0), t).code == "false_positive_review"
 
 
 def test_audit_append_only(make_settings: Callable[..., Settings]) -> None:
@@ -209,3 +255,26 @@ async def test_an_unmigrated_database_fails_every_database_check(
     by_check: Dict[str, Any] = {r.check: r for r in results}
     for name in DATABASE_CHECKS:
         assert by_check[name].outcome == "fail" and "run `lg-sotf migrate`" in by_check[name].detail
+
+
+async def test_an_unreachable_database_fails_the_database_checks(make_settings: Callable[..., Settings]) -> None:
+    settings = make_settings(database={"url": "postgresql://nobody@127.0.0.1:1/none", "command_timeout_s": 2.0})
+    results = {r.check: r for r in await run_checks(settings)}
+    for name in DATABASE_CHECKS:
+        assert results[name].outcome == "fail" and results[name].detail.startswith("database unavailable"), name
+    assert results["kill_switch"].outcome == "pass"
+
+
+def test_verify_invariants_exits_1_without_a_traceback_when_the_database_is_down(
+    settings_env: Callable[..., Settings],
+) -> None:
+    settings_env(
+        LG_SOTF_ENVIRONMENT="test",
+        LG_SOTF_LLM__PROVIDER="fake",
+        LG_SOTF_DATABASE__URL="postgresql://nobody@127.0.0.1:1/none",
+    )
+    result = CliRunner().invoke(cli, ["verify-invariants"])
+    assert result.exit_code == 1 and isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
+    failed = [line.split()[2] for line in result.stdout.splitlines() if line.startswith("FAIL")]
+    assert failed == ["rls_catalog", "runtime_role", "rls_probe", "audit_append_only"]

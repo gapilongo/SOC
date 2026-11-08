@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 from typing import AsyncIterator, Callable, Iterator
 
@@ -14,8 +15,10 @@ from click.testing import CliRunner
 from lg_sotf.cli import cli
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer
 from lg_sotf.db.pool import Database
+from lg_sotf.db.posture import RoleAttributes, current_role_attributes
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.invariants import checks
 from lg_sotf.invariants.checks import CHECKS, run_checks
 from lg_sotf.settings import DatabaseSettings, Settings
 from tests.integration.db._support import TENANT_A, db_settings, make_alert, truncate_all
@@ -75,6 +78,40 @@ def test_verify_invariants_passes_on_a_fresh_install(cli_env: str) -> None:
     by_check = {r["check"]: r for r in report["results"]}
     assert by_check["evidence_seal"]["detail"].endswith("signed (HMAC-SHA256)")
     assert by_check["kill_switch"]["detail"].startswith("install kill switch on")
+
+
+@pytest.fixture
+def connects_as_superuser(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Report the connected role as a superuser: RLS would not apply to it at all.
+
+    The test database's login role cannot be made a superuser, so only the
+    attributes are faked; the second tenant's rows are real.
+    """
+
+    async def superuser(conn: object) -> RoleAttributes:
+        return dataclasses.replace(await current_role_attributes(conn), superuser=True)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(checks, "current_role_attributes", superuser)
+
+
+@pytest.mark.usefixtures("connects_as_superuser")
+def test_a_single_role_superuser_install_with_tenant_data_skips_the_probe(cli_env: str) -> None:
+    result = CliRunner().invoke(cli, ["verify-invariants"])
+    assert result.exit_code == 0, result.stdout
+    outcomes = {line.split()[2]: line.split()[0] for line in result.stdout.splitlines() if line[:4] in ("PASS", "SKIP")}
+    assert outcomes["rls_probe"] == "SKIP" and outcomes["runtime_role"] == "SKIP"
+    assert "FAIL" not in result.stdout
+
+
+@pytest.mark.usefixtures("connects_as_superuser")
+def test_a_split_role_install_whose_runtime_role_ignores_rls_fails(
+    cli_env: str, settings_env: Callable[..., Settings]
+) -> None:
+    settings_env(LG_SOTF_DATABASE__RUNTIME_ROLE="lgsotf_app")
+    result = CliRunner().invoke(cli, ["verify-invariants"])
+    assert result.exit_code == 1
+    failed = {line.split()[2] for line in result.stdout.splitlines() if line.startswith("FAIL")}
+    assert failed == {"runtime_role", "rls_probe", "audit_append_only"}, result.stdout
 
 
 @pytest.fixture

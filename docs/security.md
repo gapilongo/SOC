@@ -589,9 +589,10 @@ read-only checks in a synthetic dry-run tenant that owns no data:
 * the runtime role is not a superuser, has no `BYPASSRLS` and is not a member
   of the schema owner;
 * `app.bypass_rls` is not honoured for the runtime role, and the probe tenant
-  sees no row in any tenant table (tables estimated above 200,000 rows are
-  not read, because RLS makes each read a full scan; the catalog check
-  covers them);
+  sees no row in any tenant table. RLS makes each read a full scan, so
+  tables estimated above 200,000 rows, and never-analyzed tables larger
+  than 8 MB, are not read; the output says how many, and the catalog check
+  covers them;
 * the audit log's triggers are enabled and the runtime role holds no
   `UPDATE`, `DELETE` or `TRUNCATE` on it;
 * a dry-run tenant is always rehearsed and the install kill switch
@@ -603,6 +604,9 @@ read-only checks in a synthetic dry-run tenant that owns no data:
 
 It writes nothing and calls no connector. Exit code 0 means no check failed;
 1 means at least one did. On a single-role install (no
-`database.runtime_role`), the two runtime-role checks report `SKIP`: the
-schema owner may bypass RLS by design, so use a separate runtime role in
-production ([deployment.md](deployment.md)).
+`database.runtime_role`), `runtime_role` and `audit_append_only` report
+`SKIP`, and so does `rls_probe` when the role is a superuser or has
+`BYPASSRLS`: the schema owner may bypass RLS by design, so use a separate
+runtime role in production ([deployment.md](deployment.md)). On a two-role
+install the same findings are failures. An unreachable database fails the
+four database checks and exits 1.
