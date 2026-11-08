@@ -61,3 +61,11 @@ Use these sets to test the pipeline and its safety policy. Do not quote its
 numbers as detection accuracy. How to evaluate on real labelled data (the
 `analyst_feedback` export) and public benchmarks without committing them is
 described in `docs/evaluation.md`.
+
+## Cassettes
+
+`cassettes/synthetic_v1/` and `cassettes/phishing_v1/` hold one cassette per
+item for the first 12 synthetic and the first 8 phishing items, recorded with
+the fake model (`lg-sotf eval --cassettes DIR`, see `docs/evaluation.md`).
+`tests/integration/eval/test_cassettes.py` replays them offline. Record them
+again with `make eval-cassettes` after a prompt or agent change.

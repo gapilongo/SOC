@@ -198,3 +198,29 @@ def test_production_environment_is_refused(settings_env: Any) -> None:
     settings = settings_env(LG_SOTF_ENVIRONMENT="production")
     with pytest.raises(EvalSetupError, match="production"):
         asyncio.run(run_evaluation(settings, small_dataset()))
+
+
+def test_cassettes_reach_the_runner_and_a_missing_replay_directory_exits_2(
+    env: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: List[Any] = []
+
+    async def run(settings: Any, dataset: Any, **kwargs: Any) -> EvalRun:
+        seen.append(kwargs["cassettes"])
+        return EvalRun(results=[result("syn-001", "malicious", "waiting_human")], info={"llm_provider": "cassette"})
+
+    monkeypatch.setattr(eval_command, "run_evaluation", run)
+    runner = CliRunner()
+    base = ["eval", "--dataset", str(DATASET), "--limit", "1", "--report", str(tmp_path / "r.json")]
+    missing = runner.invoke(cli, [*base, "--cassettes", str(tmp_path / "none")])
+    assert missing.exit_code == 2 and "no cassette directory" in missing.output and seen == []
+    recorded = runner.invoke(cli, [*base, "--cassettes", str(tmp_path / "rec"), "--cassette-mode", "record"])
+    assert recorded.exit_code == 0, recorded.output
+    (tmp_path / "rec").mkdir()
+    replayed = runner.invoke(cli, [*base, "--cassettes", str(tmp_path / "rec")])
+    assert replayed.exit_code == 0, replayed.output
+    assert [(c.mode, c.directory, c.dataset_sha256 is not None) for c in seen] == [
+        ("record", tmp_path / "rec", True), ("replay", tmp_path / "rec", True)
+    ]
+    history = runner.invoke(cli, ["eval", "--from-history", "--tenant", "t1", "--cassettes", str(tmp_path / "rec")])
+    assert history.exit_code == 2 and "not to --from-history" in history.output

@@ -46,6 +46,7 @@ closing it; the threat score is kept (it orders the analyst queue).
 
 from __future__ import annotations
 
+import functools
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -75,6 +76,7 @@ from lg_sotf.domain.phishing import (
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
+from lg_sotf.llm.trace import observe
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
     EnrichmentResult,
@@ -584,12 +586,16 @@ class AnalysisAgent(BaseAgent):
                 ctx.tenant_id, ind.type, ind.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
             )
             request = {"kind": ind.type, "value": ind.value}
-            result = await ctx.trace.tool(self.name, "history", request, lookup, EnrichmentResult.as_dict)
+            restore = functools.partial(EnrichmentResult.from_dict, ind.type)
+            result = await ctx.trace.tool(self.name, "history", request, lookup, EnrichmentResult.as_dict, restore)
             out.append((ind, result))
         return out
 
     async def candidates(self, ctx: AgentContext, alert: Mapping[str, Any]) -> Dict[str, Candidate]:
-        configured = await self.enrichment.configured_kinds(ctx.tenant_id, ctx.repos)
+        # Which providers the tenant has is part of what a cassette records: a replay offers the same lookups.
+        configured = await observe(
+            "enrichment_providers", {}, self.enrichment.configured_kinds(ctx.tenant_id, ctx.repos), dict, dict
+        )
         out: Dict[str, Candidate] = {}
         seen: set[Tuple[str, str]] = set()
         for ind in _ordered(extract_indicators(alert), LOOKUP_PRIORITY):
