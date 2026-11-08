@@ -27,7 +27,14 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import escalations_out, one_escalation_out, user_ref
+from lg_sotf.api.common import (
+    escalations_out,
+    hidden_alert_ids,
+    invalidate_verdicts,
+    one_escalation_out,
+    refuse_hidden,
+    user_ref,
+)
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
@@ -47,15 +54,15 @@ from lg_sotf.api.schemas import (
     RollbackOut,
     VerifyIn,
 )
-from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import ResponseAction
 from lg_sotf.models.vocabulary import ActionStatus, EscalationStatus
 from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.models.vocabulary import RiskLevel as Risk
 from lg_sotf.models.vocabulary import VerificationState as Verification
-from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.action_views import ActionView, action_views
+from lg_sotf.services.blind_audit import BlindAuditService
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import enqueue_resumes
 from lg_sotf.services.rollback import RollbackService
@@ -113,21 +120,6 @@ def action_error(exc: ActionRequestError) -> ApiError:
     return ApiError(exc.status, exc.code, str(exc), details=[{"reason": exc.reason}] if exc.reason else None)
 
 
-async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
-    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
-    cache = VerdictCache(ctx.redis, ctx.prefix)
-    for alert_id in alert_ids:
-        try:
-            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
-            if alert.fingerprint:
-                await cache.invalidate(tenant_id, alert.fingerprint)
-        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
-            log_failure(
-                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
-                error_type=type(exc).__name__,
-            )
-
-
 @escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first, or by SLA)")
 async def list_escalations(
     request: Request,
@@ -167,7 +159,9 @@ async def list_escalations(
         limit=limit,
         cursor=cursor,
     )
-    items = await escalations_out(ctx, principal.tenant_id, page.items)
+    hidden = await hidden_alert_ids(ctx, principal.tenant_id, [e.alert_id for e in page.items])
+    # A page may then hold fewer than ``limit`` escalations; ``next_cursor`` still continues it.
+    items = await escalations_out(ctx, principal.tenant_id, [e for e in page.items if e.alert_id not in hidden])
     return PageOut[EscalationOut](items=items, next_cursor=page.next_cursor)
 
 
@@ -176,9 +170,9 @@ async def get_escalation(
     escalation_id: str, request: Request, principal: Principal = Depends(require(VIEWER))
 ) -> EscalationOut:
     ctx = get_ctx(request)
-    return await one_escalation_out(
-        ctx, principal.tenant_id, await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
-    )
+    escalation = await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
+    await refuse_hidden(ctx, principal.tenant_id, escalation.alert_id, "escalation", escalation_id)
+    return await one_escalation_out(ctx, principal.tenant_id, escalation)
 
 
 @escalations.post("/{escalation_id}/claim", response_model=EscalationOut, summary="Claim (assign to yourself)")
@@ -216,6 +210,12 @@ async def decide(
     )
     if body.decision == "true_positive":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])
+    # A blind-audit escalation of an alert whose run has ended: re-triage, the new run starts at this decision.
+    severity = await BlindAuditService(ctx.repos).requeue_after_decision(
+        principal.tenant_id, result.escalation, principal.actor
+    )
+    if severity is not None:
+        await ctx.queue.enqueue_process(principal.tenant_id, result.escalation.alert_id, severity)
     ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, result)
     return DecisionOut(
         escalation=await one_escalation_out(ctx, principal.tenant_id, result.escalation),
@@ -252,14 +252,17 @@ async def list_actions(
         limit=limit,
         cursor=cursor,
     )
-    items = await actions_out(ctx, principal.tenant_id, page.items)
+    hidden = await hidden_alert_ids(ctx, principal.tenant_id, [a.alert_id for a in page.items])
+    items = await actions_out(ctx, principal.tenant_id, [a for a in page.items if a.alert_id not in hidden])
     return PageOut[ActionOut](items=items, next_cursor=page.next_cursor)
 
 
 @actions.get("/{action_id}", response_model=ActionOut, summary="Response action detail")
 async def get_action(action_id: UUID, request: Request, principal: Principal = Depends(require(VIEWER))) -> ActionOut:
     ctx = get_ctx(request)
-    return await one_action_out(ctx, principal.tenant_id, await ctx.repos.actions.get(principal.tenant_id, action_id))
+    action = await ctx.repos.actions.get(principal.tenant_id, action_id)
+    await refuse_hidden(ctx, principal.tenant_id, action.alert_id, "response action", str(action_id))
+    return await one_action_out(ctx, principal.tenant_id, action)
 
 
 async def _review_action(

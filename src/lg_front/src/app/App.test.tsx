@@ -62,10 +62,10 @@ const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !['/actions', '/
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
   ['viewer', { role: 'viewer' }, null, 7],
-  ['analyst', { role: 'analyst' }, null, 7],
-  ['admin', { role: 'admin' }, null, 14],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 15],
-  // No MSSP console and no account security while acting on another tenant.
+  ['analyst', { role: 'analyst' }, null, 8],
+  ['admin', { role: 'admin' }, null, 15],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 16],
+  // No MSSP console, no account security and no blind audit (a person's label) while acting on another tenant.
   ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 13],
 ];
 

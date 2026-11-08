@@ -30,6 +30,19 @@ This is an allow list: text not known to be the detector's never counts, so
 a new integration that copies object names into the title cannot reopen the
 gap. True-positive evidence may still come from attacker-written fields: an
 attacker gains nothing by making an alert look worse.
+
+Not every benign word of a rule name states benign intent (AI-E6.4).
+``test``, ``selftest``, ``maintenance`` and ``health_check`` do: the detection
+engineer wrote the rule for a test, a maintenance window or a health check.
+``scheduled``, ``update``, ``backup``, ``scan`` and ``monitoring`` name the
+*activity* the rule detects, and attackers do the same things:
+``scheduled-task-created`` is persistence (ATT&CK T1053), ``Windows Defender
+real time monitoring was disabled`` is defence evasion (T1562.001), deleting
+scheduled backups inhibits recovery (T1490). :func:`rule_name_keywords` therefore
+counts an activity word only with a trusted qualifier: an intent word in the
+same rule name (``Scheduled maintenance: package update installed``), a
+test-environment source id, or, for ``scan``, one of the tenant's known
+scanners among the entities.
 """
 
 from __future__ import annotations
@@ -43,20 +56,32 @@ from typing import Annotated, Any, Dict, FrozenSet, Iterable, List, Mapping, Tup
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator
 
 __all__ = [
+    "ACTIVITY_KEYWORDS",
     "EICAR_HASHES",
     "EICAR_MD5",
     "EICAR_SHA1",
     "EICAR_SHA256",
     "INJECTION_SIGNAL",
     "KnownScanners",
+    "RULE_NAME_KEYWORDS",
     "SCANNER_SIGNAL",
     "TENANT_CONTEXT_SIGNALS",
     "TriageSettings",
     "attacker_values",
     "detector_words",
     "eicar_only",
+    "rule_name_keywords",
     "validate_triage_settings",
 ]
+
+#: Benign words of a detection rule's name (matched against :func:`detector_words`), in reporting order.
+RULE_NAME_KEYWORDS = (
+    "test", "testing", "selftest", "scheduled", "maintenance", "update", "backup", "scan", "health_check", "monitoring",
+)
+#: Words that name the detected activity, not benign intent: they count only with a trusted qualifier.
+ACTIVITY_KEYWORDS = frozenset({"scheduled", "update", "backup", "scan", "monitoring"})
+#: Activity words a configured scanner among the alert's entities also qualifies (``triage.known_scanners``).
+SCANNER_ACTIVITY = frozenset({"scan"})
 
 # Hashes of the 68-byte EICAR anti-virus test file (https://www.eicar.org).
 EICAR_MD5 = "44d88612fea8a8f36de82e1278abb02f"
@@ -136,6 +161,24 @@ def detector_words(rule_name: Any, masked: Iterable[str] = ()) -> FrozenSet[str]
     tokens = [t.strip(".") for t in _SEPARATORS.split(text)]
     tokens = [t for t in tokens if t]
     return frozenset(tokens) | frozenset(f"{a}_{b}" for a, b in zip(tokens, tokens[1:], strict=False))
+
+
+def rule_name_keywords(
+    words: FrozenSet[str], *, test_environment: bool = False, known_scanner: bool = False
+) -> List[str]:
+    """The benign keywords among a rule name's ``words`` that count as evidence, in :data:`RULE_NAME_KEYWORDS` order.
+
+    An intent word always counts. An activity word (:data:`ACTIVITY_KEYWORDS`)
+    counts only with a trusted qualifier: an intent word in the same rule
+    name, a test-environment source (``test_environment``) or, for ``scan``,
+    a configured scanner among the entities (``known_scanner``).
+    """
+    present = [k for k in RULE_NAME_KEYWORDS if k in words]
+    qualified = test_environment or any(k not in ACTIVITY_KEYWORDS for k in present)
+    return [
+        k for k in present
+        if k not in ACTIVITY_KEYWORDS or qualified or (known_scanner and k in SCANNER_ACTIVITY)
+    ]
 
 
 def _hashes(alert: Mapping[str, Any]) -> List[str]:

@@ -12,18 +12,15 @@ import asyncio
 import hashlib
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import AsyncIterator
 
 import asyncpg
 import psycopg
 import pytest
-import pytest_asyncio
 
 from lg_sotf.db.errors import Conflict, NotFound, SystemScopeDenied
 from lg_sotf.db.migrate import (
     grant_runtime_privileges,
     schema_is_current,
-    setup_checkpointer,
 )
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, Repositories
@@ -31,38 +28,20 @@ from lg_sotf.db.retention import purge_expired
 from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.db.urls import to_libpq_url
 from lg_sotf.settings import DatabaseSettings, RetentionSettings
-from tests.integration.db._support import TENANT_A, TENANT_B, TENANT_TABLES, db_settings, make_alert, seed_everything
+from tests.integration.db._support import (
+    TENANT_A,
+    TENANT_B,
+    TENANT_TABLES,
+    make_alert,
+    seed_everything,
+)
 
 pytestmark = pytest.mark.asyncio
 
-RUNTIME_ROLE = "pg_database_owner"
 
 
 def _sha(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
-
-
-@pytest_asyncio.fixture
-async def app_db(db: Database, repos: Repositories, migrated_database_url: str) -> AsyncIterator[Database]:
-    await setup_checkpointer(migrated_database_url, DatabaseSettings())
-    await asyncio.to_thread(grant_runtime_privileges, RUNTIME_ROLE, migrated_database_url, DatabaseSettings())
-    runtime = Database(
-        db_settings(migrated_database_url, pool_min=0, pool_max=4),
-        application_name="lg-sotf-tests-runtime",
-        server_settings={"role": RUNTIME_ROLE},
-    )
-    await runtime.open()
-    try:
-        async with runtime.connection() as conn:
-            assert await conn.fetchval("SELECT current_user") == RUNTIME_ROLE
-        yield runtime
-    finally:
-        await runtime.close()
-
-
-@pytest.fixture
-def app(app_db: Database) -> Repositories:
-    return Repositories.create(app_db)
 
 
 async def test_runtime_role_can_run_the_application(app: Repositories, repos: Repositories) -> None:

@@ -518,6 +518,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/blind-audit/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The blind audit queue (no AI verdict) */
+        get: operations["list_items_api_v1_blind_audit_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blind-audit/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One sampled alert; the AI side once labelled */
+        get: operations["get_item_api_v1_blind_audit_items__item_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blind-audit/items/{item_id}/label": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Label a sampled alert, then see the AI's verdict */
+        post: operations["label_item_api_v1_blind_audit_items__item_id__label_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/blind-audit/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sampling runs: window, seed, frame and label counts */
+        get: operations["list_runs_api_v1_blind_audit_runs_get"];
+        put?: never;
+        /** Sample auto-closed alerts now (or draw without recording: dry_run) */
+        post: operations["create_run_api_v1_blind_audit_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dashboard/summary": {
         parameters: {
             query?: never;
@@ -1163,6 +1232,23 @@ export interface paths {
         };
         /** AI verdict against analyst decisions: confusion matrix, agreement, false-negative rate */
         get: operations["accuracy_report_api_v1_reports_accuracy_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/reports/blind-audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Production false-negative estimate from blind audits of auto-closed alerts, with its interval */
+        get: operations["blind_audit_report_api_v1_reports_blind_audit_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1823,6 +1909,12 @@ export interface components {
             findings?: components["schemas"]["FindingOut"][];
             /** Fingerprint */
             fingerprint: string;
+            /**
+             * Hidden For Blind Audit
+             * @description True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.
+             * @default false
+             */
+            hidden_for_blind_audit?: boolean;
             /** Id */
             id: string;
             /**
@@ -1912,6 +2004,7 @@ export interface components {
                     verdict?: string;
                 };
                 analyst_decision?: string | null;
+                blind_audit_review?: string | null;
                 close_reason?: string;
                 confidence?: number | null;
                 correlation?: {
@@ -2069,6 +2162,12 @@ export interface components {
             entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
             /** Fingerprint */
             fingerprint: string;
+            /**
+             * Hidden For Blind Audit
+             * @description True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.
+             * @default false
+             */
+            hidden_for_blind_audit?: boolean;
             /** Id */
             id: string;
             /**
@@ -2150,6 +2249,7 @@ export interface components {
                     verdict?: string;
                 };
                 analyst_decision?: string | null;
+                blind_audit_review?: string | null;
                 close_reason?: string;
                 confidence?: number | null;
                 correlation?: {
@@ -2414,6 +2514,399 @@ export interface components {
             tenant_executed_last_hour?: number | null;
             /** Tenant Hourly Cap */
             tenant_hourly_cap?: number | null;
+        };
+        /**
+         * BlindAlertOut
+         * @description The alert as its source sent it: nothing the AI concluded, and not its id (the item id is the
+         *     handle; the alert's own routes withhold its AI side until the label exists anyway).
+         */
+        BlindAlertOut: {
+            /** Category */
+            category?: string | null;
+            entities_preview?: components["schemas"]["EntitiesPreviewOut"] | null;
+            /**
+             * Ingested At
+             * Format: date-time
+             */
+            ingested_at: string;
+            /**
+             * Normalized
+             * @description The normalized event (item detail only).
+             */
+            normalized?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Raw
+             * @description The source event (item detail only).
+             */
+            raw?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name?: string | null;
+            /** Title */
+            title: string;
+        };
+        /**
+         * BlindAuditDraw
+         * @description A dry run: what a run over this window and seed draws, recorded nowhere.
+         */
+        BlindAuditDraw: {
+            /** Alert Ids */
+            alert_ids: string[];
+            /** Frame Size */
+            frame_size: number;
+            /** Sample Size */
+            sample_size: number;
+            /** Seed */
+            seed: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /**
+         * BlindAuditEstimate
+         * @description The production false-negative estimate over a set of runs, each run a stratum (see :func:`estimate`).
+         */
+        BlindAuditEstimate: {
+            agreement_rate: components["schemas"]["RateInterval"];
+            /** Benign */
+            benign: number;
+            /** Complete */
+            complete: boolean;
+            /** Effective N */
+            effective_n: number | null;
+            /** Estimated Frame */
+            estimated_frame: number;
+            /** Estimated Missed */
+            estimated_missed: number | null;
+            /** Estimated Missed High */
+            estimated_missed_high: number | null;
+            /** Estimated Missed Low */
+            estimated_missed_low: number | null;
+            false_negative_rate: components["schemas"]["RateInterval"];
+            /** Frame Size */
+            frame_size: number;
+            /** Labelled */
+            labelled: number;
+            /** Malicious */
+            malicious: number;
+            /**
+             * Method
+             * @default stratified
+             * @constant
+             */
+            method?: "stratified";
+            /** Min Samples */
+            min_samples: number;
+            /** Pending */
+            pending: number;
+            /** Sampled */
+            sampled: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "insufficient_data" | "incomplete";
+            /** Summary */
+            summary: string;
+            /** Unsure */
+            unsure: number;
+            /** Worst Case Missed */
+            worst_case_missed: number | null;
+            /** Worst Case Missed High */
+            worst_case_missed_high: number | null;
+            /** Worst Case Rate */
+            worst_case_rate: number | null;
+            /** Worst Case Rate High */
+            worst_case_rate_high: number | null;
+        };
+        /** BlindAuditItemOut */
+        BlindAuditItemOut: {
+            alert: components["schemas"]["BlindAlertOut"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Escalation Id */
+            escalation_id?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Label */
+            label?: ("malicious" | "benign" | "unsure") | null;
+            /** Labelled At */
+            labelled_at?: string | null;
+            /** Labelled By */
+            labelled_by?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** @description Null until the item is labelled. */
+            reveal?: components["schemas"]["BlindAuditRevealOut"] | null;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Sample Rank */
+            sample_rank: number;
+        };
+        /** BlindAuditLabelIn */
+        BlindAuditLabelIn: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "malicious" | "benign" | "unsure";
+            /** Notes */
+            notes?: string | null;
+        };
+        /** BlindAuditLabelOut */
+        BlindAuditLabelOut: {
+            /**
+             * Escalation Created
+             * @default false
+             */
+            escalation_created?: boolean;
+            /** Escalation Id */
+            escalation_id?: string | null;
+            item: components["schemas"]["BlindAuditItemOut"];
+        };
+        /**
+         * BlindAuditReport
+         * @description ``GET /reports/blind-audit``: the production false-negative estimate over the runs of a window.
+         */
+        BlindAuditReport: {
+            estimate: components["schemas"]["BlindAuditEstimate"];
+            /**
+             * From
+             * Format: date
+             */
+            from: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /** Labels By Organisation */
+            labels_by_organisation: components["schemas"]["OrganisationLabels"][];
+            /** Notes */
+            notes: string[];
+            /** Runs */
+            runs: components["schemas"]["BlindAuditRunSummary"][];
+            /** Strata */
+            strata: components["schemas"]["BlindAuditStratum"][];
+            /**
+             * To
+             * Format: date
+             */
+            to: string;
+            /** Uncovered */
+            uncovered: components["schemas"]["UncoveredSpan"][];
+        };
+        /**
+         * BlindAuditRevealOut
+         * @description The AI's side, shown once the item is labelled: its class when sampled, and the alert's verdict now.
+         */
+        BlindAuditRevealOut: {
+            /**
+             * Agreement
+             * @description The label equals the AI class; null for an unsure label.
+             */
+            agreement: boolean | null;
+            /**
+             * Ai Class
+             * @enum {string}
+             */
+            ai_class: "malicious" | "benign" | "inconclusive";
+            /** Close Reason */
+            close_reason?: string | null;
+            /** Conclusion */
+            conclusion?: string | null;
+            /** Confidence */
+            confidence?: number | null;
+            /** Disposition */
+            disposition?: ("malicious" | "benign" | "inconclusive") | null;
+            /** Routing Code */
+            routing_code?: string | null;
+            /** Threat Score */
+            threat_score?: number | null;
+        };
+        /**
+         * BlindAuditRunSummary
+         * @description A run with its label counts.
+         */
+        BlindAuditRunSummary: {
+            /**
+             * Agreed
+             * @default 0
+             */
+            agreed?: number;
+            /**
+             * Benign
+             * @default 0
+             */
+            benign?: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Fixed Size */
+            fixed_size: number | null;
+            /**
+             * Frame Size
+             * @description Alerts eligible in the window: the sampling frame.
+             */
+            frame_size: number;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Malicious
+             * @default 0
+             */
+            malicious?: number;
+            /** Min Sample */
+            min_sample: number;
+            /** Sample Rate */
+            sample_rate: number | null;
+            /** Sample Size */
+            sample_size: number;
+            /**
+             * Sampled
+             * @default 0
+             */
+            sampled?: number;
+            /** Seed */
+            seed: number;
+            /**
+             * Seed Source
+             * @default server
+             */
+            seed_source?: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "schedule" | "cli" | "api";
+            /**
+             * Unsure
+             * @default 0
+             */
+            unsure?: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /**
+         * BlindAuditSampleIn
+         * @description A run on demand: alerts closed from where the last run ended (the tenant's first run: ``from``, default
+         *     7 days back) to ``to`` (default and at most: 5 minutes before now). ``dry_run`` draws without recording
+         *     anything and is the only way to pass a ``seed`` (with it, ``from`` may be any time).
+         */
+        BlindAuditSampleIn: {
+            /**
+             * Dry Run
+             * @description Draw and return the sample without recording a run.
+             * @default false
+             */
+            dry_run?: boolean;
+            /** From */
+            from?: string | null;
+            /** Min Per Week */
+            min_per_week?: number | null;
+            /**
+             * Sample Rate
+             * @description Default: the tenant setting.
+             */
+            sample_rate?: number | null;
+            /**
+             * Seed
+             * @description Dry runs only (a recorded run's seed is the server's).
+             */
+            seed?: number | null;
+            /**
+             * Size
+             * @description Draw exactly this many (replaces rate and minimum).
+             */
+            size?: number | null;
+            /** To */
+            to?: string | null;
+        };
+        /**
+         * BlindAuditStratum
+         * @description One run as a stratum of the estimate, with its own rate and 95% Wilson interval.
+         */
+        BlindAuditStratum: {
+            /** Benign */
+            benign: number;
+            /** Complete */
+            complete: boolean;
+            false_negative_rate: components["schemas"]["RateInterval"];
+            /** Frame Size */
+            frame_size: number;
+            /** Labelled */
+            labelled: number;
+            /** Malicious */
+            malicious: number;
+            /** Pending */
+            pending: number;
+            /**
+             * Run Id
+             * Format: uuid
+             */
+            run_id: string;
+            /** Sampled */
+            sampled: number;
+            /** Unsure */
+            unsure: number;
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
         };
         /** BulkClaimIn */
         BulkClaimIn: {
@@ -3990,6 +4483,22 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * OrganisationLabels
+         * @description Labels given by one organisation (``None``: the tenant's own people).
+         */
+        OrganisationLabels: {
+            /** Benign */
+            benign: number;
+            /** Labelled */
+            labelled: number;
+            /** Malicious */
+            malicious: number;
+            /** Organisation */
+            organisation: string | null;
+            /** Unsure */
+            unsure: number;
+        };
         /** OrganisationOut */
         OrganisationOut: {
             /**
@@ -4030,6 +4539,20 @@ export interface components {
         PageOut_AuditEntryOut_: {
             /** Items */
             items: components["schemas"]["AuditEntryOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** PageOut[BlindAuditItemOut] */
+        PageOut_BlindAuditItemOut_: {
+            /** Items */
+            items: components["schemas"]["BlindAuditItemOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
+        /** PageOut[BlindAuditRunSummary] */
+        PageOut_BlindAuditRunSummary_: {
+            /** Items */
+            items: components["schemas"]["BlindAuditRunSummary"][];
             /** Next Cursor */
             next_cursor?: string | null;
         };
@@ -4994,6 +5517,22 @@ export interface components {
              */
             token_type?: "bearer";
             user: components["schemas"]["UserOut"];
+        };
+        /**
+         * UncoveredSpan
+         * @description Time in the report's window that no run sampled: alerts closed then are in no frame.
+         */
+        UncoveredSpan: {
+            /**
+             * From
+             * Format: date-time
+             */
+            from: string;
+            /**
+             * To
+             * Format: date-time
+             */
+            to: string;
         };
         /** UsageDayOut */
         UsageDayOut: {
@@ -6286,6 +6825,170 @@ export interface operations {
             };
         };
     };
+    list_items_api_v1_blind_audit_items_get: {
+        parameters: {
+            query?: {
+                status?: "pending" | "labelled";
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_BlindAuditItemOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_item_api_v1_blind_audit_items__item_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlindAuditItemOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    label_item_api_v1_blind_audit_items__item_id__label_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                item_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlindAuditLabelIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlindAuditLabelOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_api_v1_blind_audit_runs_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_BlindAuditRunSummary_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_v1_blind_audit_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BlindAuditSampleIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlindAuditRunSummary"] | components["schemas"]["BlindAuditDraw"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     summary_api_v1_dashboard_summary_get: {
         parameters: {
             query?: {
@@ -7562,6 +8265,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AccuracyReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    blind_audit_report_api_v1_reports_blind_audit_get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BlindAuditReport"];
                 };
             };
             /** @description Validation Error */

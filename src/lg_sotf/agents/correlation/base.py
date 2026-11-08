@@ -261,7 +261,11 @@ class CorrelationAgent(BaseAgent):
         return at + self._replay_offset
 
     async def _related(self, ctx: AgentContext, indicators: List[Indicator], now: datetime) -> List[Any]:
-        """Record this alert's sightings at ``now`` and read the alerts that shared one in the window before it."""
+        """Record this alert's sightings at ``now`` and read the alerts that shared one in the window before it.
+
+        A sample waiting for its blind-audit label is left out: its disposition must not reach this alert's
+        digest or the model (it is hidden until labelled).
+        """
         assert ctx.repos is not None
         hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
         if not hashed:
@@ -270,7 +274,7 @@ class CorrelationAgent(BaseAgent):
             await ctx.repos.indicators.add_sightings(
                 ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
             )
-        return await ctx.repos.indicators.related_alerts(
+        related = await ctx.repos.indicators.related_alerts(
             ctx.tenant_id,
             [(i.type, h) for i, h in hashed],
             since=now - self.window,
@@ -279,6 +283,10 @@ class CorrelationAgent(BaseAgent):
             limit=self.max_related,
             exclude_alert_id=ctx.alert_id,
         )
+        if not related:
+            return []
+        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
+        return [r for r in related if r.alert_id not in hidden]
 
     @staticmethod
     def alert_view(alert: Mapping[str, Any]) -> Dict[str, Any]:

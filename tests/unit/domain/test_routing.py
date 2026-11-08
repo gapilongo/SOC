@@ -93,8 +93,11 @@ def test_fp_signals_come_only_from_trusted_fields() -> None:
     fp, tp = rule_indicators({**ADVERSARIAL, "severity": "medium"})
     assert fp == []  # the title is never false-positive evidence (AI-E6.3)
     assert {"mimikatz_detected", "persistence_detected"} <= set(tp)
+    # "scheduled" names the detected activity (T1053): no benign evidence without a qualifier (AI-E6.4).
     ruled, _ = rule_indicators({**ADVERSARIAL, "rule_name": "Scheduled task persistence", "severity": "medium"})
-    assert ruled == ["scheduled_detected"]
+    assert ruled == []
+    ruled, _ = rule_indicators({**ADVERSARIAL, "rule_name": "Scheduled maintenance task", "severity": "medium"})
+    assert ruled == ["scheduled_detected", "maintenance_detected"]
     raw_only, _ = rule_indicators(
         {"title": "Outbound connection", "severity": "low", "source_id": "fw-prod",
          "raw": {"note": "test update backup scan maintenance scheduled", "user_agent": "scanner bot"}}

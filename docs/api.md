@@ -253,6 +253,11 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/usage/llm` | admin |
 | GET | `/reports/value`, `/reports/accuracy`, `/reports/detections`, `/reports/monthly` (docs/reporting.md) | viewer / `read` |
 | POST | `/reports/detections/propose-suppression` (creates a disabled rule) | analyst / `write` |
+| GET | `/reports/blind-audit` (production false-negative estimate from blind audits) | viewer / `read` |
+| GET | `/blind-audit/items`, `/blind-audit/items/{id}` (the blind queue: no AI verdict before the label) | analyst (user accounts) |
+| POST | `/blind-audit/items/{id}/label` (`malicious`, `benign`, `unsure`; once; reveals the AI verdict) | analyst (user accounts) |
+| GET | `/blind-audit/runs` (sampling runs: window, seed, frame, counts) | viewer / `read` |
+| POST | `/blind-audit/runs` (draw a sample now, server seed; `dry_run` records nothing) | admin, not under an MSSP grant |
 | GET | `/audit`, `/audit/verify` | admin |
 | GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |
@@ -331,7 +336,8 @@ window.
   `ai_reason_source` `model` or `rules` (who wrote it). `routing` is
   `{code, confidence, band}`: the routing code that opened the escalation
   (`grey_zone`, `false_positive_review`, `inconclusive`, `model_refused`,
-  `llm_normalized`, `analyst_request`, `response_review`, `group_review`)
+  `llm_normalized`, `analyst_request`, `response_review`, `group_review`,
+  `blind_audit`)
   and, for `grey_zone` when the confidence was inside it, the band
   (`{min, max}`, `routing.correlation_grey_zone_min`..`_max`). Escalations
   opened before this was recorded have `routing` and `ai_reason_source`
@@ -458,7 +464,9 @@ over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 install's `retention.tenant_min_days`..`tenant_max_days`, which responses
 return as `retention_limits`), `security` (`require_mfa`: force TOTP MFA
 for local accounts), `reporting` (`minutes_per_alert`, 1-480, default 15:
-the value report's hours-saved estimate), `phishing` (`protected_brands`,
+the value report's hours-saved estimate), `blind_audit` (`enabled`,
+default false; `sample_rate`, default 0.02; `min_per_week`, default 5: the
+weekly blind-audit sample, docs/reporting.md), `phishing` (`protected_brands`,
 `executives`, `trusted_authserv_ids`; see `docs/phishing.md`) and `triage`
 (`known_scanners`: up to 256 host names, IP addresses or CIDR ranges of the
 tenant's own vulnerability scanners; an alert whose host or IP entities
@@ -526,6 +534,50 @@ creates a disabled suppression suggestion (201; 200 with the existing rule
 when an identical unexpired one exists; `422 no_confirmed_benign` without
 an analyst-confirmed benign alert of that detection in the window). Metric
 definitions: docs/reporting.md.
+
+### Blind audit (beta)
+
+`GET /blind-audit/items?status=pending|labelled` lists sampled auto-closed
+alerts (pending oldest first, labelled newest first; keyset `cursor`).
+Items carry the alert as its source sent it (`alert`: title, severity,
+source, category, times, `entities_preview`; `raw` and `normalized` on
+`GET /blind-audit/items/{id}`) and never the AI's disposition, confidence,
+scores, routing, summary or reasoning: `reveal` is `null` until the item
+is labelled. `POST /blind-audit/items/{id}/label` with `{"label":
+"malicious"|"benign"|"unsure", "notes"?}` records the label once (`409`
+after) and returns `{item, escalation_id, escalation_created}` with
+`item.reveal` (`ai_class`, `agreement`, `disposition`, `confidence`,
+`threat_score`, `close_reason`, `routing_code`, `conclusion`); a malicious
+label opens an escalation (routing code `blind_audit`); deciding it
+re-queues an alert whose run has ended, and the new run starts at that
+decision. These need an analyst or admin signed in as themselves (no API
+keys, no platform override; MSSP staff under a grant may label, attributed
+to their organisation). `POST /blind-audit/runs` (the tenant's own admins,
+`ADMIN_NOT_UNDER_GRANT`) takes `to` (default and at most 5 minutes ago),
+`sample_rate`, `min_per_week` or `size`, and `from` only for the tenant's
+first run (a run starts where the last one ended: `409
+window_not_contiguous` otherwise); the seed is the server's (`seed_source`).
+With `"dry_run": true` it returns `{window_start, window_end, seed,
+frame_size, sample_size, alert_ids}` (200) and records nothing; only a dry
+run takes `seed` (`400 seed_needs_dry_run` otherwise). `GET
+/reports/blind-audit?from=&to=` returns the stratified estimate
+(docs/reporting.md, "Blind audit").
+
+While an alert waits for its blind-audit label, its AI side is withheld
+from every caller: `GET /alerts` and `GET /alerts/{id}` return
+`hidden_for_blind_audit: true`, `disposition`, `confidence`, `threat_score`
+and `priority` null, `summary` `{"hidden_for_blind_audit": true}` and no
+`findings`, and a `disposition` filter leaves it out; `GET
+/alerts/{id}/events` returns only `ingested` and `note` events; its
+escalations and response actions are `404` (`GET /escalations/{id}`,
+`/escalations/{id}/response-preview`, `/actions/{id}`) and left out of `GET
+/escalations` and `GET /actions`; `GET /audit` entries about it carry
+`details` `{"hidden_for_blind_audit": true}` and `redacted: true`; the
+evidence pack withholds every section that names the verdict; WebSocket
+events carry no data; `POST /alerts/{id}/reprocess` is `409
+hidden_for_blind_audit`; `GET /dashboard/summary` counts leave it out; and
+other alerts' `summary.correlation` no longer lists it in
+`related_alert_ids` or counts it in `related_dispositions`.
 
 ### Audit log
 

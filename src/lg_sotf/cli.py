@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Coroutine, List, Optional, TypeVar
 
@@ -219,6 +220,62 @@ def enqueue(tenant_id: str, alert_id: str, force: bool, resume: bool) -> None:
     else:
         entry_id = _run(enqueue_alert(settings, tenant_id=tenant_id, alert_id=alert_id, force=force))
     click.echo(f"enqueued {entry_id}")
+
+
+def _utc(value: Optional[datetime]) -> Optional[datetime]:
+    """A ``--from``/``--to`` value; one without a time zone is UTC."""
+    return value if value is None or value.tzinfo is not None else value.replace(tzinfo=UTC)
+
+
+@cli.command("audit-sample")
+@click.option("--tenant", "tenant_id", required=True, help="Tenant id.")
+@click.option(
+    "--from", "since", type=click.DateTime(),
+    help="Window start, UTC: the tenant's first run, or a dry run (a run starts where the last one ended).",
+)
+@click.option("--to", "until", type=click.DateTime(), help="Window end, UTC (default and at most: 5 minutes ago).")
+@click.option("--dry-run", is_flag=True, help="Draw and print the sample without recording a run.")
+@click.option("--seed", type=click.IntRange(0, 2**53 - 1), help="Seed of a --dry-run (a recorded run's is the server's).")
+@click.option("--rate", type=click.FloatRange(0, 1, min_open=True), help="Share drawn (default: the tenant setting).")
+@click.option("--min-per-week", type=click.IntRange(0, 500), help="Minimum per 7 days of window (default: setting).")
+@click.option("--size", type=click.IntRange(1, 2_000), help="Draw exactly this many (replaces rate and minimum).")
+@click.option("--json", "as_json", is_flag=True, help="Print the run as JSON.")
+def audit_sample(
+    tenant_id: str,
+    since: Optional[datetime],
+    until: Optional[datetime],
+    seed: Optional[int],
+    rate: Optional[float],
+    min_per_week: Optional[int],
+    size: Optional[int],
+    as_json: bool,
+    dry_run: bool,
+) -> None:
+    """Draw a blind-audit sample of auto-closed alerts for analysts to label without the AI verdict."""
+    from lg_sotf.runtime.ops import audit_sample as run_sample
+    from lg_sotf.services.blind_audit import BlindAuditDraw, SampleRequest
+
+    if seed is not None and not dry_run:
+        raise click.UsageError("--seed is for --dry-run only: a recorded run's seed is chosen by the server")
+    settings = _prepare()
+    request = SampleRequest(
+        since=_utc(since), until=_utc(until), seed=seed, sample_rate=rate, min_per_week=min_per_week, size=size,
+    )
+    run = _run(run_sample(settings, tenant_id=tenant_id, request=request, dry_run=dry_run))
+    if as_json:
+        click.echo(json.dumps(run.model_dump(mode="json"), indent=2, sort_keys=True))
+        return
+    if isinstance(run, BlindAuditDraw):
+        click.echo(
+            f"dry run (nothing recorded): {run.sample_size} of {run.frame_size} alerts closed "
+            f"{run.window_start.isoformat()} to {run.window_end.isoformat()} with seed {run.seed}: "
+            + ", ".join(run.alert_ids)
+        )
+        return
+    click.echo(
+        f"sampled {run.sample_size} of {run.frame_size} auto-closed alerts closed {run.window_start.isoformat()} "
+        f"to {run.window_end.isoformat()} (seed {run.seed}, run {run.id}); label them on the Blind audit page"
+    )
 
 
 @cli.group()

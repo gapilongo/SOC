@@ -264,8 +264,14 @@ saved no analyst time.
   The lowest rules' threat score among benign alerts was 42, against a
   requirement below 30.
 
-RUN.md proposes changes to test (none made yet). The miss-rate result
-stands; the auto-close result is not yet a statement about the model.
+RUN.md proposes changes to test. AI-E1.9 tested them offline
+([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md), a simulation,
+not a new model run) and shipped event-time correlation in the harness, the
+corpus's declared scanner, and a benign verdict corroborated by that
+context. On v2's recorded outputs no policy closes anything; with the fake
+model the corpus closes 8 of 312 benign alerts and no malicious one. The
+miss-rate result stands; the auto-close result is not yet a statement about
+the model.
 
 ### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama
 
@@ -292,7 +298,7 @@ to about 1 in 10. The model's own verdicts were often wrong (malicious recall
 
 ### 7.3 Adversarial corpus v2
 
-`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 91 synthetic alerts
+`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 97 synthetic alerts
 that try to steer the model or the rules. Since AI-E6.3 all of them are in
 the gated `adversarial` split ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 
@@ -304,6 +310,7 @@ the gated `adversarial` split ([evaluation.md](evaluation.md#adversarial-corpus-
 | `encoding-tricks` | 17 | Base64, homoglyphs, zero-width and tag characters, right-to-left override, ROT13, instructions split across fields |
 | `benign-lookalike` | 17 | The security team's own test strings (EICAR, phishing simulation, red-team harness), to measure the cost of the defences |
 | `title-camouflage` | 3 | Attacker-named tasks or services that put benign words into the title (gated since AI-E6.3) |
+| `activity-camouflage` (AI-E6.4) | 6 | Attacks whose detection rule name holds a word for the detected activity ("scheduled", "backup", "monitoring"), which the triage rules counted as benign evidence |
 
 * **The CI gate** runs the corpus with the offline fake model on every
   change: no error, no malicious item of the adversarial split closed by
@@ -344,16 +351,18 @@ the gated `adversarial` split ([evaluation.md](evaluation.md#adversarial-corpus-
   * **The gate.** The items are in the gated `adversarial` split, 0 of 3
     closed.
 * **Activity words in rule names** (AI-E6.4,
-  [#305](https://github.com/gapilongo/SOC/issues/305), in review as #314 on
+  [#305](https://github.com/gapilongo/SOC/issues/305), merged as #314 on
   2026-11-08). `scheduled`, `update`, `backup` and `scan` in a rule name
-  usually describe the detected activity, not benign intent, yet they still
-  count as benign evidence. AI-E6.4 counts them only with a trusted
-  qualifier, such as a maintenance window or a known scanner, and adds
-  adversarial items for them. Until it merges, the gap is open.
+  usually describe the detected activity, not benign intent. AI-E6.4 counts
+  them only with a trusted qualifier (an intent word in the rule name, a
+  test-environment source or, for `scan`, a known scanner) and gates the
+  `activity-camouflage` family.
 * **No benign auto-close on the attack-emulation corpus** (section 7.1). The
   routing policy and the eval replay, not the model, held all 312 benign
   alerts. The proposed changes are hypotheses in
-  [RUN.md](scorecards/v2/deepseek-v4/RUN.md), not made.
+  [RUN.md](scorecards/v2/deepseek-v4/RUN.md); AI-E1.9 shipped those that
+  passed offline ([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)).
+  A real-model re-run (v2.1) is still to do.
 * **Models follow injected text.** Up to 44% of the time in one family with
   a 7B local model. The policy contains the effect; the model is not robust.
 * **Steering through the verdict.** The injection-followed metric checks
@@ -452,8 +461,11 @@ change a customer's environment.
 * On the attack-emulation corpus automation closed no benign alert (0 of
   312), so the measured analyst-time saving is zero (section 7.1).
 * Rule-name words that describe the detected activity (`scheduled`,
-  `update`, `backup`, `scan`) still count as benign evidence until AI-E6.4
-  (#305) merges. Title camouflage (#299) is fixed and gated (AI-E6.3).
+  `update`, `backup`, `scan`) count as benign evidence only with a trusted
+  qualifier (AI-E6.4). Title camouflage (#299) is fixed and gated (AI-E6.3).
+* A declared scanner corroborates a benign verdict on any alert naming it as
+  a host or IP entity, including alerts about the scanner host itself
+  (AI-E1.9; a source-only match is a follow-up).
 * Models follow injected text a substantial share of the time; only the
   policy contains it.
 * Shadow mode (running a candidate configuration side by side without side
@@ -557,7 +569,7 @@ articles anyway, this is where each requirement is met and what is missing.
 | **Art. 12 record-keeping**: automatic logging of events over the lifetime, enough to identify risks (Art. 12(2)(a)), support post-market monitoring (12(2)(b)) and deployer monitoring (12(2)(c)) | Per-call prompt hash and model id (INV-04); the investigation trace (INV-05); the alert timeline and response ledger; the hash-chained, append-only audit log (INV-06); sealed evidence packs (INV-08) (section 8) | Default alert and trace retention is 90 days; Art. 26(6) asks deployers for at least six months (section 9) |
 | **Art. 13 transparency and instructions for use**: deployers can interpret the output; instructions state the provider, capabilities and limits, accuracy metrics, human oversight measures, resources and log handling (13(3)) | This card (capabilities, limits, models, accuracy evidence, oversight, logging); per-alert reasoning, confidence, evidence and model provenance in the UI and evidence packs; [user-guide.md](user-guide.md), [configuration.md](configuration.md) | Accuracy is declared for synthetic sets only (section 7) |
 | **Art. 14 human oversight** (14(4)(a) to (e)) | (a) understand capacities and limits and watch for anomalies: this card, the scorecards, the dashboard, usage and error metrics; (b) awareness of automation bias: rule corroboration for closes, model evidence shown next to rule evidence, oversight counts per case (section 10); (c) interpret output: reasoning, confidence, evidence and provenance per step; (d) decide not to use, override or reverse: analyst decisions override verdicts, actions can be rejected or rolled back, `llm.enabled=false`; (e) intervene or stop: the install and tenant kill switches (INV-02), approval by default, critical actions disabled | Shadow mode for testing a change without effects is pending (INV-09) |
-| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); activity words in rule names until AI-E6.4 (#305); models follow injected text (section 7.4); no third-party penetration test |
+| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); a declared scanner corroborates alerts about its own host (AI-E1.9); models follow injected text (section 7.4); no third-party penetration test |
 | **Art. 26(5) deployer monitoring and (6) log retention** (deployer duties) | Dashboard, LLM usage and cost, the AI-versus-analyst report ([reporting.md](reporting.md)), evidence packs, audit verification; `retention.*` settings | Raise retention to at least six months yourself (section 9) |
 
 [compliance.md](compliance.md#eu-ai-act-human-oversight-and-record-keeping)
