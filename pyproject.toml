@@ -235,7 +235,7 @@ containers = ["lg_sotf"]
 layers = [
     "__main__",
     "cli",
-    "api | mcp | eval",
+    "api | mcp | eval | invariants",
     "runtime",
     "core",
     "services | compliance | onboarding | agents | ingestion",

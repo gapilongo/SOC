@@ -531,6 +531,38 @@ def evidence_verify(path: Path, allow_unsigned: bool) -> None:
         sys.exit(1)
 
 
+@cli.command("verify-invariants")
+@click.option("--json", "as_json", is_flag=True, help="Print the results as JSON.")
+def verify_invariants(as_json: bool) -> None:
+    """Check this install's safety invariants (docs/invariants.md), read-only.
+
+    Reads the database catalog, the runtime role's grants and the settings as
+    the API and workers see them (database.url), in a synthetic dry-run tenant
+    that owns no data. Nothing is written and no connector is called.
+    Exit code 0: no check failed (skipped checks do not apply to this
+    install); 1: at least one failed.
+    """
+    from lg_sotf.invariants.checks import run_checks
+    from lg_sotf.invariants.registry import INVARIANTS
+
+    settings = _prepare()
+    results = _run(run_checks(settings))
+    failed = [r for r in results if r.outcome == "fail"]
+    pending = [inv.id for inv in INVARIANTS if inv.status == "pending"]
+    if as_json:
+        click.echo(json.dumps({"results": [r.as_dict() for r in results], "pending": pending}, indent=2))
+    else:
+        for r in results:
+            click.echo(f"{r.outcome.upper():4}  {r.invariant}  {r.check:<18} {r.detail}")
+        counts = {o: sum(r.outcome == o for r in results) for o in ("pass", "skip", "fail")}
+        click.echo(
+            f"{counts['pass']} passed, {counts['skip']} skipped, {counts['fail']} failed; "
+            f"{len(INVARIANTS)} invariants registered" + (f", pending: {', '.join(pending)}" if pending else "")
+        )
+    if failed:
+        sys.exit(1)
+
+
 @cli.command("mcp")
 def mcp() -> None:
     """Run the Model Context Protocol server over stdio.

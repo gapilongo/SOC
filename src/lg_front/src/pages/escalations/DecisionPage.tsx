@@ -13,7 +13,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
-import { decidedByLabel, escalationOwner, escalationSeverity, escalationTitle, readRouting } from '../../api/fields';
+import { decidedByLabel, escalationConflictNotice, escalationOwner, escalationSeverity, escalationTitle, readRouting } from '../../api/fields';
 import { useEscalation, useLivePollInterval } from '../../api/hooks';
 import { afterEscalationChange } from '../../api/invalidate';
 import { qk } from '../../api/queryKeys';
@@ -129,7 +129,8 @@ function ClaimState({ e, now }: { e: EscalationOut; now: number }) {
       await endpoints.claim(api, e.id, e.version);
       toast.success(owner.kind === 'other' ? 'Escalation taken over.' : 'Escalation claimed.');
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) toast.info('Someone else changed this escalation first; it has been reloaded.');
+      const notice = escalationConflictNotice(err, 'it has been reloaded');
+      if (notice) toast.info(notice);
       else toast.error(err, 'Claim failed');
     } finally {
       setBusy(false);

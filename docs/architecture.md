@@ -35,8 +35,8 @@ import-lint`). What each package owns is in the
 
 | Layer (top to bottom) | Packages (`src/lg_sotf/`) | Owns |
 |---|---|---|
-| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, mcp, version |
-| Interfaces | `api` \| `mcp` \| `eval` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness |
+| Entrypoints | `cli.py`, `__main__.py` | `lg-sotf` commands: api, worker, scheduler, migrate, create-admin, create-tenant, reset-mfa, dlq, eval, eval-scorecard, tenant-export, tenant-erase, evidence-verify, verify-invariants, mcp, version |
+| Interfaces | `api` \| `mcp` \| `eval` \| `invariants` | FastAPI app, auth, routers, WebSocket; the stdio MCP server; the evaluation harness; the safety-invariant registry and runtime checks |
 | Process roles | `runtime` | worker, leader-elected scheduler, health server, sweeps, shutdown |
 | Workflow engine | `core` | graph, nodes, `WorkflowEngine`, retry policy |
 | Application | `services` \| `compliance` \| `onboarding` \| `agents` \| `ingestion` | escalation, review, response, reporting; evidence, NIS2, export; onboarding; triage, correlation and analysis agents; sources and normalizers |
@@ -284,8 +284,11 @@ Rules:
   parent and every attached run. A benign/false-positive decision is only
   inherited by attached alerts whose own evidence does not contradict it;
   otherwise the attached alert is detached into its own escalation.
-* A decision on an SLA-expired escalation is still accepted (audited with
-  `after_sla_expiry`), so expiry never strands an alert.
+* A claim or decision on an SLA-expired escalation is still accepted
+  (audited with `after_sla_expiry`), so expiry never strands an alert. A
+  claim keeps the status `expired` (the SLA sweep only reads active
+  escalations, so it does not pick it up again) and sets the assignee; the
+  assignee then holds it as they would a `claimed` one.
 * Approvals are per action; unmentioned actions stay pending unless the
   request sets `reject_remaining`. An approval commits whenever the analyst
   makes it, also while the run is not waiting: `execute_actions` treats

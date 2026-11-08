@@ -69,6 +69,11 @@ export class ApiError extends Error {
     return this.status === 409;
   }
 
+  /** A 409 about the item's state (decided, closed, ...), not a lost version race: retrying cannot help. */
+  get isStateConflict(): boolean {
+    return this.status === 409 && (this.code === 'invalid_transition' || this.code === 'already_in_state');
+  }
+
   /** Human-readable list of validation problems (422 `details`), if any. */
   get detailMessages(): string[] {
     const d = this.details;

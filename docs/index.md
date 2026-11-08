@@ -15,6 +15,7 @@
 | [Dependency policy](dependency-policy.md) | Engineers, security reviewers | Admission checklist for a new dependency, patch SLAs, Dependabot and advisory triage |
 | [Threat model](threat-model.md) | Security reviewers, pen testers, engineers | STRIDE per component (API, worker, MCP, MSSP delegation, evidence tools, CI/CD), OWASP Top 10 for Agentic Applications, MITRE ATLAS, the threat-model gate per epic |
 | [Hardening guide](hardening.md) | Operators, security reviewers | Numbered L1/L2 controls with checks for Docker Compose, Helm, PostgreSQL, Redis, the reverse proxy and image verification |
+| [Safety invariants](invariants.md) | Security reviewers, buyers, engineers | The safety invariants with the tests that prove them, and `lg-sotf verify-invariants` for your own install |
 | [MSSP operations](mssp.md) | Platform admins | MSSP console, tenant switcher, suspension, quotas, usage metering and invoicing, tenant templates |
 | [Onboarding](onboarding.md) | Install admins, tenant admins | First-run setup wizard, getting-started checklist, sample alerts, per-tenant retention |
 | [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |

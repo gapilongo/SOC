@@ -24,6 +24,10 @@ from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.models.vocabulary import DECISIONS, ESCALATION_LEVELS, ESCALATION_STATUSES
 
 ACTIVE_ESCALATION_STATUSES = ("open", "claimed")
+# An analyst may claim an active escalation or one the SLA sweep expired (it keeps the status ``expired``).
+CLAIMABLE_ESCALATION_STATUSES = ACTIVE_ESCALATION_STATUSES + ("expired",)
+# Statuses no guarded update leaves: a write against them is a state error, never a version race.
+_FINAL_ESCALATION_STATUSES = ("decided", "cancelled")
 
 _CREATE_ATTEMPTS = 3
 ESCALATION_ORDERS = ("created_at", "sla_deadline")
@@ -143,6 +147,10 @@ class Escalation(Record):
     @property
     def is_active(self) -> bool:
         return self.status in ACTIVE_ESCALATION_STATUSES
+
+    def held_by_other(self, user_id: UUID) -> bool:
+        """Claimed by someone else: ``claimed``, or ``expired`` with an assignee (claimed before or after expiry)."""
+        return self.status in ("claimed", "expired") and self.assigned_to not in (None, user_id)
 
 
 class EscalationsRepo(Repository):
@@ -300,15 +308,22 @@ class EscalationsRepo(Repository):
         now: Optional[datetime] = None,
         conn: Optional[Connection] = None,
     ) -> Escalation:
-        """Assign an active escalation to ``user_id``; :class:`Conflict` if the version moved."""
+        """Assign an active or SLA-expired escalation to ``user_id``; :class:`Conflict` if the version moved.
+
+        An active one becomes ``claimed``. An expired one stays ``expired``
+        (the missed SLA is kept, and the sweep, which only looks at active
+        ones, does not pick it up again) and gets the assignee.
+        :class:`InvalidTransition` if it is decided or cancelled.
+        """
         require_aware(now, "now")
         return await self._guarded_update(
             tenant_id,
             escalation_id,
             "claimed",
-            ACTIVE_ESCALATION_STATUSES,
+            CLAIMABLE_ESCALATION_STATUSES,
             expected_version,
-            "status = 'claimed', assigned_to = $5, claimed_at = COALESCE(claimed_at, COALESCE($6::timestamptz, now()))",
+            "status = CASE WHEN status = 'expired' THEN 'expired' ELSE 'claimed' END, assigned_to = $5,"
+            " claimed_at = COALESCE(claimed_at, COALESCE($6::timestamptz, now()))",
             [user_id, now],
             conn=conn,
         )
@@ -508,6 +523,9 @@ class EscalationsRepo(Repository):
         esc = to_model(Escalation, current)
         if esc is None:
             raise NotFound("escalation", escalation_id)
+        if esc.status in _FINAL_ESCALATION_STATUSES:
+            # Whatever version the caller had, retrying cannot help: report the state, not a race.
+            raise InvalidTransition("escalation", escalation_id, esc.status, target)
         if expected_version is not None and esc.version != expected_version:
             raise Conflict(
                 f"escalation {escalation_id} was modified (version {esc.version}, expected {expected_version})"

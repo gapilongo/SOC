@@ -377,8 +377,11 @@ window.
   The final plan is computed from the alert as it is when the decision is
   recorded.
 * Claim and decision bodies carry the escalation's `version`; a stale
-  version is `409 conflict` (re-read and retry). Decisions on escalations
-  whose SLA expired are accepted and audited with `after_sla_expiry`.
+  version is `409 conflict` (re-read and retry). A claim or decision on a
+  decided or cancelled escalation is `409 invalid_transition`, whatever the
+  version: retrying cannot help. Claims and decisions on escalations whose
+  SLA expired are accepted and audited with `after_sla_expiry`; a claimed
+  expired escalation keeps the status `expired` and gets the assignee.
 * `POST /escalations/{id}/decision`:
   `{"decision": "true_positive"|"false_positive"|"benign_positive"|"needs_more_info",
   "version", "notes"?, "approved_actions"?, "feedback"?, "suggest_suppression"?}`.

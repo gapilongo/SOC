@@ -195,6 +195,35 @@ async def test_expired_escalation_can_still_be_decided(api: ApiHarness) -> None:
     assert entries[0].details["after_sla_expiry"] is True
 
 
+async def test_claim_on_an_expired_escalation_succeeds_and_state_errors_are_not_version_races(api: ApiHarness) -> None:
+    """Expired: claimable. Decided: 409 ``invalid_transition``. A stale version on an active one: 409 ``conflict``."""
+    analyst = await api.user(TENANT_A, "analyst")
+    headers = api.auth(analyst)
+    _, escalation = await _escalation(api)
+    expired = await api.repos.escalations.expire(TENANT_A, escalation.id)
+    url = f"/api/v1/escalations/{escalation.id}"
+
+    claimed = await api.client.post(f"{url}/claim", json={"version": expired.version}, headers=headers)
+    assert claimed.status_code == 200, claimed.text
+    assert (claimed.json()["status"], claimed.json()["assigned_to"]) == ("expired", str(analyst.id))
+    decided = await api.client.post(
+        f"{url}/decision", json={"decision": "false_positive", "version": claimed.json()["version"]}, headers=headers
+    )
+    assert decided.status_code == 200, decided.text
+    version = decided.json()["escalation"]["version"]
+    for stale in (version, version - 1):
+        refused = await api.client.post(f"{url}/claim", json={"version": stale}, headers=headers)
+        assert refused.status_code == 409
+        assert refused.json()["error"]["code"] == "invalid_transition"
+
+    _, active = await _escalation(api)
+    raced = await api.client.post(
+        f"/api/v1/escalations/{active.id}/claim", json={"version": active.version + 1}, headers=headers
+    )
+    assert raced.status_code == 409
+    assert raced.json()["error"]["code"] == "conflict"
+
+
 async def test_viewer_cannot_decide_and_claim_by_other_analyst_is_refused(api: ApiHarness) -> None:
     _, escalation = await _escalation(api)
     viewer = await api.login_headers(TENANT_A, "viewer")
