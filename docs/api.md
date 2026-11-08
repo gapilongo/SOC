@@ -445,8 +445,12 @@ over: `autonomy`, `protected_assets` (`hosts`, `users`, `domains`, `cidrs`,
 install's `retention.tenant_min_days`..`tenant_max_days`, which responses
 return as `retention_limits`), `security` (`require_mfa`: force TOTP MFA
 for local accounts), `reporting` (`minutes_per_alert`, 1-480, default 15:
-the value report's hours-saved estimate) and `phishing` (`protected_brands`,
-`executives`, `trusted_authserv_ids`; see `docs/phishing.md`). Secrets
+the value report's hours-saved estimate), `phishing` (`protected_brands`,
+`executives`, `trusted_authserv_ids`; see `docs/phishing.md`) and `triage`
+(`known_scanners`: up to 256 host names, IP addresses or CIDR ranges of the
+tenant's own vulnerability scanners; an alert whose host or IP entities
+include one gets the `known_scanner` false-positive signal; the section is
+replaced whole). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing
