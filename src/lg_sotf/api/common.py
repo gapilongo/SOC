@@ -2,7 +2,8 @@
 
 Response builders, query timestamps, the sign-in cookie and failed-login
 limit (auth and mfa), the password policy as an API error (identity and
-platform) and the catch-all suppression rule check (suppressions and reports).
+platform), the catch-all suppression rule check (suppressions and reports) and
+dropping cached verdicts once an analyst finds a threat (review and blind audit).
 """
 
 from __future__ import annotations
@@ -20,12 +21,31 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.escalation_views import EscalationView, escalation_views
+
+log = get_logger(__name__)
+
+
+async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
+    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
+    cache = VerdictCache(ctx.redis, ctx.prefix)
+    for alert_id in alert_ids:
+        try:
+            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
+            if alert.fingerprint:
+                await cache.invalidate(tenant_id, alert.fingerprint)
+        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
+            log_failure(
+                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
+                error_type=type(exc).__name__,
+            )
 
 
 def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:

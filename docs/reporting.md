@@ -14,6 +14,9 @@ faith.
 | Propose a suppression for a detection | `POST /api/v1/reports/detections/propose-suppression` | analyst (`write` API keys) |
 | Monthly report (print to PDF) | `GET /api/v1/reports/monthly?month=YYYY-MM[&format=json]`, Reports > Open monthly report | viewer |
 | Backtest a model on your history | `lg-sotf eval --from-history --tenant T --days N` | operator (CLI) |
+| Blind audit: production false-negative rate among auto-closed alerts | `GET /api/v1/reports/blind-audit?from=&to=`, Reports > Blind audit | viewer |
+| Label blind-audit samples | Blind audit page, `/api/v1/blind-audit/items` | analyst (user accounts) |
+| Draw a blind-audit sample | `lg-sotf audit-sample --tenant T`, `POST /api/v1/blind-audit/runs`, Blind audit page | admin, operator (CLI) |
 
 `from`/`to` are UTC dates (inclusive). The default window is the 30 days
 ending today; a window may cover at most 366 days (`400 invalid_window`
@@ -118,7 +121,71 @@ decision, so this measures the AI on the alerts it sent to a human. A good
 false-negative rate here does not prove that no threat was closed
 automatically. To measure that, use the backtest below (or a labelled
 dataset with `lg-sotf eval`), which replays decided alerts and checks what
-automation would close.
+automation would close, or the blind audit below, which measures it in
+production.
+
+## Blind audit: missed threats among auto-closed alerts
+
+Auto-closed alerts are never looked at again, so a threat the AI closed is
+invisible to the accuracy report. The blind audit puts a uniform random
+sample of them back in front of an analyst **without the AI's verdict**, so
+the label is not anchored on it, and estimates the production
+false-negative rate from the labels. It is also the proof-of-value
+"label a random sample" flow.
+
+**Sampling.** A run draws from its **frame**: every alert *closed* in the
+run's window with no person involved (no analyst decision, no person
+approving or rejecting one of its actions) and an AI disposition other than
+`malicious`. Built-in sample alerts and alerts sampled before are left out.
+Each alert of the frame gets the key `md5("<seed>:<alert id>")` and the run
+takes the alerts with the smallest keys, so every subset of the frame is
+equally likely and the draw is reproducible from the recorded seed and
+frame. The run stores its window, seed, size rule and `frame_size`. Windows
+of one tenant never overlap (`409 window_already_sampled`), so an alert is
+in one frame at most.
+
+The size is `ceil(sample_rate x frame)`, at least `ceil(min_per_week x days
+/ 7)`, at most the frame and 2,000 per run; an explicit `size` replaces both
+(for example "label 200 random alerts" in a proof of value). Runs start:
+
+* every complete week (Monday 00:00 UTC), from the scheduler, for tenants
+  with the setting on:
+  `PATCH /tenant/settings {"blind_audit": {"enabled": true, "sample_rate": 0.02, "min_per_week": 5}}`
+  (off by default; rate 2%, at least 5 a week);
+* on demand: `lg-sotf audit-sample --tenant T [--from 2026-10-01 --to
+  2026-10-08] [--size 200] [--seed N] [--json]`, or `POST
+  /api/v1/blind-audit/runs` (admins), or "Draw a sample now" on the Blind
+  audit page. The window defaults to "since the last run ended" (else the
+  last 7 days) up to now.
+
+**Labelling.** The Blind audit page (analysts and admins, signed in as
+themselves) shows each sample's source, times, entities, normalized fields
+and source event, and asks for `malicious`, `benign` or `unsure` (keys M,
+B, U; N for the next sample). `GET /blind-audit/items[/{id}]` never carries
+the alert's disposition, confidence, scores, routing, summary or reasoning
+before the label exists (`reveal` is `null`); the label response, and later
+reads, add `reveal`: the AI's class when the alert was sampled, the
+agreement, confidence, threat score, routing code, close reason and
+reasoning. A label is given once (`409` after). A **malicious** label opens
+a normal escalation for the alert (routing code `blind_audit`), drops the
+cached verdict of its fingerprint, and is audited (`blind_audit.labelled`,
+`escalation.created`); sampling is audited as `blind_audit.sampled`.
+
+**The estimate** (`GET /reports/blind-audit`, Reports > Blind audit) covers
+the runs whose window starts in the report window:
+
+* `false_negative_rate`: malicious labels over malicious and benign labels
+  (`unsure` labels are counted but left out), with `n` and its 95% Wilson
+  interval; fewer than **30** such labels is `insufficient_data`, shown as
+  "Not enough data (n=12; at least 30 needed)";
+* `estimated_missed` (with `_low` and `_high`): the rate and its interval
+  scaled to the frames, the number of missed threats among the alerts the
+  runs drew from;
+* `agreement_rate`, the counts (`sampled`, `labelled`, `pending`) and the
+  runs with their seed, frame and counts.
+
+Pooling runs is exact when they drew the same share of their frame; samples
+not labelled yet are left out until they are.
 
 ## Detection tuning report
 
@@ -238,6 +305,9 @@ can take seconds the first time; prefer monthly windows for routine use.
 * **Accuracy** covers escalated alerts only and scores the first escalation's
   verdict; attached (grouped) alerts are not samples of their own.
 * **Model attribution** exists only for alerts processed after this release.
+* **Blind audit** labels apply to the alert as it was closed; the alert stays
+  closed when an analyst labels it malicious. The escalation it opens is where
+  the analyst decides and responds.
 * **Backtest context:** suppression rules and the verdict cache are skipped
   (both derive from the decisions being scored). Correlation and history
   lookups see the tenant's data as of each alert's ingestion (sightings

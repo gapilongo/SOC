@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import escalations_out, one_escalation_out, user_ref
+from lg_sotf.api.common import escalations_out, invalidate_verdicts, one_escalation_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
@@ -47,14 +47,13 @@ from lg_sotf.api.schemas import (
     RollbackOut,
     VerifyIn,
 )
-from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos import ResponseAction
 from lg_sotf.models.vocabulary import ActionStatus, EscalationStatus
 from lg_sotf.models.vocabulary import EscalationLevel as Level
 from lg_sotf.models.vocabulary import RiskLevel as Risk
 from lg_sotf.models.vocabulary import VerificationState as Verification
-from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.observability.logging import get_logger
 from lg_sotf.services.action_views import ActionView, action_views
 from lg_sotf.services.response import ActionRequestError
 from lg_sotf.services.review import enqueue_resumes
@@ -111,21 +110,6 @@ async def one_action_out(ctx: ApiContext, tenant_id: str, action: ResponseAction
 
 def action_error(exc: ActionRequestError) -> ApiError:
     return ApiError(exc.status, exc.code, str(exc), details=[{"reason": exc.reason}] if exc.reason else None)
-
-
-async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
-    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
-    cache = VerdictCache(ctx.redis, ctx.prefix)
-    for alert_id in alert_ids:
-        try:
-            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
-            if alert.fingerprint:
-                await cache.invalidate(tenant_id, alert.fingerprint)
-        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
-            log_failure(
-                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
-                error_type=type(exc).__name__,
-            )
 
 
 @escalations.get("", response_model=PageOut[EscalationOut], summary="List escalations (newest first, or by SLA)")

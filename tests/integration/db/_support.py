@@ -63,6 +63,8 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 
 ALL_TABLES = (
+    "blind_audit_items",
+    "blind_audit_runs",
     "investigation_steps",
     "tenant_grants",
     "organisation_members",
@@ -153,6 +155,8 @@ TENANT_TABLES = (
     "organisations",
     "organisation_members",
     "tenant_grants",
+    "blind_audit_runs",
+    "blind_audit_items",
 )
 
 
@@ -204,6 +208,16 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         [NewTraceStep(agent="analysis", kind="tool", tool="history", input_hash=sha256_hex("in"), outcome="success",
                       started_at=now)],
     )
+    run = await repos.blind_audit.create_run(
+        tenant_id, since=now - timedelta(days=7), until=now, seed=7, sample_rate=0.02, min_sample=5, fixed_size=None,
+        frame_size=1, items=[(alert_id, 1, "benign")], trigger="cli", created_by="seed",
+    )
+    item = (await repos.blind_audit.list_items(tenant_id)).items[0]
+    await repos.blind_audit.label(
+        tenant_id, item.id, label="benign", notes=None, agreement=True, labelled_by=user.id,
+        labelled_by_actor=str(user.id), escalation_id=None, now=now,
+    )
+    assert item.run_id == run.id
     # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
     await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")
     await repos.organisations.add_member(tenant_id, user.id)

@@ -164,6 +164,18 @@ marked, and any model-written narrative is labelled "AI-drafted — review
 required". LG-SOTF never submits a report. See [compliance.md](compliance.md);
 to use LG-SOTF from Claude or another MCP client, see [mcp.md](mcp.md).
 
+### 7. Label blind-audit samples
+
+**Blind audit** (analysts and admins) lists a random sample of alerts that
+automation closed, to measure how many real threats it lets through. Each
+sample shows the alert's source, times, entities and event, but not the
+AI's verdict: label it **Malicious**, **Benign** or **Unsure** from the
+evidence alone (keys M, B and U), with an optional note. The AI's verdict,
+confidence, routing and reasoning appear only after you label, with whether
+you agree; press N for the next sample. A malicious label opens a normal
+escalation for the alert, which you then decide in the queue. The results
+are under Reports > Blind audit.
+
 ## Administrator workflows
 
 ### Users and access
@@ -290,7 +302,13 @@ SLA breaches, LLM cost per alert), *Accuracy* (the AI verdict against your
 analysts' decisions, with the false-negative rate first and an explicit
 "insufficient data" warning below 30 decisions) and *Detections* (noisy
 rules with a tune-or-suppress suggestion; analysts can *Propose
-suppression*, which creates a disabled rule for an admin to enable).
+suppression*, which creates a disabled rule for an admin to enable) and
+*Blind audit* (the false-negative rate among auto-closed alerts, from
+analysts' blind labels of a random sample, with its interval and sample
+size). Admins turn on the weekly sample with the tenant setting
+`blind_audit` (`{"enabled": true}`), draw one now on the Blind audit
+page, or run `lg-sotf audit-sample --tenant <id> [--size 200]` (a
+proof-of-value random sample).
 *Export CSV* downloads the value series or the detections table; *Open
 monthly report* shows a printable page for the month. Admins set the
 minutes an analyst spends per alert under Tenant settings > Reporting. To

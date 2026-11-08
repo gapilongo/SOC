@@ -1372,3 +1372,120 @@ export interface MonthlyReportOut {
   accuracy: AccuracyReportOut;
   detections: DetectionsReportOut;
 }
+
+// ------------------------------------------------------------- blind audit
+
+/** An analyst's label on a blind-audit sample (an auto-closed alert shown without the AI verdict). */
+export const AUDIT_LABELS = ['malicious', 'benign', 'unsure'] as const;
+export type AuditLabel = (typeof AUDIT_LABELS)[number];
+
+/** A sampled alert as its source sent it: nothing the AI concluded (`raw`/`normalized` on the item read only). */
+export interface BlindAlertOut {
+  id: string;
+  title: string;
+  severity: Open<Severity>;
+  source_id: string;
+  source_name: string | null;
+  category: string | null;
+  occurred_at: string;
+  ingested_at: string;
+  entities_preview: EntitiesPreviewOut | null;
+  raw: JsonObject | null;
+  normalized: JsonObject | null;
+}
+
+/** The AI's side of a sample, sent only once it is labelled. */
+export interface BlindAuditRevealOut {
+  ai_class: Open<Disposition>;
+  agreement: boolean | null;
+  disposition: Open<Disposition> | null;
+  confidence: number | null;
+  threat_score: number | null;
+  close_reason: string | null;
+  routing_code: string | null;
+  conclusion: string | null;
+}
+
+export interface BlindAuditItemOut {
+  id: string;
+  run_id: string;
+  sample_rank: number;
+  label: Open<AuditLabel> | null;
+  notes: string | null;
+  labelled_at: string | null;
+  labelled_by: string | null;
+  escalation_id: string | null;
+  created_at: string;
+  alert: BlindAlertOut;
+  /** Null until the item is labelled. */
+  reveal: BlindAuditRevealOut | null;
+}
+
+export interface BlindAuditLabelIn {
+  label: AuditLabel;
+  notes?: string | null;
+}
+
+export interface BlindAuditLabelOut {
+  item: BlindAuditItemOut;
+  escalation_id: string | null;
+  escalation_created: boolean;
+}
+
+export interface BlindAuditSampleIn {
+  from?: string | null;
+  to?: string | null;
+  seed?: number | null;
+  sample_rate?: number | null;
+  min_per_week?: number | null;
+  size?: number | null;
+}
+
+/** A sampling run: its window, seed, frame (eligible alerts) and label counts. */
+export interface BlindAuditRunSummary {
+  id: string;
+  window_start: string;
+  window_end: string;
+  seed: number;
+  sample_rate: number | null;
+  min_sample: number;
+  fixed_size: number | null;
+  frame_size: number;
+  sample_size: number;
+  trigger: string;
+  created_by: string | null;
+  created_at: string;
+  sampled: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+  agreed: number;
+}
+
+export interface BlindAuditEstimate {
+  status: 'ok' | 'insufficient_data';
+  /** "6.7% (2 of 30; 95% CI 1.8% to 21.3%)" or "Not enough data (n=4; at least 30 needed)". */
+  summary: string;
+  frame_size: number;
+  sampled: number;
+  labelled: number;
+  pending: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+  min_samples: number;
+  false_negative_rate: RateInterval;
+  agreement_rate: RateInterval;
+  estimated_missed: number | null;
+  estimated_missed_low: number | null;
+  estimated_missed_high: number | null;
+}
+
+export interface BlindAuditReportOut {
+  from: string;
+  to: string;
+  generated_at: string;
+  estimate: BlindAuditEstimate;
+  runs: BlindAuditRunSummary[];
+  notes: string[];
+}

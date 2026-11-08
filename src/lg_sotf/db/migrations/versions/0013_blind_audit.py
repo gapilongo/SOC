@@ -1,0 +1,135 @@
+"""Blind audit of auto-closed alerts (PRD-10.2): ``blind_audit_runs`` and ``blind_audit_items``.
+
+* ``blind_audit_runs``: one sampling run of a tenant. It records the window
+  (alerts *closed* in ``[window_start, window_end)``), the seed of the draw,
+  the configured rate, minimum or fixed size, the sampling frame
+  (``frame_size``: how many alerts were eligible) and how many were drawn.
+  The estimate scales to the frame, so the frame is stored, not recomputed.
+  Windows of one tenant never overlap (checked under an advisory lock), so
+  no alert is in two frames.
+* ``blind_audit_items``: one sampled alert, its rank in the draw, the AI's
+  class when it was sampled (``ai_class``, hidden from the analyst until the
+  label exists), and the analyst's label, notes, agreement and the
+  escalation a ``malicious`` label opened. An alert is sampled at most once.
+
+A new pair of tables, not escalations of a new kind: an escalation carries
+the AI verdict in its summary, joins the SLA sweep, notifications and the
+accuracy report, and its decision vocabulary is a triage decision, not a
+blind label. Items go with their alert (``ON DELETE CASCADE``: retention and
+erasure) and with their run. Forced RLS like every tenant table; the runtime
+role may read and insert both, and update only an item's label columns, once
+(a trigger refuses any other change).
+
+Revision ID: 0013
+Revises: 0012
+Create Date: 2026-11-08
+"""
+
+from __future__ import annotations
+
+from typing import List, Sequence, Union
+
+from alembic import op
+
+from lg_sotf.db.partitions import TENANT_POLICY_PREDICATE
+
+revision: str = "0013"
+down_revision: Union[str, None] = "0012"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+TABLES = ("blind_audit_runs", "blind_audit_items")
+
+SCHEMA = r"""
+CREATE TABLE blind_audit_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id TEXT NOT NULL REFERENCES tenants (id),
+    window_start TIMESTAMPTZ NOT NULL,
+    window_end TIMESTAMPTZ NOT NULL,
+    seed BIGINT NOT NULL CHECK (seed >= 0),
+    sample_rate DOUBLE PRECISION CHECK (sample_rate > 0 AND sample_rate <= 1),
+    min_sample INTEGER NOT NULL DEFAULT 0 CHECK (min_sample >= 0),
+    fixed_size INTEGER CHECK (fixed_size >= 1),
+    frame_size INTEGER NOT NULL CHECK (frame_size >= 0),
+    sample_size INTEGER NOT NULL CHECK (sample_size >= 0 AND sample_size <= frame_size),
+    trigger TEXT NOT NULL CHECK (trigger IN ('schedule', 'cli', 'api')),
+    created_by TEXT CHECK (length(created_by) <= 200),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT blind_audit_runs_tenant_id_id_key UNIQUE (tenant_id, id),
+    CONSTRAINT blind_audit_runs_window CHECK (window_end > window_start),
+    CONSTRAINT blind_audit_runs_size_rule CHECK (sample_rate IS NOT NULL OR fixed_size IS NOT NULL)
+);
+CREATE INDEX ix_blind_audit_runs_window ON blind_audit_runs (tenant_id, window_start DESC, id DESC);
+
+CREATE TABLE blind_audit_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id TEXT NOT NULL REFERENCES tenants (id),
+    run_id UUID NOT NULL,
+    alert_id TEXT NOT NULL,
+    sample_rank INTEGER NOT NULL CHECK (sample_rank >= 1),
+    ai_class TEXT NOT NULL CHECK (ai_class IN ('malicious', 'benign', 'inconclusive')),
+    label TEXT CHECK (label IN ('malicious', 'benign', 'unsure')),
+    notes TEXT CHECK (length(notes) <= 4000),
+    agreement BOOLEAN,
+    labelled_by UUID,
+    labelled_by_actor TEXT CHECK (length(labelled_by_actor) <= 200),
+    labelled_at TIMESTAMPTZ,
+    escalation_id TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT blind_audit_items_alert_key UNIQUE (tenant_id, alert_id),
+    CONSTRAINT blind_audit_items_run_rank_key UNIQUE (tenant_id, run_id, sample_rank),
+    CONSTRAINT blind_audit_items_labelled_complete CHECK ((label IS NULL) = (labelled_at IS NULL)),
+    CONSTRAINT blind_audit_items_run_fk FOREIGN KEY (tenant_id, run_id)
+        REFERENCES blind_audit_runs (tenant_id, id) ON DELETE CASCADE,
+    CONSTRAINT blind_audit_items_alert_fk FOREIGN KEY (tenant_id, alert_id)
+        REFERENCES alerts (tenant_id, id) ON DELETE CASCADE,
+    CONSTRAINT blind_audit_items_user_fk FOREIGN KEY (tenant_id, labelled_by)
+        REFERENCES users (tenant_id, id) ON DELETE SET NULL (labelled_by)
+);
+-- The queue: unlabelled items, oldest run first.
+CREATE INDEX ix_blind_audit_items_pending ON blind_audit_items (tenant_id, created_at, id) WHERE label IS NULL;
+CREATE INDEX ix_blind_audit_items_labelled ON blind_audit_items (tenant_id, labelled_at DESC, id DESC)
+    WHERE label IS NOT NULL;
+
+CREATE FUNCTION blind_audit_items_label_once() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+BEGIN
+    IF OLD.label IS NULL AND NEW.label IS NOT NULL
+       AND (to_jsonb(NEW) - 'label' - 'notes' - 'agreement' - 'labelled_by' - 'labelled_by_actor'
+            - 'labelled_at' - 'escalation_id')
+         = (to_jsonb(OLD) - 'label' - 'notes' - 'agreement' - 'labelled_by' - 'labelled_by_actor'
+            - 'labelled_at' - 'escalation_id') THEN
+        RETURN NEW;
+    END IF;
+    -- A labelling user's account being deleted clears labelled_by (ON DELETE SET NULL).
+    IF OLD.label IS NOT NULL AND NEW.labelled_by IS NULL
+       AND (to_jsonb(NEW) - 'labelled_by') = (to_jsonb(OLD) - 'labelled_by') THEN
+        RETURN NEW;
+    END IF;
+    RAISE EXCEPTION 'a blind audit item can only be labelled, once' USING ERRCODE = 'check_violation';
+END
+$$;
+CREATE TRIGGER blind_audit_items_label_once BEFORE UPDATE ON blind_audit_items
+    FOR EACH ROW EXECUTE FUNCTION blind_audit_items_label_once();
+"""
+
+
+def _rls_sql(table: str) -> List[str]:
+    return [
+        f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY",
+        f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY",
+        f"CREATE POLICY tenant_isolation ON {table} USING ({TENANT_POLICY_PREDICATE}) "
+        f"WITH CHECK ({TENANT_POLICY_PREDICATE})",
+    ]
+
+
+def upgrade() -> None:
+    op.execute(SCHEMA)
+    for table in TABLES:
+        for stmt in _rls_sql(table):
+            op.execute(stmt)
+
+
+def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS blind_audit_items, blind_audit_runs CASCADE")
+    op.execute("DROP FUNCTION IF EXISTS blind_audit_items_label_once()")

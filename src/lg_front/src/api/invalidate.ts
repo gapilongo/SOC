@@ -74,6 +74,23 @@ export const afterActionChange = (client: QueryClient) => invalidate(client, qk.
 /** An action was approved or rejected: it, the alert workflow it may resume and the approval counts. */
 export const afterActionDecision = (client: QueryClient) => invalidate(client, qk.actions.all, qk.alerts.all, qk.dashboard.all);
 
+// Blind audit ----------------------------------------------------------------
+
+/**
+ * A sample was labelled: the queue, the estimate, and (a malicious label opened one) the escalations and the
+ * overview's queue figures.
+ */
+export const afterBlindAuditLabel = (client: QueryClient, escalationCreated: boolean) =>
+  invalidate(
+    client,
+    qk.blindAudit.all,
+    qk.reportBlindAudit.all,
+    ...(escalationCreated ? [qk.escalations.all, qk.dashboard.all] : []),
+  );
+
+/** A sampling run was drawn: the queue, the runs and the estimate. */
+export const afterBlindAuditSample = (client: QueryClient) => invalidate(client, qk.blindAudit.all, qk.reportBlindAudit.all);
+
 // Tenant configuration -------------------------------------------------------
 
 export const afterSourceChange = (client: QueryClient) => invalidate(client, qk.sources.all);

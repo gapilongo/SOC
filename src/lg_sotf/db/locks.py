@@ -21,6 +21,8 @@ SCHEDULER_LEADER = 710_010
 ACTION_CAP = 710_020
 # Per-tenant escalation grouping: parent lookup and attach/create (services.escalation).
 ESCALATION_GROUP = 710_021
+# Per-tenant blind-audit sampling: the window overlap check and the run it guards (services.blind_audit).
+BLIND_AUDIT_SAMPLING = 710_022
 
 _TENANT_XACT_LOCK_SQL = "SELECT pg_advisory_xact_lock($1, hashtext($2))"
 

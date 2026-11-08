@@ -57,6 +57,9 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("audit_log", "actor_type"): AUDIT_ACTOR_TYPES,
     ("investigation_steps", "kind"): STEP_KINDS,
     ("investigation_steps", "outcome"): STEP_OUTCOMES,
+    ("blind_audit_runs", "trigger"): v.AUDIT_TRIGGERS,
+    ("blind_audit_items", "ai_class"): v.DISPOSITIONS,
+    ("blind_audit_items", "label"): v.AUDIT_LABELS,
     # Suppression rules only ever close alerts as benign.
     ("suppression_rules", "disposition"): ("benign",),
 }
