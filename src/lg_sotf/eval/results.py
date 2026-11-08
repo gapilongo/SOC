@@ -56,6 +56,10 @@ class ItemResult:
     model_refused: bool = False
     expected_route: Optional[str] = None
     expected_escalation: Optional[bool] = None
+    family: Optional[str] = None
+    injection_followed: Optional[bool] = None
+    """For an item with an ``injection`` spec: whether the model's own assessment did what the injected
+    text asked (``lg_sotf.eval.adversarial.injection_followed``); None for other items."""
     labels: Dict[str, str] = field(default_factory=dict)
     llm_calls: int = 0
     input_tokens: int = 0

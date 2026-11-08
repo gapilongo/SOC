@@ -56,8 +56,10 @@ from lg_sotf.core.workflow import RunOutcome, WorkflowEngine
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.routing import refused_by
-from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem
+from lg_sotf.eval.adversarial import injection_followed
+from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem, InjectionSpec
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult, llm_provenance
+from lg_sotf.eval.tool_fixtures import fixture_enrichment
 from lg_sotf.ingestion.batch import IngestResult
 from lg_sotf.ingestion.service import API_SOURCE_ID, IngestionService, email_source_id
 from lg_sotf.llm.cassette import CassetteSet, recording_model_factory, replay_model_factory
@@ -161,6 +163,7 @@ class EvalRunner:
             status="error",
             expected_route=item.expected.route,
             expected_escalation=item.expected.escalation,
+            family=item.family,
             labels={label.annotator: label.disposition for label in item.labels},
         )
         started = time.perf_counter()
@@ -176,7 +179,7 @@ class EvalRunner:
             result.alert_id = outcome.alert_id
             run = await asyncio.wait_for(self.engine.run(self.tenant_id, outcome.alert_id), self.run_timeout_s)
             result.latency_s = time.perf_counter() - started
-            await self._collect(result, run)
+            await self._collect(result, run, item.injection)
         except TimeoutError:
             result.latency_s = time.perf_counter() - started
             result.status = "error"
@@ -203,7 +206,7 @@ class EvalRunner:
                 error_type=type(exc).__name__,
             )
 
-    async def _collect(self, result: ItemResult, run: RunOutcome) -> None:
+    async def _collect(self, result: ItemResult, run: RunOutcome, injection: Optional[InjectionSpec] = None) -> None:
         assert result.alert_id is not None
         alert = await self.repos.alerts.get(self.tenant_id, result.alert_id)
         snapshot = await self.engine.graph.aget_state(
@@ -225,6 +228,7 @@ class EvalRunner:
         elif gate.get("suppressed") or run.status == "completed":
             result.route = "close"  # closed by the gate or by triage before ``decide``
         result.escalated = bool(state.get("escalation_id")) or run.status == "waiting_human"
+        result.injection_followed = injection_followed(injection, state.get("triage") or {}, analysis)
 
         _apply_usage(result, summary)
 
@@ -327,6 +331,12 @@ class EvalRun:
     info: Dict[str, Any]
 
 
+async def _create_tenant(settings: Settings, tenant_id: str) -> None:
+    from lg_sotf.runtime.ops import create_tenant
+
+    await create_tenant(settings, tenant_id=tenant_id, name=f"Evaluation {tenant_id}")
+
+
 async def check_services(db: Any, redis: Any) -> None:
     """Fail fast (``EvalSetupError``) when the database, its schema or Redis is not usable."""
     import asyncpg
@@ -387,7 +397,6 @@ async def run_evaluation(
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.db.pool import Database
     from lg_sotf.errors import OperationError
-    from lg_sotf.runtime.ops import create_tenant as ops_create_tenant
 
     if settings.environment == "production":
         raise EvalSetupError(
@@ -405,9 +414,6 @@ async def run_evaluation(
         tenants = {}
         plan = [(base, list(dataset.items))]
 
-    async def default_create(s: Settings, t: str) -> None:
-        await ops_create_tenant(s, tenant_id=t, name=f"Evaluation {t}")
-
     started = time.perf_counter()
     async with AsyncExitStack() as stack:
         db = Database(settings.database, application_name="lg-sotf-eval")
@@ -422,12 +428,14 @@ async def run_evaluation(
 
         ingestion = IngestionService(db, settings, secret_box=secret_box)
         stack.push_async_callback(ingestion.close)
-        engine = await open_engine(settings, db, redis, concurrency, secret_box=secret_box, cassettes=cassettes)
+        engine = await open_engine(
+            settings, db, redis, concurrency, secret_box=secret_box, cassettes=cassettes, dataset=dataset
+        )
         stack.push_async_callback(engine.close)
         # Tenants last: a configuration or service problem above leaves nothing behind.
         for tenant, _ in plan:
             try:
-                await (create_tenant or default_create)(settings, tenant)
+                await (create_tenant or _create_tenant)(settings, tenant)
             except OperationError as exc:
                 raise EvalSetupError(str(exc)) from exc
             except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
@@ -470,17 +478,26 @@ async def open_engine(
     *,
     secret_box: Optional[SecretBox] = None,
     cassettes: Optional[CassetteSet] = None,
+    dataset: Optional[Dataset] = None,
 ) -> WorkflowEngine:
-    """The workflow engine of an evaluation; with ``cassettes`` its agents' model calls record or replay."""
+    """The workflow engine of an evaluation; with ``cassettes`` its agents' model calls record or replay.
+
+    A ``dataset`` with ``tool_fixtures`` gets the fixture providers (:mod:`lg_sotf.eval.tool_fixtures`); their
+    lookups go through the same traced tool calls, so cassettes record and replay them too.
+    """
     import asyncpg
 
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.llm import get_chat_model
 
     agents: Optional[AgentSet] = None
-    if cassettes is not None:
+    enrichment = None
+    if dataset is not None and dataset.has_tool_fixtures:
+        enrichment = fixture_enrichment(settings, dataset, secret_box=secret_box)
+    if cassettes is not None or enrichment is not None:
         factories = {"record": recording_model_factory(get_chat_model), "replay": replay_model_factory}
-        agents = AgentSet.build(settings, secret_box=secret_box, model_factory=factories.get(cassettes.mode))
+        factory = factories.get(cassettes.mode) if cassettes is not None else None
+        agents = AgentSet.build(settings, secret_box=secret_box, model_factory=factory, enrichment=enrichment)
     try:
         return await WorkflowEngine.create(
             settings=settings,
