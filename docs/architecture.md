@@ -220,8 +220,10 @@ Graph (compiled once per worker process with `AsyncPostgresSaver`,
 
 ```
 START → gate → triage → correlation → analysis → decide
-gate:        suppression rules / verdict cache (same or lower severity than the
-             analyst decided; never for critical or LLM-normalised alerts) →
+gate:        suppression rules / verdict cache (same verdict key, i.e. same
+             fingerprint and behaviour, decided benign by 2 analyst decisions
+             at the same or a higher severity in 7 days, no threat since;
+             never for critical or LLM-normalised alerts) →
              close (benign) | triage
 triage:      rules + fast-tier LLM → close (obvious FP) | correlation
 correlation: indicator sightings + optional LLM → analysis | decide

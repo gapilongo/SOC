@@ -200,7 +200,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 |---|---|---|---|---|
 | INV-01 | Every tenant table has forced row-level security, and the runtime role cannot bypass it | enforced | `rls_catalog`, `runtime_role`, `rls_probe` | TM-DB-1, TM-DB-2, TM-SCH-1, TM-API-3 |
 | INV-02 | No response action runs without an approval or an autonomy rule that allows it; the kill switch wins | enforced | `kill_switch` | TM-WRK-3, TM-RSP-4, TM-RSP-5, TM-MCP-6 |
-| INV-03 | The model's verdict alone never closes a high or critical alert; the routing policy decides | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2 |
+| INV-03 | The model's verdict alone never closes a high or critical alert; the routing policy decides | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
 | INV-04 | Every LLM call records its prompt hash and model id | enforced | none | TM-WRK-8 |
 | INV-05 | Every LLM and tool step of a run is in the trace store | enforced | none | TM-WRK-8, TM-EVT-6 |
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |

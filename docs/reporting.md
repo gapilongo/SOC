@@ -40,7 +40,7 @@ they were ingested.
 | `auto_contained_dry_run` | The same, in dry-run mode: nothing was changed on a real system. |
 | `escalated` | The alert was attached to an escalation at some point (including alerts grouped into another alert's escalation). |
 | `human_decided` | An analyst decision closed the alert (directly or inherited from a grouped escalation). |
-| `suppressed_by_rule`, `verdict_cache_hits` | Closed at the gate by a suppression rule / by the cached benign verdict an analyst gave the same detection earlier. |
+| `suppressed_by_rule`, `verdict_cache_hits` | Closed at the gate by a suppression rule / by the cached benign verdict analysts gave twice to the same detection and behaviour (verdict key) in the last 7 days. |
 | `grouped_into_escalation` | Attached to an existing escalation instead of opening a new one (deduplication of analyst work). |
 | `mean_time_to_verdict_s` | Ingestion to the first automated verdict: the triage agent finishing, or the close for alerts the gate closed before triage. Over `verdicts` alerts. |
 | `mttr_s` (`mttr_auto_s`, `mttr_human_s`) | Ingestion to close, over the cohort's closed alerts (those handled without a human / those an analyst decided). |

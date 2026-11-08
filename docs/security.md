@@ -256,12 +256,21 @@ close a dangerous alert or trigger containment.
    `auto` for their risk level.
 5. **Severity policy.** Automation never closes a high or critical alert as
    benign; only an analyst decision, an admin-enabled suppression rule or an
-   analyst-confirmed verdict (not for critical) does. A cached
-   analyst-confirmed verdict applies only up to the severity the analyst
-   decided (a benign medium never closes a high repeat), is dropped when an
-   analyst decides `true_positive` on that detection or a response is
-   planned for it, and admins can clear a tenant's cache
-   (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
+   analyst-confirmed verdict (not for critical) does. The verdict cache is
+   keyed by a verdict key: the alert fingerprint (rule, hosts, users, IPs,
+   hashes, domains) plus the behaviour of the event (process image,
+   normalised command line, service name and image path, user/uid, parent
+   process), so a malicious service or command on a host never matches the
+   benign one analysts closed there. A cached verdict closes an alert only
+   after two distinct analyst-benign decisions on its key within 7 days at
+   the alert's severity or above (a benign medium never closes a high
+   repeat), and never within 7 days of a threat on the key or its
+   fingerprint: an analyst `true_positive`, a blind-audit malicious label, a
+   planned response or a malicious close drops the key's decisions and
+   blocks it. An alert whose behaviour cannot be read completely (a
+   truncated event) never uses the cache, a benign group decision applies to
+   an attached alert only with the same verdict key, and admins can clear a
+   tenant's cache (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
    false-positive decisions are bounded to the decided severity and below.
    Alerts mapped by the optional LLM-fallback normalizer
    (`llm_normalized`) have no trusted text, never use the verdict cache

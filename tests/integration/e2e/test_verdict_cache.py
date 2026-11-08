@@ -32,22 +32,28 @@ async def _ingest_settled(stack: Any, source_alert_id: str, severity: str, extra
 
 
 async def test_benign_verdict_does_not_close_a_higher_severity_repeat(stack_factory: Any, repos: Any) -> None:
+    """Two analyst-benign decisions on one verdict key close a same-severity repeat; one does not."""
     stack = stack_factory()
     engine = await stack.engine()
     analyst = str((await repos.users.create(TENANT_A, f"analyst-{uuid4().hex[:8]}@example.com", "analyst")).id)
+    inventory = {"command_lines": ["powershell -File C:\\it\\inventory.ps1"]}
     async with running(stack.worker(engine)):
-        medium = await _ingest_settled(stack, "c1", "medium", {"command_lines": ["powershell -File C:\\it\\inventory.ps1"]})
-        await analyst_decides(stack, TENANT_A, medium, "false_positive", analyst)
-        await eventually(lambda: _status_is(repos, medium, "closed"), within=30)
-        same = await _ingest_settled(stack, "c2", "medium")
-        high = await _ingest_settled(
-            stack, "c3", "high", {"command_lines": ["powershell -nop -w hidden -enc SQBFAFgA"]}
-        )
+        for n in (1, 2):  # the first decision alone does not teach the cache: the second alert is escalated too
+            decided = await _ingest_settled(stack, f"c1-{n}", "medium", inventory)
+            assert (await repos.alerts.get(TENANT_A, decided)).summary.get("close_reason") != "verdict_cache"
+            await analyst_decides(stack, TENANT_A, decided, "false_positive", analyst)
+            await eventually(lambda d=decided: _status_is(repos, d, "closed"), within=30)
+        same = await _ingest_settled(stack, "c2", "medium", inventory)
+        high = await _ingest_settled(stack, "c3", "high", inventory)
+        other = await _ingest_settled(stack, "c4", "medium", {"command_lines": ["powershell -nop -w hidden -enc SQBFAFgA"]})
     same_row, high_row = await repos.alerts.get(TENANT_A, same), await repos.alerts.get(TENANT_A, high)
-    assert same_row.fingerprint == high_row.fingerprint
+    other_row = await repos.alerts.get(TENANT_A, other)
+    assert same_row.fingerprint == high_row.fingerprint == other_row.fingerprint
     assert same_row.summary.get("close_reason") == "verdict_cache"  # the cache still works at the decided severity
     assert high_row.summary.get("close_reason") != "verdict_cache"
     assert high_row.status != "closed" or high_row.disposition != "benign"
+    # Same fingerprint, another command line: not the activity the analysts decided.
+    assert other_row.summary.get("close_reason") != "verdict_cache"
 
 
 async def test_true_positive_decision_invalidates_the_cached_benign_verdict(stack_factory: Any, repos: Any) -> None:

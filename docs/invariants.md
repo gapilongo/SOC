@@ -12,7 +12,7 @@ Threat rows refer to [threat-model.md](threat-model.md).
 |---|---|---|---|---|
 | INV-01 | Every tenant table has forced row-level security, and the runtime role cannot bypass it | enforced | `rls_catalog`, `runtime_role`, `rls_probe` | TM-DB-1, TM-DB-2, TM-SCH-1, TM-API-3 |
 | INV-02 | No response action runs without an approval or an autonomy rule that allows it; the kill switch wins | enforced | `kill_switch` | TM-WRK-3, TM-RSP-4, TM-RSP-5, TM-MCP-6 |
-| INV-03 | The model's verdict alone never closes a high or critical alert; the routing policy decides | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2 |
+| INV-03 | The model's verdict alone never closes a high or critical alert; the routing policy decides | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
 | INV-04 | Every LLM call records its prompt hash and model id | enforced | none | TM-WRK-8 |
 | INV-05 | Every LLM and tool step of a run is in the trace store | enforced | none | TM-WRK-8, TM-EVT-6 |
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
@@ -61,12 +61,12 @@ Containment changes a customer's environment. An action executes only once it is
 
 ## INV-03: The model's verdict alone never closes a high or critical alert; the routing policy decides
 
-A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and lower severities close only when rules corroborate the model.
+A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and lower severities close only when rules corroborate the model. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign twice, with no threat on it since.
 
 * **Status:** enforced
 * **Owner epic:** AI-E6
-* **Threats:** TM-WRK-1, TM-WRK-2
-* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/benign_evidence.py`
+* **Threats:** TM-WRK-1, TM-WRK-2, TM-WRK-10
+* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/benign_evidence.py`, `src/lg_sotf/domain/verdict_key.py`, `src/lg_sotf/core/verdict_cache.py`
 * **Runtime checks:** `routing_policy`
 * **Evaluation metric:** `high_severity_auto_closed_benign`
 * **Proved by:**
@@ -77,6 +77,11 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert`
   * `tests/unit/agents/test_title_camouflage.py::test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules`
   * `tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence`
+  * `tests/unit/core/test_verdict_cache_replay.py::test_analyst_oracle_replay_closes_no_malicious_alert`
+  * `tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes`
+  * `tests/unit/core/test_verdict_cache.py::test_one_analyst_decision_is_not_enough_two_distinct_ones_are`
+  * `tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window`
+  * `tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read`
 
 ## INV-04: Every LLM call records its prompt hash and model id
 

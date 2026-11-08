@@ -105,8 +105,12 @@ alerts where text in the alert tried to steer the model carry a
      admin's approval.
    * `false_positive` (the detection was wrong) or `benign_positive` (the
      detection was right but the activity is legitimate): the alert closes
-     as benign, and the verdict is cached so the same alert fingerprint is
-     closed automatically for a while (never for critical alerts). With
+     as benign, and the verdict is cached. Once analysts have made two such
+     decisions within 7 days on the same detection with the same behaviour
+     (same rule and entities, and the same process, command line, service,
+     user and parent process), its repeats at that severity or lower close
+     automatically, never for critical alerts, and not for 7 days after a
+     threat is confirmed on that detection. With
      `suggest_suppression: true` a false-positive decision also creates a
      disabled suppression rule suggestion for an admin to review.
    * `needs_more_info`: the analysis runs again with your notes, once; after

@@ -33,7 +33,7 @@ from lg_sotf.core.state import (
     RoutingDigest,
     SuppressedBy,
 )
-from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import routing
@@ -206,8 +206,10 @@ class WorkflowNodes:
         # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
         # attacker-shaped text: it never inherits a cached verdict.
         if state["severity"] != "critical" and "llm_normalized" not in flags:
-            cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
-            if cached is not None and cache_applies(cached, state["severity"]):
+            cached = await self.deps.verdicts.closing_decision(
+                tenant_id, state.get("verdict_key"), state["severity"], fingerprint=state.get("fingerprint")
+            )
+            if cached is not None:
                 cache_hit: SuppressedBy = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
@@ -367,7 +369,7 @@ class WorkflowNodes:
             alert_id,
             str(waiting_on),
             decision=str(decision.get("decision")),
-            fingerprint=state.get("fingerprint") or None,
+            verdict_key=state.get("verdict_key"),
             severity=state["severity"],
         )
         if not scope.inherited:
@@ -453,7 +455,7 @@ class WorkflowNodes:
             approver_role=analyst.get("approver_role") if is_tp else None,
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
-        await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+        await self.deps.verdicts.invalidate(tenant_id, state.get("verdict_key"), fingerprint=state.get("fingerprint"))
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
         response: ResponseSummary = {
             "threat_type": plan.threat_type,
@@ -604,14 +606,14 @@ class WorkflowNodes:
         if analyst.get("decision") in BENIGN_DECISIONS:
             await self.deps.verdicts.put_analyst_benign(
                 tenant_id,
-                state.get("fingerprint", ""),
+                state.get("verdict_key"),
                 decision=str(analyst["decision"]),
                 alert_id=alert_id,
                 escalation_id=state.get("escalation_id"),
                 severity=state["severity"],
             )
         elif disposition == "malicious":
-            await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+            await self.deps.verdicts.invalidate(tenant_id, state.get("verdict_key"), fingerprint=state.get("fingerprint"))
         return {
             "disposition": disposition,
             "close_reason": reason,

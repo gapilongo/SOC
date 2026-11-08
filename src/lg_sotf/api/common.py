@@ -35,6 +35,7 @@ from lg_sotf.domain.blind_audit import (
 )
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.passwords import password_problem
@@ -44,13 +45,12 @@ log = get_logger(__name__)
 
 
 async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
-    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
+    """Drop these alerts' cached benign verdicts and block their keys (an analyst confirmed a threat)."""
     cache = VerdictCache(ctx.redis, ctx.prefix)
     for alert_id in alert_ids:
         try:
             alert = await ctx.repos.alerts.get(tenant_id, alert_id)
-            if alert.fingerprint:
-                await cache.invalidate(tenant_id, alert.fingerprint)
+            await cache.invalidate(tenant_id, verdict_key_of(alert), fingerprint=alert.fingerprint)
         except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
             log_failure(
                 log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,

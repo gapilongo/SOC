@@ -105,11 +105,16 @@ INVARIANTS: Tuple[Invariant, ...] = (
         rationale=(
             "A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure "
             "policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and "
-            "lower severities close only when rules corroborate the model."
+            "lower severities close only when rules corroborate the model. A cached analyst verdict closes only "
+            "a non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign "
+            "twice, with no threat on it since."
         ),
         epic="AI-E6",
-        threats=("TM-WRK-1", "TM-WRK-2"),
-        code=("src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/benign_evidence.py"),
+        threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
+        code=(
+            "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/benign_evidence.py",
+            "src/lg_sotf/domain/verdict_key.py", "src/lg_sotf/core/verdict_cache.py",
+        ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
             "tests/unit/domain/test_routing.py::test_decide_never_closes_high_severity",
@@ -119,6 +124,11 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/agents/test_title_camouflage.py::"
             "test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules",
             "tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence",
+            "tests/unit/core/test_verdict_cache_replay.py::test_analyst_oracle_replay_closes_no_malicious_alert",
+            "tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes",
+            "tests/unit/core/test_verdict_cache.py::test_one_analyst_decision_is_not_enough_two_distinct_ones_are",
+            "tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window",
+            "tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read",
         ),
         checks=("routing_policy",),
         metric="high_severity_auto_closed_benign",

@@ -61,6 +61,7 @@ from lg_sotf.db.repos.escalations import ACTIVE_ESCALATION_STATUSES, DECISIONS, 
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
 from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINAL_RUN_STATUSES, WORKFLOW_OWNER
@@ -87,7 +88,7 @@ MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
 MAX_APPROVED_ENTRY_CHARS = 256
 MAX_ACTION_IDS = 100
-_ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
+_ALERT_KEYS_SQL = "SELECT id, fingerprint, severity, normalized, raw FROM alerts WHERE tenant_id = $1 AND id = ANY($2)"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
 SUPPRESSION_SUGGESTION_DAYS = 90
@@ -471,19 +472,18 @@ class ReviewService:
         attached = [a for a in escalation.related_alert_ids if a != escalation.alert_id]
         if not attached or decision not in BENIGN_DECISIONS:
             return []
-        rows = {r["id"]: r for r in await conn.fetch(_ALERT_KEYS_SQL, tenant_id, [escalation.alert_id, *attached])}
+        rows = {r["id"]: dict(r) for r in await conn.fetch(_ALERT_KEYS_SQL, tenant_id, [escalation.alert_id, *attached])}
         parent = rows.get(escalation.alert_id)
         out: List[str] = []
         for alert_id in attached:
             row = rows.get(alert_id)
-            reason = own_review_reason(
+            if own_review_reason(
                 decision,
-                parent_fingerprint=parent["fingerprint"] if parent else None,
+                parent_key=verdict_key_of(parent) if parent else None,
                 parent_severity=parent["severity"] if parent else None,
-                fingerprint=row["fingerprint"] if row else None,
+                key=verdict_key_of(row) if row else None,
                 severity=row["severity"] if row else None,
-            )
-            if reason is not None:
+            ) is not None:
                 out.append(alert_id)
         return out
 
