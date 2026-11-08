@@ -22,7 +22,9 @@ that control is in the code. Each control is one of the following:
 
 How to use it: the security model and the controls themselves are described
 in [security.md](security.md). Deployment hardening is in
-[hardening.md](hardening.md). The MCP design is in
+[hardening.md](hardening.md). The safety invariants that cut across these
+rows, each with the tests that prove it, are in [invariants.md](invariants.md).
+The MCP design is in
 [design/mcp-architecture.md](design/mcp-architecture.md), and its threat
 table (section 8.1) is the detailed source for the planned remote MCP
 endpoint.
@@ -357,7 +359,7 @@ covers it. The gate has three steps:
 | SEC1 Supply chain and release integrity | CI, images, bundles | TM-CI-1 to TM-CI-6 | Rows present |
 | SEC5 Keys and tokens | KEKs, JWT signing | TM-API-1, TM-DB-4, TM-KEY-* | Rows present (planned) |
 | SEC6 MSSP identity hardening | IdP per tenant, grants UX, break-glass | TM-MSP-5 to TM-MSP-7 | Rows present (planned) |
-| SEC9 AI safety evidence | Invariants, kill switches | ASI10 | Rows present (planned) |
+| SEC9 AI safety evidence | Invariants ([invariants.md](invariants.md)), kill switches | ASI10 | Rows present; invariant registry in place (SEC9.1) |
 | INT1–INT4 connectors | New sources and response targets | TM-ING-*, TM-RSP-* | Add a row per new connector that holds credentials |
 
 Stories of tier T3 (authorisation, RLS, migrations, signing, response
