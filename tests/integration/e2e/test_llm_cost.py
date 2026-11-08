@@ -23,6 +23,7 @@ ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "hashes": ["44d88612
 BENIGN = {
     "source_alert_id": "bk-1",
     "title": "Scheduled backup maintenance test job",
+    "rule_name": "scheduled-backup-maintenance-test",
     "severity": "low",
     "occurred_at": "2026-09-01T10:00:00Z",
     "entities": {"hosts": ["backup-01"]},

@@ -29,6 +29,7 @@ WAITING_OR_DONE = ("waiting_human", "waiting_approval", "completed", "dead_lette
 BENIGN_EVENT: Dict[str, Any] = {
     "source_alert_id": "bk-001",
     "title": "Scheduled backup maintenance test job",
+    "rule_name": "scheduled-backup-maintenance-test",
     "severity": "low",
     "occurred_at": "2024-03-05T10:00:00Z",
     "entities": {"hosts": ["backup-01"]},

@@ -40,6 +40,8 @@ REQUIRED_FAMILIES = {
     "response-steering": 10,
     "encoding-tricks": 10,
     "benign-lookalike": 10,
+    # Attacker-named objects in the title (AI-E6.3): gated since the triage rules stopped trusting titles.
+    "title-camouflage": 3,
 }
 INJECTION_FAMILIES = set(REQUIRED_FAMILIES) - {"benign-lookalike"}
 IPV4 = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3})(?![\d./])")

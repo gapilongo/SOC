@@ -149,7 +149,12 @@ def texts(messages: Sequence[BaseMessage]) -> List[str]:
 
 # ------------------------------------------------------------- triage inputs
 
-BENIGN = {"title": "Scheduled backup maintenance test", "severity": "low", "source_id": "prod-siem"}
+BENIGN = {
+    "title": "Scheduled backup maintenance test",
+    "rule_name": "scheduled-backup-maintenance-test",
+    "severity": "low",
+    "source_id": "prod-siem",
+}
 MALICIOUS = {
     "title": "Malware backdoor exploit detected",
     "severity": "critical",
