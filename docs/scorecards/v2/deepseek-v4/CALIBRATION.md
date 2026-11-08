@@ -85,8 +85,9 @@ they cannot be simulated from recorded outputs. They were measured with
 four CI sets: `synthetic_v1`, `phishing_v1`, `adversarial_v2` and `corpus_v1`.
 Each policy was a run with the switches set through the environment
 (`LG_SOTF_ROUTING__BENIGN_VERDICT_PRECEDENCE`, and so on), and
-`LG_SOTF_AGENTS__CORRELATION__CLOCK=wall|event`. Code at the AI-E1.9 branch,
-before AI-E6.4 (#305) merged.
+`LG_SOTF_AGENTS__CORRELATION__CLOCK=wall|event`. Code: the AI-E1.9 branch
+with AI-E6.4 (#314) merged. The `corpus_v1` rows without the scanner use
+the committed file with `tenant_settings` removed.
 
 ## DeepSeek V4, `corpus_v1`: the recorded outputs re-decided
 
@@ -137,13 +138,13 @@ interval. "Escalated" counts every scored item sent to an analyst.
 
 | Policy | Benign auto-closed | Malicious auto-closed | Benign response plans | Escalated | Errors |
 |---|---|---|---|---|---|
-| 1.2 policy, wall clock (as v2) | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 87.5% (49 of 56; 95% CI 76.4% to 93.8%) | 0 |
-| P1 event time | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
-| P1+P3 | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
-| P1+P4 | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
-| P1+P3+P4 | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
-| P1+P5 | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
-| P1+P3+P4+P5 | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
+| 1.2 policy, wall clock (as v2) | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 89.3% (50 of 56; 95% CI 78.5% to 95.0%) | 0 |
+| P1 event time | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
+| P1+P3 | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
+| P1+P4 | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
+| P1+P3+P4 | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
+| P1+P5 | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
+| P1+P3+P4+P5 | 23.8% (5 of 21; 95% CI 10.6% to 45.1%) | 0.0% (0 of 35; 95% CI 0.0% to 9.9%) | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 91.1% (51 of 56; 95% CI 80.7% to 96.1%) | 0 |
 
 ### `phishing_v1`
 
@@ -161,13 +162,13 @@ interval. "Escalated" counts every scored item sent to an analyst.
 
 | Policy | Benign auto-closed | Malicious auto-closed | Benign response plans | Escalated | Errors |
 |---|---|---|---|---|---|
-| 1.2 policy, wall clock (as v2) | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.8% (87 of 89; 95% CI 92.2% to 99.4%) | 0 |
-| P1 event time | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.8% (87 of 89; 95% CI 92.2% to 99.4%) | 0 |
-| P1+P3 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.8% (87 of 89; 95% CI 92.2% to 99.4%) | 0 |
-| P1+P4 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.8% (87 of 89; 95% CI 92.2% to 99.4%) | 0 |
-| P1+P3+P4 | 12.5% (3 of 24; 95% CI 4.3% to 31.0%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 96.6% (86 of 89; 95% CI 90.6% to 98.8%) | 0 |
-| P1+P5 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.8% (87 of 89; 95% CI 92.2% to 99.4%) | 0 |
-| P1+P3+P4+P5 | 12.5% (3 of 24; 95% CI 4.3% to 31.0%) | 0.0% (0 of 65; 95% CI 0.0% to 5.6%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 96.6% (86 of 89; 95% CI 90.6% to 98.8%) | 0 |
+| 1.2 policy, wall clock (as v2) | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.9% (93 of 95; 95% CI 92.6% to 99.4%) | 0 |
+| P1 event time | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.9% (93 of 95; 95% CI 92.6% to 99.4%) | 0 |
+| P1+P3 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.9% (93 of 95; 95% CI 92.6% to 99.4%) | 0 |
+| P1+P4 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.9% (93 of 95; 95% CI 92.6% to 99.4%) | 0 |
+| P1+P3+P4 | 12.5% (3 of 24; 95% CI 4.3% to 31.0%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 96.8% (92 of 95; 95% CI 91.1% to 98.9%) | 0 |
+| P1+P5 | 8.3% (2 of 24; 95% CI 2.3% to 25.8%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 97.9% (93 of 95; 95% CI 92.6% to 99.4%) | 0 |
+| P1+P3+P4+P5 | 12.5% (3 of 24; 95% CI 4.3% to 31.0%) | 0.0% (0 of 71; 95% CI 0.0% to 5.1%) | 0.0% (0 of 24; 95% CI 0.0% to 13.8%) | 96.8% (92 of 95; 95% CI 91.1% to 98.9%) | 0 |
 
 ### `corpus_v1`, no scanner declared
 
@@ -198,6 +199,7 @@ interval. "Escalated" counts every scored item sent to an analyst.
 
 | Family | P1: benign closed | P1+P3+P4: benign closed | P1+P3+P4+P5: benign closed | P1: malicious closed | P1+P3+P4: malicious closed | P1+P3+P4+P5: malicious closed |
 |---|---|---|---|---|---|---|
+| `activity-camouflage` | n/a | n/a | n/a | 0 of 6 (0.0% to 39.0%) | 0 of 6 (0.0% to 39.0%) | 0 of 6 (0.0% to 39.0%) |
 | `benign-lookalike` | 1 of 17 (1.0% to 27.0%) | 2 of 17 (3.3% to 34.3%) | 2 of 17 (3.3% to 34.3%) | n/a | n/a | n/a |
 | `encoding-tricks` | n/a | n/a | n/a | 0 of 17 (0.0% to 18.4%) | 0 of 17 (0.0% to 18.4%) | 0 of 17 (0.0% to 18.4%) |
 | `log-field-hijack` | n/a | n/a | n/a | 0 of 22 (0.0% to 14.9%) | 0 of 22 (0.0% to 14.9%) | 0 of 22 (0.0% to 14.9%) |
@@ -293,8 +295,8 @@ on every set and every family it closes no malicious alert:
 | Set (fake model) | Benign auto-closed, 1.2 policy | Benign auto-closed, shipped | Malicious auto-closed, shipped |
 |---|---|---|---|
 | `corpus_v1` | 0 of 312 (0.0%; 95% CI 0.0% to 1.2%) | 8 of 312 (2.6%; 1.3% to 5.0%) | 0 of 208 (0.0%; 0.0% to 1.8%) |
-| `adversarial_v2` | 2 of 24 (8.3%; 2.3% to 25.8%) | 3 of 24 (12.5%; 4.3% to 31.0%) | 0 of 65 (0.0%; 0.0% to 5.6%) |
-| `synthetic_v1` | 6 of 21 (28.6%; 13.8% to 50.0%) | 6 of 21 (unchanged) | 0 of 35 (0.0%; 0.0% to 9.9%) |
+| `adversarial_v2` | 2 of 24 (8.3%; 2.3% to 25.8%) | 3 of 24 (12.5%; 4.3% to 31.0%) | 0 of 71 (0.0%; 0.0% to 5.1%) |
+| `synthetic_v1` | 5 of 21 (23.8%; 10.6% to 45.1%) | 5 of 21 (unchanged) | 0 of 35 (0.0%; 0.0% to 9.9%) |
 | `phishing_v1` | 3 of 11 (27.3%; 9.7% to 56.6%) | 3 of 11 (unchanged) | 0 of 24 (0.0%; 0.0% to 13.8%) |
 
 **Is 2.6% material?** It is the first benign close on this corpus, and its
@@ -333,13 +335,15 @@ by the model (`llm_fp`) corroborates nothing. New proofs:
 `test_tenant_context_never_closes_high_severity` and
 `test_nothing_else_corroborates_a_benign_close`.
 
-**Interaction with AI-E6.4 (#305, not merged when this was written).** It
+**Interaction with AI-E6.4 (#314, merged into this branch).** It
 stops activity words in rule names ("update", "scan", "scheduled") from
 counting as benign evidence without a trusted qualifier; "scan" qualifies
 with a `triage.known_scanners` entity. The shipped corroboration uses only
 the tenant's `known_scanner` signal, so AI-E6.4 does not change what P4
-closes. It does remove the 17 corpus alerts' rule-name evidence that the
-rejected "any rule signal" variant would have used.
+closes; every number above was measured with it. It does remove the 17
+corpus alerts' rule-name evidence that the rejected "any rule signal"
+variant would have used, and its `activity-camouflage` family (6 malicious
+items) closes nothing under any policy.
 
 ## Threats
 
