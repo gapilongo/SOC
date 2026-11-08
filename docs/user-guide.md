@@ -119,8 +119,10 @@ alerts where text in the alert tried to steer the model carry a
    same detection and not more severe; otherwise that alert gets its own
    escalation. Pre-approved actions apply only to the alert you reviewed.
 
-Decisions after the SLA deadline are still accepted (and marked as late in
-the audit log); an expired escalation never strands an alert.
+Claims and decisions after the SLA deadline are still accepted (and marked
+as late in the audit log); an expired escalation never strands an alert.
+A claimed expired escalation stays in the Expired view, now with you as
+its owner.
 
 ### 4. Approve or reject response actions
 

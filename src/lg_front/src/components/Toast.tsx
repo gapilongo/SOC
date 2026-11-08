@@ -28,7 +28,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const push = useCallback(
     (toast: Omit<Toast, 'id'>) => {
       const id = next.current++;
-      setToasts((t) => [...t.slice(-4), { ...toast, id }]);
+      // A repeat of a visible toast replaces it (fresh timer) instead of stacking: repeated clicks
+      // that fail the same way show one notice.
+      const same = (x: Toast) => x.tone === toast.tone && x.message === toast.message;
+      setToasts((t) => [...t.filter((x) => !same(x)).slice(-4), { ...toast, id }]);
       setTimeout(() => dismiss(id), toast.tone === 'error' ? 12_000 : 5_000);
     },
     [dismiss],
