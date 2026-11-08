@@ -81,6 +81,7 @@ from lg_sotf.models import vocabulary
 from lg_sotf.models.vocabulary import POLICY_APPROVER, SCHEDULER_OWNER, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.crypto import SecretBox
+from lg_sotf.security.shadow import Arguments, egress, sink
 from lg_sotf.services.connectors import Connector, ConnectorRegistry, ConnectorResult, DryRunConnector
 from lg_sotf.services.connectors.microsoft import MicrosoftClients, microsoft_connector_for
 from lg_sotf.services.connectors.routing import ConnectorRouter, RoutingSnapshot
@@ -149,6 +150,17 @@ __all__ = [
 log = get_logger(__name__)
 
 PENDING_WORK_STATUSES = frozenset({"awaiting_approval", "approved"})
+
+
+def _shadow_plan(args: Arguments) -> PlanResult:
+    """A shadow run plans nothing: the would-be actions are in the sink (:func:`_plan_detail`), none in the ledger."""
+    threat_type, _ = build_candidates(args["ctx"], args["alert_id"])
+    return PlanResult(threat_type=threat_type)
+
+
+def _plan_detail(args: Arguments) -> Dict[str, Any]:
+    threat_type, candidates = build_candidates(args["ctx"], args["alert_id"])
+    return {"threat_type": threat_type, "actions": [f"{c.action_type}:{c.target}" for c in candidates]}
 
 
 # --------------------------------------------------------------------------- service
@@ -279,6 +291,7 @@ class ResponseService:
 
     # ------------------------------------------------------------------ plan
 
+    @egress("response_plan", sink(_shadow_plan, detail=_plan_detail))
     async def plan(
         self, tenant_id: str, alert_id: str, ctx: PlanContext, *, now: Optional[datetime] = None
     ) -> PlanResult:
@@ -441,6 +454,7 @@ class ResponseService:
 
     # ------------------------------------------------------------- execution (lg_sotf.services.response.execution)
 
+    @egress("response_execute", sink(lambda a: {}, detail=lambda a: {"actions": len(a["action_ids"])}))
     async def execute(
         self, tenant_id: str, alert_id: str, action_ids: Sequence[str], *, now: Optional[datetime] = None,
         budget_s: Optional[float] = None,

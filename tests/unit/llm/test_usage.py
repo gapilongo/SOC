@@ -19,7 +19,7 @@ DAY = date(2026, 9, 1)
 
 
 def _metric(name: str, **labels: str) -> float:
-    return REGISTRY.get_sample_value(name, labels) or 0.0
+    return REGISTRY.get_sample_value(name, {"mode": "live", **labels}) or 0.0
 
 
 def test_cost_math_per_million_tokens() -> None:

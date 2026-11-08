@@ -195,7 +195,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
 | INV-07 | No secret is ever logged; redaction covers the known credential patterns | enforced | `log_redaction` | TM-API-6, TM-ING-3, TM-WRK-4 |
 | INV-08 | Evidence packs are hash-verified | enforced | `evidence_seal` | TM-EVT-6, TM-API-9 |
-| INV-09 | Shadow mode causes no side effects | pending (AI-E1.5a) | none | TM-RSP-4, TM-MCP-6 |
+| INV-09 | Shadow mode causes no side effects | enforced | none | TM-RSP-4, TM-MCP-6 |
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |

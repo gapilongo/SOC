@@ -67,6 +67,7 @@ from lg_sotf.llm.trace import content_hash, use_tape
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import safe_error_text
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -366,6 +367,7 @@ async def check_services(db: Any, redis: Any) -> None:
         raise EvalSetupError(f"redis unavailable: {safe_error_text(exc, 200)}") from exc
 
 
+@egress("database_connection", REFUSE)
 async def run_evaluation(
     settings: Settings,
     dataset: Dataset,
@@ -392,11 +394,11 @@ async def run_evaluation(
     ``cassettes`` records each item's observations, or replays them (see the module docs).
     """
     import asyncpg
-    from redis.asyncio import Redis
 
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.db.pool import Database
     from lg_sotf.errors import OperationError
+    from lg_sotf.queue.redis import ShadowSafeRedis
 
     if settings.environment == "production":
         raise EvalSetupError(
@@ -422,7 +424,7 @@ async def run_evaluation(
         except DatabaseError as exc:
             raise EvalSetupError(f"database unavailable: {exc}") from exc
         stack.push_async_callback(db.close)
-        redis = Redis.from_url(settings.redis.url.get_secret_value(), decode_responses=False)
+        redis = ShadowSafeRedis.from_url(settings.redis.url.get_secret_value(), decode_responses=False)
         stack.push_async_callback(redis.aclose)
         await check_services(db, redis)
 

@@ -47,6 +47,7 @@ from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantSt
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.reports import ReportsRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
+from lg_sotf.db.repos.shadow_effects import ShadowEffectsRepo, StoredShadowEffect
 from lg_sotf.db.repos.sources import Source, SourcesRepo
 from lg_sotf.db.repos.suppressions import SuppressionRule, SuppressionsRepo
 from lg_sotf.db.repos.tenants import Tenant, TenantsRepo
@@ -84,6 +85,7 @@ class Repositories:
     outbox: OutboxRepo
     tickets: TicketsRepo
     investigation_steps: InvestigationStepsRepo
+    shadow_effects: ShadowEffectsRepo
     reports: ReportsRepo
     views: ViewsRepo
     organisations: OrganisationsRepo
@@ -115,6 +117,7 @@ class Repositories:
             outbox=OutboxRepo(db),
             tickets=TicketsRepo(db),
             investigation_steps=InvestigationStepsRepo(db),
+            shadow_effects=ShadowEffectsRepo(db),
             reports=ReportsRepo(db),
             views=ViewsRepo(db),
             organisations=OrganisationsRepo(db),
@@ -171,9 +174,11 @@ __all__ = [
     "ResponseAction",
     "ResponseTimes",
     "RunsRepo",
+    "ShadowEffectsRepo",
     "Source",
     "SourcesRepo",
     "StaleRunSweep",
+    "StoredShadowEffect",
     "SuppressionRule",
     "SuppressionsRepo",
     "Tenant",

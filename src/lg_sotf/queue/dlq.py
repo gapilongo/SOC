@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from redis.asyncio import Redis
 
 from lg_sotf.queue.streams import FIELD_RETRIES, WORK_FIELDS, QueueStreams, decode_fields
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 
@@ -65,6 +66,7 @@ class DeadLetterQueue:
             return letter.source_stream
         return self._streams.high
 
+    @egress("queue", REFUSE)
     async def requeue(self, letter: DeadLetter) -> str:
         """Move a dead letter back to its work stream with a fresh delivery count; returns the new entry id."""
         # ``retries`` is left behind: kept, ``Message.attempts`` would start at the exhausted count
@@ -79,6 +81,7 @@ class DeadLetterQueue:
         new_id, _deleted = await pipe.execute()
         return _text(new_id)
 
+    @egress("queue", REFUSE)
     async def delete(self, entry_id: str) -> bool:
         return bool(await self._redis.xdel(self._streams.dlq, entry_id))
 

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, Dict, Mapping, Optional, Protocol, runtime_checkable
 
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import egress, sink
 
 log = get_logger(__name__)
 
@@ -31,6 +32,7 @@ def make_event(event_type: str, tenant_id: str, alert_id: str, data: Mapping[str
     }
 
 
+@egress("ws_event", sink(detail=lambda a: {"event_type": a["event_type"]}))
 async def publish_event(
     events: Optional[EventPublisher], event_type: str, tenant_id: str, alert_id: str, data: Mapping[str, Any]
 ) -> None:

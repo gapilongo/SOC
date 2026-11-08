@@ -63,6 +63,7 @@ from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.response import Connector, ResponseService
 from lg_sotf.settings import Settings
@@ -175,6 +176,7 @@ class WorkflowEngine:
         agents: AgentSet,
         escalations: EscalationService,
         events: Optional[EventPublisher],
+        node_deps: NodeDeps,
     ) -> None:
         self.settings = settings
         self.repos = repos
@@ -187,8 +189,11 @@ class WorkflowEngine:
         self._checkpointer = checkpointer
         self._escalations = escalations
         self._events = events
+        self.node_deps = node_deps
+        """The services the nodes run with (a :class:`~lg_sotf.core.shadow.ShadowRunner` reuses them)."""
 
     @classmethod
+    @egress("database_connection", REFUSE)
     async def create(
         cls,
         *,
@@ -263,6 +268,7 @@ class WorkflowEngine:
             agents=agent_set,
             escalations=escalations,
             events=events,
+            node_deps=deps,
         )
 
     async def close(self) -> None:

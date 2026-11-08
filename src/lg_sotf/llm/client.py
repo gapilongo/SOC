@@ -370,7 +370,7 @@ async def llm_slot(tier: Tier, settings: Settings) -> AsyncIterator[None]:
 
     Unset, the tier gets ``worker.concurrency`` slots (one per run in flight), so
     the slots never cap throughput below the worker's own concurrency. The wait
-    is exported as ``lgsotf_llm_slot_wait_seconds{tier}``: it counts against the
+    is exported as ``lgsotf_llm_slot_wait_seconds{tier,mode}``: it counts against the
     node timeout, so a sustained wait means the slots are too few.
     """
     if tier not in TIERS:

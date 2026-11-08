@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from lg_sotf.db.pagination import check_limit
 from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware, to_models, truncate
+from lg_sotf.security.shadow import egress, sink
 
 MAX_DISPLAY_CHARS = 256
 MAX_QUERY_INDICATORS = 500
@@ -32,6 +33,7 @@ class RelatedAlert(Record):
 
 
 class IndicatorsRepo(Repository):
+    @egress("indicator_sighting", sink(lambda a: 0, detail=lambda a: {"sightings": len(a["sightings"])}))
     async def add_sightings(
         self,
         tenant_id: str,

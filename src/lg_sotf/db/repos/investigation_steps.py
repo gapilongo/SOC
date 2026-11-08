@@ -14,6 +14,7 @@ from uuid import UUID
 from lg_sotf.db.pagination import check_limit
 from lg_sotf.db.repos._base import Connection, Record, Repository, require_aware, to_models
 from lg_sotf.models.trace import NewTraceStep
+from lg_sotf.security.shadow import Arguments, active_shadow_run, egress, sink
 
 MAX_STEPS_LISTED = 5_000
 
@@ -39,6 +40,14 @@ _APPEND_SQL = """
 """
 
 
+def _keep_in_shadow_run(args: Arguments) -> int:
+    """A shadow run's steps stay with the run (``ShadowRun.trace``) instead of the store."""
+    run = active_shadow_run()
+    if run is not None:
+        run.trace.extend(args["steps"])
+    return len(args["steps"])
+
+
 class TraceStep(NewTraceStep, Record):
     """A stored step."""
 
@@ -51,6 +60,7 @@ class TraceStep(NewTraceStep, Record):
 
 
 class InvestigationStepsRepo(Repository):
+    @egress("trace_store", sink(_keep_in_shadow_run, detail=lambda a: {"steps": len(a["steps"])}))
     async def append(
         self,
         tenant_id: str,

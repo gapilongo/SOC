@@ -24,6 +24,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.ingestion.metrics import REGISTRY as INGESTION_REGISTRY
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import render_latest
+from lg_sotf.security.shadow import allow, egress
 
 log = get_logger(__name__)
 
@@ -120,6 +121,7 @@ class HealthServer:
             return int(self._socket.getsockname()[1])
         return self._port
 
+    @egress("health_listener", allow("binds the local health and metrics listener; sends nothing"))
     def _bind(self) -> socket.socket:
         # Bound here rather than by uvicorn, which calls sys.exit() when the port is taken.
         family = socket.AF_INET6 if ":" in self._host else socket.AF_INET

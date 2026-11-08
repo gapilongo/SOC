@@ -229,10 +229,20 @@ INVARIANTS: Tuple[Invariant, ...] = (
         ),
         epic="AI-E1",
         threats=("TM-RSP-4", "TM-MCP-6"),
-        code=(),
-        proofs=("tests/invariants/test_shadow_mode.py::test_shadow_mode_has_no_side_effects",),
-        status="pending",
-        pending_story="AI-E1.5a",
+        code=(
+            "src/lg_sotf/security/shadow.py",
+            "src/lg_sotf/core/shadow.py",
+            "src/lg_sotf/db/pool.py",
+            "src/lg_sotf/db/shadow_connection.py",
+            "src/lg_sotf/queue/redis.py",
+        ),
+        proofs=(
+            "tests/integration/engine/test_shadow.py::test_shadow_no_side_effects",
+            "tests/integration/engine/test_shadow.py::test_every_boundary_diverts_when_called_directly",
+            "tests/unit/architecture/test_shadow_egress.py::"
+            "test_shadow_no_side_effects_every_egress_site_is_a_registered_boundary",
+            "tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_boundary_diverts_in_shadow_mode",
+        ),
     ),
     Invariant(
         id="INV-10",

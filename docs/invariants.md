@@ -18,7 +18,7 @@ Threat rows refer to [threat-model.md](threat-model.md).
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
 | INV-07 | No secret is ever logged; redaction covers the known credential patterns | enforced | `log_redaction` | TM-API-6, TM-ING-3, TM-WRK-4 |
 | INV-08 | Evidence packs are hash-verified | enforced | `evidence_seal` | TM-EVT-6, TM-API-9 |
-| INV-09 | Shadow mode causes no side effects | pending (AI-E1.5a) | none | TM-RSP-4, TM-MCP-6 |
+| INV-09 | Shadow mode causes no side effects | enforced | none | TM-RSP-4, TM-MCP-6 |
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
@@ -155,13 +155,16 @@ An evidence pack handed to an auditor or a court must show that it was not chang
 
 A candidate configuration run side by side with production must not act: no response execution, outbox message, Slack or mail notification, webhook, ticket or WebSocket event may leave a shadow run.
 
-* **Status:** pending, delivered by AI-E1.5a
+* **Status:** enforced
 * **Owner epic:** AI-E1
 * **Threats:** TM-RSP-4, TM-MCP-6
-* **Enforced in:** none
+* **Enforced in:** `src/lg_sotf/security/shadow.py`, `src/lg_sotf/core/shadow.py`, `src/lg_sotf/db/pool.py`, `src/lg_sotf/db/shadow_connection.py`, `src/lg_sotf/queue/redis.py`
 * **Runtime checks:** none
 * **Proved by:**
-  * `tests/invariants/test_shadow_mode.py::test_shadow_mode_has_no_side_effects`
+  * `tests/integration/engine/test_shadow.py::test_shadow_no_side_effects`
+  * `tests/integration/engine/test_shadow.py::test_every_boundary_diverts_when_called_directly`
+  * `tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_egress_site_is_a_registered_boundary`
+  * `tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_boundary_diverts_in_shadow_mode`
 
 ## INV-10: Release images are signed, and their signature is checked before deploy
 

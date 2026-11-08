@@ -23,6 +23,7 @@ import httpx
 
 from lg_sotf.net.egress import DestinationPolicy, GuardedTransport, Resolver, system_resolve
 from lg_sotf.net.tls import Verify
+from lg_sotf.security.shadow import REFUSE, egress
 
 
 class ResponseTooLarge(Exception):
@@ -57,6 +58,7 @@ async def read_capped(response: httpx.Response, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+@egress("http", REFUSE)
 def guarded_client(
     *,
     policy: Optional[DestinationPolicy],

@@ -160,6 +160,7 @@ next two partitions ahead and drops expired ones.
 | `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
 | `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
 | `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
+| `shadow_effects` | Shadow-mode sink, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id` (`shadow/...`), `seq` (UNIQUE per run), `boundary`, `operation`, `outcome` (sunk/refused), `detail JSONB` (event and action types, action targets; size-capped). What a shadow run would have done (§8); no API reads it |
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
@@ -277,6 +278,29 @@ Rules:
   `workflow.unknown_graph_version`) before anything is written, is retried,
   and is dead-lettered like any failing run; it never runs on another graph.
   Drop a builder only when no run that can still resume is on its version.
+* Shadow runs (`core/shadow.py`, `security/shadow.py`) run a candidate
+  (another model, prompt or graph) on a real alert beside production, under
+  run id `shadow/<hex>`, with in-memory checkpoints and no token budget, and
+  stop at the first interrupt. Shadow mode is one context flag, entered only
+  by system code (`shadow_scope`; it never nests and cannot be left early).
+  It is enforced at the egress boundaries, never in the agents: every
+  function decorated with `@egress` refuses in shadow mode, or records the
+  call in the run's sink and returns a stand-in ("would have done X"), or,
+  for the local health listener only, runs. Every database transaction of
+  a shadow run is read only, and its connection refuses the statements that
+  would reach past it (`COMMIT`, `SET TRANSACTION`, `NOTIFY`/`pg_notify`,
+  session settings and advisory locks); its Redis client
+  (`ShadowSafeRedis`) sends reads only. Threat-intelligence lookups answer
+  from the cache only (a miss is `skipped`: no provider call, no quota, no
+  production rate limit), so a shadow verdict can see fewer
+  threat-intelligence answers than production's. LLM use stays on the run
+  (never `llm_usage_daily`, which bills the tenant and seeds its budget),
+  and metrics are labelled `mode="shadow"`. After the run, the sink is
+  written to `shadow_effects`, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
+  finds the egress call sites (HTTP, SMTP, socket, database and Redis
+  clients, every Redis write command, WebSocket sends, connector execution,
+  outbox inserts) with the AST and fails on any outside a registered
+  boundary, and on any thread or fresh-context hop that drops the run mode.
 * A model refusal at any stage escalates with reason `model_refused`; no
   actions are planned from a refused analysis.
 * Related alerts (shared key entities or fingerprint within the grouping
@@ -438,10 +462,10 @@ Everything else is per stack, on purpose:
   `lgsotf_http_requests_total{route,method,status}`,
   `lgsotf_http_request_seconds`, `lgsotf_queue_depth{stream}`,
   `lgsotf_queue_pending{stream}`, `lgsotf_runs_total{outcome}`,
-  `lgsotf_node_seconds{node}`, `lgsotf_llm_calls_total{model,agent,outcome}`,
-  `lgsotf_llm_tokens_total{model,kind}`, `lgsotf_llm_cost_usd_total{model}`,
+  `lgsotf_node_seconds{node,mode}`, `lgsotf_llm_calls_total{model,agent,outcome,mode}`,
+  `lgsotf_llm_tokens_total{model,kind,mode}`, `lgsotf_llm_cost_usd_total{model,mode}`,
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
-  `lgsotf_llm_slot_wait_seconds{tier}`,
+  `lgsotf_llm_slot_wait_seconds{tier,mode}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
   `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed

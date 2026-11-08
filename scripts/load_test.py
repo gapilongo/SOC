@@ -1260,7 +1260,7 @@ class LoadTest:
             nodes: Dict[str, Dict[str, float]] = defaultdict(dict)
             http: Dict[str, Dict[str, float]] = defaultdict(dict)
             for name, value in metrics.items():
-                m = re.match(r'lgsotf_node_seconds_(sum|count)\{node="([^"]+)"\}', name)
+                m = re.match(r'lgsotf_node_seconds_(sum|count)\{node="([^"]+)",mode="live"\}', name)
                 if m:
                     nodes[m.group(2)][m.group(1)] = value
                     continue

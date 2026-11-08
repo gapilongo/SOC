@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lg_sotf.db.pagination import Page, check_limit, decode_cursor_bigint, paginate
 from lg_sotf.db.repos._base import Connection, Record, Repository, check_choice, fetch_one, require_aware, to_models
+from lg_sotf.security.shadow import egress, sink
 
 EVENT_ACTOR_TYPES = ("system", "user", "agent")
 
@@ -48,6 +49,7 @@ class NewAlertEvent(BaseModel):
 
 
 class AlertEventsRepo(Repository):
+    @egress("alert_event", sink(detail=lambda a: {"event_type": a["event_type"]}))
     async def append(
         self,
         tenant_id: str,

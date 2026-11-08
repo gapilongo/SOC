@@ -22,6 +22,7 @@ import asyncpg
 from lg_sotf.db import locks
 from lg_sotf.db.pool import build_ssl_arg, owner_dsn
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -73,6 +74,7 @@ def asyncpg_connector(settings: Settings, *, application_name: str = "lg-sotf-sc
     ssl_arg = build_ssl_arg(settings.database.ssl_mode, settings.database.ssl_root_cert)
     server_settings = {"application_name": application_name, **keepalive_settings(settings.scheduler.leader_lease_s)}
 
+    @egress("database_connection", REFUSE)
     async def connect() -> LeaderConnection:
         kwargs: dict[str, Any] = {
             "dsn": dsn,
