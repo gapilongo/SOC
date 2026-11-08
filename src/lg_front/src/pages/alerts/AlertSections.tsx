@@ -13,7 +13,7 @@ import { Link } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
 import { endpoints } from '../../api/endpoints';
-import { decidedByLabel, escalationOwner, readFindings } from '../../api/fields';
+import { decidedByLabel, escalationConflictNotice, escalationOwner, readFindings } from '../../api/fields';
 import { useEscalation } from '../../api/hooks';
 import { afterAlertChange, afterAlertTimelineChange, afterEscalationChange } from '../../api/invalidate';
 import { qk } from '../../api/queryKeys';
@@ -86,7 +86,8 @@ export function EscalationBox({ escalationId }: { escalationId: string }) {
     mutationFn: (e: EscalationOut) => endpoints.claim(api, e.id, e.version),
     onSuccess: (_out, e) => toast.success(e.status === 'claimed' ? 'Escalation taken over.' : 'Escalation claimed.'),
     onError: (err) => {
-      if (err instanceof ApiError && err.status === 409) toast.info('Someone else changed this escalation first; it has been refreshed.');
+      const notice = escalationConflictNotice(err, 'it has been refreshed');
+      if (notice) toast.info(notice);
       else toast.error(err, 'Claim failed');
     },
     onSettled: () => afterEscalationChange(client),

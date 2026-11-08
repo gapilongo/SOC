@@ -382,3 +382,37 @@ async def test_expired_escalations_take_a_late_decision_once(
     audits = [e for e in (await repos.audit.list(TENANT_A, resource_id=expired_id)).items if e.action == "escalation.decided"]
     assert [a.details["after_sla_expiry"] for a in audits] == [True]
     assert await repos.feedback.get_for_escalation(TENANT_A, expired_id) is not None
+
+
+async def test_an_expired_escalation_can_be_claimed_and_keeps_its_missed_sla(
+    repos: Repositories, make_settings: Callable[..., Settings]
+) -> None:
+    """Overdue work needs an owner: claiming an SLA-expired escalation assigns it and leaves it ``expired``."""
+    settings = make_settings()
+    review = ReviewService(repos, settings, FakeEvents())
+    svc = EscalationService(repos, None, settings)
+    kw: Dict[str, Any] = dict(severity="critical", confidence=50, threat_score=90, reason="grey zone")
+    esc_id = (await svc.open_or_attach(TENANT_A, await add_alert(repos, TENANT_A), **kw)).id
+    expired = await repos.escalations.expire(TENANT_A, esc_id)
+    alice, bob, boss = [await user(repos, r) for r in ("analyst", "analyst", "admin")]
+
+    claimed = await review.claim(TENANT_A, esc_id, alice, expired.version)
+    assert (claimed.status, claimed.assigned_to, claimed.version) == ("expired", alice, expired.version + 1)
+    assert claimed.claimed_at is not None
+    # The SLA sweep only looks at active escalations: it does not pick the claimed expired one up again.
+    breached = await repos.escalations.find_sla_breached_all_tenants(now=datetime.now(UTC) + timedelta(days=365))
+    assert esc_id not in {e.id for e in breached}
+    [audit] = [e for e in (await repos.audit.list(TENANT_A, resource_id=esc_id)).items if e.action == "escalation.claimed"]
+    assert audit.details["after_sla_expiry"] is True
+    # Alice now holds it: another analyst may neither take it over nor decide it; an admin may.
+    with pytest.raises(ReviewDenied):
+        await review.claim(TENANT_A, esc_id, bob, claimed.version)
+    with pytest.raises(ReviewDenied):
+        await review.decide(TENANT_A, esc_id, bob, "analyst", "false_positive", None, [], claimed.version)
+    taken = await review.claim(TENANT_A, esc_id, boss, claimed.version, role="admin")
+    assert (taken.status, taken.assigned_to) == ("expired", boss)
+    decided = (await review.decide(TENANT_A, esc_id, boss, "admin", "false_positive", None, [], taken.version)).escalation
+    # Claiming a decided escalation is a state error, whatever version the caller had: never a version race.
+    for version in (decided.version, decided.version - 1):
+        with pytest.raises(InvalidTransition):
+            await review.claim(TENANT_A, esc_id, alice, version)

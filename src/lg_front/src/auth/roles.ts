@@ -44,11 +44,18 @@ export interface EscalationRef {
   assigned_to?: string | null;
 }
 
+/** The statuses the API lets an analyst claim and decide (an SLA-expired escalation stays `expired` when claimed). */
 const ACTIVE_ESCALATION = new Set(['open', 'claimed', 'expired']);
+/** The statuses in which an assignee holds the escalation (`Escalation.held_by_other` in the API). */
+const HELD_ESCALATION = new Set(['claimed', 'expired']);
+
+function heldBy(e: EscalationRef): boolean {
+  return HELD_ESCALATION.has(e.status) && Boolean(e.assigned_to);
+}
 
 /** Claimed by someone other than `p` (the API lets only an admin act on it then). */
 function claimedByOther(p: Principal | null, e: EscalationRef): boolean {
-  return e.status === 'claimed' && Boolean(e.assigned_to) && e.assigned_to !== p?.userId;
+  return heldBy(e) && e.assigned_to !== p?.userId;
 }
 
 export const can = {
@@ -65,7 +72,7 @@ export const can = {
   claimEscalation: (p: Principal | null, e: EscalationRef) =>
     can.claim(p) &&
     ACTIVE_ESCALATION.has(e.status) &&
-    !(e.status === 'claimed' && e.assigned_to === p?.userId) &&
+    !(heldBy(e) && e.assigned_to === p?.userId) &&
     (!claimedByOther(p, e) || roleAtLeast(p?.role, 'admin')),
   /** Decide this escalation: not while another analyst holds the claim (admins may). */
   decideEscalation: (p: Principal | null, e: EscalationRef) =>

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bulkFailures,
   decidedByLabel,
+  escalationConflictNotice,
   escalationOwner,
   escalationSeverity,
   escalationTitle,
@@ -20,6 +21,7 @@ import {
   toBulkItems,
   totalOf,
 } from './fields';
+import { apiError } from '../test/helpers';
 import type { ActionOut, AlertDetailOut, DashboardOut, EscalationOut } from './types';
 
 const preview = {
@@ -127,6 +129,23 @@ describe('escalation fields', () => {
     expect(decidedByLabel({ decided_by: null }, 'u-1')).toBeNull();
     expect(decidedByLabel({ decided_by: 'u-1' }, 'u-1')).toBe('You');
     expect(decidedByLabel({ decided_by: 'u-2', decided_by_email: 'lead@acme.example' }, 'u-1')).toBe('lead@acme.example');
+  });
+});
+
+describe('escalation conflict notices', () => {
+  it('tells a state error apart from a version race, and leaves other errors to the error toast', () => {
+    expect(escalationConflictNotice(apiError(409, 'invalid_transition'), 'the list has been refreshed')).toBe(
+      'This escalation is already decided or closed; the list has been refreshed.',
+    );
+    expect(escalationConflictNotice(apiError(409, 'already_in_state'), 'it has been reloaded')).toBe(
+      'This escalation is already decided or closed; it has been reloaded.',
+    );
+    expect(escalationConflictNotice(apiError(409, 'conflict'), 'it has been reloaded')).toBe(
+      'Someone else changed this escalation first; it has been reloaded.',
+    );
+    expect(escalationConflictNotice(apiError(403, 'forbidden'), 'x')).toBeNull();
+    expect(escalationConflictNotice(new Error('network'), 'x')).toBeNull();
+    expect(apiError(400, 'invalid_transition').isStateConflict).toBe(false);
   });
 });
 

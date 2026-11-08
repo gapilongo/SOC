@@ -269,8 +269,11 @@ Rules:
   parent and every attached run. A benign/false-positive decision is only
   inherited by attached alerts whose own evidence does not contradict it;
   otherwise the attached alert is detached into its own escalation.
-* A decision on an SLA-expired escalation is still accepted (audited with
-  `after_sla_expiry`), so expiry never strands an alert.
+* A claim or decision on an SLA-expired escalation is still accepted
+  (audited with `after_sla_expiry`), so expiry never strands an alert. A
+  claim keeps the status `expired` (the SLA sweep only reads active
+  escalations, so it does not pick it up again) and sets the assignee; the
+  assignee then holds it as they would a `claimed` one.
 * Approvals are per action; unmentioned actions stay pending unless the
   request sets `reject_remaining`. An approval commits whenever the analyst
   makes it, also while the run is not waiting: `execute_actions` treats
