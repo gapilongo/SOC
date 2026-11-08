@@ -769,7 +769,9 @@ escalation, action, alert change or event leaves the run; its model calls
 are real and billed to the candidate's provider, never to the tenant). The
 candidate profile may set `name` (the report's label), `llm` and `agents`,
 merged over the configuration; `${VAR}` references are expanded, so keys stay
-in the environment. Routing thresholds, tenant policy and services stay
+in the environment. A profile that changes `provider` or `base_url` never
+reuses production's API key: give it its own `llm.api_key` (a self-hosted
+provider needs none). Routing thresholds, tenant policy and services stay
 production's.
 
 Each alert's pair of verdicts is stored in `shadow_verdicts` (append-only,

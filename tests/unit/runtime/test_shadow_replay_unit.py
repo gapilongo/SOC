@@ -108,6 +108,23 @@ def test_candidate_profile_is_validated(tmp_path: Path, text: str, message: str)
         load_candidate(Settings(environment="test"), path)
 
 
+def test_production_api_key_never_follows_the_candidate_to_another_endpoint(tmp_path: Path) -> None:
+    production = Settings(environment="test", llm={"provider": "anthropic", "api_key": "test-only-production-key"})
+    path = tmp_path / "cand.yaml"
+    path.write_text("llm:\n  provider: openai\n")
+    with pytest.raises(OperationError, match="set its own llm.api_key"):
+        load_candidate(production, path)
+    path.write_text("llm:\n  provider: openai_compatible\n  base_url: http://llm.internal:8000/v1\n")
+    _, local = load_candidate(production, path)
+    assert local.llm.api_key is None
+    path.write_text("llm:\n  provider: openai\n  api_key: test-only-candidate-key\n")
+    _, own = load_candidate(production, path)
+    assert own.llm.api_key is not None and own.llm.api_key.get_secret_value() == "test-only-candidate-key"
+    path.write_text("llm:\n  fast: {model: claude-sonnet-4-5}\n")  # same provider and endpoint: the key stays
+    _, same = load_candidate(production, path)
+    assert same.llm.api_key == production.llm.api_key
+
+
 def test_missing_or_huge_profile_is_refused(tmp_path: Path) -> None:
     with pytest.raises(OperationError, match="cannot read"):
         load_candidate(Settings(environment="test"), tmp_path / "missing.yaml")

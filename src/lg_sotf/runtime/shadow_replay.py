@@ -18,7 +18,8 @@ and refuses that flag outright in staging and production
 the file name) and the ``llm`` and ``agents`` sections to use instead of
 the configured ones (deep-merged, ``${VAR}`` references expanded as in the
 main configuration file). Nothing else can differ: routing thresholds,
-tenant policy and services stay production's.
+tenant policy and services stay production's. A profile that moves to
+another provider or ``base_url`` never inherits production's API key.
 """
 
 from __future__ import annotations
@@ -43,7 +44,7 @@ from lg_sotf.errors import OperationError
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.shadow_reports import stored_report
-from lg_sotf.settings import LLMSettings, Settings, _expand_env
+from lg_sotf.settings import SELF_HOSTED_PROVIDERS, LLMSettings, Settings, _expand_env
 
 NO_SHADOW_ROLE_FLAG = "--i-understand-no-shadow-role"
 MAX_WINDOW = timedelta(days=90)
@@ -116,11 +117,25 @@ def load_candidate(settings: Settings, path: Path) -> Tuple[str, Settings]:
     llm, agents = profile.get("llm") or {}, profile.get("agents") or {}
     if not isinstance(llm, dict) or not isinstance(agents, dict):
         raise OperationError("the candidate profile's llm and agents sections are mappings")
+    return label, settings.model_copy(update={"llm": _candidate_llm(settings, llm), "agents": _merge(settings.agents, agents)})
+
+
+def _candidate_llm(settings: Settings, override: Mapping[str, Any]) -> LLMSettings:
+    """Production's ``llm`` with the profile's on top; production's API key never goes to another endpoint."""
+    merged = _merge(settings.llm.model_dump(), override)
+    moved = any(key in override and override[key] != getattr(settings.llm, key) for key in ("provider", "base_url"))
+    if moved and "api_key" not in override:
+        merged["api_key"] = None
     try:
-        candidate_llm = LLMSettings.model_validate(_merge(settings.llm.model_dump(), llm))
+        candidate = LLMSettings.model_validate(merged)
     except ValidationError as exc:
         raise OperationError(f"the candidate profile's llm section is invalid: {exc.error_count()} error(s)") from exc
-    return label, settings.model_copy(update={"llm": candidate_llm, "agents": _merge(settings.agents, agents)})
+    if moved and candidate.api_key is None and candidate.provider not in (*SELF_HOSTED_PROVIDERS, "fake"):
+        raise OperationError(
+            "the candidate profile changes the LLM provider or base_url: set its own llm.api_key "
+            "(e.g. api_key: ${CANDIDATE_API_KEY})"
+        )
+    return candidate
 
 
 async def run_shadow_replay(

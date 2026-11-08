@@ -55,6 +55,7 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
         "integration_id": str(integration.id),
         "user_id": str(user.id),
         "tenant_id": TENANT_B,
+        "run_id": "shr_" + "0" * 32,
     }
 
 

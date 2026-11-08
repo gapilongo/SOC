@@ -117,7 +117,7 @@ async def _seed_victim(api: ApiHarness) -> Dict[str, str]:
     return {
         "alert_id": alert.id, "escalation_id": escalation.id, "action_id": str(action.id), "source_id": source.id,
         "rule_id": rule.id, "integration_id": str(integration.id), "user_id": str(user.id), "key_id": str(key.id),
-        "grant_id": str(grant.id), "tenant_id": VICTIM,
+        "grant_id": str(grant.id), "tenant_id": VICTIM, "run_id": "shr_" + "0" * 32,
     }
 
 
