@@ -20,14 +20,15 @@ from lg_sotf.domain.blind_audit import (
     draw,
     estimate,
     hidden_alert_view,
-    hidden_event_data,
     hidden_evidence_pack,
     new_seed,
     run_rate,
     sample_key,
     sample_size,
+    shown_while_hidden,
     total,
     wilson_bounds,
+    without_pending_related,
 )
 
 pytestmark = pytest.mark.unit
@@ -195,14 +196,19 @@ def test_hidden_views_withhold_the_ai_side() -> None:
     )
     assert view == {"id": "a", "title": "T", "disposition": None, "confidence": None, "threat_score": None,
                     "priority": None, "summary": HIDDEN, "findings": [], "hidden_for_blind_audit": True}
-    assert hidden_event_data("note", {"text": "n"}) == {"text": "n"}
-    assert hidden_event_data("node.completed", {"verdict": "benign"}) == HIDDEN
+    assert shown_while_hidden("note") and shown_while_hidden("ingested")
+    assert not shown_while_hidden("node.completed") and not shown_while_hidden("escalation.created")
     pack = hidden_evidence_pack({
-        "alert": {"disposition": "benign", "summary": {}}, "timeline": [{"event_type": "ingested", "data": {"a": 1}}],
+        "alert": {"disposition": "benign", "summary": {}},
+        "timeline": [{"event_type": "ingested", "data": {"a": 1}}, {"event_type": "node.completed", "node": "close"}],
         "agents": {"triage": {}}, "investigation": {}, "human_oversight": {},
         "enrichment": {"observations": [1], "indicator_sightings": [2]}, "correlation": {"digest": {}},
+        "escalations": [{"summary": {"verdict": "benign"}}], "actions": [{"id": 1}], "feedback": [{"id": 2}],
+        "audit": {"entries": [{"details": {"verdict": "benign"}}], "chain_verification": {}},
     })
-    assert pack["alert"]["disposition"] is None and pack["timeline"][0]["data"] == {"a": 1}
+    assert pack["alert"]["disposition"] is None and pack["timeline"] == [{"event_type": "ingested", "data": {"a": 1}}]
+    assert pack["escalations"] == pack["actions"] == pack["feedback"] == []
+    assert pack["audit"] == {**HIDDEN, "entries": []}
     assert pack["agents"] == pack["investigation"] == pack["correlation"] == HIDDEN
     assert pack["enrichment"] == {**HIDDEN, "indicator_sightings": [2]} and pack["hidden_for_blind_audit"] is True
 
@@ -211,3 +217,15 @@ def test_total_sums_runs() -> None:
     a = LabelCounts(sampled=5, malicious=1, benign=3, unsure=1, agreed=3)
     b = LabelCounts(sampled=7, malicious=0, benign=2, unsure=0, agreed=2)
     assert total([a, b]) == LabelCounts(sampled=12, malicious=1, benign=5, unsure=1, agreed=5)
+
+
+def test_another_alerts_correlation_digest_drops_pending_samples() -> None:
+    summary = {"verdict": "benign", "correlation": {
+        "related_alert_ids": ["p1", "a2", "p2"], "related_count": 3,
+        "related_dispositions": {"benign": 2, "malicious": 1}, "score": 40}}
+    out = without_pending_related(summary, {"p1": "benign", "p2": None})
+    assert out["correlation"] == {"related_alert_ids": ["a2"], "related_count": 1,
+                                  "related_dispositions": {"benign": 1, "malicious": 1}, "score": 40}
+    assert out["verdict"] == "benign" and summary["correlation"]["related_count"] == 3  # a copy
+    assert without_pending_related(summary, {"other": "benign"}) == summary
+    assert without_pending_related({"verdict": "x"}, {"p1": "benign"}) == {"verdict": "x"}

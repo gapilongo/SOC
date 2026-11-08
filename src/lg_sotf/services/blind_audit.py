@@ -210,9 +210,14 @@ REPORT_NOTES = (
     "Each run draws a uniform random sample, with a seed the server chose and recorded, from the alerts "
     "automation closed in its window without a person involved and without a malicious verdict (its frame). "
     "Runs follow each other without gaps; time no run covered is listed as uncovered.",
-    "Until a sample is labelled, its alert's verdict, confidence, scores, routing, summary and reasoning are "
-    "hidden on every screen and API (alerts, timeline, evidence pack, MCP, live updates) for everyone in the "
-    "tenant, admins included, and the sample is left out of the value and detection reports.",
+    "From the moment an alert is sampled until it is labelled, everyone in the tenant (admins included) is "
+    "kept from its verdict: the alert routes and MCP withhold its disposition, scores, summary and findings; "
+    "its timeline shows only ingestion and notes; its escalations and response actions are not served and "
+    "audit details about it are redacted; its evidence pack withholds all of these; live updates carry no "
+    "data; it cannot be reprocessed; and it is left out of the value, detection and dashboard figures and of "
+    "other alerts' correlation digests. Before it was sampled its verdict was visible like any alert's (in "
+    "the console, live updates and exports taken then), and comparing exports taken before and after a run "
+    "reveals the dispositions of the sampled alerts in aggregate.",
     "The false-negative rate is stratified: each run's rate (malicious over malicious and benign labels) is "
     "weighted by its frame, so runs that drew different shares are not mixed up. The 95% interval is Wilson's "
     "on Kish's effective sample size; each run also shows its own Wilson interval.",
@@ -453,10 +458,10 @@ class BlindAuditService:
         # Closed by automation, the decision not applied yet (a finished re-triage run has applied it).
         if alert.status != "closed" or alert.summary.get("analyst_decision") is not None:
             return None
-        if alert.summary.get(BLIND_AUDIT_REVIEW_KEY) != escalation.id:
-            await self._repos.alerts.update(tenant_id, alert.id, summary={"blind_audit_review": escalation.id})
         try:
-            queued = await alert_changes.request_reprocess(self._repos, self._audit, tenant_id, actor, alert.id)
+            queued = await alert_changes.request_reprocess(
+                self._repos, self._audit, tenant_id, actor, alert.id, summary={"blind_audit_review": escalation.id}
+            )
         except InvalidTransition:
             log.info("blind_audit.requeue_skipped")
             return None

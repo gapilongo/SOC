@@ -293,9 +293,38 @@ def hidden_alert_view(view: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
-def hidden_event_data(event_type: str, data: Any) -> Any:
-    """A timeline event's data while the alert is hidden: kept for ingestion and notes, else the marker."""
-    return data if event_type in VISIBLE_EVENT_TYPES else dict(HIDDEN)
+def shown_while_hidden(event_type: str) -> bool:
+    """Whether a timeline event is shown while its alert is hidden: ingestion and notes only (the workflow's
+    events would reveal its path, e.g. gate straight to close)."""
+    return event_type in VISIBLE_EVENT_TYPES
+
+
+def related_alert_ids(summary: Mapping[str, Any]) -> List[str]:
+    """The alerts a summary's correlation digest names."""
+    ids = _mapping(summary.get("correlation")).get("related_alert_ids")
+    return [str(i) for i in ids] if isinstance(ids, list) else []
+
+
+def without_pending_related(summary: Mapping[str, Any], pending: Mapping[str, Optional[str]]) -> Dict[str, Any]:
+    """Another alert's summary without the pending samples among its correlated alerts: their ids leave
+    ``related_alert_ids`` and their dispositions leave ``related_dispositions`` (and ``related_count``)."""
+    correlation = _mapping(summary.get("correlation"))
+    named = related_alert_ids(summary)
+    gone = [i for i in named if i in pending]
+    if not gone:
+        return dict(summary)
+    counts = dict(_mapping(correlation.get("related_dispositions")))
+    for alert_id in gone:
+        key = str(pending[alert_id] or "undecided")
+        if isinstance(counts.get(key), int) and counts[key] > 0:
+            counts[key] -= 1
+            if counts[key] == 0:
+                del counts[key]
+    filtered = {**dict(correlation), "related_alert_ids": [i for i in named if i not in pending],
+                "related_dispositions": counts}
+    if isinstance(correlation.get("related_count"), int):
+        filtered["related_count"] = max(0, correlation["related_count"] - len(gone))
+    return {**dict(summary), "correlation": filtered}
 
 
 def hidden_evidence_pack(pack: Mapping[str, Any]) -> Dict[str, Any]:
@@ -303,12 +332,14 @@ def hidden_evidence_pack(pack: Mapping[str, Any]) -> Dict[str, Any]:
     out = dict(pack)
     out["alert"] = hidden_alert_view(_mapping(pack.get("alert")))
     out["timeline"] = [
-        {**dict(e), "data": hidden_event_data(str(e.get("event_type")), e.get("data"))}
-        for e in pack.get("timeline") or []
-        if isinstance(e, Mapping)
+        dict(e) for e in pack.get("timeline") or [] if isinstance(e, Mapping) and shown_while_hidden(str(e.get("event_type")))
     ]
     for key in ("agents", "investigation", "human_oversight"):
         out[key] = dict(HIDDEN)
+    # Escalations, response actions, analyst feedback and audit details name the verdict too.
+    for key in ("escalations", "actions", "feedback"):
+        out[key] = []
+    out["audit"] = {**dict(HIDDEN), "entries": []}
     enrichment = _mapping(pack.get("enrichment"))
     out["enrichment"] = {**dict(HIDDEN), "indicator_sightings": enrichment.get("indicator_sightings") or []}
     out["correlation"] = dict(HIDDEN)

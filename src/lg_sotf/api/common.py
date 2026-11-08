@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 from uuid import UUID
@@ -22,8 +23,15 @@ from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
 from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
-from lg_sotf.domain.blind_audit import HIDDEN, HIDDEN_ALERT_FIELDS, HIDDEN_KEY
+from lg_sotf.domain.blind_audit import (
+    HIDDEN,
+    HIDDEN_ALERT_FIELDS,
+    HIDDEN_KEY,
+    related_alert_ids,
+    without_pending_related,
+)
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
@@ -63,16 +71,21 @@ def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[
         raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
 
 
-def alert_out(alert: AlertListItem, *, hidden: bool = False) -> AlertOut:
-    """``hidden``: the alert waits for its blind-audit label, so its AI side is withheld."""
+def alert_out(alert: AlertListItem, *, view: Optional[BlindView] = None) -> AlertOut:
+    """``view``: which alerts wait for their blind-audit label (this one's AI side is then withheld, and
+    another's correlation digest no longer names them)."""
     preview = entities_preview(alert.entities)
     out = AlertOut.model_validate(alert).model_copy(
         update={"entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None}
     )
-    return out.model_copy(update=_hidden_fields()) if hidden else out
+    if view is None:
+        return out
+    if view.hides(alert.id):
+        return out.model_copy(update=_hidden_fields())
+    return out.model_copy(update={"summary": without_pending_related(alert.summary, view.pending)})
 
 
-def alert_detail_out(alert: Alert, *, hidden: bool = False) -> AlertDetailOut:
+def alert_detail_out(alert: Alert, *, view: Optional[BlindView] = None) -> AlertDetailOut:
     preview = entities_preview(alert.entities)
     out = AlertDetailOut.model_validate(alert).model_copy(
         update={
@@ -80,7 +93,32 @@ def alert_detail_out(alert: Alert, *, hidden: bool = False) -> AlertDetailOut:
             "findings": [FindingOut.model_validate(f) for f in findings(alert.summary)],
         }
     )
-    return out.model_copy(update={**_hidden_fields(), "findings": []}) if hidden else out
+    if view is None:
+        return out
+    if view.hides(alert.id):
+        return out.model_copy(update={**_hidden_fields(), "findings": []})
+    return out.model_copy(update={"summary": without_pending_related(alert.summary, view.pending)})
+
+
+@dataclass(frozen=True)
+class BlindView:
+    """The pending blind-audit samples among some alerts and the alerts their correlation digests name."""
+
+    pending: Mapping[str, Optional[str]]
+
+    def hides(self, alert_id: str) -> bool:
+        return alert_id in self.pending
+
+
+async def blind_view(ctx: ApiContext, tenant_id: str, alerts: Sequence[AlertListItem]) -> BlindView:
+    ids = [a.id for a in alerts] + [r for a in alerts for r in related_alert_ids(a.summary)]
+    return BlindView(await ctx.repos.blind_audit.pending_dispositions(tenant_id, ids))
+
+
+async def refuse_hidden(ctx: ApiContext, tenant_id: str, alert_id: str, resource: str, resource_id: str) -> None:
+    """``NotFound`` for a resource of an alert waiting for its blind-audit label (it would name the verdict)."""
+    if await hidden_alert_ids(ctx, tenant_id, [alert_id]):
+        raise NotFound(resource, resource_id)
 
 
 def _hidden_fields() -> Dict[str, Any]:

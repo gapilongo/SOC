@@ -27,7 +27,14 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from lg_sotf.api.auth.deps import CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import escalations_out, invalidate_verdicts, one_escalation_out, user_ref
+from lg_sotf.api.common import (
+    escalations_out,
+    hidden_alert_ids,
+    invalidate_verdicts,
+    one_escalation_out,
+    refuse_hidden,
+    user_ref,
+)
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import (
@@ -152,7 +159,9 @@ async def list_escalations(
         limit=limit,
         cursor=cursor,
     )
-    items = await escalations_out(ctx, principal.tenant_id, page.items)
+    hidden = await hidden_alert_ids(ctx, principal.tenant_id, [e.alert_id for e in page.items])
+    # A page may then hold fewer than ``limit`` escalations; ``next_cursor`` still continues it.
+    items = await escalations_out(ctx, principal.tenant_id, [e for e in page.items if e.alert_id not in hidden])
     return PageOut[EscalationOut](items=items, next_cursor=page.next_cursor)
 
 
@@ -161,9 +170,9 @@ async def get_escalation(
     escalation_id: str, request: Request, principal: Principal = Depends(require(VIEWER))
 ) -> EscalationOut:
     ctx = get_ctx(request)
-    return await one_escalation_out(
-        ctx, principal.tenant_id, await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
-    )
+    escalation = await ctx.repos.escalations.get(principal.tenant_id, escalation_id)
+    await refuse_hidden(ctx, principal.tenant_id, escalation.alert_id, "escalation", escalation_id)
+    return await one_escalation_out(ctx, principal.tenant_id, escalation)
 
 
 @escalations.post("/{escalation_id}/claim", response_model=EscalationOut, summary="Claim (assign to yourself)")
@@ -243,14 +252,17 @@ async def list_actions(
         limit=limit,
         cursor=cursor,
     )
-    items = await actions_out(ctx, principal.tenant_id, page.items)
+    hidden = await hidden_alert_ids(ctx, principal.tenant_id, [a.alert_id for a in page.items])
+    items = await actions_out(ctx, principal.tenant_id, [a for a in page.items if a.alert_id not in hidden])
     return PageOut[ActionOut](items=items, next_cursor=page.next_cursor)
 
 
 @actions.get("/{action_id}", response_model=ActionOut, summary="Response action detail")
 async def get_action(action_id: UUID, request: Request, principal: Principal = Depends(require(VIEWER))) -> ActionOut:
     ctx = get_ctx(request)
-    return await one_action_out(ctx, principal.tenant_id, await ctx.repos.actions.get(principal.tenant_id, action_id))
+    action = await ctx.repos.actions.get(principal.tenant_id, action_id)
+    await refuse_hidden(ctx, principal.tenant_id, action.alert_id, "response action", str(action_id))
+    return await one_action_out(ctx, principal.tenant_id, action)
 
 
 async def _review_action(

@@ -38,7 +38,7 @@ from lg_sotf.compliance.canonical import jsonable, optional_signing_key, seal
 from lg_sotf.compliance.evidence_html import AGENT_STEPS, render_evidence_html
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Feedback, Repositories, ResponseAction, TraceStep
-from lg_sotf.domain.blind_audit import hidden_evidence_pack
+from lg_sotf.domain.blind_audit import hidden_evidence_pack, related_alert_ids, without_pending_related
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
@@ -468,6 +468,12 @@ def human_oversight(
     }
 
 
+async def _pending_samples(repos: Repositories, tenant_id: str, alert: Alert, conn: Connection) -> Dict[str, Optional[str]]:
+    """Blind-audit samples waiting for a label among this alert and the alerts its correlation names."""
+    ids = [alert.id, *related_alert_ids(_obj(alert.summary))]
+    return await repos.blind_audit.pending_dispositions(tenant_id, ids, conn=conn)
+
+
 def _sealed(pack: Dict[str, Any], settings: Settings, *, hidden: bool) -> Dict[str, Any]:
     """The sealed pack. ``hidden``: the alert waits for its blind-audit label, so the pack withholds the AI's
     side, like every other view of the alert (:func:`lg_sotf.domain.blind_audit.hidden_evidence_pack`)."""
@@ -495,10 +501,10 @@ async def build_evidence_pack(
         audit, audit_truncated = await _audit_entries(
             conn, tenant_id, alert_id, [e.id for e in escalations], [str(a.id) for a in actions]
         )
-        hidden = bool(await repos.blind_audit.pending_alert_ids(tenant_id, [alert_id], conn=conn))
+        pending = await _pending_samples(repos, tenant_id, alert, conn)
     chain_since = audit[0]["ts"] if audit else None
     chain = await repos.audit.verify_chain(tenant_id, chain_since) if audit else None
-    summary = cast("AlertSummary", _obj(alert.summary))
+    summary = cast("AlertSummary", without_pending_related(_obj(alert.summary), pending))
     rollbacks = _rollback_links(actions)
     analysis = _obj(summary.get("analysis"))
     pack: Dict[str, Any] = {
@@ -553,7 +559,7 @@ async def build_evidence_pack(
             "investigation_truncated": len(trace) > MAX_TRACE_STEPS,
         },
     }
-    return _sealed(pack, settings, hidden=hidden)
+    return _sealed(pack, settings, hidden=alert_id in pending)
 
 
 __all__ = [

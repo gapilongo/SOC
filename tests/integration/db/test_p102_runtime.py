@@ -9,35 +9,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Dict
 
-import asyncpg
 import pytest
 
 from lg_sotf.db.repos import Repositories
-from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
+from tests.integration.db._support import TENANT_A, TENANT_B, attempt_as, closed_alert_as
 
 pytestmark = pytest.mark.asyncio
 
 
-async def _closed(app: Repositories, owner: Repositories, tenant: str) -> str:
-    alert_id = await make_alert(app, tenant)
-    async with owner.db.system_tx() as conn:
-        await conn.execute("UPDATE alerts SET status='closed', disposition='benign', closed_at=now() - interval '1 hour' "
-                           "WHERE tenant_id=$1 AND id=$2", tenant, alert_id)
-    return alert_id
-
-
-async def _attempt(app: Repositories, sql: str, *args: object) -> str:
-    try:
-        async with app.db.tenant_tx(TENANT_A) as conn:
-            await conn.execute(sql, *args)
-    except asyncpg.PostgresError as exc:
-        return type(exc).__name__
-    return "ALLOWED"
-
-
 async def test_runtime_role_blind_audit_integrity(app: Repositories, repos: Repositories) -> None:
-    a1, a2, _ = [await _closed(app, repos, TENANT_A) for _ in range(3)]
-    b1 = await _closed(app, repos, TENANT_B)
+    a1, a2, _ = [await closed_alert_as(app, repos, TENANT_A) for _ in range(3)]
+    b1 = await closed_alert_as(app, repos, TENANT_B)
     now = datetime.now(UTC)
     run = await app.blind_audit.create_run(
         TENANT_A, since=now - timedelta(days=1), until=now, seed=1, sample_rate=None, min_sample=0, fixed_size=1,
@@ -54,32 +36,32 @@ async def test_runtime_role_blind_audit_integrity(app: Repositories, repos: Repo
         "UPDATE blind_audit_items SET ai_class = 'malicious' WHERE id = $1",
         "DELETE FROM blind_audit_items WHERE id = $1",
     ):
-        results[stmt] = await _attempt(app, stmt, item.id)
+        results[stmt] = await attempt_as(app, stmt, item.id)
     for stmt in ("DELETE FROM blind_audit_runs", "UPDATE blind_audit_runs SET frame_size = 0"):
-        results[stmt] = await _attempt(app, stmt)
-    results["insert prelabelled"] = await _attempt(
+        results[stmt] = await attempt_as(app, stmt)
+    results["insert prelabelled"] = await attempt_as(
         app,
         "INSERT INTO blind_audit_items (tenant_id, run_id, alert_id, sample_rank, ai_class, label, agreement,"
         " labelled_at, labelled_by_actor) VALUES ($1, $2, $3, 2, 'benign', 'benign', true, now(), 'x')",
         TENANT_A, run.id, a2,
     )
-    results["insert beyond the run's sample"] = await _attempt(
+    results["insert beyond the run's sample"] = await attempt_as(
         app,
         "INSERT INTO blind_audit_items (tenant_id, run_id, alert_id, sample_rank, ai_class) VALUES ($1, $2, $3, 2, 'benign')",
         TENANT_A, run.id, a2,
     )
-    results["cross-tenant insert"] = await _attempt(
+    results["cross-tenant insert"] = await attempt_as(
         app,
         "INSERT INTO blind_audit_items (tenant_id, run_id, alert_id, sample_rank, ai_class) VALUES ($1, $2, $3, 1, 'benign')",
         TENANT_B, run.id, b1,
     )
-    results["recorded seed claimed by a caller"] = await _attempt(
+    results["recorded seed claimed by a caller"] = await attempt_as(
         app,
         "INSERT INTO blind_audit_runs (tenant_id, window_start, window_end, seed, seed_source, min_sample, frame_size, "
         "sample_size, trigger) VALUES ($1, now() - interval '2 days', now() - interval '1 day', 1, 'server', 0, 0, 0, 'api')",
         TENANT_A,
     )
-    results["delete labelled alert"] = await _attempt(app, "DELETE FROM alerts WHERE id = $1", a1)
+    results["delete labelled alert"] = await attempt_as(app, "DELETE FROM alerts WHERE id = $1", a1)
     allowed = [k for k, v in results.items() if v == "ALLOWED"]
     assert allowed == [], results
     assert results["insert prelabelled"] == "InsufficientPrivilegeError"

@@ -8,11 +8,14 @@
   and reasoning shown, with the agreement. A malicious label opens a normal
   escalation for the alert; deciding it re-triages the alert with the
   analyst's decision.
-- Until a sample is labelled, its alert's verdict, scores, summary and
-  reasoning are hidden on every screen and API for everyone in the tenant
-  (alerts, timeline, evidence pack, MCP, live updates), and the alert is left
-  out of the value and detection reports. Alerts carry
-  `hidden_for_blind_audit` while that is so.
+- From the moment an alert is sampled until it is labelled, its verdict is
+  withheld from everyone in the tenant: the alert routes and MCP (alerts
+  carry `hidden_for_blind_audit`), its timeline (ingestion and notes only),
+  its escalations, response actions and audit details, its evidence pack
+  and live updates; it cannot be reprocessed, and it is left out of the
+  value, detection and dashboard figures and of other alerts' correlation.
+  Blindness starts at sampling: earlier views and exports showed the verdict
+  like any alert's.
 - Samples are drawn every week when the tenant setting `blind_audit` is on
   (2% of auto-closed alerts, at least 5 a week by default; off until
   enabled), on demand with `lg-sotf audit-sample --tenant T` (also the

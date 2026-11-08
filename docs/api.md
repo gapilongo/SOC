@@ -563,12 +563,21 @@ run takes `seed` (`400 seed_needs_dry_run` otherwise). `GET
 /reports/blind-audit?from=&to=` returns the stratified estimate
 (docs/reporting.md, "Blind audit").
 
-While an alert waits for its blind-audit label, `GET /alerts`,
-`GET /alerts/{id}`, its events, its evidence pack and WebSocket events
-withhold its AI side for every caller: `hidden_for_blind_audit: true`,
-`disposition`, `confidence`, `threat_score` and `priority` null, `summary`
-`{"hidden_for_blind_audit": true}`, no `findings`, and a `disposition`
-filter leaves it out.
+While an alert waits for its blind-audit label, its AI side is withheld
+from every caller: `GET /alerts` and `GET /alerts/{id}` return
+`hidden_for_blind_audit: true`, `disposition`, `confidence`, `threat_score`
+and `priority` null, `summary` `{"hidden_for_blind_audit": true}` and no
+`findings`, and a `disposition` filter leaves it out; `GET
+/alerts/{id}/events` returns only `ingested` and `note` events; its
+escalations and response actions are `404` (`GET /escalations/{id}`,
+`/escalations/{id}/response-preview`, `/actions/{id}`) and left out of `GET
+/escalations` and `GET /actions`; `GET /audit` entries about it carry
+`details` `{"hidden_for_blind_audit": true}` and `redacted: true`; the
+evidence pack withholds every section that names the verdict; WebSocket
+events carry no data; `POST /alerts/{id}/reprocess` is `409
+hidden_for_blind_audit`; `GET /dashboard/summary` counts leave it out; and
+other alerts' `summary.correlation` no longer lists it in
+`related_alert_ids` or counts it in `related_dispositions`.
 
 ### Audit log
 

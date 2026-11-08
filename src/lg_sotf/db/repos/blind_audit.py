@@ -420,6 +420,22 @@ class BlindAuditRepo(Repository):
             )
         return {str(r["alert_id"]) for r in rows}
 
+    async def pending_dispositions(
+        self, tenant_id: str, alert_ids: Sequence[str], *, conn: Optional[Connection] = None
+    ) -> Dict[str, Optional[str]]:
+        """The alerts among ``alert_ids`` that wait for a blind-audit label, with their disposition."""
+        if not alert_ids:
+            return {}
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                "SELECT i.alert_id, a.disposition FROM blind_audit_items i "
+                "JOIN alerts a ON a.tenant_id = i.tenant_id AND a.id = i.alert_id "
+                "WHERE i.tenant_id = $1 AND i.label IS NULL AND i.alert_id = ANY($2::text[])",
+                tenant_id,
+                list(dict.fromkeys(alert_ids)),
+            )
+        return {str(r["alert_id"]): r["disposition"] for r in rows}
+
     async def db_now(self, tenant_id: str, *, conn: Optional[Connection] = None) -> datetime:
         """The database's clock (windows end before closes that are still committing)."""
         async with self._tenant(tenant_id, conn) as c:

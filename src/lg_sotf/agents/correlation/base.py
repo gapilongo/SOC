@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
@@ -176,15 +176,7 @@ class CorrelationAgent(BaseAgent):
             await ctx.repos.indicators.add_sightings(
                 ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
             )
-        related = []
-        if hashed:
-            related = await ctx.repos.indicators.related_alerts(
-                ctx.tenant_id,
-                [(i.type, h) for i, h in hashed],
-                since=now - self.window,
-                limit=self.max_related,
-                exclude_alert_id=ctx.alert_id,
-            )
+        related = await self._related(ctx, [(i.type, h) for i, h in hashed], now)
 
         type_counts: Dict[str, int] = {}
         for ind in indicators:
@@ -284,6 +276,19 @@ class CorrelationAgent(BaseAgent):
                     }
                 )
         return out
+
+    async def _related(self, ctx: AgentContext, keys: List[Tuple[str, str]], now: datetime) -> List[Any]:
+        """Alerts sharing an indicator within the window. A sample waiting for its blind-audit label is left
+        out: its disposition must not reach this alert's digest or the model (it is hidden until labelled)."""
+        if not keys or ctx.repos is None:
+            return []
+        related = await ctx.repos.indicators.related_alerts(
+            ctx.tenant_id, keys, since=now - self.window, limit=self.max_related, exclude_alert_id=ctx.alert_id
+        )
+        if not related:
+            return []
+        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
+        return [r for r in related if r.alert_id not in hidden]
 
     @staticmethod
     def _rule_score(related: List[Any], indicators: List[Indicator], burst: bool) -> int:

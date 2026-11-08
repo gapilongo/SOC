@@ -171,19 +171,39 @@ so a recorded run's window and seed re-draw that run's sample exactly.
 **Labelling.** The Blind audit page (analysts and admins, signed in as
 themselves) shows each sample's source, times, entities, normalized fields
 and source event, and asks for `malicious`, `benign` or `unsure` (keys M,
-B, U; N for the next sample). Items carry no alert id. **Until the label
-exists the alert's AI side is hidden everywhere, for everyone in the tenant,
-admins and platform admins included**: `GET /alerts/{id}` and `GET /alerts`
-return `hidden_for_blind_audit: true` with `disposition`, `confidence`,
-`threat_score` and `priority` null, `summary` `{"hidden_for_blind_audit":
-true}` and no `findings`; a `disposition` filter never returns the sample;
-the timeline keeps only ingestion and notes (other events carry the marker
-as data); the evidence pack withholds the alert's verdict, the timeline's
-workflow data, the agents, investigation, enrichment, correlation and
-oversight sections; MCP tools read the same routes; WebSocket events about
-the alert go out without data; and the value and detection reports leave
-the sample out. MSSP staff under a grant may label; their labels are
-attributed to their organisation.
+B, U; N for the next sample). Items carry no alert id. **From the moment
+an alert is sampled until it is labelled, its AI side is withheld from
+everyone in the tenant, admins and platform admins included:**
+
+* `GET /alerts/{id}` and `GET /alerts` return `hidden_for_blind_audit:
+  true` with `disposition`, `confidence`, `threat_score` and `priority`
+  null, `summary` `{"hidden_for_blind_audit": true}` and no `findings`; a
+  `disposition` filter never returns the sample. MCP tools read the same
+  routes;
+* its timeline returns only its ingestion and notes (the workflow's events
+  would show its path, for example gate straight to close);
+* its escalations and response actions are not served (`404`, and left out
+  of lists) and audit entries about it come back with `details` replaced and
+  `redacted: true`;
+* its evidence pack withholds the alert's verdict, the workflow events, the
+  agents, investigation, enrichment, correlation, oversight, escalation,
+  action, feedback and audit sections;
+* WebSocket events about it go out without data;
+* it cannot be reprocessed (`409 hidden_for_blind_audit`): a new run would
+  write a new verdict;
+* it is left out of the value, detection and dashboard figures, and other
+  alerts' correlation digests no longer name it or count its disposition
+  (the correlation agent leaves it out of new digests; digests stored
+  earlier are filtered when served).
+
+**Blindness starts when the alert is sampled.** Until then its verdict was
+visible like any alert's: an analyst may have seen it in the console or the
+live feed, and exports taken earlier include it. Comparing a value or
+detection CSV export taken before a run with one taken after reveals the
+dispositions of the sampled alerts in aggregate. Free-text reasoning another
+alert's analysis wrote before the sample was drawn is not rewritten. MSSP
+staff under a grant may label; their labels are attributed to their
+organisation.
 
 The label response, and later reads, add `reveal`: the AI's class when the
 alert was sampled, the agreement, confidence, threat score, routing code,
@@ -342,10 +362,10 @@ can take seconds the first time; prefer monthly windows for routine use.
 * **Accuracy** covers escalated alerts only and scores the first escalation's
   verdict; attached (grouped) alerts are not samples of their own.
 * **Model attribution** exists only for alerts processed after this release.
-* **Blind audit**: samples waiting for a label are left out of the value and
-  detection figures until labelled. The Overview's disposition counts (24-hour
-  aggregates) still include them, and another alert's correlation digest may
-  count them among related dispositions.
+* **Blind audit**: samples waiting for a label are left out of the value,
+  detection and dashboard figures until labelled, so those figures change
+  when a run is drawn and again when its samples are labelled. Blindness
+  covers the time after sampling only (see "Blind audit" above).
 * **Backtest context:** suppression rules and the verdict cache are skipped
   (both derive from the decisions being scored). Correlation and history
   lookups see the tenant's data as of each alert's ingestion (sightings

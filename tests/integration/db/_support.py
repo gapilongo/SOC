@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+import asyncpg
 import psycopg
 import pytest
 from pydantic import SecretStr
@@ -236,3 +237,22 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         tenant_id, mssp, "analyst", reason="seed", created_by="seed", expires_at=now + timedelta(days=1)
     )
     return alert_id
+
+
+async def closed_alert_as(app: Repositories, owner: Repositories, tenant: str) -> str:
+    """An alert inserted by ``app`` (the runtime role) and closed by automation an hour ago."""
+    alert_id = await make_alert(app, tenant)
+    async with owner.db.system_tx() as conn:
+        await conn.execute("UPDATE alerts SET status='closed', disposition='benign', closed_at=now() - interval '1 hour' "
+                           "WHERE tenant_id=$1 AND id=$2", tenant, alert_id)
+    return alert_id
+
+
+async def attempt_as(app: Repositories, sql: str, *args: object, tenant: str = TENANT_A) -> str:
+    """Run ``sql`` in ``app``'s tenant transaction: ``ALLOWED``, or the name of the refusing error."""
+    try:
+        async with app.db.tenant_tx(tenant) as conn:
+            await conn.execute(sql, *args)
+    except asyncpg.PostgresError as exc:
+        return type(exc).__name__
+    return "ALLOWED"

@@ -15,7 +15,7 @@ from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
-from lg_sotf.api.common import alert_detail_out, alert_out, aware, hidden_alert_ids
+from lg_sotf.api.common import alert_detail_out, alert_out, aware, blind_view, hidden_alert_ids
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertCountsOut, AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
@@ -23,7 +23,7 @@ from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
-from lg_sotf.domain.blind_audit import hidden_event_data
+from lg_sotf.domain.blind_audit import shown_while_hidden
 from lg_sotf.domain.events import publish_event
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
 from lg_sotf.observability.logging import get_logger, log_failure
@@ -84,8 +84,8 @@ async def list_alerts(
         limit=limit,
         cursor=cursor,
     )
-    hidden = await hidden_alert_ids(ctx, principal.tenant_id, [a.id for a in page.items])
-    return PageOut[AlertOut](items=[alert_out(a, hidden=a.id in hidden) for a in page.items], next_cursor=page.next_cursor)
+    view = await blind_view(ctx, principal.tenant_id, page.items)
+    return PageOut[AlertOut](items=[alert_out(a, view=view) for a in page.items], next_cursor=page.next_cursor)
 
 
 def counts_cache_key(ctx: ApiContext, tenant_id: str, closed_from: datetime, closed_to: Optional[datetime]) -> str:
@@ -129,7 +129,7 @@ async def alert_counts(
 async def get_alert(alert_id: str, request: Request, principal: Principal = Depends(require(VIEWER))) -> AlertDetailOut:
     ctx = get_ctx(request)
     alert = await ctx.repos.alerts.get(principal.tenant_id, alert_id)
-    return alert_detail_out(alert, hidden=bool(await hidden_alert_ids(ctx, principal.tenant_id, [alert_id])))
+    return alert_detail_out(alert, view=await blind_view(ctx, principal.tenant_id, [alert]))
 
 
 @router.get("/{alert_id}/events", response_model=PageOut[AlertEventOut], summary="Alert timeline (oldest first)")
@@ -144,7 +144,8 @@ async def alert_events(
     page = await alert_changes.timeline(ctx.repos, principal.tenant_id, alert_id, limit=limit, cursor=cursor)
     items = [AlertEventOut.model_validate(e) for e in page.items]
     if await hidden_alert_ids(ctx, principal.tenant_id, [alert_id]):
-        items = [e.model_copy(update={"data": hidden_event_data(e.event_type, e.data)}) for e in items]
+        # Only ingestion and notes: the workflow's events would reveal its path (gate straight to close).
+        items = [e for e in items if shown_while_hidden(e.event_type)]
     return PageOut[AlertEventOut](items=items, next_cursor=page.next_cursor)
 
 
@@ -172,6 +173,11 @@ async def add_note(
 async def reprocess(alert_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> ReprocessOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
+    if await hidden_alert_ids(ctx, tenant_id, [alert_id]):
+        raise ApiError(
+            409, "hidden_for_blind_audit",
+            "the alert waits for its blind-audit label; label it first (a new run would reveal the verdict)",
+        )
     try:
         alert = await alert_changes.request_reprocess(
             ctx.repos, AuditLogger(ctx.repos), tenant_id, principal.actor, alert_id

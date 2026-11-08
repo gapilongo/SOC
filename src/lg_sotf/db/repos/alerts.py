@@ -452,7 +452,8 @@ class AlertsRepo(Repository):
     ) -> DashboardCounts:
         """Counts of alerts ingested since ``since`` by status, severity and disposition.
 
-        Alerts without a disposition are counted under ``"undecided"``.
+        Alerts without a disposition are counted under ``"undecided"``. Alerts waiting for their
+        blind-audit label are left out: windows that differ by one hour would reveal their disposition.
         """
         require_aware(since, "since")
         async with self._tenant(tenant_id, conn) as c:
@@ -463,6 +464,8 @@ class AlertsRepo(Repository):
                        status, severity, disposition, count(*) AS n
                 FROM alerts
                 WHERE tenant_id = $1 AND ingested_at >= $2
+                  AND NOT EXISTS (SELECT 1 FROM blind_audit_items b WHERE b.tenant_id = alerts.tenant_id
+                                  AND b.alert_id = alerts.id AND b.label IS NULL)
                 GROUP BY GROUPING SETS ((status), (severity), (disposition), ())
                 """,
                 tenant_id,

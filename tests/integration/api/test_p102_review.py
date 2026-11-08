@@ -100,7 +100,7 @@ async def test_F1_the_verdict_stays_hidden_on_every_alert_path_until_labelled(ap
         assert benign and alert_id not in {a["id"] for a in benign}, who
         events = (await api.client.get(f"{API}/alerts/{alert_id}/events", headers=headers)).json()["items"]
         by_type = {e["event_type"]: e["data"] for e in events}
-        assert by_type["node.completed"] == HIDDEN and by_type["note"] == {"text": "seen by a person"}, who
+        assert "node.completed" not in by_type and by_type["note"] == {"text": "seen by a person"}, who
         pack = await api.client.get(f"{API}/alerts/{alert_id}/evidence", headers=headers)
         assert pack.status_code == 200 and VERDICT_MARKER not in pack.text, who
         sealed = pack.json()
