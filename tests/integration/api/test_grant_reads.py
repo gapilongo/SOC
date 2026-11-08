@@ -46,6 +46,12 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
     rule = await api.repos.suppressions.create(TENANT_B, "noisy", {"title": "x"})
     integration = await api.repos.integrations.create(TENANT_B, "email", "Mail", config={"recipients": ["a@b.co"]})
     user = await api.user(TENANT_B, "admin")
+    now = datetime.now(UTC)
+    await api.repos.blind_audit.create_run(
+        TENANT_B, since=now - timedelta(days=7), until=now, seed=1, sample_rate=0.02, min_sample=0, fixed_size=None,
+        frame_size=1, items=[(alert_id, 1, "benign")], trigger="cli", created_by="seed",
+    )
+    item = (await api.repos.blind_audit.list_items(TENANT_B)).items[0]
     return {
         "alert_id": alert_id,
         "escalation_id": escalation.id,
@@ -55,6 +61,7 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
         "integration_id": str(integration.id),
         "user_id": str(user.id),
         "tenant_id": TENANT_B,
+        "item_id": str(item.id),
     }
 
 
