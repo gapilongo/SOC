@@ -9,8 +9,10 @@ the whole serialised alert:
 * False-positive signals can close low/medium alerts, so they come only from
   what the attacker does not write (:mod:`lg_sotf.domain.benign_evidence`):
   words of the detection rule's name with every attacker-named value masked
-  out, an alert whose only file hashes are the EICAR test file's, one of the
-  tenant's configured scanners among the entities, and environment tags in
+  out (words that name the detected activity, such as ``scheduled`` or
+  ``scan``, only with a trusted qualifier), an alert whose only file hashes
+  are the EICAR test file's, one of the tenant's configured scanners among
+  the entities, and environment tags in
   the configured source id. The title never produces them: integrations
   build it from the names of the objects involved, and the attacker names
   those ("Scheduled task created: Windows Update Test"). Raw event fields,
@@ -77,7 +79,13 @@ from pydantic import BaseModel, Field
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult, refusal_digest
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain import routing
-from lg_sotf.domain.benign_evidence import KnownScanners, attacker_values, detector_words, eicar_only
+from lg_sotf.domain.benign_evidence import (
+    KnownScanners,
+    attacker_values,
+    detector_words,
+    eicar_only,
+    rule_name_keywords,
+)
 from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.registry import register_prompt
@@ -96,7 +104,6 @@ TP_KEYWORD_WEIGHTS: Dict[str, int] = {
     "anomaly": 10,
 }
 FP_KEYWORD_WEIGHTS: Dict[str, int] = {"test": -30, "selftest": -30, "scheduled": -20, "maintenance": -25}
-FP_KEYWORDS = ("test", "testing", "selftest", "scheduled", "maintenance", "update", "backup", "scan", "health_check", "monitoring")
 # True-positive evidence is matched on plain alphanumeric words ("mimikatz.exe" -> "mimikatz", "exe").
 _TP_WORD_RE = re.compile(r"[a-z0-9]+")
 _SOURCE_TOKEN_RE = re.compile(r"[^a-z0-9]+")
@@ -365,10 +372,12 @@ def _parse_time(value: Any) -> Optional[datetime]:
 
 def _score(alert: Mapping[str, Any], tp_words: FrozenSet[str], injected: bool, email_weight: int = 0) -> int:
     score = 50 + SEVERITY_WEIGHTS.get(str(alert.get("severity", "")).lower(), 0) + email_weight
-    words = trusted_words(alert) if not injected else frozenset()
+    test_environment = source_environment(alert) is not None
+    # Scanners only qualify "scan", which has no weight, so the score needs no tenant configuration.
+    words = rule_name_keywords(trusted_words(alert), test_environment=test_environment) if not injected else []
     score += sum(weight for keyword, weight in TP_KEYWORD_WEIGHTS.items() if _has_word(tp_words, keyword))
     score += sum(weight for keyword, weight in FP_KEYWORD_WEIGHTS.items() if keyword in words)
-    if source_environment(alert) is not None:
+    if test_environment:
         score -= 25
     if eicar_only(alert):
         score -= 25
@@ -410,17 +419,19 @@ def rule_indicators(
     scanners: Optional[KnownScanners] = None,
 ) -> Tuple[List[str], List[str]]:
     raw = _raw(alert)
-    words = trusted_words(alert)
     evidence = evidence_words(alert)
     injected = injection_suspected(alert)
     signals = _email_signals(phishing, injected)
+    test_environment = source_environment(alert) is not None
+    known_scanner = scanners is not None and scanners.matches(alert)
     # Injected text voids false-positive evidence taken from text; the source id, hashes and configuration still count.
-    fp = [f"{k}_detected" for k in FP_KEYWORDS if k in words] if not injected else []
-    if source_environment(alert) is not None:
+    words = trusted_words(alert) if not injected else frozenset()
+    fp = [f"{k}_detected" for k in rule_name_keywords(words, test_environment=test_environment, known_scanner=known_scanner)]
+    if test_environment:
         fp.append("test_environment")
     if eicar_only(alert):
         fp.append(EICAR_SIGNAL)
-    if scanners is not None and scanners.matches(alert):
+    if known_scanner:
         fp.append(SCANNER_SIGNAL)
     if signals is not None:
         fp += signals.fp

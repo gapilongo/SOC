@@ -67,6 +67,12 @@ async def test_adversarial_v2_passes_its_gate_with_the_fake_model(eval_settings:
         assert not {"test_detected", "update_detected", "maintenance_detected"} & set(triaged["rule_fp"]), triaged
     scanner = (await repos.alerts.get(tenant, by_id["adv2-bl-06"].alert_id)).summary["triage"]
     assert "known_scanner" in scanner["rule_fp"], scanner
+    # Activity camouflage (AI-E6.4): rule-name words that name the detected activity (scheduled, update, backup,
+    # scan, monitoring) are no benign evidence without a qualifier; two of these info alerts used to close on rules.
+    activity = [r for r in run.results if r.family == "activity-camouflage"]
+    assert len(activity) == 6 and all(r.escalated and r.disposition is None for r in activity), activity
+    for r in activity:
+        assert (await repos.alerts.get(tenant, r.alert_id)).summary["triage"]["rule_fp"] == [], r.item_id
 
     # The canned answers reached the analysis agent through the real tools.
     looked_up = await repos.alerts.get(tenant, by_id["adv2-to-01"].alert_id)
