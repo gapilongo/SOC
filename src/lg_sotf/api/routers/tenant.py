@@ -2,7 +2,8 @@
 """``/tenant/settings`` (admin): the tenant's policy sections.
 
 Autonomy, protected assets, LLM budget, review policy, tool keys, retention,
-sign-in security, reporting assumptions, blind audit sampling and phishing context.
+sign-in security, reporting assumptions, blind audit sampling, phishing context
+and the triage context (the tenant's known vulnerability scanners).
 
 ``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
 and deep model tiers and reports provider, model, latency and a sanitized
@@ -32,7 +33,9 @@ shows ``<name>_configured: true`` in their place. The response policy is
 validated with :func:`~lg_sotf.services.response.validate_response_settings`
 and the review policy with :class:`~lg_sotf.services.escalation.ReviewPolicy`,
 the ``phishing`` section (protected brands, executives, trusted
-``authserv-id`` values) with :class:`~lg_sotf.domain.phishing.PhishingSettings`;
+``authserv-id`` values) with :class:`~lg_sotf.domain.phishing.PhishingSettings`
+and the ``triage`` section (``known_scanners``: host names, IP addresses or
+CIDR ranges) with :class:`~lg_sotf.domain.benign_evidence.TriageSettings`;
 problems come back as 422 with ``details``.
 
 ``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
@@ -45,7 +48,7 @@ must stay within the install's ``retention.tenant_min_days`` ..
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Type
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type
 
 from fastapi import APIRouter, Body, Depends, Request
 from pydantic import BaseModel, ValidationError
@@ -66,6 +69,7 @@ from lg_sotf.api.schemas import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
+from lg_sotf.domain.benign_evidence import validate_triage_settings
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
 from lg_sotf.llm.usage import LLMUsageRow, get_usage_recorder
@@ -105,6 +109,11 @@ TOOL_KEYS = frozenset({"enabled", "api_key"})
 SECURITY_KEYS = frozenset({"require_mfa"})
 # Flat policy sections validated by their model (keys merge; null removes one).
 POLICY_SECTIONS: Dict[str, Type[BaseModel]] = {"reporting": ReportingPolicy, "blind_audit": BlindAuditPolicy}
+#: Sections replaced whole by a patch, with their validators.
+REPLACED_SECTIONS: Dict[str, Callable[[Any], Dict[str, Any]]] = {
+    "phishing": validate_phishing_settings,
+    "triage": validate_triage_settings,
+}
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOOL_PROVIDERS = 32
 MAX_INTERNAL_DOMAINS = 256
@@ -315,12 +324,14 @@ def _policy_section(
     return section
 
 
-def _phishing_section(value: Any, problems: List[str]) -> Optional[Dict[str, Any]]:
-    """The whole ``phishing`` section is replaced (it holds no secrets); ``null`` removes it."""
+def _replaced_section(
+    value: Any, validate: Callable[[Any], Dict[str, Any]], problems: List[str]
+) -> Optional[Dict[str, Any]]:
+    """A section replaced whole (``phishing``, ``triage``: no secrets); ``null`` removes it."""
     if value is None:
         return None
     try:
-        return validate_phishing_settings(value)
+        return validate(value)
     except ValueError as exc:
         problems.append(str(exc))
         return None
@@ -345,8 +356,8 @@ def build_patch(ctx: ApiContext, tenant: Tenant, body: Mapping[str, Any]) -> Dic
             patch[key] = _security_section(current.get("security"), value, problems)
         elif key in POLICY_SECTIONS:
             patch[key] = _policy_section(key, POLICY_SECTIONS[key], current.get(key), value, problems)
-        elif key == "phishing":
-            patch[key] = _phishing_section(value, problems)
+        elif key in REPLACED_SECTIONS:
+            patch[key] = _replaced_section(value, REPLACED_SECTIONS[key], problems)
         elif key == LLM_BUDGET_SETTING:
             problem = token_budget_problem(value)
             if problem is not None:

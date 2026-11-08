@@ -22,9 +22,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from lg_sotf.db.repos.usage import SAMPLE_SOURCE_ID
+from lg_sotf.domain.benign_evidence import EICAR_MD5, EICAR_SHA256
 
-EICAR_MD5 = "44d88612fea8a8f36de82e1278abb02f"
-EICAR_SHA256 = "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f"
 SAMPLE_NOTE = "Sample alert sent from the LG-SOTF getting-started checklist; all indicators are reserved test values."
 
 _SAMPLES: List[Dict[str, Any]] = [

@@ -377,6 +377,22 @@ async def test_dashboard_is_cached_per_tenant_and_usage_sums(api: ApiHarness) ->
     assert bad.status_code == 400
 
 
+async def test_tenant_triage_settings_known_scanners(api: ApiHarness) -> None:
+    """AI-E6.3: the tenant's scanners, the configured source of the ``known_scanner`` benign signal."""
+    admin = await api.login_headers(TENANT_A, "admin")
+    patch = {"triage": {"known_scanners": ["Scanner-01.corp.example", "192.0.2.0/28"]}}
+    ok = await api.client.patch("/api/v1/tenant/settings", json=patch, headers=admin)
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["settings"]["triage"] == {"known_scanners": ["scanner-01.corp.example", "192.0.2.0/28"]}
+    for bad in ({"known_scanners": ["not a host!"]}, {"scanners": []}, "scanner-01"):
+        rejected = await api.client.patch("/api/v1/tenant/settings", json={"triage": bad}, headers=admin)
+        assert rejected.status_code == 422 and "triage" in rejected.text, rejected.text
+    removed = await api.client.patch("/api/v1/tenant/settings", json={"triage": None}, headers=admin)
+    assert "triage" not in removed.json()["settings"]
+    analyst = await api.login_headers(TENANT_A, "analyst")
+    assert (await api.client.patch("/api/v1/tenant/settings", json=patch, headers=analyst)).status_code == 403
+
+
 async def test_concurrent_settings_patches_do_not_lose_updates(api: ApiHarness) -> None:
     """M3: nested sections are merged under a row lock, so both sub-keys survive."""
     import asyncio

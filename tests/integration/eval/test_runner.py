@@ -107,7 +107,7 @@ async def test_rejected_and_duplicate_events_are_errors_not_crashes(eval_runner:
     dataset = parse_dataset(
         '{"id": "bad", "source_type": "canonical", "alert": {"severity": "low"}, "expected": {"disposition": "benign"}}\n'
         '{"id": "ok", "source_type": "canonical", "alert": {"source_alert_id": "d-1", "title": "Scheduled backup test",'
-        ' "severity": "low"}, "expected": {"disposition": "benign"}}\n'
+        ' "rule_name": "scheduled-backup-test", "severity": "low"}, "expected": {"disposition": "benign"}}\n'
         '{"id": "dup", "source_type": "canonical", "alert": {"source_alert_id": "d-1", "title": "Scheduled backup test",'
         ' "severity": "low"}, "expected": {"disposition": "benign"}}\n'
     )

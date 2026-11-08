@@ -2,8 +2,8 @@
 
 One JSON object per line. An optional first line ``{"_meta": {...}}``
 describes the file (``synthetic``, ``description``, ``version`` and optional
-``tenant_settings`` applied to every evaluation tenant: ``tools.internal_domains``
-and the ``phishing`` section); every other line is an :class:`EvalItem`::
+``tenant_settings`` applied to every evaluation tenant: ``tools.internal_domains``,
+the ``phishing`` section and ``triage.known_scanners``); every other line is an :class:`EvalItem`::
 
     {"id": "syn-007",
      "source_type": "crowdstrike",          # canonical | splunk | crowdstrike | sentinel |
@@ -38,6 +38,7 @@ from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequ
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
+from lg_sotf.domain.benign_evidence import TriageSettings
 from lg_sotf.domain.phishing import PhishingSettings
 from lg_sotf.models.vocabulary import DISPOSITIONS as DISPOSITIONS
 from lg_sotf.models.vocabulary import Disposition
@@ -82,12 +83,13 @@ class EvalTools(BaseModel):
 
 
 class EvalTenantSettings(BaseModel):
-    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile)."""
+    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile, scanners)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tools: Optional[EvalTools] = None
     phishing: Optional[PhishingSettings] = None
+    triage: Optional[TriageSettings] = None
 
     def patch(self) -> Dict[str, Any]:
         """The tenant settings merge patch (only the sections that were given)."""

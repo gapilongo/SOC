@@ -46,6 +46,8 @@ class TenantSettingsDoc(TypedDict, total=False):
     #: Blind audit sampling of auto-closed alerts (lg_sotf.services.blind_audit).
     blind_audit: Dict[str, Any]
     phishing: Dict[str, Any]
+    #: Triage context (``known_scanners``; lg_sotf.domain.benign_evidence).
+    triage: Dict[str, Any]
     #: Set when the tenant's data was erased (compliance.tenant_data); never editable.
     erased_at: str
 
@@ -68,6 +70,7 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
         "reporting",
         "blind_audit",
         "phishing",
+        "triage",
     }
 )
 

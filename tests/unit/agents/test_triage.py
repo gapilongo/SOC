@@ -289,7 +289,8 @@ async def test_a_persuaded_model_cannot_pull_an_alert_into_the_triage_close_regi
     from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
-    alert = {"title": "Scheduled task created", "severity": "low", "source_id": "sysmon", "occurred_at": "2026-09-01T10:00:00Z"}
+    alert = {"title": "Scheduled job ran", "rule_name": "scheduled-job", "severity": "low", "source_id": "sysmon",
+             "occurred_at": "2026-09-01T10:00:00Z"}
     benign = {**ASSESSMENT, "threat_likelihood": 0, "false_positive_indicators": ["a", "b", "c", "d"], "true_positive_indicators": []}
     result = await TriageAgent(settings=settings, model_factory=factory(scripted(TriageAssessment=[benign]))).run(ctx(settings), alert)
     assert result.llm_used and result.rule_fp == ["scheduled_detected"]
@@ -306,7 +307,8 @@ async def test_refused_ambiguous_alert_is_never_closed_automatically(make_settin
     from lg_sotf.domain.routing import RoutingThresholds
 
     settings = make_settings()
-    alert = {"title": "Maintenance window login", "severity": "low", "source_id": "splunk-prod",
+    alert = {"title": "Maintenance window login", "rule_name": "maintenance-window-login", "severity": "low",
+             "source_id": "splunk-prod",
              "occurred_at": "2026-09-01T10:00:00Z", "entities": {"users": ["bob"]}}
     assert rule_confidence(alert) == 15
     model = scripted(TriageAssessment=[Refuse("cyber")])

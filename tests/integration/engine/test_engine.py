@@ -38,7 +38,7 @@ async def benign_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs:
         tenant_id,
         title="Scheduled backup maintenance test job",
         severity="low",
-        normalized={"entities": {"hosts": ["backup-01"]}},
+        normalized={"rule_name": "scheduled-backup-maintenance-test", "entities": {"hosts": ["backup-01"]}},
         **kwargs,
     )
 

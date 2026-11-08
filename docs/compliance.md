@@ -348,4 +348,6 @@ oversight and logging, or a customer asks for them, these features help:
 * [api.md](api.md): endpoint reference and roles;
 * [mcp.md](mcp.md): driving LG-SOTF from Claude or another MCP client
   (the `get_evidence_pack` tool);
-* [security.md](security.md): tenant isolation, secrets, audit log.
+* [security.md](security.md): tenant isolation, secrets, audit log;
+* [ai-system-card.md](ai-system-card.md): the AI system card, with the
+  risk-classification reasoning and the full EU AI Act and NIS2 mapping.
