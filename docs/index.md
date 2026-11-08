@@ -43,6 +43,7 @@
 | [Microsoft 365 mail](microsoft-mail.md) | Tenant admins | Removing reported messages and notifying reporters in Exchange Online |
 | [Microsoft Entra ID](microsoft-entra.md) | Tenant admins | Disabling, revoking sessions, resetting passwords and confirming compromise for a user |
 | [Microsoft Defender for Endpoint](microsoft-defender.md) | Tenant admins | Isolating devices, blocking indicators, quarantining files, collecting investigation packages |
+| [Microsoft SKU coverage matrix](microsoft-skus.md) | Tenant admins, MSSP pre-sales, security reviewers | Every Microsoft Graph, Defender for Endpoint and Log Analytics API LG-SOTF calls, with the licence it needs on Business Premium, E3 and E5, its permission, the Microsoft Learn source and lab evidence |
 
 Repository files: [README](../README.md), [CHANGELOG](../CHANGELOG.md),
 [SECURITY](../SECURITY.md) (vulnerability reporting),

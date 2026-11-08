@@ -385,6 +385,9 @@ Defender calls are limited client-side to 60 per minute per integration.
 * [Microsoft 365 mail](microsoft-mail.md)
 * [Microsoft Entra ID](microsoft-entra.md)
 * [Microsoft Defender for Endpoint](microsoft-defender.md)
+* [Microsoft SKU coverage matrix](microsoft-skus.md): every Microsoft API
+  LG-SOTF calls, with the licence it needs on Business Premium, E3 and E5,
+  its permission and the Microsoft Learn source
 
 Each page has the same sections: Overview, Actions and Microsoft calls,
 Permissions and setup, Verification, Rollback, Limits and licensing,
