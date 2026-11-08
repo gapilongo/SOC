@@ -63,15 +63,15 @@ def frame(
     return ids
 
 
-def test_audit_sample_draws_a_seeded_sample_and_records_the_frame(frame: List[str], migrated_database_url: str) -> None:
+def test_audit_sample_draws_with_a_server_seed_and_records_the_frame(frame: List[str], migrated_database_url: str) -> None:
     runner = CliRunner()
-    args = ["audit-sample", "--tenant", TENANT_A, "--from", "2026-10-05", "--to", "2026-10-12", "--seed", "99"]
+    window = ["--from", "2026-10-05", "--to", "2026-10-12"]
 
-    result = runner.invoke(cli, [*args, "--size", "4", "--json"])
+    result = runner.invoke(cli, ["audit-sample", "--tenant", TENANT_A, *window, "--size", "4", "--json"])
 
     assert result.exit_code == 0, result.output
     run = json.loads(result.stdout)
-    assert (run["frame_size"], run["sample_size"], run["seed"], run["trigger"]) == (12, 4, 99, "cli")
+    assert (run["frame_size"], run["sample_size"], run["trigger"], run["seed_source"]) == (12, 4, "cli", "server")
     assert run["window_start"] == "2026-10-05T00:00:00Z" and run["window_end"] == "2026-10-12T00:00:00Z"
 
     async def read(repos: Repositories) -> Any:
@@ -80,10 +80,22 @@ def test_audit_sample_draws_a_seeded_sample_and_records_the_frame(frame: List[st
         return items, actions
 
     items, actions = asyncio.run(_with_repos(migrated_database_url, read))
-    assert [i.alert_id for i in sorted(items, key=lambda i: i.sample_rank)] == draw(frame, 99, 4)
+    drawn = [i.alert_id for i in sorted(items, key=lambda i: i.sample_rank)]
+    assert drawn == draw(frame, run["seed"], 4)
     assert ("blind_audit.sampled", "cli") in actions
 
-    again = runner.invoke(cli, args)
-    assert again.exit_code != 0 and "already sampled" in again.output
+    # A seed of the operator's choosing is for dry runs, which re-draw the recorded run and record nothing.
+    chosen = runner.invoke(cli, ["audit-sample", "--tenant", TENANT_A, "--seed", "99"])
+    assert chosen.exit_code == 2 and "--dry-run" in chosen.output
+    dry = runner.invoke(
+        cli, ["audit-sample", "--tenant", TENANT_A, *window, "--size", "4", "--dry-run", "--seed", str(run["seed"]), "--json"]
+    )
+    assert dry.exit_code == 0, dry.output
+    assert json.loads(dry.stdout)["alert_ids"] == drawn
+    items_after, _ = asyncio.run(_with_repos(migrated_database_url, read))
+    assert len(items_after) == 4
+    # Runs follow each other without gaps.
+    again = runner.invoke(cli, ["audit-sample", "--tenant", TENANT_A, *window])
+    assert again.exit_code != 0 and "without gaps" in again.output
     missing = runner.invoke(cli, ["audit-sample", "--tenant", "no-such-tenant"])
     assert missing.exit_code != 0 and "does not exist" in missing.output

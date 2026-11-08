@@ -196,6 +196,7 @@ def _repos(case: Dict[str, Any]) -> Any:
         feedback=SimpleNamespace(list_for_alert=fake(case["feedback"])),
         indicators=SimpleNamespace(sightings_for_alert=fake(case["sightings"])),
         investigation_steps=SimpleNamespace(list_for_alert=fake(case["trace"])),
+        blind_audit=SimpleNamespace(pending_alert_ids=fake(set())),
         audit=SimpleNamespace(verify_chain=fake(ChainVerification(ok=True, first_bad_id=None))),
     )
 

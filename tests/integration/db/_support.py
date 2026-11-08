@@ -21,6 +21,8 @@ from lg_sotf.settings import DatabaseSettings
 
 TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
+# Acts like the production API/worker role (see tests/integration/db/conftest.py, ``app_db``).
+RUNTIME_ROLE = "pg_database_owner"
 
 
 def db_settings(url: str, **overrides: object) -> DatabaseSettings:
