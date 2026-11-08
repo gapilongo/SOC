@@ -1,8 +1,9 @@
 name: Claude Code Review
 
 on:
-  pull_request:
-    types: [opened, synchronize]
+  # Manual only until the CLAUDE_CODE_OAUTH_TOKEN secret is renewed: on every PR it failed after
+  # 2 s with is_error (an auth/credit failure, not a review). Restore the pull_request trigger then.
+  workflow_dispatch:
     # Optional: Only run on specific file changes
     # paths:
     #   - "src/**/*.ts"
