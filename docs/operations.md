@@ -304,14 +304,25 @@ runs never page anyone.
 | Queue backlog growing | `sum(lgsotf_queue_depth{stream!="dlq"})` increasing for 30 m and workers at max | page |
 | High-priority backlog | `lgsotf_queue_depth{stream="high"} > 50` for 15 m | page |
 | Dead letters | `increase(lgsotf_queue_depth{stream="dlq"}[15m]) > 0` | ticket (page if > 20) |
-| Run failures | `rate(lgsotf_runs_total{outcome=~"failed|dead_lettered"}[15m]) / rate(lgsotf_runs_total[15m]) > 0.05` | page |
+| Run failures | `sum(rate(lgsotf_runs_total{outcome=~"failed\|dead_lettered"}[15m])) / sum(rate(lgsotf_runs_total[15m])) > 0.05` | page |
 | No scheduler leader | no scheduler pod logged leadership in 5 m, or `lgsotf_queue_depth` stops updating | page |
-| LLM errors | `rate(lgsotf_llm_calls_total{mode="live",outcome=~"error|invalid_output"}[10m]) / rate(lgsotf_llm_calls_total{mode="live"}[10m]) > 0.1` | page |
+| LLM errors | `sum(rate(lgsotf_llm_calls_total{mode="live",outcome=~"error\|invalid_output"}[10m])) / sum(rate(lgsotf_llm_calls_total{mode="live"}[10m])) > 0.1` | page |
 | LLM spend | daily `increase(lgsotf_llm_cost_usd_total{mode="live"}[1d])` above budget | ticket |
 | Escalation backlog | `lgsotf_escalations_open` above analyst capacity for 1 h | ticket |
 | Source polling failing | `increase(lgsotf_source_polls_total{outcome="error"}[30m]) > 0` for a source type | ticket |
 | Pod restarts / OOM | `kube_pod_container_status_restarts_total` increase, `OOMKilled` | ticket |
 | Certificates | TLS certificate expiry < 14 days | ticket |
+
+Ratio alerts sum both sides before dividing. Without `sum`, PromQL divides
+series by series, matching on every label (`outcome` included): each error
+series is divided by itself, the ratio is 1 as soon as one call fails, and the
+alert pages on a single error. Worked example for "LLM errors": live calls at
+9.5/s `success`, 0.3/s `error` and 0.2/s `invalid_output` give
+`0.5 / 10 = 0.05`, below 0.1, so no page (failing shadow calls do not count);
+at 8.5, 1.0 and 0.5 the ratio is 0.15 and the alert pages.
+`tests/unit/observability/test_alert_expressions.py` evaluates the expressions
+in this table on such samples. For a per-model alert, use `sum by (model)` on
+both sides.
 
 Tune thresholds to your volume after a week of baseline data. Metric labels are
 deliberately low cardinality (never tenant or alert ids); per-tenant views come
