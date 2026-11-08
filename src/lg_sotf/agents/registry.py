@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from lg_sotf.agents.analysis.base import AnalysisAgent
-from lg_sotf.agents.base import BaseAgent
+from lg_sotf.agents.base import BaseAgent, ModelFactory
 from lg_sotf.agents.correlation.base import CorrelationAgent
 from lg_sotf.agents.triage.base import TriageAgent
 from lg_sotf.security.crypto import SecretBox
@@ -30,17 +30,18 @@ class AgentSet:
         settings: Settings,
         *,
         secret_box: Optional[SecretBox] = None,
+        model_factory: Optional[ModelFactory] = None,
         enrichment: Optional[EnrichmentService] = None,
     ) -> AgentSet:
         """``secret_box`` (the process's) decrypts the tenant tool keys analysis enrichment uses.
 
-        ``enrichment`` replaces the service built from settings (the evaluation harness's tool fixtures).
+        ``model_factory`` replaces :func:`~lg_sotf.llm.get_chat_model` for every agent (evaluation cassettes).
         """
         enrichment = enrichment or EnrichmentService.from_settings(settings, secret_box=secret_box)
         return cls(
-            triage=TriageAgent(settings=settings),
-            correlation=CorrelationAgent(settings=settings),
-            analysis=AnalysisAgent(settings=settings, enrichment=enrichment),
+            triage=TriageAgent(settings=settings, model_factory=model_factory),
+            correlation=CorrelationAgent(settings=settings, model_factory=model_factory),
+            analysis=AnalysisAgent(settings=settings, enrichment=enrichment, model_factory=model_factory),
         )
 
     def all(self) -> List[BaseAgent]:

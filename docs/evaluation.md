@@ -337,6 +337,56 @@ split standard: 48 items, malicious FNR 0.0%, escalation 85.4%
 gate PASSED (9 checks)
 ```
 
+## Cassettes: record once, replay offline
+
+A cassette holds what one item's run observed: every tool answer
+(threat-intelligence reputation, tenant history, which enrichment providers
+the tenant has) and every model reply. Record a run once against the live
+model and tools, then replay it as often as needed with no network at all.
+
+```bash
+# Record: a live run; one cassette per item is written to the directory
+lg-sotf eval --dataset corpus.jsonl --cassettes cassettes/corpus --cassette-mode record
+
+# Replay: tools and model answer from the cassettes; nothing is called
+lg-sotf eval --dataset corpus.jsonl --cassettes cassettes/corpus --thresholds gate.yaml
+
+# Candidate model or prompt: tools replayed, the configured model called live
+lg-sotf eval --dataset corpus.jsonl --cassettes cassettes/corpus --cassette-mode replay-tools
+```
+
+- **Format.** One JSON Lines file per item, `<item id>.jsonl`, keys sorted.
+  The header line has the schema version (`"cassette": 2`), the source, the
+  time of recording, the dataset's sha256, the item's sha256 and the model
+  each tier used. Each further line is a tool call or a model attempt, in the
+  order the run made them.
+- **Keys.** A tool call is found by its input hash, the same hash
+  `investigation_steps.input_hash` holds (the tool's name and its request as
+  canonical JSON). A model attempt is found by a hash of its messages with
+  alert ids and timestamps blanked, since those change on every run.
+- **Misses.** A replay never falls back to a live call. A call the cassette
+  does not hold (a changed prompt, a changed dataset item, a missing file)
+  fails that item with `CassetteMiss`, and the report lists it as an error.
+  Record the cassettes again after changing a prompt or an agent.
+- **Redaction.** Requests, observations and replies are redacted with the
+  rules of the trace digest, so no credential reaches a cassette. Nothing is
+  cut: a replay sees what the live run saw.
+- **Report.** `run.cassettes` records the mode and directory; a full replay
+  reports `llm_provider: cassette`.
+- **Same selection.** Correlation and history depend on the alerts evaluated
+  before an item, so replay with the same `--split`, `--tag`, `--limit` and
+  `--isolate` as the recording.
+
+Cassettes are recorded from a live run, not exported from the trace store:
+the trace keeps only capped digests, no reply of an invalid model attempt,
+and an LLM input hash that covers the alert id.
+
+`tests/fixtures/eval/cassettes/` holds cassettes recorded with the fake model
+for the first items of the synthetic and phishing sets.
+`tests/integration/eval/test_cassettes.py` replays them with every outbound
+connection blocked and checks the outcomes match a live run. When a prompt
+change makes them stale, `make eval-cassettes` records them again.
+
 ## The shipped synthetic dataset
 
 `tests/fixtures/eval/synthetic_v1.jsonl` has 64 hand-written items across all
@@ -408,7 +458,9 @@ fixtures take `ip`, `domain`, `url` and `hash` (documentation addresses are
 not public, so the shipped set uses hashes, domains and URLs); `history`
 fixtures also take `user`, `host` and `process`. Two items may share a
 fixture only if they give the same answer. Only the evaluation harness
-builds these providers; the product never simulates intelligence.
+builds these providers; the product never simulates intelligence. The
+fixture lookups are ordinary traced tool calls, so `--cassettes` records
+them and a replay answers them from the tape like any other lookup.
 
 ### Injection followed
 

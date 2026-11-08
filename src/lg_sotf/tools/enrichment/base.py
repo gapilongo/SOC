@@ -96,6 +96,21 @@ class EnrichmentResult:
     ) -> EnrichmentResult:
         return cls(provider, kind, status, "unknown", {}, error, retry_after_s)
 
+    @classmethod
+    def from_dict(cls, kind: str, data: Mapping[str, Any]) -> EnrichmentResult:
+        """The result :meth:`as_dict` describes (a replayed observation); ``kind`` is not part of it."""
+        retry = data.get("retry_after_s")
+        return cls(
+            provider=str(data["provider"]),
+            kind=kind,
+            status=data["status"],
+            verdict=data.get("verdict", "unknown"),
+            data=dict(data.get("data") or {}),
+            error=data.get("error"),
+            retry_after_s=float(retry) if retry is not None else None,
+            cached=bool(data.get("cached", False)),
+        )
+
     def as_dict(self) -> Dict[str, Any]:
         """Compact form for prompts and summaries."""
         out: Dict[str, Any] = {"provider": self.provider, "status": self.status, "verdict": self.verdict}

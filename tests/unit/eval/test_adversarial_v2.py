@@ -20,7 +20,6 @@ from lg_sotf.eval.tool_fixtures import (
     FIXTURE_INTEL_PROVIDER,
     FixtureHistoryProvider,
     FixtureIntelProvider,
-    fixture_agents,
     fixture_enrichment,
     fixture_tables,
 )
@@ -224,10 +223,6 @@ async def test_fixture_enrichment_offers_the_canned_provider_without_credentials
         assert isinstance(service.provider("history"), FixtureHistoryProvider)
     finally:
         await service.aclose()
-    agents = fixture_agents(settings, dataset)
-    assert agents is not None and agents.analysis.enrichment.provider(FIXTURE_INTEL_PROVIDER)
-    await agents.cleanup()
-    assert fixture_agents(settings, parse_dataset(_line())) is None
 
 
 # --------------------------------------------------------------------------------------------- injection signal

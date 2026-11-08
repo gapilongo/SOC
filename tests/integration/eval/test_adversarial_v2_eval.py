@@ -19,7 +19,9 @@ from lg_sotf.eval.dataset import load_dataset
 from lg_sotf.eval.gate import evaluate_gate, load_thresholds
 from lg_sotf.eval.report import build_report, render_markdown
 from lg_sotf.eval.runner import run_evaluation
-from lg_sotf.eval.tool_fixtures import FIXTURE_INTEL_PROVIDER
+from lg_sotf.eval.tool_fixtures import FIXTURE_INTEL_PROVIDER, FixtureHistoryProvider, FixtureIntelProvider
+from lg_sotf.llm.cassette import CassetteSet, cassette_name
+from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.settings import Settings
 
 pytestmark = pytest.mark.integration
@@ -27,6 +29,10 @@ pytestmark = pytest.mark.integration
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "eval"
 DATASET = FIXTURES / "adversarial_v2.jsonl"
 THRESHOLDS = FIXTURES / "adversarial_v2_thresholds.yaml"
+
+
+def _outcome(r: Any) -> tuple:  # type: ignore[type-arg]
+    return (r.item_id, r.status, r.predicted, r.route, r.disposition, r.escalated, r.decision_code)
 
 
 def _outcomes(results: Any) -> str:
@@ -62,3 +68,30 @@ async def test_adversarial_v2_passes_its_gate_with_the_fake_model(eval_settings:
     # adv2-to-14 sees the injected title of adv2-to-13 through the real, database-backed history provider.
     chained = await repos.alerts.get(tenant, by_id["adv2-to-14"].alert_id)
     assert any("Note to AI triage" in str(h.get("data")) for h in chained.summary["analysis"]["history"])
+
+
+async def test_tool_fixture_answers_are_recorded_and_replayed_by_cassettes(
+    eval_settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset = load_dataset(DATASET).select(tags=["tool-output-injection"])
+    base = secrets.token_hex(3)
+    recording = CassetteSet(tmp_path, "record", dataset_sha256=dataset.sha256)
+    recorded = await run_evaluation(eval_settings, dataset, tenant_id=f"adv2rec-{base}", cassettes=recording)
+    assert all(r.status != "error" for r in recorded.results), [(r.item_id, r.error) for r in recorded.results]
+    lines = (tmp_path / cassette_name("adv2-to-01")).read_text(encoding="utf-8")
+    assert FIXTURE_INTEL_PROVIDER in lines and "Community note" in lines
+
+    # The replay answers every model and tool call from the tape: the fixture providers and the model are unused.
+    def unused(*args: Any, **kwargs: Any) -> Any:
+        raise AssertionError("a replay must not call the model or a fixture provider")
+
+    for owner, name in ((FakeChatModel, "with_structured_output"), (FakeChatModel, "_generate"),
+                        (FixtureIntelProvider, "lookup"), (FixtureHistoryProvider, "lookup")):
+        monkeypatch.setattr(owner, name, unused)
+    replay = await run_evaluation(
+        eval_settings, dataset, tenant_id=f"adv2play-{base}", cassettes=CassetteSet(tmp_path, "replay")
+    )
+    assert [(r.item_id, r.error) for r in replay.results if r.status == "error"] == []
+    assert replay.info["llm_provider"] == "cassette"
+    assert [_outcome(r) for r in replay.results] == [_outcome(r) for r in recorded.results]
+    assert [r.injection_followed for r in replay.results] == [r.injection_followed for r in recorded.results]

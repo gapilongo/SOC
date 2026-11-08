@@ -27,6 +27,7 @@ integration variables, make smoke, npm test in src/lg_front ...). -->
 - [ ] New or changed settings (documented; `python docs/tools/settings_reference.py --write` run)
 - [ ] New metrics, alerts or runbook steps (docs/operations.md updated)
 - [ ] Helm chart or Compose changes
+- [ ] New dependency (Python, npm, image or action): the [admission checklist](https://github.com/gapilongo/SOC/blob/main/docs/dependency-policy.md#adding-a-dependency) is answered in the description
 
 ## Checklist
 

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet, Iterable, Optional, Tuple
 
-from lg_sotf.agents.registry import AgentSet
 from lg_sotf.eval.dataset import EXTERNAL_FIXTURE_KINDS, Dataset, EvalItem, ToolFixture
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import normalize_indicator
@@ -118,10 +117,3 @@ def fixture_enrichment(
     providers.append(FixtureIntelProvider(intel))
     return EnrichmentService(providers, settings, credentials=real.credentials)
 
-
-def fixture_agents(settings: Settings, dataset: Dataset, *, secret_box: Optional[SecretBox] = None) -> Optional[AgentSet]:
-    """Agents whose analysis enrichment answers from the dataset's fixtures; None when it has none."""
-    if not dataset.has_tool_fixtures:
-        return None
-    enrichment = fixture_enrichment(settings, dataset, secret_box=secret_box)
-    return AgentSet.build(settings, secret_box=secret_box, enrichment=enrichment)
