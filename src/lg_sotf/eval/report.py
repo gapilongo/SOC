@@ -26,7 +26,7 @@ FAKE_MODEL_NOTE = (
     "model quality."
 )
 SYNTHETIC_NOTE = (
-    "The dataset is synthetic: hand-written alerts with labels assigned by construction. It exercises "
+    "The dataset is synthetic: hand-written or generated alerts with labels assigned by construction. It exercises "
     "the pipeline; it says nothing about accuracy on real customer telemetry."
 )
 HISTORY_NOTE = (

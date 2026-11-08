@@ -1,0 +1,2944 @@
+{
+ "_about": "Subset of upstream reference data used by the attack-emulation corpus generator: Wazuh v4.14.8 ruleset (rules), MITRE ATT&CK v16.1 (attack), Atomic Red Team at commit 61080b19460f2c6431c31689d58063c5f6c1f8fb (atomics). Check with `python -m tests.fixtures.attack_corpus verify-sources`.",
+ "atomics": {
+  "T1003.001-1": {
+   "guid": "0be2230c-9ab3-4ac2-8826-3199b9a0ebf8",
+   "name": "Dump LSASS.exe Memory using ProcDump"
+  },
+  "T1003.001-2": {
+   "guid": "2536dee2-12fb-459a-8c37-971844fa73be",
+   "name": "Dump LSASS.exe Memory using comsvcs.dll"
+  },
+  "T1003.002-1": {
+   "guid": "5c2571d0-1572-416d-9676-812e64ca9f44",
+   "name": "Registry dump of SAM, creds, and secrets"
+  },
+  "T1003.002-6": {
+   "guid": "9d77fed7-05f8-476e-a81b-8ff0472c64d0",
+   "name": "dump volume shadow copy hives with System.IO.File"
+  },
+  "T1003.008-1": {
+   "guid": "3723ab77-c546-403c-8fb4-bb577033b235",
+   "name": "Access /etc/shadow (Local)"
+  },
+  "T1018-1": {
+   "guid": "85321a9c-897f-4a60-9f20-29788e50bccd",
+   "name": "Remote System Discovery - net"
+  },
+  "T1018-17": {
+   "guid": "97e89d9e-e3f5-41b5-a90f-1e0825df0fdf",
+   "name": "Enumerate Active Directory Computers with Get-AdComputer"
+  },
+  "T1021.002-3": {
+   "guid": "0eb03d41-79e4-4393-8e57-6344856be1cf",
+   "name": "Copy and Execute File with PsExec"
+  },
+  "T1033-2": {
+   "guid": "2a9b677d-a230-44f4-ad86-782df1ef108c",
+   "name": "System Owner/User Discovery"
+  },
+  "T1047-7": {
+   "guid": "7db7a7f9-9531-4840-9b30-46220135441c",
+   "name": "Create a Process using WMI Query and an Encoded Command"
+  },
+  "T1053.003-1": {
+   "guid": "435057fb-74b1-410e-9403-d81baf194f75",
+   "name": "Cron - Replace crontab with referenced file"
+  },
+  "T1053.003-3": {
+   "guid": "078e69eb-d9fb-450e-b9d0-2e118217c846",
+   "name": "Cron - Add script to /etc/cron.d folder"
+  },
+  "T1057-1": {
+   "guid": "4ff64f0b-aaf2-4866-b39d-38d9791407cc",
+   "name": "Process Discovery - ps"
+  },
+  "T1059.001-1": {
+   "guid": "f3132740-55bc-48c4-bcc0-758a459cd027",
+   "name": "Mimikatz"
+  },
+  "T1059.001-15": {
+   "guid": "86a43bad-12e3-4e85-b97c-4d5cf25b95c3",
+   "name": "ATHPowerShellCommandLineParameter -EncodedCommand parameter variations"
+  },
+  "T1059.006-2": {
+   "guid": "6c4d1dcb-33c7-4c36-a8df-c6cfd0408be8",
+   "name": "Execute Python via scripts"
+  },
+  "T1059.006-4": {
+   "guid": "161d694c-b543-4434-85c3-c3a433e33792",
+   "name": "Python pty module and spawn function used to spawn sh or bash"
+  },
+  "T1070.001-1": {
+   "guid": "e6abb60e-26b8-41da-8aae-0c35174b0967",
+   "name": "Clear Logs"
+  },
+  "T1070.003-12": {
+   "guid": "da75ae8d-26d6-4483-b0fe-700e4df4f037",
+   "name": "Clear Powershell History by Deleting History File"
+  },
+  "T1070.003-5": {
+   "guid": "47966a1d-df4f-4078-af65-db6d9aa20739",
+   "name": "Clear Bash history (truncate)"
+  },
+  "T1083-3": {
+   "guid": "ffc8b249-372a-4b74-adcd-e4c0430842de",
+   "name": "Nix File and Directory Discovery"
+  },
+  "T1087.002-1": {
+   "guid": "6fbc9e68-5ad7-444a-bd11-8bf3136c477e",
+   "name": "Enumerate all accounts (Domain)"
+  },
+  "T1098.004-1": {
+   "guid": "342cc723-127c-4d3a-8292-9c0c6b4ecadc",
+   "name": "Modify SSH Authorized Keys"
+  },
+  "T1105-10": {
+   "guid": "42dc4460-9aa6-45d3-b1a6-3955d34e1fe8",
+   "name": "Windows - PowerShell Download"
+  },
+  "T1105-15": {
+   "guid": "54a4daf1-71df-4383-9ba7-f1a295d8b6d2",
+   "name": "File Download via PowerShell"
+  },
+  "T1105-27": {
+   "guid": "bdc373c5-e9cf-4563-8a7b-a9ba720a90f3",
+   "name": "Linux Download File and Run"
+  },
+  "T1105-7": {
+   "guid": "dd3b61dd-7bbc-48cd-ab51-49ad1a776df0",
+   "name": "certutil download (urlcache)"
+  },
+  "T1110.003-1": {
+   "guid": "90bc2e54-6c84-47a5-9439-0a2a92b4b175",
+   "name": "Password Spray all Domain Users"
+  },
+  "T1113-8": {
+   "guid": "e9313014-985a-48ef-80d9-cde604ffc187",
+   "name": "Windows Screen Capture (CopyFromScreen)"
+  },
+  "T1136.001-1": {
+   "guid": "40d8eabd-e394-46f6-8785-b9bfa1d011d2",
+   "name": "Create a user account on a Linux system"
+  },
+  "T1136.001-6": {
+   "guid": "a1040a30-d28b-4eda-bd99-bb2861a4616c",
+   "name": "Create a new user in Linux with `root` UID and GID."
+  },
+  "T1136.001-8": {
+   "guid": "fda74566-a604-4581-a4cc-fbbe21d66559",
+   "name": "Create a new Windows admin user"
+  },
+  "T1140-1": {
+   "guid": "dc6fe391-69e6-4506-bd06-ea5eeb4082f8",
+   "name": "Deobfuscate/Decode Files Or Information"
+  },
+  "T1140-2": {
+   "guid": "71abc534-3c05-4d0c-80f7-cbe93cb2aa94",
+   "name": "Certutil Rename and Decode"
+  },
+  "T1218.005-1": {
+   "guid": "1483fab9-4f52-4217-a9ce-daa9d7747cae",
+   "name": "Mshta executes JavaScript Scheme Fetch Remote Payload With GetObject"
+  },
+  "T1218.005-2": {
+   "guid": "906865c3-e05f-4acc-85c4-fbc185455095",
+   "name": "Mshta executes VBScript to execute malicious command"
+  },
+  "T1218.011-10": {
+   "guid": "ae3a8605-b26e-457c-b6b3-2702fd335bac",
+   "name": "Execution of non-dll using rundll32.exe"
+  },
+  "T1222.002-2": {
+   "guid": "fc9d6695-d022-4a80-91b1-381f5c35aff3",
+   "name": "chmod - Change file or folder mode (symbolic mode)"
+  },
+  "T1486-10": {
+   "guid": "ab3f793f-2dcc-4da5-9c71-34988307263f",
+   "name": "Akira Ransomware drop Files with .akira Extension and Ransomnote"
+  },
+  "T1543.002-1": {
+   "guid": "d9e4f24f-aa67-4c6e-bcbf-85622b697a7c",
+   "name": "Create Systemd Service"
+  },
+  "T1543.003-2": {
+   "guid": "981e2942-e433-44e9-afc1-8c957a1496b6",
+   "name": "Service Installation CMD"
+  },
+  "T1546.003-1": {
+   "guid": "3c64f177-28e2-49eb-a799-d767b24dd1e0",
+   "name": "Persistence via WMI Event Subscription - CommandLineEventConsumer"
+  },
+  "T1547.001-1": {
+   "guid": "e55be3fd-3521-4610-9d1a-e210e42dcf05",
+   "name": "Reg Key Run"
+  },
+  "T1548.002-4": {
+   "guid": "3f627297-6c38-4e7d-a278-fc2563eaaeaa",
+   "name": "Bypass UAC using Fodhelper - PowerShell"
+  },
+  "T1548.003-1": {
+   "guid": "150c3a08-ee6e-48a6-aeaf-3659d24ceb4e",
+   "name": "Sudo usage"
+  },
+  "T1548.003-3": {
+   "guid": "a7b17659-dd5e-46f7-b7d1-e6792c91d0bc",
+   "name": "Unlimited sudo cache timeout"
+  },
+  "T1558.003-1": {
+   "guid": "3f987809-3681-43c8-bcd8-b3ff3a28533a",
+   "name": "Request for service tickets"
+  },
+  "T1560.001-4": {
+   "guid": "d1334303-59cb-4a03-8313-b3e24d02c198",
+   "name": "Compress Data and lock with password for Exfiltration with 7zip"
+  },
+  "T1562.001-16": {
+   "guid": "6b8df440-51ec-4d53-bf83-899591c9b5d7",
+   "name": "Tamper with Windows Defender ATP PowerShell"
+  },
+  "T1569.002-2": {
+   "guid": "873106b7-cfed-454b-8680-fa9f6400431c",
+   "name": "Use PsExec to execute a command on a remote host"
+  }
+ },
+ "attack": {
+  "T1003.001": {
+   "name": "LSASS Memory",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1003.002": {
+   "name": "Security Account Manager",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1003.008": {
+   "name": "/etc/passwd and /etc/shadow",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1018": {
+   "name": "Remote System Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1021": {
+   "name": "Remote Services",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1021.002": {
+   "name": "SMB/Windows Admin Shares",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1021.004": {
+   "name": "SSH",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1021.006": {
+   "name": "Windows Remote Management",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1033": {
+   "name": "System Owner/User Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1036.003": {
+   "name": "Rename System Utilities",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1047": {
+   "name": "Windows Management Instrumentation",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1053.003": {
+   "name": "Cron",
+   "tactics": [
+    "Execution",
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1055": {
+   "name": "Process Injection",
+   "tactics": [
+    "Defense Evasion",
+    "Privilege Escalation"
+   ]
+  },
+  "T1057": {
+   "name": "Process Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1059": {
+   "name": "Command and Scripting Interpreter",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1059.001": {
+   "name": "PowerShell",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1059.003": {
+   "name": "Windows Command Shell",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1059.006": {
+   "name": "Python",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1068": {
+   "name": "Exploitation for Privilege Escalation",
+   "tactics": [
+    "Privilege Escalation"
+   ]
+  },
+  "T1070.001": {
+   "name": "Clear Windows Event Logs",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1070.003": {
+   "name": "Clear Command History",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1070.004": {
+   "name": "File Deletion",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1078": {
+   "name": "Valid Accounts",
+   "tactics": [
+    "Defense Evasion",
+    "Persistence",
+    "Privilege Escalation",
+    "Initial Access"
+   ]
+  },
+  "T1078.002": {
+   "name": "Domain Accounts",
+   "tactics": [
+    "Defense Evasion",
+    "Persistence",
+    "Privilege Escalation",
+    "Initial Access"
+   ]
+  },
+  "T1078.003": {
+   "name": "Local Accounts",
+   "tactics": [
+    "Defense Evasion",
+    "Persistence",
+    "Privilege Escalation",
+    "Initial Access"
+   ]
+  },
+  "T1083": {
+   "name": "File and Directory Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1087": {
+   "name": "Account Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1087.002": {
+   "name": "Domain Account",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1098": {
+   "name": "Account Manipulation",
+   "tactics": [
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1098.004": {
+   "name": "SSH Authorized Keys",
+   "tactics": [
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1102": {
+   "name": "Web Service",
+   "tactics": [
+    "Command and Control"
+   ]
+  },
+  "T1105": {
+   "name": "Ingress Tool Transfer",
+   "tactics": [
+    "Command and Control"
+   ]
+  },
+  "T1110": {
+   "name": "Brute Force",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1110.001": {
+   "name": "Password Guessing",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1110.003": {
+   "name": "Password Spraying",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1112": {
+   "name": "Modify Registry",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1113": {
+   "name": "Screen Capture",
+   "tactics": [
+    "Collection"
+   ]
+  },
+  "T1135": {
+   "name": "Network Share Discovery",
+   "tactics": [
+    "Discovery"
+   ]
+  },
+  "T1136": {
+   "name": "Create Account",
+   "tactics": [
+    "Persistence"
+   ]
+  },
+  "T1136.001": {
+   "name": "Local Account",
+   "tactics": [
+    "Persistence"
+   ]
+  },
+  "T1136.002": {
+   "name": "Domain Account",
+   "tactics": [
+    "Persistence"
+   ]
+  },
+  "T1140": {
+   "name": "Deobfuscate/Decode Files or Information",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1190": {
+   "name": "Exploit Public-Facing Application",
+   "tactics": [
+    "Initial Access"
+   ]
+  },
+  "T1203": {
+   "name": "Exploitation for Client Execution",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1218.005": {
+   "name": "Mshta",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1218.011": {
+   "name": "Rundll32",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1222.002": {
+   "name": "Linux and Mac File and Directory Permissions Modification",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1484": {
+   "name": "Domain or Tenant Policy Modification",
+   "tactics": [
+    "Defense Evasion",
+    "Privilege Escalation"
+   ]
+  },
+  "T1485": {
+   "name": "Data Destruction",
+   "tactics": [
+    "Impact"
+   ]
+  },
+  "T1486": {
+   "name": "Data Encrypted for Impact",
+   "tactics": [
+    "Impact"
+   ]
+  },
+  "T1496": {
+   "name": "Resource Hijacking",
+   "tactics": [
+    "Impact"
+   ]
+  },
+  "T1505.003": {
+   "name": "Web Shell",
+   "tactics": [
+    "Persistence"
+   ]
+  },
+  "T1531": {
+   "name": "Account Access Removal",
+   "tactics": [
+    "Impact"
+   ]
+  },
+  "T1543.002": {
+   "name": "Systemd Service",
+   "tactics": [
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1543.003": {
+   "name": "Windows Service",
+   "tactics": [
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1546.003": {
+   "name": "Windows Management Instrumentation Event Subscription",
+   "tactics": [
+    "Privilege Escalation",
+    "Persistence"
+   ]
+  },
+  "T1547.001": {
+   "name": "Registry Run Keys / Startup Folder",
+   "tactics": [
+    "Persistence",
+    "Privilege Escalation"
+   ]
+  },
+  "T1548.002": {
+   "name": "Bypass User Account Control",
+   "tactics": [
+    "Privilege Escalation",
+    "Defense Evasion"
+   ]
+  },
+  "T1548.003": {
+   "name": "Sudo and Sudo Caching",
+   "tactics": [
+    "Privilege Escalation",
+    "Defense Evasion"
+   ]
+  },
+  "T1550.002": {
+   "name": "Pass the Hash",
+   "tactics": [
+    "Defense Evasion",
+    "Lateral Movement"
+   ]
+  },
+  "T1554": {
+   "name": "Compromise Host Software Binary",
+   "tactics": [
+    "Persistence"
+   ]
+  },
+  "T1558.003": {
+   "name": "Kerberoasting",
+   "tactics": [
+    "Credential Access"
+   ]
+  },
+  "T1560.001": {
+   "name": "Archive via Utility",
+   "tactics": [
+    "Collection"
+   ]
+  },
+  "T1562": {
+   "name": "Impair Defenses",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1562.001": {
+   "name": "Disable or Modify Tools",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1562.004": {
+   "name": "Disable or Modify System Firewall",
+   "tactics": [
+    "Defense Evasion"
+   ]
+  },
+  "T1565.001": {
+   "name": "Stored Data Manipulation",
+   "tactics": [
+    "Impact"
+   ]
+  },
+  "T1567.002": {
+   "name": "Exfiltration to Cloud Storage",
+   "tactics": [
+    "Exfiltration"
+   ]
+  },
+  "T1569.002": {
+   "name": "Service Execution",
+   "tactics": [
+    "Execution"
+   ]
+  },
+  "T1570": {
+   "name": "Lateral Tool Transfer",
+   "tactics": [
+    "Lateral Movement"
+   ]
+  },
+  "T1595.002": {
+   "name": "Vulnerability Scanning",
+   "tactics": [
+    "Reconnaissance"
+   ]
+  },
+  "T1595.003": {
+   "name": "Wordlist Scanning",
+   "tactics": [
+    "Reconnaissance"
+   ]
+  }
+ },
+ "rules": {
+  "2833": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "4.13"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AU.6",
+     "AC.6"
+    ],
+    "pci_dss": [
+     "10.2.7",
+     "10.6.1",
+     "10.2.2"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Root's crontab entry changed.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "cron"
+   ],
+   "level": 8,
+   "mitre": [
+    "T1053.003"
+   ]
+  },
+  "2902": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "4.10"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6",
+     "AU.14"
+    ],
+    "pci_dss": [
+     "10.6.1",
+     "10.2.7"
+    ],
+    "tsc": [
+     "CC7.2",
+     "CC7.3",
+     "CC6.8",
+     "CC8.1"
+    ]
+   },
+   "description": "New dpkg (Debian Package) installed.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "dpkg",
+    "config_changed"
+   ],
+   "level": 7,
+   "mitre": []
+  },
+  "2933": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "4.10"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6",
+     "AU.14"
+    ],
+    "pci_dss": [
+     "10.6.1",
+     "10.2.7"
+    ],
+    "tsc": [
+     "CC7.2",
+     "CC7.3",
+     "CC6.8",
+     "CC8.1"
+    ]
+   },
+   "description": "Yum package updated.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "yum",
+    "config_changed"
+   ],
+   "level": 7,
+   "mitre": []
+  },
+  "31101": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Web server 400 error code.",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "attack"
+   ],
+   "level": 5,
+   "mitre": []
+  },
+  "31103": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4",
+     "6.5.1"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "SQL injection attempt.",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "attack",
+    "sql_injection"
+   ],
+   "level": 7,
+   "mitre": [
+    "T1190"
+   ]
+  },
+  "31104": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4",
+     "6.5.1"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Common web attack.",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "attack"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1055",
+    "T1083",
+    "T1190"
+   ]
+  },
+  "31106": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "A web attack returned code 200 (success).",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "attack"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1190"
+   ]
+  },
+  "31120": {
+   "compliance": {},
+   "description": "Web server 500 error code (server error).",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog"
+   ],
+   "level": 5,
+   "mitre": []
+  },
+  "31151": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Multiple web server 400 error codes from same source ip.",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "web_scan",
+    "recon"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1595.002"
+   ]
+  },
+  "31168": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SI.4"
+    ],
+    "pci_dss": [
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Shellshock attack detected",
+   "file": "0245-web_rules.xml",
+   "groups": [
+    "web",
+    "accesslog",
+    "attack"
+   ],
+   "level": 15,
+   "mitre": [
+    "T1068",
+    "T1190"
+   ]
+  },
+  "31509": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4",
+     "6.5.10",
+     "10.2.4",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "CMS (WordPress or Joomla) login attempt.",
+   "file": "0270-web_appsec_rules.xml",
+   "groups": [
+    "web",
+    "appsec",
+    "attack"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1110.001"
+   ]
+  },
+  "31514": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "nist_800_53": [
+     "SA.11",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "6.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.6",
+     "CC7.1",
+     "CC8.1",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Simple shell.php command execution.",
+   "file": "0270-web_appsec_rules.xml",
+   "groups": [
+    "web",
+    "appsec",
+    "attack"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1505.003",
+    "T1203"
+   ]
+  },
+  "40112": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1",
+     "7.8"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "10.2.4",
+     "10.2.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Multiple authentication failures followed by a success.",
+   "file": "0280-attack_rules.xml",
+   "groups": [
+    "syslog",
+    "attacks"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1078",
+    "T1110"
+   ]
+  },
+  "5402": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.6",
+     "7.8",
+     "7.13"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7",
+     "AC.6"
+    ],
+    "pci_dss": [
+     "10.2.5",
+     "10.2.2"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Successful sudo to ROOT executed.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "sudo"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1548.003"
+   ]
+  },
+  "5403": {
+   "compliance": {},
+   "description": "First time user executed sudo.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "sudo"
+   ],
+   "level": 4,
+   "mitre": [
+    "T1548.003"
+   ]
+  },
+  "550": {
+   "compliance": {
+    "gdpr": [
+     "II_5.1.f"
+    ],
+    "gpg13": [
+     "4.11"
+    ],
+    "hipaa": [
+     "164.312.c.1",
+     "164.312.c.2"
+    ],
+    "nist_800_53": [
+     "SI.7"
+    ],
+    "pci_dss": [
+     "11.5"
+    ],
+    "tsc": [
+     "PI1.4",
+     "PI1.5",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Integrity checksum changed.",
+   "file": "0015-ossec_rules.xml",
+   "groups": [
+    "ossec",
+    "syscheck",
+    "syscheck_entry_modified",
+    "syscheck_file"
+   ],
+   "level": 7,
+   "mitre": [
+    "T1565.001"
+   ]
+  },
+  "5501": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.8",
+     "7.9"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "PAM: Login session opened.",
+   "file": "0085-pam_rules.xml",
+   "groups": [
+    "pam",
+    "syslog",
+    "authentication_success"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1078"
+   ]
+  },
+  "553": {
+   "compliance": {
+    "gdpr": [
+     "II_5.1.f"
+    ],
+    "gpg13": [
+     "4.11"
+    ],
+    "hipaa": [
+     "164.312.c.1",
+     "164.312.c.2"
+    ],
+    "nist_800_53": [
+     "SI.7"
+    ],
+    "pci_dss": [
+     "11.5"
+    ],
+    "tsc": [
+     "PI1.4",
+     "PI1.5",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "File deleted.",
+   "file": "0015-ossec_rules.xml",
+   "groups": [
+    "ossec",
+    "syscheck",
+    "syscheck_entry_deleted",
+    "syscheck_file"
+   ],
+   "level": 7,
+   "mitre": [
+    "T1070.004",
+    "T1485"
+   ]
+  },
+  "554": {
+   "compliance": {
+    "gdpr": [
+     "II_5.1.f"
+    ],
+    "gpg13": [
+     "4.11"
+    ],
+    "hipaa": [
+     "164.312.c.1",
+     "164.312.c.2"
+    ],
+    "nist_800_53": [
+     "SI.7"
+    ],
+    "pci_dss": [
+     "11.5"
+    ],
+    "tsc": [
+     "PI1.4",
+     "PI1.5",
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "File added to the system.",
+   "file": "0015-ossec_rules.xml",
+   "groups": [
+    "ossec",
+    "syscheck",
+    "syscheck_entry_added",
+    "syscheck_file"
+   ],
+   "level": 5,
+   "mitre": []
+  },
+  "5710": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7",
+     "AU.6"
+    ],
+    "pci_dss": [
+     "10.2.4",
+     "10.2.5",
+     "10.6.1"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "sshd: Attempt to login using a non-existent user",
+   "file": "0095-sshd_rules.xml",
+   "groups": [
+    "syslog",
+    "sshd",
+    "authentication_failed",
+    "invalid_login"
+   ],
+   "level": 5,
+   "mitre": [
+    "T1110.001",
+    "T1021.004"
+   ]
+  },
+  "5712": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "SI.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "11.4",
+     "10.2.4",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "sshd: brute force trying to get access to the system. Non existent user.",
+   "file": "0095-sshd_rules.xml",
+   "groups": [
+    "syslog",
+    "sshd",
+    "authentication_failures"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1110"
+   ]
+  },
+  "5715": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1",
+     "7.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "sshd: authentication success.",
+   "file": "0095-sshd_rules.xml",
+   "groups": [
+    "syslog",
+    "sshd",
+    "authentication_success"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1078",
+    "T1021"
+   ]
+  },
+  "5760": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.4",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "sshd: authentication failed.",
+   "file": "0095-sshd_rules.xml",
+   "groups": [
+    "syslog",
+    "sshd",
+    "authentication_failed"
+   ],
+   "level": 5,
+   "mitre": [
+    "T1110.001",
+    "T1021.004"
+   ]
+  },
+  "5763": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "SI.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "11.4",
+     "10.2.4",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "sshd: brute force trying to get access to the system. Authentication failed.",
+   "file": "0095-sshd_rules.xml",
+   "groups": [
+    "syslog",
+    "sshd",
+    "authentication_failures"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1110"
+   ]
+  },
+  "5902": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "4.13"
+    ],
+    "hipaa": [
+     "164.312.b",
+     "164.312.a.2.I",
+     "164.312.a.2.II"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7",
+     "AC.2",
+     "IA.4"
+    ],
+    "pci_dss": [
+     "10.2.7",
+     "10.2.5",
+     "8.1.2"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "New user added to the system.",
+   "file": "0020-syslog_rules.xml",
+   "groups": [
+    "syslog",
+    "adduser"
+   ],
+   "level": 8,
+   "mitre": [
+    "T1136"
+   ]
+  },
+  "60106": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1",
+     "7.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.9"
+    ],
+    "pci_dss": [
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows Logon Success",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "authentication_success"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1078"
+   ]
+  },
+  "60109": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.a.2.I",
+     "164.312.a.2.II",
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AC.2",
+     "IA.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "8.1.2",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "User account enabled or created",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "adduser",
+    "account_changed"
+   ],
+   "level": 8,
+   "mitre": [
+    "T1098"
+   ]
+  },
+  "60110": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.a.2.I",
+     "164.312.a.2.II",
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AC.2",
+     "IA.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "8.1.2",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "User account changed",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "account_changed"
+   ],
+   "level": 8,
+   "mitre": [
+    "T1098"
+   ]
+  },
+  "60111": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.a.2.I",
+     "164.312.a.2.II",
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AC.2",
+     "IA.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "8.1.2",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "User account disabled or deleted",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "adduser",
+    "account_changed"
+   ],
+   "level": 8,
+   "mitre": [
+    "T1098",
+    "T1531"
+   ]
+  },
+  "60115": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "7.5"
+    ],
+    "hipaa": [
+     "164.312.a.1"
+    ],
+    "nist_800_53": [
+     "AC.7",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "8.1.6",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "User account locked out (multiple login errors)",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "authentication_failures"
+   ],
+   "level": 9,
+   "mitre": [
+    "T1110",
+    "T1531"
+   ]
+  },
+  "60117": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "10.1"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6"
+    ],
+    "pci_dss": [
+     "10.6.1"
+    ],
+    "tsc": [
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows audit log was cleared",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "logs_cleared"
+   ],
+   "level": 9,
+   "mitre": [
+    "T1070.004"
+   ]
+  },
+  "60118": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1",
+     "7.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.9"
+    ],
+    "pci_dss": [
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows Workstation Logon Success",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "authentication_success"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1078"
+   ]
+  },
+  "60122": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.1"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.4",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Logon Failure - Unknown user or bad password",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "authentication_failed"
+   ],
+   "level": 5,
+   "mitre": [
+    "T1531"
+   ]
+  },
+  "60133": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.b",
+     "164.312.a.1"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.5",
+     "8.1.6"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "User account unlocked",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "account_changed"
+   ],
+   "level": 5,
+   "mitre": [
+    "T1098"
+   ]
+  },
+  "60137": {
+   "compliance": {
+    "gdpr": [
+     "IV_32.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows User Logoff",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "60154": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.a.2.I",
+     "164.312.a.2.II",
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AC.2",
+     "IA.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "8.1.2",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Administrators Group Changed",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "group_changed",
+    "win_group_changed"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1484"
+   ]
+  },
+  "60179": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "gpg13": [
+     "7.10"
+    ],
+    "hipaa": [
+     "164.312.a.2.I",
+     "164.312.a.2.II",
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AC.2",
+     "IA.4",
+     "AU.14",
+     "AC.7"
+    ],
+    "pci_dss": [
+     "8.1.2",
+     "10.2.5"
+    ],
+    "tsc": [
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Remote Desktop Users Group Changed",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "group_changed",
+    "win_group_changed"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1484"
+   ]
+  },
+  "60204": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_32.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.14",
+     "AC.7",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "10.2.4",
+     "10.2.5",
+     "11.4"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Multiple Windows Logon Failures",
+   "file": "0580-win-security_rules.xml",
+   "groups": [
+    "windows",
+    "windows_security",
+    "authentication_failures"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1110"
+   ]
+  },
+  "60612": {
+   "compliance": {},
+   "description": "Application installed $(win.eventdata.data).",
+   "file": "0585-win-application_rules.xml",
+   "groups": [
+    "windows",
+    "windows_application"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "61104": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6"
+    ],
+    "pci_dss": [
+     "10.6"
+    ],
+    "tsc": [
+     "CC6.1",
+     "CC6.8",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Service startup type was changed",
+   "file": "0590-win-system_rules.xml",
+   "groups": [
+    "windows",
+    "windows_system",
+    "policy_changed"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "61138": {
+   "compliance": {},
+   "description": "New Windows Service Created",
+   "file": "0590-win-system_rules.xml",
+   "groups": [
+    "windows",
+    "windows_system"
+   ],
+   "level": 5,
+   "mitre": [
+    "T1543.003"
+   ]
+  },
+  "62107": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6"
+    ],
+    "pci_dss": [
+     "10.6.1",
+     "5.3"
+    ],
+    "tsc": [
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows Defender: Antimalware scan started",
+   "file": "0600-win-wdefender_rules.xml",
+   "groups": [
+    "windows",
+    "windows_defender"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "62108": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "AU.6"
+    ],
+    "pci_dss": [
+     "10.6.1",
+     "5.3"
+    ],
+    "tsc": [
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows Defender: Antimalware scan finished",
+   "file": "0600-win-wdefender_rules.xml",
+   "groups": [
+    "windows",
+    "windows_defender"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "62123": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "4.2"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "SI.3",
+     "AU.6",
+     "SI.4"
+    ],
+    "pci_dss": [
+     "5.1",
+     "5.2",
+     "10.6.1",
+     "11.4"
+    ],
+    "tsc": [
+     "A1.2",
+     "CC7.2",
+     "CC7.3",
+     "CC6.1",
+     "CC6.8"
+    ]
+   },
+   "description": "Windows Defender: Antimalware platform detected $(win.eventdata.severityName) potentially unwanted software ($(win.eventdata.processName))",
+   "file": "0600-win-wdefender_rules.xml",
+   "groups": [
+    "windows",
+    "windows_defender"
+   ],
+   "level": 12,
+   "mitre": []
+  },
+  "62130": {
+   "compliance": {
+    "gdpr": [
+     "IV_35.7.d",
+     "IV_35.7.d"
+    ],
+    "gpg13": [
+     "4.4",
+     "4.14"
+    ],
+    "hipaa": [
+     "164.312.b"
+    ],
+    "nist_800_53": [
+     "SI.3",
+     "AU.6"
+    ],
+    "pci_dss": [
+     "5.1",
+     "10.6.1",
+     "5.2"
+    ],
+    "tsc": [
+     "A1.2",
+     "CC7.2",
+     "CC7.3"
+    ]
+   },
+   "description": "Windows Defender: Antimalware definitions updated successfully",
+   "file": "0600-win-wdefender_rules.xml",
+   "groups": [
+    "windows",
+    "windows_defender"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "80784": {
+   "compliance": {
+    "gdpr": [
+     "IV_30.1.g"
+    ]
+   },
+   "description": "Audit: Watch - Read access: $(audit.file.name).",
+   "file": "0365-auditd_rules.xml",
+   "groups": [
+    "audit",
+    "audit_watch_read"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "80792": {
+   "compliance": {
+    "gdpr": [
+     "IV_30.1.g"
+    ]
+   },
+   "description": "Audit: Command: $(audit.exe).",
+   "file": "0365-auditd_rules.xml",
+   "groups": [
+    "audit",
+    "audit_command"
+   ],
+   "level": 3,
+   "mitre": []
+  },
+  "89502": {
+   "compliance": {},
+   "description": "WmiConsumerEvent created, possible persistence tactic using command-executing binaries",
+   "file": "0950-sysmon_id_20.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid20_detections",
+    "windows"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1546.003"
+   ]
+  },
+  "91803": {
+   "compliance": {},
+   "description": "Screen capture method invoked from PowerShell script.",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1113"
+   ]
+  },
+  "91805": {
+   "compliance": {},
+   "description": "Executed Powershell script \"Get-ADComputer\" executed.",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1018"
+   ]
+  },
+  "91806": {
+   "compliance": {},
+   "description": "Powershell script \"Get-NetUser executed\".",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1087.002"
+   ]
+  },
+  "91823": {
+   "compliance": {},
+   "description": "Powershell script used \"Invoke-command\" cmdlet to execute code on remote computer",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1059.001",
+    "T1021.006"
+   ]
+  },
+  "91844": {
+   "compliance": {},
+   "description": "Possible addition of new item to Windows startup registry",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1547.001",
+    "T1059.001",
+    "T1112"
+   ]
+  },
+  "91846": {
+   "compliance": {},
+   "description": "Powershell used .NET compression method, possible data extraction operation",
+   "file": "0915-win-powershell_rules.xml",
+   "groups": [
+    "windows",
+    "powershell"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1560.001"
+   ]
+  },
+  "92007": {
+   "compliance": {},
+   "description": "Possible tampering on Windows Defender configuration by Powershell command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1562"
+   ]
+  },
+  "92008": {
+   "compliance": {},
+   "description": "Windows Defender real time monitoring was disabled by Powershell command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1562.001"
+   ]
+  },
+  "92010": {
+   "compliance": {},
+   "description": "Windows Defender downloaded file scanning was disabled by Powershell command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 13,
+   "mitre": [
+    "T1562.001"
+   ]
+  },
+  "92016": {
+   "compliance": {},
+   "description": "Masqueraded CertUtil.exe with a different file name. Possible use to decode malware",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 13,
+   "mitre": [
+    "T1036.003",
+    "T1140"
+   ]
+  },
+  "92018": {
+   "compliance": {},
+   "description": "CertUtil.exe used to decode binary file",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 13,
+   "mitre": [
+    "T1140"
+   ]
+  },
+  "92021": {
+   "compliance": {},
+   "description": "Powershell was used to delete files or directories",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1070.004"
+   ]
+  },
+  "92024": {
+   "compliance": {},
+   "description": "Powershell used to copy SAM hive from VSS",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1003.002",
+    "T1059.001"
+   ]
+  },
+  "92026": {
+   "compliance": {},
+   "description": "Reg.exe used to dump SAM hive",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1003.002"
+   ]
+  },
+  "92029": {
+   "compliance": {},
+   "description": "Powershell executed script from suspicious location",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1059.001"
+   ]
+  },
+  "92035": {
+   "compliance": {},
+   "description": "A net.exe domain discovery command was executed",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1135",
+    "T1059.003"
+   ]
+  },
+  "92038": {
+   "compliance": {},
+   "description": "A connection to cloud resource was started by $(win.eventdata.parentImage)",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1102",
+    "T1567.002"
+   ]
+  },
+  "92039": {
+   "compliance": {},
+   "description": "A net.exe account discovery command was initiated",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1087"
+   ]
+  },
+  "92040": {
+   "compliance": {},
+   "description": "$(win.eventdata.originalFileName) executed a user creation command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1136.001"
+   ]
+  },
+  "92043": {
+   "compliance": {},
+   "description": "Netsh used to add firewall rule",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 10,
+   "mitre": [
+    "T1562.004"
+   ]
+  },
+  "92046": {
+   "compliance": {},
+   "description": "Possible use of fodhelper.exe used to bypass UAC and execute of malicious software",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1548.002"
+   ]
+  },
+  "92048": {
+   "compliance": {},
+   "description": "Office application started mshta.exe and executed scripting command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 15,
+   "mitre": [
+    "T1218.005",
+    "T1059"
+   ]
+  },
+  "92052": {
+   "compliance": {},
+   "description": "Windows command prompt started by an abnormal process",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 4,
+   "mitre": [
+    "T1059.003"
+   ]
+  },
+  "92056": {
+   "compliance": {},
+   "description": "Powershell process invoked known auto-elevated utility $(win.eventdata.originalFileName), may have been used to bypass UAC",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 14,
+   "mitre": [
+    "T1548.002"
+   ]
+  },
+  "92057": {
+   "compliance": {},
+   "description": "Powershell.exe spawned a powershell process which executed a base64 encoded command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1059.001"
+   ]
+  },
+  "92063": {
+   "compliance": {},
+   "description": "File deletion by $(win.eventdata.originalFileName). Command: $(win.eventdata.commandLine)",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1070.004"
+   ]
+  },
+  "92067": {
+   "compliance": {},
+   "description": "$(win.eventdata.image) launched by $(win.eventdata.parentImage) executed a compressed file creation command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1560.001"
+   ]
+  },
+  "92068": {
+   "compliance": {},
+   "description": "PSEXEC was used to execute: $(win.eventdata.commandLine)",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1569.002"
+   ]
+  },
+  "92071": {
+   "compliance": {},
+   "description": "A powershell process created by WMI executed a base64 encoded command",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1047",
+    "T1059.001"
+   ]
+  },
+  "92075": {
+   "compliance": {},
+   "description": "$(win.eventdata.originalFileName) launched with commands to create a binary file",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1105"
+   ]
+  },
+  "92081": {
+   "compliance": {},
+   "description": "Rundll32 executing file with suspicious extension",
+   "file": "0800-sysmon_id_1.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid1_detections",
+    "windows"
+   ],
+   "level": 15,
+   "mitre": [
+    "T1218.011"
+   ]
+  },
+  "92103": {
+   "compliance": {},
+   "description": "LDAP activity from Powershell process, possible remote system discovery",
+   "file": "0810-sysmon_id_3.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid3_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1018"
+   ]
+  },
+  "92106": {
+   "compliance": {},
+   "description": "Windows System process activity over SMB port - Possible suspicious access to Windows admin shares",
+   "file": "0810-sysmon_id_3.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid3_detections",
+    "windows"
+   ],
+   "level": 3,
+   "mitre": [
+    "T1021.002"
+   ]
+  },
+  "92200": {
+   "compliance": {},
+   "description": "Scripting file created under Windows Temp or User folder",
+   "file": "0830-sysmon_id_11.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid11_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1059",
+    "T1105"
+   ]
+  },
+  "92204": {
+   "compliance": {},
+   "description": "Powershell process created executable file in AppData temp folder",
+   "file": "0830-sysmon_id_11.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid11_detections",
+    "windows"
+   ],
+   "level": 9,
+   "mitre": [
+    "T1105"
+   ]
+  },
+  "92207": {
+   "compliance": {},
+   "description": "Executable file dropped in Users\\Public folder",
+   "file": "0830-sysmon_id_11.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid11_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1105"
+   ]
+  },
+  "92213": {
+   "compliance": {},
+   "description": "Executable file dropped in folder commonly used by malware",
+   "file": "0830-sysmon_id_11.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid11_detections",
+    "windows"
+   ],
+   "level": 15,
+   "mitre": [
+    "T1105"
+   ]
+  },
+  "92217": {
+   "compliance": {},
+   "description": "Executable dropped in Windows root folder",
+   "file": "0830-sysmon_id_11.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid11_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1570"
+   ]
+  },
+  "92302": {
+   "compliance": {},
+   "description": "Registry entry to be executed on next logon was modified using command line application reg.exe",
+   "file": "0860-sysmon_id_13.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid13_detections",
+    "windows"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1547.001"
+   ]
+  },
+  "92305": {
+   "compliance": {},
+   "description": "Command interpreter added to registry key associated to UAC bypass by auto-elevated processes",
+   "file": "0860-sysmon_id_13.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid13_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1548.002",
+    "T1112"
+   ]
+  },
+  "92601": {
+   "compliance": {},
+   "description": "Executed python script from /tmp/ folder.",
+   "file": "0850-audit_rules.xml",
+   "groups": [
+    "audit_detections"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1059.006"
+   ]
+  },
+  "92602": {
+   "compliance": {},
+   "description": "Suspicious python script matches Impacket signature, possible use of stolen credentials or pass the hash attack.",
+   "file": "0850-audit_rules.xml",
+   "groups": [
+    "audit_detections"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1059.006",
+    "T1550.002"
+   ]
+  },
+  "92603": {
+   "compliance": {},
+   "description": "A file was copied to this system over SSH using SCP.",
+   "file": "0850-audit_rules.xml",
+   "groups": [
+    "audit_detections"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1021.004"
+   ]
+  },
+  "92604": {
+   "compliance": {},
+   "description": "Processes running for all users were queried with ps command.",
+   "file": "0850-audit_rules.xml",
+   "groups": [
+    "audit_detections"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1057"
+   ]
+  },
+  "92605": {
+   "compliance": {},
+   "description": "Executed recursive query of all files using ls command.",
+   "file": "0850-audit_rules.xml",
+   "groups": [
+    "audit_detections"
+   ],
+   "level": 6,
+   "mitre": [
+    "T1083"
+   ]
+  },
+  "92900": {
+   "compliance": {},
+   "description": "Lsass process was accessed by $(win.eventdata.sourceImage) with read permissions, possible credential dump",
+   "file": "0945-sysmon_id_10.xml",
+   "groups": [
+    "sysmon",
+    "sysmon_eid10_detections",
+    "windows"
+   ],
+   "level": 12,
+   "mitre": [
+    "T1003.001"
+   ]
+  }
+ }
+}

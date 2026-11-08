@@ -106,6 +106,10 @@ test-integration: ## Integration tier against `make test-services` (PYTEST_ARGS=
 eval-cassettes: ## Record the committed evaluation cassettes again (fake model) against `make test-services`
 	$(TEST_SERVICES_ENV) LG_SOTF_RECORD_CASSETTES=1 $(PYTHON) -m pytest tests/integration/eval/test_cassettes.py -k committed
 
+.PHONY: eval-corpus-cassettes
+eval-corpus-cassettes: ## Record the corpus_v1 cassettes again (fake model, about 4 min) against `make test-services`
+	$(TEST_SERVICES_ENV) LG_SOTF_RECORD_CASSETTES=1 $(PYTHON) -m pytest tests/integration/eval/test_corpus_v1_eval.py
+
 .PHONY: test-services-down
 test-services-down: ## Stop and remove the test services (their data was on tmpfs)
 	$(TEST_COMPOSE) down -v

@@ -147,3 +147,13 @@ def test_cli_reports_unusable_input_as_an_error(tmp_path: Path) -> None:
     bad.write_text("[]", encoding="utf-8")
     res = CliRunner().invoke(cli, ["eval-scorecard", str(bad), "--output", str(tmp_path / "x.md")])
     assert res.exit_code == 1 and "not an lg-sotf eval report" in res.output
+
+
+def test_a_generated_corpus_is_not_called_hand_written() -> None:
+    small = build_scorecard([report()], ScorecardOptions())
+    assert any("hand-written" in note for note in small["limitations"])
+    big = report()
+    big["dataset"]["items"] = 520  # corpus_v1 size: a generated set, not a hand-written one
+    card = build_scorecard([big], ScorecardOptions())
+    assert not any("hand-written" in note for note in card["limitations"])
+    assert any("generated alerts" in note for note in card["limitations"])
