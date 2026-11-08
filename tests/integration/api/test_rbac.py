@@ -105,6 +105,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("PATCH", "/api/v1/platform/tenants/no-such-tenant", "platform_admin", {"name": "n"}),
     ("GET", "/api/v1/platform/escalations", "platform_admin", None),
     ("GET", "/api/v1/platform/usage", "platform_admin", None),
+    ("GET", f"/api/v1/platform/shadow/reports/shr_{'0' * 32}?tenant_id=tenant-a", "platform_admin", None),
     ("GET", "/api/v1/onboarding/status", "admin", None),
     ("POST", "/api/v1/onboarding/sample-alerts", "admin", None),
     ("POST", "/api/v1/onboarding/autonomy-reviewed", "admin", None),

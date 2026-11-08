@@ -173,11 +173,12 @@ it still cannot claim or decide.
 | PATCH | `/api/v1/platform/tenants/{id}` | `name`, `status` (`active`/`suspended`), `quotas` (only the keys present change; `null` = unlimited). |
 | GET | `/api/v1/platform/escalations?tenant_id=&limit=&cursor=` | Open and claimed escalations of every tenant, soonest SLA first, keyset-paginated (`limit` <= 200). Each item has `overdue`. |
 | GET | `/api/v1/platform/usage?month=YYYY-MM&format=json\|csv` | Per-tenant usage for a UTC month (default: the current one). |
+| GET | `/api/v1/platform/shadow/reports/{id}?tenant_id=` | A shadow agreement report (`lg-sotf shadow-run`): a candidate model's verdicts against production's, read-only (docs/evaluation.md, "Shadow agreement"). |
 
 Platform endpoints act across tenants: send them without `X-Tenant-ID` (the
 web app does). Every call is audited in your home tenant
 (`platform.tenants_listed`, `platform.escalations_listed`,
-`platform.usage_exported`, `platform.tenant_created`,
+`platform.usage_exported`, `platform.shadow_report_viewed`, `platform.tenant_created`,
 `platform.tenant_updated`); changes are also audited in the tenant concerned
 (`tenant.created`, `tenant.updated`, `tenant.suspended`,
 `tenant.reactivated`), and a settings copy in the source tenant

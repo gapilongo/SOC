@@ -236,6 +236,7 @@ The archive holds JSON Lines files, one object per row: `users.jsonl`,
 `external_tickets.jsonl`, `usage_daily.jsonl`, `llm_usage_daily.jsonl`,
 `investigation_steps.jsonl` (the investigation trace),
 `shadow_effects.jsonl` (what shadow runs of a candidate pipeline would have done),
+`shadow_verdicts.jsonl` (production's and a candidate's verdict per alert, from shadow replays),
 `audit_log.jsonl` and `indicator_sightings.jsonl` (the indicator values seen on
 each alert, as displayed: IP addresses, email addresses, user and host names),
 plus `tenant.json` (name, status, settings) and `manifest.json` (row count and

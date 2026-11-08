@@ -1136,6 +1136,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/platform/shadow/reports/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A shadow agreement report: a candidate's verdicts against production's (read-only) */
+        get: operations["shadow_report_api_v1_platform_shadow_reports__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/platform/tenants": {
         parameters: {
             query?: never;
@@ -5030,6 +5047,143 @@ export interface components {
             /** Tenant Name */
             tenant_name: string;
         };
+        /** ShadowAgreementReport */
+        ShadowAgreementReport: {
+            /** @description Agreement over every alert with a production verdict; failed or degraded runs disagree. */
+            agreement: components["schemas"]["RateInterval"];
+            /** Agreement Text */
+            agreement_text: string;
+            /** @description Agreement over the usable candidate verdicts only. */
+            agreement_usable: components["schemas"]["RateInterval"];
+            /** Agreement Usable Text */
+            agreement_usable_text: string;
+            /**
+             * Alerts
+             * @description Alerts replayed.
+             */
+            alerts: number;
+            /** By Class */
+            by_class: components["schemas"]["ShadowClassAgreement"][];
+            /** Candidate */
+            candidate: string;
+            /**
+             * Candidate Degraded
+             * @description Candidate runs whose model answer was unusable or refused.
+             */
+            candidate_degraded: number;
+            /**
+             * Candidate Failed
+             * @description Candidate runs that raised: no verdict.
+             */
+            candidate_failed: number;
+            candidate_failures: components["schemas"]["ShadowCaseList"];
+            /**
+             * Compared
+             * @description Alerts with a production verdict and a usable candidate verdict.
+             */
+            compared: number;
+            /**
+             * Confusion
+             * @description Production route -> candidate route -> alerts.
+             */
+            confusion: {
+                [key: string]: {
+                    [key: string]: number;
+                };
+            };
+            cost_usd: components["schemas"]["ShadowDelta"];
+            /**
+             * Data Warnings
+             * @description Why the report is not enough_data, if it is not.
+             */
+            data_warnings: string[];
+            /** Enough Data */
+            enough_data: boolean;
+            /** Labels */
+            labels: string[];
+            latency_ms: components["schemas"]["ShadowDelta"];
+            /** Limitations */
+            limitations: string[];
+            /** Max Failure Rate */
+            max_failure_rate: number;
+            /** Min Samples */
+            min_samples: number;
+            new_escalations: components["schemas"]["ShadowCaseList"];
+            /** No Production Verdict */
+            no_production_verdict: number;
+            plan_differences: components["schemas"]["ShadowCaseList"];
+            potential_misses: components["schemas"]["ShadowCaseList"];
+            /** Report Id */
+            report_id: string;
+            /** @description escalate <-> plan_response, production escalate -> candidate plan_response first. */
+            routing_differences: components["schemas"]["ShadowCaseList"];
+            /** Tenant Id */
+            tenant_id: string;
+            tokens: components["schemas"]["ShadowDelta"];
+        };
+        /**
+         * ShadowCase
+         * @description One alert on which the two verdicts differ, as the report lists it.
+         */
+        ShadowCase: {
+            /** Alert Id */
+            alert_id: string;
+            /** Candidate Actions */
+            candidate_actions: string[];
+            /** Candidate Confidence */
+            candidate_confidence: number | null;
+            /**
+             * Candidate Degraded
+             * @default 0
+             */
+            candidate_degraded?: number;
+            /** Candidate Disposition */
+            candidate_disposition: string | null;
+            /** Candidate Error */
+            candidate_error?: string | null;
+            /** Candidate Route */
+            candidate_route: string | null;
+            /** Production Actions */
+            production_actions: string[];
+            /** Production Confidence */
+            production_confidence: number | null;
+            /** Production Disposition */
+            production_disposition: string | null;
+            /** Production Route */
+            production_route: string | null;
+            /** Severity */
+            severity: string;
+        };
+        /** ShadowCaseList */
+        ShadowCaseList: {
+            /** Count */
+            count: number;
+            /**
+             * Items
+             * @description Worst first, at most 100.
+             */
+            items: components["schemas"]["ShadowCase"][];
+        };
+        /** ShadowClassAgreement */
+        ShadowClassAgreement: {
+            agreement: components["schemas"]["RateInterval"];
+            /** Production Route */
+            production_route: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * ShadowDelta
+         * @description Per-alert means over the usable comparisons; ``delta`` is candidate minus production.
+         */
+        ShadowDelta: {
+            /** Candidate Mean */
+            candidate_mean: number | null;
+            /** Delta */
+            delta: number | null;
+            /** Production Mean */
+            production_mean: number | null;
+        };
         /** SourceCreateIn */
         SourceCreateIn: {
             /** Config */
@@ -8000,6 +8154,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OrganisationOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    shadow_report_api_v1_platform_shadow_reports__run_id__get: {
+        parameters: {
+            query: {
+                /** @description The tenant the report was run on. */
+                tenant_id: string;
+            };
+            header?: never;
+            path: {
+                /** @description The report id lg-sotf shadow-run printed. */
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShadowAgreementReport"];
                 };
             };
             /** @description Validation Error */

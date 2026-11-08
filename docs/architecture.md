@@ -161,6 +161,7 @@ next two partitions ahead and drops expired ones.
 | `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
 | `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
 | `shadow_effects` | Shadow-mode sink, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id` (`shadow/...`), `seq` (UNIQUE per run), `boundary`, `operation`, `outcome` (sunk/refused), `detail JSONB` (event and action types, action targets; size-capped). What a shadow run would have done (§8); no API reads it |
+| `shadow_verdicts` | Shadow agreement rows (AI-E1.5b), append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `report_id` (`shr_<32 hex>`, UNIQUE with the alert), `run_id`, `candidate` (label), then for production (`prod_*`) and the candidate (`cand_*`): `route` (escalate/plan_response/close), `disposition`, `confidence`, `actions TEXT[]` (`action_type:target`, at most 20), `tokens`, `cost_usd`, `latency_ms`; `cand_error` (a failed candidate run), `cand_degraded` (model answers that were unusable or refused, so the rules decided; counted as a failure). Read by `GET /platform/shadow/reports/{id}`; not in the evidence pack |
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
@@ -296,7 +297,9 @@ Rules:
   threat-intelligence answers than production's. LLM use stays on the run
   (never `llm_usage_daily`, which bills the tenant and seeds its budget),
   and metrics are labelled `mode="shadow"`. After the run, the sink is
-  written to `shadow_effects`, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
+  written to `shadow_effects`, the run's only write (`lg-sotf shadow-run` then stores the
+  candidate's verdict beside production's in `shadow_verdicts`, `core/shadow_replay.py`;
+  docs/evaluation.md, "Shadow agreement"). `tests/unit/architecture/test_shadow_egress.py`
   finds the egress call sites (HTTP, SMTP, socket, database and Redis
   clients, every Redis write command, WebSocket sends, connector execution,
   outbox inserts) with the AST and fails on any outside a registered

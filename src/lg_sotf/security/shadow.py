@@ -111,11 +111,31 @@ class ShadowRun:
     llm_tokens: int = 0
     llm_cost_usd: Decimal = Decimal(0)
     """The run's LLM use (never a billing row of the tenant: ``lg_sotf.llm.usage``)."""
+    llm_skipped: int = 0
+    llm_unusable: int = 0
+    llm_refused: int = 0
+    """Model calls not made, whose output was unusable (rules fallback), or that the model refused."""
 
     def add_llm_usage(self, tokens: int, cost_usd: Decimal) -> None:
         self.llm_calls += 1
         self.llm_tokens += tokens
         self.llm_cost_usd += cost_usd
+
+
+LLMShortfall = Literal["skipped", "unusable", "refused"]
+
+
+def note_llm_shortfall(kind: LLMShortfall) -> None:
+    """Count, on the active shadow run, an agent step that got no usable model answer (live: nothing)."""
+    run = _RUN.get()
+    if run is None:
+        return
+    if kind == "skipped":
+        run.llm_skipped += 1
+    elif kind == "unusable":
+        run.llm_unusable += 1
+    else:
+        run.llm_refused += 1
 
 
 _RUN: ContextVar[Optional[ShadowRun]] = ContextVar("lg_sotf_shadow_run", default=None)
@@ -256,6 +276,7 @@ __all__ = [
     "SHADOW_RUN_PREFIX",
     "EffectOutcome",
     "EgressPoint",
+    "LLMShortfall",
     "RunMode",
     "ShadowEffect",
     "ShadowEgressRefused",
@@ -266,6 +287,7 @@ __all__ = [
     "allow",
     "egress",
     "in_shadow",
+    "note_llm_shortfall",
     "passed_arguments",
     "refuse_in_shadow",
     "run_mode",
