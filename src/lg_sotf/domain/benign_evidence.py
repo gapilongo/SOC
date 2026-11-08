@@ -61,8 +61,11 @@ __all__ = [
     "EICAR_MD5",
     "EICAR_SHA1",
     "EICAR_SHA256",
+    "INJECTION_SIGNAL",
     "KnownScanners",
     "RULE_NAME_KEYWORDS",
+    "SCANNER_SIGNAL",
+    "TENANT_CONTEXT_SIGNALS",
     "TriageSettings",
     "attacker_values",
     "detector_words",
@@ -246,6 +249,16 @@ def _ip(value: str) -> Union[ipaddress.IPv4Address, ipaddress.IPv6Address, None]
         return ipaddress.ip_address(value.strip())
     except ValueError:
         return None
+
+
+#: The false-positive signal of an alert naming one of the tenant's configured scanners (:class:`KnownScanners`).
+SCANNER_SIGNAL = "known_scanner"
+#: Signals that come from what the tenant declared, not from the alert or the detector: the only rule evidence
+#: that may corroborate a benign model verdict whose rules' threat score is too high (``routing.decide``).
+TENANT_CONTEXT_SIGNALS = frozenset({SCANNER_SIGNAL})
+#: The true-positive signal of alert text written to steer a model. It voids false-positive evidence taken from
+#: text, and a benign verdict on such an alert is never corroborated by tenant context.
+INJECTION_SIGNAL = "prompt_injection_suspected"
 
 
 @dataclass(frozen=True)

@@ -20,7 +20,10 @@ per-item report committed next to it.
 * **Cost.** $1.47 for the run.
 
 [RUN.md](v2/deepseek-v4/RUN.md) traces which routing gate held each benign
-alert and lists the changes to test next. A self-hosted copy of the weights
+alert and lists the changes to test next.
+[CALIBRATION.md](v2/deepseek-v4/CALIBRATION.md) (AI-E1.9) tests them offline
+against the recorded decisions and the fake-model sets, and records the policy
+chosen; it is a simulation, not a new model run. A self-hosted copy of the weights
 is how a client runs this model; customer data never goes to the hosted API.
 
 ## Generating one
@@ -91,9 +94,12 @@ results (`--thresholds`, `--baseline`), not on a scorecard.
 ## Reproducing a scorecard
 
 `v2/deepseek-v4/` holds the eval report (`corpus_v1.json`), the scorecard,
-its JSON form and [RUN.md](v2/deepseek-v4/RUN.md).
+its JSON form, [RUN.md](v2/deepseek-v4/RUN.md), the decision inputs
+recovered from the alert timelines (`decision_inputs.json`) and
+[CALIBRATION.md](v2/deepseek-v4/CALIBRATION.md).
 `tests/unit/eval/test_scorecard_v2.py` regenerates the scorecard from the
-committed report and fails if they disagree.
+committed report and fails if they disagree; `tests/unit/eval/test_calibration.py`
+checks the simulator reproduces every recorded decision.
 
 `v1/<model>/` holds the two eval reports, the scorecard and its JSON form.
 `tests/unit/eval/test_scorecard_v1.py` regenerates the scorecard from the

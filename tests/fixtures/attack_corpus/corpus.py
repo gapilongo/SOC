@@ -25,10 +25,11 @@ from tests.fixtures.attack_corpus.catalog import (
     rule_block,
     technique_name,
 )
-from tests.fixtures.attack_corpus.fleet import MANAGER
+from tests.fixtures.attack_corpus.fleet import MANAGER, SCANNER_IP
 from tests.fixtures.attack_corpus.scenarios import DAYS, START, Draft, Truth, generate
 
 NAME = "corpus_v1"
+TENANT_SETTINGS: Dict[str, Any] = {"triage": {"known_scanners": [SCANNER_IP]}}
 VERSION = 1
 SEED = 20261108
 MALICIOUS = 208
@@ -174,6 +175,8 @@ def meta(alerts: Sequence[Mapping[str, Any]], labels: Mapping[str, Truth]) -> Di
                       "window": [START.date().isoformat(), f"{DAYS} days"]},
         "sources": {"wazuh_ruleset": WAZUH_TAG, "attack": ATTACK_VERSION, "atomic_red_team": ART_COMMIT},
         "composition": composition(alerts, labels),
+        # What the estate's tenant would configure (AI-E1.9): its authorised vulnerability scanner.
+        "tenant_settings": TENANT_SETTINGS,
     }
 
 

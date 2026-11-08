@@ -82,7 +82,7 @@ Top-level settings.
 |---|---|---|---|---|
 | `environment` | `LG_SOTF_ENVIRONMENT` | `development` \| `test` \| `staging` \| `production` | `development` | `development`, `test`, `staging` or `production`. Staging and production run the startup safety checks (`Settings.assert_safe`). `LG_SOTF_ENV` is accepted as a legacy alias. |
 | `config_file` | `LG_SOTF_CONFIG_FILE` | string (optional) | unset | Optional YAML file with lower precedence than environment variables and `.env`; may reference `${VAR}` and `${VAR:-default}`. |
-| `agents` | `LG_SOTF_AGENTS` | mapping | `{}` | Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`). |
+| `agents` | `LG_SOTF_AGENTS` | mapping | `{}` | Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `correlation.clock` is `wall` (default) or `event` (correlate on each alert's own time; `lg-sotf eval` uses it). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`). |
 | `routing` | `LG_SOTF_ROUTING` | mapping | `{}` | See the routing table below. |
 | `tools` | `LG_SOTF_TOOLS` | mapping | `{}` | Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent. |
 | `ingestion` | `LG_SOTF_INGESTION` | mapping | `{}` | See the ingestion table below. |
@@ -377,6 +377,9 @@ Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-for
 | `routing.close_max_threat` | `LG_SOTF_ROUTING__CLOSE_MAX_THREAT` | integer | `30` | Below this threat score a low/medium alert closes if rules corroborate; high/critical go to an analyst. |
 | `routing.max_more_info_loops` | `LG_SOTF_ROUTING__MAX_MORE_INFO_LOOPS` | integer | `1` | How often an analyst's `needs_more_info` re-runs analysis before the case returns to the analyst. |
 | `routing.max_alert_age_hours` | `LG_SOTF_ROUTING__MAX_ALERT_AGE_HOURS` | integer | `72` | Reserved alert-age limit (not enforced by routing in this release). |
+| `routing.benign_verdict_precedence` | `LG_SOTF_ROUTING__BENIGN_VERDICT_PRECEDENCE` | boolean | `true` | A benign deep-model verdict below `close_max_threat` skips the grey-zone confidence test; every other close test still applies. `false` restores the 1.2 policy (AI-E1.9). |
+| `routing.context_corroboration` | `LG_SOTF_ROUTING__CONTEXT_CORROBORATION` | boolean | `true` | A benign deep-model verdict below `close_max_threat` on a low/medium alert may be corroborated by context the tenant declared (a `triage.known_scanners` entity) instead of the rules' threat score. `false` restores the 1.2 policy (AI-E1.9). |
+| `routing.cap_correlated_confidence` | `LG_SOTF_ROUTING__CAP_CORRELATED_CONFIDENCE` | boolean | `false` | Related alerts never lift the confidence to `response_combo_confidence`; only triage (trusted rule evidence with the model) can. `false` restores the 1.2 policy (AI-E1.9). |
 
 ### `ingestion`
 
