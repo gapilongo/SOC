@@ -66,6 +66,9 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 ALL_TABLES = (
     "shadow_effects",
     "investigation_steps",
+    "tenant_grants",
+    "organisation_members",
+    "organisations",
     "external_tickets",
     "notification_outbox",
     "integrations",
@@ -150,6 +153,9 @@ TENANT_TABLES = (
     "external_tickets",
     "investigation_steps",
     "shadow_effects",
+    "organisations",
+    "organisation_members",
+    "tenant_grants",
 )
 
 
@@ -203,5 +209,14 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
     )
     await repos.shadow_effects.append(
         tenant_id, alert_id, "shadow/seed", [ShadowEffect(0, "outbox", "enqueue_on", "sunk", {"rows": 1})]
+    )
+    # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
+    await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")
+    await repos.organisations.add_member(tenant_id, user.id)
+    mssp = f"{tenant_id}-mssp"
+    await repos.tenants.provision(mssp, "Another MSSP")
+    await repos.organisations.upsert(mssp, "Another MSSP")
+    await repos.grants.create(
+        tenant_id, mssp, "analyst", reason="seed", created_by="seed", expires_at=now + timedelta(days=1)
     )
     return alert_id

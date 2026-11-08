@@ -1,4 +1,4 @@
-"""The shadow-mode sink: what each shadow run would have done (migration 0012).
+"""The shadow-mode sink: what each shadow run would have done (migration 0013).
 
 Rows are append-only and written after the run has left shadow mode
 (:class:`lg_sotf.core.shadow.ShadowRunner`); no API endpoint reads them.

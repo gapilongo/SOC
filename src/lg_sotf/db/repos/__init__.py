@@ -35,6 +35,13 @@ from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, Relat
 from lg_sotf.db.repos.integrations import Integration, IntegrationsRepo
 from lg_sotf.db.repos.investigation_steps import InvestigationStepsRepo, TraceStep
 from lg_sotf.db.repos.llm_usage import LLMUsageDay, LLMUsageDelta, LLMUsageRepo, LLMUsageTotals
+from lg_sotf.db.repos.organisations import (
+    GrantsRepo,
+    Organisation,
+    OrganisationMember,
+    OrganisationsRepo,
+    TenantGrant,
+)
 from lg_sotf.db.repos.outbox import NewOutboxEntry, OutboxEntry, OutboxRepo
 from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
@@ -81,6 +88,8 @@ class Repositories:
     shadow_effects: ShadowEffectsRepo
     reports: ReportsRepo
     views: ViewsRepo
+    organisations: OrganisationsRepo
+    grants: GrantsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -111,6 +120,8 @@ class Repositories:
             shadow_effects=ShadowEffectsRepo(db),
             reports=ReportsRepo(db),
             views=ViewsRepo(db),
+            organisations=OrganisationsRepo(db),
+            grants=GrantsRepo(db),
         )
 
 
@@ -135,6 +146,7 @@ __all__ = [
     "Feedback",
     "FeedbackRepo",
     "FeedbackStats",
+    "GrantsRepo",
     "IndicatorSighting",
     "IndicatorsRepo",
     "Integration",
@@ -149,6 +161,9 @@ __all__ = [
     "NewOutboxEntry",
     "PlatformEscalation",
     "PlatformRepo",
+    "Organisation",
+    "OrganisationMember",
+    "OrganisationsRepo",
     "OutboxEntry",
     "OutboxRepo",
     "RefreshToken",
@@ -167,6 +182,7 @@ __all__ = [
     "SuppressionRule",
     "SuppressionsRepo",
     "Tenant",
+    "TenantGrant",
     "TenantStats",
     "TenantUsage",
     "TenantsRepo",

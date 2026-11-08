@@ -25,7 +25,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from lg_sotf.api.auth.deps import REVIEWER, VIEWER, require
+from lg_sotf.api.auth.deps import CLAIMER, REVIEWER, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import escalations_out, one_escalation_out, user_ref
 from lg_sotf.api.context import ApiContext, get_ctx
@@ -183,7 +183,7 @@ async def get_escalation(
 
 @escalations.post("/{escalation_id}/claim", response_model=EscalationOut, summary="Claim (assign to yourself)")
 async def claim(
-    escalation_id: str, body: ClaimIn, request: Request, principal: Principal = Depends(require(REVIEWER))
+    escalation_id: str, body: ClaimIn, request: Request, principal: Principal = Depends(require(CLAIMER))
 ) -> EscalationOut:
     assert principal.user_id is not None and principal.role is not None
     ctx = get_ctx(request)
@@ -212,6 +212,7 @@ async def decide(
         body.version,
         feedback=body.feedback.model_dump(exclude_none=True) if body.feedback else None,
         suggest_suppression=body.suggest_suppression,
+        delegated=principal.delegated,
     )
     if body.decision == "true_positive":
         await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id])

@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from lg_sotf.api.auth.deps import ADMIN, ANALYST, VIEWER, require
+from lg_sotf.api.auth.deps import ADMIN, ADMIN_NOT_UNDER_GRANT, ANALYST, VIEWER, require
 from lg_sotf.api.auth.principal import Principal, role_at_least
 from lg_sotf.api.common import aware, reject_catch_all
 from lg_sotf.api.context import get_ctx
@@ -98,6 +98,9 @@ async def update_rule(
     changes: Dict[str, Any] = {name: getattr(body, name) for name in ("name", "match", "enabled") if name in fields}
     if "expires_at" in fields:
         changes["expires_at"] = _future(body.expires_at) if body.expires_at else None
+    if principal.delegated and (await ctx.repos.suppressions.get(principal.tenant_id, rule_id)).grant_id is None:
+        # The customer's own rules are changed by the customer: under a grant only rules written under one.
+        raise ApiError(403, "forbidden", "under a grant only rules created under a grant can be changed")
     rule = await rule_changes.update_rule(
         ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, rule_id, changes, fields=fields
     )
@@ -105,7 +108,9 @@ async def update_rule(
 
 
 @router.delete("/{rule_id}", status_code=204, summary="Delete a rule")
-async def delete_rule(rule_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
+async def delete_rule(
+    rule_id: str, request: Request, principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT))
+) -> Response:
     ctx = get_ctx(request)
     if not await rule_changes.delete_rule(
         ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, rule_id

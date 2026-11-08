@@ -120,6 +120,14 @@ Beyond the database:
 * A platform admin may act on another tenant with `X-Tenant-ID`; every such
   request is written to that tenant's audit log, and decisions (claims,
   escalation decisions, approvals) stay with the tenant's own members.
+* A member of an MSSP organisation may act on a customer tenant with
+  `X-Tenant-ID` only under a live grant the customer gave
+  (`tenant_grants`): the grant is read on every request, its role is capped
+  at the member's own, and every request is written to the customer's audit
+  log. Only the customer's own admins give, list and revoke grants. Under a
+  grant nobody claims escalations or creates credentials (users, API keys,
+  grants), and every audit entry is recorded in both the customer's and the
+  organisation's chain in one transaction (`AuditLogger`, dual audit).
 
 ## 3. Authentication and authorisation
 

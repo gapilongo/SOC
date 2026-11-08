@@ -115,6 +115,7 @@ async def bulk_close(
     decision: str,
     notes: str,
     suggest_suppression: Optional[bool] = None,
+    delegated: bool = False,
 ) -> List[ItemOutcome]:
     """Decide each ``(escalation_id, version)`` as ``decision`` (benign only) with ``notes``, as
     ``POST /escalations/{id}/decision`` does. The caller enqueues each outcome's resume messages."""
@@ -126,7 +127,7 @@ async def bulk_close(
         try:
             result = await review.decide(
                 tenant_id, escalation_id, user, role, decision, notes, [], version,
-                suggest_suppression=suggest_suppression,
+                suggest_suppression=suggest_suppression, delegated=delegated,
             )
         except ITEM_ERRORS as exc:
             out.append(ItemOutcome(escalation_id, error=exc))

@@ -24,7 +24,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from lg_sotf.api.auth.deps import ADMIN, ADMIN_USER, require
+from lg_sotf.api.auth.deps import ADMIN, Access, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import check_password
 from lg_sotf.api.context import get_ctx
@@ -41,6 +41,10 @@ from lg_sotf.services.tenancy import QuotaExceeded
 
 users = APIRouter(prefix="/users", tags=["users"])
 api_keys = APIRouter(prefix="/api-keys", tags=["api-keys"])
+
+# Accounts and keys would outlive a grant: an MSSP analyst acting under one cannot create or change them.
+ACCOUNTS = Access(role="admin", no_grant=True)
+ACCOUNTS_USER = Access(role="admin", user_account=True, no_grant=True)
 
 _REFUSALS: Dict[str, Tuple[int, str, str]] = {
     "platform_admin_target": (403, "forbidden", "only a platform admin can modify a platform-admin account"),
@@ -89,7 +93,7 @@ async def get_user(user_id: UUID, request: Request, principal: Principal = Depen
 
 
 @users.post("", status_code=201, response_model=UserOut, summary="Create a user")
-async def create_user(body: UserCreateIn, request: Request, principal: Principal = Depends(require(ADMIN))) -> UserOut:
+async def create_user(body: UserCreateIn, request: Request, principal: Principal = Depends(require(ACCOUNTS))) -> UserOut:
     ctx = get_ctx(request)
     if body.is_platform_admin and not principal.is_platform_admin:
         raise ApiError(403, "forbidden", "only a platform admin can create platform admins")
@@ -122,7 +126,7 @@ async def create_user(body: UserCreateIn, request: Request, principal: Principal
 
 @users.patch("/{user_id}", response_model=UserOut, summary="Update role, status or password")
 async def update_user(
-    user_id: UUID, body: UserUpdateIn, request: Request, principal: Principal = Depends(require(ADMIN_USER))
+    user_id: UUID, body: UserUpdateIn, request: Request, principal: Principal = Depends(require(ACCOUNTS_USER))
 ) -> UserOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
@@ -161,7 +165,7 @@ async def update_user(
 
 
 @users.post("/{user_id}/mfa/reset", status_code=204, summary="Remove a user's MFA (lost device); signs them out")
-async def reset_user_mfa(user_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
+async def reset_user_mfa(user_id: UUID, request: Request, principal: Principal = Depends(require(ACCOUNTS))) -> Response:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
     if user_id == principal.user_id:
@@ -181,7 +185,7 @@ async def reset_user_mfa(user_id: UUID, request: Request, principal: Principal =
 
 
 @users.delete("/{user_id}", status_code=204, summary="Delete a user")
-async def delete_user(user_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN_USER))) -> Response:
+async def delete_user(user_id: UUID, request: Request, principal: Principal = Depends(require(ACCOUNTS_USER))) -> Response:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
     if user_id == principal.user_id:
@@ -214,7 +218,7 @@ async def list_keys(
 
 @api_keys.post("", status_code=201, response_model=ApiKeyCreatedOut, summary="Create an API key (secret shown once)")
 async def create_key(
-    body: ApiKeyCreateIn, request: Request, principal: Principal = Depends(require(ADMIN))
+    body: ApiKeyCreateIn, request: Request, principal: Principal = Depends(require(ACCOUNTS))
 ) -> ApiKeyCreatedOut:
     ctx = get_ctx(request)
     generated = generate_api_key()
@@ -234,7 +238,7 @@ async def create_key(
 
 
 @api_keys.delete("/{key_id}", status_code=204, summary="Revoke an API key")
-async def revoke_key(key_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
+async def revoke_key(key_id: UUID, request: Request, principal: Principal = Depends(require(ACCOUNTS))) -> Response:
     ctx = get_ctx(request)
     if not await accounts.revoke_api_key(
         ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, key_id

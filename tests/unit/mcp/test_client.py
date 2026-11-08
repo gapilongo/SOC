@@ -170,6 +170,14 @@ async def test_key_sent_in_header_only() -> None:
     sent = stub.requests[0]
     assert sent.headers["X-API-Key"] == key
     assert key not in str(sent.url) and "authorization" not in sent.headers
+    assert "X-Tenant-ID" not in sent.headers
+
+
+async def test_a_pinned_tenant_is_sent_with_every_call() -> None:
+    stub = StubApi()
+    stub.json("GET /api/v1/alerts", {"items": []})
+    await make_client(stub, tenant_id="customer-1").get("/api/v1/alerts")
+    assert stub.requests[0].headers["X-Tenant-ID"] == "customer-1"
 
 
 async def test_base_url_path_prefix_is_kept() -> None:

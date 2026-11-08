@@ -4,7 +4,7 @@
   model, prompt or graph) on a real alert beside the production run. The
   shadow run records what it would have done (notifications, escalation,
   response plan, alert changes, live UI events) in the new `shadow_effects`
-  table instead of doing it. Migration `0012` creates the table; it is in the
+  table instead of doing it. Migration `0013` creates the table; it is in the
   tenant data export and follows alert retention. No API endpoint exposes
   shadow runs yet.
 

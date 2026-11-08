@@ -34,7 +34,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from lg_sotf.api.auth.deps import ADMIN, VIEWER, require
+from lg_sotf.api.auth.deps import ADMIN, ADMIN_NOT_UNDER_GRANT, VIEWER, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
@@ -365,7 +365,8 @@ async def slack_interactions(
         secret = decrypt_secret(ctx.secret_box, tenant, item.id, item.secret_ciphertext)
     except (NotFound, IntegrationConfigError):
         raise denied from None
-    if item.kind != "slack" or not item.enabled or not item.config.get("interactive_approvals"):
+    # Defence in depth: an integration written under an MSSP grant never decides as a customer user.
+    if item.kind != "slack" or not item.enabled or not item.config.get("interactive_approvals") or item.grant_id:
         raise denied
     signing_secret, bot_token = secret.get("signing_secret"), secret.get("bot_token")
     signature = request.headers.get("X-Slack-Signature")
@@ -423,7 +424,7 @@ async def get_integration(
 
 @router.post("", status_code=201, response_model=IntegrationOut, summary="Create an integration")
 async def create_integration(
-    body: IntegrationCreateIn, request: Request, principal: Principal = Depends(require(ADMIN))
+    body: IntegrationCreateIn, request: Request, principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT))
 ) -> IntegrationOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
@@ -465,7 +466,10 @@ async def create_integration(
 
 @router.patch("/{integration_id}", response_model=IntegrationOut, summary="Update an integration")
 async def update_integration(
-    integration_id: UUID, body: IntegrationUpdateIn, request: Request, principal: Principal = Depends(require(ADMIN))
+    integration_id: UUID,
+    body: IntegrationUpdateIn,
+    request: Request,
+    principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT)),
 ) -> IntegrationOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
@@ -511,7 +515,7 @@ async def update_integration(
 
 @router.delete("/{integration_id}", status_code=204, summary="Delete an integration (its delivery log and ticket links)")
 async def delete_integration(
-    integration_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN))
+    integration_id: UUID, request: Request, principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT))
 ) -> Response:
     ctx = get_ctx(request)
     current = await ctx.repos.integrations.get(principal.tenant_id, integration_id)

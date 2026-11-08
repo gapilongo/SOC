@@ -13,8 +13,8 @@ tenant's ``alerts_days`` retention and tenant erasure. Tenant-scoped with
 forced RLS like every tenant table; the runtime role may read and insert,
 never update or delete. No API endpoint reads the table.
 
-Revision ID: 0012
-Revises: 0011
+Revision ID: 0013
+Revises: 0012
 Create Date: 2026-11-08
 """
 
@@ -26,8 +26,8 @@ from alembic import op
 
 from lg_sotf.db.partitions import TENANT_POLICY_PREDICATE
 
-revision: str = "0012"
-down_revision: Union[str, None] = "0011"
+revision: str = "0013"
+down_revision: Union[str, None] = "0012"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -124,7 +124,7 @@ def test_authorise_approvals_stops_at_the_first_bad_entry_in_order() -> None:
 def test_resume_requests_give_pre_approvals_to_the_reviewed_alert_only() -> None:
     request = _DecisionRequest("true_positive", None, ["block_ip"], {})
     approved = ["block_ip:10.0.0.1"]
-    requests = _resume_requests("e1", escalation("a1", ["a2", "a1", "a3"]), request, approved, _Actor(USER, "admin"))
+    requests = _resume_requests("e1", escalation("a1", ["a2", "a1", "a3"]), request, approved, _Actor(USER, "admin", USER))
     assert [r.alert_id for r in requests] == ["a1", "a2", "a3"]
     assert requests[0].payload == {
         "type": "analyst_decision",
@@ -141,5 +141,5 @@ def test_resume_requests_give_pre_approvals_to_the_reviewed_alert_only() -> None
 
 def test_resume_requests_carry_the_notes() -> None:
     request = _DecisionRequest("false_positive", "scanner", [], {})
-    (only,) = _resume_requests("e1", escalation(), request, [], _Actor(USER, "analyst"))
+    (only,) = _resume_requests("e1", escalation(), request, [], _Actor(USER, "analyst", USER))
     assert only.payload["notes"] == "scanner" and only.payload["decision"] == "false_positive"
