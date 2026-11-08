@@ -78,8 +78,11 @@ async def test_organisation_members_and_grant_lifecycle(api: ApiHarness) -> None
     assert personal.status_code == 201, personal.text
     removed = await api.client.delete(f"{API}/organisation/members/{staff.id}", headers=api.auth(org_admin))
     assert removed.status_code == 204
-    # The member's own grant went with the membership.
-    assert [g["id"] for g in (await api.client.get(f"{API}/tenant/grants", headers=customer)).json()] == [grant["id"]]
+    # The member's own grant stays in the customer's record, but no longer works.
+    assert [g["id"] for g in (await api.client.get(f"{API}/tenant/grants", headers=customer)).json()] == [
+        personal.json()["id"], grant["id"]
+    ]
+    assert (await api.client.get(f"{API}/alerts", headers=as_staff)).status_code == 403
     assert (await api.client.delete(f"{API}/organisation/members/{staff.id}", headers=api.auth(org_admin))).status_code == 404
 
 
@@ -92,7 +95,7 @@ async def test_grant_validation(api: ApiHarness) -> None:
         (_grant_body(expires_at=(now - timedelta(minutes=1)).isoformat()), 422),
         (_grant_body(expires_at=(now + timedelta(days=400)).isoformat()), 422),
         (_grant_body(organisation_id=TENANT_B), 422),
-        (_grant_body(organisation_id=TENANT_A), 404),  # not an organisation
+        (_grant_body(organisation_id=TENANT_A), 201),  # not an organisation: answered like one (no oracle)
         (_grant_body(reason=""), 422),
         (_grant_body(role="owner"), 422),
     ):

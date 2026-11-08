@@ -54,7 +54,7 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 from uuid import UUID
 
-from lg_sotf.audit.logger import AuditLogger
+from lg_sotf.audit.logger import AuditLogger, written_under_grant
 from lg_sotf.db import Connection
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos.escalations import ACTIVE_ESCALATION_STATUSES, DECISIONS, Escalation
@@ -578,7 +578,7 @@ class ReviewService:
             dict(match),
             created_by=created_by,
             source_feedback_id=source_feedback_id,
-            expires_at=now + timedelta(days=SUPPRESSION_SUGGESTION_DAYS),
+            **written_under_grant(tenant_id, now + timedelta(days=SUPPRESSION_SUGGESTION_DAYS)),
             enabled=False,
             conn=conn,
         )

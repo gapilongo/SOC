@@ -22,6 +22,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
 
+from lg_sotf.api.auth.authenticate import forbidden
 from lg_sotf.api.auth.deps import PLATFORM_ADMIN, Access, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import aware
@@ -43,11 +44,22 @@ GRANT_READER = Access(role="admin", no_grant=True)
 GRANTOR = Access(role="admin", user_account=True, home_tenant_only=True)
 ORG_ADMIN = Access(role="admin", user_account=True, home_tenant_only=True)
 ORG_STAFF = Access(role="viewer", user_account=True, home_tenant_only=True)
+# Grants a tenant may give per minute (each is audited in two chains).
+GRANTS_PER_MINUTE = 10
 
 
 async def _require_organisation(request: Request, tenant_id: str) -> None:
     if await get_ctx(request).repos.organisations.get(tenant_id) is None:
         raise NotFound("organisation", tenant_id)
+
+
+async def _require_staff(request: Request, principal: Principal) -> None:
+    """Members of the organisation, and the admins who manage its membership."""
+    assert principal.user_id is not None
+    if principal.role != "admin" and not await get_ctx(request).repos.organisations.is_member(
+        principal.tenant_id, principal.user_id
+    ):
+        raise forbidden("only members of the organisation see its grants and staff")
 
 
 # ----------------------------------------------------------- customer side
@@ -61,7 +73,9 @@ async def list_grants(request: Request, principal: Principal = Depends(require(G
 
 @tenant_grants.post("", status_code=201, response_model=GrantOut, summary="Give an MSSP organisation a role here")
 async def create_grant(body: GrantIn, request: Request, principal: Principal = Depends(require(GRANTOR))) -> GrantOut:
-    """404 when the organisation (or ``user_id`` as one of its members) does not exist."""
+    """Any organisation id is accepted, known or not (the answer reveals nothing about which exist); a grant
+    to an unknown organisation, or naming someone who is not a member, simply never works.
+    ``allow_api_keys`` lets the organisation's API keys use a grant to the whole organisation."""
     expires_at = aware(body.expires_at)
     assert expires_at is not None
     now = datetime.now(UTC)
@@ -70,10 +84,11 @@ async def create_grant(body: GrantIn, request: Request, principal: Principal = D
     if body.organisation_id == principal.tenant_id:
         raise ApiError(422, "validation_error", "a tenant cannot grant itself")
     ctx = get_ctx(request)
+    await ctx.limiter.enforce("grants", principal.tenant_id, GRANTS_PER_MINUTE, tenant_id=principal.tenant_id)
     grant = await delegation.create_grant(
         ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor,
         organisation_id=body.organisation_id, role=body.role, reason=body.reason.strip(),
-        expires_at=expires_at, user_id=body.user_id,
+        expires_at=expires_at, user_id=body.user_id, allow_api_keys=body.allow_api_keys,
     )
     return GrantOut.model_validate(grant)
 
@@ -90,6 +105,7 @@ async def revoke_grant(grant_id: UUID, request: Request, principal: Principal = 
 
 @organisation.get("/grants", response_model=List[GrantOut], summary="The tenants your organisation may act in")
 async def organisation_grants(request: Request, principal: Principal = Depends(require(ORG_STAFF))) -> List[GrantOut]:
+    await _require_staff(request, principal)
     grants = await get_ctx(request).repos.grants.list_for_organisation(principal.tenant_id)
     return [GrantOut.model_validate(g) for g in grants]
 
@@ -97,6 +113,7 @@ async def organisation_grants(request: Request, principal: Principal = Depends(r
 @organisation.get("/members", response_model=List[MemberOut], summary="Staff who may act under the grants")
 async def list_members(request: Request, principal: Principal = Depends(require(ORG_STAFF))) -> List[MemberOut]:
     await _require_organisation(request, principal.tenant_id)
+    await _require_staff(request, principal)
     members = await get_ctx(request).repos.organisations.list_members(principal.tenant_id)
     return [MemberOut.model_validate(m) for m in members]
 
@@ -109,7 +126,7 @@ async def add_member(user_id: UUID, request: Request, principal: Principal = Dep
     return MemberOut.model_validate(member)
 
 
-@organisation.delete("/members/{user_id}", status_code=204, summary="Remove a staff account (and its own grants)")
+@organisation.delete("/members/{user_id}", status_code=204, summary="Remove a staff account (its grants stop working)")
 async def remove_member(user_id: UUID, request: Request, principal: Principal = Depends(require(ORG_ADMIN))) -> Response:
     ctx = get_ctx(request)
     await delegation.remove_member(ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, user_id)

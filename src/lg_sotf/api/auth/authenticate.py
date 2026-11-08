@@ -184,9 +184,6 @@ async def authenticate(ctx: ApiContext, conn: HTTPConnection, *, allow_api_key: 
                 raise rate_limited(decision) from exc
         raise
     principal = await _apply_tenant_override(ctx, conn, principal)
-    if principal.grant_id is not None:
-        # Every audit entry of this request in the customer's chain is also recorded in the organisation's.
-        act_under_grant(Delegation(principal.tenant_id, principal.home_tenant_id, str(principal.grant_id)))
     mark_principal(conn.scope, principal.tenant_id, principal.id)
     bind_context(tenant_id=principal.tenant_id)
     return principal
@@ -420,6 +417,7 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
         raise ApiError(400, "invalid_tenant", "X-Tenant-ID is not a valid tenant id")
     delegated = await under_grant(ctx, principal, requested)
     if delegated is not None:
+        act_under_grant(delegation_of(delegated))
         await record_access(
             ctx, conn, delegated, "grant.tenant_access",
             organisation_id=principal.home_tenant_id, grant_id=str(delegated.grant_id), role=delegated.role,
@@ -439,8 +437,12 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
 
 async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
     """``principal`` acting in ``tenant_id`` under its organisation's strongest live grant, else ``None``."""
-    if principal.is_api_key:
-        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, None)
+    if principal.is_api_key and principal.api_key_id is not None:
+        # A key acts only while the member who created it is still a member, and only where allowed.
+        key = await ctx.repos.api_keys.get_by_id(principal.home_tenant_id, principal.api_key_id)
+        if key is None or key.created_by is None:
+            return None
+        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, key.created_by, api_key=True)
     elif principal.user_id is not None and principal.role is not None:
         grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, principal.user_id)
     else:
@@ -449,9 +451,14 @@ async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> 
         return None
     await _require_active_tenant(ctx, tenant_id)
     if principal.role is None:
-        return principal.under_grant(tenant_id, grant.id, None, principal.scopes & GRANT_SCOPES[grant.role])
+        return principal.under_grant(tenant_id, grant, None, principal.scopes & GRANT_SCOPES[grant.role])
     role = min(grant.role, principal.role, key=lambda r: ROLE_RANK[r])
-    return principal.under_grant(tenant_id, grant.id, cast(Role, role), principal.scopes)
+    return principal.under_grant(tenant_id, grant, cast(Role, role), principal.scopes)
+
+
+def delegation_of(principal: Principal) -> Delegation:
+    """Marks the request: every audit entry in the customer's chain (this access first) is also the organisation's."""
+    return Delegation(principal.tenant_id, principal.home_tenant_id, str(principal.grant_id), principal.grant_expires_at)
 
 
 async def record_access(

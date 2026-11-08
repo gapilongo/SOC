@@ -1026,7 +1026,7 @@ export interface paths {
         /** Add a staff account */
         put: operations["add_member_api_v1_organisation_members__user_id__put"];
         post?: never;
-        /** Remove a staff account (and its own grants) */
+        /** Remove a staff account (its grants stop working) */
         delete: operations["remove_member_api_v1_organisation_members__user_id__delete"];
         options?: never;
         head?: never;
@@ -1342,7 +1342,9 @@ export interface paths {
         put?: never;
         /**
          * Give an MSSP organisation a role here
-         * @description 404 when the organisation (or ``user_id`` as one of its members) does not exist.
+         * @description Any organisation id is accepted, known or not (the answer reveals nothing about which exist); a grant
+         *     to an unknown organisation, or naming someone who is not a member, simply never works.
+         *     ``allow_api_keys`` lets the organisation's API keys use a grant to the whole organisation.
          */
         post: operations["create_grant_api_v1_tenant_grants_post"];
         delete?: never;
@@ -3226,6 +3228,12 @@ export interface components {
         /** GrantIn */
         GrantIn: {
             /**
+             * Allow Api Keys
+             * @description Let the organisation's API keys (whose creator is a member) use this grant; never for a grant to one member.
+             * @default false
+             */
+            allow_api_keys?: boolean;
+            /**
              * Expires At
              * Format: date-time
              * @description In the future, at most 365 days ahead.
@@ -3255,6 +3263,11 @@ export interface components {
         };
         /** GrantOut */
         GrantOut: {
+            /**
+             * Allow Api Keys
+             * @default false
+             */
+            allow_api_keys?: boolean;
             /**
              * Created At
              * Format: date-time

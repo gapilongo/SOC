@@ -36,3 +36,21 @@
   grant's role (never `ingest`); `LG_SOTF_MCP__TENANT_ID` pins the MCP server
   to one customer tenant. A generated cross-tenant leak suite covers every
   API operation, MCP tool and the WebSocket channel.
+
+### Security
+
+- MSSP grants, after an independent security review: nothing created or
+  changed under a grant outlives it or acts as a customer user. Under a grant,
+  integrations (all kinds), sources and tenant settings can no longer be
+  created or changed, and a Slack app recorded as written under a grant never
+  approves or rejects. Suppression rules written under a grant name it and
+  expire with it. A grant row can only be revoked, once, and nothing the
+  organisation does deletes it; an unknown organisation id is accepted like a
+  known one; a tenant can give at most 10 grants a minute. An organisation's
+  API key uses a grant only when the customer set `allow_api_keys` and while
+  the member who created it is still a member. A delegated WebSocket closes
+  when the organisation's own tenant is suspended. Reads under a grant are now
+  recorded in the organisation's chain too (`delegated.grant.tenant_access`),
+  and `GET /audit` under a grant hides the customer's grant register and
+  other organisations' details. `GET /organisation/grants` and
+  `/organisation/members` are for members (and the home tenant's admins).

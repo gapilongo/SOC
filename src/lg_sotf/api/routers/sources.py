@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Request, Response
 
-from lg_sotf.api.auth.deps import ADMIN, require
+from lg_sotf.api.auth.deps import ADMIN, ADMIN_NOT_UNDER_GRANT, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
@@ -87,7 +87,7 @@ async def get_source(source_id: str, request: Request, principal: Principal = De
 
 @router.post("", status_code=201, response_model=SourceOut, summary="Create a source")
 async def create_source(
-    body: SourceCreateIn, request: Request, principal: Principal = Depends(require(ADMIN))
+    body: SourceCreateIn, request: Request, principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT))
 ) -> SourceOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id
@@ -129,7 +129,10 @@ async def create_source(
 
 @router.patch("/{source_id}", response_model=SourceOut, summary="Update a source")
 async def update_source(
-    source_id: str, body: SourceUpdateIn, request: Request, principal: Principal = Depends(require(ADMIN))
+    source_id: str,
+    body: SourceUpdateIn,
+    request: Request,
+    principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT)),
 ) -> SourceOut:
     ctx = get_ctx(request)
     tenant_id = principal.tenant_id

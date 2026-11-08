@@ -13,7 +13,7 @@ from typing import Dict, List
 import asyncpg
 import pytest
 
-from lg_sotf.db.errors import InvalidValue, ReferenceNotFound
+from lg_sotf.db.errors import InvalidValue
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories, TenantGrant, User
 from tests.integration.db._support import TENANT_A, TENANT_B
@@ -106,12 +106,22 @@ async def test_only_the_customer_writes_its_grants(db: Database, repos: Reposito
             )
     async with db.tenant_tx(TENANT_B) as conn:
         assert await conn.execute("UPDATE tenant_grants SET revoked_at = now()") == "UPDATE 0"
-    # Nor can the customer move its grant to another tenant.
-    with pytest.raises(asyncpg.InsufficientPrivilegeError):
+    # Nor can the customer move, extend or re-open a grant: an update may only revoke it, once.
+    for statement, value in (
+        ("UPDATE tenant_grants SET tenant_id = $1", TENANT_B),
+        ("UPDATE tenant_grants SET expires_at = $1", later),
+        ("UPDATE tenant_grants SET role = $1", "admin"),
+    ):
+        with pytest.raises(asyncpg.CheckViolationError):
+            async with db.tenant_tx(TENANT_A) as conn:
+                await conn.execute(statement, value)
+    assert await repos.grants.revoke(TENANT_A, grant.id, revoked_by="a") is not None
+    with pytest.raises(asyncpg.CheckViolationError):
         async with db.tenant_tx(TENANT_A) as conn:
-            await conn.execute("UPDATE tenant_grants SET tenant_id = $1", TENANT_B)
+            await conn.execute("UPDATE tenant_grants SET revoked_at = NULL, revoked_by = NULL")
     assert await repos.grants.revoke(TENANT_B, grant.id, revoked_by="b") is None
-    assert (await repos.grants.get(TENANT_A, grant.id)) == grant
+    stored = await repos.grants.get(TENANT_A, grant.id)
+    assert stored is not None and stored.revoked_by == "a" and stored.expires_at == grant.expires_at
 
 
 async def test_live_grant_lookup(db: Database, repos: Repositories) -> None:
@@ -137,10 +147,17 @@ async def test_live_grant_lookup(db: Database, repos: Repositories) -> None:
     await _grant(repos, TENANT_B, ORG_ONE, "admin", now=past, expires_at=past + timedelta(hours=1))
     assert await repos.grants.active_for(ORG_ONE, TENANT_B, staff.id) is None
 
-    # Leaving the organisation ends access at once, and takes the member's own grants with it.
+    # Leaving the organisation ends access at once; the customer's grant rows stay as its record.
     await repos.organisations.remove_member(ORG_ONE, other.id)
     assert await repos.grants.active_for(ORG_ONE, TENANT_A, other.id) is None
-    assert await repos.grants.get(TENANT_A, personal.id) is None
+    assert await repos.grants.get(TENANT_A, personal.id) is not None
+
+    # An API key acts only under an organisation-wide grant that allows keys, through a member creator.
+    assert await repos.grants.active_for(ORG_ONE, TENANT_A, staff.id, api_key=True) is None
+    keyed = await _grant(repos, TENANT_A, ORG_ONE, "analyst", allow_api_keys=True)
+    await _grant(repos, TENANT_A, ORG_ONE, "admin", user_id=staff.id, allow_api_keys=True)  # personal: never keys
+    assert await repos.grants.active_for(ORG_ONE, TENANT_A, staff.id, api_key=True) == keyed
+    assert await repos.grants.active_for(ORG_ONE, TENANT_A, outsider.id, api_key=True) is None
 
 
 async def test_grant_constraints(db: Database, repos: Repositories) -> None:
@@ -154,8 +171,10 @@ async def test_grant_constraints(db: Database, repos: Repositories) -> None:
         await repos.grants.create(
             TENANT_A, ORG_ONE, "viewer", reason="  ", created_by="x", expires_at=datetime.now(UTC) + timedelta(hours=1)
         )
-    with pytest.raises(ReferenceNotFound):  # TENANT_B is not an organisation
-        await _grant(repos, TENANT_A, TENANT_B)
-    with pytest.raises(ReferenceNotFound):  # a personal grant names a member of that organisation
-        await _grant(repos, TENANT_A, ORG_ONE, user_id=outsider.id)
+    # No foreign key on the organisation or the member: nothing tells the customer which exist, and nothing
+    # the organisation does deletes the customer's rows. Such a grant simply never works.
+    unknown = await _grant(repos, TENANT_A, TENANT_B)  # TENANT_B is not an organisation
+    stranger = await _grant(repos, TENANT_A, ORG_ONE, user_id=outsider.id)
+    assert unknown.organisation_id == TENANT_B and stranger.user_id == outsider.id
+    assert await repos.grants.active_for(ORG_ONE, TENANT_A, outsider.id) is None
     assert (await _grant(repos, TENANT_A, ORG_ONE, user_id=staff.id)).user_id == staff.id

@@ -44,6 +44,7 @@ class TenantGrant(Record):
     organisation_id: str
     user_id: Optional[UUID]
     role: str
+    allow_api_keys: bool
     reason: str
     created_by: str
     created_at: datetime
@@ -57,24 +58,23 @@ class TenantGrant(Record):
 
 class OrganisationsRepo(Repository):
     async def upsert(self, tenant_id: str, name: str, *, conn: Optional[Connection] = None) -> Organisation:
-        """Make ``tenant_id`` an organisation (or rename it)."""
+        """Make ``tenant_id`` an organisation (or rename it), through ``lgsotf_save_organisation``."""
         async with self._tenant(tenant_id, conn) as c:
-            row = await fetch_one(
-                c,
-                """
-                INSERT INTO organisations (tenant_id, name) VALUES ($1, $2)
-                ON CONFLICT (tenant_id) DO UPDATE SET name = EXCLUDED.name
-                RETURNING *
-                """,
-                tenant_id,
-                name,
-            )
+            row = await fetch_one(c, "SELECT * FROM lgsotf_save_organisation($1, $2)", tenant_id, name)
         return Organisation.model_validate(dict(row))
 
     async def get(self, tenant_id: str, *, conn: Optional[Connection] = None) -> Optional[Organisation]:
         async with self._tenant(tenant_id, conn) as c:
             row = await c.fetchrow("SELECT * FROM organisations WHERE tenant_id = $1", tenant_id)
         return to_model(Organisation, row)
+
+    async def is_member(self, tenant_id: str, user_id: UUID, *, conn: Optional[Connection] = None) -> bool:
+        async with self._tenant(tenant_id, conn) as c:
+            return bool(
+                await c.fetchval(
+                    "SELECT 1 FROM organisation_members WHERE tenant_id = $1 AND user_id = $2", tenant_id, user_id
+                )
+            )
 
     async def add_member(
         self, tenant_id: str, user_id: UUID, *, added_by: Optional[str] = None, conn: Optional[Connection] = None
@@ -100,7 +100,7 @@ class OrganisationsRepo(Repository):
         return OrganisationMember.model_validate(dict(row))
 
     async def remove_member(self, tenant_id: str, user_id: UUID, *, conn: Optional[Connection] = None) -> bool:
-        """Remove a member; grants given to that member alone go with it (``ON DELETE CASCADE``)."""
+        """Remove a member; the customers' grant rows naming them stay (as records), but no longer work."""
         async with self._tenant(tenant_id, conn) as c:
             status = await c.execute(
                 "DELETE FROM organisation_members WHERE tenant_id = $1 AND user_id = $2", tenant_id, user_id
@@ -126,6 +126,7 @@ class GrantsRepo(Repository):
         created_by: str,
         expires_at: datetime,
         user_id: Optional[UUID] = None,
+        allow_api_keys: bool = False,
         now: Optional[datetime] = None,
         conn: Optional[Connection] = None,
     ) -> TenantGrant:
@@ -138,8 +139,8 @@ class GrantsRepo(Repository):
                 c,
                 """
                 INSERT INTO tenant_grants
-                    (tenant_id, organisation_id, user_id, role, reason, created_by, created_at, expires_at)
-                VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, now()), $8)
+                    (tenant_id, organisation_id, user_id, role, reason, created_by, created_at, expires_at, allow_api_keys)
+                VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, now()), $8, $9)
                 RETURNING *
                 """,
                 tenant_id,
@@ -150,6 +151,7 @@ class GrantsRepo(Repository):
                 created_by,
                 now,
                 expires_at,
+                allow_api_keys,
             )
         return TenantGrant.model_validate(dict(row))
 
@@ -183,15 +185,21 @@ class GrantsRepo(Repository):
         return to_models(TenantGrant, rows)
 
     async def active_for(
-        self, organisation_id: str, tenant_id: str, user_id: Optional[UUID], *, conn: Optional[Connection] = None
+        self,
+        organisation_id: str,
+        tenant_id: str,
+        user_id: UUID,
+        *,
+        api_key: bool = False,
+        conn: Optional[Connection] = None,
     ) -> Optional[TenantGrant]:
         """The strongest live grant letting member ``user_id`` of the organisation act in ``tenant_id``.
 
         Read in the organisation's home tenant; ``None`` unless the user is a
         member and a grant to the organisation (or to that user) is neither
-        revoked nor expired at this transaction's ``now()``. Without
-        ``user_id`` (an API key of the organisation) only grants to the
-        whole organisation count.
+        revoked nor expired at this transaction's ``now()``. For an API key
+        (``api_key``; ``user_id`` is the member who created it) only grants to
+        the whole organisation that allow API keys count.
         """
         async with self._tenant(organisation_id, conn) as c:
             rows = await c.fetch(
@@ -199,14 +207,16 @@ class GrantsRepo(Repository):
                 SELECT g.* FROM tenant_grants g
                 WHERE g.organisation_id = $1 AND g.tenant_id = $2
                   AND g.revoked_at IS NULL AND g.expires_at > now()
-                  AND (g.user_id IS NULL OR g.user_id = $3)
-                  AND ($3::uuid IS NULL OR EXISTS (
+                  AND (g.user_id IS NULL OR (NOT $4 AND g.user_id = $3))
+                  AND (NOT $4 OR g.allow_api_keys)
+                  AND EXISTS (
                       SELECT 1 FROM organisation_members m WHERE m.tenant_id = g.organisation_id AND m.user_id = $3
-                  ))
+                  )
                 """,
                 organisation_id,
                 tenant_id,
                 user_id,
+                api_key,
             )
         grants = to_models(TenantGrant, rows)
         return max(grants, key=lambda g: (ROLE_RANK[g.role], g.expires_at), default=None)

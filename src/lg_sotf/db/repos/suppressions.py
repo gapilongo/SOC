@@ -35,6 +35,8 @@ class SuppressionRule(Record):
     enabled: bool
     created_at: datetime
     updated_at: datetime
+    #: The MSSP grant the rule was written under (its expiry is capped at the grant's).
+    grant_id: Optional[UUID] = None
 
 
 def _check_match(match: Mapping[str, Any]) -> Dict[str, Any]:
@@ -55,6 +57,7 @@ class SuppressionsRepo(Repository):
         source_feedback_id: Optional[str] = None,
         expires_at: Optional[datetime] = None,
         enabled: bool = True,
+        grant_id: Optional[UUID] = None,
         conn: Optional[Connection] = None,
     ) -> SuppressionRule:
         require_aware(expires_at, "expires_at")
@@ -63,8 +66,8 @@ class SuppressionsRepo(Repository):
                 c,
                 """
                 INSERT INTO suppression_rules (tenant_id, name, match, created_by, source_feedback_id,
-                                               expires_at, enabled)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                               expires_at, enabled, grant_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                 RETURNING *
                 """,
                 tenant_id,
@@ -74,6 +77,7 @@ class SuppressionsRepo(Repository):
                 source_feedback_id,
                 expires_at,
                 enabled,
+                grant_id,
             )
         return SuppressionRule.model_validate(dict(row))
 
@@ -148,6 +152,7 @@ class SuppressionsRepo(Repository):
         match: Mapping[str, Any] = UNSET,
         enabled: bool = UNSET,
         expires_at: Optional[datetime] = UNSET,
+        grant_id: Optional[UUID] = UNSET,
         conn: Optional[Connection] = None,
     ) -> SuppressionRule:
         if expires_at not in (UNSET, None):
@@ -159,6 +164,7 @@ class SuppressionsRepo(Repository):
                 "match": _check_match(match) if match is not UNSET else UNSET,
                 "enabled": enabled,
                 "expires_at": expires_at,
+                "grant_id": grant_id,
             },
             params,
         )

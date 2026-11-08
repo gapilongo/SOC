@@ -51,6 +51,8 @@ class Integration(Record):
     created_by: Optional[UUID]
     created_at: datetime
     updated_at: datetime
+    #: The MSSP grant the row was written under (never set today: integrations are refused under a grant).
+    grant_id: Optional[UUID] = None
 
     @property
     def is_ticketing(self) -> bool:

@@ -100,6 +100,9 @@ REVIEWER = Access(role="analyst", user_account=True, no_platform_override=True)
 CLAIMER = Access(role="analyst", user_account=True, home_tenant_only=True)
 ADMIN = Access(role="admin")
 ADMIN_USER = Access(role="admin", user_account=True)
+# Channels, sources and settings would outlive a grant (a planted Slack app, webhook or mailbox keeps
+# working after revocation): only the customer's own admins (or a platform admin) change them.
+ADMIN_NOT_UNDER_GRANT = Access(role="admin", no_grant=True)
 ANY = Access(role="viewer", any_api_key=True)
 PLATFORM_ADMIN = Access(role="admin", platform_admin=True)
 INGEST = Access(scope="ingest", api_key_only=True, bucket=INGEST_BUCKET)

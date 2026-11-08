@@ -8,6 +8,7 @@ from typing import FrozenSet, Literal, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor
+from lg_sotf.db.repos import TenantGrant
 from lg_sotf.models.vocabulary import ROLE_RANK, Role, Scope
 from lg_sotf.models.vocabulary import ROLES as ROLES
 from lg_sotf.models.vocabulary import SCOPES as SCOPES
@@ -47,6 +48,7 @@ class Principal:
     expires_at: Optional[datetime] = None
     token_id: Optional[str] = None
     grant_id: Optional[UUID] = None
+    grant_expires_at: Optional[datetime] = None
 
     @property
     def is_user(self) -> bool:
@@ -105,10 +107,9 @@ class Principal:
     def acting_on(self, tenant_id: str) -> Principal:
         return replace(self, tenant_id=tenant_id)
 
-    def under_grant(
-        self, tenant_id: str, grant_id: UUID, role: Optional[Role], scopes: FrozenSet[Scope]
-    ) -> Principal:
-        """This principal acting in ``tenant_id`` through a grant: ``role`` and ``scopes``, nothing more."""
+    def under_grant(self, tenant_id: str, grant: TenantGrant, role: Optional[Role], scopes: FrozenSet[Scope]) -> Principal:
+        """This principal acting in ``tenant_id`` through ``grant``: ``role`` and ``scopes``, nothing more."""
         return replace(
-            self, tenant_id=tenant_id, grant_id=grant_id, role=role, scopes=scopes, is_platform_admin=False
+            self, tenant_id=tenant_id, grant_id=grant.id, grant_expires_at=grant.expires_at, role=role, scopes=scopes,
+            is_platform_admin=False,
         )

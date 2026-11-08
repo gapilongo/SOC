@@ -25,7 +25,9 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Dict, Mapping, Optional
+from uuid import UUID
 
 from lg_sotf.db.tenancy import switch_tenant
 from lg_sotf.observability.logging import get_logger
@@ -53,6 +55,7 @@ class Delegation:
     tenant_id: str
     organisation_id: str
     grant_id: str
+    expires_at: Optional[datetime] = None
 
 
 _delegation: ContextVar[Optional[Delegation]] = ContextVar("lg_sotf_audit_delegation", default=None)
@@ -61,6 +64,24 @@ _delegation: ContextVar[Optional[Delegation]] = ContextVar("lg_sotf_audit_delega
 def act_under_grant(delegation: Optional[Delegation]) -> None:
     """Set the grant the current request acts under (``None``: none). Authentication calls it on every request."""
     _delegation.set(delegation)
+
+
+def acting_under_grant(tenant_id: str) -> bool:
+    delegation = _delegation.get()
+    return delegation is not None and delegation.tenant_id == tenant_id
+
+
+def written_under_grant(tenant_id: str, expires_at: Optional[datetime]) -> Dict[str, Any]:
+    """``expires_at`` and ``grant_id`` for a row written now in ``tenant_id``.
+
+    Under a grant the row names the grant and expires with it at the latest:
+    nothing written under a grant outlives it.
+    """
+    delegation = _delegation.get()
+    if delegation is None or delegation.tenant_id != tenant_id or delegation.expires_at is None:
+        return {"expires_at": expires_at, "grant_id": None}
+    capped = delegation.expires_at if expires_at is None else min(expires_at, delegation.expires_at)
+    return {"expires_at": capped, "grant_id": UUID(delegation.grant_id)}
 
 
 class AuditLogger:

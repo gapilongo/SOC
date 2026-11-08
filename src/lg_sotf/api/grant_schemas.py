@@ -38,6 +38,11 @@ class GrantIn(In):
     reason: str = Field(min_length=1, max_length=500, description="Why, e.g. a contract or ticket reference.")
     expires_at: datetime = Field(description=f"In the future, at most {MAX_GRANT_DAYS} days ahead.")
     user_id: Optional[UUID] = Field(default=None, description="Grant one member of the organisation only.")
+    allow_api_keys: bool = Field(
+        default=False,
+        description="Let the organisation's API keys (whose creator is a member) use this grant; "
+        "never for a grant to one member.",
+    )
 
 
 class GrantOut(Out):
@@ -46,6 +51,7 @@ class GrantOut(Out):
     organisation_id: str
     user_id: Optional[UUID] = None
     role: RoleStr
+    allow_api_keys: bool = False
     reason: str
     created_by: str
     created_at: datetime

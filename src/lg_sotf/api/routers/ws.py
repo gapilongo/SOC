@@ -37,6 +37,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from lg_sotf.api.auth.authenticate import (
     bearer_principal,
     client_ip,
+    delegation_of,
     failure_blocked,
     record_access,
     record_failure,
@@ -46,6 +47,7 @@ from lg_sotf.api.auth.principal import Principal, role_at_least
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
+from lg_sotf.audit.logger import act_under_grant
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.observability.logging import bind_context, get_logger, log_failure
 from lg_sotf.queue.events import SubscriberLimitReached, SubscriberQuotaReached
@@ -81,9 +83,10 @@ async def _still_authorized(ctx: ApiContext, token: str, principal: Principal) -
         return CLOSE_POLICY  # disabled / deleted account
     if current.tenant_id != principal.tenant_id or not role_at_least(current.role, "viewer"):
         return CLOSE_POLICY
-    tenant = await ctx.tenants.get(principal.tenant_id)
-    if tenant is None or tenant.status != "active":
-        return CLOSE_POLICY
+    for tenant_id in {principal.tenant_id, principal.home_tenant_id}:  # the organisation's own tenant too
+        tenant = await ctx.tenants.get(tenant_id)
+        if tenant is None or tenant.status != "active":
+            return CLOSE_POLICY
     return None
 
 
@@ -105,6 +108,7 @@ async def _authenticate(ctx: ApiContext, websocket: WebSocket) -> Optional[Princ
             if delegated is None:
                 return None
             principal = delegated
+            act_under_grant(delegation_of(principal))
             await record_access(
                 ctx, websocket, principal, "grant.tenant_access",
                 organisation_id=principal.home_tenant_id, grant_id=str(principal.grant_id), role=principal.role,
