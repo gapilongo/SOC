@@ -254,12 +254,13 @@ organisations and grants.
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
-| TM-CI-1 | T | A tampered image is deployed | Keyless cosign signatures and SLSA provenance, made in a job that runs no repository code (`.github/workflows/release-images.yml:144-194`); the deploy verifies signer identity and issuer (`.github/workflows/deploy.yml:229-232`) | In place (SEC1.1) |
-| TM-CI-2 | T | Vulnerable or malicious dependency | Pinned requirements, pip-audit, Bandit, gitleaks per change and over full history (`.github/workflows/ci.yml:296-337`); Dependabot | Partial: image CVE gate and digest-pinned base images planned (SEC1.3); SBOM and VEX as release assets planned (SEC1.2) |
+| TM-CI-1 | T | A tampered image is deployed | Keyless cosign signatures and SLSA provenance, made in a job that runs no repository code (`.github/workflows/release-images.yml:154-204`); the deploy verifies signer identity and issuer (`.github/workflows/deploy.yml:229-232`) | In place (SEC1.1) |
+| TM-CI-2 | T | Vulnerable or malicious dependency | Pinned requirements, pip-audit, Bandit, gitleaks per change and over full history (`.github/workflows/ci.yml:296-337`); Dependabot; an admission checklist for new dependencies and patch SLAs (docs/dependency-policy.md) | Partial: image CVE gate and digest-pinned base images planned (SEC1.3); SBOM and VEX as release assets planned (SEC1.2) |
 | TM-CI-3 | E | A change switches off a guard (baselines, ratchets, workflows) | CODEOWNERS on workflows, CI scripts and pinned dependencies (`.github/CODEOWNERS:6-16`) | In place, with branch protection |
 | TM-CI-4 | E | Container escape or privilege inside the image | Non-root uid 10001, no setuid binaries, no pip (`docker/Dockerfile:104-118`) | In place |
 | TM-CI-5 | T | Air-gapped bundle altered in transit | `SHA256SUMS` plus its hash sent out of band | Partial: signed bundle and signed Helm OCI artifact planned (SEC1.4) |
 | TM-CI-6 | E | AI coding agent introduces a backdoor | CI gates, CODEOWNERS, protected `main` | Partial: AI-coding-agent policy and SSDF attestation planned (SEC3.2); CodeQL and Scorecard planned (SEC1.5) |
+| TM-CI-7 | T | A release or channel tag points at an untested or unsigned image | The release train tags only commits whose CI passed, including the N-1 upgrade and install rehearsals (`.github/workflows/release-train.yml:50-53`), and verifies both digests exactly like the deploy before anything moves (`.github/workflows/release-train.yml:137-157`); the job that moves tags runs no repository code and holds no OIDC token (`.github/workflows/release-train.yml:159-172`); `v*` tags never move | In place (ARCH-E1.5); tag rulesets and the `release` environment are repository settings (docs/releases.md) |
 
 ### 2.13 Secrets, keys and backups
 

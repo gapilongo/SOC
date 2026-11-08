@@ -73,6 +73,72 @@ flowchart LR
     G --> C
 ```
 
+## What's new in 1.3
+
+On `main` now. It ships first as 1.3.0 release candidates on the weekly
+partner train, then as the stable 1.3.0 ([releases](docs/releases.md)).
+Full list in the [changelog](CHANGELOG.md).
+
+* **Proof-of-value install**: `scripts/pov.sh --siem-host HOST` starts a
+  stack that can only read. Every response action is blocked or recorded as
+  dry run whatever a tenant admin sets, mailbox sources that write back are
+  refused, and outbound connections go only to the SIEM and the model
+  endpoint. A test forces an approved action through a loosened tenant and
+  checks nothing runs ([docs](docs/pov.md)).
+* **First-run setup wizard**: five steps from a fresh install to the first
+  triaged sample alert: account, organisation and first tenant, a
+  language-model profile (EU-hosted or local, tested), sample alerts. CI
+  times the whole path against a 30-minute budget
+  ([docs](docs/onboarding.md#first-run-setup-wizard)).
+* **Signed, verifiable releases**: both images are signed with cosign
+  (keyless) and carry SLSA build provenance; the deploy workflow verifies
+  both before anything reaches a host. Each release attaches CycloneDX
+  SBOMs, an OpenVEX document and `SHA256SUMS`
+  ([verify an image](docs/security.md#verify-an-image-yourself),
+  [SBOMs and VEX](docs/security.md#sboms-and-vex)).
+* **Release trains**: every Thursday the head of `main` becomes a signed
+  partner release candidate; a candidate is promoted to stable and LTS.
+  A commit is tagged only when its CI, upgrade and install rehearsals
+  passed and its images verify. Support windows, backports and patch SLAs
+  are published ([releases](docs/releases.md),
+  [dependency policy](docs/dependency-policy.md)).
+* **Pinned builds and a CVE gate**: every Python requirement is hash-locked
+  and installed with `--require-hashes`, every base image is pinned by
+  digest, and Trivy fails CI on any fixable critical or high CVE in either
+  image ([docs](docs/security.md#pinned-inputs-and-the-image-cve-gate)).
+* **Accuracy measured on a real model**: `lg-sotf eval-scorecard` turns
+  evaluation runs into a one-page scorecard, false-negative rate first. The
+  first one is a local `qwen2.5:7b` on the synthetic and phishing sets
+  ([scorecard](docs/scorecards/v1/qwen2.5-7b/scorecard.md),
+  [how to read it](docs/scorecards/README.md)).
+* **Confidence intervals on every rate**: evaluation reports, scorecards and
+  the Reports pages show each rate with its sample size and a 95% Wilson
+  interval, so a rate over a handful of alerts no longer reads as a firm
+  number ([docs](docs/reporting.md)).
+* **Investigation trace**: every model call and every threat-intelligence or
+  history lookup is stored in order, with the prompt and model (or tool),
+  tokens, latency and hashes of what went in and out, and appears in the case's
+  evidence pack ([docs](docs/compliance.md#investigation-trace)). Each model
+  call also records the name and hash of the prompt it sent.
+* **Safe upgrades**: runs waiting for an analyst or an approval survive
+  upgrades that change the workflow, and CI rehearses the upgrade from the
+  previous release on every change: waiting runs must resume and be decided
+  on the new version ([docs](docs/deployment.md#7-upgrades-and-migrations)).
+* **API stability tiers**: every operation is marked `stable`, `beta` or
+  `internal`. CI fails a breaking change to a stable operation, and a stable
+  operation is deprecated for at least 6 months, with `Deprecation` and
+  `Sunset` headers, before it changes
+  ([docs](docs/api.md#stability-and-deprecation)).
+* **Threat model v2 and hardening guide**: STRIDE per component, the OWASP
+  Top 10 for Agentic Applications and MITRE ATLAS, each control linked to
+  the code that enforces it ([threat model](docs/threat-model.md)); numbered
+  L1/L2 deployment controls with checks for Compose, Helm, PostgreSQL, Redis
+  and the reverse proxy ([hardening guide](docs/hardening.md)).
+* **Evidence-fact schema v1**: the published JSON Schema for the typed
+  observations that verdicts will cite, with SemVer and a CI breaking-change
+  check. Published now; the investigation agents start producing facts in a
+  later release ([docs](docs/evidence-facts.md)).
+
 ## What's new in 1.2
 
 * **MCP for testers and analysts**: from Claude Code, send test alerts, wait
@@ -125,9 +191,8 @@ flowchart LR
   or any MCP client ([docs](docs/mcp.md)).
 * **Quick start**: `make quickstart` goes from clone to triaged demo alerts
   and prints the measured time to first verdict ([docs](docs/quickstart.md));
-  a first-run setup wizard takes a new install's admin to the first triaged
-  sample alert, and new tenants get a getting-started checklist and one-click
-  sample alerts ([docs](docs/onboarding.md)).
+  new tenants get a getting-started checklist and one-click sample alerts
+  ([docs](docs/onboarding.md)).
 
 ## Features
 
@@ -195,7 +260,15 @@ flowchart LR
   metrics, JSON logs; Docker Compose and a Helm chart
   (HPA, KEDA, PDBs, NetworkPolicies, ServiceMonitors).
 * Evaluation harness (`lg-sotf eval`) with a synthetic labelled dataset,
-  adversarial prompt-injection cases, metrics and a CI regression gate.
+  adversarial prompt-injection cases, metrics with 95% intervals, a CI
+  regression gate and one-page scorecards (`lg-sotf eval-scorecard`).
+* Model provenance: every model call records the provider, model and the
+  name and hash of the prompt it sent; an investigation trace of every step
+  goes into the case's evidence pack.
+* Upgrades: waiting runs finish on the workflow graph they started on, and
+  CI rehearses the upgrade from the previous release on every change. The
+  public API is split into `stable`, `beta` and `internal` operations, with
+  a CI gate on breaking changes and a deprecation window for stable ones.
 * Analyst web application (`src/lg_front`, React and TypeScript, a client
   of the public API only): a live Overview that puts the analyst's own work
   first, an alert queue with filters and a side panel per alert, an
@@ -350,6 +423,20 @@ keys too, see docs/configuration.md). Every call is metered: see
 `GET /api/v1/usage/llm` and set `LG_SOTF_LLM__DAILY_TOKEN_BUDGET_PER_TENANT` to
 cap spend.
 
+### Proof of value on your own alerts (read-only)
+
+```sh
+scripts/pov.sh --siem-host siem.example.internal    # or: make pov SIEM=siem.example.internal
+```
+
+One command starts a stack that can only read: response actions are blocked
+or recorded as dry run whatever a tenant admin sets, mailbox sources that
+mark or move messages are refused, and outbound connections go only to the
+SIEM host(s) and the model endpoint (a local Ollama model by default).
+Connect a source with read-only credentials; once analysts' decisions are in
+the history, `scripts/pov.sh --backtest 90` compares the model with them. Helm users layer
+`deploy/helm/lg-sotf/values-pov.yaml`. See [docs/pov.md](docs/pov.md).
+
 ### Production
 
 Use the production compose override (two database roles, mandatory secrets)
@@ -408,11 +495,38 @@ enrichment keys, token budget) is set per tenant through
   configuration.
 * **Accountability**: every decision, approval and administrative change is
   in a hash-chained, append-only audit log.
+* **Supply chain**: hash-locked Python dependencies, base images pinned by
+  digest, a Trivy gate on both images, keyless cosign signatures and SLSA
+  build provenance on every published image, verified by the deploy
+  workflow before anything reaches a host; SBOMs and VEX on every release.
 
 Personal data in alerts (names, addresses, hosts) is not pseudonymised and is
 sent to the configured model provider when the LLM is enabled. Read
-[docs/security.md](docs/security.md) for the threat model and data handling,
-and [SECURITY.md](SECURITY.md) to report a vulnerability.
+[docs/security.md](docs/security.md) for the controls and data handling,
+[docs/threat-model.md](docs/threat-model.md) for the threat model (STRIDE,
+OWASP Agentic Top 10, MITRE ATLAS), [docs/hardening.md](docs/hardening.md)
+to harden a deployment, and [SECURITY.md](SECURITY.md) to report a
+vulnerability.
+
+### Verify a release
+
+Images are signed from 1.3.0 on (and on every `main` build since signing
+shipped). Verify the image digest you will run, not a tag. The signer must
+be the release workflow on `main`:
+
+```sh
+SIGNER=https://github.com/gapilongo/SOC/.github/workflows/release-images.yml@refs/heads/main
+ISSUER=https://token.actions.githubusercontent.com
+IMAGE=ghcr.io/gapilongo/lg-sotf@sha256:<digest>
+cosign verify --certificate-identity "$SIGNER" --certificate-oidc-issuer "$ISSUER" "$IMAGE"
+gh attestation verify "oci://$IMAGE" --repo gapilongo/SOC \
+    --cert-identity "$SIGNER" --cert-oidc-issuer "$ISSUER" --deny-self-hosted-runners
+```
+
+Do the same for `ghcr.io/gapilongo/lg-sotf-frontend`. Releases from 1.3.0
+on also attach SBOMs, a VEX document and `SHA256SUMS`; how to fetch,
+check and scan with them is in
+[docs/security.md](docs/security.md#sboms-and-vex).
 
 ## Measuring quality
 
@@ -430,12 +544,22 @@ kappa, cost and latency, with a regression gate for CI. The shipped dataset
 is synthetic and the CI run uses the fake model, so those numbers check
 plumbing and policy, not detection quality; export your analysts' decisions
 to evaluate a real model ([docs/evaluation.md](docs/evaluation.md)).
+Every rate comes with its sample size and a 95% Wilson interval.
+
+`lg-sotf eval-scorecard` turns the reports of one model configuration into
+a one-page scorecard. The first baseline is a local `qwen2.5:7b` (Ollama) on
+the synthetic and phishing sets. It closed none of the 35 and 24
+expected-malicious items without a human, but with samples this small the
+95% upper bounds on the miss rate are still 9.9% and 13.8%. Read
+[the scorecard](docs/scorecards/v1/qwen2.5-7b/scorecard.md) and
+[how to read it](docs/scorecards/README.md). It is measured on synthetic
+data, not on customer alerts.
 
 ## Development
 
 ```sh
 python3.11 -m venv .venv && . .venv/bin/activate
-make dev                     # pinned dependencies + editable install
+make dev                     # hash-locked dependencies + editable install (re-lock: make lock)
 make lint                    # ruff + mypy
 make test                    # unit tests; integration tests need the variables below
 export LG_SOTF_TEST_DATABASE_URL=postgresql://soc:<password>@127.0.0.1:5432/soc_test
@@ -469,15 +593,23 @@ container logs and that no page violates the Content-Security-Policy.
 |---|---|
 | [User guide](docs/user-guide.md) | Analyst and admin workflows |
 | [Architecture](docs/architecture.md) | The system contract |
-| [API](docs/api.md) | Authentication, roles, endpoints, events |
+| [API](docs/api.md) | Authentication, roles, endpoints, events, stability tiers and deprecation |
 | [Configuration](docs/configuration.md) | Every setting |
 | [Deployment](docs/deployment.md) | Image, Compose, Helm, PostgreSQL roles, TLS, sizing, upgrades, backups |
 | [CI/CD](docs/cicd.md) | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM, promotion, rollback, backups |
 | [Self-hosting on a PC](docs/self-hosting-pc.md) | Dev and uat on your own Windows PC (WSL2, Tailscale Funnel), no cloud account |
 | [Operations](docs/operations.md) | Runbooks, key rotation, incidents, dashboards and alerts |
-| [Security](docs/security.md) | Threat model and controls |
+| [Security](docs/security.md) | Controls, data handling, supply chain and how to verify images |
+| [Threat model](docs/threat-model.md) | STRIDE per component, OWASP Agentic Top 10, MITRE ATLAS |
+| [Hardening guide](docs/hardening.md) | Numbered L1/L2 deployment controls with checks |
+| [Releases](docs/releases.md) | Release channels (partner, stable, LTS), support windows, backports |
+| [Dependency policy](docs/dependency-policy.md) | Admission checklist for dependencies, patch SLAs |
 | [Evaluation](docs/evaluation.md) | The evaluation harness |
+| [Scorecards](docs/scorecards/README.md) | Accuracy scorecards per model configuration |
+| [Evidence facts](docs/evidence-facts.md) | The evidence-fact schema v1 |
 | [Quickstart](docs/quickstart.md) | One-command demo with measured time to first verdict |
+| [Proof of value](docs/pov.md) | Read-only install on your own alerts, then the backtest |
+| [Performance](docs/performance.md) | Load-test results and sizing |
 | [Phishing](docs/phishing.md) | Reported-email triage, mailbox sources |
 | [Integrations](docs/integrations.md) | Slack, Teams, email, webhooks, Jira, ServiceNow |
 | [Reporting](docs/reporting.md) | Value, accuracy and detection reports, backtest |
@@ -487,6 +619,8 @@ container logs and that no page violates the Content-Security-Policy.
 | [Compliance](docs/compliance.md) | Evidence packs, NIS2 drafts, tenant export and erasure |
 | [Local LLMs](docs/local-llm.md) / [Air-gapped](docs/air-gapped.md) | Self-hosted models and offline installs |
 | [MCP server](docs/mcp.md) | Using LG-SOTF from Claude or another MCP client |
+| [Roadmap](docs/roadmap/README.md) | Engineering milestones and scheduled work, with what is done |
+| [All documentation](docs/index.md) | Every document, by audience |
 | [Changelog](CHANGELOG.md) | Release notes |
 
 ## License

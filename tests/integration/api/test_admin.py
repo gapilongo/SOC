@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import httpx
@@ -343,7 +343,7 @@ async def test_dashboard_is_cached_per_tenant_and_usage_sums(api: ApiHarness) ->
         [
             LLMUsageDelta(
                 tenant_id=TENANT_A,
-                day=date.today(),
+                day=datetime.now(UTC).date(),
                 model="m",
                 agent="triage",
                 calls=2,

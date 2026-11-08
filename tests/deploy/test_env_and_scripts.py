@@ -266,6 +266,7 @@ def test_only_useful_scripts_remain() -> None:
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
         "ci/release_assets.sh",
+        "ci/release_train.sh",
         "ci/requirements-nightly.in",
         "ci/requirements-nightly.txt",
         "ci/requirements-tools.in",
