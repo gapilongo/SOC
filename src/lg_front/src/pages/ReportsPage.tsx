@@ -13,13 +13,15 @@ import { useToast } from '../components/Toast';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, Truncated, cx } from '../components/ui';
 import { downloadText } from '../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../lib/format';
+import { BlindAuditTab } from './blindAudit/BlindAuditReport';
 import { SUGGESTION_LABEL, defaultRange, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rateDetail } from '../lib/reports';
 
-type Tab = 'value' | 'accuracy' | 'detections';
+type Tab = 'value' | 'accuracy' | 'detections' | 'blind_audit';
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'value', label: 'Value' },
   { id: 'accuracy', label: 'Accuracy' },
   { id: 'detections', label: 'Detections' },
+  { id: 'blind_audit', label: 'Blind audit' },
 ];
 
 // Validated categorical pair (dark surface): blue = handled without a human, orange = needed a human.
@@ -503,7 +505,7 @@ export default function ReportsPage() {
   const [exporting, setExporting] = useState(false);
   const baseId = useId();
   const invalid = rangeError(from, to);
-  const exportKind = tab === 'accuracy' ? null : tab;
+  const exportKind = tab === 'value' || tab === 'detections' ? tab : null;
 
   const exportCsv = async () => {
     if (!exportKind || invalid) return;
@@ -543,7 +545,7 @@ export default function ReportsPage() {
               disabled={!exportKind || Boolean(invalid)}
               busy={exporting}
               icon={<Download className="h-4 w-4" aria-hidden="true" />}
-              title={exportKind ? undefined : 'The accuracy report has no CSV export; use the monthly report.'}
+              title={exportKind ? undefined : 'This report has no CSV export.'}
             >
               Export CSV
             </Button>
@@ -588,7 +590,15 @@ export default function ReportsPage() {
         ))}
       </div>
       <div id={`${baseId}-panel`} role="tabpanel" aria-labelledby={`${baseId}-tab-${tab}`}>
-        {invalid ? null : tab === 'value' ? <ValueTab from={from} to={to} /> : tab === 'accuracy' ? <AccuracyTab from={from} to={to} /> : <DetectionsTab from={from} to={to} />}
+        {invalid ? null : tab === 'value' ? (
+          <ValueTab from={from} to={to} />
+        ) : tab === 'accuracy' ? (
+          <AccuracyTab from={from} to={to} />
+        ) : tab === 'blind_audit' ? (
+          <BlindAuditTab from={from} to={to} tile={(label, value, hint) => <Tile label={label} value={value} hint={hint} />} />
+        ) : (
+          <DetectionsTab from={from} to={to} />
+        )}
       </div>
     </>
   );

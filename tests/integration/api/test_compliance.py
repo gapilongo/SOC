@@ -393,6 +393,7 @@ async def test_platform_admin_exports_a_tenant_without_secrets(api: ApiHarness) 
                 "alert_events.jsonl", "escalations.jsonl", "feedback.jsonl", "actions.jsonl", "suppressions.jsonl",
                 "integrations.jsonl", "notification_outbox.jsonl", "external_tickets.jsonl", "usage_daily.jsonl",
                 "llm_usage_daily.jsonl", "investigation_steps.jsonl", "shadow_effects.jsonl", "shadow_verdicts.jsonl",
+                "blind_audit_runs.jsonl", "blind_audit_items.jsonl",
                 "audit_log.jsonl", "indicator_sightings.jsonl", "tenant_grants.jsonl",
                 "organisations.jsonl", "organisation_members.jsonl"}
     assert set(files) == expected

@@ -198,6 +198,8 @@ export interface AlertOut {
   source_name?: string | null;
   /** First value of up to three entity kinds and how many each kind has; null without entities (newer APIs). */
   entities_preview?: EntitiesPreviewOut | null;
+  /** The alert waits for its blind-audit label: its AI side (verdict, scores, summary) is withheld. */
+  hidden_for_blind_audit?: boolean;
 }
 
 /** One entity value of a preview. */
@@ -1371,4 +1373,168 @@ export interface MonthlyReportOut {
   value: ValueReportOut;
   accuracy: AccuracyReportOut;
   detections: DetectionsReportOut;
+}
+
+// ------------------------------------------------------------- blind audit
+
+/** An analyst's label on a blind-audit sample (an auto-closed alert shown without the AI verdict). */
+export const AUDIT_LABELS = ['malicious', 'benign', 'unsure'] as const;
+export type AuditLabel = (typeof AUDIT_LABELS)[number];
+
+/**
+ * A sampled alert as its source sent it: nothing the AI concluded and not its id (the item id is the handle);
+ * `raw`/`normalized` on the item read only.
+ */
+export interface BlindAlertOut {
+  title: string;
+  severity: Open<Severity>;
+  source_id: string;
+  source_name: string | null;
+  category: string | null;
+  occurred_at: string;
+  ingested_at: string;
+  entities_preview: EntitiesPreviewOut | null;
+  raw: JsonObject | null;
+  normalized: JsonObject | null;
+}
+
+/** The AI's side of a sample, sent only once it is labelled. */
+export interface BlindAuditRevealOut {
+  ai_class: Open<Disposition>;
+  agreement: boolean | null;
+  disposition: Open<Disposition> | null;
+  confidence: number | null;
+  threat_score: number | null;
+  close_reason: string | null;
+  routing_code: string | null;
+  conclusion: string | null;
+}
+
+export interface BlindAuditItemOut {
+  id: string;
+  run_id: string;
+  sample_rank: number;
+  label: Open<AuditLabel> | null;
+  notes: string | null;
+  labelled_at: string | null;
+  labelled_by: string | null;
+  escalation_id: string | null;
+  created_at: string;
+  alert: BlindAlertOut;
+  /** Null until the item is labelled. */
+  reveal: BlindAuditRevealOut | null;
+}
+
+export interface BlindAuditLabelIn {
+  label: AuditLabel;
+  notes?: string | null;
+}
+
+export interface BlindAuditLabelOut {
+  item: BlindAuditItemOut;
+  escalation_id: string | null;
+  escalation_created: boolean;
+}
+
+export interface BlindAuditSampleIn {
+  from?: string | null;
+  to?: string | null;
+  /** Draw without recording; the only place for a caller's `seed`. */
+  dry_run?: boolean;
+  seed?: number | null;
+  sample_rate?: number | null;
+  min_per_week?: number | null;
+  size?: number | null;
+}
+
+/** A sampling run: its window, seed, frame (eligible alerts) and label counts. */
+export interface BlindAuditRunSummary {
+  id: string;
+  window_start: string;
+  window_end: string;
+  seed: number;
+  /** Who chose the seed of a recorded run: always the server. */
+  seed_source: string;
+  sample_rate: number | null;
+  min_sample: number;
+  fixed_size: number | null;
+  frame_size: number;
+  sample_size: number;
+  trigger: string;
+  created_by: string | null;
+  created_at: string;
+  sampled: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+  agreed: number;
+}
+
+/** The stratified false-negative estimate: each run a stratum weighted by its frame. */
+export interface BlindAuditEstimate {
+  status: Open<'ok' | 'insufficient_data' | 'incomplete'>;
+  /** Every sample of every run labelled. */
+  complete: boolean;
+  /** "6.7% (stratified over 1 run(s); n=30; 95% CI 1.8% to 21.3%)" or "Not enough data (n=4; at least 30 needed)". */
+  summary: string;
+  method: string;
+  frame_size: number;
+  /** The frames of the runs with a malicious-or-benign label (what the estimate scales to). */
+  estimated_frame: number;
+  effective_n: number | null;
+  sampled: number;
+  labelled: number;
+  pending: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+  min_samples: number;
+  false_negative_rate: RateInterval;
+  agreement_rate: RateInterval;
+  estimated_missed: number | null;
+  estimated_missed_low: number | null;
+  estimated_missed_high: number | null;
+  /** Unsure and pending samples counted as malicious. */
+  worst_case_rate: number | null;
+  worst_case_rate_high: number | null;
+  worst_case_missed: number | null;
+  worst_case_missed_high: number | null;
+}
+
+/** One run as a stratum, with its own rate and 95% Wilson interval. */
+export interface BlindAuditStratum {
+  run_id: string;
+  window_start: string;
+  window_end: string;
+  frame_size: number;
+  sampled: number;
+  labelled: number;
+  pending: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+  complete: boolean;
+  false_negative_rate: RateInterval;
+}
+
+/** Labels given by one organisation (`null`: the tenant's own people; else an MSSP under a grant). */
+export interface OrganisationLabels {
+  organisation: string | null;
+  labelled: number;
+  malicious: number;
+  benign: number;
+  unsure: number;
+}
+
+export interface BlindAuditReportOut {
+  from: string;
+  to: string;
+  generated_at: string;
+  estimate: BlindAuditEstimate;
+  strata: BlindAuditStratum[];
+  runs: BlindAuditRunSummary[];
+  /** Time in the window no run covered: alerts closed then are in no frame. */
+  uncovered: Array<{ from: string; to: string }>;
+  labels_by_organisation: OrganisationLabels[];
+  notes: string[];
 }

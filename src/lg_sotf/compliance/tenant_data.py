@@ -155,6 +155,9 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ExportTable("external_tickets.jsonl", "external_tickets", "*", _ID_UUID),
     # The investigation trace: hashes, token counts and redacted, size-capped result digests.
     ExportTable("investigation_steps.jsonl", "investigation_steps", "*", _ID_UUID),
+    # Blind audits: the sampling runs (window, seed, frame) and each sampled alert's analyst label.
+    ExportTable("blind_audit_runs.jsonl", "blind_audit_runs", "*", _ID_UUID),
+    ExportTable("blind_audit_items.jsonl", "blind_audit_items", "*", _ID_UUID),
     # What shadow runs of a candidate pipeline would have done (event and action types, action targets).
     ExportTable("shadow_effects.jsonl", "shadow_effects", "*", _ID_UUID),
     # Shadow agreement reports: production's and a candidate's verdict (routes, planned actions, usage) per alert.

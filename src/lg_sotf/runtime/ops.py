@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection
@@ -12,7 +12,7 @@ from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upgrade_head
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import owner_database, owner_dsn
-from lg_sotf.db.repos import Repositories, User
+from lg_sotf.db.repos import BlindAuditRun, Repositories, User
 from lg_sotf.db.repos.users import ROLES, normalize_email
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.errors import OperationError
@@ -23,6 +23,7 @@ from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.hashing import ahash_password
 from lg_sotf.security.passwords import password_problem
+from lg_sotf.services.blind_audit import BlindAuditDraw, BlindAuditService, SampleRequest, SamplingError
 from lg_sotf.services.tenancy import TenantRequest, provision_tenant
 from lg_sotf.settings import Settings
 
@@ -356,6 +357,32 @@ async def enqueue_lost_resume(settings: Settings, *, tenant_id: str, alert_id: s
         return await WorkQueue(redis, settings).enqueue_resume(tenant_id, alert_id, payload)
     finally:
         await redis.aclose()
+        await db.close()
+
+
+async def audit_sample(
+    settings: Settings, *, tenant_id: str, request: SampleRequest, dry_run: bool = False
+) -> Union[BlindAuditRun, BlindAuditDraw]:
+    """Draw a blind-audit sample of a tenant's auto-closed alerts now (``lg-sotf audit-sample``; audited as cli),
+    or, with ``dry_run``, what a run over the window and seed would draw (recorded nowhere)."""
+    if not is_valid_tenant_id(tenant_id):
+        raise OperationError(f"invalid tenant id {tenant_id!r}")
+    db = owner_database(settings, "lg-sotf-cli")
+    await db.open()
+    try:
+        repos = Repositories.create(db)
+        try:
+            await repos.tenants.get(tenant_id)
+        except NotFound as exc:
+            raise OperationError(f"tenant {tenant_id!r} does not exist") from exc
+        try:
+            service = BlindAuditService(repos)
+            if dry_run:
+                return await service.dry_run(tenant_id, request)
+            return await service.sample(tenant_id, request, trigger="cli", actor=Actor("system", "cli"))
+        except SamplingError as exc:
+            raise OperationError(str(exc)) from exc
+    finally:
         await db.close()
 
 

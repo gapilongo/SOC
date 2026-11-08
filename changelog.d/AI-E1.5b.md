@@ -11,7 +11,7 @@
   fails, or whose model answers are unusable so the rules decide, counts as a
   disagreement and is listed; the report says when there is not enough to
   judge the candidate on. Platform admins can also read the report at
-  `GET /api/v1/platform/shadow/reports/{id}` (beta). Migration `0014` adds
+  `GET /api/v1/platform/shadow/reports/{id}` (beta). Migration `0015` adds
   the `shadow_verdicts` table (append-only, tenant row-level security,
   deleted with its alert, in the tenant data export, not in the evidence
   pack).

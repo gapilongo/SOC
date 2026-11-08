@@ -7,13 +7,16 @@ happen after the commit, in the caller (``api.routers.alerts``).
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.pagination import Page
 from lg_sotf.db.repos import Alert, AlertEvent, Repositories
 from lg_sotf.observability.logging import get_logger
+
+if TYPE_CHECKING:
+    from lg_sotf.core.state import AlertSummary
 
 log = get_logger(__name__)
 
@@ -64,13 +67,20 @@ async def add_note(
 
 
 async def request_reprocess(
-    repos: Repositories, audit: AuditLogger, tenant_id: str, actor: Actor, alert_id: str
+    repos: Repositories,
+    audit: AuditLogger,
+    tenant_id: str,
+    actor: Actor,
+    alert_id: str,
+    *,
+    summary: Optional[AlertSummary] = None,
 ) -> Alert:
     """Queue the alert's run again and the alert with it; audited ``alert.reprocess_requested``.
 
     A finished run is reset to ``queued``. A run that is claimed or running
     cannot be: ``InvalidTransition`` (``current`` is the run's status) and
     nothing changes. An alert whose status cannot move to ``queued`` keeps it.
+    ``summary`` is merged into the alert's summary in the same transaction.
     """
     async with repos.db.tenant_tx(tenant_id) as conn:
         alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
@@ -82,6 +92,8 @@ async def request_reprocess(
             alert = await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
         except InvalidTransition:
             log.info("api.reprocess_status_kept", status=previous)
+        if summary is not None:
+            alert = await repos.alerts.update(tenant_id, alert_id, summary=summary, conn=conn)
         await audit.record(
             tenant_id,
             "alert.reprocess_requested",

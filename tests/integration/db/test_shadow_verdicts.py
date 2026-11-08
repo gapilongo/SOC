@@ -1,4 +1,4 @@
-"""``shadow_verdicts`` (migration 0014, AI-E1.5b): tenant RLS, append-only for the runtime role, checked columns."""
+"""``shadow_verdicts`` (migration 0015, AI-E1.5b): tenant RLS, append-only for the runtime role, checked columns."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Shadow agreement rows: production's verdict and a candidate's on the same alert (migration 0014).
+"""Shadow agreement rows: production's verdict and a candidate's on the same alert (migration 0015).
 
 One row per alert per report (:mod:`lg_sotf.domain.shadow_agreement`).
 Rows are append-only, written by ``lg-sotf shadow-run`` after each shadow

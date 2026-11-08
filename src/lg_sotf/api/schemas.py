@@ -299,6 +299,11 @@ class AlertOut(Out):
     case_key: Optional[str] = None
     source_name: Optional[str] = Field(default=None, description="The source's name; null once it is deleted.")
     entities_preview: Optional[EntitiesPreviewOut] = None
+    hidden_for_blind_audit: bool = Field(
+        default=False,
+        description="True while the alert waits for its blind-audit label: disposition, confidence, scores, "
+        "priority, summary and findings are withheld (null or the marker) for everyone in the tenant.",
+    )
 
 
 class AlertDetailOut(AlertOut):

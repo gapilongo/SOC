@@ -2,30 +2,60 @@
 
 Response builders, query timestamps, the sign-in cookie and failed-login
 limit (auth and mfa), the password policy as an API error (identity and
-platform) and the catch-all suppression rule check (suppressions and reports).
+platform), the catch-all suppression rule check (suppressions and reports) and
+dropping cached verdicts once an analyst finds a threat (review and blind audit).
 """
 
 from __future__ import annotations
 
 import ipaddress
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set
 from uuid import UUID
 
 from fastapi import Request, Response
+from redis.exceptions import RedisError
 
 from lg_sotf.api.auth.authenticate import client_ip
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
+from lg_sotf.core.verdict_cache import VerdictCache
+from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
+from lg_sotf.domain.blind_audit import (
+    HIDDEN,
+    HIDDEN_ALERT_FIELDS,
+    HIDDEN_KEY,
+    related_alert_ids,
+    without_pending_related,
+)
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
+from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.escalation_views import EscalationView, escalation_views
+
+log = get_logger(__name__)
+
+
+async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
+    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
+    cache = VerdictCache(ctx.redis, ctx.prefix)
+    for alert_id in alert_ids:
+        try:
+            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
+            if alert.fingerprint:
+                await cache.invalidate(tenant_id, alert.fingerprint)
+        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
+            log_failure(
+                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
+                error_type=type(exc).__name__,
+            )
 
 
 def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:
@@ -42,21 +72,84 @@ def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[
         raise ApiError(400, "invalid_request", f"{name} must be a user id or 'me'") from exc
 
 
-def alert_out(alert: AlertListItem) -> AlertOut:
+def alert_out(alert: AlertListItem, *, view: Optional[BlindView] = None) -> AlertOut:
+    """``view``: which alerts wait for their blind-audit label (this one's AI side is then withheld, and
+    another's correlation digest no longer names them)."""
     preview = entities_preview(alert.entities)
-    return AlertOut.model_validate(alert).model_copy(
+    out = AlertOut.model_validate(alert).model_copy(
         update={"entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None}
     )
+    if view is None:
+        return out
+    if view.hides(alert.id):
+        return out.model_copy(update=_hidden_fields())
+    return out.model_copy(update={"summary": without_pending_related(alert.summary, view.pending)})
 
 
-def alert_detail_out(alert: Alert) -> AlertDetailOut:
+def alert_detail_out(alert: Alert, *, view: Optional[BlindView] = None) -> AlertDetailOut:
     preview = entities_preview(alert.entities)
-    return AlertDetailOut.model_validate(alert).model_copy(
+    out = AlertDetailOut.model_validate(alert).model_copy(
         update={
             "entities_preview": EntitiesPreviewOut.model_validate(preview) if preview else None,
             "findings": [FindingOut.model_validate(f) for f in findings(alert.summary)],
         }
     )
+    if view is None:
+        return out
+    if view.hides(alert.id):
+        return out.model_copy(update={**_hidden_fields(), "findings": []})
+    return out.model_copy(update={"summary": without_pending_related(alert.summary, view.pending)})
+
+
+@dataclass(frozen=True)
+class BlindView:
+    """The pending blind-audit samples among some alerts and the alerts their correlation digests name."""
+
+    pending: Mapping[str, Optional[str]]
+
+    def hides(self, alert_id: str) -> bool:
+        return alert_id in self.pending
+
+
+async def blind_view(ctx: ApiContext, tenant_id: str, alerts: Sequence[AlertListItem]) -> BlindView:
+    ids = [a.id for a in alerts] + [r for a in alerts for r in related_alert_ids(a.summary)]
+    return BlindView(await ctx.repos.blind_audit.pending_dispositions(tenant_id, ids))
+
+
+# Cached tenant figures that leave pending blind-audit samples out (dashboard summary, reports).
+FIGURE_CACHES = ("dashboard", "reports")
+
+
+def dashboard_cache_key(ctx: ApiContext, tenant_id: str, window_hours: int) -> str:
+    return f"{ctx.prefix}:t:{tenant_id}:cache:dashboard:{window_hours}"
+
+
+async def forget_cached_figures(ctx: ApiContext, tenant_id: str) -> None:
+    """Drop the tenant's cached dashboard and report figures: they leave pending blind-audit samples out, so a
+    run drawn or a sample labelled changes them, and a cached copy would show the counts from before.
+    Redis being unavailable only means the copies expire on their own (15 and 60 seconds)."""
+    try:
+        for kind in FIGURE_CACHES:
+            keys = [key async for key in ctx.redis.scan_iter(match=f"{ctx.prefix}:t:{tenant_id}:cache:{kind}:*")]
+            if keys:
+                await ctx.redis.unlink(*keys)
+    except (RedisError, OSError, TimeoutError) as exc:
+        log_failure(log, "api.figure_cache_unavailable", exc, level="warning", error_type=type(exc).__name__)
+
+
+async def refuse_hidden(ctx: ApiContext, tenant_id: str, alert_id: str, resource: str, resource_id: str) -> None:
+    """``NotFound`` for a resource of an alert waiting for its blind-audit label (it would name the verdict)."""
+    if await hidden_alert_ids(ctx, tenant_id, [alert_id]):
+        raise NotFound(resource, resource_id)
+
+
+def _hidden_fields() -> Dict[str, Any]:
+    return {**{key: None for key in HIDDEN_ALERT_FIELDS}, "summary": dict(HIDDEN), HIDDEN_KEY: True}
+
+
+async def hidden_alert_ids(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> Set[str]:
+    """The alerts among ``alert_ids`` that wait for a blind-audit label: nobody in the tenant sees their AI side."""
+    return await ctx.repos.blind_audit.pending_alert_ids(tenant_id, alert_ids)
 
 
 def escalation_out(escalation: Escalation, view: Optional[EscalationView]) -> EscalationOut:

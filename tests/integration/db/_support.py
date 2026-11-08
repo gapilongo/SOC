@@ -8,6 +8,7 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
+import asyncpg
 import psycopg
 import pytest
 from pydantic import SecretStr
@@ -23,6 +24,8 @@ from lg_sotf.settings import DatabaseSettings
 
 TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
+# Acts like the production API/worker role (see tests/integration/db/conftest.py, ``app_db``).
+RUNTIME_ROLE = "pg_database_owner"
 
 
 def db_settings(url: str, **overrides: object) -> DatabaseSettings:
@@ -66,6 +69,8 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 ALL_TABLES = (
     "shadow_verdicts",
+    "blind_audit_items",
+    "blind_audit_runs",
     "shadow_effects",
     "investigation_steps",
     "tenant_grants",
@@ -159,6 +164,8 @@ TENANT_TABLES = (
     "organisations",
     "organisation_members",
     "tenant_grants",
+    "blind_audit_runs",
+    "blind_audit_items",
 )
 
 
@@ -213,6 +220,16 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         [NewTraceStep(agent="analysis", kind="tool", tool="history", input_hash=sha256_hex("in"), outcome="success",
                       started_at=now)],
     )
+    run = await repos.blind_audit.create_run(
+        tenant_id, since=now - timedelta(days=7), until=now, seed=7, sample_rate=0.02, min_sample=5, fixed_size=None,
+        frame_size=1, items=[(alert_id, 1, "benign")], trigger="cli", created_by="seed",
+    )
+    item = (await repos.blind_audit.list_items(tenant_id)).items[0]
+    await repos.blind_audit.label(
+        tenant_id, item.id, label="benign", notes=None, agreement=True, labelled_by=user.id,
+        labelled_by_actor=str(user.id), escalation_id=None, now=now,
+    )
+    assert item.run_id == run.id
     await repos.shadow_effects.append(
         tenant_id, alert_id, "shadow/seed", [ShadowEffect(0, "outbox", "enqueue_on", "sunk", {"rows": 1})]
     )
@@ -232,3 +249,22 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         tenant_id, mssp, "analyst", reason="seed", created_by="seed", expires_at=now + timedelta(days=1)
     )
     return alert_id
+
+
+async def closed_alert_as(app: Repositories, owner: Repositories, tenant: str) -> str:
+    """An alert inserted by ``app`` (the runtime role) and closed by automation an hour ago."""
+    alert_id = await make_alert(app, tenant)
+    async with owner.db.system_tx() as conn:
+        await conn.execute("UPDATE alerts SET status='closed', disposition='benign', closed_at=now() - interval '1 hour' "
+                           "WHERE tenant_id=$1 AND id=$2", tenant, alert_id)
+    return alert_id
+
+
+async def attempt_as(app: Repositories, sql: str, *args: object, tenant: str = TENANT_A) -> str:
+    """Run ``sql`` in ``app``'s tenant transaction: ``ALLOWED``, or the name of the refusing error."""
+    try:
+        async with app.db.tenant_tx(tenant) as conn:
+            await conn.execute(sql, *args)
+    except asyncpg.PostgresError as exc:
+        return type(exc).__name__
+    return "ALLOWED"

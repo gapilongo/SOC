@@ -17,6 +17,7 @@ from lg_sotf.runtime import scheduler as scheduler_module
 from lg_sotf.runtime.leader import LeaderLease
 from lg_sotf.runtime.orphans import orphan_thresholds
 from lg_sotf.runtime.scheduler import Scheduler
+from lg_sotf.services.blind_audit import week_window
 from lg_sotf.services.dispatch import dispatch_new_alerts
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
@@ -298,6 +299,33 @@ async def test_maintenance_and_metrics(
     assert QUEUE_DEPTH.labels(stream="high")._value.get() == 1
     assert QUEUE_DEPTH.labels(stream="normal")._value.get() == 0
     assert ESCALATIONS_OPEN._value.get() == 1
+
+
+async def test_blind_audit_job_samples_the_tenants_that_enabled_it(
+    repos: Repositories, redis_client: Any, runtime_settings: Callable[..., Settings]
+) -> None:
+    sched = _scheduler(runtime_settings(), repos.db, redis_client)
+    week_start, _ = week_window(datetime.now(UTC))
+    async with repos.db.system_tx() as conn:
+        await conn.execute(
+            "UPDATE tenants SET settings = settings || $2::jsonb WHERE id = $1",
+            TENANT_A, {"blind_audit": {"enabled": True, "sample_rate": 0.5, "min_per_week": 0}},
+        )
+    for tenant_id in (TENANT_A, TENANT_B):
+        for i in range(4):
+            alert_id = await make_alert(repos, tenant_id)
+            async with repos.db.system_tx() as conn:
+                await conn.execute(
+                    "UPDATE alerts SET status = 'closed', disposition = 'benign', closed_at = $2 WHERE id = $1",
+                    alert_id, week_start + timedelta(hours=i),
+                )
+
+    await sched.sample_blind_audits()
+    await sched.sample_blind_audits()  # the week is sampled once
+
+    [run] = (await repos.blind_audit.list_runs(TENANT_A)).items
+    assert (run.trigger, run.frame_size, run.sample_size, run.window_start) == ("schedule", 4, 2, week_start)
+    assert (await repos.blind_audit.list_runs(TENANT_B)).items == []  # not enabled
 
 
 async def _age_run(repos: Repositories, alert_id: str, seconds: int = 3600) -> None:

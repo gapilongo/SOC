@@ -24,6 +24,7 @@ from lg_sotf.api.routers import (
     alerts,
     audit,
     auth,
+    blind_audit,
     compliance,
     dashboard,
     grants,
@@ -155,6 +156,8 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
         (integrations.router, "beta"),
         (integrations.tickets, "beta"),
         (reports.router, "beta"),
+        (blind_audit.router, "beta"),
+        (blind_audit.report, "beta"),
     )
 
 

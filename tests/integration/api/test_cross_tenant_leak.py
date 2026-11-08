@@ -114,10 +114,16 @@ async def _seed_victim(api: ApiHarness) -> Dict[str, str]:
     await api.repos.organisations.upsert(OTHER_ORG, "Other MSSP")
     grant = await _grant(api, VICTIM, OTHER_ORG, "viewer", reason=MARKER)
     await api.repos.audit.append(VICTIM, "user", str(user.id), "alert.viewed", "alert", alert.id, {"m": MARKER})
+    now = datetime.now(UTC)
+    await api.repos.blind_audit.create_run(
+        VICTIM, since=now - timedelta(days=7), until=now, seed=1, sample_rate=0.02, min_sample=0, fixed_size=None,
+        frame_size=1, items=[(alert.id, 1, "benign")], trigger="cli", created_by=MARKER,
+    )
+    item = (await api.repos.blind_audit.list_items(VICTIM)).items[0]
     return {
         "alert_id": alert.id, "escalation_id": escalation.id, "action_id": str(action.id), "source_id": source.id,
         "rule_id": rule.id, "integration_id": str(integration.id), "user_id": str(user.id), "key_id": str(key.id),
-        "grant_id": str(grant.id), "tenant_id": VICTIM, "run_id": "shr_" + "0" * 32,
+        "grant_id": str(grant.id), "tenant_id": VICTIM, "item_id": str(item.id), "run_id": "shr_" + "0" * 32,
     }
 
 

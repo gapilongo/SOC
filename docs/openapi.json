@@ -774,6 +774,12 @@
             "title": "Fingerprint",
             "type": "string"
           },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1019,6 +1025,16 @@
                 "type": "object"
               },
               "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "blind_audit_review": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -1693,6 +1709,12 @@
             "title": "Fingerprint",
             "type": "string"
           },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "True while the alert waits for its blind-audit label: disposition, confidence, scores, priority, summary and findings are withheld (null or the marker) for everyone in the tenant.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -1928,6 +1950,16 @@
                 "type": "object"
               },
               "analyst_decision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "blind_audit_review": {
                 "anyOf": [
                   {
                     "type": "string"
@@ -2903,6 +2935,975 @@
           }
         },
         "title": "BlastRadiusOut",
+        "type": "object"
+      },
+      "BlindAlertOut": {
+        "description": "The alert as its source sent it: nothing the AI concluded, and not its id (the item id is the\nhandle; the alert's own routes withhold its AI side until the label exists anyway).",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "entities_preview": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EntitiesPreviewOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ingested_at": {
+            "format": "date-time",
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "normalized": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The normalized event (item detail only).",
+            "title": "Normalized"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The source event (item detail only).",
+            "title": "Raw"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "severity",
+          "source_id",
+          "occurred_at",
+          "ingested_at"
+        ],
+        "title": "BlindAlertOut",
+        "type": "object"
+      },
+      "BlindAuditDraw": {
+        "description": "A dry run: what a run over this window and seed draws, recorded nowhere.",
+        "properties": {
+          "alert_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Ids",
+            "type": "array"
+          },
+          "frame_size": {
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "seed",
+          "frame_size",
+          "sample_size",
+          "alert_ids"
+        ],
+        "title": "BlindAuditDraw",
+        "type": "object"
+      },
+      "BlindAuditEstimate": {
+        "description": "The production false-negative estimate over a set of runs, each run a stratum (see :func:`estimate`).",
+        "properties": {
+          "agreement_rate": {
+            "$ref": "#/components/schemas/RateInterval"
+          },
+          "benign": {
+            "title": "Benign",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "effective_n": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective N"
+          },
+          "estimated_frame": {
+            "title": "Estimated Frame",
+            "type": "integer"
+          },
+          "estimated_missed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Missed"
+          },
+          "estimated_missed_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Missed High"
+          },
+          "estimated_missed_low": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Missed Low"
+          },
+          "false_negative_rate": {
+            "$ref": "#/components/schemas/RateInterval"
+          },
+          "frame_size": {
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "labelled": {
+            "title": "Labelled",
+            "type": "integer"
+          },
+          "malicious": {
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "method": {
+            "const": "stratified",
+            "default": "stratified",
+            "title": "Method",
+            "type": "string"
+          },
+          "min_samples": {
+            "title": "Min Samples",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "sampled": {
+            "title": "Sampled",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "insufficient_data",
+              "incomplete"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "title": "Summary",
+            "type": "string"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "integer"
+          },
+          "worst_case_missed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Missed"
+          },
+          "worst_case_missed_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Missed High"
+          },
+          "worst_case_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Rate"
+          },
+          "worst_case_rate_high": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Case Rate High"
+          }
+        },
+        "required": [
+          "status",
+          "complete",
+          "summary",
+          "frame_size",
+          "estimated_frame",
+          "sampled",
+          "labelled",
+          "pending",
+          "malicious",
+          "benign",
+          "unsure",
+          "min_samples",
+          "effective_n",
+          "false_negative_rate",
+          "agreement_rate",
+          "estimated_missed",
+          "estimated_missed_low",
+          "estimated_missed_high",
+          "worst_case_rate",
+          "worst_case_rate_high",
+          "worst_case_missed",
+          "worst_case_missed_high"
+        ],
+        "title": "BlindAuditEstimate",
+        "type": "object"
+      },
+      "BlindAuditItemOut": {
+        "properties": {
+          "alert": {
+            "$ref": "#/components/schemas/BlindAlertOut"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "escalation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalation Id"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "unsure"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "labelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labelled At"
+          },
+          "labelled_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labelled By"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "reveal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BlindAuditRevealOut"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null until the item is labelled."
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sample_rank": {
+            "title": "Sample Rank",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "sample_rank",
+          "created_at",
+          "alert"
+        ],
+        "title": "BlindAuditItemOut",
+        "type": "object"
+      },
+      "BlindAuditLabelIn": {
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "enum": [
+              "malicious",
+              "benign",
+              "unsure"
+            ],
+            "title": "Label",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "maxLength": 4000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "BlindAuditLabelIn",
+        "type": "object"
+      },
+      "BlindAuditLabelOut": {
+        "properties": {
+          "escalation_created": {
+            "default": false,
+            "title": "Escalation Created",
+            "type": "boolean"
+          },
+          "escalation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalation Id"
+          },
+          "item": {
+            "$ref": "#/components/schemas/BlindAuditItemOut"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "title": "BlindAuditLabelOut",
+        "type": "object"
+      },
+      "BlindAuditReport": {
+        "description": "``GET /reports/blind-audit``: the production false-negative estimate over the runs of a window.",
+        "properties": {
+          "estimate": {
+            "$ref": "#/components/schemas/BlindAuditEstimate"
+          },
+          "from": {
+            "format": "date",
+            "title": "From",
+            "type": "string"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "labels_by_organisation": {
+            "items": {
+              "$ref": "#/components/schemas/OrganisationLabels"
+            },
+            "title": "Labels By Organisation",
+            "type": "array"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/BlindAuditRunSummary"
+            },
+            "title": "Runs",
+            "type": "array"
+          },
+          "strata": {
+            "items": {
+              "$ref": "#/components/schemas/BlindAuditStratum"
+            },
+            "title": "Strata",
+            "type": "array"
+          },
+          "to": {
+            "format": "date",
+            "title": "To",
+            "type": "string"
+          },
+          "uncovered": {
+            "items": {
+              "$ref": "#/components/schemas/UncoveredSpan"
+            },
+            "title": "Uncovered",
+            "type": "array"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "generated_at",
+          "estimate",
+          "strata",
+          "runs",
+          "uncovered",
+          "labels_by_organisation",
+          "notes"
+        ],
+        "title": "BlindAuditReport",
+        "type": "object"
+      },
+      "BlindAuditRevealOut": {
+        "description": "The AI's side, shown once the item is labelled: its class when sampled, and the alert's verdict now.",
+        "properties": {
+          "agreement": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The label equals the AI class; null for an unsure label.",
+            "title": "Agreement"
+          },
+          "ai_class": {
+            "enum": [
+              "malicious",
+              "benign",
+              "inconclusive"
+            ],
+            "title": "Ai Class",
+            "type": "string"
+          },
+          "close_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Close Reason"
+          },
+          "conclusion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conclusion"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposition"
+          },
+          "routing_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Routing Code"
+          },
+          "threat_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threat Score"
+          }
+        },
+        "required": [
+          "ai_class",
+          "agreement"
+        ],
+        "title": "BlindAuditRevealOut",
+        "type": "object"
+      },
+      "BlindAuditRunSummary": {
+        "description": "A run with its label counts.",
+        "properties": {
+          "agreed": {
+            "default": 0,
+            "title": "Agreed",
+            "type": "integer"
+          },
+          "benign": {
+            "default": 0,
+            "title": "Benign",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "fixed_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fixed Size"
+          },
+          "frame_size": {
+            "description": "Alerts eligible in the window: the sampling frame.",
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "malicious": {
+            "default": 0,
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "min_sample": {
+            "title": "Min Sample",
+            "type": "integer"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Rate"
+          },
+          "sample_size": {
+            "title": "Sample Size",
+            "type": "integer"
+          },
+          "sampled": {
+            "default": 0,
+            "title": "Sampled",
+            "type": "integer"
+          },
+          "seed": {
+            "title": "Seed",
+            "type": "integer"
+          },
+          "seed_source": {
+            "default": "server",
+            "title": "Seed Source",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "schedule",
+              "cli",
+              "api"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "unsure": {
+            "default": 0,
+            "title": "Unsure",
+            "type": "integer"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "window_start",
+          "window_end",
+          "seed",
+          "sample_rate",
+          "min_sample",
+          "fixed_size",
+          "frame_size",
+          "sample_size",
+          "trigger",
+          "created_by",
+          "created_at"
+        ],
+        "title": "BlindAuditRunSummary",
+        "type": "object"
+      },
+      "BlindAuditSampleIn": {
+        "additionalProperties": false,
+        "description": "A run on demand: alerts closed from where the last run ended (the tenant's first run: ``from``, default\n7 days back) to ``to`` (default and at most: 5 minutes before now). ``dry_run`` draws without recording\nanything and is the only way to pass a ``seed`` (with it, ``from`` may be any time).",
+        "properties": {
+          "dry_run": {
+            "default": false,
+            "description": "Draw and return the sample without recording a run.",
+            "title": "Dry Run",
+            "type": "boolean"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From"
+          },
+          "min_per_week": {
+            "anyOf": [
+              {
+                "maximum": 500.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Per Week"
+          },
+          "sample_rate": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default: the tenant setting.",
+            "title": "Sample Rate"
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "maximum": 9007199254740991.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dry runs only (a recorded run's seed is the server's).",
+            "title": "Seed"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "maximum": 2000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Draw exactly this many (replaces rate and minimum).",
+            "title": "Size"
+          },
+          "to": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To"
+          }
+        },
+        "title": "BlindAuditSampleIn",
+        "type": "object"
+      },
+      "BlindAuditStratum": {
+        "description": "One run as a stratum of the estimate, with its own rate and 95% Wilson interval.",
+        "properties": {
+          "benign": {
+            "title": "Benign",
+            "type": "integer"
+          },
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "false_negative_rate": {
+            "$ref": "#/components/schemas/RateInterval"
+          },
+          "frame_size": {
+            "title": "Frame Size",
+            "type": "integer"
+          },
+          "labelled": {
+            "title": "Labelled",
+            "type": "integer"
+          },
+          "malicious": {
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "run_id": {
+            "format": "uuid",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "sampled": {
+            "title": "Sampled",
+            "type": "integer"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "integer"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "window_start",
+          "window_end",
+          "frame_size",
+          "sampled",
+          "labelled",
+          "pending",
+          "malicious",
+          "benign",
+          "unsure",
+          "complete",
+          "false_negative_rate"
+        ],
+        "title": "BlindAuditStratum",
         "type": "object"
       },
       "BulkClaimIn": {
@@ -6977,6 +7978,47 @@
         "title": "OrganisationIn",
         "type": "object"
       },
+      "OrganisationLabels": {
+        "description": "Labels given by one organisation (``None``: the tenant's own people).",
+        "properties": {
+          "benign": {
+            "title": "Benign",
+            "type": "integer"
+          },
+          "labelled": {
+            "title": "Labelled",
+            "type": "integer"
+          },
+          "malicious": {
+            "title": "Malicious",
+            "type": "integer"
+          },
+          "organisation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organisation"
+          },
+          "unsure": {
+            "title": "Unsure",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "organisation",
+          "labelled",
+          "malicious",
+          "benign",
+          "unsure"
+        ],
+        "title": "OrganisationLabels",
+        "type": "object"
+      },
       "OrganisationOut": {
         "properties": {
           "created_at": {
@@ -7108,6 +8150,60 @@
           "items"
         ],
         "title": "PageOut[AuditEntryOut]",
+        "type": "object"
+      },
+      "PageOut_BlindAuditItemOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BlindAuditItemOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PageOut[BlindAuditItemOut]",
+        "type": "object"
+      },
+      "PageOut_BlindAuditRunSummary_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BlindAuditRunSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PageOut[BlindAuditRunSummary]",
         "type": "object"
       },
       "PageOut_EscalationOut_": {
@@ -10011,6 +11107,27 @@
         "title": "TokenOut",
         "type": "object"
       },
+      "UncoveredSpan": {
+        "description": "Time in the report's window that no run sampled: alerts closed then are in no frame.",
+        "properties": {
+          "from": {
+            "format": "date-time",
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "UncoveredSpan",
+        "type": "object"
+      },
       "UsageDayOut": {
         "properties": {
           "agent": {
@@ -12727,6 +13844,292 @@
         "x-stability": "stable"
       }
     },
+    "/api/v1/blind-audit/items": {
+      "get": {
+        "operationId": "list_items_api_v1_blind_audit_items_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "labelled"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_BlindAuditItemOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "The blind audit queue (no AI verdict)",
+        "tags": [
+          "blind-audit"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/blind-audit/items/{item_id}": {
+      "get": {
+        "operationId": "get_item_api_v1_blind_audit_items__item_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindAuditItemOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One sampled alert; the AI side once labelled",
+        "tags": [
+          "blind-audit"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/blind-audit/items/{item_id}/label": {
+      "post": {
+        "operationId": "label_item_api_v1_blind_audit_items__item_id__label_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "item_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Item Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlindAuditLabelIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindAuditLabelOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Label a sampled alert, then see the AI's verdict",
+        "tags": [
+          "blind-audit"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/blind-audit/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_blind_audit_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_BlindAuditRunSummary_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sampling runs: window, seed, frame and label counts",
+        "tags": [
+          "blind-audit"
+        ],
+        "x-stability": "beta"
+      },
+      "post": {
+        "operationId": "create_run_api_v1_blind_audit_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BlindAuditSampleIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/BlindAuditRunSummary"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BlindAuditDraw"
+                    }
+                  ],
+                  "title": "Response Create Run Api V1 Blind Audit Runs Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sample auto-closed alerts now (or draw without recording: dry_run)",
+        "tags": [
+          "blind-audit"
+        ],
+        "x-stability": "beta"
+      }
+    },
     "/api/v1/dashboard/summary": {
       "get": {
         "description": "The tenant's figures are cached per tenant and window; ``pending_approvals`` and ``my_claimed``\ndepend on the caller and are computed on every request.",
@@ -14871,6 +16274,74 @@
           }
         },
         "summary": "AI verdict against analyst decisions: confusion matrix, agreement, false-negative rate",
+        "tags": [
+          "reports"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/reports/blind-audit": {
+      "get": {
+        "operationId": "blind_audit_report_api_v1_reports_blind_audit_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlindAuditReport"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Production false-negative estimate from blind audits of auto-closed alerts, with its interval",
         "tags": [
           "reports"
         ],
