@@ -154,6 +154,12 @@ synthetic (documentation address ranges, `example.com`) and marked
 `_synthetic`, like `tests/fixtures/vendors`. `tests.fixtures.wazuh_lab.WazuhLab`
 is the same client in Python, for tests that seed their own data.
 
+The attack-emulation corpus (`corpus_v1`, [evaluation.md](evaluation.md#attack-emulation-corpus-v1))
+loads the same way: `python -m tests.fixtures.attack_corpus alerts corpus.json`
+writes its 520 alerts as `alerts.json` lines. `tests/live/wazuh/test_attack_corpus.py`
+indexes them, reads them back through the real connector and checks the
+rebuilt dataset against the committed sha256.
+
 ## Fixtures and helpers
 
 Fixtures live in conftests; **helpers live in `_support.py` modules**. A test
@@ -171,7 +177,8 @@ into the nearest `_support.py` instead.
 | `tests/integration/e2e/_support.py` | `Stack` (ingest, dispatch, engine, worker), `running(worker)`, `eventually(predicate)`, shared events. |
 | `tests/integration/runtime/_support.py` | `FakeEngine`, `make_worker`, `dispatch_alert`, `running`, `eventually`, `ManualClock`. |
 | `tests/integration/integrations/_support.py`, `.../microsoft/_support.py` | `Receiver` (scripted HTTP receiver), `add_integration`, `MicrosoftEnv`. |
-| `tests/fixtures/` | Vendor payloads, `FakeMicrosoft`, the evaluation datasets, the Wazuh lab client and sample alerts (`wazuh_lab`). |
+| `tests/fixtures/` | Vendor payloads, `FakeMicrosoft`, the evaluation datasets, the Wazuh lab client and sample alerts (`wazuh_lab`), the attack-emulation corpus generator (`attack_corpus`). |
+| `tests/integration/eval/_support.py` | `EVAL_TENANT`, `NetworkGuard` and `block_network_and_model` (a replay with every outbound connection blocked and the configured model unusable). |
 | `tests/live/wazuh/conftest.py`, `_support.py` | `lab`, `lab_admin`, `reader`, `no_access_user`, `alert_index` (one index per test), `wazuh(**config)` (the real connector for the lab), `collect`. |
 
 ## The fake LLM

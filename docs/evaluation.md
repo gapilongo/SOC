@@ -355,7 +355,9 @@ lg-sotf eval --dataset corpus.jsonl --cassettes cassettes/corpus --thresholds ga
 lg-sotf eval --dataset corpus.jsonl --cassettes cassettes/corpus --cassette-mode replay-tools
 ```
 
-- **Format.** One JSON Lines file per item, `<item id>.jsonl`, keys sorted.
+- **Format.** One JSON Lines file per item, `<item id>.jsonl`, keys sorted;
+  a replay also reads it gzip-compressed as `<item id>.jsonl.gz` (how the
+  `corpus_v1` cassettes are committed).
   The header line has the schema version (`"cassette": 2`), the source, the
   time of recording, the dataset's sha256, the item's sha256 and the model
   each tier used. Each further line is a tool call or a model attempt, in the
@@ -531,6 +533,181 @@ trusting attacker-named parts of a title; then move them to the
 ```sh
 LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/adversarial_v2.jsonl \
     --report ~/lg-sotf-eval/adversarial-v2.json --thresholds tests/fixtures/eval/adversarial_v2_thresholds.yaml
+```
+
+## Attack-emulation corpus v1
+
+`tests/fixtures/eval/corpus_v1.jsonl.gz` (version 1, sha256 of the JSONL
+text `3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9`) is
+`corpus_v1`: 520 Wazuh 4.14 alerts with ground-truth labels, written for
+what happened in an emulated estate over twelve days (2026-10-19 to 10-30):
+9 Windows workstations, 7 Windows servers and 2 domain controllers with
+Sysmon, 8 Linux servers with auditd and file integrity monitoring, two nginx
+web servers. It exists because the synthetic sets are too small to bound a
+miss rate (35 and 24 malicious items give 95% upper bounds of about 10% and
+14%) and because their alerts are hand-written, not shaped like attack
+telemetry. With 208 malicious items, 0 misses bound the miss rate below
+1.8%.
+
+### What is in it
+
+| Log source (`family`) | Malicious | Benign | Wazuh rules |
+|---|---|---|---|
+| `sysmon` | 88 | 30 | Sysmon event 1, 3, 10, 11, 13 and 20 detections (`0800`-`0950` rule files) |
+| `windows` | 42 | 125 | Security, System, Application, Defender and PowerShell/Operational channels |
+| `syscheck` | 23 | 16 | File integrity: added, modified, deleted (550, 553, 554) |
+| `audit` | 27 | 19 | auditd commands and watches (80784, 80792, 926xx) |
+| `sshd` | 12 | 51 | sshd and PAM: guessing, brute force, logins (57xx, 5501, 40112) |
+| `syslog` | 8 | 38 | sudo, useradd, crontab, dpkg, yum |
+| `web` | 8 | 33 | nginx access log: scans, SQL injection, Shellshock, web shell (311xx, 315xx) |
+| **Total** | **208 (40%)** | **312 (60%)** | 91 rules |
+
+**Malicious (208).** 162 alerts from eleven campaigns that chain Atomic Red
+Team tests the way a Caldera operation does, two instances each (four for the
+macro intrusion), plus 46 single atomic runs (a purple-team sweep):
+
+| Campaign | Steps (ATT&CK technique, Atomic Red Team test) |
+|---|---|
+| Office macro intrusion | mshta from Word (T1218.005-2), encoded PowerShell cradle (T1059.001-15), implant written to AppData (T1105-10), Run key (T1547.001-1), `net user /domain` (T1087.002-1), `net view /domain` (T1018-1), LSASS read by ProcDump (T1003.001-1), `reg save HKLM\sam` (T1003.002-1) |
+| PsExec to ransomware | PSEXESVC installed (T1021.002-3), command through it (T1569.002-2), Defender off (T1562.001-16), files encrypted to `.akira` with a note and a Defender detection (T1486-10), Security log cleared (T1070.001-1) |
+| SSH brute force to persistence | user-name and password guessing (T1110.001), guessed login (T1078.003), sudo shell (T1548.003-1), `useradd` (T1136.001-1), root `authorized_keys` (T1098.004-1), root crontab (T1053.003-1), Python from `/tmp` (T1059.006-2), history truncated (T1070.003-5) |
+| Web exploitation | content discovery (T1595.003), UNION SQL injection that returns rows (T1190), PHP web shell written and used (T1505.003), `id`, `ps aux`, second stage with `wget` (T1033-2, T1057-1, T1105-27) |
+| AD recon and Kerberoasting | `Get-ADComputer` (T1018-17), PowerView `Get-NetUser -SPN` and LDAP from PowerShell (T1087.002), RC4 service tickets (T1558.003-1) |
+| UAC bypass and WMI persistence | fodhelper bypass (T1548.002-4), `CommandLineEventConsumer` (T1546.003-1), WMI starting encoded PowerShell (T1047-7) |
+| LOLBin ingress | `certutil -urlcache` (T1105-7), `-decode` (T1140-1), renamed certutil (T1140-2), rundll32 on a fake image (T1218.011-10) |
+| Linux cryptominer | `curl` download (T1105-27), `chmod +x` (T1222.002-2), systemd unit (T1543.002-1), miner to its pool (T1496) |
+| Password spray | one password against many accounts, lockout, a working account (T1110.003-1, T1078.002) |
+| Local admin backdoor | `net user /add` and local Administrators (T1136.001-8), Remote Desktop Users (T1098), firewall opened for RDP (T1562.004) |
+| Collection and exfiltration | `CopyFromScreen` (T1113-8), `ZipFile::CreateFromDirectory` and a 7-Zip archive (T1560.001, T1560.001-4), WebDAV mount on attacker storage (T1567.002) |
+
+Steps that Atomic Red Team has no test for (SSH guessing from outside, SQL
+injection, a web shell on Linux, pass-the-hash with Impacket from Linux)
+are labelled with their technique and a described manual procedure. In all,
+47 techniques and 50 Atomic tests; 78% of the malicious alerts name their
+Atomic test.
+
+**Benign (312).** 186 routine alerts: admin SSH logins from the bastion, sudo,
+a mistyped password, Windows logons and logoffs, helpdesk unlocks and
+resets, Windows and Linux patching (MSI installs, dpkg and dnf updates,
+Defender definition updates and scans), backups, monitoring, web 4xx and 5xx
+errors, blog logins. And 126 look-alikes that trip the same rules as an
+attack: the authorised Wednesday-night vulnerability scan (SSH guessing,
+content discovery, SQL injection, path traversal and Shellshock probes from
+`10.20.5.10`), IT running PsExec and `net user`, SCCM staging and running
+PowerShell from `C:\Windows\Temp`, an installer adding its own firewall
+rule, an approved Defender exclusion, Ansible running `AnsiballZ_*.py` from
+`/tmp`, writing root's crontab, sudoers and `authorized_keys` and creating
+users, updaters unpacking executables into `%TEMP%` (rule 92213, level
+15), a cumulative update writing DLLs under `C:\Windows`, a phone retrying an
+old password, a monitoring agent running `ps aux`, a backup job copying a dump
+with `scp`.
+
+**Why 40/60.** Real SOC queues are far more benign than 40%. The split is
+chosen for the measurement: 208 malicious items bound the miss rate below
+1.8% at 0 misses, and 312 benign items bound the false-escalation and
+auto-close rates within about ±5 points. Read precision and auto-close
+counts with this prior in mind; they are not production base rates.
+
+### How it is made
+
+`tests/fixtures/attack_corpus/` is a seeded generator (seed `20261108`). No
+attack runs anywhere (there are no Windows endpoints or agents here): the
+generator writes what a 4.14 manager would write to `alerts.json`.
+
+* **Rules.** Every alert carries the rule id, level, description, groups,
+  compliance tags (`pci_dss`, `gpg13`, `gdpr`, `hipaa`, `nist_800_53`, `tsc`)
+  and MITRE ids of the Wazuh `v4.14.8` ruleset, with technique names and
+  tactics from ATT&CK v16.1, and `$(field)` placeholders expanded. The event
+  fields satisfy the rule's `<field>` conditions (checked with an approximate
+  matcher when the corpus was built). `sources.json` holds just the entries
+  used; `python -m tests.fixtures.attack_corpus verify-sources` fetches the
+  pinned rule files, the Atomic Red Team index at commit `61080b19` (the
+  last before ATT&CK v19 renumbered it) and the ATT&CK bundle, and compares.
+* **Shapes.** Windows events come through `windows_eventchannel` as
+  `data.win.system` and `data.win.eventdata` with every backslash doubled,
+  as 4.x writes them; syslog programs carry `full_log`, `predecoder` and
+  their decoder's fields; FIM events a `syscheck` object; auditd events
+  `data.audit` with the `EXECVE` arguments; frequency rules
+  `previous_output`. Hashes of a file are the same across the corpus. The
+  rendered `win.system.message` is left out (it repeats `eventdata`).
+* **Labels.** Each item's `expected.disposition` comes from the procedure
+  that produced it, never from the text. Tags name the kind (`attack`,
+  `noise`, `lookalike`), the scenario, the rule and level, the technique
+  (`technique:` for an attack, `resembles:` for a look-alike) and the Atomic
+  test (`atomic:T1003.001-1`, `atomic-guid:`); `notes` says what ran.
+  `expected.escalation` is true for malicious items.
+* **No giveaways.** Lab artefacts are not reproduced: payloads sit in
+  `C:\Users\Public`, `%TEMP%` and `/tmp`, not under `C:\AtomicRedTeam`, and
+  no event field contains a test name or label word (a unit test checks).
+  Addresses are documentation ranges and RFC 1918; names are `example.com`
+  and `.test`.
+* **What the 4.14 ruleset does not alert on is not in the corpus.**
+  `vssadmin delete shadows`, `schtasks /create` and plain `whoami` raise no
+  default alert, so they produce no item. Two ruleset quirks are kept as
+  they are: rule 91802 (the parent of the PowerShell script-block rules) names
+  `win.eventdata.ScriptBlockId` while the decoder writes `scriptBlockId`, and
+  rule 92057 does not match `-enc` (its list has `-e`, `-ec`, `-en`, `-enco`).
+
+### Pipeline
+
+1. `python -m tests.fixtures.attack_corpus generate` writes the dataset;
+   `check` confirms the committed file is byte for byte what the generator
+   writes (a unit test does too).
+2. The live Wazuh tests (`tests/live/wazuh/test_attack_corpus.py`, `make
+   test-wazuh-up test-wazuh`) index the 520 alerts with the template Wazuh
+   publishes for 4.14, read them back with the production Wazuh connector as
+   the least-privilege reader in `search_after` pages of two, and rebuild the
+   dataset from what the connector returned: the mapping rejects nothing, the
+   connector drops, reorders and alters nothing, and the rebuilt file has the
+   committed sha256. `python -m tests.fixtures.attack_corpus alerts OUT` writes
+   the alerts as `alerts.json` lines for `python -m tests.fixtures.wazuh_lab
+   load`.
+3. `make eval-corpus-cassettes` runs the corpus through the pipeline with the
+   fake model and records one gzip-compressed cassette per item in
+   `tests/fixtures/eval/cassettes/corpus_v1/`.
+4. CI (`tests/integration/eval/test_corpus_v1_eval.py`, about two minutes)
+   replays all 520 from the cassettes, with every outbound connection blocked
+   and the model unusable, and gates the report with
+   `tests/fixtures/eval/corpus_v1_thresholds.yaml`. It needs no Ollama and no
+   Wazuh. `LG_SOTF_CORPUS_REPORT=path.json` also writes the report.
+
+**Why the full corpus is committed, compressed.** The acceptance is that at
+least 500 items are recorded as cassettes and run by the gate on every
+change. Committing a 100-item subset would leave the gate under 500 and move
+the full run to a nightly job that can break unnoticed. Compressed, the
+dataset is 150 KB (940 KB as JSONL) and the 520 cassettes 550 KB (about 2.3
+MB as JSONL); git stores blobs compressed anyway, so gzip mostly spares
+checkouts and diffs. `lg-sotf eval --dataset` reads `.jsonl.gz` directly
+(the sha256 is of the JSONL text) and a replay reads `<item>.jsonl.gz`
+cassettes.
+
+### The gate
+
+With the fake model (recorded run, 2026-11-08):
+
+```text
+items 520 (scored 520, errors 0)
+malicious false-negative rate 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
+malicious closed by automation 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
+benign auto-close rate 0.0% (0 of 312); benign routed to response 37.5% (117 of 312)
+escalation rate 56.7%; approval request rate 43.3%; malicious recall 52.4%; macro F1 0.322
+gate PASSED (16 checks)
+```
+
+The bounds: no error; no malicious alert closed by automation, overall and
+in each of the seven families; no high or critical alert closed as benign;
+and regression bounds on what the fake model does (benign alerts routed to a
+response plan at most 45%, malicious recall at least 45%, escalation at most
+65%). The Wazuh texts hold few of the fake model's keywords, so it closes
+nothing on its own and sends every benign alert to a human or to an approval:
+the gate measures the routing policy, not a model. A real model's numbers on
+this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
+
+```sh
+python -m tests.fixtures.attack_corpus generate --out ~/lg-sotf-eval/corpus_v1.jsonl   # or use the .gz as is
+LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.jsonl.gz \
+    --cassettes tests/fixtures/eval/cassettes/corpus_v1 \
+    --thresholds tests/fixtures/eval/corpus_v1_thresholds.yaml --report ~/lg-sotf-eval/corpus-v1.json
 ```
 
 ## Evaluating on your own labelled data

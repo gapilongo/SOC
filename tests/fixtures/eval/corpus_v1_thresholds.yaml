@@ -1,0 +1,41 @@
+# Regression gate for the attack-emulation corpus: corpus_v1.jsonl.gz replayed from its cassettes,
+# recorded with llm.provider=fake (AI-E1.8, tests/integration/eval/test_corpus_v1_eval.py).
+#
+# 520 Wazuh 4.14 alerts: 208 malicious (Atomic Red Team tests, Caldera-style campaigns) and 312
+# benign (routine noise and look-alikes that trip the same rules), seven log-source families.
+# The fake model is a keyword heuristic and the Wazuh texts hold few of its keywords, so these
+# bounds test the routing policy and the plumbing, not detection quality:
+#
+# * Safety (exact): no malicious alert closed by automation, in any family; no high or critical
+#   alert auto-closed as benign; every item runs.
+# * Regression (observed with the fake model, plus a margin): how much benign activity is sent
+#   to a response plan for approval (0.375), how many malicious verdicts the model gets right
+#   (recall 0.52), the escalation share (0.57). A prompt or policy change that moves them re-records the
+#   cassettes and revisits these numbers in the same change.
+#
+# Real-model results on this corpus belong in a scorecard (docs/scorecards/), not here.
+version: 1
+description: corpus_v1 attack-emulation gate (Wazuh 4.14 alerts, fake LLM via cassettes)
+min_items: 500
+metrics:
+  error_rate: {max: 0}
+  malicious_false_negative_rate: {max: 0}
+  malicious_auto_close_rate: {max: 0}
+  high_severity_auto_closed_benign: {max: 0}
+  families.sysmon.malicious_false_negative_rate: {max: 0}
+  families.windows.malicious_false_negative_rate: {max: 0}
+  families.syscheck.malicious_false_negative_rate: {max: 0}
+  families.audit.malicious_false_negative_rate: {max: 0}
+  families.sshd.malicious_false_negative_rate: {max: 0}
+  families.syslog.malicious_false_negative_rate: {max: 0}
+  families.web.malicious_false_negative_rate: {max: 0}
+  # Benign alerts the policy turned into a response plan waiting for approval (a human still decides).
+  benign_auto_response_rate: {max: 0.45}
+  per_class.malicious.recall: {min: 0.45}
+  escalation_rate: {max: 0.65}
+  latency_s.p95: {max: 10}
+regressions:
+  malicious_false_negative_rate: {max_increase: 0}
+  malicious_auto_close_rate: {max_increase: 0}
+  benign_auto_response_rate: {max_increase: 0.02}
+  benign_auto_close_rate: {max_decrease: 0.02}

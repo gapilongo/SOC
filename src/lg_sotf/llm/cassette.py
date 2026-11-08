@@ -1,6 +1,7 @@
 """Cassettes: a run's tool observations and model replies, recorded once and replayed offline.
 
-A cassette is one JSON Lines file per alert (one evaluation item). Its first
+A cassette is one JSON Lines file per alert (one evaluation item), plain or
+gzip-compressed (``.jsonl.gz``, see :class:`CassetteSet`). Its first
 line is the header::
 
     {"cassette": 2, "item_id": ..., "item_sha256": ..., "dataset_sha256": ...,
@@ -46,8 +47,10 @@ Modes (:data:`CassetteMode`):
 
 from __future__ import annotations
 
+import gzip
 import json
 import re
+import zlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -77,6 +80,7 @@ from lg_sotf.settings import Settings
 
 CASSETTE_SCHEMA_VERSION = 2
 CASSETTE_SUFFIX = ".jsonl"
+GZIP_SUFFIX = ".gz"
 CASSETTE_PROVIDER = "cassette"
 CassetteMode = Literal["record", "replay", "replay-tools"]
 CASSETTE_MODES: Tuple[str, ...] = get_args(CassetteMode)
@@ -234,12 +238,24 @@ class Cassette:
 
 @dataclass(frozen=True)
 class CassetteSet:
-    """A directory of cassettes, one per item, read or written in one mode."""
+    """A directory of cassettes, one per item, read or written in one mode.
+
+    A cassette may be stored gzip-compressed (``<name>.jsonl.gz``); a replay reads
+    either form, and ``compress=True`` makes a recording write the compressed one.
+    """
 
     directory: Path
     mode: CassetteMode
     source: str = "lg-sotf eval"
     dataset_sha256: Optional[str] = None
+    compress: bool = False
+
+    def _read(self, item_id: str) -> Tuple[Path, str]:
+        path = self.directory / cassette_name(item_id)
+        packed = path.with_name(path.name + GZIP_SUFFIX)
+        if not path.exists() and packed.exists():
+            return packed, gzip.decompress(packed.read_bytes()).decode("utf-8")
+        return path, path.read_text(encoding="utf-8")
 
     def open(self, item_id: str, item_sha256: str) -> Cassette:
         """The item's cassette: a new one to record, or the recorded one (problems surface on first lookup)."""
@@ -252,10 +268,11 @@ class CassetteSet:
             return Cassette(mode=self.mode, header=header)
         path = self.directory / cassette_name(item_id)
         try:
-            cassette = Cassette.loads(path.read_text(encoding="utf-8"), self.mode)
+            path, text = self._read(item_id)
+            cassette = Cassette.loads(text, self.mode)
         except FileNotFoundError:
             return Cassette(mode=self.mode, header=header, problem=f"no cassette file {path.name} in {self.directory}")
-        except (OSError, CassetteError) as exc:
+        except (OSError, EOFError, zlib.error, UnicodeDecodeError, CassetteError) as exc:
             return Cassette(mode=self.mode, header=header, problem=f"unreadable cassette {path.name}: {exc}")
         if cassette.item_id != item_id:
             cassette.problem = f"{path.name} records item {cassette.item_id!r}"
@@ -269,7 +286,13 @@ class CassetteSet:
             return
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
-            (self.directory / cassette_name(cassette.item_id)).write_text(cassette.dumps(), encoding="utf-8")
+            path = self.directory / cassette_name(cassette.item_id)
+            if self.compress:
+                # mtime=0 and no file name: re-recording an unchanged run gives the same bytes but recorded_at.
+                packed = gzip.compress(cassette.dumps().encode("utf-8"), compresslevel=9, mtime=0)
+                path.with_name(path.name + GZIP_SUFFIX).write_bytes(packed)
+            else:
+                path.write_text(cassette.dumps(), encoding="utf-8")
         except OSError as exc:
             raise CassetteError(f"cannot write cassette for {cassette.item_id!r}: {exc}") from exc
 

@@ -22,6 +22,8 @@ and the ``phishing`` section); every other line is an :class:`EvalItem`::
      "tags": ["prompt-injection", "identity"],
      "notes": "free text"}
 
+A file ending in ``.gz`` is read as gzip-compressed JSONL.
+
 Blank lines and lines starting with ``#`` are ignored. Loading is strict: an
 invalid line raises :class:`DatasetError` with its line number, so a typo
 never silently drops an item from a gated run.
@@ -29,9 +31,11 @@ never silently drops an item from a gated run.
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import re
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
@@ -374,11 +378,15 @@ def parse_dataset(text: str, *, path: Optional[str] = None) -> Dataset:
 
 
 def load_dataset(path: str | Path) -> Dataset:
+    """Read a ``.jsonl`` dataset, or a gzip-compressed ``.jsonl.gz`` one (the sha256 is of the JSONL text)."""
     p = Path(path)
     try:
-        text = p.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise DatasetError(f"cannot read dataset {p}: {exc.strerror or exc}") from None
+        raw = p.read_bytes()
+        if p.suffix == ".gz":
+            raw = gzip.decompress(raw)
+        text = raw.decode("utf-8")
+    except (OSError, EOFError, zlib.error) as exc:
+        raise DatasetError(f"cannot read dataset {p}: {getattr(exc, 'strerror', None) or exc}") from None
     except UnicodeDecodeError:
         raise DatasetError(f"dataset {p} is not UTF-8") from None
     return parse_dataset(text, path=str(p))

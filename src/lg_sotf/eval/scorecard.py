@@ -28,6 +28,8 @@ PROMPT_KEYS = ("prompt_hashes", "prompts", "prompt_versions")
 # Models whose results are for internal comparison only (lead decision: synthetic data, never published).
 INTERNAL_ONLY_MODELS = ("deepseek",)
 NOT_RECORDED = "not recorded in the report"
+# A synthetic set this large is a generated corpus (corpus_v1), not a hand-written one.
+GENERATED_CORPUS_ITEMS = 200
 
 
 class ScorecardError(ValueError):
@@ -155,10 +157,17 @@ def _limitations(
     options: ScorecardOptions,
 ) -> List[str]:
     out: List[str] = []
-    if any((card["dataset"] or {}).get("synthetic") for card in cards):
+    synthetic = [card["dataset"] or {} for card in cards if (card["dataset"] or {}).get("synthetic")]
+    if synthetic and all(int(ds.get("items") or 0) < GENERATED_CORPUS_ITEMS for ds in synthetic):
         out.append(
             "The data is synthetic: hand-written alerts with labels assigned by construction, a few dozen items per "
             "set. It shows how the pipeline and model behave on scenarios we wrote, not accuracy on real telemetry."
+        )
+    elif synthetic:
+        out.append(
+            "The data is synthetic: generated alerts (attack emulation and benign activity) labelled from the "
+            "procedure that produced them. It shows how the pipeline and model behave on realistic alert shapes, "
+            "not accuracy on a customer's real telemetry."
         )
     out.append(
         "Small samples: read the 95% Wilson intervals, not the point estimates. Two models whose intervals overlap "
