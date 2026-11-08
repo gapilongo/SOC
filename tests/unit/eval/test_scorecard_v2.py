@@ -9,6 +9,8 @@ only because every dataset is synthetic; the test pins that too.
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Dict
@@ -23,6 +25,15 @@ pytestmark = pytest.mark.unit
 ROOT = Path(__file__).resolve().parents[3]
 V2 = ROOT / "docs" / "scorecards" / "v2" / "deepseek-v4"
 CORPUS = ROOT / "tests" / "fixtures" / "eval" / "corpus_v1.jsonl.gz"
+
+
+def corpus_sha256_without_tenant_settings() -> str:
+    """The corpus v2 ran on: today's alerts, before AI-E1.9 declared the estate's scanner in ``_meta``."""
+    first, rest = gzip.decompress(CORPUS.read_bytes()).decode("utf-8").split("\n", 1)
+    header = json.loads(first)
+    assert header["_meta"].pop("tenant_settings") == {"triage": {"known_scanners": ["10.20.5.10"]}}
+    text = json.dumps(header, ensure_ascii=False, separators=(",", ":")) + "\n" + rest
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @pytest.fixture(scope="module")
@@ -54,7 +65,8 @@ def test_scorecard_v2_is_a_real_model_on_the_whole_synthetic_corpus(committed: D
     corpus = load_dataset(CORPUS)
     (dataset,) = committed["datasets"]
     assert dataset["dataset"]["synthetic"] is True
-    assert dataset["dataset"]["sha256"] == corpus.sha256 and dataset["dataset"]["items"] == len(corpus.items) >= 500
+    assert dataset["dataset"]["sha256"] == corpus_sha256_without_tenant_settings()
+    assert dataset["dataset"]["items"] == len(corpus.items) >= 500
     assert dataset["scored"] == len(corpus.items) and dataset["errors"] == 0
     miss = dataset["malicious_false_negative"]
     assert miss["n"] >= 200 and miss["ci95"] is not None

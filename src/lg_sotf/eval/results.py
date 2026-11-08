@@ -70,6 +70,9 @@ class ItemResult:
     error: Optional[str] = None
     llm_provenance: Dict[str, Dict[str, str]] = field(default_factory=dict)
     """Per agent: the provider, model, prompt name and prompt hash of its latest LLM call."""
+    decision_inputs: Dict[str, Any] = field(default_factory=dict)
+    """What ``decide`` read (scores, verdict, rule evidence), for the offline policy simulator
+    (``lg_sotf.eval.calibration.decision_inputs``); empty when ``decide`` did not run."""
 
     @property
     def scored(self) -> bool:

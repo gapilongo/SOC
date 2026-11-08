@@ -172,7 +172,7 @@ dangerous case.
 
 | Decision | Who makes it | The model's part |
 |---|---|---|
-| Close an alert as benign | The routing policy (`lg_sotf.domain.routing`). Never for high or critical alerts (INV-03): those close only by an analyst decision, an admin-enabled suppression rule, or an analyst-confirmed verdict (not for critical). Low and medium alerts close only when rules corroborate the model | Its assessment is one input; a benign verdict alone never closes |
+| Close an alert as benign | The routing policy (`lg_sotf.domain.routing`). Never for high or critical alerts (INV-03): those close only by an analyst decision, an admin-enabled suppression rule, or an analyst-confirmed verdict (not for critical). Low and medium alerts close only when rules corroborate a low threat score, or when context the tenant declared (a configured scanner, AI-E1.9) corroborates a benign deep-model verdict | Its assessment is one input; a benign verdict alone never closes |
 | Escalate to an analyst | The routing policy. Uncertain cases, model refusals (`model_refused`), alerts from the fallback normaliser, and failed responses always go to a person | Its uncertainty raises escalation |
 | Plan a response | The routing policy, from the threat score | It recommends actions; the planner validates every target |
 | Run a response action | The tenant's **autonomy policy** per risk level (`auto`, `approval` or `disabled`; default `approval` for low, medium and high, `disabled` for critical), then the **guardrails** (protected assets, target checks, hourly caps, blast radius). Containment on model-only evidence always waits for a person, even under `auto` (INV-11) | None beyond the recommendation |

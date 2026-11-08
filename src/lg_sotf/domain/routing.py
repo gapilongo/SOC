@@ -4,7 +4,9 @@ Safety rules enforced here (contract section 8):
 
 * Automation never closes a high/critical alert: only an analyst decision,
   a suppression rule or an analyst-confirmed verdict (not for critical) does.
-  Lower severities close only with rule-based corroboration of the LLM.
+  Lower severities close only with rule-based corroboration of the LLM, or
+  (AI-E1.9) a benign deep-model verdict corroborated by context the tenant
+  declared (``tenant_context``: a configured scanner, no steering text).
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -28,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL, TENANT_CONTEXT_SIGNALS
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
 from lg_sotf.models.vocabulary import Route as DecideRoute
 
@@ -73,6 +76,11 @@ class RoutingThresholds(BaseModel):
     close_max_threat: int = 30
     max_more_info_loops: int = 1
     max_alert_age_hours: int = 72
+    # AI-E1.9 (docs/scorecards/v2/deepseek-v4/CALIBRATION.md): false restores the 1.2 policy. The correlation
+    # cap was measured and is not on by default.
+    benign_verdict_precedence: bool = True
+    context_corroboration: bool = True
+    cap_correlated_confidence: bool = False
 
     @classmethod
     def from_settings(cls, routing: Optional[Mapping[str, Any]]) -> RoutingThresholds:
@@ -194,7 +202,9 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
             "plan_response", f"threat score {threat:.0f} meets the response policy", "malicious", "high_risk"
         )
 
-    if verdict == "inconclusive" or t.correlation_grey_zone_min <= confidence <= t.correlation_grey_zone_max:
+    benign_verdict = verdict == "benign" and threat < t.close_max_threat
+    in_band = t.correlation_grey_zone_min <= confidence <= t.correlation_grey_zone_max
+    if verdict == "inconclusive" or (in_band and not (benign_verdict and t.benign_verdict_precedence)):
         return Decision("escalate", "confidence in the grey zone", None, "grey_zone")
 
     if threat < t.close_max_threat:
@@ -206,9 +216,27 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
             )
         if rule_threat < t.close_max_threat:
             return Decision("close", "low threat corroborated by rules", "benign", "rule_corroborated_benign")
+        if benign_verdict and t.context_corroboration and tenant_context(triage):
+            return Decision("close", "benign verdict corroborated by the tenant's context", "benign", "context_corroborated_benign")
         return Decision("escalate", "low threat verdict lacks rule corroboration", None, "false_positive_review")
 
     return Decision("escalate", "no automatic policy applies", None, "inconclusive")
+
+
+def tenant_context(triage: Mapping[str, Any]) -> bool:
+    """Triage found rule evidence the tenant declared (a configured scanner), and no text written to steer a model."""
+    fp, tp = triage.get("rule_fp"), triage.get("rule_tp")
+    if not isinstance(fp, list) or (isinstance(tp, list) and INJECTION_SIGNAL in tp):
+        return False
+    return any(s in TENANT_CONTEXT_SIGNALS for s in fp if isinstance(s, str))
+
+
+def correlated_confidence(base: float, adjusted: int, t: RoutingThresholds) -> int:
+    """Correlation's adjusted confidence; with ``cap_correlated_confidence`` related alerts never lift it to the
+    response policy's ``response_combo_confidence`` (triage alone decides that, with trusted rule evidence)."""
+    if not t.cap_correlated_confidence or base >= t.response_combo_confidence:
+        return adjusted
+    return min(adjusted, t.response_combo_confidence - 1)
 
 
 def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[Tuple[int, int]]:

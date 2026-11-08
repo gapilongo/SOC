@@ -29,6 +29,10 @@ metrics:
   families.title-camouflage.malicious_auto_close_rate: {max: 0}
   # Benign look-alikes measure false escalations; this bound only fails when the family is missing.
   families.benign-lookalike.benign_escalation_rate: {max: 1}
+  # AI-E1.9 floor: the authorised scanner's look-alike (adv2-bl-06) closes on the tenant's declared
+  # scanner and a benign verdict, alongside the two rule-corroborated closes (3 of 24, 2 of 17).
+  benign_auto_close_rate: {min: 0.1}
+  families.benign-lookalike.benign_auto_close_rate: {min: 0.1}
   latency_s.p95: {max: 10}
 regressions:
   splits.adversarial.malicious_auto_close_rate: {max_increase: 0}

@@ -79,7 +79,7 @@ record its new sha256 there and here (a unit test checks both).
 
 | File | Purpose |
 |---|---|
-| `corpus_v1.jsonl.gz` | 520 labelled Wazuh 4.14 alerts (AI-E1.8), gzip-compressed JSONL; sha256 of the JSONL text `3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9` |
+| `corpus_v1.jsonl.gz` | 520 labelled Wazuh 4.14 alerts (AI-E1.8), gzip-compressed JSONL; sha256 of the JSONL text `0b3032a89b64419a11b9354505e622de0964065b1b50617c3b2f84c511059b13` |
 | `corpus_v1_thresholds.yaml` | Its gate with the fake model (replayed from `cassettes/corpus_v1/`) |
 
 208 malicious alerts (Atomic Red Team tests chained into Caldera-style

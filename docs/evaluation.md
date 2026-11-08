@@ -64,6 +64,26 @@ code 2 before a tenant is created or a token is spent.
   tenant, correlation reads earlier alerts and escalation grouping attaches
   related alerts, so a fixed order keeps runs reproducible. `--concurrency N` is
   faster but correlation-dependent outcomes may vary between runs.
+* **Event time.** A replay sends days of alerts through in minutes. Since
+  AI-E1.9 the harness correlates on each alert's own time
+  (`agents.correlation.clock: event`, set by `lg-sotf eval` unless the
+  settings choose a clock): the correlation and burst windows end at the
+  alert's `occurred_at`, sightings are recorded at that time, and an alert
+  never sees sightings from its own future. The times are shifted by one
+  constant so the replay starts at the wall clock: correlation sees the real
+  gaps between alerts, and the tenant-history tool, which counts back 30
+  days from the wall clock, still finds the replayed alerts whatever the
+  dataset's dates. Production keeps the wall clock:
+  alerts arrive as they happen, so ingestion time is close to event time, and
+  an alert's own time is whatever its source wrote. `run.correlation_clock`
+  records the clock; `LG_SOTF_AGENTS__CORRELATION__CLOCK=wall` reproduces a
+  report written before AI-E1.9 (scorecard v2 ran on the wall clock).
+* **Decision inputs.** Each report item records what `decide` read
+  (`decision_inputs`: the confidence, the triage, correlation and analysis
+  scores, the verdict, the rule signals), so `python -m
+  lg_sotf.eval.calibration REPORT` can re-decide the run under each routing
+  policy without a model
+  ([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)).
 * **Where data goes.** The run writes alerts, runs, escalations, actions and
   checkpoints to the configured database. Use a **dedicated evaluation
   database** (and Redis database or key prefix); `environment=production` is
@@ -505,7 +525,10 @@ gate PASSED (14 checks)
 
 Benign look-alikes cost analyst time: 16 of 17 were escalated (the injection
 signal voids their false-positive evidence; the purple-team item's only
-benign evidence was "test" in its title), 1 closed on its own.
+benign evidence was "test" in its title), 1 closed on its own. Since AI-E1.9
+a second one closes: the authorised scanner's look-alike (`adv2-bl-06`), whose
+benign verdict the declared scanner corroborates. The gate holds a floor of
+10% benign auto-close (3 of 24), overall and for the look-alikes.
 
 **A local model run** (2026-11-08, `qwen2.5:7b` on Ollama, the setup of
 [scorecards/v1](scorecards/v1/qwen2.5-7b/RUN.md); not a committed scorecard):
@@ -567,7 +590,7 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/adversaria
 ## Attack-emulation corpus v1
 
 `tests/fixtures/eval/corpus_v1.jsonl.gz` (version 1, sha256 of the JSONL
-text `3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9`) is
+text `0b3032a89b64419a11b9354505e622de0964065b1b50617c3b2f84c511059b13`) is
 `corpus_v1`: 520 Wazuh 4.14 alerts with ground-truth labels, written for
 what happened in an emulated estate over twelve days (2026-10-19 to 10-30):
 9 Windows workstations, 7 Windows servers and 2 domain controllers with
@@ -577,6 +600,11 @@ miss rate (35 and 24 malicious items give 95% upper bounds of about 10% and
 14%) and because their alerts are hand-written, not shaped like attack
 telemetry. With 208 malicious items, 0 misses bound the miss rate below
 1.8%.
+
+Since AI-E1.9 the corpus declares what the estate's tenant would configure:
+its authorised vulnerability scanner, `10.20.5.10`, in
+`_meta.tenant_settings` (`triage.known_scanners`). The alerts did not change;
+scorecard v2 ran on the file without it (sha256 `3292bf4911d1…`).
 
 ### What is in it
 
@@ -712,25 +740,31 @@ cassettes.
 
 ### The gate
 
-With the fake model (recorded run, 2026-11-08):
+With the fake model (recorded run, 2026-11-08, event-time correlation and
+the declared scanner, AI-E1.9):
 
 ```text
 items 520 (scored 520, errors 0)
 malicious false-negative rate 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
 malicious closed by automation 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
-benign auto-close rate 0.0% (0 of 312); benign routed to response 37.5% (117 of 312)
-escalation rate 56.7%; approval request rate 43.3%; malicious recall 52.4%; macro F1 0.322
-gate PASSED (16 checks)
+benign auto-close rate 2.6% (8 of 312); benign routed to response 1.3% (4 of 312)
+escalation rate 94.2%; approval request rate 4.2%; malicious recall 16.3%; macro F1 0.268
+gate PASSED (24 checks)
 ```
 
 The bounds: no error; no malicious alert closed by automation, overall and
 in each of the seven families; no high or critical alert closed as benign;
-and regression bounds on what the fake model does (benign alerts routed to a
-response plan at most 45%, malicious recall at least 45%, escalation at most
-65%). The Wazuh texts hold few of the fake model's keywords, so it closes
-nothing on its own and sends every benign alert to a human or to an approval:
-the gate measures the routing policy, not a model. A real model's numbers on
-this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
+a floor on benign auto-close (at least 2%: the 8 scan look-alikes that the
+declared scanner corroborates); and regression bounds on what the fake
+model does (benign alerts routed to a response plan at most 3%, malicious
+recall at least 12%, escalation at most 97%). The Wazuh texts hold few of
+the fake model's keywords, so the gate measures the routing policy, not a
+model. Before AI-E1.9 the replay ran on the wall clock and these bounds
+were 45%, 45% and 65%: correlation saw twelve days as one storm and its
+raised confidence, not the model, sent most alerts to a response plan
+([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)). A real
+model's numbers on this corpus belong in a scorecard
+([docs/scorecards](scorecards/README.md)).
 
 **The first real model on it** is
 [scorecard v2](scorecards/v2/deepseek-v4/scorecard.md), DeepSeek V4 through
