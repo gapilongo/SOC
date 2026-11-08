@@ -244,7 +244,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "integrations.smtp_password": "SMTP password (optional).",
     "integrations.smtp_from": "Sender address of notification emails.",
     "integrations.smtp_timeout_s": "SMTP connection and command timeout.",
-    "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
+    "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `correlation.clock` is `wall` (default) or `event` (correlate on each alert's own time; `lg-sotf eval` uses it). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
     "tools": "Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent.",
     "routing": "See the routing table below.",
     "ingestion": "See the ingestion table below.",
@@ -266,6 +266,9 @@ DESCRIPTIONS: Dict[str, str] = {
     "routing.close_max_threat": "Below this threat score a low/medium alert closes if rules corroborate; high/critical go to an analyst.",
     "routing.max_more_info_loops": "How often an analyst's `needs_more_info` re-runs analysis before the case returns to the analyst.",
     "routing.max_alert_age_hours": "Reserved alert-age limit (not enforced by routing in this release).",
+    "routing.benign_verdict_precedence": "A benign deep-model verdict below `close_max_threat` skips the grey-zone confidence test; every other close test still applies. `false` restores the 1.2 policy (AI-E1.9).",
+    "routing.context_corroboration": "A benign deep-model verdict below `close_max_threat` on a low/medium alert may be corroborated by context the tenant declared (a `triage.known_scanners` entity) instead of the rules' threat score. `false` restores the 1.2 policy (AI-E1.9).",
+    "routing.cap_correlated_confidence": "Related alerts never lift the confidence to `response_combo_confidence`; only triage (trusted rule evidence with the model) can. `false` restores the 1.2 policy (AI-E1.9).",
     # ingestion (IngestionOptions)
     "ingestion.llm_fallback": "Use the fast LLM to normalize events no deterministic normalizer recognizes. Off by default.",
     "ingestion.llm_fallback_max_per_call": "Further unrecognized events in one call are rejected.",

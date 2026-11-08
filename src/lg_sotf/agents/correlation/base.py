@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
@@ -36,7 +36,7 @@ from lg_sotf.agents.triage.base import agent_refusal
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import PhishingProfile
-from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.domain.routing import RoutingThresholds, correlated_confidence
 from lg_sotf.errors import AgentError
 from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str
@@ -121,6 +121,8 @@ class CorrelationAgent(BaseAgent):
         self.max_related = min(MAX_RELATED, int(self.get_config("max_correlations", 10)))
         self.enable_llm = bool(self.get_config("enable_llm_correlation", True))
         self.llm_weight = float(self.get_config("llm_weight", 0.3))
+        self.event_time = self.get_config("clock", "wall") == "event"
+        self._replay_offset: Optional[timedelta] = None
 
     @staticmethod
     async def indicators(ctx: AgentContext, alert: Mapping[str, Any]) -> List[Indicator]:
@@ -169,14 +171,9 @@ class CorrelationAgent(BaseAgent):
     ) -> CorrelationResult:
         if ctx.repos is None:
             raise AgentError("correlation needs repositories in the agent context")
-        now = now or datetime.now(UTC)
+        now = now or self.clock(alert)
         indicators = await self.indicators(ctx, alert)
-        hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
-        if hashed and ctx.persist:
-            await ctx.repos.indicators.add_sightings(
-                ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
-            )
-        related = await self._related(ctx, [(i.type, h) for i, h in hashed], now)
+        related = await self._related(ctx, indicators, now)
 
         type_counts: Dict[str, int] = {}
         for ind in indicators:
@@ -185,7 +182,8 @@ class CorrelationAgent(BaseAgent):
         burst = len(recent) >= self.burst_threshold
         per_hour = len(related) / max(self.window.total_seconds() / 3600.0, 1e-9)
         rule_score = self._rule_score(related, indicators, burst)
-        confidence = self._adjust_confidence(base_confidence, len(related), burst, frequency_level(per_hour))
+        adjusted = self._adjust_confidence(base_confidence, len(related), burst, frequency_level(per_hour))
+        confidence = correlated_confidence(base_confidence, adjusted, RoutingThresholds.from_settings(ctx.settings.routing))
 
         result = CorrelationResult(
             score=rule_score,
@@ -238,6 +236,58 @@ class CorrelationAgent(BaseAgent):
             result.campaign_indicators = list(llm.value.attack_campaign_indicators)
         return result
 
+    def clock(self, alert: Mapping[str, Any]) -> datetime:
+        """Correlation's "now": the wall clock, or with ``clock: event`` the alert's own time, replayed.
+
+        An evaluation replays days of alerts in minutes, so it correlates on each
+        alert's time (:func:`lg_sotf.eval.runner.event_time_settings`). The times
+        are shifted by one constant, fixed at the first alert, so the replay starts
+        at the wall clock: correlation sees the real gaps between alerts, and
+        lookups that count back from the wall clock (the tenant-history tool)
+        still find the replayed alerts whatever the dataset's dates. Production
+        keeps the wall clock: alerts arrive as they happen, and an alert's own time
+        is whatever its source wrote.
+        """
+        wall = datetime.now(UTC)
+        occurred = alert.get("occurred_at") if self.event_time else None
+        try:
+            at = datetime.fromisoformat(occurred) if isinstance(occurred, str) else None
+        except ValueError:
+            at = None
+        if at is None or at.tzinfo is None:
+            return wall
+        if self._replay_offset is None:
+            self._replay_offset = wall - at
+        return at + self._replay_offset
+
+    async def _related(self, ctx: AgentContext, indicators: List[Indicator], now: datetime) -> List[Any]:
+        """Record this alert's sightings at ``now`` and read the alerts that shared one in the window before it.
+
+        A sample waiting for its blind-audit label is left out: its disposition must not reach this alert's
+        digest or the model (it is hidden until labelled).
+        """
+        assert ctx.repos is not None
+        hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
+        if not hashed:
+            return []
+        if ctx.persist:
+            await ctx.repos.indicators.add_sightings(
+                ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
+            )
+        related = await ctx.repos.indicators.related_alerts(
+            ctx.tenant_id,
+            [(i.type, h) for i, h in hashed],
+            since=now - self.window,
+            # On event time an alert replayed out of order must not see sightings from its future.
+            until=now + timedelta(microseconds=1) if self.event_time else None,
+            limit=self.max_related,
+            exclude_alert_id=ctx.alert_id,
+        )
+        if not related:
+            return []
+        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
+        return [r for r in related if r.alert_id not in hidden]
+
     @staticmethod
     def alert_view(alert: Mapping[str, Any]) -> Dict[str, Any]:
         """The alert without its raw event: correlation reasons over entities and detections."""
@@ -276,19 +326,6 @@ class CorrelationAgent(BaseAgent):
                     }
                 )
         return out
-
-    async def _related(self, ctx: AgentContext, keys: List[Tuple[str, str]], now: datetime) -> List[Any]:
-        """Alerts sharing an indicator within the window. A sample waiting for its blind-audit label is left
-        out: its disposition must not reach this alert's digest or the model (it is hidden until labelled)."""
-        if not keys or ctx.repos is None:
-            return []
-        related = await ctx.repos.indicators.related_alerts(
-            ctx.tenant_id, keys, since=now - self.window, limit=self.max_related, exclude_alert_id=ctx.alert_id
-        )
-        if not related:
-            return []
-        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
-        return [r for r in related if r.alert_id not in hidden]
 
     @staticmethod
     def _rule_score(related: List[Any], indicators: List[Indicator], burst: bool) -> int:

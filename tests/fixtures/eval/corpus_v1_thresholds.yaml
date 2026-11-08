@@ -6,12 +6,19 @@
 # The fake model is a keyword heuristic and the Wazuh texts hold few of its keywords, so these
 # bounds test the routing policy and the plumbing, not detection quality:
 #
-# * Safety (exact): no malicious alert closed by automation, in any family; no high or critical
-#   alert auto-closed as benign; every item runs.
-# * Regression (observed with the fake model, plus a margin): how much benign activity is sent
-#   to a response plan for approval (0.375), how many malicious verdicts the model gets right
-#   (recall 0.52), the escalation share (0.57). A prompt or policy change that moves them re-records the
-#   cassettes and revisits these numbers in the same change.
+# * Safety (exact): no malicious alert closed by automation, with any disposition, in any family;
+#   no high or critical alert auto-closed as benign; every item runs.
+# * Floor (AI-E1.9): benign alerts still close on their own. The corpus declares its authorised
+#   scanner (triage.known_scanners) and the routing policy lets that context corroborate a benign
+#   deep-model verdict: 8 of 312 benign alerts close (2.6%) with the fake model.
+# * Regression (observed with the fake model, plus a margin): benign activity sent to a response
+#   plan (0.013), malicious verdicts the model gets right (recall 0.16), the escalation share (0.94).
+#   A prompt or policy change that moves them re-records the cassettes and revisits these numbers.
+#
+# Since AI-E1.9 the replay correlates on each alert's own time (docs/evaluation.md, "Event time").
+# The earlier bounds (response plans 0.375, recall 0.52, escalation 0.57) measured the wall-clock
+# replay, which squeezed twelve days into minutes: correlation-raised confidence sent most alerts to
+# a response plan without the model. See docs/scorecards/v2/deepseek-v4/CALIBRATION.md.
 #
 # Real-model results on this corpus belong in a scorecard (docs/scorecards/), not here.
 version: 1
@@ -29,10 +36,18 @@ metrics:
   families.sshd.malicious_false_negative_rate: {max: 0}
   families.syslog.malicious_false_negative_rate: {max: 0}
   families.web.malicious_false_negative_rate: {max: 0}
+  families.sysmon.malicious_auto_close_rate: {max: 0}
+  families.windows.malicious_auto_close_rate: {max: 0}
+  families.syscheck.malicious_auto_close_rate: {max: 0}
+  families.audit.malicious_auto_close_rate: {max: 0}
+  families.sshd.malicious_auto_close_rate: {max: 0}
+  families.syslog.malicious_auto_close_rate: {max: 0}
+  families.web.malicious_auto_close_rate: {max: 0}
   # Benign alerts the policy turned into a response plan waiting for approval (a human still decides).
-  benign_auto_response_rate: {max: 0.45}
-  per_class.malicious.recall: {min: 0.45}
-  escalation_rate: {max: 0.65}
+  benign_auto_close_rate: {min: 0.02}
+  benign_auto_response_rate: {max: 0.03}
+  per_class.malicious.recall: {min: 0.12}
+  escalation_rate: {max: 0.97}
   latency_s.p95: {max: 10}
 regressions:
   malicious_false_negative_rate: {max_increase: 0}

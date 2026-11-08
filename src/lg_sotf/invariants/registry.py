@@ -105,9 +105,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
         rationale=(
             "A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure "
             "policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and "
-            "lower severities close only when rules corroborate the model. A cached analyst verdict closes only "
-            "a non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign "
-            "twice, with no threat on it since."
+            "lower severities close only when rules, or context the tenant declared (a configured scanner), "
+            "corroborate the model. A cached analyst verdict closes only a non-critical repeat of the same "
+            "detection and behaviour (verdict key) that analysts decided benign twice, with no threat on it since."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
@@ -120,6 +120,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_routing.py::test_decide_never_closes_high_severity",
             "tests/unit/domain/test_routing.py::test_decide_closes_only_with_rule_corroboration",
             "tests/unit/domain/test_routing.py::test_attacker_controlled_fp_words_never_close_high_severity",
+            "tests/unit/domain/test_routing_calibration.py::test_tenant_context_never_closes_high_severity",
+            "tests/unit/domain/test_routing_calibration.py::test_nothing_else_corroborates_a_benign_close",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"
             "test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules",

@@ -34,6 +34,7 @@ from lg_sotf.db.posture import (
     tables_with_visible_rows,
     tenant_table_security,
 )
+from lg_sotf.domain.benign_evidence import SCANNER_SIGNAL
 from lg_sotf.domain.routing import RoutingThresholds, decide, route_after_triage
 from lg_sotf.models.vocabulary import HIGH_SEVERITIES
 from lg_sotf.observability.logging import is_configured
@@ -116,9 +117,9 @@ def check_kill_switch(settings: Settings) -> CheckResult:
 
 
 def _benign_state(severity: str, rule_threat: int) -> Dict[str, Any]:
-    """A synthetic alert the model calls benign with full confidence, with five false-positive signals."""
-    triage = {"confidence": 0, "rule_confidence": rule_threat, "rule_fp": ["r"] * 5, "llm_fp": ["l"] * 5,
-              "rule_tp": [], "llm_tp": []}
+    """A synthetic alert the model calls benign with full confidence, five false-positive signals and tenant context."""
+    triage = {"confidence": 0, "rule_confidence": rule_threat, "rule_fp": ["r"] * 4 + [SCANNER_SIGNAL],
+              "llm_fp": ["l"] * 5, "rule_tp": [], "llm_tp": []}
     analysis = {"threat_score": 0, "rule_threat_score": rule_threat, "verdict": "benign"}
     return {"severity": severity, "confidence": 0, "triage": triage, "correlation": {}, "analysis": analysis}
 
@@ -132,7 +133,8 @@ def check_routing_policy(settings: Settings) -> CheckResult:
         if route_after_triage(state, thresholds) == "close" or decide(state, thresholds).route == "close":
             closed.append(f"{severity} alert closed on a benign verdict")
     uncorroborated = _benign_state("low", rule_threat=100)
-    uncorroborated["triage"].update(rule_fp=[], rule_confidence=100)
+    # The model naming a scanner is not the tenant's context.
+    uncorroborated["triage"].update(rule_fp=[], llm_fp=[SCANNER_SIGNAL], rule_confidence=100)
     if decide(uncorroborated, thresholds).route == "close":
         closed.append("low alert closed on the model's verdict without rule corroboration")
     return _result("routing_policy", not closed, "; ".join(closed) or "a benign model verdict closes no high, critical or uncorroborated alert")

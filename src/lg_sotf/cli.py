@@ -416,6 +416,14 @@ def _quiet_eval_logging(settings: Settings) -> None:
     help="replay: tools and model from the cassettes, no network; replay-tools: tools replayed, model live; "
     "record: a live run, written to the cassettes.",
 )
+@click.option(
+    "--oracle",
+    type=click.Choice(["off", "propose", "accept"]),
+    default="off",
+    show_default=True,
+    help="Measurement mode: a simulated analyst decides every escalation from the ground truth, in event-time "
+    "order. propose: suggested suppressions stay disabled; accept: the oracle enables them too.",
+)
 def eval_command(
     dataset: Optional[str],
     from_history: bool,
@@ -434,6 +442,7 @@ def eval_command(
     validate_only: bool,
     cassettes: Optional[str],
     cassette_mode: str,
+    oracle: str,
 ) -> None:
     """Run a labelled dataset through ingestion and the workflow, report metrics and gate on thresholds.
 
@@ -451,7 +460,8 @@ def eval_command(
     database; nothing is written to it.
 
     With --cassettes DIR, --cassette-mode record writes each item's tool observations and model replies to
-    DIR; replay runs the dataset again from them without any network call.
+    DIR; replay runs the dataset again from them without any network call. --oracle propose|accept decides
+    every escalation from the dataset's labels (lg_sotf.eval.oracle).
     """
     from dataclasses import replace
 
@@ -481,6 +491,7 @@ def eval_command(
         days=days,
         cassettes=cassettes,
         cassette_mode=cassette_mode,
+        oracle=oracle,
     )
     settings = get_settings() if validate_only else _prepare()
     if not validate_only:
@@ -489,10 +500,7 @@ def eval_command(
         # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
         options = replace(options, secret_box=None if validate_only else load_secret_box(settings))
         code = execute(settings, options, echo=click.echo)
-    except (EvalCommandError, SecurityConfigError) as exc:
-        click.echo(f"Error: {exc}", err=True)
-        sys.exit(EXIT_CANNOT_RUN)
-    except OSError as exc:
+    except (EvalCommandError, SecurityConfigError, OSError) as exc:
         click.echo(f"Error: {exc}", err=True)
         sys.exit(EXIT_CANNOT_RUN)
     sys.exit(code)

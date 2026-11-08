@@ -10,6 +10,23 @@
 | Reports generated | 2026-11-08T04:33:24.878842+00:00 |
 | Scorecard format | v1 |
 
+## Headline: closure
+
+Benign closure rate: expected-benign items automation closed as benign (95% Wilson interval). Malicious auto-close: expected-malicious items automation closed with any disposition, with the exact one-sided 95% upper bound.
+
+| Dataset | Benign closure rate | Malicious auto-close |
+|---|---|---|
+| `corpus_v1.jsonl` | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 of 208 (0.0%; 95% upper bound 1.4%) |
+
+| Dataset | Mechanism | Benign closed | Malicious closed |
+|---|---|---|---|
+| `corpus_v1.jsonl` | rules | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+| `corpus_v1.jsonl` | model | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+| `corpus_v1.jsonl` | history | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+| `corpus_v1.jsonl` | cache | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+| `corpus_v1.jsonl` | suppression | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+| `corpus_v1.jsonl` | response | 0.0% (0 of 312; 95% CI 0.0% to 1.2%) | 0 |
+
 ## Malicious false-negative rate
 
 Expected-malicious items that automation closed as benign without a human. Lower is better; the target is 0.
