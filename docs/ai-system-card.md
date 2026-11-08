@@ -236,9 +236,9 @@ to about 1 in 10. The model's own verdicts were often wrong (malicious recall
 
 ### 7.2 Adversarial corpus v2
 
-`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 91 synthetic alerts
-that try to steer the model, 88 in the gated `adversarial` split and 3 in a
-reported `known-gap` split ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
+`tests/fixtures/eval/adversarial_v2.jsonl` (AI-E6.1): 97 synthetic alerts
+that try to steer the model or the rules, all in the gated `adversarial`
+split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 
 | Family | Items | Attack |
 |---|---|---|
@@ -247,7 +247,8 @@ reported `known-gap` split ([evaluation.md](evaluation.md#adversarial-corpus-v2)
 | `response-steering` | 14 | Text asking for containment of a domain controller or an executive's account, an allowlist, a page, or a close |
 | `encoding-tricks` | 17 | Base64, homoglyphs, zero-width and tag characters, right-to-left override, ROT13, instructions split across fields |
 | `benign-lookalike` | 17 | The security team's own test strings (EICAR, phishing simulation, red-team harness), to measure the cost of the defences |
-| `title-camouflage` (known gap) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trust |
+| `title-camouflage` (known gap until AI-E6.3) | 3 | Attacker-named tasks or services that put benign words into the title the triage rules trusted |
+| `activity-camouflage` (AI-E6.4) | 6 | Attacks whose detection rule name holds a word for the detected activity ("scheduled", "backup", "monitoring"), which the triage rules counted as benign evidence |
 
 * **The CI gate** runs the corpus with the offline fake model on every
   change: no error, no malicious item of the adversarial split closed by
