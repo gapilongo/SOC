@@ -26,7 +26,7 @@ ARG NGINX_IMAGE=
 # Base images, pinned by digest (tags kept for readability; Dependabot bumps
 # both). Each is only pulled when its override above is empty. The runtime is
 # the -slim variant: nginx and busybox only, no curl, libxml2 or image libraries.
-FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS node-base
+FROM --platform=$BUILDPLATFORM node:25-alpine@sha256:bdf2cca6fe3dabd014ea60163eca3f0f7015fbd5c7ee1b0e9ccb4ced6eb02ef4 AS node-base
 FROM nginxinc/nginx-unprivileged:1.31-alpine-slim@sha256:a8cb0f33d51fa107c96fd2bd3a71aaf564ec131e9d2bdf8700944f0ed8b170d7 AS nginx-base
 
 # ---------------------------------------------------------------------------
