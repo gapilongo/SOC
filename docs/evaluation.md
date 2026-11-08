@@ -813,7 +813,7 @@ llm:
   deep: {model: llama-3.3-70b}
 EOF
 lg-sotf shadow-run --tenant acme --candidate local-llama.yaml --window 7d --limit 200 \
-    --report shadow.json --markdown shadow.md --i-understand-no-shadow-role
+    --report shadow.json --markdown shadow.md
 ```
 
 `lg-sotf shadow-run` is a platform-admin command; nothing in an alert can
@@ -835,13 +835,30 @@ production's LLM key) into a field or send it to an endpoint of its choice.
 A profile that changes `provider` or `base_url` never inherits production's
 API key, and a key equal to production's is refused even under another
 name: give the candidate its own (a self-hosted provider needs none).
+A profile that changes only the model (`fast.model`, `deep.model`) keeps
+production's provider, endpoint and key: its calls use production's provider
+account, rate limits and quota, so a large replay can slow live triage at
+the provider (the shadow runs' own concurrency, `llm.<tier>.shadow_max_concurrency`,
+default 1, bounds it per process).
+
+The candidate's endpoint: tenant alert data goes to the candidate's LLM
+host, so it must be production's own host or listed in
+`security.shadow_candidate_llm_hosts` (`*.domain` allowed). The list is read
+from the production settings only; a profile cannot extend it. A candidate
+on any other host is refused before any alert is read. The host (never the
+key) is stored on every verdict row and shown in the report
+(`candidate_host`; empty for the fake model, which calls no network).
 
 Each alert's pair of verdicts is stored in `shadow_verdicts` (append-only,
 tenant row-level security, deleted with the alert; in the tenant export, not
 in the evidence pack) under a report id `shr_<32 hex>`. The command prints
 the report in Markdown; platform admins read it later with
 `GET /api/v1/platform/shadow/reports/{id}?tenant_id=acme` (beta, audited as
-`platform.shadow_report_viewed`). The report shows:
+`platform.shadow_report_viewed`). Each `shadow-run` is audited before its
+first shadow run, in the tenant (`tenant.shadow_replayed`) and in the
+platform tenant (`platform.tenant_shadow_replayed`, `auth.bootstrap_tenant_id`),
+with the report id, candidate label and host, window in hours and number of
+alerts. The report shows:
 
 * **Agreement** on the routing decision (`close`, `plan_response`,
   `escalate`), overall and per production route, as a rate with its sample
@@ -884,15 +901,14 @@ within `events_days`, or older alerts closed without a remaining event read
 as `close` and open ones as having no production verdict (the command warns
 when the window is longer).
 
-**Gate (until AI-E1.5c).** Shadow runs should read through a separate,
-SELECT-only database role (issue #309). Until that role exists, `shadow-run`
-refuses to run unless `--i-understand-no-shadow-role` is passed, and refuses
-that flag in `staging` and `production` environments: use it on a
-development or evaluation copy of the database only. AI-E1.5c replaces the
-flag with its setting. The gate prevents accidents; it is not access
-control: it trusts the `environment` setting, which defaults to
-`development` when nothing sets it, and anyone who can run the CLI with the
-database credentials can pass the flag.
+**The shadow database role.** Every read of a shadow run goes through the
+SELECT-only `lgsotf_shadow` role (`database.shadow_url`; see
+[deployment.md](deployment.md), section 4); the verdict rows, the would-be
+effects and the audit entries are written by the runtime role after each
+run has left shadow mode. Without `database.shadow_url`, `shadow-run`
+refuses to run, in every environment and with no override. Run it where
+the worker's settings are (`docker compose exec worker lg-sotf shadow-run
+...`), with `database.shadow_url` set.
 
 ## Evaluating on your own labelled data
 

@@ -24,3 +24,15 @@
 - New setting `security.shadow_candidate_llm_hosts`: the LLM hosts a shadow
   candidate profile may call besides production's own. It is read from the
   production settings only; a candidate profile cannot extend it.
+  `lg-sotf shadow-run` refuses a candidate on any other host before reading
+  any alert, and stores the candidate's host (never its key) on each
+  verdict row and in the report (`candidate_host`; migration `0016`).
+- Each `lg-sotf shadow-run` is audited in the tenant
+  (`tenant.shadow_replayed`) and in the platform tenant
+  (`platform.tenant_shadow_replayed`), with the report id, candidate label
+  and host, window and number of alerts.
+
+### Removed
+
+- The `--i-understand-no-shadow-role` option of `lg-sotf shadow-run`: the
+  command now always needs the shadow database role, in every environment.

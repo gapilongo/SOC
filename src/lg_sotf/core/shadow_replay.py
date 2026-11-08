@@ -66,10 +66,13 @@ def candidate_verdict(outcome: ShadowOutcome) -> Verdict:
 class ShadowReplay:
     """Replays alerts through ``runner`` (the candidate ``candidate``) and stores each comparison."""
 
-    def __init__(self, runner: ShadowRunner, repos: Repositories, *, candidate: str) -> None:
+    def __init__(
+        self, runner: ShadowRunner, repos: Repositories, *, candidate: str, candidate_host: Optional[str] = None
+    ) -> None:
         self._runner = runner
         self._repos = repos
         self.candidate = candidate
+        self.candidate_host = candidate_host
 
     async def run(
         self, tenant_id: str, alert_ids: Sequence[str], *, report_id: Optional[str] = None,
@@ -81,7 +84,9 @@ class ShadowReplay:
         todo = [production[a] for a in alert_ids if a in production]
         for done, base in enumerate(todo, start=1):
             row, run_id = await self._compare(tenant_id, base)
-            await self._repos.shadow_verdicts.append(tenant_id, report_id, self.candidate, row, run_id=run_id)
+            await self._repos.shadow_verdicts.append(
+                tenant_id, report_id, self.candidate, row, run_id=run_id, candidate_host=self.candidate_host
+            )
             if progress is not None:
                 progress(done, len(todo), row)
         log.info("shadow.replay_completed", tenant_id=tenant_id, report_id=report_id, alerts=len(todo))

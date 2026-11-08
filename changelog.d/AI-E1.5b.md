@@ -18,12 +18,10 @@
 
 ### Security
 
-- `lg-sotf shadow-run` refuses to run until shadow runs have their own
-  SELECT-only database role (AI-E1.5c). On a development or test database it
-  runs with `--i-understand-no-shadow-role`; that flag is refused when the
-  environment setting is staging or production (an accident guard, not
-  access control). Reading a shadow report is audited as
-  `platform.shadow_report_viewed` in the platform admin's home tenant.
+- `lg-sotf shadow-run` reads only through the SELECT-only shadow database
+  role (`database.shadow_url`, AI-E1.5c) and refuses to run without it. Reading
+  a shadow report is audited as `platform.shadow_report_viewed` in the
+  platform admin's home tenant.
 - A candidate profile expands `${VAR}` only in `llm.api_key`, and only from a
   `CANDIDATE_` variable, so it cannot send a process secret to an endpoint
   of its choice. A candidate on another provider or `base_url` never gets

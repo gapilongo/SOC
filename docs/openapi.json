@@ -9549,6 +9549,18 @@
           "candidate_failures": {
             "$ref": "#/components/schemas/ShadowCaseList"
           },
+          "candidate_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The host the candidate's LLM calls went to (empty: no network); never its key.",
+            "title": "Candidate Host"
+          },
           "compared": {
             "description": "Alerts with a production verdict and a usable candidate verdict.",
             "title": "Compared",

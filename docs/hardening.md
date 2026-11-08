@@ -561,7 +561,7 @@ the Kubernetes audit log.
 **Rationale.** Row-level security protects tenants only if the API and
 worker connect as a role that cannot bypass it. `lg-sotf migrate` refuses to
 grant to a runtime role that is a superuser, has `BYPASSRLS` or belongs to
-the owner role (`src/lg_sotf/db/migrate.py:234-256`).
+the owner role (`src/lg_sotf/db/migrate.py:235-257`).
 
 **Check.**
 
@@ -727,7 +727,7 @@ must change nothing. Its statement guard is a pattern match that a crafted
 statement can slip past; the database role is the boundary. `lg-sotf
 migrate` grants `database.shadow_role` `SELECT` on the tenant tables except
 the credentials, and nothing else, and refuses a role that may write or
-bypass isolation (`src/lg_sotf/db/migrate.py:301-336`).
+bypass isolation (`src/lg_sotf/db/migrate.py:302-337`).
 
 **Check.** The query must return `false`, `false`, `false`, `{}` and
 `{default_transaction_read_only=on}`:
