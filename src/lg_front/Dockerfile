@@ -27,7 +27,7 @@ ARG NGINX_IMAGE=
 # both). Each is only pulled when its override above is empty. The runtime is
 # the -slim variant: nginx and busybox only, no curl, libxml2 or image libraries.
 FROM --platform=$BUILDPLATFORM node:22-alpine@sha256:0e1754758c2df4cfa3e68d59e2e1b7374bb7fd9ea6328eaaacf15cc934af8202 AS node-base
-FROM nginxinc/nginx-unprivileged:1.30-alpine-slim@sha256:5d8bb9437d74a600ec5dbf90c035451c724dc33eac8d3a71078f6f8612c345f6 AS nginx-base
+FROM nginxinc/nginx-unprivileged:1.31-alpine-slim@sha256:a8cb0f33d51fa107c96fd2bd3a71aaf564ec131e9d2bdf8700944f0ed8b170d7 AS nginx-base
 
 # ---------------------------------------------------------------------------
 # Build: install the locked dependency set, type-check and bundle. The output
