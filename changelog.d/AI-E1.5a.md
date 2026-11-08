@@ -28,6 +28,6 @@
 - The pipeline metrics (`lgsotf_node_seconds`, `lgsotf_llm_calls_total`,
   `lgsotf_llm_tokens_total`, `lgsotf_llm_cost_usd_total`,
   `lgsotf_llm_refusals_total`, `lgsotf_llm_skipped_total`,
-  `lgsotf_enrichment_lookups_total`) have a new `mode` label (`live` or
+  `lgsotf_enrichment_lookups_total`, `lgsotf_llm_slot_wait_seconds`) have a new `mode` label (`live` or
   `shadow`). Add `mode="live"` to your alerts and dashboards; the examples in
   `docs/operations.md` do.

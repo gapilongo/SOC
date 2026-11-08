@@ -465,7 +465,7 @@ Everything else is per stack, on purpose:
   `lgsotf_node_seconds{node,mode}`, `lgsotf_llm_calls_total{model,agent,outcome,mode}`,
   `lgsotf_llm_tokens_total{model,kind,mode}`, `lgsotf_llm_cost_usd_total{model,mode}`,
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
-  `lgsotf_llm_slot_wait_seconds{tier}`,
+  `lgsotf_llm_slot_wait_seconds{tier,mode}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
   `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed

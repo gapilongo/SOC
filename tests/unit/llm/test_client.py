@@ -213,7 +213,7 @@ async def test_llm_slots_default_to_worker_concurrency(make_settings: Callable[.
             await asyncio.sleep(0.02)
             active -= 1
 
-    before = LLM_SLOT_WAIT_SECONDS.labels(tier="deep")._sum.get()  # type: ignore[attr-defined]
+    before = LLM_SLOT_WAIT_SECONDS.labels(tier="deep", mode="live")._sum.get()  # type: ignore[attr-defined]
     await asyncio.gather(*(call() for _ in range(30)))
     assert peak == 24
-    assert LLM_SLOT_WAIT_SECONDS.labels(tier="deep")._sum.get() > before  # type: ignore[attr-defined]
+    assert LLM_SLOT_WAIT_SECONDS.labels(tier="deep", mode="live")._sum.get() > before  # type: ignore[attr-defined]

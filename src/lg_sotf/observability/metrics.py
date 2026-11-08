@@ -5,7 +5,7 @@ running tests in the same process, never collides with the global default
 registry. Labels are low-cardinality only: never tenant, alert or user ids.
 
 The pipeline's series (nodes, LLM calls, tokens, cost, refusals, skipped
-calls, enrichment lookups) carry ``mode`` (``live`` or ``shadow``,
+calls, enrichment lookups, LLM slot waits) carry ``mode`` (``live`` or ``shadow``,
 :mod:`lg_sotf.run_mode`): a shadow run never moves a production series, and
 dashboards and alerts select ``mode="live"``.
 """
@@ -66,7 +66,7 @@ NODE_SECONDS = Histogram(
 LLM_SLOT_WAIT_SECONDS = Histogram(
     "lgsotf_llm_slot_wait_seconds",
     "Time a model call waited for a per-process concurrency slot (llm.<tier>.max_concurrency).",
-    ["tier"],
+    ["tier", "mode"],
     buckets=_NODE_BUCKETS,
     registry=REGISTRY,
 )
@@ -159,7 +159,7 @@ def time_node(node: str) -> Iterator[None]:
 
 
 def record_llm_slot_wait(tier: str, seconds: float) -> None:
-    LLM_SLOT_WAIT_SECONDS.labels(tier=tier).observe(max(0.0, seconds))
+    LLM_SLOT_WAIT_SECONDS.labels(tier=tier, mode=run_mode()).observe(max(0.0, seconds))
 
 
 def record_llm_call(model: str, agent: str, outcome: str) -> None:
