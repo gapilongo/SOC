@@ -6,6 +6,10 @@ and the production services. Every egress boundary then records what it
 would have done instead of doing it, and every database transaction is read
 only (see :mod:`lg_sotf.security.shadow`). The run:
 
+* refuses to start without the SELECT-only shadow database role
+  (``database.shadow_url``, :mod:`lg_sotf.db.shadow_role`): its every
+  transaction runs on that role's pool, never on the runtime role's;
+
 * starts from the alert row, like a fresh production run, under its own run
   id (``shadow/<hex>``), which the agents' contexts carry;
 * keeps its checkpoints in memory (production checkpoints are untouched) and
@@ -90,6 +94,7 @@ class ShadowRunner:
 
     async def run(self, tenant_id: str, alert_id: str) -> ShadowOutcome:
         repos = self._deps.repos
+        await repos.db.open_shadow()  # ShadowRoleRequired without the shadow role: no run on the runtime role
         alert = await repos.alerts.get(tenant_id, alert_id)
         tenant = await repos.tenants.get(tenant_id)
         run = ShadowRun(SHADOW_RUN_PREFIX + uuid4().hex)

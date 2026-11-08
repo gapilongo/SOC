@@ -9,7 +9,8 @@ a separate login role that has only the privileges
 :func:`grant_runtime_privileges` gives it; that role cannot bypass tenant
 isolation, alter tables, or modify the audit log. ``lg-sotf migrate`` runs
 :func:`upgrade_head`, :func:`setup_checkpointer`, then
-:func:`grant_runtime_privileges`.
+:func:`grant_runtime_privileges`, and :func:`grant_shadow_privileges` for
+the SELECT-only role shadow runs connect as (:mod:`lg_sotf.db.shadow_role`).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from sqlalchemy import create_engine, pool, text
 from lg_sotf.db import locks
 from lg_sotf.db.partitions import drop_expired_partitions, ensure_partitions
 from lg_sotf.db.pool import Database
+from lg_sotf.db.shadow_role import UNSAFE_ROLE_SQL, unsafe_role_reasons
 from lg_sotf.db.urls import redact_url, to_libpq_url, to_sqlalchemy_url, with_query_params
 from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.settings import DatabaseSettings
@@ -39,12 +41,14 @@ __all__ = [
     "PLATFORM_FUNCTIONS",
     "PROVISIONING_FUNCTIONS",
     "RUNTIME_TABLE_PRIVILEGES",
+    "SHADOW_TABLES",
     "alembic_config",
     "current_revision",
     "downgrade_base",
     "drop_expired_partitions",
     "ensure_partitions",
     "grant_runtime_privileges",
+    "grant_shadow_privileges",
     "head_revision",
     "libpq_url",
     "migration_transaction_setup",
@@ -98,6 +102,9 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
         "UPDATE (label, notes, agreement, labelled_by, labelled_by_actor, labelled_by_org, labelled_at, escalation_id)",
     ),
 }
+# The shadow role (AI-E1.5c) reads what a run reads: every runtime table but the credentials, and writes nothing.
+SHADOW_EXCLUDED_TABLES = frozenset({"users", "user_mfa", "refresh_tokens", "api_keys"})
+SHADOW_TABLES: Tuple[str, ...] = tuple(t for t in RUNTIME_TABLE_PRIVILEGES if t not in SHADOW_EXCLUDED_TABLES)
 CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),
     "checkpoint_blobs": ("SELECT", "INSERT", "UPDATE", "DELETE"),
@@ -289,6 +296,44 @@ def grant_runtime_privileges(role: str, database_url: str, database: DatabaseSet
         for stmt in runtime_grant_statements(role, sequences=sequences, checkpoint_tables=checkpoint_tables):
             conn.execute(stmt)
     log.info("db.migrate.runtime_grants", role=role, checkpoint_tables=len(checkpoint_tables))
+
+
+def shadow_grant_statements(role: str) -> List[sql.Composed]:
+    """Statements that reset ``role`` to exactly the shadow runs' privileges: ``SELECT`` on :data:`SHADOW_TABLES`."""
+    who = sql.Identifier(role)
+    stmts: List[sql.Composed] = [
+        sql.SQL("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM {}").format(who),
+        sql.SQL("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {}").format(who),
+        sql.SQL("REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM {}").format(who),
+        sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(who),
+    ]
+    stmts += [sql.SQL("GRANT SELECT ON TABLE {} TO {}").format(sql.Identifier("public", t), who) for t in SHADOW_TABLES]
+    return stmts
+
+
+@egress("database_connection", REFUSE)
+def grant_shadow_privileges(role: str, database_url: str, database: DatabaseSettings) -> None:
+    """Give the shadow runs' login role ``SELECT`` on :data:`SHADOW_TABLES` and nothing else (idempotent).
+
+    Run as the schema owner, after :func:`grant_runtime_privileges`. Refuses,
+    changing nothing, a role that may write or bypass isolation, before or
+    after the grants (superuser, BYPASSRLS, the owner, a member of a role that
+    may write, one allowed a ``SECURITY DEFINER`` function): pointing
+    ``database.shadow_role`` at the runtime role must not strip its privileges.
+    """
+    with psycopg.connect(libpq_url(database_url, database)) as conn:
+
+        def refuse_unsafe() -> None:
+            reasons = unsafe_role_reasons(conn.execute(UNSAFE_ROLE_SQL.format(role="%s"), (role,)).fetchone(), role)
+            if reasons:
+                conn.rollback()
+                raise ValueError(f"shadow role {role!r} must be SELECT-only, but it " + "; ".join(reasons))
+
+        refuse_unsafe()
+        for stmt in shadow_grant_statements(role):
+            conn.execute(stmt)
+        refuse_unsafe()
+    log.info("db.migrate.shadow_grants", role=role, tables=len(SHADOW_TABLES))
 
 
 @egress("database_connection", REFUSE)

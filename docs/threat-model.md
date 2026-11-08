@@ -119,7 +119,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
-| TM-API-1 | S | Stolen or forged session | HS256 access tokens of 15 minutes (`src/lg_sotf/settings.py:166`); refresh rotation with reuse detection; JWT secret of at least 32 bytes enforced at start-up (`src/lg_sotf/settings.py:503-505`) | In place. Asymmetric JWT with `kid` rotation is planned (SEC5.2) |
+| TM-API-1 | S | Stolen or forged session | HS256 access tokens of 15 minutes (`src/lg_sotf/settings.py:175`); refresh rotation with reuse detection; JWT secret of at least 32 bytes enforced at start-up (`src/lg_sotf/settings.py:512-514`) | In place. Asymmetric JWT with `kid` rotation is planned (SEC5.2) |
 | TM-API-2 | S | API key used beyond its purpose | Keys are scoped (`ingest`, `read`, `write`) and refused on admin, decision and approval routes (`src/lg_sotf/api/auth/deps.py:43-62`) | In place |
 | TM-API-3 | E | A user reaches another tenant | Tenant comes from the credential; `X-Tenant-ID` is honoured only for platform admins and audited (`src/lg_sotf/api/auth/authenticate.py:394-410`); RLS below (TM-DB-1) | In place |
 | TM-API-4 | E | Role escalation through the request body | Approver role always comes from the principal; role checks are in `Access.check` (`src/lg_sotf/api/auth/deps.py:53-58`) | In place |
@@ -128,7 +128,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | TM-API-7 | I | Clickjacking, MIME sniffing, referrer leaks | Security headers and CSP (`src/lg_sotf/api/middleware.py:29-33`, `src/lg_sotf/api/middleware.py:148-179`) | In place |
 | TM-API-8 | I | Prometheus metrics readable by anyone who can reach the API | Bearer token checked when `api.metrics_token` is set (`src/lg_sotf/api/routers/health.py:66-79`) | Partial: open when the token is unset; see HG-APP-5 in [hardening.md](hardening.md) |
 | TM-API-9 | R | A user denies an action | Hash-chained, append-only audit log (TM-DB-3) | In place |
-| TM-API-10 | S | Spoofed client address defeats per-address limits and the audit trail | `X-Forwarded-For` is trusted only from `api.forwarded_allow_ips` (`src/lg_sotf/settings.py:222`) | In place, if set correctly (HG-PX-4) |
+| TM-API-10 | S | Spoofed client address defeats per-address limits and the audit trail | `X-Forwarded-For` is trusted only from `api.forwarded_allow_ips` (`src/lg_sotf/settings.py:231`) | In place, if set correctly (HG-PX-4) |
 
 ### 2.2 Worker and LLM pipeline (`lg-sotf worker`)
 
@@ -138,17 +138,19 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | TM-WRK-2 | T | A fooled model closes a dangerous alert, or the attacker names objects so the rules corroborate a benign close (title camouflage) | High and critical alerts are never auto-closed; low and medium need rule corroboration; refusals escalate (`src/lg_sotf/domain/routing.py:1-21`). Rule false-positive evidence comes only from the detection rule name with attacker-named values masked, EICAR hashes, the tenant's `triage.known_scanners` and the source id, never from titles, entity names, command lines, user agents or email subjects (`src/lg_sotf/domain/benign_evidence.py`, AI-E6.3). Rule-name words that name the detected activity (`scheduled`, `update`, `backup`, `scan`, `monitoring`) count only with a trusted qualifier: an intent word in the same rule name, a test-environment source id or, for `scan`, a known scanner (AI-E6.4) | In place; measured by `high_severity_auto_closed_benign` = 0 and the gated `title-camouflage` and `activity-camouflage` families of the adversarial corpus v2 in CI |
 | TM-WRK-3 | E | A fooled model triggers containment | Containment on model-only evidence always waits for approval (`src/lg_sotf/services/response/planner.py:328-329`); tenant autonomy, with unknown values read as `disabled` (`src/lg_sotf/services/response/policy.py:215-226`) | In place |
 | TM-WRK-4 | I | Alert data or secrets sent to the model provider | Secrets redacted before storage and before the model; personal data is **not** redacted | Partial: per-tenant pseudonymisation before the LLM call is planned (SEC7.5b) |
-| TM-WRK-5 | I | Model endpoint pointed at an internal or metadata address | `llm.base_url` egress check (`src/lg_sotf/llm/endpoint.py:80-100`), enforced at start-up (`src/lg_sotf/settings.py:519-524`) | In place |
+| TM-WRK-5 | I | Model endpoint pointed at an internal or metadata address | `llm.base_url` egress check (`src/lg_sotf/llm/endpoint.py:80-100`), enforced at start-up (`src/lg_sotf/settings.py:528-533`) | In place |
 | TM-WRK-6 | D | Cost exhaustion (alert floods, long prompts) | Per-tenant daily token budget, seeded from PostgreSQL after a Redis loss (`src/lg_sotf/llm/budget.py:1-12`); rules gate LLM calls | In place. Per-investigation budgets are planned (AI-E3.3) |
 | TM-WRK-7 | T | A malformed or truncated model answer is used | Schema-validated structured output; refusal, truncation and invalid output are distinct errors (`src/lg_sotf/llm/structured.py:1-12`) | In place |
 | TM-WRK-8 | R | Nobody can say which prompt produced a decision | Prompt registry with a content hash per template (`src/lg_sotf/llm/registry.py:1-12`); model and provider per step in the alert summary | Partial: a full LLM and tool-call trace store is planned (AI-E1.3) |
 | TM-WRK-9 | T | LLM normaliser invents fields for an unknown event | Off by default; its output is grounded against the event and never auto-closed (`src/lg_sotf/ingestion/llm_fallback.py:1-5`) | In place |
+| TM-WRK-10 | T/E | A shadow run (a candidate pipeline replayed on a real alert) writes to the database by escaping its read-only transaction, for example a `COMMIT` hidden behind a comment marker in a string literal | Every shadow transaction runs on a pool of its own logged in as the SELECT-only `lgsotf_shadow` role (read-only sessions, `SELECT` on the tenant tables but the credentials, no `INSERT`, sequence or `SECURITY DEFINER` function); without it a shadow run refuses to start and never falls back to the runtime role (`src/lg_sotf/db/shadow_role.py:1-18`, `src/lg_sotf/db/pool.py:243-270`, `src/lg_sotf/db/pool.py:313-318`); `lg-sotf migrate` grants it and refuses a role that may write (`src/lg_sotf/db/migrate.py:301-336`); the statement guard stays as defence in depth (`src/lg_sotf/db/shadow_connection.py:1-17`) | In place; tested in `tests/integration/db/test_shadow_role.py` with the guard removed. Residual: grants cannot stop `NOTIFY`/`pg_notify` or advisory locks (PUBLIC functions); the guard refuses them, nothing in LG-SOTF listens, and the pool releases locks with the connection |
+| TM-WRK-11 | D | Shadow runs starve production of LLM concurrency, so live calls time out | Shadow calls take per-tier slots of their own (`llm.<tier>.shadow_max_concurrency`, default 1), never production's (`src/lg_sotf/llm/client.py:369-392`) | In place |
 
 ### 2.3 Scheduler (`lg-sotf scheduler`)
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
-| TM-SCH-1 | E | Cross-tenant code path misused from the runtime role | `system_tx()` bypasses RLS only for members of the schema-owner role and checks this (`src/lg_sotf/db/pool.py:243-256`) | In place |
+| TM-SCH-1 | E | Cross-tenant code path misused from the runtime role | `system_tx()` bypasses RLS only for members of the schema-owner role and checks this (`src/lg_sotf/db/pool.py:286-299`) | In place |
 | TM-SCH-2 | T | Retention deletes audit rows early | Retention drops whole partitions older than `retention.audit_days`; the trigger blocks row deletes (TM-DB-3) | In place |
 | TM-SCH-3 | D | Two schedulers run maintenance at once | Leader election on a PostgreSQL advisory lock (`scheduler.leader_lease_s`) | In place |
 
@@ -156,11 +158,11 @@ disclosure, **D**enial of service, **E**levation of privilege.
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
-| TM-DB-1 | I/T | Tenant data read or written across tenants | `FORCE ROW LEVEL SECURITY` on tenant tables (`src/lg_sotf/db/migrations/versions/0001_initial.py:516`); `tenant_tx` sets `app.tenant_id` per transaction (`src/lg_sotf/db/pool.py:233-240`) | In place; tested in `tests/integration/db/test_rls.py` |
-| TM-DB-2 | E | Runtime role can bypass RLS | `lg-sotf migrate` refuses a runtime role that is a superuser, has `BYPASSRLS` or belongs to the owner role (`src/lg_sotf/db/migrate.py:227-249`); compose roles created `NOBYPASSRLS NOINHERIT` (`docker/postgres/init-roles.sh:21-30`) | In place |
+| TM-DB-1 | I/T | Tenant data read or written across tenants | `FORCE ROW LEVEL SECURITY` on tenant tables (`src/lg_sotf/db/migrations/versions/0001_initial.py:516`); `tenant_tx` sets `app.tenant_id` per transaction (`src/lg_sotf/db/pool.py:335-341`) | In place; tested in `tests/integration/db/test_rls.py` |
+| TM-DB-2 | E | Runtime role can bypass RLS | `lg-sotf migrate` refuses a runtime role that is a superuser, has `BYPASSRLS` or belongs to the owner role (`src/lg_sotf/db/migrate.py:234-256`); compose roles created `NOBYPASSRLS NOINHERIT` (`docker/postgres/init-roles.sh:27-47`) | In place |
 | TM-DB-3 | T/R | Audit entries altered or deleted | Per-tenant SHA-256 hash chain (`src/lg_sotf/db/repos/audit.py:1-15`); triggers block `UPDATE`, `DELETE` and `TRUNCATE` (`src/lg_sotf/db/migrations/versions/0001_initial.py:448-467`); `GET /api/v1/audit/verify` | In place. A DBA with the owner role can still rewrite the chain; WORM export is planned (ARCH-E8) |
 | TM-DB-4 | I | Credentials readable from a dump | Source credentials and tenant secrets encrypted with Fernet, bound to tenant and purpose (`src/lg_sotf/security/crypto.py:35-81`) | Partial: install-wide keys; per-tenant KEKs and crypto-shredding are planned (ARCH-E4.4, SEC5.1) |
-| TM-DB-5 | I | Traffic to the database read on the network | `database.ssl_mode` up to `verify-full` (`src/lg_sotf/db/pool.py:90-111`) | In place, off unless configured (HG-PG-4) |
+| TM-DB-5 | I | Traffic to the database read on the network | `database.ssl_mode` up to `verify-full` (`src/lg_sotf/db/pool.py:95-116`) | In place, off unless configured (HG-PG-4) |
 
 ### 2.5 Redis
 
@@ -186,7 +188,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 | TM-RSP-1 | S/T | Forged or replayed webhook to the SOAR | HMAC-SHA256 over timestamp and body, idempotency key (`src/lg_sotf/services/connectors/webhook.py:18`, `src/lg_sotf/services/connectors/webhook.py:280`) | In place; receivers must verify |
 | TM-RSP-2 | E | Action on a protected asset or critical process | Guardrails before planning and before execution (`src/lg_sotf/services/response/guardrails.py:67`) | In place |
 | TM-RSP-3 | I | Microsoft credentials sent to an attacker-chosen host | Hosts are module constants, never tenant configuration (`src/lg_sotf/integrations/microsoft/clouds.py:1-6`) | In place |
-| TM-RSP-4 | D | Mass containment | Hourly cap per tenant and blast-radius limits; dry run by default (`src/lg_sotf/settings.py:304-306`) | In place |
+| TM-RSP-4 | D | Mass containment | Hourly cap per tenant and blast-radius limits; dry run by default (`src/lg_sotf/settings.py:313-315`) | In place |
 | TM-RSP-5 | R | Who approved an action is unclear | Action ledger with status history and approver; every transition audited | In place |
 
 ### 2.8 Evidence tools (read-only investigation queries)
@@ -220,7 +222,7 @@ The remote endpoint with OAuth (Phases 1b–3) is designed but not built.
 | TM-MCP-5 | I | Exfiltration through the client's own tools (the lethal trifecta) | Client hardening profile in [mcp.md](mcp.md#security); the server cannot remove that leg | Partial by design |
 | TM-MCP-6 | T | Test alerts trigger real actions | Install-level dry run; tester keys `ingest`+`read` only | Partial: server-side QA tenants and rehearsal routing planned (MCP design Phase 1a) |
 | TM-MCP-7 | T | A committed `.mcp.json` sends keys to an attacker program | CODEOWNERS on MCP config and `src/lg_sotf/mcp/` (`.github/CODEOWNERS:18-27`) | In place, effective with "Require review from Code Owners" |
-| TM-MCP-8 | D | Tool-call floods | At most 4 running and 32 queued calls; response size caps (`src/lg_sotf/mcp/server.py:50-51`, `src/lg_sotf/settings.py:343-344`) | In place |
+| TM-MCP-8 | D | Tool-call floods | At most 4 running and 32 queued calls; response size caps (`src/lg_sotf/mcp/server.py:50-51`, `src/lg_sotf/settings.py:352-353`) | In place |
 | TM-MCP-9 | S/E | Remote MCP token theft, consent phishing, cross-tenant pivot | Design section 8.1, threats 5–10 and 14 | Planned (INT5.4a–c, MCP design Phases 1b–3) |
 | TM-MCP-10 | T | Poisoned external MCP servers used as evidence (MCP-in) | Allow-listed tools, outputs quarantined | Planned (AI-E7.1, AI-E3.2) |
 
@@ -240,7 +242,7 @@ organisations and grants.
 | TM-MSP-3 | E | MSSP analyst decides for a customer without authority | Refused today (`src/lg_sotf/api/auth/deps.py:61-62`) | Planned: write paths and decisions under grants with dual audit (ARCH-E4.1c) |
 | TM-MSP-4 | E | WebSocket, MCP or API key outlives a revoked grant | WebSocket re-check every 15 s (TM-RD-1) | Planned: WS, MCP and API keys under grants (ARCH-E4.1d) |
 | TM-MSP-5 | R | Customer cannot see or revoke MSSP access | Audit entries `platform_admin.tenant_access` in the customer's chain | Planned: customer grant register and revoke, expiry, JIT reason, co-approval (SEC6.2) |
-| TM-MSP-6 | S | Customer identities mixed under one install-wide IdP | One OIDC issuer per install (`src/lg_sotf/settings.py:173`) | Planned: one IdP per tenant bound to its issuer (SEC6.1) |
+| TM-MSP-6 | S | Customer identities mixed under one install-wide IdP | One OIDC issuer per install (`src/lg_sotf/settings.py:182`) | Planned: one IdP per tenant bound to its issuer (SEC6.1) |
 | TM-MSP-7 | E | Break-glass access is silent | `lg-sotf reset-mfa` exists | Planned: break-glass procedure, alert on use, drill (SEC6.5) |
 | TM-MSP-8 | I | Erased customer data recoverable from backups | Erasure deletes rows and Redis keys and keeps the audit log (`src/lg_sotf/compliance/tenant_data.py:433`) | Partial: crypto-shredding with per-tenant KEKs planned (ARCH-E4.4, SEC5.1) |
 
@@ -251,7 +253,7 @@ organisations and grants.
 | TM-WEB-1 | T | XSS through alert content | CSP `default-src 'none'; script-src 'self'` and other headers from the frontend entrypoint (`src/lg_front/docker/entrypoint.sh:123-134`) | In place |
 | TM-WEB-2 | I | Tokens in logs (OIDC codes, WebSocket query tokens) | nginx logs `$uri` without the query string (`src/lg_front/docker/nginx.conf:29-33`); the VM Caddy edge disables access logs (`deploy/vm/caddy/Caddyfile.tmpl:6-14`) | In place for shipped proxies; your own proxy: HG-PX-5 |
 | TM-WEB-3 | S | Forged `X-Forwarded-For` | nginx honours it only from `LG_SOTF_TRUSTED_PROXIES` (`src/lg_front/docker/entrypoint.sh:161-163`) | In place |
-| TM-WEB-4 | I | Plain HTTP | Secure cookies required in production (`src/lg_sotf/settings.py:527-528`); HSTS when configured | In place; TLS is the operator's (HG-PX-1) |
+| TM-WEB-4 | I | Plain HTTP | Secure cookies required in production (`src/lg_sotf/settings.py:536-537`); HSTS when configured | In place; TLS is the operator's (HG-PX-1) |
 
 ### 2.12 CI/CD and supply chain
 
@@ -269,7 +271,7 @@ organisations and grants.
 
 | ID | STRIDE | Threat | Controls | Status |
 |---|---|---|---|---|
-| TM-KEY-1 | I | Published placeholder secrets used in production | Start-up refuses placeholders and weak secrets (`src/lg_sotf/security/insecure.py:92-107`, `src/lg_sotf/settings.py:538-542`) | In place |
+| TM-KEY-1 | I | Published placeholder secrets used in production | Start-up refuses placeholders and weak secrets (`src/lg_sotf/security/insecure.py:92-107`, `src/lg_sotf/settings.py:547-551`) | In place |
 | TM-KEY-2 | I | Secrets in Helm values or ConfigMaps | Values schema rejects secret-bearing keys (`deploy/helm/lg-sotf/values.schema.json:8-9`) | In place |
 | TM-KEY-3 | I | Backup gives keys and data together | Keys documented as stored apart from dumps | Partial: operator procedure (HG-PG-8) |
 
@@ -351,7 +353,7 @@ covers it. The gate has three steps:
 | ARCH-E4 MSSP and enterprise identity | Organisations, grants, SAML, SCIM, KMS | TM-MSP-1 to TM-MSP-8, TM-DB-4 | Rows present (planned) |
 | ARCH-E8 Durable events and storage tiers | Object store, WORM audit export | TM-DB-3; add TM-OBJ-* | Add rows before the first story |
 | ARCH-E9 Control plane and cells | Cell registry, cross-cell auth | Add a new STRIDE table | Add rows before the first story |
-| AI-E1 Evaluation and trace foundation | Trace store, prompt registry, shadow mode | TM-WRK-8, TM-EVT-6 | Rows present |
+| AI-E1 Evaluation and trace foundation | Trace store, prompt registry, shadow mode | TM-WRK-8, TM-WRK-10, TM-WRK-11, TM-EVT-6 | Rows present |
 | AI-E2 Tool registry and Microsoft read tools | Evidence tools | TM-EVT-1 to TM-EVT-7 | Rows present (planned) |
 | AI-E3 Investigation subgraph | Planner, quarantined reader, critic | TM-EVT-2, TM-EVT-5, TM-EVT-7, ASI01, ASI09 | Rows present (planned) |
 | AI-E4 Tenant memory and feedback | Memory, retrieval, calibration | ASI06, AML.T0070, AML.T0080 | Add TM-MEM-* before the first story |

@@ -40,6 +40,11 @@ Secrets are not created by this chart. The pods read:
 {{- if .Values.secrets.bootstrapSecret }}
   bootstrap       {{ .Values.secrets.bootstrapSecret }}  (migrate)
 {{- end }}
+{{- if .Values.secrets.shadowSecret }}
+  shadow secret   {{ .Values.secrets.shadowSecret }}  (worker; SELECT-only shadow-run login)
+{{- else }}
+  shadow secret   (none: shadow runs refuse to start without the SELECT-only shadow role)
+{{- end }}
 If a pod is stuck in CreateContainerConfigError, a referenced Secret is missing.
 
 Check the rollout:

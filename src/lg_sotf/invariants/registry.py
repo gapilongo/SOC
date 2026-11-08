@@ -234,6 +234,7 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "src/lg_sotf/core/shadow.py",
             "src/lg_sotf/db/pool.py",
             "src/lg_sotf/db/shadow_connection.py",
+            "src/lg_sotf/db/shadow_role.py",
             "src/lg_sotf/queue/redis.py",
         ),
         proofs=(
@@ -242,6 +243,10 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/architecture/test_shadow_egress.py::"
             "test_shadow_no_side_effects_every_egress_site_is_a_registered_boundary",
             "tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_boundary_diverts_in_shadow_mode",
+            "tests/integration/db/test_shadow_role.py::test_shadow_role_refuses_each_proven_guard_bypass_at_the_database",
+            "tests/integration/db/test_shadow_role.py::"
+            "test_without_the_shadow_role_a_shadow_transaction_is_refused_not_run_on_the_runtime_role",
+            "tests/integration/engine/test_shadow.py::test_a_shadow_run_refuses_to_start_without_the_shadow_role",
         ),
     ),
     Invariant(

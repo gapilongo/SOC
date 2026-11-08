@@ -139,10 +139,20 @@ itself is never loaded into a container. Each service receives exactly:
 
 | Service | Database credentials | Other secrets |
 |---|---|---|
-| postgres | superuser, owner and app passwords (to create the roles) | none |
+| postgres | superuser, owner and app passwords, and the shadow password when set (to create the roles) | none |
 | migrate | `lgsotf_app` DSN, `lgsotf_owner` DSN (`LG_SOTF_DATABASE__MIGRATION_URL`) | app secrets, bootstrap admin email/password |
 | scheduler | `lgsotf_app` DSN, `lgsotf_owner` DSN | app secrets |
-| api, worker | `lgsotf_app` DSN only | app secrets |
+| api | `lgsotf_app` DSN only | app secrets |
+| worker | `lgsotf_app` DSN, and the `lgsotf_shadow` DSN when `LGSOTF_SHADOW_PASSWORD` is set | app secrets |
+
+Shadow runs (a candidate pipeline replayed on real alerts, read only) connect
+only as `lgsotf_shadow`, a third login that `lg-sotf migrate` grants `SELECT`
+and nothing else (section 4). It is optional: set `LGSOTF_SHADOW_PASSWORD` in
+`.env` before the first start and `init-roles.sh` creates it, the migrate job
+grants it (`database.shadow_role`) and the worker gets its DSN
+(`database.shadow_url`). Without it shadow runs refuse to start; they never fall
+back to `lgsotf_app`. On a database created before, add the role by hand
+(section 4), then set the password and run `migrate` again.
 
 "App secrets" are the JWT secret, Fernet keys and indicator HMAC key, plus the
 optional settings listed under `x-passthrough` in `docker-compose.prod.yml`
@@ -362,6 +372,11 @@ kubectl -n lg-sotf create secret generic lg-sotf \
 kubectl -n lg-sotf create secret generic lg-sotf-owner \
   --from-literal=LG_SOTF_DATABASE__MIGRATION_URL='postgresql://lgsotf_owner:<pw>@db.internal:5432/lgsotf'
 
+# Shadow runs: worker only (optional; without it shadow runs refuse to start).
+# The SELECT-only shadow role of section 4; set settings.database.shadow_role too.
+kubectl -n lg-sotf create secret generic lg-sotf-shadow \
+  --from-literal=LG_SOTF_DATABASE__SHADOW_URL='postgresql://lgsotf_shadow:<pw>@db.internal:5432/lgsotf'
+
 # Bootstrap admin: migrate job only (optional; delete after the first install).
 kubectl -n lg-sotf create secret generic lg-sotf-bootstrap \
   --from-literal=LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
@@ -403,9 +418,11 @@ secrets:
   existingSecret: lg-sotf
   ownerSecret: lg-sotf-owner
   bootstrapSecret: lg-sotf-bootstrap
+  shadowSecret: lg-sotf-shadow      # optional: shadow runs
 settings:
   database:
     runtime_role: lgsotf_app
+    shadow_role: lgsotf_shadow      # optional: with shadowSecret
     ssl_mode: verify-full
   api:
     public_url: https://soc.example.com
@@ -540,6 +557,36 @@ Then:
 `lg-sotf migrate` refuses to grant to a role that is a superuser, has
 `BYPASSRLS` or is a member of the owner role. Single-role installs (development
 only) use the owner everywhere and leave `migration_url`/`runtime_role` unset.
+
+**Shadow runs** need a third login, `lgsotf_shadow`, which may read and never
+write. Every transaction of a shadow run uses it, from a pool of its own; the
+statement guard in front of it is defence in depth, not the boundary.
+
+```sql
+-- as a superuser / cloud admin, once (optional: without it shadow runs refuse to start)
+CREATE ROLE lgsotf_shadow LOGIN PASSWORD '<shadow pw>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS NOINHERIT;
+ALTER ROLE lgsotf_shadow SET default_transaction_read_only = on;
+GRANT CONNECT ON DATABASE lgsotf TO lgsotf_shadow;
+\c lgsotf
+GRANT USAGE ON SCHEMA public TO lgsotf_shadow;
+```
+
+| Setting | Value | Who gets it |
+|---|---|---|
+| `database.shadow_url` (`LG_SOTF_DATABASE__SHADOW_URL`) | `lgsotf_shadow` DSN | worker (and whoever runs shadow replays) |
+| `database.shadow_role` | `lgsotf_shadow` | migrate (grants) |
+| `database.shadow_pool_max` | connections of the shadow pool per process (default 4) | worker |
+
+`lg-sotf migrate` grants it `SELECT` on the tenant tables, except the
+credential tables (`users`, `user_mfa`, `refresh_tokens`, `api_keys`), and
+nothing else: no `INSERT` anywhere, no sequence, no `SECURITY DEFINER`
+function. A shadow run's record (`shadow_effects`, and the replay's verdict
+rows) is written after the run has left shadow mode, by the runtime role. Never
+make the shadow role a member of another role. `lg-sotf migrate` refuses, and
+changes nothing, when `database.shadow_role` names a role that may write or
+bypass isolation (for example `lgsotf_app`), and a worker refuses to open the
+shadow pool when `database.shadow_url` logs in as such a role. Row-level
+security applies to the shadow role like to the runtime role.
 
 Use TLS to the database: `settings.database.ssl_mode: verify-full` and, for a
 private CA, `ssl_root_cert` pointing at a file mounted with `extraVolumes` /

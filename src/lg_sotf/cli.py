@@ -125,6 +125,8 @@ def migrate() -> None:
     click.echo(f"schema: up to date; tenant: {report.tenant_id} ({'created' if report.tenant_created else 'exists'})")
     if report.runtime_role_granted:
         click.echo(f"runtime role: privileges granted to {report.runtime_role_granted}")
+    if report.shadow_role_granted:
+        click.echo(f"shadow role: SELECT granted to {report.shadow_role_granted}")
     if report.admin_created:
         click.echo(f"bootstrap admin created: {report.admin_created}")
 

@@ -8,10 +8,14 @@ only for members of the schema owner role (``lgsotf_rls_bypass()``), so the
 API/worker runtime role cannot bypass isolation by setting the GUC.
 
 In a shadow run (:mod:`lg_sotf.security.shadow`) every transaction and bare
-connection is read only, whatever the caller asked for: a write that no
-egress boundary diverted fails instead of committing. Its connections also
-refuse the statements that would reach past a read-only transaction
-(:mod:`lg_sotf.db.shadow_connection`).
+connection comes from a second pool, logged in as the SELECT-only shadow
+role (``database.shadow_url``, :mod:`lg_sotf.db.shadow_role`), and is read
+only, whatever the caller asked for: a write that no egress boundary
+diverted fails for lack of privilege instead of committing. Without that
+pool (:meth:`Database.open_shadow`) a shadow transaction is refused; it never
+falls back to the runtime pool. Its connections also refuse the statements
+that would reach past a read-only transaction
+(:mod:`lg_sotf.db.shadow_connection`), as defence in depth.
 
 :meth:`Database.run_tenant_tx` and :func:`retry_stale_statement` run a
 transaction again, once, when a migration made one of the pool's cached
@@ -38,13 +42,14 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, T
 import asyncpg
 import structlog
 
-from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, SystemScopeDenied
+from lg_sotf.db.errors import DatabaseError, DatabaseUnavailable, PoolExhausted, ShadowRoleRequired, SystemScopeDenied
 from lg_sotf.db.shadow_connection import shadow_connection
+from lg_sotf.db.shadow_role import UNSAFE_ROLE_SQL, shadow_dsn, unsafe_role_reasons
 from lg_sotf.db.tenancy import validate_tenant_id
 from lg_sotf.db.types import Connection
 from lg_sotf.db.urls import redact_url, to_libpq_url
 from lg_sotf.observability.metrics import record_stale_statement_retry
-from lg_sotf.security.shadow import REFUSE, egress, in_shadow
+from lg_sotf.security.shadow import REFUSE, egress, in_shadow, refuse_in_shadow
 from lg_sotf.settings import DatabaseSettings, Settings
 
 log = structlog.get_logger(__name__)
@@ -188,6 +193,8 @@ class Database:
             raise ValueError("invalid pool size: require 0 <= min_size <= max_size and max_size >= 1")
         self._server_settings = dict(server_settings or {})
         self._pool: Optional[asyncpg.Pool] = None
+        self._shadow_dsn = shadow_dsn(settings)
+        self._shadow_pool: Optional[asyncpg.Pool] = None
         self._lock = asyncio.Lock()
         self._system_scope_verified = False
 
@@ -202,42 +209,79 @@ class Database:
         return self._pool is not None and not self._pool.is_closing()
 
     @egress("database_connection", REFUSE)
+    async def _create_pool(
+        self, dsn: str, min_size: int, max_size: int, server_settings: Mapping[str, str]
+    ) -> asyncpg.Pool:
+        kwargs: dict[str, Any] = {
+            "dsn": dsn,
+            "min_size": min_size,
+            "max_size": max_size,
+            "command_timeout": self._settings.command_timeout_s,
+            "server_settings": {
+                "statement_timeout": str(int(self._settings.statement_timeout_ms)),
+                **server_settings,
+            },
+            "init": _init_connection,
+        }
+        ssl_arg = build_ssl_arg(self._settings.ssl_mode, self._settings.ssl_root_cert)
+        if ssl_arg is not None:
+            kwargs["ssl"] = ssl_arg
+        try:
+            return await asyncpg.create_pool(**kwargs)
+        except (TimeoutError, OSError, asyncpg.PostgresError) as exc:
+            raise DatabaseUnavailable(f"cannot connect to {redact_url(dsn)}: {type(exc).__name__}") from exc
+
+    @egress("database_connection", REFUSE)
     async def open(self) -> None:
         async with self._lock:
             if self._pool is not None:
                 return
-            kwargs: dict[str, Any] = {
-                "dsn": self._dsn,
-                "min_size": self._min_size,
-                "max_size": self._max_size,
-                "command_timeout": self._settings.command_timeout_s,
-                "server_settings": {
-                    "application_name": self._application_name,
-                    "statement_timeout": str(int(self._settings.statement_timeout_ms)),
-                    **self._server_settings,
-                },
-                "init": _init_connection,
-            }
-            ssl_arg = build_ssl_arg(self._settings.ssl_mode, self._settings.ssl_root_cert)
-            if ssl_arg is not None:
-                kwargs["ssl"] = ssl_arg
-            try:
-                self._pool = await asyncpg.create_pool(**kwargs)
-            except (TimeoutError, OSError, asyncpg.PostgresError) as exc:
-                raise DatabaseUnavailable(f"cannot connect to {redact_url(self._dsn)}: {type(exc).__name__}") from exc
+            server_settings = {"application_name": self._application_name, **self._server_settings}
+            self._pool = await self._create_pool(self._dsn, self._min_size, self._max_size, server_settings)
             log.info("db.pool_opened", min_size=self._min_size, max_size=self._max_size)
+
+    @egress("database_connection", REFUSE)
+    async def open_shadow(self) -> None:
+        """Open the shadow runs' pool (the SELECT-only shadow role), once; a shadow run calls it before it starts.
+
+        Raises :class:`ShadowRoleRequired` when ``database.shadow_url`` is unset, or
+        when its role could write or bypass tenant isolation.
+        """
+        async with self._lock:
+            if self._shadow_pool is not None:
+                return
+            if self._shadow_dsn is None:
+                raise ShadowRoleRequired(
+                    "shadow runs need database.shadow_url, the login of the SELECT-only shadow role; refusing to start"
+                )
+            read_only = {"application_name": f"{self._application_name}-shadow", "default_transaction_read_only": "on"}
+            pool = await self._create_pool(self._shadow_dsn, 0, self._settings.shadow_pool_max, read_only)
+            try:
+                async with pool.acquire(timeout=self._acquire_timeout_s) as conn:
+                    row = await conn.fetchrow(UNSAFE_ROLE_SQL.format(role="current_user"))
+                    role = await conn.fetchval("SELECT current_user")
+            except (TimeoutError, OSError, asyncpg.PostgresError) as exc:
+                pool.terminate()
+                raise DatabaseUnavailable(f"cannot connect as the shadow role: {type(exc).__name__}") from exc
+            reasons = unsafe_role_reasons(None if row is None else tuple(row), str(role))
+            if reasons:
+                await pool.close()
+                raise ShadowRoleRequired(f"database.shadow_url logs in as {role!r}, which " + "; ".join(reasons))
+            self._shadow_pool = pool
+            log.info("db.shadow_pool_opened", max_size=self._settings.shadow_pool_max)
 
     async def close(self, timeout_s: float = 10.0) -> None:
         async with self._lock:
-            pool, self._pool = self._pool, None
-        if pool is None:
-            return
-        try:
-            await asyncio.wait_for(pool.close(), timeout=timeout_s)
-        except TimeoutError:
-            log.warning("db.pool_close_timeout", timeout_s=timeout_s)
-            pool.terminate()
-        log.info("db.pool_closed")
+            pools = [p for p in (self._pool, self._shadow_pool) if p is not None]
+            self._pool = self._shadow_pool = None
+        for pool in pools:
+            try:
+                await asyncio.wait_for(pool.close(), timeout=timeout_s)
+            except TimeoutError:
+                log.warning("db.pool_close_timeout", timeout_s=timeout_s)
+                pool.terminate()
+        if pools:
+            log.info("db.pool_closed")
 
     async def __aenter__(self) -> Database:
         await self.open()
@@ -267,9 +311,16 @@ class Database:
                 await conn.execute("SELECT 1")
                 yield shadow_connection(conn)
 
+    def _shadow_or_refuse(self) -> asyncpg.Pool:
+        if self._shadow_pool is None:
+            # Never the runtime pool: a shadow run reads only as the SELECT-only shadow role.
+            refuse_in_shadow("database", "a connection without the shadow role (Database.open_shadow)")
+            raise ShadowRoleRequired("the shadow pool is not open")  # pragma: no cover - refuse_in_shadow raised
+        return self._shadow_pool
+
     @asynccontextmanager
     async def _acquire(self) -> AsyncIterator[Connection]:
-        pool = self._require_pool()
+        pool = self._shadow_or_refuse() if in_shadow() else self._require_pool()
         try:
             conn = await pool.acquire(timeout=self._acquire_timeout_s)
         except TimeoutError as exc:
@@ -316,7 +367,7 @@ class Database:
         async with self._acquire() as conn:
             async with conn.transaction(readonly=readonly or in_shadow()):
                 await conn.execute("SELECT set_config('app.bypass_rls', 'on', true)")
-                if not self._system_scope_verified:
+                if in_shadow() or not self._system_scope_verified:
                     await self._verify_system_scope(conn)
                 yield shadow_connection(conn) if in_shadow() else conn
 
@@ -329,7 +380,8 @@ class Database:
             raise SystemScopeDenied(
                 "this database role cannot bypass tenant isolation; system operations must run as the schema owner"
             )
-        self._system_scope_verified = True
+        if not in_shadow():  # the shadow pool's role is another one, checked on every use (and always refused)
+            self._system_scope_verified = True
 
     async def ping(self, *, acquire_timeout_s: float = 1.0) -> Optional[float]:
         """Round-trip ``SELECT 1`` and return its latency in seconds.

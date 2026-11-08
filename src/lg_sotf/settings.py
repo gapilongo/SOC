@@ -97,6 +97,12 @@ class DatabaseSettings(BaseModel):
     migration_url: Optional[SecretStr] = None
     # Login role that ``lg-sotf migrate`` grants runtime privileges to.
     runtime_role: Optional[str] = None
+    # Login of the SELECT-only role shadow runs connect as (lgsotf_shadow); unset, shadow runs refuse to start.
+    shadow_url: Optional[SecretStr] = None
+    # Role that ``lg-sotf migrate`` grants the shadow runs' SELECT privileges to.
+    shadow_role: Optional[str] = None
+    # Connections of the shadow runs' own pool, per process (opened when a shadow run starts).
+    shadow_pool_max: int = Field(default=4, ge=1)
     pool_min: int = 2
     pool_max: int = 10
     command_timeout_s: float = 30.0
@@ -282,6 +288,14 @@ class RetentionSettings(BaseModel):
 class SecuritySettings(BaseModel):
     encryption_keys: Optional[SecretStr] = None
     indicator_hmac_key: Optional[SecretStr] = None
+    # LLM hosts a shadow candidate may call besides production's own (``*.domain`` allowed). Read from the
+    # production settings only: a candidate profile replaces ``llm`` and ``agents``, never this.
+    shadow_candidate_llm_hosts: List[str] = Field(default_factory=list)
+
+    @field_validator("shadow_candidate_llm_hosts")
+    @classmethod
+    def _lower_hosts(cls, hosts: List[str]) -> List[str]:
+        return [h.strip().lower().rstrip(".") for h in hosts if h.strip()]
 
 
 class ObservabilitySettings(BaseModel):

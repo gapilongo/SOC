@@ -9,6 +9,7 @@ must do none of that, and must record what it would have done.
 
 from __future__ import annotations
 
+import dataclasses
 import smtplib
 from datetime import UTC, datetime
 from typing import Any, Dict, List
@@ -22,6 +23,7 @@ from asyncpg.exceptions import InvalidCachedStatementError, ReadOnlySQLTransacti
 from lg_sotf.core.shadow import ShadowRunner
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.core.workflow import WorkflowEngine
+from lg_sotf.db.errors import ShadowRoleRequired, SystemScopeDenied
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry, enqueue_on
@@ -36,7 +38,7 @@ from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.shadow import ShadowEgressRefused, ShadowRun, shadow_scope
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.settings import Settings
-from tests.integration.db._support import ALL_TABLES, TENANT_A, make_alert
+from tests.integration.db._support import ALL_TABLES, TENANT_A, db_settings, make_alert
 from tests.integration.engine._support import SUSPICIOUS_ENTITIES, RecordingEvents
 from tests.integration.integrations._support import Receiver, add_integration, fake_secret, public_resolver, slack_url
 
@@ -192,7 +194,7 @@ async def test_a_write_no_boundary_diverts_fails_in_shadow_mode(db: Database, re
         async with db.connection() as conn:
             with pytest.raises(ReadOnlySQLTransactionError):
                 await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
-        with pytest.raises(ReadOnlySQLTransactionError):
+        with pytest.raises(SystemScopeDenied):  # the shadow role cannot bypass isolation (AI-E1.5c)
             async with db.system_tx() as conn:
                 await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
         # A transaction retried after a stale cached statement is a new transaction: read only too.
@@ -318,3 +320,21 @@ async def test_the_shadow_runner_reads_redis_through_a_write_refusing_client(
         with pytest.raises(ShadowEgressRefused):
             await shadow_redis.delete(key)
     assert await redis_client.get(key) == b"live"
+
+
+async def test_a_shadow_run_refuses_to_start_without_the_shadow_role(
+    engine_factory: Any, repos: Repositories, db: Database, migrated_database_url: str
+) -> None:
+    """AI-E1.5c: no ``database.shadow_url``, no shadow run; it never runs on the runtime role instead."""
+    engine: WorkflowEngine = await engine_factory()
+    alert_id = await make_alert(repos, TENANT_A, title="x", severity="low")
+    runtime_only = Database(db_settings(migrated_database_url, pool_min=0, pool_max=2), application_name="no-shadow")
+    await runtime_only.open()
+    try:
+        deps = dataclasses.replace(engine.node_deps, repos=Repositories.create(runtime_only))
+        with pytest.raises(ShadowRoleRequired, match="database.shadow_url"):
+            await ShadowRunner(deps).run(TENANT_A, alert_id)
+    finally:
+        await runtime_only.close()
+    async with db.tenant_tx(TENANT_A) as conn:
+        assert await conn.fetchval("SELECT count(*) FROM shadow_effects") == 0

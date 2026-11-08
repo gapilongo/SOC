@@ -75,6 +75,7 @@ staging before production.
 | HG-PG-8 | Encrypted backups, keys stored apart, restore drills | L1 | Operator |
 | HG-PG-9 | Log connections, never statements | L2 | Operator |
 | HG-PG-10 | Point-in-time recovery | L2 | Operator |
+| HG-PG-11 | Shadow runs connect only as a SELECT-only role | L1 | Operator (shadow runs refuse to start without it) |
 | HG-RD-1 | Redis not reachable from outside the platform network | L1 | Met (compose) |
 | HG-RD-2 | Redis requires authentication | L1 | Operator |
 | HG-RD-3 | Keep `noeviction` and append-only persistence | L1 | Met (compose) |
@@ -113,7 +114,7 @@ when the JWT secret is shorter than 32 bytes, when encryption keys or the
 indicator HMAC key are missing, when a published placeholder secret is used,
 or when CORS is a wildcard, cookies are insecure, the fake model runs
 without `llm.allow_fake`, or the development database password is in the
-URL (`src/lg_sotf/settings.py:500-536`).
+URL (`src/lg_sotf/settings.py:509-545`).
 
 **Check.** Compose: `docker compose -f docker/docker-compose.yml -f
 docker/docker-compose.prod.yml config | grep LG_SOTF_ENVIRONMENT`. Helm:
@@ -196,7 +197,7 @@ reads it from `serviceMonitor.apiBearerTokenSecret`.
 
 **Level:** L1. **Default:** met: `response.dry_run=true`, and autonomy is
 `approval` for low, medium and high risk and `disabled` for critical
-(`src/lg_sotf/settings.py:294-306`).
+(`src/lg_sotf/settings.py:303-315`).
 
 **Rationale.** A misconfigured connector or policy acts on the customer's
 production systems. Dry run records what would happen and sends nothing.
@@ -243,7 +244,7 @@ MFA enforced at the IdP.
 ### HG-APP-9 Shorten the refresh-token lifetime
 
 **Level:** L2. **Default:** operator. Refresh tokens last 14 days
-(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:167`).
+(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:176`).
 
 **Rationale.** A shorter lifetime limits how long a stolen browser session
 stays useful. Per-tenant session policy (idle timeout, absolute lifetime)
@@ -282,7 +283,7 @@ the host is internal (`src/lg_sotf/llm/endpoint.py:80-100`).
 **Rationale.** `docker/docker-compose.prod.yml` creates two database roles,
 runs `staging` (HG-APP-1), and gives each container only the secrets it
 needs. No application container loads `.env`
-(`docker/docker-compose.prod.yml:16-25`).
+(`docker/docker-compose.prod.yml:19-29`).
 
 **Check.** `docker compose ls` and the command you deploy with both include
 `-f docker/docker-compose.prod.yml`. `docker compose ... config` shows no
@@ -432,7 +433,7 @@ sha256:<digest>`, after verifying them (HG-SC-1).
 **Level:** L1. **Default:** met: `runAsNonRoot`, uid and gid 10001,
 `RuntimeDefault` seccomp, no privilege escalation, read-only root
 filesystem, all capabilities dropped
-(`deploy/helm/lg-sotf/values.yaml:137-152`).
+(`deploy/helm/lg-sotf/values.yaml:144-159`).
 
 **Rationale.** See HG-CMP-3.
 
@@ -461,7 +462,7 @@ pod-security.kubernetes.io/enforce=restricted`.
 ### HG-K8S-5 Do not mount service-account tokens
 
 **Level:** L1. **Default:** met: `serviceAccount.automountServiceAccountToken:
-false` (`deploy/helm/lg-sotf/values.yaml:130-135`). The application never
+false` (`deploy/helm/lg-sotf/values.yaml:137-142`). The application never
 calls the Kubernetes API.
 
 **Rationale.** A token in the pod would give code running there access to
@@ -475,7 +476,7 @@ is `false` for every LG-SOTF pod.
 ### HG-K8S-6 Enable ingress NetworkPolicies
 
 **Level:** L1. **Default:** operator. `networkPolicy.enabled: false`
-(`deploy/helm/lg-sotf/values.yaml:477-499`). When it is enabled, the chart
+(`deploy/helm/lg-sotf/values.yaml:484-506`). When it is enabled, the chart
 refuses to render without `networkPolicy.api.from`
 (`deploy/helm/lg-sotf/templates/networkpolicy.yaml:3-4`).
 
@@ -507,7 +508,7 @@ migrate job.
 
 **Level:** L2. **Default:** operator. Egress policies are off; when enabled
 the default HTTPS destination is `0.0.0.0/0`
-(`deploy/helm/lg-sotf/values.yaml:488-499`).
+(`deploy/helm/lg-sotf/values.yaml:495-506`).
 
 **Rationale.** It limits where a compromised pod can send data. It also
 backs up the application's own egress policy
@@ -554,13 +555,13 @@ the Kubernetes audit log.
 ### HG-PG-1 Separate owner and runtime roles
 
 **Level:** L1. **Default:** met by the production compose override
-(`docker/postgres/init-roles.sh:21-30`). Helm: operator (set
+(`docker/postgres/init-roles.sh:27-47`). Helm: operator (set
 `settings.database.runtime_role` and `secrets.ownerSecret`).
 
 **Rationale.** Row-level security protects tenants only if the API and
 worker connect as a role that cannot bypass it. `lg-sotf migrate` refuses to
 grant to a runtime role that is a superuser, has `BYPASSRLS` or belongs to
-the owner role (`src/lg_sotf/db/migrate.py:227-249`).
+the owner role (`src/lg_sotf/db/migrate.py:234-256`).
 
 **Check.**
 
@@ -613,7 +614,7 @@ administration only.
 ### HG-PG-4 TLS to the database
 
 **Level:** L1. **Default:** met by Helm (`settings.database.ssl_mode:
-require`, `deploy/helm/lg-sotf/values.yaml:62`). Compose: operator (the
+require`, `deploy/helm/lg-sotf/values.yaml:69`). Compose: operator (the
 bundled PostgreSQL is on the private compose network; set it when the
 database is elsewhere).
 
@@ -627,7 +628,7 @@ application roles.
 
 **Set.** `LG_SOTF_DATABASE__SSL_MODE=require` or `settings.database.ssl_mode`.
 The setting is translated for asyncpg and psycopg
-(`src/lg_sotf/db/pool.py:90-111`).
+(`src/lg_sotf/db/pool.py:95-116`).
 
 ### HG-PG-5 Verify the database server certificate
 
@@ -714,6 +715,39 @@ managed service's PITR window is at least 7 days.
 
 **Set.** Your provider's PITR, or `pg_basebackup` with WAL archiving.
 
+### HG-PG-11 Shadow runs connect only as a SELECT-only role
+
+**Level:** L1. **Default:** operator. Without the role shadow runs refuse to
+start (`src/lg_sotf/db/pool.py:243-270`); they never fall back to the runtime
+role. The production compose override creates it when
+`LGSOTF_SHADOW_PASSWORD` is set (`docker/postgres/init-roles.sh:27-47`).
+
+**Rationale.** A shadow run replays a candidate pipeline on real alerts and
+must change nothing. Its statement guard is a pattern match that a crafted
+statement can slip past; the database role is the boundary. `lg-sotf
+migrate` grants `database.shadow_role` `SELECT` on the tenant tables except
+the credentials, and nothing else, and refuses a role that may write or
+bypass isolation (`src/lg_sotf/db/migrate.py:301-336`).
+
+**Check.** The query must return `false`, `false`, `false`, `{}` and
+`{default_transaction_read_only=on}`:
+
+```sql
+SELECT r.rolsuper, r.rolbypassrls,
+       pg_has_role(r.oid, (SELECT relowner FROM pg_class WHERE oid = 'public.tenants'::regclass), 'MEMBER'),
+       ARRAY(SELECT c.relname FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+             AND has_table_privilege(r.oid, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')),
+       r.rolconfig
+FROM pg_roles r WHERE r.rolname = 'lgsotf_shadow';
+```
+
+A worker refuses to open the shadow pool when this does not hold.
+
+**Set.** Create the role ([deployment.md section 4](deployment.md#4-two-role-postgresql-setup)),
+set `database.shadow_role` for migrate and `database.shadow_url` (Helm:
+`secrets.shadowSecret`) for the worker only, and never make the role a member
+of another role.
+
 ## 5. Redis (HG-RD)
 
 Redis holds in-flight queue entries, pub/sub for live events, rate-limit
@@ -738,7 +772,7 @@ anyone who can connect.
 **Level:** L1. **Default:** operator. The compose files run Redis without a
 password and the production override sets
 `LG_SOTF_REDIS__URL=redis://redis:6379/0`
-(`docker/docker-compose.prod.yml:40`). Not exercised by the project's CI;
+(`docker/docker-compose.prod.yml:44`). Not exercised by the project's CI;
 validate in staging.
 
 **Rationale.** Network isolation (HG-RD-1) alone leaves Redis open to every
@@ -930,7 +964,7 @@ requests.
 your largest ingest batch) and only `/api/v1/ws` has a long read timeout.
 
 **Set.** ingress-nginx annotations `proxy-body-size` and, for WebSockets,
-`proxy-read-timeout` (examples in `deploy/helm/lg-sotf/values.yaml:445-448`).
+`proxy-read-timeout` (examples in `deploy/helm/lg-sotf/values.yaml:452-455`).
 
 ### HG-PX-8 Edge rate limits for sign-in and ingest
 

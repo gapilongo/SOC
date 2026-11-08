@@ -96,6 +96,9 @@ PostgreSQL connections (asyncpg pool; the worker's LangGraph checkpointer opens 
 | `database.url` | `LG_SOTF_DATABASE__URL` | secret | `postgresql://soc:soc_dev_password@localhost:5432/soc` | Runtime DSN (API, worker). In production a non-owner role without `BYPASSRLS`. `DATABASE_URL` is honoured when this is unset. The default is the development stack's credential and is refused in staging/production. |
 | `database.migration_url` | `LG_SOTF_DATABASE__MIGRATION_URL` | secret (optional) | unset | Schema-owner DSN for `lg-sotf migrate`, the scheduler and operator commands. Defaults to `database.url` (single-role installs). |
 | `database.runtime_role` | `LG_SOTF_DATABASE__RUNTIME_ROLE` | string (optional) | unset | Login role that `lg-sotf migrate` grants runtime privileges to (two-role installs). |
+| `database.shadow_url` | `LG_SOTF_DATABASE__SHADOW_URL` | secret (optional) | unset | DSN of the SELECT-only role shadow runs connect as (`lgsotf_shadow`). Unset or empty: shadow runs refuse to start; they never use `database.url`. |
+| `database.shadow_role` | `LG_SOTF_DATABASE__SHADOW_ROLE` | string (optional) | unset | Role that `lg-sotf migrate` grants `SELECT` (and nothing else) for shadow runs; refused when it may write or bypass isolation. |
+| `database.shadow_pool_max` | `LG_SOTF_DATABASE__SHADOW_POOL_MAX` | integer | `4` | Connections of the shadow runs' own pool, per process (opened when a shadow run starts). |
 | `database.pool_min` | `LG_SOTF_DATABASE__POOL_MIN` | integer | `2` | Minimum connections per process pool. |
 | `database.pool_max` | `LG_SOTF_DATABASE__POOL_MAX` | integer | `10` | Maximum connections per process pool; size PostgreSQL `max_connections` from it (see docs/deployment.md). |
 | `database.command_timeout_s` | `LG_SOTF_DATABASE__COMMAND_TIMEOUT_S` | number | `30.0` | Client-side timeout for one database command. |
@@ -277,6 +280,7 @@ Application keys. Required in staging and production.
 |---|---|---|---|---|
 | `security.encryption_keys` | `LG_SOTF_SECURITY__ENCRYPTION_KEYS` | secret (optional) | unset | Comma-separated Fernet keys: the first encrypts, all decrypt (rotation). Encrypts source credentials and tenant secrets. |
 | `security.indicator_hmac_key` | `LG_SOTF_SECURITY__INDICATOR_HMAC_KEY` | secret (optional) | unset | HMAC key for stored indicator values (correlation). Changing it resets correlation history. |
+| `security.shadow_candidate_llm_hosts` | `LG_SOTF_SECURITY__SHADOW_CANDIDATE_LLM_HOSTS` | list[string] | `[]` | LLM hosts a shadow candidate profile may call besides production's own (`*.domain` allowed). Read from the production settings only; a candidate profile cannot extend it. |
 
 ### `observability`
 

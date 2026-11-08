@@ -287,16 +287,19 @@ Rules:
   function decorated with `@egress` refuses in shadow mode, or records the
   call in the run's sink and returns a stand-in ("would have done X"), or,
   for the local health listener only, runs. Every database transaction of
-  a shadow run is read only, and its connection refuses the statements that
-  would reach past it (`COMMIT`, `SET TRANSACTION`, `NOTIFY`/`pg_notify`,
-  session settings and advisory locks); its Redis client
+  a shadow run comes from a pool of its own, logged in as the SELECT-only
+  shadow role (`database.shadow_url`, `db/shadow_role.py`; no role, no
+  shadow run, and never the runtime pool), and is read only; its connection
+  also refuses the statements that would reach past it (`COMMIT`,
+  `SET TRANSACTION`, `NOTIFY`/`pg_notify`, session settings and advisory
+  locks), as defence in depth; its Redis client
   (`ShadowSafeRedis`) sends reads only. Threat-intelligence lookups answer
   from the cache only (a miss is `skipped`: no provider call, no quota, no
   production rate limit), so a shadow verdict can see fewer
   threat-intelligence answers than production's. LLM use stays on the run
   (never `llm_usage_daily`, which bills the tenant and seeds its budget),
   and metrics are labelled `mode="shadow"`. After the run, the sink is
-  written to `shadow_effects`, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
+  written to `shadow_effects` by the runtime role, the run's only write. `tests/unit/architecture/test_shadow_egress.py`
   finds the egress call sites (HTTP, SMTP, socket, database and Redis
   clients, every Redis write command, WebSocket sends, connector execution,
   outbox inserts) with the AST and fails on any outside a registered
