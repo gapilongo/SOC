@@ -2745,6 +2745,11 @@
             ],
             "title": "Prev Hash"
           },
+          "redacted": {
+            "default": false,
+            "title": "Redacted",
+            "type": "boolean"
+          },
           "resource_id": {
             "anyOf": [
               {
@@ -5224,6 +5229,71 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HeldGrantOut": {
+        "description": "A grant as the organisation sees it: no ``reason`` (free text the customer controls).",
+        "properties": {
+          "allow_api_keys": {
+            "default": false,
+            "title": "Allow Api Keys",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "organisation_id": {
+            "title": "Organisation Id",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "viewer",
+              "analyst",
+              "admin"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "tenant_id": {
+            "description": "The customer tenant the grant opens.",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "organisation_id",
+          "role",
+          "created_at",
+          "expires_at"
+        ],
+        "title": "HeldGrantOut",
         "type": "object"
       },
       "IncidentReportIn": {
@@ -13684,7 +13754,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "$ref": "#/components/schemas/GrantOut"
+                    "$ref": "#/components/schemas/HeldGrantOut"
                   },
                   "title": "Response Organisation Grants Api V1 Organisation Grants Get",
                   "type": "array"

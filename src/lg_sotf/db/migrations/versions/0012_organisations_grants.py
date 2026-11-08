@@ -79,7 +79,7 @@ CREATE INDEX ix_tenant_grants_tenant ON tenant_grants (tenant_id, created_at DES
 CREATE INDEX ix_tenant_grants_organisation ON tenant_grants (organisation_id, tenant_id) WHERE revoked_at IS NULL;
 
 CREATE FUNCTION tenant_grants_only_revoke() RETURNS trigger
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
     IF OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL
        AND (to_jsonb(NEW) - 'revoked_at' - 'revoked_by') = (to_jsonb(OLD) - 'revoked_at' - 'revoked_by') THEN

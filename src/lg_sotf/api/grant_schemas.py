@@ -45,6 +45,19 @@ class GrantIn(In):
     )
 
 
+class HeldGrantOut(Out):
+    """A grant as the organisation sees it: no ``reason`` (free text the customer controls)."""
+
+    id: UUID
+    tenant_id: str = Field(description="The customer tenant the grant opens.")
+    organisation_id: str
+    user_id: Optional[UUID] = None
+    role: RoleStr
+    allow_api_keys: bool = False
+    created_at: datetime
+    expires_at: datetime
+
+
 class GrantOut(Out):
     id: UUID
     tenant_id: str = Field(description="The customer tenant the grant opens.")

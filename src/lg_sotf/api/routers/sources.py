@@ -158,7 +158,9 @@ async def update_source(
 
 
 @router.delete("/{source_id}", status_code=204, summary="Delete a source")
-async def delete_source(source_id: str, request: Request, principal: Principal = Depends(require(ADMIN))) -> Response:
+async def delete_source(
+    source_id: str, request: Request, principal: Principal = Depends(require(ADMIN_NOT_UNDER_GRANT))
+) -> Response:
     ctx = get_ctx(request)
     if not await source_changes.delete_source(
         ctx.repos, AuditLogger(ctx.repos), principal.tenant_id, principal.actor, source_id

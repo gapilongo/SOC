@@ -2368,6 +2368,11 @@ export interface components {
             id: number;
             /** Prev Hash */
             prev_hash?: string | null;
+            /**
+             * Redacted
+             * @default false
+             */
+            redacted?: boolean;
             /** Resource Id */
             resource_id?: string | null;
             /** Resource Type */
@@ -3335,6 +3340,46 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HeldGrantOut
+         * @description A grant as the organisation sees it: no ``reason`` (free text the customer controls).
+         */
+        HeldGrantOut: {
+            /**
+             * Allow Api Keys
+             * @default false
+             */
+            allow_api_keys?: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Organisation Id */
+            organisation_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "viewer" | "analyst" | "admin";
+            /**
+             * Tenant Id
+             * @description The customer tenant the grant opens.
+             */
+            tenant_id: string;
+            /** User Id */
+            user_id?: string | null;
         };
         /** IncidentReportIn */
         IncidentReportIn: {
@@ -7112,7 +7157,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GrantOut"][];
+                    "application/json": components["schemas"]["HeldGrantOut"][];
                 };
             };
         };

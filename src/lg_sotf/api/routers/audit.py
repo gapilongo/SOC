@@ -38,6 +38,8 @@ class AuditEntryOut(Out):
     details: Dict[str, Any] = Field(default_factory=dict)
     prev_hash: Optional[str] = None
     hash: str
+    #: Details were cut for a caller acting under an MSSP grant, so the entry no longer matches ``hash``.
+    redacted: bool = False
 
 
 class AuditVerifyOut(BaseModel):
@@ -88,7 +90,8 @@ def _visible(entry: AuditEntryOut, principal: Principal) -> Optional[AuditEntryO
         return None
     delegation = entry.details.get("delegation")
     if isinstance(delegation, dict) and delegation.get("organisation_id") != principal.home_tenant_id:
-        return entry.model_copy(update={"details": {k: v for k, v in entry.details.items() if k != "delegation"}})
+        details = {k: v for k, v in entry.details.items() if k != "delegation"}
+        return entry.model_copy(update={"details": details, "redacted": True})
     return entry
 
 

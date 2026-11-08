@@ -437,12 +437,14 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
 
 async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
     """``principal`` acting in ``tenant_id`` under its organisation's strongest live grant, else ``None``."""
+    creator: Optional[User] = None
     if principal.is_api_key and principal.api_key_id is not None:
         # A key acts only while the member who created it is still a member, and only where allowed.
         key = await ctx.repos.api_keys.get_by_id(principal.home_tenant_id, principal.api_key_id)
-        if key is None or key.created_by is None:
+        creator = await _key_creator(ctx, principal.home_tenant_id, key.created_by if key else None)
+        if creator is None:
             return None
-        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, key.created_by, api_key=True)
+        grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, creator.id, api_key=True)
     elif principal.user_id is not None and principal.role is not None:
         grant = await ctx.repos.grants.active_for(principal.home_tenant_id, tenant_id, principal.user_id)
     else:
@@ -451,9 +453,22 @@ async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> 
         return None
     await _require_active_tenant(ctx, tenant_id)
     if principal.role is None:
-        return principal.under_grant(tenant_id, grant, None, principal.scopes & GRANT_SCOPES[grant.role])
+        assert creator is not None
+        cap = min(grant.role, creator.role, key=lambda r: ROLE_RANK[r])
+        return principal.under_grant(tenant_id, grant, None, principal.scopes & GRANT_SCOPES[cap])
     role = min(grant.role, principal.role, key=lambda r: ROLE_RANK[r])
     return principal.under_grant(tenant_id, grant, cast(Role, role), principal.scopes)
+
+
+async def _key_creator(ctx: ApiContext, tenant_id: str, user_id: Optional[UUID]) -> Optional[User]:
+    """The active account that created an organisation's API key, else ``None``."""
+    if user_id is None:
+        return None
+    try:
+        user = await ctx.repos.users.get(tenant_id, user_id)
+    except NotFound:
+        return None
+    return user if user.is_active else None
 
 
 def delegation_of(principal: Principal) -> Delegation:

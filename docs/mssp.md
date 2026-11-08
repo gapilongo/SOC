@@ -61,25 +61,33 @@ staff accounts may act in customer tenants that granted it access.
    /tenant/grants/{id}/revoke` ends one. A grant row can only be revoked,
    once: nothing extends or re-opens it, and nothing the organisation does
    (removing a member, deleting a staff account, erasing its tenant)
-   deletes it.
+   deletes it. Removing a member is not revocation: their personal grant
+   stops working, but re-adding the same account makes it work again until
+   it expires. Revoke the grant to end it for good.
 4. A member sees where they may act (`GET /organisation/grants`; members
-   and the home tenant's admins only) and acts there by sending
-   `X-Tenant-ID: <customer>` with their own sign-in.
+   and the home tenant's admins of an organisation only, without the
+   customer's `reason`) and acts there by sending `X-Tenant-ID: <customer>`
+   with their own sign-in.
 
 Under a grant the member has the grant's role, never more than their own
 role in the home tenant, and no platform-admin powers (a platform admin who
 is also a member and holds a grant acts under the grant). With the analyst
 role they decide escalations and approve, reject, roll back, retry and
 verify actions within the role's approval authority, and write notes and
-suppression rules. A suppression rule created or changed under a grant
-names the grant (`grant_id`) and expires with it at the latest. Nothing
+suppression rules. A suppression rule created under a grant names the grant
+(`grant_id`), expires with it at the latest, ends when the grant is revoked
+(in the revocation's transaction), and is ignored by the suppression gate
+once its grant is no longer live. Under a grant only such rules can be
+changed; the customer's own rules cannot be edited or deleted. Nothing
 created or changed under a grant may outlive the grant or act as a customer
 user, so even an admin grant cannot claim an escalation (it assigns it to an
 account of the customer; decide without claiming), create or change
 credentials (users, MFA resets, API keys, grants), or create or change
 channels and settings that would keep working after revocation:
 integrations of every kind (Slack, Teams, email, webhook, ticketing,
-Microsoft), sources (polling, mailboxes) and `PATCH /tenant/settings`. A
+Microsoft), sources (polling, mailboxes) and `PATCH /tenant/settings`. Nor
+can it delete what the customer configured: integrations, sources and
+suppression rules. A
 Slack app recorded as written under a grant never approves or rejects.
 
 Work queued under a grant still runs after the grant ends: actions it
@@ -100,8 +108,11 @@ Reads are recorded the same way: each request's `grant.tenant_access` in the
 customer's chain has its `delegated.grant.tenant_access` in the
 organisation's. Under a grant, `GET /audit` hides the customer's grant
 register (`grant.*` entries) and other organisations' `delegation` details
-(an entry whose details were cut no longer matches its hash; verify the
-chain with `GET /audit/verify`). The grant is read
+(such an entry carries `redacted: true` and no longer matches its hash;
+verify the chain with `GET /audit/verify`). Known limit: the evidence pack
+of an alert still shows the `delegation` details of its audit entries,
+other organisations' included, to anyone who can read it under a grant;
+redacting it is a follow-up story. The grant is read
 on every request: a revoked or expired grant, a removed member or a
 suspended customer gets 403 on the next request. Every request is written to
 the customer's audit log (`grant.tenant_access`, with the grant and the
@@ -120,10 +131,11 @@ Live updates, automation and MCP work under grants too:
 * **API keys**: an API key of the organisation's home tenant acts with
   `X-Tenant-ID` under a grant to the whole organisation (never one given to
   a single member) only when the customer set `allow_api_keys`, and only
-  while the member who created the key is still a member (removing or
-  deleting them disables the key there). Its scopes are capped by the
-  grant's role: `read` for a viewer grant, `read` and `write` for analyst and
-  admin grants, never `ingest`. Keys still never decide, approve or
+  while the member who created the key is still a member with an active
+  account (removing, disabling or deleting them disables the key there).
+  Its scopes are capped by the lower of the grant's role and its creator's
+  current role: `read` for viewer, `read` and `write` for analyst and admin,
+  never `ingest`. Keys still never decide, approve or
   administer. API keys do not expire on their own; a key acting under a
   grant stops with the grant.
 * **MCP**: `LG_SOTF_MCP__TENANT_ID` pins `lg-sotf mcp` to one customer: every

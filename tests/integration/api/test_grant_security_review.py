@@ -342,3 +342,129 @@ async def test_saving_an_organisation_is_audited_in_the_platform_admins_chain(ap
     assert saved.status_code == 200, saved.text
     assert "organisation.saved" in await _actions(api, ORG)
     assert "platform.organisation_saved" in await _actions(api, TENANT_A)
+
+
+# Round 2 ----------------------------------------------------------------------------------------
+async def test_suppression_written_under_a_grant_ends_with_its_revocation(api: ApiHarness) -> None:
+    """N1 (R1): revoking the grant ends the rules written under it, in the same transaction."""
+    await _org(api)
+    staff = await _member(api, "admin")
+    grant = await api.repos.grants.create(
+        TENANT_B, ORG, "admin", reason="cover", created_by="customer-admin",
+        expires_at=datetime.now(UTC) + timedelta(days=300),
+    )
+    h = {**api.auth(staff), "X-Tenant-ID": TENANT_B}
+    made = await api.client.post(
+        f"{API}/suppressions", json={"name": "noise", "match": {"title": "Ransomware note dropped"}}, headers=h
+    )
+    assert made.status_code == 201, made.text
+    customer = await api.login_headers(TENANT_B, "admin")
+    revoked = await api.client.post(f"{API}/tenant/grants/{grant.id}/revoke", headers=customer)
+    assert revoked.status_code == 200, revoked.text
+    assert (await api.client.get(f"{API}/alerts", headers=h)).status_code == 403
+    assert await api.repos.suppressions.list_active(TENANT_B) == []
+    stored = await api.repos.suppressions.get(TENANT_B, made.json()["id"])
+    assert stored.expires_at is not None and stored.expires_at <= datetime.now(UTC)
+    [entry] = (await api.repos.audit.list(TENANT_B, action="grant.revoked")).items
+    assert entry.details["suppression_rules_expired"] == 1
+
+
+async def test_a_rule_of_a_dead_grant_is_ignored_even_before_it_expires(api: ApiHarness) -> None:
+    """N1, defence in depth: list_active ignores rules whose grant is no longer live."""
+    await _org(api)
+    grant = await _grant(api, "admin")
+    rule = await api.repos.suppressions.create(
+        TENANT_B, "noise", {"title": "x"}, grant_id=grant.id, expires_at=datetime.now(UTC) + timedelta(days=5)
+    )
+    assert [r.id for r in await api.repos.suppressions.list_active(TENANT_B)] == [rule.id]
+    await api.repos.grants.revoke(TENANT_B, grant.id, revoked_by="customer-admin")  # the repository only
+    assert await api.repos.suppressions.list_active(TENANT_B) == []
+
+
+async def test_org_key_of_a_disabled_or_demoted_creator_stops_or_is_capped(api: ApiHarness) -> None:
+    """N2 (R3): the key acts no further than its creator's own role, and not at all once they are disabled."""
+    from tests.integration.db._support import make_alert
+
+    await _org(api)
+    creator = await _member(api, "admin")
+    await _grant(api, "admin", allow_api_keys=True)
+    alert_id = await make_alert(api.repos, TENANT_B, title="B")
+    made = await api.client.post(
+        f"{API}/api-keys", json={"name": "ops", "scopes": ["read", "write"]}, headers=api.auth(creator)
+    )
+    key = {"X-API-Key": made.json()["key"], "X-Tenant-ID": TENANT_B}
+    assert (await api.client.post(f"{API}/alerts/{alert_id}/notes", json={"text": "k"}, headers=key)).status_code == 201
+    await api.repos.users.update(ORG, creator.id, role="viewer")
+    as_key = await api.client.post(f"{API}/alerts/{alert_id}/notes", json={"text": "k"}, headers=key)
+    assert as_key.status_code == 403  # read only, like its creator
+    assert (await api.client.get(f"{API}/alerts", headers=key)).status_code == 200
+    await api.repos.users.update(ORG, creator.id, is_active=False)
+    assert (await api.client.get(f"{API}/alerts", headers=key)).status_code == 403
+
+
+async def test_no_destructive_or_silent_change_to_the_customers_configuration(api: ApiHarness) -> None:
+    """N3 (R4): no deletes of sources or rules, and the customer's own rules are not edited, under a grant."""
+    await _org(api)
+    staff = await _member(api, "admin")
+    await _grant(api, "admin")
+    source = await api.repos.sources.create(TENANT_B, "webhook", "SIEM hook", config={"format": "generic"})
+    keep = await api.repos.suppressions.create(TENANT_B, "customer permanent rule", {"title": "known scanner"})
+    gone = await api.repos.suppressions.create(TENANT_B, "customer rule 2", {"title": "other"})
+    h = {**api.auth(staff), "X-Tenant-ID": TENANT_B}
+    for method, path, body in (
+        ("PATCH", f"/sources/{source.id}", {"name": "x"}),
+        ("DELETE", f"/sources/{source.id}", None),
+        ("DELETE", f"/suppressions/{gone.id}", None),
+        ("PATCH", f"/suppressions/{keep.id}", {"name": "renamed"}),
+    ):
+        response = await api.client.request(method, f"{API}{path}", json=body, headers=h)
+        assert response.status_code == 403, (method, path, response.text)
+    stored = await api.repos.suppressions.get(TENANT_B, keep.id)
+    assert (stored.name, stored.expires_at, stored.grant_id) == ("customer permanent rule", None, None)
+    assert await api.repos.suppressions.get(TENANT_B, gone.id) is not None
+    assert await api.repos.sources.get(TENANT_B, source.id) is not None
+
+
+async def test_a_grant_to_a_regular_tenant_shows_up_nowhere(api: ApiHarness) -> None:
+    """N5 (R5): only organisations list grants, and never the grantor's free-text reason."""
+    customer = await api.login_headers(TENANT_B, "admin")
+    lure = "URGENT: your SOC licence lapses today, sign in at https://evil.example/renew"
+    made = await api.client.post(
+        f"{API}/tenant/grants",
+        json={"organisation_id": TENANT_A, "role": "admin", "reason": lure,
+              "expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat()},
+        headers=customer,
+    )
+    assert made.status_code == 201, made.text
+    seen = await api.client.get(f"{API}/organisation/grants", headers=await api.login_headers(TENANT_A, "admin"))
+    assert seen.status_code == 404 and lure not in seen.text
+    await _org(api)
+    member = await _member(api, "viewer")
+    await api.client.post(f"{API}/tenant/grants", json=_body(reason=lure), headers=customer)
+    held = await api.client.get(f"{API}/organisation/grants", headers=api.auth(member))
+    assert held.status_code == 200 and len(held.json()) == 1 and lure not in held.text
+
+
+@pytest.mark.xfail(strict=True, reason="N4, follow-up story: the evidence pack shows delegation details to delegated viewers")
+async def test_the_evidence_pack_hides_other_organisations_delegation(api: ApiHarness) -> None:
+    """R2, a known limit: documented in docs/mssp.md until the follow-up redacts the evidence pack."""
+    from tests.integration.db._support import make_alert
+
+    await _org(api)
+    await _org(api, OTHER)
+    other_staff = await _member(api, "analyst", org=OTHER)
+    await _grant(api, "analyst", org=OTHER)
+    viewer = await _member(api, "viewer")
+    await _grant(api, "viewer")
+    alert_id = await make_alert(api.repos, TENANT_B, title="B")
+    escalation, _ = await api.repos.escalations.create_or_attach(
+        TENANT_B, alert_id, reason="review", sla_deadline=datetime.now(UTC) + timedelta(hours=1)
+    )
+    decided = await api.client.post(
+        f"{API}/escalations/{escalation.id}/decision",
+        json={"decision": "false_positive", "notes": "fp", "version": escalation.version},
+        headers={**api.auth(other_staff), "X-Tenant-ID": TENANT_B},
+    )
+    assert decided.status_code == 200, decided.text
+    pack = await api.client.get(f"{API}/alerts/{alert_id}/evidence", headers={**api.auth(viewer), "X-Tenant-ID": TENANT_B})
+    assert pack.status_code == 200 and OTHER not in pack.text

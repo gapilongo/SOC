@@ -86,12 +86,14 @@ async def revoke_grant(
         grant = await repos.grants.revoke(tenant_id, grant_id, revoked_by=actor.id or actor.type, conn=conn)
         if grant is None:
             raise NotFound("grant", str(grant_id))
+        # Nothing written under the grant outlives it: its suppression rules end with it.
+        expired = await repos.suppressions.expire_for_grant(tenant_id, grant.id, conn=conn)
         known = await _is_organisation(repos, grant.organisation_id, tenant_id, conn)
         for chain in (tenant_id, grant.organisation_id) if known else (tenant_id,):
             await switch_tenant(conn, chain)
             await audit.record(
                 chain, "grant.revoked", GRANT, str(grant.id), actor_type=actor.type, actor_id=actor.id,
-                details=_grant_details(grant), conn=conn,
+                details={**_grant_details(grant), "suppression_rules_expired": expired}, conn=conn,
             )
     return grant
 

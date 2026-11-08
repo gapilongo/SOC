@@ -28,7 +28,15 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.common import aware
 from lg_sotf.api.context import get_ctx
 from lg_sotf.api.errors import ApiError
-from lg_sotf.api.grant_schemas import MAX_GRANT_DAYS, GrantIn, GrantOut, MemberOut, OrganisationIn, OrganisationOut
+from lg_sotf.api.grant_schemas import (
+    MAX_GRANT_DAYS,
+    GrantIn,
+    GrantOut,
+    HeldGrantOut,
+    MemberOut,
+    OrganisationIn,
+    OrganisationOut,
+)
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.tenancy import validate_tenant_id
@@ -103,11 +111,14 @@ async def revoke_grant(grant_id: UUID, request: Request, principal: Principal = 
 # ------------------------------------------------------- organisation side
 
 
-@organisation.get("/grants", response_model=List[GrantOut], summary="The tenants your organisation may act in")
-async def organisation_grants(request: Request, principal: Principal = Depends(require(ORG_STAFF))) -> List[GrantOut]:
+@organisation.get("/grants", response_model=List[HeldGrantOut], summary="The tenants your organisation may act in")
+async def organisation_grants(
+    request: Request, principal: Principal = Depends(require(ORG_STAFF))
+) -> List[HeldGrantOut]:
+    await _require_organisation(request, principal.tenant_id)
     await _require_staff(request, principal)
     grants = await get_ctx(request).repos.grants.list_for_organisation(principal.tenant_id)
-    return [GrantOut.model_validate(g) for g in grants]
+    return [HeldGrantOut.model_validate(g) for g in grants]
 
 
 @organisation.get("/members", response_model=List[MemberOut], summary="Staff who may act under the grants")

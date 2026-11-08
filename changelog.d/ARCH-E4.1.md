@@ -54,3 +54,11 @@
   and `GET /audit` under a grant hides the customer's grant register and
   other organisations' details. `GET /organisation/grants` and
   `/organisation/members` are for members (and the home tenant's admins).
+- MSSP grants, second review round: revoking a grant ends the suppression
+  rules written under it, and the suppression gate ignores rules of a grant
+  that is no longer live. An organisation's API key stops when its creator's
+  account is disabled and acts no further than the creator's own role.
+  Under a grant, sources and suppression rules can no longer be deleted, and
+  only rules created under a grant can be changed. `GET /organisation/grants`
+  answers for organisations only and no longer shows the customer's reason.
+  Audit entries cut for a caller under a grant carry `redacted: true`.
