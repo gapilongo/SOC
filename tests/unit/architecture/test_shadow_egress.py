@@ -200,7 +200,11 @@ def registry() -> Dict[str, EgressPoint]:
     for src in source_files():
         if egress_sites(src.tree) or _decorates_egress(src.tree):
             importlib.import_module(module_name(src.rel))
-    return {key.replace(".<locals>", ""): point for key, point in EGRESS_POINTS.items() if key.startswith("lg_sotf.")}
+    # A boundary nested in a function registers only once that function runs (an earlier test may have run it):
+    # those are checked statically, by nested_boundaries().
+    return {
+        key: point for key, point in EGRESS_POINTS.items() if key.startswith("lg_sotf.") and ".<locals>." not in key
+    }
 
 
 def test_the_scan_finds_every_kind_of_egress() -> None:
