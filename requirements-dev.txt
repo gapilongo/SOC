@@ -19,9 +19,9 @@ annotated-types==0.8.0 \
     #   -c requirements.txt
     #   lg-sotf (pyproject.toml)
     #   pydantic
-anthropic==1.17.0 \
-    --hash=sha256:ccb98b85e1a14f81cf1e2ba348393f341f342bad9e07e014f96c9b69f853aaa7 \
-    --hash=sha256:dcf77a74dde89a9fd12405fca798b012725a107f7c9488454234a74e275c2163
+anthropic==2.5.0 \
+    --hash=sha256:79756a8cafa23a8c0ab636700914d34ee968039eb6e466a8aa748210713f4c00 \
+    --hash=sha256:898848f23c473aca52b4d1b496c22e5f6125246c31e0b2161ef98cb0384131a0
     # via
     #   -c requirements.txt
     #   langchain-anthropic
