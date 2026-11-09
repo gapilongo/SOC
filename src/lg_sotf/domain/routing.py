@@ -18,6 +18,9 @@ Safety rules enforced here (contract section 8):
   tenant's autonomy tier is ``auto_full_audit``, through a model-led close
   (:mod:`lg_sotf.domain.closure`, code ``model_closed``) that every condition
   of that module allows. With the tier ``off`` a model never closes alone.
+  Policy v2.1 (FIX-2) lets a catalogued noise rule (vendor and rule id,
+  :mod:`lg_sotf.domain.noise_families`) lift only the ``unmapped`` class,
+  and tells one rule repeating apart from a campaign.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -41,7 +44,7 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
-from lg_sotf.domain import closure
+from lg_sotf.domain import closure, noise_families
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
 from lg_sotf.models.vocabulary import Route as DecideRoute
 
@@ -259,9 +262,11 @@ def _low_threat(
         state, tier=tier, max_likelihood=t.model_close_max_likelihood, min_certainty=t.model_close_min_certainty
     )
     if not blockers:
-        return Decision(
-            "close", "AI-closed, audit required: both model tiers judged it benign", "benign", closure.MODEL_CLOSED
-        )
+        reason = "AI-closed, audit required: both model tiers judged it benign"
+        family = closure.catalogued_noise(state.get("alert"))
+        if family is not None:
+            reason += f" (catalogued noise {family.family}, catalogue {noise_families.CATALOGUE_VERSION})"
+        return Decision("close", reason, "benign", closure.MODEL_CLOSED)
     return Decision("escalate", "low threat verdict lacks approved benign evidence", None, "false_positive_review")
 
 

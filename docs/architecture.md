@@ -287,10 +287,16 @@ Rules:
     the severity is info, low or medium, the detection rule maps it to
     ATT&CK and not to a never-close class (credential access, log clearing,
     tampering, ransomware, persistence through an object the attacker
-    names), triage found no steering text, no entity has a recent true
-    positive, no campaign is in progress (a burst, or a related alert a
-    model judged malicious or suspicious or still open for review), and
-    both model tiers say `benign`: fast-tier likelihood at
+    names), or it is unmapped but its vendor rule id is in the reviewed
+    noise catalogue (`lg_sotf.domain.noise_families`, FIX-2: package
+    installs, Windows software installs, Defender scan and signature status,
+    web 4xx; keyed by vendor and rule id, never by text), triage found no
+    steering text, no entity has a recent true positive, no campaign is in
+    progress (every related alert must be the same detection rule repeating,
+    judged benign by the fast tier and a threat by no model, outside the
+    never-close classes and not a plan awaiting approval, over a complete
+    related set: a different rule on the same entities is a possible kill
+    chain), and both model tiers say `benign`: fast-tier likelihood at
     most `routing.model_close_max_likelihood` (8) and deep-tier certainty at
     least `routing.model_close_min_certainty` (85). The `decide` node reads
     the tier from the tenant's settings at every decision.

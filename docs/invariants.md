@@ -61,12 +61,12 @@ Containment changes a customer's environment. An action executes only once it is
 
 ## INV-03: An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier
 
-A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed verdict. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects, unmapped alerts), steering text, entities with a recent true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier off, the default, a model never closes an alert alone.
+A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed verdict. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects, unmapped alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering text, entities with a recent true positive or a campaign in progress (anything but the same detection rule repeating as benign noise over a complete related set); such a close is marked model_closed for audit. With the tier off, the default, a model never closes an alert alone.
 
 * **Status:** enforced
 * **Owner epic:** AI-E6
 * **Threats:** TM-WRK-1, TM-WRK-2
-* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/closure.py`, `src/lg_sotf/domain/benign_evidence.py`
+* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/closure.py`, `src/lg_sotf/domain/noise_families.py`, `src/lg_sotf/domain/benign_evidence.py`
 * **Runtime checks:** `routing_policy`
 * **Evaluation metric:** `high_severity_auto_closed_benign`
 * **Proved by:**
@@ -82,7 +82,15 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class`
   * `tests/unit/domain/test_closure.py::test_a_campaign_in_progress_is_never_model_closed`
   * `tests/unit/domain/test_closure.py::test_review_f2_sentinel_credential_access_is_a_never_close_class`
+  * `tests/unit/domain/test_noise_families.py::test_a_forged_or_borrowed_title_on_an_uncatalogued_rule_stays_unmapped`
+  * `tests/unit/domain/test_noise_families.py::test_the_catalogue_lifts_only_unmapped_never_a_mapped_never_close_class`
+  * `tests/unit/domain/test_noise_families.py::test_every_other_condition_still_blocks_a_catalogued_rule`
+  * `tests/unit/domain/test_noise_families.py::test_a_malicious_or_suspicious_model_verdict_on_a_catalogued_rule_still_escalates`
+  * `tests/unit/agents/test_campaign_split.py::test_a_different_detection_on_the_same_host_is_a_possible_kill_chain`
+  * `tests/unit/agents/test_campaign_split.py::test_a_same_rule_alert_still_counts_against_closing_when`
+  * `tests/unit/agents/test_campaign_split.py::test_an_incomplete_related_set_fails_closed`
   * `tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close`
+  * `tests/integration/engine/test_model_closure.py::test_catalogued_noise_and_its_repeats_close_but_another_rule_on_the_host_does_not`
   * `tests/integration/eval/test_adversarial_v2_eval.py::test_no_malicious_close_with_model_led_closure_on`
   * `tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert`
   * `tests/unit/agents/test_title_camouflage.py::test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules`

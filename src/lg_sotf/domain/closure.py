@@ -1,4 +1,4 @@
-"""Model-led closure (decision policy v2, FIX-1): the tenant's autonomy tier and when a model may close.
+"""Model-led closure (decision policy v2.1, FIX-1 and FIX-2): the tenant's autonomy tier and when a model may close.
 
 Without approved benign evidence (:func:`lg_sotf.domain.routing.decide`), a
 low or medium alert is closed on the models' word only when the tenant chose
@@ -15,16 +15,27 @@ missing or unreadable value blocks the close.
   names (scheduled tasks, services, autostart entries, WMI subscriptions,
   accounts), whose alert text is the attacker's. An alert the rule maps to
   no tactic or technique is ``unmapped`` and counts as a never-close class:
-  nothing shows it is outside them;
+  nothing shows it is outside them. The one exception is a detection rule in
+  the reviewed noise catalogue (:mod:`lg_sotf.domain.noise_families`,
+  FIX-2), keyed by vendor and rule id, never by title or description text:
+  it lifts ``unmapped`` and nothing else (:func:`model_close_class`);
 * no steering text: triage did not flag ``prompt_injection_suspected``;
 * no recent true positive on the alert's entities: no analyst-confirmed
   malicious history (``prior_malicious_history``), no related alert of the
   correlation window closed as malicious, and no rule evidence that
   corroborates a threat (``rule_corroborated``);
-* no campaign in progress: no burst of related alerts, no related alert a
-  model judged malicious or suspicious, none still open for an analyst or an
-  approval (counted over every related alert, not only those shown to the
-  correlation model), so an attack is never closed alert by alert;
+* no campaign in progress (FIX-2): every related alert of the correlation
+  window is the same detection rule repeating as noise
+  (``related_rule_repeats`` equals ``related_count``): the same vendor rule
+  id as this alert, judged benign by the fast tier, judged a threat by no
+  model, not a never-close class and not a response plan awaiting approval.
+  A related alert of a different rule on the same entities is a possible
+  kill chain and blocks, whatever its status. A burst of one rule judged
+  benign is repetition, not a campaign. The set must be complete
+  (``related_complete``): when the correlation query hit its limit or a
+  related alert was hidden for a blind audit, the close is blocked. A digest
+  without these fields (unknown) blocks too, so an attack is never closed
+  alert by alert;
 * both model tiers say benign: the fast tier's assessment is ``benign`` with
   a threat likelihood at most ``routing.model_close_max_likelihood``
   (default 8), and the deep tier's verdict is ``benign`` with a certainty of
@@ -33,6 +44,8 @@ missing or unreadable value blocks the close.
 
 A model-led close carries the decision code ``model_closed`` and the close
 reason ``ai_closed:audit_required``: an analyst is expected to audit it.
+When the noise catalogue lifted ``unmapped``, the decision reason names the
+family and the catalogue version.
 Correlation shows such an alert to later models as ``ai_closed_unaudited``,
 never as ``benign``, so one persuaded close cannot vouch for the next.
 
@@ -52,6 +65,7 @@ from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
+from lg_sotf.domain.noise_families import NoiseFamily, noise_family
 
 __all__ = [
     "AUTONOMY_TIERS",
@@ -67,8 +81,10 @@ __all__ = [
     "SETTING",
     "UNMAPPED",
     "autonomy_tier",
+    "catalogued_noise",
     "evidence_close_blockers",
     "model_close_blockers",
+    "model_close_class",
     "never_close_class",
     "validate_ai_closure_settings",
 ]
@@ -172,6 +188,25 @@ def never_close_class(alert: Any) -> Optional[str]:
     return None if tactics or techniques else UNMAPPED
 
 
+def catalogued_noise(alert: Any) -> Optional[NoiseFamily]:
+    """The catalogued noise family that lifts the alert's ``unmapped`` class, or ``None`` (FIX-2).
+
+    ``None`` unless the alert is :data:`UNMAPPED` and its vendor detection rule
+    id is in the catalogue: a mapped alert never needs the lift, and a mapped
+    never-close class is never lifted.
+    """
+    return noise_family(alert) if never_close_class(alert) == UNMAPPED else None
+
+
+def model_close_class(alert: Any) -> Optional[str]:
+    """The never-close class that blocks a model-led close: :func:`never_close_class`, except that a detection rule
+    in the noise catalogue lifts ``unmapped`` (and only ``unmapped``)."""
+    found = never_close_class(alert)
+    if found == UNMAPPED and catalogued_noise(alert) is not None:
+        return None
+    return found
+
+
 def _number(value: Any) -> Optional[float]:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
@@ -208,17 +243,24 @@ def _recent_true_positive(analysis: Mapping[str, Any], correlation: Mapping[str,
 
 
 def _campaign_in_progress(correlation: Mapping[str, Any]) -> bool:
-    """Related alerts that may be one attack: a burst, one a model judged malicious or suspicious, or one still
-    open for review. Unknown counts (a digest without them) fail closed."""
+    """Related alerts that may be one attack (FIX-2): anything but the same detection rule repeating as noise.
+
+    The close is allowed only when there is no related alert (and none was
+    left out), or when the related set is complete and every related alert is
+    a quiet repeat of this alert's rule (``related_rule_repeats`` equals
+    ``related_count``) and none was judged a threat. A burst made only of such
+    repeats is repetition, not a campaign. Unknown or inconsistent counts (a
+    digest without them) fail closed.
+    """
     related = _number(correlation.get("related_count"))
-    if related is None:
+    complete = correlation.get("related_complete")
+    if related is None or related < 0:
         return True
     if related == 0:
-        return False
-    if correlation.get("burst") is not False:
-        return True
-    counts = [_number(correlation.get(key)) for key in ("related_threats", "related_open_reviews")]
-    return any(count is None or count > 0 for count in counts)
+        return complete is False
+    repeats = _number(correlation.get("related_rule_repeats"))
+    threats = _number(correlation.get("related_threats"))
+    return not (complete is True and repeats == related and threats == 0)
 
 
 def _steering_text(triage: Mapping[str, Any]) -> bool:
@@ -263,7 +305,7 @@ def model_close_blockers(
     checks = (
         ("tier_off", tier != MODEL_CLOSE_TIER),
         ("severity", state.get("severity") not in CLOSABLE_SEVERITIES),
-        ("never_close_class", never_close_class(state.get("alert")) is not None),
+        ("never_close_class", model_close_class(state.get("alert")) is not None),
         ("steering_text", _steering_text(triage)),
         ("recent_true_positive", _recent_true_positive(analysis, correlation)),
         ("campaign_in_progress", _campaign_in_progress(correlation)),

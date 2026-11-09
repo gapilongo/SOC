@@ -36,6 +36,7 @@ class StoredAlert:
     disposition: Optional[str] = None
     occurred_at: datetime = NOW
     normalized: Dict[str, Any] = field(default_factory=dict)
+    raw: Dict[str, Any] = field(default_factory=dict)
     summary: Dict[str, Any] = field(default_factory=dict)
 
 

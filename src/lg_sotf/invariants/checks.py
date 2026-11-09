@@ -130,7 +130,8 @@ def _benign_state(severity: str, *, evidence: bool = True, tactic: Optional[str]
 
 def check_routing_policy(settings: Settings) -> CheckResult:
     """With this install's thresholds, a benign verdict never closes a high alert at any autonomy tier, a model
-    never closes alone with the tier ``off``, and never a never-close class (INV-03)."""
+    never closes alone with the tier ``off``, never a never-close class, and never next to a different detection on
+    the alert's entities (a possible campaign, FIX-2) (INV-03)."""
     thresholds = RoutingThresholds.from_settings(settings.routing)
     closed: List[str] = []
     for severity in sorted(HIGH_SEVERITIES):
@@ -144,6 +145,11 @@ def check_routing_policy(settings: Settings) -> CheckResult:
     credential = _benign_state("low", evidence=False, tactic="Credential Access")
     if decide(credential, thresholds, MODEL_CLOSE_TIER).route == "close":
         closed.append("credential access alert closed on the models' verdict")
+    chain = _benign_state("low", evidence=False)
+    chain["correlation"] = {"related_count": 1, "related_rule_repeats": 0, "related_complete": True,
+                           "related_threats": 0, "related_dispositions": {"benign": 1}}
+    if decide(chain, thresholds, MODEL_CLOSE_TIER).route == "close":
+        closed.append("alert closed on the models' verdict next to a different detection on its entities")
     corroborated = _benign_state("low")
     corroborated["analysis"].update(rule_corroborated=True, rule_evidence=["threat_intel_malicious"])
     if decide(corroborated, thresholds, "off").route == "close":
@@ -152,7 +158,7 @@ def check_routing_policy(settings: Settings) -> CheckResult:
         "routing_policy",
         not closed,
         "; ".join(closed) or "a benign model verdict closes no high or critical alert, nothing with model-led closure "
-        "off, no never-close class, and no alert with evidence of a threat",
+        "off, no never-close class, nothing next to a different detection, and no alert with evidence of a threat",
     )
 
 

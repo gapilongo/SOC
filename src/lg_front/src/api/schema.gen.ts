@@ -2042,11 +2042,13 @@ export interface components {
                     llm_skipped?: string | null;
                     llm_used?: boolean;
                     related_alert_ids?: string[];
+                    related_complete?: boolean;
                     related_count?: number;
                     related_dispositions?: {
                         [key: string]: number;
                     };
                     related_open_reviews?: number;
+                    related_rule_repeats?: number;
                     related_threats?: number;
                     score?: number;
                 };
@@ -2290,11 +2292,13 @@ export interface components {
                     llm_skipped?: string | null;
                     llm_used?: boolean;
                     related_alert_ids?: string[];
+                    related_complete?: boolean;
                     related_count?: number;
                     related_dispositions?: {
                         [key: string]: number;
                     };
                     related_open_reviews?: number;
+                    related_rule_repeats?: number;
                     related_threats?: number;
                     score?: number;
                 };

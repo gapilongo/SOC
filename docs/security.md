@@ -251,9 +251,11 @@ close a dangerous alert or trigger containment.
    `auto_full_audit`. Then both model tiers may close a low or medium alert
    alone, marked `ai_closed:audit_required`, but never a never-close class
    (credential access, log clearing, tampering, ransomware, persistence
-   through attacker-named objects, or an alert without an ATT&CK mapping),
+   through attacker-named objects, or an alert without an ATT&CK mapping
+   unless its vendor rule id is in the reviewed noise catalogue, FIX-2),
    never with steering text, a recent true positive on its entities or a
-   campaign in progress among its related alerts, and
+   campaign in progress among its related alerts (anything but the same
+   detection rule repeating as benign noise), and
    only when the fast tier's likelihood is at most 8 and the deep tier's
    certainty at least 85 (install settings). The routing policy chooses to plan a response from the threat
    score; what then runs automatically is decided per action: automatic

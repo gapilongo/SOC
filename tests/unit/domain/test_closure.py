@@ -334,12 +334,25 @@ def test_a_scanner_or_test_source_never_closes_a_never_close_class(mitre: Dict[s
 @pytest.mark.parametrize(
     "correlation",
     [
+        # FIX-1 digests (no repeat count, no completeness): unknown, so they fail closed whatever they say.
         {"related_count": 3, "burst": True, "related_threats": 0, "related_open_reviews": 0},
         {"related_count": 3, "burst": False, "related_threats": 1, "related_open_reviews": 0},
         {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 2},
-        {"related_count": 3, "burst": False},  # counts unknown: fail closed
-        {"related_count": 3, "related_threats": 0, "related_open_reviews": 0},  # burst unknown
+        {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 0},
+        {"related_count": 3, "burst": False},
         {},  # nothing known about related alerts
+        # FIX-2 digests: anything but a complete set of quiet repeats of this rule.
+        {"related_count": 3, "related_rule_repeats": 2, "related_complete": True, "related_threats": 0},
+        {"related_count": 3, "related_rule_repeats": 3, "related_complete": False, "related_threats": 0},
+        {"related_count": 3, "related_rule_repeats": 3, "related_threats": 0},  # completeness unknown
+        {"related_count": 3, "related_rule_repeats": 3, "related_complete": "true", "related_threats": 0},
+        {"related_count": 3, "related_rule_repeats": 3, "related_complete": True, "related_threats": 1},
+        {"related_count": 3, "related_rule_repeats": 3, "related_complete": True},  # threats unknown
+        {"related_count": 3, "related_rule_repeats": None, "related_complete": True, "related_threats": 0},
+        {"related_count": 3, "related_rule_repeats": 4, "related_complete": True, "related_threats": 0},
+        {"related_count": -1, "related_rule_repeats": -1, "related_complete": True, "related_threats": 0},
+        {"related_count": True, "related_rule_repeats": True, "related_complete": True, "related_threats": 0},
+        {"related_count": 0, "related_complete": False},  # every related alert was hidden for a blind audit
     ],
 )
 def test_a_campaign_in_progress_is_never_model_closed(correlation: Dict[str, Any]) -> None:
@@ -348,9 +361,13 @@ def test_a_campaign_in_progress_is_never_model_closed(correlation: Dict[str, Any
     assert routing.decide(state, T, AUTO).route == "escalate"
 
 
-def test_quiet_related_alerts_do_not_block_a_model_led_close() -> None:
-    quiet = {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 0,
-             "related_dispositions": {"benign": 2, "undecided": 1}}
-    assert routing.decide(benign_state(correlation=quiet), T, AUTO).code == MODEL_CLOSED
-    ai_closed = {**quiet, "related_dispositions": {"ai_closed_unaudited": 3}}
-    assert routing.decide(benign_state(correlation=ai_closed), T, AUTO).code == MODEL_CLOSED
+def test_a_burst_of_the_same_rule_judged_benign_is_not_a_campaign() -> None:
+    """FIX-2: the same detection rule repeating, every repeat judged benign, over a complete related set, does not
+    block; the burst and open reviews (the repeats waiting for an analyst) no longer block on their own."""
+    repeats = {"related_count": 9, "related_rule_repeats": 9, "related_complete": True, "related_threats": 0,
+               "burst": True, "frequency_level": "high", "related_open_reviews": 9,
+               "related_dispositions": {"undecided": 6, "ai_closed_unaudited": 3}}
+    assert routing.decide(benign_state(correlation=repeats), T, AUTO).code == MODEL_CLOSED
+    for alone in ({"related_count": 0, "related_dispositions": {}},
+                  {"related_count": 0, "related_complete": True, "related_dispositions": {}}):
+        assert routing.decide(benign_state(correlation=alone), T, AUTO).code == MODEL_CLOSED
