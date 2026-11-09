@@ -14,6 +14,7 @@ from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.connectors import ConnectorResult
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.errors import InvalidResumePayload
 from lg_sotf.services.connectors.dry_run import DryRunConnector
 from lg_sotf.services.response import ResponseService
@@ -230,7 +231,7 @@ async def test_needs_more_info_returns_to_analysis_at_most_once(
     assert final.alert_status == "closed"
     alert = await repos.alerts.get(TENANT_A, alert_id)
     assert alert.disposition == "benign" and alert.summary["close_reason"] == "analyst:false_positive"
-    key = f"{engine_settings.redis.key_prefix}:t:{TENANT_A}:verdict:{alert.fingerprint}"
+    key = engine.node_deps.verdicts.key(TENANT_A, str(verdict_key_of(alert)))
     assert await redis_client.exists(key) == 1
     assert 0 < await redis_client.ttl(key) <= 7 * 24 * 3600
 
@@ -238,28 +239,50 @@ async def test_needs_more_info_returns_to_analysis_at_most_once(
 async def test_verdict_cache_closes_repeats_but_never_critical(
     engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Two analysts' benign decisions on one verdict key close a repeat; one analyst (even twice) does not, nor
+    another behaviour or a critical alert."""
     alert_id = await suspicious_alert(repos)
     user_id = await analyst(repos)
     first = await engine.run(TENANT_A, alert_id)
     await decide(engine, repos, alert_id, first.interrupt["escalation_id"], "benign_positive", user_id)
     fingerprint = (await repos.alerts.get(TENANT_A, alert_id)).fingerprint
-    triage_calls = count_calls(monkeypatch, engine.agents.triage, "run")
 
-    async def repeat(severity: str) -> str:
+    async def repeat(severity: str, process: str = "powershell.exe") -> str:
         row = NewAlert(
             source_id="splunk-prod", source_alert_id=uuid4().hex, fingerprint=fingerprint, title="Possible C2 beacon",
-            severity=severity, occurred_at=datetime.now(UTC), normalized={"entities": SUSPICIOUS_ENTITIES},
+            severity=severity, occurred_at=datetime.now(UTC),
+            normalized={"entities": {**SUSPICIOUS_ENTITIES, "processes": [process]}},
         )
         return (await repos.alerts.insert_many_if_absent(TENANT_A, [row]))[0]
+
+    # One analyst decision is not enough: the repeat is investigated and goes to an analyst again.
+    second_id = await repeat("medium")
+    second = await engine.run(TENANT_A, second_id)
+    assert second.interrupt is not None and (await repos.alerts.get(TENANT_A, second_id)).status != "closed"
+    await decide(engine, repos, second_id, second.interrupt["escalation_id"], "false_positive", user_id)
+    # The same analyst twice is still one analyst: a third repeat goes to an analyst, this time another one.
+    third_id = await repeat("medium")
+    third = await engine.run(TENANT_A, third_id)
+    assert third.interrupt is not None and (await repos.alerts.get(TENANT_A, third_id)).status != "closed"
+    await decide(engine, repos, third_id, third.interrupt["escalation_id"], "false_positive", await analyst(repos))
+    triage_calls = count_calls(monkeypatch, engine.agents.triage, "run")
 
     medium = await repeat("medium")
     assert (await engine.run(TENANT_A, medium)).alert_status == "closed"
     closed = await repos.alerts.get(TENANT_A, medium)
     assert closed.summary["suppressed_by"]["type"] == "verdict_cache" and not triage_calls
 
+    # Same fingerprint, another process: not the activity the analysts decided.
+    other = await repeat("low", process="c:\\windows\\psexesvc.exe")
+    await engine.run(TENANT_A, other)
+    assert triage_calls, "another behaviour must never be closed from the verdict cache"
+    assert (await repos.alerts.get(TENANT_A, other)).summary.get("suppressed_by") is None
+
     critical = await repeat("critical")
     await engine.run(TENANT_A, critical)
-    assert triage_calls, "critical alerts must never be closed from the verdict cache"
+    assert (await repos.alerts.get(TENANT_A, critical)).summary.get("suppressed_by") is None, (
+        "critical alerts must never be closed from the verdict cache"
+    )
 
 
 async def test_suppression_rule_closes_before_triage(
@@ -523,8 +546,8 @@ async def test_crash_after_close_committed_is_finished_on_redelivery(
     nodes = [e.node for e in (await repos.alert_events.list_for_alert(TENANT_A, alert_id, limit=100)).items]
     assert nodes.count("close") == 1
     assert any(e["data"].get("status") == "closed" and e["data"].get("node") == "close" for e in events.of_type("alert.updated"))
-    fingerprint = (await repos.alerts.get(TENANT_A, alert_id)).fingerprint
-    assert await redis_client.exists(f"{engine_settings.redis.key_prefix}:t:{TENANT_A}:verdict:{fingerprint}") == 1
+    key = engine.node_deps.verdicts.key(TENANT_A, str(verdict_key_of(await repos.alerts.get(TENANT_A, alert_id))))
+    assert await redis_client.exists(key) == 1
     snapshot = await engine.graph.aget_state({"configurable": {"thread_id": thread_id_for(TENANT_A, alert_id)}})
     assert snapshot.next == ()
 
@@ -628,3 +651,46 @@ async def test_spoofed_fp_keywords_never_close_high_severity(
     assert outcome.status == "waiting_human"
     nodes = [e.node for e in (await repos.alert_events.list_for_alert(TENANT_A, alert_id)).items]
     assert nodes[:4] == ["gate", "triage", "correlation", "analysis"]
+
+
+async def test_plan_response_and_the_malicious_close_revoke_the_benign_learning(
+    engine: WorkflowEngine, repos: Repositories, redis_client: Any
+) -> None:
+    """#343 M3: a response planned for the alert, and the malicious close after it, disable the rules that match it
+    and tombstone its verdict key and fingerprint."""
+    from lg_sotf.core.verdict_cache import MALICIOUS_FIELD
+
+    alert_id = await suspicious_alert(repos)
+    user_id = await analyst(repos)
+    first = await engine.run(TENANT_A, alert_id)
+    assert first.status == "waiting_human"
+    stored = await repos.alerts.get(TENANT_A, alert_id)
+    key = verdict_key_of(stored)
+    assert key is not None
+    rule = await repos.suppressions.create(TENANT_A, "suggested", {"verdict_key": key}, enabled=True)
+    cache = engine.node_deps.verdicts
+    for analyst_id in ("a1", "a2"):
+        await cache.put_analyst_benign(TENANT_A, key, decision="false_positive", alert_id="earlier",
+                                       escalation_id=None, decided_by=analyst_id, severity="medium")
+
+    second = await decide(engine, repos, alert_id, first.interrupt["escalation_id"], "true_positive", user_id)
+    assert second.status == "waiting_approval"
+    assert (await repos.suppressions.get(TENANT_A, rule.id)).enabled is False  # plan_response
+    record = await cache.get(TENANT_A, key, fingerprint=stored.fingerprint)
+    assert record is not None and record["decisions"] == [] and len(record["threats"]) == 2
+
+    # Enabled again by hand before the response finished: the malicious close disables it again.
+    await repos.suppressions.update(TENANT_A, rule.id, enabled=True)
+    await redis_client.delete(cache.key(TENANT_A, key))
+    done = await engine.resume(
+        TENANT_A, alert_id,
+        {"type": "approval", "approved_action_ids": [], "rejected_action_ids": [], "decided_by": user_id,
+         "reject_remaining": True},
+    )
+    assert done.status == "completed"
+    alert = await repos.alerts.get(TENANT_A, alert_id)
+    assert (alert.status, alert.disposition) == ("closed", "malicious")
+    assert (await repos.suppressions.get(TENANT_A, rule.id)).enabled is False
+    assert await redis_client.hexists(cache.key(TENANT_A, key), MALICIOUS_FIELD)
+    revoked = [e.resource_id for e in (await repos.audit.list(TENANT_A, action="suppression.revoked")).items]
+    assert revoked == [rule.id, rule.id]

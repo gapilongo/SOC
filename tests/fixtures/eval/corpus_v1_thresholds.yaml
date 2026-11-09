@@ -37,6 +37,13 @@ metrics:
   families.sshd.malicious_false_negative_rate: {max: 0}
   families.syslog.malicious_false_negative_rate: {max: 0}
   families.web.malicious_false_negative_rate: {max: 0}
+  families.sysmon.malicious_auto_close_rate: {max: 0}
+  families.windows.malicious_auto_close_rate: {max: 0}
+  families.syscheck.malicious_auto_close_rate: {max: 0}
+  families.audit.malicious_auto_close_rate: {max: 0}
+  families.sshd.malicious_auto_close_rate: {max: 0}
+  families.syslog.malicious_auto_close_rate: {max: 0}
+  families.web.malicious_auto_close_rate: {max: 0}
   # Benign alerts the policy turned into a response plan waiting for approval (a human still decides).
   benign_auto_response_rate: {max: 0.02}
   per_class.malicious.recall: {min: 0.014}

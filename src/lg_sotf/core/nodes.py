@@ -16,12 +16,13 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
 from lg_sotf.core.state import (
     AlertSummary,
@@ -33,19 +34,19 @@ from lg_sotf.core.state import (
     RoutingDigest,
     SuppressedBy,
 )
-from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
-from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
+from lg_sotf.domain.suppression import alert_match_view, fingerprint_suggestion, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.security.shadow import shadow_run_id
-from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.escalation import WORKFLOW_ACTOR, EscalationService
 from lg_sotf.services.plan_context import plan_context
 from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
@@ -186,6 +187,11 @@ class WorkflowNodes:
 
     async def gate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert = state["tenant_id"], state["alert"]
+        raw_flags = alert.get("flags")
+        # An LLM-normalised alert's fields were chosen by a model from attacker-shaped text: no suppression
+        # rule and no cached verdict closes it.
+        if "llm_normalized" in (raw_flags if isinstance(raw_flags, list) else []):
+            return {"gate": {"suppressed": False}, EVENT_KEY: {"suppressed": False}}
         view = alert_match_view(
             title=str(alert.get("title", "")),
             severity=state["severity"],
@@ -194,20 +200,20 @@ class WorkflowNodes:
             source_alert_id=str(alert.get("source_alert_id", "")),
             fingerprint=state.get("fingerprint", ""),
             normalized=alert,
+            verdict_key=state.get("verdict_key"),
         )
-        rules = await self.deps.repos.suppressions.list_active(tenant_id)
+        # Suggestions written before verdict keys matched a fingerprint alone; migration 0016 disabled them.
+        rules = [r for r in await self.deps.repos.suppressions.list_active(tenant_id) if not fingerprint_suggestion(r)]
         match = first_matching_rule(rules, view)
         if match is not None:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
             by: SuppressedBy = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
-        raw_flags = alert.get("flags")
-        flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
-        # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
-        # attacker-shaped text: it never inherits a cached verdict.
-        if state["severity"] != "critical" and "llm_normalized" not in flags:
-            cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
-            if cached is not None and cache_applies(cached, state["severity"]):
+        if state["severity"] != "critical":
+            cached = await self.deps.verdicts.closing_decision(
+                tenant_id, state.get("verdict_key"), state["severity"], fingerprint=state.get("fingerprint")
+            )
+            if cached is not None:
                 cache_hit: SuppressedBy = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
@@ -372,7 +378,7 @@ class WorkflowNodes:
             alert_id,
             str(waiting_on),
             decision=str(decision.get("decision")),
-            fingerprint=state.get("fingerprint") or None,
+            verdict_key=state.get("verdict_key"),
             severity=state["severity"],
         )
         if not scope.inherited:
@@ -417,6 +423,11 @@ class WorkflowNodes:
         own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
+    async def _forget_benign_learning(self, state: WorkflowState) -> None:
+        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again."""
+        alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
+        await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
+
     def _evidence(self, state: WorkflowState) -> str:
         """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.
 
@@ -458,7 +469,7 @@ class WorkflowNodes:
             approver_role=analyst.get("approver_role") if is_tp else None,
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
-        await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+        await self._forget_benign_learning(state)
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
         response: ResponseSummary = {
             "threat_type": plan.threat_type,
@@ -610,14 +621,15 @@ class WorkflowNodes:
         if analyst.get("decision") in BENIGN_DECISIONS:
             await self.deps.verdicts.put_analyst_benign(
                 tenant_id,
-                state.get("fingerprint", ""),
+                state.get("verdict_key"),
                 decision=str(analyst["decision"]),
                 alert_id=alert_id,
                 escalation_id=state.get("escalation_id"),
+                decided_by=str(analyst.get("decided_by") or "") or None,
                 severity=state["severity"],
             )
         elif disposition == "malicious":
-            await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+            await self._forget_benign_learning(state)
         return {
             "disposition": disposition,
             "close_reason": reason,

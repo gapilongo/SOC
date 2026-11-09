@@ -25,6 +25,7 @@ CONTRACT_METRICS = {
     "lgsotf_llm_refusals_total": ("agent", "category", "mode"),
     "lgsotf_llm_skipped_total": ("agent", "reason", "mode"),
     "lgsotf_enrichment_lookups_total": ("provider", "status", "mode"),
+    "lgsotf_revocation_failures_total": ("path",),
     # Integrations outbox and ticket sync (docs/integrations.md).
     "lgsotf_integration_deliveries_total": ("kind", "outcome"),
     "lgsotf_ticket_syncs_total": ("system", "outcome"),

@@ -12,7 +12,7 @@ Threat rows refer to [threat-model.md](threat-model.md).
 |---|---|---|---|---|
 | INV-01 | Every tenant table has forced row-level security, and the runtime role cannot bypass it | enforced | `rls_catalog`, `runtime_role`, `rls_probe` | TM-DB-1, TM-DB-2, TM-SCH-1, TM-API-3 |
 | INV-02 | No response action runs without an approval or an autonomy rule that allows it; the kill switch wins | enforced | `kill_switch` | TM-WRK-3, TM-RSP-4, TM-RSP-5, TM-MCP-6 |
-| INV-03 | An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2 |
+| INV-03 | An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
 | INV-04 | Every LLM call records its prompt hash and model id | enforced | none | TM-WRK-8 |
 | INV-05 | Every LLM and tool step of a run is in the trace store | enforced | none | TM-WRK-8, TM-EVT-6 |
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
@@ -61,12 +61,12 @@ Containment changes a customer's environment. An action executes only once it is
 
 ## INV-03: An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier
 
-A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed verdict. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects, authentication failures by vendor rule group, unmapped alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering text, entities with a recent true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier off, the default, a model never closes an alert alone.
+A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed verdict. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects, authentication failures by vendor rule group, unmapped alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering text, entities with a recent true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier off, the default, a model never closes an alert alone. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) that two different analysts decided benign, with no threat on it since; alerts in a never-close class, normalised by a model or without a process, command line, service, scheduled task, registry key, target file or Sysmon WMI object get no key (a URL, user agent, O365 operation or other request-set context is in the key but never enough for one). A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never apply, and a confirmed threat disables the rules that match it.
 
 * **Status:** enforced
 * **Owner epic:** AI-E6
-* **Threats:** TM-WRK-1, TM-WRK-2
-* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/closure.py`, `src/lg_sotf/domain/noise_families.py`, `src/lg_sotf/domain/benign_evidence.py`
+* **Threats:** TM-WRK-1, TM-WRK-2, TM-WRK-10
+* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/closure.py`, `src/lg_sotf/domain/benign_evidence.py`, `src/lg_sotf/domain/noise_families.py`, `src/lg_sotf/domain/verdict_key.py`, `src/lg_sotf/core/verdict_cache.py`, `src/lg_sotf/core/benign_learning.py`
 * **Runtime checks:** `routing_policy`
 * **Evaluation metric:** `high_severity_auto_closed_benign`
 * **Proved by:**
@@ -94,6 +94,23 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert`
   * `tests/unit/agents/test_title_camouflage.py::test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules`
   * `tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence`
+  * `tests/unit/core/test_verdict_cache_replay.py::test_analyst_oracle_replay_closes_no_malicious_alert`
+  * `tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes`
+  * `tests/unit/core/test_verdict_cache.py::test_one_analyst_is_not_enough_two_different_ones_are`
+  * `tests/unit/domain/test_verdict_key.py::test_never_close_classes_get_no_key`
+  * `tests/unit/domain/test_verdict_key.py::test_context_alone_never_makes_a_key`
+  * `tests/unit/domain/test_verdict_key_review.py::test_a_real_sql_injection_does_not_inherit_a_false_positives_verdict`
+  * `tests/unit/core/test_gate.py::test_a_fingerprint_suggestion_never_closes_even_enabled_again_by_an_admin`
+  * `tests/unit/domain/test_verdict_key.py::test_attacker_writable_differences_never_share_a_key`
+  * `tests/unit/domain/test_verdict_key_review.py::test_a_malicious_scheduled_task_does_not_inherit_a_benign_tasks_verdict`
+  * `tests/unit/domain/test_verdict_key_review.py::test_a_payload_appended_past_512_characters_changes_the_key`
+  * `tests/integration/api/test_revocation.py::test_a_true_positive_decision_disables_matching_rules_and_tombstones_the_cache`
+  * `tests/integration/engine/test_engine.py::test_plan_response_and_the_malicious_close_revoke_the_benign_learning`
+  * `tests/integration/db/test_migrations.py::test_0016_disables_fingerprint_suggestions_and_audits_each_in_its_chain`
+  * `tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window`
+  * `tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read`
+  * `tests/integration/eval/test_oracle_corpus_v1.py::test_the_oracle_closes_no_attack_on_corpus_v1`
+  * `tests/integration/services/test_review.py::test_a_confirmed_threat_disables_the_suppression_rules_that_would_close_it`
 
 ## INV-04: Every LLM call records its prompt hash and model id
 

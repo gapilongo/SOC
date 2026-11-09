@@ -10,6 +10,32 @@
 | Reports generated | 2026-11-07T20:49:38.039302+00:00, 2026-11-07T21:15:49.241638+00:00 |
 | Scorecard format | v1 |
 
+## Headline: closure
+
+Benign closure rate: expected-benign items automation closed as benign (95% Wilson interval). Malicious auto-close: expected-malicious items automation closed with any disposition, with the exact one-sided 95% upper bound.
+
+| Dataset | Benign closure rate | Malicious auto-close |
+|---|---|---|
+| `synthetic_v1` | 28.6% (6 of 21; 95% CI 13.8% to 50.0%) | 0 of 35 (0.0%; 95% upper bound 8.2%) |
+| `phishing_v1` | 45.5% (5 of 11; 95% CI 21.3% to 72.0%) | 0 of 24 (0.0%; 95% upper bound 11.7%) |
+
+| Dataset | Mechanism | Benign closed | Malicious closed |
+|---|---|---|---|
+| `synthetic_v1` | rules | 19.0% (4 of 21; 95% CI 7.7% to 40.0%) | 0 |
+| `synthetic_v1` | model | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 0 |
+| `synthetic_v1` | history | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 0 |
+| `synthetic_v1` | cache | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 0 |
+| `synthetic_v1` | suppression | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 0 |
+| `synthetic_v1` | response | 0.0% (0 of 21; 95% CI 0.0% to 15.5%) | 0 |
+| `synthetic_v1` | unattributed | 9.5% (2 of 21; 95% CI 2.7% to 28.9%) | 0 |
+| `phishing_v1` | rules | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | model | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | history | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | cache | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | suppression | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | response | 0.0% (0 of 11; 95% CI 0.0% to 25.9%) | 0 |
+| `phishing_v1` | unattributed | 45.5% (5 of 11; 95% CI 21.3% to 72.0%) | 0 |
+
 ## Malicious false-negative rate
 
 Expected-malicious items that automation closed as benign without a human. Lower is better; the target is 0.

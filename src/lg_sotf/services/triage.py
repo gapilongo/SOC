@@ -22,8 +22,9 @@ One *disabled* suppression rule is proposed from all the escalations, or
 nothing is written. Every escalation must exist in the tenant and carry an
 analyst's ``false_positive`` or ``benign_positive`` decision: a proposal
 needs that evidence, as for the detection report's proposals. The rule
-matches the escalations' alerts' fingerprints (the same detection on the
-same entities) and sources, bounded to the most severe of their severities
+matches the escalations' alerts' verdict keys (the same detection on the
+same entities with the same process, command line, service, user and
+parent: :mod:`lg_sotf.domain.verdict_key`) and sources, bounded to the most severe of their severities
 (``{"severity": {"in": [...]}}``), so it never covers a more severe alert.
 It is created through :meth:`ReviewService.propose_suppression
 <lg_sotf.services.review.ReviewService.propose_suppression>` (audited as
@@ -39,6 +40,7 @@ from uuid import UUID
 
 from lg_sotf.db.errors import AlreadyInState, Conflict, InvalidTransition, InvalidValue, NotFound
 from lg_sotf.db.repos import Escalation, Repositories, SuppressionRule
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
 from lg_sotf.services.review import DecisionResult, ReviewDenied, ReviewError, ReviewService
 
@@ -69,12 +71,14 @@ class ItemOutcome:
 @dataclass
 class SuppressionProposal:
     """``rule`` is ``None`` (and nothing was written) when ``unconfirmed`` lists escalations without a benign
-    analyst decision."""
+    analyst decision, or ``no_behaviour`` those whose alert has no verdict key (no process, command, service or
+    named object, a never-close class, a model-normalised or truncated event): no rule may match them."""
 
     rule: Optional[SuppressionRule] = None
     created: bool = False
     escalation_ids: List[str] = field(default_factory=list)
     unconfirmed: List[str] = field(default_factory=list)
+    no_behaviour: List[str] = field(default_factory=list)
 
 
 def _check_batch(ids: Sequence[str]) -> None:
@@ -166,13 +170,17 @@ async def propose_suppression(
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
         escalations = [await repos.escalations.get(tenant_id, i, conn=conn) for i in ids]
         alerts = await repos.views.alert_digests(tenant_id, [e.alert_id for e in escalations], conn=conn)
+        keys = {e.id: verdict_key_of(await repos.alerts.get(tenant_id, e.alert_id, conn=conn)) for e in escalations}
     unconfirmed = [e.id for e in escalations if e.status != "decided" or e.decision not in BENIGN_DECISIONS]
     if unconfirmed:
         return SuppressionProposal(unconfirmed=unconfirmed)
+    no_behaviour = [i for i, k in keys.items() if k is None]
+    if no_behaviour:
+        return SuppressionProposal(no_behaviour=no_behaviour)
     digests = [alerts[e.alert_id] for e in escalations if e.alert_id in alerts]
     rank = max(SEVERITIES.index(d.severity) for d in digests if d.severity in SEVERITIES) if digests else 0
     match: Dict[str, Any] = {
-        "fingerprint": {"in": sorted({d.fingerprint for d in digests})},
+        "verdict_key": {"in": sorted({str(k) for k in keys.values()})},
         "source_id": {"in": sorted({d.source_id for d in digests})},
         "severity": {"in": list(SEVERITIES[: rank + 1])},
     }

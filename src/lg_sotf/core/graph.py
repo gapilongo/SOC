@@ -52,6 +52,7 @@ from lg_sotf.core.state import (
 )
 from lg_sotf.domain import routing
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.domain.verdict_key import verdict_key_of
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Alert
@@ -93,6 +94,9 @@ class WorkflowState(TypedDict, total=False):
     alert_id: str
     severity: str
     fingerprint: str
+    # The verdict cache's key (lg_sotf.domain.verdict_key), read from the full alert before it is capped.
+    # None: the alert never uses the cache. Runs started before it existed have no value.
+    verdict_key: Optional[str]
     alert: Dict[str, Any]
     confidence: float
     gate: GateDigest
@@ -282,6 +286,7 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[in
         "alert_id": alert.id,
         "severity": alert.severity,
         "fingerprint": alert.fingerprint,
+        "verdict_key": verdict_key_of(alert),
         "alert": cap_alert(canonical),
         "confidence": 50,
         "gate": {},

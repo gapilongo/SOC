@@ -35,6 +35,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security import safe_regex
 from lg_sotf.security.redaction import redact_text
@@ -115,9 +116,15 @@ def alert_match_view(
     source_alert_id: str,
     fingerprint: str,
     normalized: Mapping[str, Any],
+    verdict_key: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Fields a suppression rule may reference. Canonical-model keys are also exposed at the top level."""
-    view: dict[str, Any] = {k: v for k, v in normalized.items() if k != "raw"}
+    """Fields a suppression rule may reference. Canonical-model keys are also exposed at the top level.
+
+    ``verdict_key`` (:mod:`lg_sotf.domain.verdict_key`) is present only when the
+    alert has one: a rule on it never matches an alert whose behaviour could
+    not be read.
+    """
+    view: dict[str, Any] = {k: v for k, v in normalized.items() if k not in ("raw", "verdict_key")}
     view.update(
         {
             "title": title,
@@ -129,7 +136,18 @@ def alert_match_view(
             "normalized": {k: v for k, v in normalized.items() if k != "raw"},
         }
     )
+    if verdict_key:
+        view["verdict_key"] = verdict_key
     return view
+
+
+def stored_alert_view(alert: Any) -> dict[str, Any]:
+    """:func:`alert_match_view` of a stored alert (``lg_sotf.db.repos.Alert``), with its verdict key."""
+    return alert_match_view(
+        title=alert.title, severity=alert.severity, category=alert.category, source_id=alert.source_id,
+        source_alert_id=alert.source_alert_id, fingerprint=alert.fingerprint, normalized=alert.normalized,
+        verdict_key=verdict_key_of(alert),
+    )
 
 
 def _resolve(view: Mapping[str, Any], path: str) -> Any:
@@ -388,6 +406,38 @@ def explain_rule(match: Any, view: Mapping[str, Any], budget: Optional[WorkBudge
     if own_budget:
         _log_overruns(budget, 1)
     return RuleExplanation(matched, tuple(results), error)
+
+
+#: The ``match`` keys of a suggestion written before verdict keys (one false positive, or a bulk proposal).
+FINGERPRINT_SUGGESTION_KEYS = frozenset({"fingerprint", "source_id", "severity"})
+
+
+def fingerprint_suggestion(rule: Any) -> bool:
+    """A suggested rule that matches a fingerprint alone: written before verdict keys, never applied at the gate.
+
+    A fingerprint is the detection and its entities, not what ran, so such a
+    rule closed a malicious service or command next to a benign one (#343).
+    It is a suggestion when it came from an analyst's false positive
+    (``source_feedback_id``) or has exactly the suggestions' shape.
+    """
+    match = getattr(rule, "match", None)
+    if not isinstance(match, Mapping) or "fingerprint" not in match:
+        return False
+    return bool(getattr(rule, "source_feedback_id", None)) or set(match) == FINGERPRINT_SUGGESTION_KEYS
+
+
+def matching_rules(rules: Iterable[Any], views: Sequence[Mapping[str, Any]]) -> List[Any]:
+    """Every valid rule that matches any of ``views`` (each rule with its own work budget per view)."""
+    out: List[Any] = []
+    for rule in rules:
+        for view in views:
+            try:
+                if rule_matches(rule.match, view, WorkBudget()):
+                    out.append(rule)
+                    break
+            except InvalidRule:
+                break
+    return out
 
 
 def first_matching_rule(

@@ -268,13 +268,43 @@ close a dangerous alert or trigger containment.
    `auto` for their risk level.
 5. **Severity policy.** Automation never closes a high or critical alert as
    benign; only an analyst decision, an admin-enabled suppression rule or an
-   analyst-confirmed verdict (not for critical) does. A cached
-   analyst-confirmed verdict applies only up to the severity the analyst
-   decided (a benign medium never closes a high repeat), is dropped when an
-   analyst decides `true_positive` on that detection or a response is
-   planned for it, and admins can clear a tenant's cache
-   (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
-   false-positive decisions are bounded to the decided severity and below.
+   analyst-confirmed verdict (not for critical) does. The verdict cache is
+   keyed by a verdict key: the alert fingerprint (rule, hosts, users, IPs,
+   hashes, domains) plus the behaviour of the event (process image, command
+   line, service name and image path, user/uid, parent process, scheduled
+   tasks, registry keys, target files and Sysmon WMI objects, plus context
+   such as URLs, user agents, O365 operations and their parameters, queries,
+   registry value details and process-access rights), compared in full, so a
+   malicious service, command or request on a host never matches the benign
+   one analysts closed there. Nothing is masked or truncated; only
+   whitespace and Windows path case are normalised. Context is set by
+   whoever sends the request, so it is never enough for a key. Alerts with no
+   process, command, service or created object (task, registry key, target
+   file, Sysmon WMI object), in
+   a never-close class (credential access, log clearing, tampering,
+   ransomware, named persistence) or normalised by a model get no key, so
+   the cache never closes them and no rule is suggested. A cached verdict
+   closes an alert only after two different analysts decided its key benign
+   within 7 days at the alert's severity or above (one analyst's decisions,
+   bulk closes included, count once; a benign medium never closes a high
+   repeat), and never within 7 days of a threat on the key or its
+   fingerprint: an analyst `true_positive`, a blind-audit malicious label, a
+   planned response or a malicious close drops the key's decisions and
+   blocks it. An alert whose behaviour cannot be read completely (a
+   truncated event) never uses the cache, a benign group decision applies to
+   an attached alert only with the same verdict key, and admins can clear a
+   tenant's cache (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
+   false-positive decisions (one per decision, or one for a batch of
+   escalations) match the same verdict key, not the fingerprint, and are
+   bounded to the decided severity and below. When a threat is confirmed on
+   an alert (an analyst `true_positive`, a blind-audit malicious label, a
+   planned response or a malicious close), every enabled suppression rule
+   that would close that alert, at its severity or the lowest, is disabled
+   and audited as `suppression.revoked`; a failure to revoke is logged as an
+   error and counted in `lgsotf_revocation_failures_total`. Suggestions
+   written before verdict keys, which matched a fingerprint alone, were
+   disabled by migration 0016 (audited) and are ignored at the gate. Alerts
+   normalised by a model skip suppression rules too.
    Alerts mapped by the optional LLM-fallback normalizer
    (`llm_normalized`) have no trusted text, never use the verdict cache
    and are never closed automatically. A response the policy
