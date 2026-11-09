@@ -14,13 +14,14 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from lg_sotf.core.graph import cap_alert
+from lg_sotf.core.graph import RAW_RULE_KEYS, cap_alert
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.closure import MODEL_CLOSED, UNMAPPED, model_close_blockers, model_close_class, never_close_class
 from lg_sotf.domain.noise_families import (
     AUTH_FAILURE_GROUPS,
     CATALOGUE,
     CATALOGUE_VERSION,
+    VENDOR_UNKNOWN,
     WAZUH,
     DetectionRule,
     detection_rule,
@@ -182,17 +183,28 @@ def test_the_rule_id_comes_from_the_vendor_event_and_the_wazuh_rule_name_only() 
     ):
         assert detection_rule(broken) is None, broken
         assert noise_family(broken) is None
-        assert model_close_class(broken) == UNMAPPED
+        # Unmapped either way; a Wazuh-built alert whose rule cannot be read is vendor_unknown (re-check of #345).
+        assert model_close_class(broken) in (UNMAPPED, VENDOR_UNKNOWN)
     # A title, description or rule name alone is never a rule id (a canonical alert without a vendor event).
     canonical = {"title": DPKG, "description": DPKG, "rule_name": f"2902: {DPKG}", "mitre": {}, "raw": {}}
     assert noise_family(canonical) is None and model_close_class(canonical) == UNMAPPED
 
 
-def test_an_oversized_raw_event_is_dropped_by_the_state_cap_and_fails_closed() -> None:
-    event = {**wazuh_event("2902", DPKG), "data": {f"field{i}": "x" * 1_500 for i in range(30)}}
-    alert = state_alert(event)
-    assert "rule" not in alert["raw"]
-    assert model_close_class(alert) == UNMAPPED
+def test_an_oversized_raw_event_keeps_its_rule_through_the_state_cap() -> None:
+    """Re-check of #345: the cap replaces an oversized raw event but keeps ``raw.rule`` (id, level, description,
+    groups, mitre), so an attacker who inflates an event cannot hide the rule's groups."""
+    padding = {f"field{i}": "x" * 1_500 for i in range(30)}
+    alert = state_alert({**wazuh_event("2902", DPKG), "data": padding})
+    assert alert["raw"]["_omitted"] and alert["raw"]["rule"]["id"] == "2902" and "data" not in alert["raw"]
+    assert closure.catalogued_noise(alert) is not None
+    inflated = {**wazuh_event(*AUTH_FAILURES[2][:2], groups=AUTH_FAILURES[2][3], mitre=AUTH_FAILURES[2][4]),
+                "data": padding}
+    capped = state_alert(inflated)
+    assert set(capped["raw"]["rule"]) == set(RAW_RULE_KEYS) and "invalid_login" in capped["raw"]["rule"]["groups"]
+    assert never_close_class(capped) == "credential_access"
+    huge = cap_alert({"title": "t", "raw": {"rule": {"id": "1", "groups": ["g" * 5_000] * 200, "x": "y"}, "z": "z" * 20_000}})
+    kept = huge["raw"]["rule"]
+    assert "x" not in kept and len(kept["groups"]) <= 20 and all(len(g) <= 200 for g in kept["groups"])
 
 
 # --------------------------------------------------------------------------- every other condition still applies
@@ -314,10 +326,21 @@ def test_review_h1_the_groups_are_matched_exactly_and_t1531_alone_is_enough() ->
     assert never_close_class(upper) == "credential_access"
 
 
-def test_review_h1_without_the_raw_event_only_the_attack_mapping_is_left() -> None:
-    """Documented: when the state size cap drops the raw event, the groups cannot be read. 60122 still blocks on
-    T1531; 99919 (T1078) then rests on its ATT&CK mapping alone, like any mapped alert before FIX-2."""
-    spray = state_alert(wazuh_event(*AUTH_FAILURES[0][:2], groups=AUTH_FAILURES[0][3], mitre=AUTH_FAILURES[0][4]))
-    assert never_close_class({k: v for k, v in spray.items() if k != "raw"}) == "credential_access"
+def test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes() -> None:
+    """Re-check of #345: when the raw event is gone altogether, a Wazuh-built alert's groups are unknown: it is
+    vendor_unknown, a never-close class that also blocks the catalogue lift. 99919 (T1078) no longer slips through."""
+    for case in (AUTH_FAILURES[0], AUTH_FAILURES[2]):
+        alert = state_alert(wazuh_event(*case[:2], groups=case[3], mitre=case[4]))
+        gone = {k: v for k, v in alert.items() if k != "raw"}
+        assert never_close_class(gone) in ("credential_access", VENDOR_UNKNOWN)
+        assert never_close_class({**gone, "raw": {"_omitted": "x"}}) in ("credential_access", VENDOR_UNKNOWN)
     bad_ip = state_alert(wazuh_event(*AUTH_FAILURES[2][:2], groups=AUTH_FAILURES[2][3], mitre=AUTH_FAILURES[2][4]))
-    assert never_close_class({k: v for k, v in bad_ip.items() if k != "raw"}) is None
+    assert never_close_class({k: v for k, v in bad_ip.items() if k != "raw"}) == VENDOR_UNKNOWN
+    package = state_alert(wazuh_event("2902", DPKG))
+    gone = {k: v for k, v in package.items() if k != "raw"}
+    assert model_close_class(gone) == VENDOR_UNKNOWN
+    state = wazuh_state(wazuh_event("2902", DPKG))
+    state["alert"] = gone
+    assert routing.decide(state, T, AUTO).route == "escalate"
+    # Another format without a raw rule stays as before: its ATT&CK mapping decides.
+    assert never_close_class({**gone, "normalizer": "canonical"}) == UNMAPPED

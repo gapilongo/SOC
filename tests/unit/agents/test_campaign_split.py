@@ -29,8 +29,11 @@ BENIGN_TRIAGE: Dict[str, Any] = {"threat_assessment": "benign", "threat_likeliho
                                  "rule_fp": [], "rule_tp": []}
 BENIGN_ANALYSIS: Dict[str, Any] = {"verdict": "benign", "certainty": 90, "threat_score": 8, "llm_used": True,
                                    "rule_evidence": [], "rule_corroborated": False}
-#: What a sibling the models could close themselves has stored: both tiers benign within the thresholds.
-BENIGN_SUMMARY: Dict[str, Any] = {"triage": BENIGN_TRIAGE, "analysis": BENIGN_ANALYSIS}
+#: A sibling's own correlation digest when it had no related alert.
+ALONE: Dict[str, Any] = {"related_count": 0, "related_complete": True, "related_rule_repeats": 0, "related_threats": 0,
+                         "related_other_rules": 0, "related_dispositions": {}}
+#: What a sibling the models could close themselves has stored: both tiers benign within the thresholds, alone.
+BENIGN_SUMMARY: Dict[str, Any] = {"triage": BENIGN_TRIAGE, "analysis": BENIGN_ANALYSIS, "correlation": ALONE}
 RULES = {
     "2902": "New dpkg (Debian Package) installed.",
     "5402": "Successful sudo to ROOT executed.",
@@ -135,7 +138,7 @@ async def test_a_different_detection_on_the_same_host_is_a_possible_kill_chain(
          {"summary": {**BENIGN_SUMMARY,
                       "analysis": {**BENIGN_ANALYSIS, "rule_evidence": ["prior_malicious_history"]}}}),
         ("(b) one of its own related alerts closed as malicious",
-         {"summary": {**BENIGN_SUMMARY, "correlation": {"related_dispositions": {"malicious": 1}}}}),
+         {"summary": {**BENIGN_SUMMARY, "correlation": {**ALONE, "related_dispositions": {"malicious": 1}}}}),
         ("(c) the fast tier said benign at likelihood 40",
          {"summary": {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "threat_likelihood": 40}}}),
         ("(c) the deep tier said benign at certainty 60",
@@ -223,3 +226,69 @@ async def test_review_m1_a_steering_msi_does_not_vouch_for_the_next(make_setting
     result = await correlate(make_settings(), [stored("msi1", "60612", summary=steering)], rule_id="60612")
     assert (result.related_count, result.related_rule_repeats) == (1, 0)
     assert decide(result, "60612").route == "escalate"
+
+
+
+# --------------------------------------------------------------------------- re-check of #345: campaign-block laundering
+
+
+async def sibling_with_own_digest(settings: Settings, its_related: List[StoredAlert], **correlate_kwargs: Any) -> StoredAlert:
+    """S (rule 2902, both tiers benign) as stored after its own correlation over ``its_related``: the digest is the
+    one the real agent produced for it."""
+    own = await correlate(settings, its_related, **correlate_kwargs)
+    return stored("S", "2902", summary={**BENIGN_SUMMARY, "correlation": dict(own.digest())})
+
+
+async def test_recheck_a_campaign_block_is_not_laundered_through_a_sibling(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """X (another rule, a possible kill-chain step) on host H at t0; S (2902) at t50 is blocked by X and waits for an
+    analyst; A (2902) at t70 sees S but no longer X (outside its 60-minute window). S's campaign block is not exempt:
+    its digest shows a related alert of another rule, so S is no quiet repeat and A goes to an analyst."""
+    settings = make_settings()
+    s = await sibling_with_own_digest(settings, [stored("X", "5402")])
+    assert s.summary["correlation"]["related_other_rules"] == 1
+    a = await correlate(settings, [s])
+    assert (a.related_count, a.related_rule_repeats, a.related_other_rules) == (1, 0, 0)
+    assert decide(a).route == "escalate"
+
+
+@pytest.mark.parametrize(
+    ("why", "its_related", "kwargs"),
+    [
+        ("a related alert a model judged suspicious",
+         [stored("T", "2902", summary={**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "threat_assessment": "suspicious"}})],
+         {}),
+        ("an incomplete related set (query at its limit)", [stored(f"r{i}", "2902") for i in range(2)],
+         {"max_correlations": 2}),
+        ("a related alert hidden for a blind audit", [stored("r0", "2902"), stored("audit", "2902")],
+         {"pending": ("audit",)}),
+    ],
+)
+async def test_recheck_threat_and_incomplete_set_blocks_are_not_laundered_either(
+    why: str, its_related: List[StoredAlert], kwargs: Dict[str, Any], make_settings: Callable[..., Settings]
+) -> None:
+    settings = make_settings()
+    s = await sibling_with_own_digest(settings, its_related, **kwargs)
+    a = await correlate(settings, [s])
+    assert a.related_rule_repeats == 0, why
+    assert decide(a).route == "escalate", why
+
+
+async def test_recheck_a_sibling_digest_without_the_new_count_is_not_quiet(make_settings: Callable[..., Settings]) -> None:
+    """Fail closed: a sibling blocked by its own campaign check, whose digest predates ``related_other_rules``."""
+    old = {"related_count": 1, "related_rule_repeats": 0, "related_complete": True, "related_threats": 0,
+           "related_dispositions": {}}
+    a = await correlate(make_settings(), [stored("S", "2902", summary={**BENIGN_SUMMARY, "correlation": old})])
+    assert a.related_rule_repeats == 0 and decide(a).route == "escalate"
+
+
+async def test_recheck_a_burst_does_not_block_itself(make_settings: Callable[..., Settings]) -> None:
+    """Control: S was blocked only by a same-rule sibling no model had judged yet (in flight). Its digest shows no
+    threat, a complete set and no other rule, so its block clears and A, which sees only S, closes."""
+    settings = make_settings()
+    s = await sibling_with_own_digest(settings, [stored("P", "2902", status="processing", summary={})])
+    own = s.summary["correlation"]
+    assert (own["related_count"], own["related_rule_repeats"], own["related_other_rules"]) == (1, 0, 0)
+    a = await correlate(settings, [s])
+    assert a.related_rule_repeats == 1 and decide(a).code == MODEL_CLOSED

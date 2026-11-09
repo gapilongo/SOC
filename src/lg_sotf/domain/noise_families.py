@@ -46,7 +46,8 @@ IP to T1078, "possible replay attack" to T1550), so the rule's own groups
 (``authentication_failed``, ``authentication_failures``, ``invalid_login``,
 ``login_denied``) and a short list of rule ids without those groups make
 it credential access. These checks only ever block a close, so they read
-the raw event whatever format built the alert.
+the raw event whatever format built the alert; a Wazuh-built alert whose
+rule cannot be read at all is ``vendor_unknown`` and never closes.
 
 Changing the catalogue is a reviewed change to the decision policy: bump
 :data:`CATALOGUE_VERSION`, justify the entry from the vendor ruleset's
@@ -64,6 +65,7 @@ __all__ = [
     "AUTH_FAILURE_GROUPS",
     "CATALOGUE",
     "NEVER_CLOSE_RULE_IDS",
+    "VENDOR_UNKNOWN",
     "CATALOGUE_VERSION",
     "WAZUH",
     "DetectionRule",
@@ -186,6 +188,8 @@ NEVER_CLOSE_RULE_IDS: Mapping[str, str] = {
     "44733": "credential_access",  # FortiAuthenticator: authentication failed
 }
 MAX_RULE_GROUPS = 50
+#: The class of a Wazuh-built alert whose vendor rule cannot be read: its groups are unknown, so it never closes.
+VENDOR_UNKNOWN = "vendor_unknown"
 
 
 def _raw_rule(alert: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
@@ -234,13 +238,17 @@ def vendor_never_close_class(alert: Any) -> Optional[str]:
     ``credential_access`` for a Wazuh rule in an authentication-failure group
     (:data:`AUTH_FAILURE_GROUPS`) or in :data:`NEVER_CLOSE_RULE_IDS`. These
     checks only block, so they read the raw event whatever format built the
-    alert. When the state size cap dropped the raw event they cannot run and
-    the alert falls back to its ATT&CK mapping alone (an unmapped one stays
-    ``unmapped``, which blocks too).
+    alert. The state size cap always keeps ``raw.rule``
+    (:func:`lg_sotf.core.graph.cap_alert`); a Wazuh-built alert whose rule
+    still cannot be read is :data:`VENDOR_UNKNOWN`, a never-close class.
     """
-    rule = _raw_rule(alert) if isinstance(alert, Mapping) else None
-    if rule is None:
+    if not isinstance(alert, Mapping):
         return None
+    rule = _raw_rule(alert)
+    if rule is None:
+        # A Wazuh alert whose rule cannot be read (the raw event is gone): its groups are unknown, so it may be an
+        # authentication failure mapped elsewhere. Fail closed; this also blocks the catalogue lift.
+        return VENDOR_UNKNOWN if alert.get("normalizer") == WAZUH else None
     groups = rule.get("groups")
     if isinstance(groups, list):
         names = {g.strip().lower() for g in groups[:MAX_RULE_GROUPS] if isinstance(g, str)}

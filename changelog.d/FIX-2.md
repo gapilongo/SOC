@@ -17,7 +17,8 @@
   every repeat was either closed as benign or is one the models could close
   themselves: no steering text, no recent true positive, both model tiers
   benign within the thresholds, no never-close class. The correlation
-  digest has two new fields, `related_rule_repeats` and `related_complete`.
+  digest has three new fields, `related_rule_repeats`, `related_complete` and
+  `related_other_rules`.
   A complete related set holds fewer than `agents.correlation.max_correlations`
   alerts (10 by default), so at most 9 repeats stand behind a close.
 - Rule ids are known for Wazuh alerts only. For other vendors (Sentinel,
@@ -42,6 +43,17 @@
   rule-name text: a custom rule that copies a stock description, a forged
   rule-name prefix or a canonical push of a Wazuh document stays unmapped. An alert whose
   raw event was dropped by the state size cap stays unmapped too.
+- A same-rule related alert that was itself blocked by its own campaign
+  check counts as a repeat only when its digest shows no threat, a complete
+  related set and no related alert of another rule (the new digest field
+  `related_other_rules`), so an attack step that has left the correlation
+  window cannot clear a later alert through it. A related alert an analyst
+  or approved evidence closed as benign counts as a repeat whatever its own
+  model scores: that decision is trusted on purpose. A model threat verdict
+  on it still blocks.
+- The workflow state keeps the vendor rule (`raw.rule`: id, level,
+  description, groups, ATT&CK) when an oversized raw event is dropped, and a
+  Wazuh alert whose rule cannot be read never closes on the models' word.
 - A related alert still blocks a model-led close when its detection rule
   differs (a possible kill chain, even if it was closed as benign), when a
   model judged it malicious or suspicious, when it is still waiting for a

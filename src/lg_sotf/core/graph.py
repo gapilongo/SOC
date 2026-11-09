@@ -163,12 +163,34 @@ def _shrink(value: Any, items: int, chars: int, keys: int, depth: int) -> Any:
     return value
 
 
+#: The vendor rule fields of ``raw.rule`` kept when the raw event is too large for the state (FIX-2 review): the
+#: never-close checks read the Wazuh rule id and groups from there.
+RAW_RULE_KEYS = ("id", "level", "description", "groups", "mitre")
+RAW_OMITTED = "raw event too large for workflow state"
+
+
+def _raw_rule_subset(raw: Any) -> Optional[Dict[str, Any]]:
+    rule = raw.get("rule") if isinstance(raw, Mapping) else None
+    if not isinstance(rule, Mapping):
+        return None
+    subset = {k: _shrink(rule[k], 20, 200, 10, 3) for k in RAW_RULE_KEYS if k in rule}
+    return subset or None
+
+
+def _omitted_raw(rule: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {"_omitted": RAW_OMITTED, "rule": rule} if rule else {"_omitted": RAW_OMITTED}
+
+
 def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     """Size-cap the canonical alert for graph state: per-field, per-list and total limits.
 
-    ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`. The whole
-    document is bounded by :data:`MAX_ALERT_JSON_CHARS`: first the largest
-    unprotected keys are dropped, then ``entities`` is shrunk step by step
+    ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`; otherwise it
+    is replaced by a marker that keeps the small vendor rule subset
+    (``raw.rule``: :data:`RAW_RULE_KEYS`, shortened), which the never-close
+    checks read (an attacker who inflates an event must not hide the rule's
+    groups). The whole document is bounded by :data:`MAX_ALERT_JSON_CHARS`:
+    first the largest unprotected keys are dropped (``raw`` is first reduced
+    to that marker), then ``entities`` is shrunk step by step
     (fewer items, shorter strings) so indicators and response targets
     survive, and only as a last resort are whole entity kinds dropped.
     Every loop removes something, so this always terminates.
@@ -177,13 +199,18 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     capped: Dict[str, Any] = _cap(dict(canonical))
     capped.pop("_omitted_keys", None)
     omitted: List[str] = []
+    rule = _raw_rule_subset(capped.get("raw"))
+    reduced = False
     if "raw" in capped and _json_len(capped["raw"]) > MAX_RAW_JSON_CHARS:
-        capped["raw"] = {"_omitted": "raw event too large for workflow state"}
+        capped["raw"], reduced = _omitted_raw(rule), True
     while _json_len(capped) > limit:
         candidates = [k for k in capped if k not in PROTECTED_ALERT_KEYS]
         if not candidates:
             break
         largest = max(candidates, key=lambda k: _json_len(capped[k]))
+        if largest == "raw" and rule is not None and not reduced:
+            capped["raw"], reduced = _omitted_raw(rule), True
+            continue
         capped.pop(largest)
         omitted.append(largest)
     entities = capped.get("entities")

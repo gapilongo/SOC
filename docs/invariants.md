@@ -90,6 +90,8 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/agents/test_campaign_split.py::test_a_same_rule_alert_still_counts_against_closing_when`
   * `tests/unit/agents/test_campaign_split.py::test_an_incomplete_related_set_fails_closed`
   * `tests/unit/agents/test_campaign_split.py::test_review_m1_a_steering_msi_does_not_vouch_for_the_next`
+  * `tests/unit/agents/test_campaign_split.py::test_recheck_a_campaign_block_is_not_laundered_through_a_sibling`
+  * `tests/unit/domain/test_noise_families.py::test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes`
   * `tests/unit/domain/test_noise_families.py::test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping`
   * `tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close`
   * `tests/integration/engine/test_model_closure.py::test_catalogued_noise_and_its_repeats_close_but_another_rule_on_the_host_does_not`

@@ -30,11 +30,15 @@ missing or unreadable value blocks the close.
   id as this alert (known for Wazuh only: for other vendors every related
   alert blocks), judged a threat by no model, not a response plan awaiting
   approval, and either closed as benign (by an analyst, approved evidence or
-  a model-led close) or itself a model-led close candidate: its own
-  conditions here, apart from the tier and this one, all hold (no steering
-  text, no recent true positive, both model tiers benign at the thresholds,
-  no never-close class). A sibling still waiting for its deep verdict
-  blocks. A related alert of a different rule on the same entities is a
+  a model-led close: a deliberate trust in that decision, whatever the
+  sibling's own model scores) or itself a model-led close candidate: its
+  own conditions here, apart from the tier, all hold (no steering text, no
+  recent true positive, both model tiers benign at the thresholds, no
+  never-close class), and its own campaign block counts as cleared only
+  when its digest shows no threat, a complete set and no related alert of
+  another or unknown rule (``related_other_rules``), so a kill-chain
+  step that has left this alert's window cannot be laundered through it.
+  A sibling still waiting for its deep verdict blocks. A related alert of a different rule on the same entities is a
   possible kill chain and blocks, whatever its status. A burst of one rule
   that passes these tests is repetition, not a campaign. The set must be
   complete (``related_complete``): when the correlation query hit its

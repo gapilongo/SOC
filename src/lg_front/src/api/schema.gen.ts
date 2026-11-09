@@ -2048,6 +2048,7 @@ export interface components {
                         [key: string]: number;
                     };
                     related_open_reviews?: number;
+                    related_other_rules?: number;
                     related_rule_repeats?: number;
                     related_threats?: number;
                     score?: number;
@@ -2298,6 +2299,7 @@ export interface components {
                         [key: string]: number;
                     };
                     related_open_reviews?: number;
+                    related_other_rules?: number;
                     related_rule_repeats?: number;
                     related_threats?: number;
                     score?: number;

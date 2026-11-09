@@ -1153,6 +1153,9 @@
                   "related_open_reviews": {
                     "type": "integer"
                   },
+                  "related_other_rules": {
+                    "type": "integer"
+                  },
                   "related_rule_repeats": {
                     "type": "integer"
                   },
@@ -2098,6 +2101,9 @@
                     "type": "object"
                   },
                   "related_open_reviews": {
+                    "type": "integer"
+                  },
+                  "related_other_rules": {
                     "type": "integer"
                   },
                   "related_rule_repeats": {

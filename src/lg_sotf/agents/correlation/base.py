@@ -30,7 +30,10 @@ that are this alert's own detection rule repeating as noise
 response plan awaiting approval, and either closed as benign or one the
 models could close themselves; see :func:`quiet_rule_repeat`) and records whether the related set is complete
 (``related_complete``: the query stayed under its limit and no related alert
-was hidden for a blind audit). A model-led close needs every related alert
+was hidden for a blind audit), and counts the related alerts of another or
+unknown rule (``related_other_rules``), which a later alert reads before it
+lets this alert's own campaign block pass as repetition. A model-led close
+needs every related alert
 to be such a repeat over a complete set (:mod:`lg_sotf.domain.closure`): a
 different detection on the same entities is a possible kill chain. The rule
 id is known for Wazuh alerts only, so for other vendors every related alert
@@ -123,6 +126,9 @@ class CorrelationResult:
     # Fail closed: the defaults (0, False) block a model-led close whenever there is a related alert.
     related_rule_repeats: int = 0
     related_complete: bool = False
+    # FIX-2 review: related alerts of another or unknown detection rule (or vendor); a later alert reads it from this
+    # digest before it lets this alert's own campaign block pass as repetition.
+    related_other_rules: int = 0
     campaign_indicators: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
@@ -165,9 +171,27 @@ def related_document(other: Any) -> Dict[str, Any]:
     return {**normalized, "raw": raw if isinstance(raw, Mapping) else {}}
 
 
-#: What a sibling's own model-close check may still report and leave it a quiet repeat: the tier (this alert's tier
-#: decides) and the campaign check (the sibling's own related alerts are this alert's concern, counted here).
-SIBLING_EXEMPT_BLOCKERS = frozenset({"tier_off", "campaign_in_progress"})
+#: What a sibling's own model-close check may report and leave it a quiet repeat: the tier (this alert's tier
+#: decides). Its campaign check is exempt only when its own digest shows nothing but repeats of its rule
+#: (:func:`_sibling_campaign_cleared`), so a block cannot be laundered through a sibling once the alert that caused
+#: it has left this alert's window.
+SIBLING_EXEMPT_BLOCKERS = frozenset({"tier_off"})
+CAMPAIGN = "campaign_in_progress"
+
+
+def _count(value: Any) -> Optional[int]:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _sibling_campaign_cleared(correlation: Mapping[str, Any]) -> bool:
+    """Whether a sibling's own campaign block came only from same-rule siblings it could not yet vouch for: its
+    digest shows no threat, a complete set and no related alert of another or unknown rule. A digest without these
+    counts (unknown) does not clear it."""
+    return (
+        _count(correlation.get("related_threats")) == 0
+        and correlation.get("related_complete") is True
+        and _count(correlation.get("related_other_rules")) == 0
+    )
 
 
 def _sibling_state(other: Any) -> Dict[str, Any]:
@@ -192,13 +216,23 @@ def quiet_rule_repeat(
     """Whether a related alert is ``rule`` repeating as noise (FIX-2).
 
     The same vendor detection rule, judged a threat by no model, not a
-    response plan awaiting approval, and either closed as benign (by an
-    analyst, approved evidence or a model-led close) or a model-led close
-    candidate itself: its own :func:`closure.model_close_blockers`, apart
-    from the tier and the campaign check, are empty (no steering text, no
-    recent true positive, both tiers benign at the thresholds, no never-close
-    class, a low enough severity). A sibling still waiting for a model, or
-    for its deep verdict, is not quiet: anything unknown blocks.
+    response plan awaiting approval, and either:
+
+    * closed as benign (by an analyst, approved evidence or a model-led
+      close). This trusts the analyst's or the evidence's decision on purpose,
+      whatever the sibling's own model scores; a model threat verdict on it
+      still blocks (checked first); or
+    * a model-led close candidate itself: its own
+      :func:`closure.model_close_blockers`, apart from the tier, are empty
+      (no steering text, no recent true positive, both tiers benign at the
+      thresholds, no never-close class, a low enough severity). Its own
+      campaign block counts as cleared only when its stored digest shows no
+      threat, a complete related set and no related alert of another or
+      unknown rule (``related_other_rules`` 0): the block of a kill-chain
+      step that has since left this alert's window is not laundered.
+
+    A sibling still waiting for a model, or for its deep verdict, is not
+    quiet: anything unknown blocks.
     """
     if rule is None or judged_threat or other.status == APPROVAL_STATUS:
         return False
@@ -206,11 +240,13 @@ def quiet_rule_repeat(
         return False
     if other.status == "closed" and other.disposition == "benign":
         return True
-    blockers = closure.model_close_blockers(
-        _sibling_state(other), tier=closure.MODEL_CLOSE_TIER, max_likelihood=max_likelihood,
-        min_certainty=min_certainty,
-    )
-    return not set(blockers) - SIBLING_EXEMPT_BLOCKERS
+    sibling = _sibling_state(other)
+    blockers = set(closure.model_close_blockers(
+        sibling, tier=closure.MODEL_CLOSE_TIER, max_likelihood=max_likelihood, min_certainty=min_certainty,
+    )) - SIBLING_EXEMPT_BLOCKERS
+    if CAMPAIGN in blockers and _sibling_campaign_cleared(sibling["correlation"]):
+        blockers.discard(CAMPAIGN)
+    return not blockers
 
 
 def tally_related(
@@ -231,6 +267,7 @@ def tally_related(
         )
         result.related_threats += int(judged)
         result.related_open_reviews += int(other.status in OPEN_REVIEW_STATUSES)
+        result.related_other_rules += int(rule is None or detection_rule(related_document(other)) != rule)
         result.related_rule_repeats += int(quiet_rule_repeat(
             rule, other, judged_threat=judged, max_likelihood=t.model_close_max_likelihood,
             min_certainty=t.model_close_min_certainty,
