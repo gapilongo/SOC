@@ -110,9 +110,6 @@ class CorrelationDigest(TypedDict, total=False):
     related_dispositions: Dict[str, int]
     related_threats: int
     related_open_reviews: int
-    related_rule_repeats: int
-    related_complete: bool
-    related_other_rules: int
     campaign_indicators: List[str]
 
 

@@ -91,30 +91,18 @@ async def wazuh_alert(repos: Repositories, name: str, rule_id: str, description:
                             raw=raw, normalized=fields)
 
 
-async def test_catalogued_noise_and_its_repeats_close_but_another_rule_on_the_host_does_not(
+async def test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not(
     engine: WorkflowEngine, repos: Repositories
 ) -> None:
-    """FIX-2 through the real workflow and correlation: an unmapped Wazuh package install (rule 2902, catalogued)
-    closes on the models' word, and so do its repeats on the same host; a different detection on that host, and
-    every repeat after it, goes to an analyst. An uncatalogued unmapped rule never closes."""
+    """FIX-2 through the real workflow: an unmapped Wazuh package install (rule 2902, catalogued) closes on the
+    models' word, marked with its family; a custom rule copying the description stays unmapped and goes to an
+    analyst."""
     await repos.tenants.update_settings(TENANT_A, {"ai_closure": {"tier": "auto_full_audit"}})
-    for name in ("first", "second", "third"):
-        alert_id = await wazuh_alert(repos, name, "2902", DPKG)
-        assert (await engine.run(TENANT_A, alert_id)).status == "completed", name
-        decided = await decide_event(repos, alert_id)
-        assert decided["code"] == "model_closed" and "catalogued noise linux_package_install" in decided["reason"]
-    correlation = (await repos.alerts.get(TENANT_A, alert_id)).summary["correlation"]
-    assert (correlation["related_count"], correlation["related_rule_repeats"], correlation["related_complete"]) == (
-        2, 2, True)
-
-    other = await wazuh_alert(repos, "logon", "60106", "Windows logon success",
-                              mitre={"tactics": ["Initial Access"], "techniques": ["T1078"]})
-    assert (await engine.run(TENANT_A, other)).status == "waiting_human"
-    assert (await decide_event(repos, other))["code"] == "false_positive_review"
-    after = await wazuh_alert(repos, "after", "2902", DPKG)
-    assert (await engine.run(TENANT_A, after)).status == "waiting_human"
-    correlation = (await repos.alerts.get(TENANT_A, after)).summary["correlation"]
-    assert correlation["related_count"] == 4 and correlation["related_rule_repeats"] == 3
+    package = await wazuh_alert(repos, "package", "2902", DPKG)
+    assert (await engine.run(TENANT_A, package)).status == "completed"
+    decided = await decide_event(repos, package)
+    assert decided["code"] == "model_closed" and "catalogued noise linux_package_install" in decided["reason"]
 
     custom = await wazuh_alert(repos, "custom", "100200", DPKG, entities={"hosts": ["db-08"]})
     assert (await engine.run(TENANT_A, custom)).status == "waiting_human"
+    assert (await decide_event(repos, custom))["code"] == "false_positive_review"

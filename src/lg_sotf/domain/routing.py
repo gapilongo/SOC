@@ -19,8 +19,8 @@ Safety rules enforced here (contract section 8):
   (:mod:`lg_sotf.domain.closure`, code ``model_closed``) that every condition
   of that module allows. With the tier ``off`` a model never closes alone.
   Policy v2.1 (FIX-2) lets a catalogued noise rule (vendor and rule id,
-  :mod:`lg_sotf.domain.noise_families`) lift only the ``unmapped`` class,
-  and tells one rule repeating apart from a campaign.
+  :mod:`lg_sotf.domain.noise_families`) lift only the ``unmapped`` class;
+  the campaign check is FIX-1's.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked

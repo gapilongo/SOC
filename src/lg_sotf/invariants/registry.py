@@ -117,9 +117,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, "
             "persistence through attacker-named objects, authentication failures by vendor rule group, unmapped "
             "alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering "
-            "text, entities with a recent true positive or a campaign in progress (anything but the same detection "
-            "rule repeating as benign noise over a complete related set); such a close is marked model_closed for "
-            "audit. With the tier off, the default, a model never closes an alert alone."
+            "text, entities with a recent true positive or a campaign in progress; such a close is marked "
+            "model_closed for audit. With the tier off, the default, a model never closes an alert alone."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2"),
@@ -147,17 +146,12 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_noise_families.py::test_every_other_condition_still_blocks_a_catalogued_rule",
             "tests/unit/domain/test_noise_families.py::"
             "test_a_malicious_or_suspicious_model_verdict_on_a_catalogued_rule_still_escalates",
-            "tests/unit/agents/test_campaign_split.py::test_a_different_detection_on_the_same_host_is_a_possible_kill_chain",
-            "tests/unit/agents/test_campaign_split.py::test_a_same_rule_alert_still_counts_against_closing_when",
-            "tests/unit/agents/test_campaign_split.py::test_an_incomplete_related_set_fails_closed",
-            "tests/unit/agents/test_campaign_split.py::test_review_m1_a_steering_msi_does_not_vouch_for_the_next",
-            "tests/unit/agents/test_campaign_split.py::test_recheck_a_campaign_block_is_not_laundered_through_a_sibling",
             "tests/unit/domain/test_noise_families.py::test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes",
             "tests/unit/domain/test_noise_families.py::"
             "test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping",
             "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
             "tests/integration/engine/test_model_closure.py::"
-            "test_catalogued_noise_and_its_repeats_close_but_another_rule_on_the_host_does_not",
+            "test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not",
             "tests/integration/eval/test_adversarial_v2_eval.py::test_no_malicious_close_with_model_led_closure_on",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"

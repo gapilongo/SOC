@@ -24,23 +24,9 @@ never move an alert into the grey zone or to the response policy on their
 own. Over every related alert (not only the digests the model sees) the
 digest counts dispositions, alerts a model judged malicious or suspicious
 (``related_threats``) and alerts still waiting for an analyst or an approval
-(``related_open_reviews``). Since FIX-2 it also counts the related alerts
-that are this alert's own detection rule repeating as noise
-(``related_rule_repeats``: the same vendor rule id, a threat to no model, no
-response plan awaiting approval, and either closed as benign or one the
-models could close themselves; see :func:`quiet_rule_repeat`) and records whether the related set is complete
-(``related_complete``: the query stayed under its limit and no related alert
-was hidden for a blind audit), and counts the related alerts of another or
-unknown rule (``related_other_rules``), which a later alert reads before it
-lets this alert's own campaign block pass as repetition. A model-led close
-needs every related alert
-to be such a repeat over a complete set (:mod:`lg_sotf.domain.closure`): a
-different detection on the same entities is a possible kill chain. The rule
-id is known for Wazuh alerts only, so for other vendors every related alert
-blocks a model-led close. The set is bounded by ``max_correlations``
-(default 10, at most 20): a complete set holds fewer. A related
-alert the models closed alone counts and shows as ``ai_closed_unaudited``,
-never as ``benign``.
+(``related_open_reviews``); any of them, or a burst, blocks a model-led
+close (:mod:`lg_sotf.domain.closure`). A related alert the models closed
+alone counts and shows as ``ai_closed_unaudited``, never as ``benign``.
 
 A refusal of that call leaves the alert's assessment open: its confidence is
 raised to the grey zone (``routing.correlation_grey_zone_min``) and the
@@ -60,9 +46,7 @@ from pydantic import BaseModel, Field
 from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.agents.triage.base import agent_refusal
 from lg_sotf.db.errors import NotFound
-from lg_sotf.domain import closure
 from lg_sotf.domain.indicators import Indicator, extract_indicators
-from lg_sotf.domain.noise_families import DetectionRule, detection_rule
 from lg_sotf.domain.phishing import PhishingProfile
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import AgentError
@@ -121,14 +105,6 @@ class CorrelationResult:
     # malicious or suspicious, and how many still wait for an analyst or an approval.
     related_threats: int = 0
     related_open_reviews: int = 0
-    # FIX-2: how many related alerts are this alert's detection rule repeating as noise (quiet_rule_repeat), and
-    # whether the related set is complete (the query did not hit its limit and no related alert was hidden for a blind audit).
-    # Fail closed: the defaults (0, False) block a model-led close whenever there is a related alert.
-    related_rule_repeats: int = 0
-    related_complete: bool = False
-    # FIX-2 review: related alerts of another or unknown detection rule (or vendor); a later alert reads it from this
-    # digest before it lets this alert's own campaign block pass as repetition.
-    related_other_rules: int = 0
     campaign_indicators: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
@@ -144,9 +120,7 @@ class CorrelationResult:
 AI_CLOSED = "ai_closed_unaudited"
 #: A related alert's model assessments that count as judged a threat: the fast tier's, or the deep tier's verdict.
 THREAT_ASSESSMENTS = frozenset({"suspicious", "likely_threat", "confirmed_threat"})
-APPROVAL_STATUS = "waiting_approval"
-DEFAULT_THRESHOLDS = RoutingThresholds()
-OPEN_REVIEW_STATUSES = frozenset({"waiting_human", APPROVAL_STATUS})
+OPEN_REVIEW_STATUSES = frozenset({"waiting_human", "waiting_approval"})
 
 
 def _summary_part(other: Any, key: str) -> Mapping[str, Any]:
@@ -164,101 +138,8 @@ def related_disposition(other: Any) -> str:
     return str(other.disposition or "undecided")
 
 
-def related_document(other: Any) -> Dict[str, Any]:
-    """A stored related alert as a canonical alert with its raw event (what the noise catalogue reads)."""
-    normalized = other.normalized if isinstance(other.normalized, Mapping) else {}
-    raw = getattr(other, "raw", None)
-    return {**normalized, "raw": raw if isinstance(raw, Mapping) else {}}
-
-
-#: What a sibling's own model-close check may report and leave it a quiet repeat: the tier (this alert's tier
-#: decides). Its campaign check is exempt only when its own digest shows nothing but repeats of its rule
-#: (:func:`_sibling_campaign_cleared`), so a block cannot be laundered through a sibling once the alert that caused
-#: it has left this alert's window.
-SIBLING_EXEMPT_BLOCKERS = frozenset({"tier_off"})
-CAMPAIGN = "campaign_in_progress"
-
-
-def _count(value: Any) -> Optional[int]:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
-def _sibling_campaign_cleared(correlation: Mapping[str, Any]) -> bool:
-    """Whether a sibling's own campaign block came only from same-rule siblings it could not yet vouch for: its
-    digest shows no threat, a complete set and no related alert of another or unknown rule. A digest without these
-    counts (unknown) does not clear it."""
-    return (
-        _count(correlation.get("related_threats")) == 0
-        and correlation.get("related_complete") is True
-        and _count(correlation.get("related_other_rules")) == 0
-    )
-
-
-def _sibling_state(other: Any) -> Dict[str, Any]:
-    """A related alert as routing state, from what is stored: its severity, alert document and agent digests."""
-    return {
-        "severity": other.severity,
-        "alert": related_document(other),
-        "triage": dict(_summary_part(other, "triage")),
-        "analysis": dict(_summary_part(other, "analysis")),
-        "correlation": dict(_summary_part(other, "correlation")),
-    }
-
-
-def quiet_rule_repeat(
-    rule: Optional[DetectionRule],
-    other: Any,
-    *,
-    judged_threat: bool,
-    max_likelihood: int = DEFAULT_THRESHOLDS.model_close_max_likelihood,
-    min_certainty: int = DEFAULT_THRESHOLDS.model_close_min_certainty,
-) -> bool:
-    """Whether a related alert is ``rule`` repeating as noise (FIX-2).
-
-    The same vendor detection rule, judged a threat by no model, not a
-    response plan awaiting approval, and either:
-
-    * closed as benign (by an analyst, approved evidence or a model-led
-      close). This trusts the analyst's or the evidence's decision on purpose,
-      whatever the sibling's own model scores; a model threat verdict on it
-      still blocks (checked first); or
-    * a model-led close candidate itself: its own
-      :func:`closure.model_close_blockers`, apart from the tier, are empty
-      (no steering text, no recent true positive, both tiers benign at the
-      thresholds, no never-close class, a low enough severity). Its own
-      campaign block counts as cleared only when its stored digest shows no
-      threat, a complete related set and no related alert of another or
-      unknown rule (``related_other_rules`` 0): the block of a kill-chain
-      step that has since left this alert's window is not laundered.
-
-    A sibling still waiting for a model, or for its deep verdict, is not
-    quiet: anything unknown blocks.
-    """
-    if rule is None or judged_threat or other.status == APPROVAL_STATUS:
-        return False
-    if detection_rule(related_document(other)) != rule:
-        return False
-    if other.status == "closed" and other.disposition == "benign":
-        return True
-    sibling = _sibling_state(other)
-    blockers = set(closure.model_close_blockers(
-        sibling, tier=closure.MODEL_CLOSE_TIER, max_likelihood=max_likelihood, min_certainty=min_certainty,
-    )) - SIBLING_EXEMPT_BLOCKERS
-    if CAMPAIGN in blockers and _sibling_campaign_cleared(sibling["correlation"]):
-        blockers.discard(CAMPAIGN)
-    return not blockers
-
-
-def tally_related(
-    result: CorrelationResult,
-    others: List[Any],
-    rule: Optional[DetectionRule] = None,
-    *,
-    thresholds: Optional[RoutingThresholds] = None,
-) -> None:
-    """Count every related alert's disposition, model judgement, open review and quiet repeat of ``rule`` (this
-    alert's detection rule) into ``result``."""
-    t = thresholds or DEFAULT_THRESHOLDS
+def tally_related(result: CorrelationResult, others: List[Any]) -> None:
+    """Count every related alert's disposition, model judgement and open review into ``result``."""
     for other in others:
         key = related_disposition(other)
         result.related_dispositions[key] = result.related_dispositions.get(key, 0) + 1
@@ -267,11 +148,6 @@ def tally_related(
         )
         result.related_threats += int(judged)
         result.related_open_reviews += int(other.status in OPEN_REVIEW_STATUSES)
-        result.related_other_rules += int(rule is None or detection_rule(related_document(other)) != rule)
-        result.related_rule_repeats += int(quiet_rule_repeat(
-            rule, other, judged_threat=judged, max_likelihood=t.model_close_max_likelihood,
-            min_certainty=t.model_close_min_certainty,
-        ))
 
 
 def frequency_level(alerts_per_hour: float) -> str:
@@ -350,7 +226,7 @@ class CorrelationAgent(BaseAgent):
             await ctx.repos.indicators.add_sightings(
                 ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
             )
-        related, complete = await self._related(ctx, [(i.type, h) for i, h in hashed], now)
+        related = await self._related(ctx, [(i.type, h) for i, h in hashed], now)
 
         type_counts: Dict[str, int] = {}
         for ind in indicators:
@@ -370,15 +246,13 @@ class CorrelationAgent(BaseAgent):
             indicator_types=type_counts,
             burst=burst,
             frequency_level=frequency_level(per_hour),
-            related_complete=complete,
         )
         if not related:
             result.llm_skipped = self.skip_llm("no_related_alerts").skipped
             return result
 
         others = await self.related_alerts(ctx, related)
-        thresholds = RoutingThresholds.from_settings(ctx.settings.routing)
-        tally_related(result, [other for _, _, other in others], detection_rule(alert), thresholds=thresholds)
+        tally_related(result, [other for _, _, other in others])
         digests = [self.related_digest(*found) for found in others[:MAX_DIGESTS]]
 
         llm: LLMResult[CorrelationAssessment] = await self.call_llm(
@@ -402,7 +276,7 @@ class CorrelationAgent(BaseAgent):
         result.llm_skipped = llm.skipped
         result.llm_refusal = agent_refusal(llm, self.name)
         if llm.refused:
-            grey = thresholds.correlation_grey_zone_min
+            grey = RoutingThresholds.from_settings(ctx.settings.routing).correlation_grey_zone_min
             result.confidence = max(result.confidence, grey)
             result.notes.append("correlation: model refused; confidence held in the grey zone for review")
         if llm.value is not None:
@@ -461,27 +335,18 @@ class CorrelationAgent(BaseAgent):
         """Compact, bounded view of each related alert (no raw events, no ids)."""
         return [cls.related_digest(idx, r, other) for idx, r, other in await cls.related_alerts(ctx, related)]
 
-    async def _related(
-        self, ctx: AgentContext, keys: List[Tuple[str, str]], now: datetime
-    ) -> Tuple[List[Any], bool]:
-        """Alerts sharing an indicator within the window, and whether that set is complete.
-
-        A sample waiting for its blind-audit label is left out: its disposition
-        must not reach this alert's digest or the model (it is hidden until
-        labelled). The set is incomplete when the query hit its limit (more
-        related alerts may exist) or a related alert was hidden: a model-led
-        close then fails closed (FIX-2, :mod:`lg_sotf.domain.closure`).
-        """
+    async def _related(self, ctx: AgentContext, keys: List[Tuple[str, str]], now: datetime) -> List[Any]:
+        """Alerts sharing an indicator within the window. A sample waiting for its blind-audit label is left
+        out: its disposition must not reach this alert's digest or the model (it is hidden until labelled)."""
         if not keys or ctx.repos is None:
-            return [], True
+            return []
         related = await ctx.repos.indicators.related_alerts(
             ctx.tenant_id, keys, since=now - self.window, limit=self.max_related, exclude_alert_id=ctx.alert_id
         )
         if not related:
-            return [], True
+            return []
         hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
-        complete = len(related) < self.max_related and not hidden
-        return [r for r in related if r.alert_id not in hidden], complete
+        return [r for r in related if r.alert_id not in hidden]
 
     @staticmethod
     def _rule_score(related: List[Any], indicators: List[Indicator], burst: bool) -> int:

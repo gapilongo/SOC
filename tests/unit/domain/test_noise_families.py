@@ -66,7 +66,7 @@ def wazuh_state(event: Dict[str, Any], **changes: Any) -> Dict[str, Any]:
         "alert": alert,
         "triage": {"confidence": 25, "rule_fp": [], "rule_tp": [], "llm_used": True, "threat_assessment": "benign",
                    "threat_likelihood": 3},
-        "correlation": {"related_count": 0, "related_complete": True, "related_dispositions": {}},
+        "correlation": {"related_count": 0, "related_dispositions": {}},
         "analysis": {"threat_score": 8, "certainty": 92, "verdict": "benign", "rule_threat_score": 40,
                      "rule_evidence": [], "rule_corroborated": False, "llm_used": True},
     }
@@ -344,3 +344,25 @@ def test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes() -> None:
     assert routing.decide(state, T, AUTO).route == "escalate"
     # Another format without a raw rule stays as before: its ATT&CK mapping decides.
     assert never_close_class({**gone, "normalizer": "canonical"}) == UNMAPPED
+
+
+
+def test_final_a_cut_groups_list_never_closes() -> None:
+    """Final check of #345: with more groups than the state keeps, an authentication-failure group could sit past the
+    cut, so the alert is vendor_unknown (fail closed); one inside the cut still reads as credential access."""
+    padding = {f"field{i}": "x" * 1_500 for i in range(30)}
+    many = [f"group{i}" for i in range(25)] + ["authentication_failed"]
+    oversized = state_alert({**wazuh_event("60122", "Logon Failure", groups=many,
+                                           mitre={"id": ["T1078"], "tactic": ["Initial Access"]}), "data": padding})
+    assert oversized["raw"]["rule"]["groups_truncated"] is True
+    assert "authentication_failed" not in oversized["raw"]["rule"]["groups"]
+    assert never_close_class(oversized) == VENDOR_UNKNOWN
+    package = state_alert({**wazuh_event("2902", DPKG, groups=many[:25]), "data": padding})
+    assert model_close_class(package) == VENDOR_UNKNOWN  # the cut also blocks the catalogue lift
+    kept_whole = state_alert(wazuh_event("2902", DPKG, groups=[f"group{i}" for i in range(60)]))
+    assert kept_whole["raw"]["rule"]["groups_truncated"] is True and model_close_class(kept_whole) == VENDOR_UNKNOWN
+    early = state_alert({**wazuh_event("60122", "Logon Failure", groups=["authentication_failed"] + many,
+                                       mitre={"id": ["T1078"], "tactic": ["Initial Access"]}), "data": padding})
+    assert never_close_class(early) == "credential_access"
+    few = state_alert({**wazuh_event("2902", DPKG), "data": padding})
+    assert "groups_truncated" not in few["raw"]["rule"] and model_close_class(few) is None

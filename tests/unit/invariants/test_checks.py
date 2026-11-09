@@ -88,7 +88,6 @@ def test_routing_policy(make_settings: Callable[..., Settings], monkeypatch: pyt
         "high alert closed on a benign verdict",
         "low alert closed on the models' verdict with model-led closure off",
         "credential access alert closed on the models' verdict",
-        "alert closed on the models' verdict next to a different detection on its entities",
         "low alert closed on benign evidence despite rule evidence of a threat",
     ]
 
@@ -222,12 +221,6 @@ def test_the_synthetic_routing_states_are_ones_the_policy_would_otherwise_close(
     assert decide(checks._benign_state("low", evidence=False), t, "auto_full_audit").code == "model_closed"
     credential = checks._benign_state("low", evidence=False, tactic="Credential Access")
     assert decide(credential, t, "auto_full_audit").code == "false_positive_review"
-    repeats = checks._benign_state("low", evidence=False)
-    repeats["correlation"] = {"related_count": 1, "related_rule_repeats": 1, "related_complete": True,
-                             "related_threats": 0, "related_dispositions": {"benign": 1}}
-    assert decide(repeats, t, "auto_full_audit").code == "model_closed"  # the same rule repeating closes
-    repeats["correlation"]["related_rule_repeats"] = 0
-    assert decide(repeats, t, "auto_full_audit").code == "false_positive_review"
     corroborated = checks._benign_state("low")
     corroborated["analysis"].update(rule_corroborated=True)
     assert decide(corroborated, t).code == "false_positive_review"

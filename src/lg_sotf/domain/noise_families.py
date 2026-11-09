@@ -35,8 +35,8 @@ What an entry is keyed on, and why:
   without admin rights. Each entry therefore records the abuse it could
   hide, and every family with a known abuse has a test that a malicious or
   suspicious model verdict still escalates it. A forged repeat can also be
-  a decoy, or flood the related set: past the correlation limit the set is
-  incomplete and the close fails closed.
+  a decoy; while it waits for an analyst it blocks other model closes on
+  the same entities (FIX-1's campaign check).
 
 The module also holds the vendor facts that put an alert **into** a
 never-close class whatever its ATT&CK mapping (:func:`vendor_never_close_class`):
@@ -162,8 +162,7 @@ CATALOGUE: Tuple[NoiseFamily, ...] = (
             "A single 4xx answer in a web access log: broken links, crawlers and expired sessions produce these "
             "constantly. Attack signatures in the same access log (SQL injection, XSS, common web attacks, an "
             "attack answered with 200) and repeated 4xx from one source (31151, level 10, which maps to medium) "
-            "are separate rules and are not catalogued; as a different rule on the same source, 31151 blocks a "
-            "model close of the 4xx repeats around it. 5xx answers (31120-31123) are left out: a server error can "
+            "are separate rules and are not catalogued. 5xx answers (31120-31123) are left out: a server error can "
             "be the side effect of an exploit attempt."
         ),
         could_hide=(
@@ -240,7 +239,9 @@ def vendor_never_close_class(alert: Any) -> Optional[str]:
     checks only block, so they read the raw event whatever format built the
     alert. The state size cap always keeps ``raw.rule``
     (:func:`lg_sotf.core.graph.cap_alert`); a Wazuh-built alert whose rule
-    still cannot be read is :data:`VENDOR_UNKNOWN`, a never-close class.
+    still cannot be read, or whose groups list the cap cut (``groups_truncated``)
+    without an authentication-failure group in what it kept, is
+    :data:`VENDOR_UNKNOWN`, a never-close class.
     """
     if not isinstance(alert, Mapping):
         return None
@@ -254,5 +255,7 @@ def vendor_never_close_class(alert: Any) -> Optional[str]:
         names = {g.strip().lower() for g in groups[:MAX_RULE_GROUPS] if isinstance(g, str)}
         if names & AUTH_FAILURE_GROUPS:
             return "credential_access"
+    if rule.get("groups_truncated") is True:
+        return VENDOR_UNKNOWN  # the state cap cut the groups: an authentication-failure group may be among the rest
     rule_id = _rule_id(rule)
     return NEVER_CLOSE_RULE_IDS.get(rule_id) if rule_id is not None else None

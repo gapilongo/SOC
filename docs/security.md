@@ -256,8 +256,7 @@ close a dangerous alert or trigger containment.
    authentication failures count as credential access whatever their
    ATT&CK id),
    never with steering text, a recent true positive on its entities or a
-   campaign in progress among its related alerts (anything but the same
-   detection rule repeating as benign noise), and
+   campaign in progress among its related alerts, and
    only when the fast tier's likelihood is at most 8 and the deep tier's
    certainty at least 85 (install settings). The routing policy chooses to plan a response from the threat
    score; what then runs automatically is decided per action: automatic

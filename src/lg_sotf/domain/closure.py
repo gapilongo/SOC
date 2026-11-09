@@ -24,30 +24,12 @@ missing or unreadable value blocks the close.
   malicious history (``prior_malicious_history``), no related alert of the
   correlation window closed as malicious, and no rule evidence that
   corroborates a threat (``rule_corroborated``);
-* no campaign in progress (FIX-2): every related alert of the correlation
-  window is the same detection rule repeating as noise
-  (``related_rule_repeats`` equals ``related_count``): the same vendor rule
-  id as this alert (known for Wazuh only: for other vendors every related
-  alert blocks), judged a threat by no model, not a response plan awaiting
-  approval, and either closed as benign (by an analyst, approved evidence or
-  a model-led close: a deliberate trust in that decision, whatever the
-  sibling's own model scores) or itself a model-led close candidate: its
-  own conditions here, apart from the tier, all hold (no steering text, no
-  recent true positive, both model tiers benign at the thresholds, no
-  never-close class), and its own campaign block counts as cleared only
-  when its digest shows no threat, a complete set and no related alert of
-  another or unknown rule (``related_other_rules``), so a kill-chain
-  step that has left this alert's window cannot be laundered through it.
-  A sibling still waiting for its deep verdict blocks. A related alert of a different rule on the same entities is a
-  possible kill chain and blocks, whatever its status. A burst of one rule
-  that passes these tests is repetition, not a campaign. The set must be
-  complete (``related_complete``): when the correlation query hit its
-  limit (``agents.correlation.max_correlations``: 10 by default, 20 at
-  most; a complete set holds fewer, so a close stands behind at most 9
-  repeats in the 60-minute window by default, 19 at most) or a related alert was hidden for a blind audit, the close
-  is blocked. A digest from before FIX-2 with related alerts blocks (its
-  repeat count is unknown); one with none (``related_count`` 0) has
-  nothing to count and does not;
+* no campaign in progress: no burst of related alerts, no related alert a
+  model judged malicious or suspicious, none still open for an analyst or an
+  approval (counted over every related alert, not only those shown to the
+  correlation model), so an attack is never closed alert by alert. (A
+  check that lets one rule repeat was deferred from FIX-2: three review
+  rounds found ways to launder a block through it);
 * both model tiers say benign: the fast tier's assessment is ``benign`` with
   a threat likelihood at most ``routing.model_close_max_likelihood``
   (default 8), and the deep tier's verdict is ``benign`` with a certainty of
@@ -265,24 +247,17 @@ def _recent_true_positive(analysis: Mapping[str, Any], correlation: Mapping[str,
 
 
 def _campaign_in_progress(correlation: Mapping[str, Any]) -> bool:
-    """Related alerts that may be one attack (FIX-2): anything but the same detection rule repeating as noise.
-
-    The close is allowed only when there is no related alert (and none was
-    left out), or when the related set is complete and every related alert is
-    a quiet repeat of this alert's rule (``related_rule_repeats`` equals
-    ``related_count``) and none was judged a threat. A burst made only of such
-    repeats is repetition, not a campaign. Unknown or inconsistent counts (a
-    digest without them) fail closed.
-    """
+    """Related alerts that may be one attack: a burst, one a model judged malicious or suspicious, or one still
+    open for review. Unknown counts (a digest without them) fail closed."""
     related = _number(correlation.get("related_count"))
-    complete = correlation.get("related_complete")
-    if related is None or related < 0:
+    if related is None:
         return True
     if related == 0:
-        return complete is False
-    repeats = _number(correlation.get("related_rule_repeats"))
-    threats = _number(correlation.get("related_threats"))
-    return not (complete is True and repeats == related and threats == 0)
+        return False
+    if correlation.get("burst") is not False:
+        return True
+    counts = [_number(correlation.get(key)) for key in ("related_threats", "related_open_reviews")]
+    return any(count is None or count > 0 for count in counts)
 
 
 def _steering_text(triage: Mapping[str, Any]) -> bool:

@@ -280,15 +280,10 @@ queue without them. That is a simulation, not a re-measurement. The miss-rate re
 auto-close result is not yet a statement about the model.
 
 Decision policy v2.1 (FIX-2) adds a reviewed catalogue of unmapped Wazuh
-noise rules (by rule id) and a campaign check that lets one rule repeat.
-Simulated on the same recorded outputs, with the related alerts rebuilt
-from the stream: none of the 312 benign alerts closes and none of the 208
-malicious (only the 107 benign and 30 malicious alerts that run analysed
-can be simulated);
-on the 100 alerts of the FIX-1 dev run, 2 of 60 benign (0 of 40
-malicious). The model tiers and related alerts a model judged suspicious
-remain the main blockers. With a model fooled on every corpus_v1 alert, the
-policy alone closes none of the 208 malicious alerts.
+noise rules (by rule id) and makes authentication failures a never-close
+class whatever their ATT&CK id; the campaign check stays FIX-1's.
+Simulated on the FIX-1 dev run's 100 recorded alerts, 2 of the 60
+benign alerts close and none of the 40 malicious.
 
 ### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama
 

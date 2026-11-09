@@ -1138,9 +1138,6 @@
                     },
                     "type": "array"
                   },
-                  "related_complete": {
-                    "type": "boolean"
-                  },
                   "related_count": {
                     "type": "integer"
                   },
@@ -1151,12 +1148,6 @@
                     "type": "object"
                   },
                   "related_open_reviews": {
-                    "type": "integer"
-                  },
-                  "related_other_rules": {
-                    "type": "integer"
-                  },
-                  "related_rule_repeats": {
                     "type": "integer"
                   },
                   "related_threats": {
@@ -2088,9 +2079,6 @@
                     },
                     "type": "array"
                   },
-                  "related_complete": {
-                    "type": "boolean"
-                  },
                   "related_count": {
                     "type": "integer"
                   },
@@ -2101,12 +2089,6 @@
                     "type": "object"
                   },
                   "related_open_reviews": {
-                    "type": "integer"
-                  },
-                  "related_other_rules": {
-                    "type": "integer"
-                  },
-                  "related_rule_repeats": {
                     "type": "integer"
                   },
                   "related_threats": {
