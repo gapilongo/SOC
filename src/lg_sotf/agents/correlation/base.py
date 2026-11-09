@@ -16,10 +16,17 @@ domains (``tools.internal_domains``) are left out, as is the reporter (see
 :mod:`lg_sotf.domain.indicators`), so ordinary internal mail
 and a prolific reporter never look like a campaign.
 
+Correlation is evidence, not a score boost (decision policy v2, FIX-1): its
+digest (related alerts, burst, frequency, campaign rating) goes to the
+analysis model and into the alert summary, but the alert's confidence is
+left as triage set it. Related alerts, bursts and alert rates therefore
+never move an alert into the grey zone or to the response policy on their
+own.
+
 A refusal of that call leaves the alert's assessment open: its confidence is
-raised to the grey zone (``routing.correlation_grey_zone_min``) so it goes
-on to analysis and an analyst instead of an automatic close, and the digest
-carries ``llm_refusal``.
+raised to the grey zone (``routing.correlation_grey_zone_min``) and the
+digest carries ``llm_refusal``, so routing sends it to an analyst instead of
+an automatic close.
 """
 
 from __future__ import annotations
@@ -185,7 +192,7 @@ class CorrelationAgent(BaseAgent):
         burst = len(recent) >= self.burst_threshold
         per_hour = len(related) / max(self.window.total_seconds() / 3600.0, 1e-9)
         rule_score = self._rule_score(related, indicators, burst)
-        confidence = self._adjust_confidence(base_confidence, len(related), burst, frequency_level(per_hour))
+        confidence = max(0, min(100, round(base_confidence)))
 
         result = CorrelationResult(
             score=rule_score,
@@ -299,12 +306,4 @@ class CorrelationAgent(BaseAgent):
         if burst:
             score += 20
         return max(0, min(100, score))
-
-    @staticmethod
-    def _adjust_confidence(base: float, related: int, burst: bool, level: str) -> int:
-        adjustment = min(20, related * 5)
-        if burst:
-            adjustment += 15
-        adjustment += {"critical": 15, "high": 10}.get(level, 0)
-        return max(0, min(100, round(base + adjustment)))
 

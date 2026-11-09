@@ -42,6 +42,7 @@ from lg_sotf.db import Connection
 from lg_sotf.db.repos import Repositories, Tenant, User
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS
 from lg_sotf.db.tenancy import switch_tenant
+from lg_sotf.domain import closure
 from lg_sotf.models.tenant_settings import COPIED_KEYS, TenantSettingsDoc
 from lg_sotf.services.escalation import resolve_review_policy
 from lg_sotf.settings import Settings
@@ -367,13 +368,17 @@ async def update_settings(
     so two concurrent changes to different sub-keys cannot drop one another.
     ``build_patch`` validates and may raise, and then nothing changes.
     Audited ``tenant.settings_updated`` with the patched keys (never their
-    values); saving ``autonomy`` or ``response`` also marks the onboarding
+    values), plus the model-led closure tier when ``ai_closure`` changes;
+    saving ``autonomy`` or ``response`` also marks the onboarding
     "autonomy reviewed" step. Cache invalidation is the caller's.
     """
     async with repos.db.tenant_tx(tenant_id) as conn:
         tenant = await repos.tenants.get(tenant_id, for_update=True, conn=conn)
         patch = build_patch(tenant)
         updated = await repos.tenants.update_settings(tenant_id, patch, conn=conn)
+        details: Dict[str, Any] = {"keys": sorted(patch)}
+        if closure.SETTING in patch:
+            details["ai_closure_tier"] = closure.autonomy_tier(updated.settings)
         await audit.record(
             tenant_id,
             "tenant.settings_updated",
@@ -381,7 +386,7 @@ async def update_settings(
             tenant_id,
             actor_type=actor.type,
             actor_id=actor.id,
-            details={"keys": sorted(patch)},
+            details=details,
             conn=conn,
         )
         if AUTONOMY_REVIEW_KEYS & patch.keys():

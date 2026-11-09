@@ -224,9 +224,10 @@ gate:        suppression rules / verdict cache (same or lower severity than the
              analyst decided; never for critical or LLM-normalised alerts) →
              close (benign) | triage
 triage:      rules + fast-tier LLM → close (obvious FP) | correlation
-correlation: indicator sightings + optional LLM → analysis | decide
+correlation: indicator sightings + optional LLM → analysis
+             (decide only for a strongly correlated high/critical alert)
 analysis:    ReAct with deep-tier LLM, bounded steps, early stop
-decide:      policy routing → escalate | plan_response | close
+decide:      policy routing (decision policy v2) → escalate | plan_response | close
 escalate:    create/attach escalation (idempotent) → await_analyst
 await_analyst: interrupt({"escalation_id": ...}) → route on decision:
              true_positive → plan_response ; false_positive/benign → close ;
@@ -256,8 +257,7 @@ Rules:
   message is retried by the queue and eventually dead-lettered. Failures are
   never converted into default scores that drive routing.
 * LLM output alone can never auto-close a high/critical alert or authorise a
-  containment action. Routing to `close` from LLM evidence requires rule
-  corroboration or analyst decision; containment requires tenant autonomy
+  containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.
   (Clarification: "auto-close" here means closing as benign. The decision to
   plan a response is taken from the threat score; rule corroboration gates
@@ -265,6 +265,31 @@ Rules:
   `create_ticket`, which run under autonomy `auto` on any evidence. A
   policy response whose actions complete closes the alert as malicious at
   any severity.)
+* Decision policy v2 (`domain/routing.py` `decide`, `domain/closure.py`):
+  * Every low, medium and info alert is analysed. Correlation is evidence for
+    the analysis model and the summary; it never raises the confidence, so it
+    never moves an alert into the grey zone or to the response policy alone.
+  * The response policy and the grey zone (30 to 70) read the post-analysis
+    assessment: the analysis threat score, or the triage confidence when no
+    analysis ran (a strongly correlated high or critical alert).
+  * A low-threat `benign` verdict closes a lower-severity alert with
+    approved benign evidence (`rule_corroborated_benign`): a rule
+    false-positive signal of triage, which comes only from the detection
+    rule's name, the EICAR hash, a test-environment source, a scanner the
+    tenant declared or an authenticated internal sender. A cached analyst
+    verdict closes earlier, at the gate. The rules' threat score no longer
+    gates a close.
+  * Without such evidence the models close the alert alone (`model_closed`,
+    close reason `ai_closed:audit_required`) only when the tenant's
+    autonomy tier `ai_closure.tier` is `auto_full_audit` (default `off`),
+    the severity is info, low or medium, the detection rule maps it to
+    ATT&CK and not to a never-close class (credential access, log clearing,
+    tampering, ransomware, persistence through an object the attacker
+    names), triage found no steering text, no entity has a recent true
+    positive, and both model tiers say `benign`: fast-tier likelihood at
+    most `routing.model_close_max_likelihood` (8) and deep-tier certainty at
+    least `routing.model_close_min_certainty` (85). The `decide` node reads
+    the tier from the tenant's settings at every decision.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,

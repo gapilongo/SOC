@@ -1493,6 +1493,16 @@
                     },
                     "type": "array"
                   },
+                  "threat_likelihood": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "trusted_score": {
                     "anyOf": [
                       {
@@ -2417,6 +2427,16 @@
                       "type": "string"
                     },
                     "type": "array"
+                  },
+                  "threat_likelihood": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   },
                   "trusted_score": {
                     "anyOf": [

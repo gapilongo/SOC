@@ -4,7 +4,18 @@ Safety rules enforced here (contract section 8):
 
 * Automation never closes a high/critical alert: only an analyst decision,
   a suppression rule or an analyst-confirmed verdict (not for critical) does.
-  Lower severities close only with rule-based corroboration of the LLM.
+* Decision policy v2 (FIX-1). Every low/medium alert is analysed: correlation
+  never skips analysis for it, and correlation is evidence for the model, not
+  a confidence boost. The grey zone and the response policy read the
+  post-analysis assessment (the analysis threat score; the triage confidence
+  only when no analysis ran). A low-threat benign verdict closes a lower
+  severity alert only with approved benign evidence (:func:`benign_evidence`:
+  triage's rule false-positive signals, which come only from the detection
+  rule's name, the EICAR hash, a test source or the tenant's declared
+  context; a cached analyst verdict closes earlier, at the gate) or, when the
+  tenant's autonomy tier is ``auto_full_audit``, through a model-led close
+  (:mod:`lg_sotf.domain.closure`, code ``model_closed``) that every condition
+  of that module allows. With the tier ``off`` a model never closes alone.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -28,6 +39,7 @@ from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, Tuple, cast
 
 from pydantic import BaseModel, ConfigDict
 
+from lg_sotf.domain import closure
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, COMPLETED_ACTION_STATUSES, HIGH_SEVERITIES, ROUTES
 from lg_sotf.models.vocabulary import Route as DecideRoute
 
@@ -73,6 +85,10 @@ class RoutingThresholds(BaseModel):
     close_max_threat: int = 30
     max_more_info_loops: int = 1
     max_alert_age_hours: int = 72
+    # Model-led close (lg_sotf.domain.closure): the fast tier's likelihood at most this, the deep tier's
+    # certainty at least this. Install-wide on purpose: a tenant chooses the tier, never looser numbers.
+    model_close_max_likelihood: int = 8
+    model_close_min_certainty: int = 85
 
     @classmethod
     def from_settings(cls, routing: Optional[Mapping[str, Any]]) -> RoutingThresholds:
@@ -152,23 +168,45 @@ def route_after_triage(state: Mapping[str, Any], t: RoutingThresholds) -> Triage
 
 
 def route_after_correlation(state: Mapping[str, Any], t: RoutingThresholds) -> CorrelationRoute:
+    """Every alert automation may close (below high) is analysed; strong correlation skips it only for high/critical.
+
+    High and critical alerts never close automatically, so a strong
+    correlation may send them straight to ``decide``, which escalates them
+    (or plans a response only on trusted triage evidence).
+    """
+    if not _is_high(state):
+        return "analysis"
     corr = cast("CorrelationDigest", state.get("correlation") or {})
     score = float(corr.get("score", 0))
     related = int(corr.get("related_count", 0))
-    confidence = float(state.get("confidence", 50))
     if score > t.correlation_strong_score and related >= t.correlation_strong_min_related:
-        return "decide"
-    if (
-        not _is_high(state)
-        and confidence < t.human_review_min
-        and score < t.human_review_min
-        and not corr.get("burst")
-    ):
         return "decide"
     return "analysis"
 
 
-def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
+def benign_evidence(triage: Mapping[str, Any]) -> bool:
+    """Approved benign evidence for a close: a rule false-positive signal of triage.
+
+    Triage takes those only from what an attacker does not write
+    (:mod:`lg_sotf.domain.benign_evidence`): the detection rule's name with
+    attacker-named values masked, an EICAR-only hash, a test-environment
+    source id, a scanner the tenant declared (``triage.known_scanners``) and,
+    for email, an authenticated sender of the tenant's internal domains.
+    """
+    fp = triage.get("rule_fp")
+    return isinstance(fp, list) and any(isinstance(signal, str) and signal for signal in fp)
+
+
+def assessed_threat(state: Mapping[str, Any]) -> float:
+    """The post-analysis assessment routing tests: the analysis threat score, else the confidence."""
+    triage = cast("TriageDigest", state.get("triage") or {})
+    analysis = cast("AnalysisDigest", state.get("analysis") or {})
+    confidence = float(state.get("confidence", triage.get("confidence", 50)))
+    return float(analysis.get("threat_score", confidence)) if analysis else confidence
+
+
+def decide(state: Mapping[str, Any], t: RoutingThresholds, tier: str = "off") -> Decision:
+    """The routing decision after analysis; ``tier`` is the tenant's autonomy tier for model-led closure."""
     if int(state.get("more_info_loops", 0)) > 0:
         return Decision("escalate", "analyst requested more information", None, "analyst_request")
     refused = refused_by(state)
@@ -178,14 +216,8 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
     triage = cast("TriageDigest", state.get("triage") or {})
     analysis = cast("AnalysisDigest", state.get("analysis") or {})
     confidence = float(state.get("confidence", triage.get("confidence", 50)))
-    if analysis:
-        threat = float(analysis.get("threat_score", confidence))
-        rule_threat = float(analysis.get("rule_threat_score", threat))
-        verdict = analysis.get("verdict")
-    else:
-        threat = confidence
-        rule_threat = float(triage.get("rule_confidence", confidence))
-        verdict = None
+    threat = assessed_threat(state)
+    verdict = analysis.get("verdict") if analysis else None
 
     if threat >= t.response_threshold or (
         threat >= t.response_combo_threat and confidence >= t.response_combo_confidence
@@ -194,28 +226,45 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds) -> Decision:
             "plan_response", f"threat score {threat:.0f} meets the response policy", "malicious", "high_risk"
         )
 
-    if verdict == "inconclusive" or t.correlation_grey_zone_min <= confidence <= t.correlation_grey_zone_max:
-        return Decision("escalate", "confidence in the grey zone", None, "grey_zone")
+    if verdict == "inconclusive" or t.correlation_grey_zone_min <= threat <= t.correlation_grey_zone_max:
+        return Decision("escalate", "assessment in the grey zone", None, "grey_zone")
 
     if threat < t.close_max_threat:
-        if _is_high(state):
-            return Decision("escalate", "high severity alerts are closed only by an analyst", None, "false_positive_review")
-        if llm_normalized(state):
-            return Decision(
-                "escalate", "the alert was normalised by a model; an analyst confirms benign closes", None, "llm_normalized"
-            )
-        if rule_threat < t.close_max_threat:
-            return Decision("close", "low threat corroborated by rules", "benign", "rule_corroborated_benign")
-        return Decision("escalate", "low threat verdict lacks rule corroboration", None, "false_positive_review")
+        return _low_threat(state, triage, verdict, t, tier)
 
     return Decision("escalate", "no automatic policy applies", None, "inconclusive")
 
 
-def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[Tuple[int, int]]:
-    """The confidence band that sent the alert to an analyst, when one did.
+def _low_threat(
+    state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Optional[str], t: RoutingThresholds, tier: str
+) -> Decision:
+    """A low threat: close on approved benign evidence or a model-led close the tier allows, else an analyst."""
+    if _is_high(state):
+        return Decision("escalate", "high severity alerts are closed only by an analyst", None, "false_positive_review")
+    if llm_normalized(state):
+        return Decision(
+            "escalate", "the alert was normalised by a model; an analyst confirms benign closes", None, "llm_normalized"
+        )
+    if verdict not in (None, "benign"):
+        return Decision("escalate", "low threat score without a benign verdict", None, "false_positive_review")
+    if benign_evidence(triage):
+        return Decision("close", "low threat corroborated by approved benign evidence", "benign", "rule_corroborated_benign")
+    blockers = closure.model_close_blockers(
+        state, tier=tier, max_likelihood=t.model_close_max_likelihood, min_certainty=t.model_close_min_certainty
+    )
+    if not blockers:
+        return Decision(
+            "close", "AI-closed, audit required: both model tiers judged it benign", "benign", closure.MODEL_CLOSED
+        )
+    return Decision("escalate", "low threat verdict lacks approved benign evidence", None, "false_positive_review")
 
-    Only ``grey_zone`` escalations are decided by a band: the confidence lies
-    in ``[correlation_grey_zone_min, correlation_grey_zone_max]``. A
+
+def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[Tuple[int, int]]:
+    """The band that sent the alert to an analyst, when one did.
+
+    Only ``grey_zone`` escalations are decided by a band: the assessed threat
+    (:func:`assessed_threat`, passed as ``confidence``) lies in
+    ``[correlation_grey_zone_min, correlation_grey_zone_max]``. A
     ``grey_zone`` escalation caused by an ``inconclusive`` verdict outside the
     band, and every other code, has none.
     """
@@ -225,7 +274,8 @@ def review_band(code: str, confidence: float, t: RoutingThresholds) -> Optional[
 
 
 def routing_digest(code: str, confidence: float, t: RoutingThresholds) -> RoutingDigest:
-    """What an escalation records about the routing that created it: the code, the confidence and the band."""
+    """What an escalation records about the routing that created it: the code, the score routing tested against
+    the grey zone (``confidence``: :func:`assessed_threat` for ``decide``'s escalations) and the band."""
     band = review_band(code, confidence, t)
     return {
         "code": code,

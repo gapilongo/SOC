@@ -151,7 +151,7 @@ const decisionBody = (calls: Array<{ method: string; path: string; body?: unknow
 describe('decision page header and claim state', () => {
   it('shows severity, level, owner, routing against its band and the SLA', async () => {
     await renderDecision();
-    expect(screen.getByText('Escalated because triage confidence 42% is inside the review band (20–60%).')).toBeInTheDocument();
+    expect(screen.getByText('Escalated because the assessed threat 42% is inside the review band (20–60%).')).toBeInTheDocument();
     expect(screen.getByText(/Grey zone/)).toHaveTextContent('Grey zone · confidence 42% (band 20–60)');
     expect(screen.getByText(/^SLA /)).toHaveTextContent(/over · breaching/);
     expect(screen.getByText('high')).toBeInTheDocument();

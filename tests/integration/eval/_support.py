@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import socket
-from typing import Any, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
 
+from lg_sotf.eval.dataset import Dataset
+from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.settings import Settings
 
@@ -78,3 +81,20 @@ def block_network_and_model(settings: Settings, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(FakeChatModel, "with_structured_output", no_model)
     monkeypatch.setattr(FakeChatModel, "_generate", no_model)
     return guard
+
+
+def at_tier(dataset: Dataset, tier: str) -> Dataset:
+    """``dataset`` with its evaluation tenants at the model-led closure ``tier`` (FIX-1)."""
+    tenant_settings = {**dict(dataset.meta.get("tenant_settings") or {}), "ai_closure": {"tier": tier}}
+    return dataclasses.replace(dataset, meta={**dataset.meta, "tenant_settings": tenant_settings})
+
+
+def closures(results: List[ItemResult]) -> Dict[str, int]:
+    """Items automation closed, by label, and how many of them the models closed alone (``model_closed``)."""
+    closed = [r for r in results if r.status == "closed"]
+    return {
+        "benign_closed": sum(r.expected == "benign" for r in closed),
+        "malicious_closed": sum(r.expected == "malicious" for r in closed),
+        "benign_model_closed": sum(r.expected == "benign" and r.decision_code == "model_closed" for r in closed),
+        "malicious_model_closed": sum(r.expected == "malicious" and r.decision_code == "model_closed" for r in closed),
+    }

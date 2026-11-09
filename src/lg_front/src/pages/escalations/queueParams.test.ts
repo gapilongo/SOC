@@ -54,10 +54,10 @@ describe('queue URL parameters', () => {
 describe('labels', () => {
   it('explains the routing code with the confidence against its band', () => {
     expect(routingSentence({ code: 'grey_zone', confidence: 42, band: { min: 20, max: 60 } })).toBe(
-      'Escalated because triage confidence 42% is inside the review band (20–60%).',
+      'Escalated because the assessed threat 42% is inside the review band (20–60%).',
     );
-    expect(routingSentence({ code: 'grey_zone', confidence: 70 })).toBe('Escalated because triage confidence 70% is in the grey zone.');
-    expect(routingSentence({ code: 'grey_zone' })).toBe('Escalated because triage confidence is in the grey zone.');
+    expect(routingSentence({ code: 'grey_zone', confidence: 70 })).toBe('Escalated because the assessed threat 70% is in the grey zone.');
+    expect(routingSentence({ code: 'grey_zone' })).toBe('Escalated because the assessed threat is in the grey zone.');
     expect(routingSentence({ code: 'model_refused' })).toMatch(/declined/);
     expect(routingSentence({ code: 'brand_new_code' })).toBe('Escalated: Brand new code.');
     expect(routingSentence(null)).toBeNull();

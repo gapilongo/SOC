@@ -2119,6 +2119,7 @@ export interface components {
                     rule_tp?: string[];
                     threat_assessment?: string | null;
                     threat_categories?: string[];
+                    threat_likelihood?: number | null;
                     trusted_score?: number | null;
                 };
                 verdict?: string;
@@ -2364,6 +2365,7 @@ export interface components {
                     rule_tp?: string[];
                     threat_assessment?: string | null;
                     threat_categories?: string[];
+                    threat_likelihood?: number | null;
                     trusted_score?: number | null;
                 };
                 verdict?: string;

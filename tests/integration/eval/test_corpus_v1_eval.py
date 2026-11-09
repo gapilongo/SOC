@@ -4,7 +4,8 @@ Every item is ingested as a Wazuh alert, run through the real graph and
 routing policy, and answered from its committed cassette
 (``tests/fixtures/eval/cassettes/corpus_v1/*.jsonl.gz``, recorded with the
 fake model): no model, no network, no Wazuh lab. The report must pass
-``corpus_v1_thresholds.yaml``.
+``corpus_v1_thresholds.yaml`` with model-led closure off (the default) and
+at the autonomy tier ``auto_full_audit`` (FIX-1).
 
 When a prompt or agent change makes the cassettes stale (a replay then fails
 with "record it again"), record them again with ``make eval-corpus-cassettes``
@@ -27,7 +28,7 @@ from lg_sotf.eval.report import build_report, render_markdown, write_json
 from lg_sotf.eval.runner import run_evaluation
 from lg_sotf.llm.cassette import CassetteSet, cassette_name
 from lg_sotf.settings import Settings
-from tests.integration.eval._support import block_network_and_model
+from tests.integration.eval._support import at_tier, block_network_and_model, closures
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(1800)]
 
@@ -72,3 +73,13 @@ async def test_corpus_v1_replays_offline_and_passes_its_gate(
     metrics = report["metrics"]
     assert metrics["scored"] == len(dataset.items) and metrics["errors"] == 0
     assert set(report["families"]) == FAMILIES
+    assert closures(replay.results)["benign_model_closed"] == 0  # the tier is off by default
+
+    # FIX-1: model-led closure on. The tier only changes what decide does after analysis, so the same cassettes
+    # answer every call, and the gate (no malicious alert closed in any family) still holds.
+    on = await run_evaluation(eval_settings, at_tier(dataset, "auto_full_audit"),
+                              tenant_id=f"play-cv1on-{secrets.token_hex(3)}", cassettes=CassetteSet(CASSETTES, "replay"))
+    assert [(r.item_id, r.error) for r in on.results if r.status == "error"] == [] and guard.attempts == []
+    on_gate = evaluate_gate(build_report(on.results, dataset=dataset, run_info=on.info), load_thresholds(THRESHOLDS))
+    assert on_gate.passed, [v.message for v in on_gate.violations]
+    assert closures(on.results)["malicious_closed"] == 0

@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Callable
 
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.agents.correlation.base import MAX_DIGESTS, CorrelationAgent, frequency_level
+from lg_sotf.agents.correlation.base import MAX_DIGESTS, MAX_RELATED, CorrelationAgent, frequency_level
 from lg_sotf.domain.indicators import extract_indicators, is_public_ip
 from lg_sotf.llm.fake import Refuse
 from lg_sotf.settings import Settings
@@ -157,7 +157,19 @@ async def test_burst_and_frequency_come_from_sightings(make_settings: Callable[.
     result = await agent.run(ctx, {"entities": {"hashes": ["d41d8cd98f00b204e9800998ecf8427e"]}}, base_confidence=40, now=NOW)
     assert result.burst and result.related_count == 6 and result.llm_used
     assert result.related_alert_ids == [f"r{i}" for i in range(6)]
-    assert result.confidence > 40 and result.score > 0
+    assert result.score > 0
+
+
+async def test_correlation_is_evidence_and_never_raises_the_confidence(make_settings: Callable[..., Settings]) -> None:
+    """FIX-1: a burst of strongly related alerts is in the digest, but routing's confidence is triage's."""
+    settings = make_settings()
+    related = [Related(f"r{i}", 3, NOW - timedelta(minutes=1)) for i in range(MAX_RELATED)]
+    agent = CorrelationAgent(settings=settings, config={"max_correlations": MAX_RELATED})
+    result = await agent.run(
+        AgentContext("t1", "a1", settings, repos=fake_repos(related=related)), HASH_ALERT, base_confidence=55, now=NOW
+    )
+    assert result.burst and result.related_count == MAX_RELATED and result.score >= 85
+    assert result.confidence == 55 and result.digest()["confidence"] == 55
 
 
 def test_frequency_levels() -> None:

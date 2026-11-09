@@ -245,8 +245,15 @@ close a dangerous alert or trigger containment.
    the objects involved, and the attacker names those: "Scheduled task
    created: Windows Update Test"), descriptions, entity names, command lines,
    user agents or email subjects (AI-E6.3, `lg_sotf.domain.benign_evidence`).
-   A low/medium benign close needs rule corroboration in addition to the
-   model. The routing policy chooses to plan a response from the threat
+   A low/medium benign close needs that evidence in addition to the model,
+   unless the tenant set its model-led closure tier `ai_closure.tier` to
+   `auto_full_audit`. Then both model tiers may close a low or medium alert
+   alone, marked `ai_closed:audit_required`, but never a never-close class
+   (credential access, log clearing, tampering, ransomware, persistence
+   through attacker-named objects, or an alert without an ATT&CK mapping),
+   never with steering text or a recent true positive on its entities, and
+   only when the fast tier's likelihood is at most 8 and the deep tier's
+   certainty at least 85 (install settings). The routing policy chooses to plan a response from the threat
    score; what then runs automatically is decided per action: automatic
    *containment* needs rule evidence that does not come from text an
    attacker writes (threat-intelligence verdicts, analyst-confirmed history,

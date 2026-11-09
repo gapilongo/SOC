@@ -61,6 +61,7 @@ __all__ = [
     "EICAR_MD5",
     "EICAR_SHA1",
     "EICAR_SHA256",
+    "INJECTION_SIGNAL",
     "KnownScanners",
     "RULE_NAME_KEYWORDS",
     "TriageSettings",
@@ -71,6 +72,9 @@ __all__ = [
     "validate_triage_settings",
 ]
 
+#: The true-positive signal triage adds when alert text addresses a language model (steering text). It voids the
+#: false-positive evidence taken from text, and a model never closes an alert that carries it.
+INJECTION_SIGNAL = "prompt_injection_suspected"
 #: Benign words of a detection rule's name (matched against :func:`detector_words`), in reporting order.
 RULE_NAME_KEYWORDS = (
     "test", "testing", "selftest", "scheduled", "maintenance", "update", "backup", "scan", "health_check", "monitoring",
