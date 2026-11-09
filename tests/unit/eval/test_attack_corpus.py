@@ -30,7 +30,7 @@ ROOT = Path(__file__).resolve().parents[3]
 DATASET = ROOT / "tests" / "fixtures" / "eval" / "corpus_v1.jsonl.gz"
 SCENARIOS = ROOT / "tests" / "fixtures" / "attack_corpus" / "scenarios.py"
 DOCS = (ROOT / "docs" / "evaluation.md", ROOT / "tests" / "fixtures" / "eval" / "README.md")
-SHA256 = "3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9"
+SHA256 = "42e40657d357939cc4719139cbdc069c8f61a5c0bb3b3ca16f3517165f2e3b69"
 
 
 @pytest.fixture(scope="module")

@@ -95,7 +95,7 @@ def test_own_review_reason(
     decision: str, parent: tuple, attached: tuple, reason: Optional[str]
 ) -> None:
     got = own_review_reason(
-        decision, parent_fingerprint=parent[0], parent_severity=parent[1], fingerprint=attached[0], severity=attached[1]
+        decision, parent_key=parent[0], parent_severity=parent[1], key=attached[0], severity=attached[1]
     )
     assert got == reason
 

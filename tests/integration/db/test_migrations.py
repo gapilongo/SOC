@@ -524,3 +524,46 @@ async def test_0009_reruns_after_failing_once_its_catalog_change_committed(migra
     assert current_revision(url, URL_TLS) == head_revision()
     await test_0009_constraints_and_indexes_are_valid_after_upgrade(url)
     await test_0009_indexes_exist(url)
+
+
+async def test_0016_disables_fingerprint_suggestions_and_audits_each_in_its_chain(migrated_database_url: str) -> None:
+    """#343: enabled suggestions that match a fingerprint alone closed attacks; the migration disables them."""
+    url = migrated_database_url
+    cfg = alembic_config(url, URL_TLS)
+    tenant = f"m16-{uuid.uuid4().hex[:8]}"
+    suggestion = {"fingerprint": "f" * 64, "source_id": "s", "severity": {"in": ["info", "low"]}}
+    rules = {
+        "bulk": (suggestion, True),
+        "admin": ({"fingerprint": "f" * 64, "title": "Nightly scanner"}, True),
+        "verdict_key": ({"verdict_key": "a" * 64, "source_id": "s", "severity": {"in": ["low"]}}, True),
+        "disabled": (suggestion, False),
+    }
+    command.downgrade(cfg, "0015")
+    try:
+        with _owner(url) as conn:
+            _seed(conn, tenant)
+            ids = {}
+            for name, (match, enabled) in rules.items():
+                ids[name] = conn.execute(
+                    "INSERT INTO suppression_rules (tenant_id, name, match, enabled) VALUES (%s, %s, %s, %s) RETURNING id",
+                    (tenant, name, Jsonb(match), enabled),
+                ).fetchone()[0]
+            conn.commit()
+    finally:
+        command.upgrade(cfg, "head")
+    with _owner(url) as conn:
+        enabled = dict(conn.execute("SELECT name, enabled FROM suppression_rules WHERE tenant_id = %s", (tenant,)))
+        audited = conn.execute(
+            "SELECT actor_type, actor_id, resource_id, details FROM audit_log "
+            "WHERE tenant_id = %s AND action = 'suppression.revoked'", (tenant,),
+        ).fetchall()
+    assert enabled == {"bulk": False, "admin": True, "verdict_key": True, "disabled": False}
+    assert audited == [("system", "migration-0016", ids["bulk"], {"reason": "fingerprint_suggestion", "issue": 343})]
+    database = Database(db_settings(url), application_name="m16")
+    await database.open()
+    try:
+        from lg_sotf.db.repos import Repositories
+
+        assert (await Repositories.create(database).audit.verify_chain(tenant)).ok
+    finally:
+        await database.close()

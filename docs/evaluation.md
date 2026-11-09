@@ -59,11 +59,25 @@ code 2 before a tenant is created or a token is spent.
   records `review: "unreviewed"`, appends an `eval.review_not_performed`
   event to the alert's timeline and leaves the run waiting. It never resumes
   a run with a made-up analyst decision, and it never approves an action.
+  The one exception is a measurement mode you ask for by name, the
+  [analyst oracle](#analyst-oracle) (`--oracle`), which decides from the
+  dataset's labels and says so in the report.
 * **Order.** Items run one at a time in file order by default (split by
   split with `--isolate splits`, results reported in file order). Within a
   tenant, correlation reads earlier alerts and escalation grouping attaches
   related alerts, so a fixed order keeps runs reproducible. `--concurrency N` is
   faster but correlation-dependent outcomes may vary between runs.
+* **Event time.** Correlation runs on the wall clock in a replay too, so
+  a replay of days of alerts in minutes sees more of the corpus inside each
+  correlation window than production would. AI-E1.9's event-time clock was not
+  carried over to decision policy v2 (FIX-1), where correlation is evidence
+  for the model only and no longer moves the confidence.
+* **Decision inputs.** Each report item records what `decide` read
+  (`decision_inputs`: the confidence, the triage, correlation and analysis
+  scores, the verdict, the rule signals) for reading why it was routed; the
+  AI-E1.9 offline simulator that re-decided a run under its routing policies
+  was removed with decision policy v2
+  ([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)).
 * **Where data goes.** The run writes alerts, runs, escalations, actions and
   checkpoints to the configured database. Use a **dedicated evaluation
   database** (and Redis database or key prefix); `environment=production` is
@@ -237,6 +251,37 @@ wide; read it before comparing two runs.
 | `total_cost_usd`, `total_tokens`, `errored_cost_usd` | Totals over every item, including items that errored after model calls (read back from the alert when the run failed): what the run cost. `errored_cost_usd` is the errored items' share. |
 | `latency_s` | Mean, p50, p95, max seconds from ingestion to the run's stop (close or interrupt). |
 
+### The headline: closure
+
+Every report (JSON `closure`, the first section of the Markdown) and every
+scorecard leads with two numbers:
+
+* **Benign closure rate**: expected-benign items automation closed as
+  benign, with n and the 95% Wilson interval. The analyst work saved.
+* **Malicious auto-close**: expected-malicious items automation closed with
+  any disposition, with n and the exact one-sided 95% upper bound
+  (Clopper-Pearson; at 0 of n it is about 3/n). 0 of 208 means the true rate
+  may still be up to 1.4%.
+
+Below them, a table attributes each automatic close to one mechanism
+(`lg_sotf.eval.closure`; each item's `close_mechanism`):
+
+| Mechanism | What closed the alert |
+|---|---|
+| `rules` | Triage closed an obvious false positive, or `decide` closed on triage's and the rules' scores without the deep model |
+| `model` | The deep model's benign verdict, corroborated by the rules' score or by declared context, as the routing policy requires |
+| `history` | As `model`, while the tenant's history said an analyst had already judged one of the alert's entities harmless |
+| `cache` | An analyst-confirmed benign verdict for the same fingerprint (the verdict cache), at the gate |
+| `suppression` | An enabled suppression rule, at the gate |
+| `response` | A policy response whose actions completed (disposition `malicious`) |
+
+Every malicious item closed by any mechanism is listed by id with its close
+reason. When the dataset declares [tenant context](#declared-tenant-context),
+the section also shows how many benign items it covers, how many of those
+closed, and how many malicious items it covers too. Reports written before
+the attribution existed are read from their close reasons (`unattributed`
+when that is ambiguous).
+
 **Predicted disposition** is what the platform concluded on its own: the
 closing disposition of a closed alert; `malicious` for a run waiting on
 response approval (the policy decided to respond); for a run handed to an
@@ -252,9 +297,10 @@ usage, cost and latency.
 * JSON (`--report`): `schema_version`, `dataset` (path, sha256, item count,
   synthetic flag, splits), `run` (isolation, tenants, provider, models,
   concurrency, duration, `selection`: splits, tags, limit, isolation),
-  `notes`, `metrics`, `splits`, `families` (only when items have a
-  `family`), `llm_provenance`, `items` and, with thresholds, `gate`. Keep it
-  as the next run's `--baseline`.
+  `notes`, `closure` (the [headline](#the-headline-closure)), `metrics`,
+  `splits`, `families` (only when items have a `family`), `llm_provenance`,
+  `items` and, with thresholds, `gate`. Keep it as the next run's
+  `--baseline`.
   `metrics.intervals` holds each rate's `n` and 95% Wilson interval (see
   [Metrics](#metrics)).
   `llm_provenance` lists each agent, provider, model, prompt name and prompt
@@ -263,7 +309,9 @@ usage, cost and latency.
   reports means the prompt text or schema changed (see
   [compliance](compliance.md#model-provenance)).
 * Markdown (`--markdown`, default next to the JSON): notices, run facts,
-  the models and prompts used, gate result, headline table per split (each rate with `k of n` and its 95%
+  the models and prompts used, gate result, the closure section (the two
+  headline numbers, closes per mechanism, closed malicious items, context
+  coverage), the metrics table per split (each rate with `k of n` and its 95%
   Wilson interval), the adversarial families table (when items have a family), per-class scores (precision and recall likewise), confusion matrix,
   inter-annotator agreement and the item table with missed malicious items
   marked `MISSED`.
@@ -390,6 +438,96 @@ for the first items of the synthetic and phishing sets.
 connection blocked and checks the outcomes match a live run. When a prompt
 change makes them stale, `make eval-cassettes` records them again.
 
+## Analyst oracle
+
+An ordinary run leaves every escalation waiting, so the mechanisms that
+learn from analysts never see a decision: the verdict cache stays empty, the
+history tool finds no analyst outcome, no suppression is ever suggested. The
+oracle answers a different question: **how much would automation close if
+analysts decided every escalation correctly and at once?**
+
+```sh
+lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.jsonl.gz --oracle propose --report ~/lg-sotf-eval/oracle.json
+```
+
+* **Real decision path.** After an item's run stops, a simulated analyst (one
+  of two users created in the evaluation tenant, taking turns item by item:
+  the verdict cache needs two analysts) decides its escalation with
+  `ReviewService.decide`, as `POST /escalations/{id}/decision` does:
+  `false_positive` for an expected-benign item, `true_positive` for an
+  expected-malicious one (which also revokes the alert's cached benign
+  verdicts and the suppression rules matching it). The run resumes with the decision, so the close node writes the
+  verdict cache and later history lookups see an analyst's outcome. Response
+  actions waiting for approval are rejected (an evaluation never executes a
+  response); the run then closes or comes back as an escalation. Items
+  without a ground truth (`inconclusive`) stay waiting.
+* **Suppressions.** A `false_positive` creates the disabled suppression
+  suggestion the tenant's review policy asks for. `--oracle propose` leaves
+  them disabled, as they are until an admin acts; `--oracle accept` also
+  enables each one, as an admin who approves every suggestion would.
+* **Event-time order.** Items run one at a time (`--concurrency 1`) in the
+  order their events happened, not file order, so an alert benefits only
+  from decisions on alerts that came before it. Results are reported in file
+  order.
+* **What the numbers mean.** An item's `status` and every rate still count
+  what automation did before the oracle acted on that item; `review` is
+  `oracle`, and `oracle_decisions` and `final_status` record the rest. The
+  gain shows on later items: closes by `cache`, `history` and `suppression`.
+  The report's `run.oracle` and a notice say the run used the oracle, and
+  its selection records the mode, so an oracle run is never compared with a
+  plain baseline by mistake.
+* **Limits.** The verdict cache keeps its wall-clock lifetime (seven days),
+  which a replay of a few days never reaches. Perfect analysts are an upper
+  bound: real ones are slower and sometimes wrong.
+
+**First measurement** (`corpus_v1`, fake model, 2026-11-08; the plain run
+reproduces AI-E1.9's gate run):
+
+| Run | Benign closure rate | Malicious auto-close | Closes by mechanism (benign) |
+|---|---|---|---|
+| Plain | 2.6% (8 of 312; 95% CI 1.3% to 5.0%) | 0 of 208 (95% upper bound 1.4%) | model 8 |
+| `--oracle propose` | 27.6% (86 of 312; 95% CI 22.9% to 32.8%) | **4 of 208** (1.9%; 95% upper bound 4.3%) | cache 78, model 8 |
+| `--oracle accept` (224 rules enabled) | 28.2% (88 of 312; 95% CI 23.5% to 33.4%) | **4 of 208** (1.9%; 95% upper bound 4.3%) | suppression 80, model 8 |
+
+With instant, perfect analysts the verdict cache alone closes a quarter of
+the benign alerts, and it closes four attacks: a fingerprint is the
+detection and the alert's hosts, users, addresses, hashes and domains, not
+what ran. `cv1-0113` (PsExec installs `PSEXESVC` on `SRV-APP-02` during the
+ransomware campaign) shares "61138: New Windows Service Created" on
+`srv-app-02` with the Edge installer an analyst had just called benign;
+`cv1-0309` and `cv1-0440` (`sc.exe create` of a dropped binary) the same rule
+on two workstations; `cv1-0494` (`ps aux` through a web shell) the
+monitoring agent's `ps` on `web-02`. Suggested suppression rules match the
+same fingerprint and, unlike the cache, are not dropped by a later
+`true_positive`, so `accept` closes the same four. History closed nothing:
+it informs the model's verdict but is never rule evidence. These numbers
+use the fake model; a hosted model's run belongs in a scorecard.
+
+**After the verdict-key fix** ([#343](https://github.com/gapilongo/SOC/issues/343);
+`corpus_v1`, fake model, decision policy v2 at tier `off`, two oracle analysts
+taking turns, 2026-11-09; `tests/integration/eval/test_oracle_corpus_v1.py`).
+Before is today's code with the cache and suggestions keyed by fingerprint and
+one decision enough. After is the shipped key: what ran compared in full, no
+key for alerts without a process, command, service or named object or in a
+never-close class, two different analysts per cache close, and rules disabled
+by a confirmed threat.
+
+| Run | Benign closure rate | Malicious auto-close | Closes by mechanism (benign) |
+|---|---|---|---|
+| `--oracle propose`, before | 26.3% (82 of 312; 95% CI 21.7% to 31.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | cache 80, model 2 |
+| `--oracle propose`, after | 3.5% (11 of 312; 95% CI 2.0% to 6.2%) | 0 of 208 (95% CI 0.0% to 1.8%) | cache 7, model 4 |
+| `--oracle accept`, before (227 rules enabled) | 27.2% (85 of 312; 95% CI 22.6% to 32.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | suppression 83, model 2 |
+| `--oracle accept`, after (104 rules enabled) | 9.9% (31 of 312; 95% CI 7.1% to 13.8%) | 0 of 208 (95% CI 0.0% to 1.8%) | suppression 27, model 4 |
+
+The safety costs closures. Most of the loss comes from alerts that no longer
+get a key: new services, scheduled tasks, account changes and brute force are
+never-close classes, and sign-in and audit alerts that name only users have
+nothing that ran to compare. Requiring two different analysts and comparing
+command lines unmasked cost the rest: with one analyst enough, the unit replay
+of the same corpus closes about 20 benign repeats and still no attack
+(`tests/unit/core/test_verdict_cache_replay.py`). Declared tenant context
+(PRD-15.1) is the planned way back for routine identity noise.
+
 ## The shipped synthetic dataset
 
 `tests/fixtures/eval/synthetic_v1.jsonl` has 64 hand-written items across all
@@ -508,7 +646,10 @@ gate PASSED (15 checks)
 
 Benign look-alikes cost analyst time: 16 of 17 were escalated (the injection
 signal voids their false-positive evidence; the purple-team item's only
-benign evidence was "test" in its title), 1 closed on its own.
+benign evidence was "test" in its title), 1 closed on its own. Since AI-E1.9
+a second one closes: the authorised scanner's look-alike (`adv2-bl-06`), whose
+benign verdict the declared scanner corroborates. The gate holds a floor of
+10% benign auto-close (3 of 24), overall and for the look-alikes.
 
 **A local model run** (2026-11-08, `qwen2.5:7b` on Ollama, the setup of
 [scorecards/v1](scorecards/v1/qwen2.5-7b/RUN.md); not a committed scorecard):
@@ -612,7 +753,7 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/adversaria
 ## Attack-emulation corpus v1
 
 `tests/fixtures/eval/corpus_v1.jsonl.gz` (version 1, sha256 of the JSONL
-text `3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9`) is
+text `42e40657d357939cc4719139cbdc069c8f61a5c0bb3b3ca16f3517165f2e3b69`) is
 `corpus_v1`: 520 Wazuh 4.14 alerts with ground-truth labels, written for
 what happened in an emulated estate over twelve days (2026-10-19 to 10-30):
 9 Windows workstations, 7 Windows servers and 2 domain controllers with
@@ -622,6 +763,11 @@ miss rate (35 and 24 malicious items give 95% upper bounds of about 10% and
 14%) and because their alerts are hand-written, not shaped like attack
 telemetry. With 208 malicious items, 0 misses bound the miss rate below
 1.8%.
+
+Since AI-E1.9 the corpus declares what the estate's tenant would configure:
+its authorised vulnerability scanner, `10.20.5.10`, in
+`_meta.tenant_settings` (`triage.known_scanners`). The alerts did not change;
+scorecard v2 ran on the file without it (sha256 `3292bf4911d1…`).
 
 ### What is in it
 
@@ -755,6 +901,64 @@ checkouts and diffs. `lg-sotf eval --dataset` reads `.jsonl.gz` directly
 (the sha256 is of the JSONL text) and a replay reads `<item>.jsonl.gz`
 cassettes.
 
+### Declared tenant context
+
+A customer tells its MSSP a few facts about its estate. The corpus declares
+them in `_meta.tenant_context` (`tests/fixtures/attack_corpus/corpus.py`),
+limited to what a customer would plausibly write down: roles and hosts, a
+maintenance window, the scanner. Nothing per alert, and nothing chosen
+because it would exclude an attack.
+
+| Declared | Entries | Why a customer knows it |
+|---|---|---|
+| `admin_accounts` | `ksmith`, `tlee`, `adm.ksmith`, `adm.tlee` | The IT administrators' Linux and Windows admin accounts |
+| `admin_groups` | `Domain Admins`, `Administrators` | The privileged groups only IT changes |
+| `helpdesk_accounts` | `hd.ochen`, `hd.rpatel` | The helpdesk staff |
+| `automation_accounts` | `ansible`, `deploy`, `backup`, `svc_idm`, `svc_sccm`, `svc_backup`, `svc_monitor` | Ansible, deployment, backup, identity-management, SCCM and monitoring service accounts |
+| `automation_hosts` | `build-01`, `backup-01`, `mon-01`, `SRV-APP-02` (SCCM), `SRV-BKP-01` | CI, backup, monitoring and software-distribution servers |
+| `jump_hosts` | `IT-WS-01` (10.20.1.120; PsExec, RDP, PowerShell), `bastion-01` (10.20.2.5; SSH) | Where IT administers others from |
+| `patch_windows` | `servers-nightly`: every day 01:00 to 05:00 UTC, the Linux and Windows servers and domain controllers | The servers' maintenance window |
+| `scanners` | `10.20.5.10` | The authorised vulnerability scanner (also `tenant_settings.triage.known_scanners`) |
+
+Workstation software distribution has no window (it happens during the
+day), and the personal devices behind stale-credential retries are unknown
+to any customer: neither is declared.
+
+**Only the scanner is used today** (through `tenant_settings`, AI-E1.9).
+The rest is measured: `lg_sotf.eval.context.context_matches` lists the
+declared facts an alert touches, read from the normalised alert (its
+entities and event time) and the acting-user fields of Windows events, never
+from free text. On `corpus_v1`
+(`tests/unit/eval/test_context.py::test_corpus_v1_declares_its_estate_and_the_context_covers_attacks_too`):
+
+| Benign set | Touches declared context | Does not |
+|---|---|---|
+| Look-alikes (126) | 75 | 51 |
+| All benign (312) | 168 | 144 |
+| **Malicious (208)** | **47** | 161 |
+
+Per look-alike scenario, closable with context against not:
+
+| Scenario | Covered | What covers it, or why not |
+|---|---|---|
+| `vulnerability-scan` | 25 of 25 | The scanner (also the patch window: the scan runs at night) |
+| `account-lifecycle` | 10 of 10 | Admin, helpdesk and identity-management accounts, the admin groups |
+| `linux-patching` | 5 of 5 | The patch window |
+| `ci` | 5 of 5 | `build-01` |
+| `backups` | 6 of 7 | `backup-01`, the patch window; one pre-script listing `/etc` on `app-01` at 00:04 is outside both |
+| `it-admin` | 12 of 26 | Admin and helpdesk accounts, the jump host; **not** PsExec arriving on a workstation (the alert names the target, not `IT-WS-01`), nor SCCM scripts, scheduled clean-ups and installers running as SYSTEM on workstations |
+| `config-management` | 7 of 17 | Only changes on automation hosts; on other servers the change (a unit file, sudoers, a cron job, keys, a new user) names root, the new user or no account, never `ansible` |
+| `windows-patching` | 3 of 13 | Server installs in the window; workstation installs have no window |
+| `monitoring` | 2 of 5 | Only on `mon-01` and other automation hosts |
+| `stale-credentials` | 0 of 8 | A user's phone or mapped drive: nothing a customer declares |
+| `file-share` | 0 of 5 | Ordinary users opening a share |
+
+**Context is a fact, not a verdict.** 47 of the 208 attacks touch the
+declared context too: lateral movement with an administrator's credentials,
+attacks on the automation servers, activity during the patch window. A
+policy that closed on context alone would close them. Context can only
+narrow what a model, the rules or an analyst already judged benign.
+
 ### The gate
 
 With the fake model (recorded run, 2026-11-09, decision policy v2):
@@ -800,6 +1004,63 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.
     --cassettes tests/fixtures/eval/cassettes/corpus_v1 \
     --thresholds tests/fixtures/eval/corpus_v1_thresholds.yaml --report ~/lg-sotf-eval/corpus-v1.json
 ```
+
+## AIT-ADS
+
+The [AIT Alert Data Set](https://zenodo.org/records/8263181) (AIT-ADS,
+version 1, CC BY 4.0; Landauer, Skopik and Wurzenberger, CSET 2024) holds
+2.29 million Wazuh alerts (2.6 million with the Suricata alerts Wazuh
+forwards) from eight scenarios of the AIT-LDSv2 testbed: simulated users at
+work for four to six days, and one multi-step attack per scenario (network
+and service scans, WPScan and dirb, a webshell, password cracking, a reverse
+shell, privilege escalation, DNS exfiltration). It is the realistic,
+repetitive benign volume the generated corpus lacks: Dovecot logins, ClamAV
+updates, web 400s, TLS anomalies, again and again. The release and the
+sample stay out of git; `tests/fixtures/aitads/` holds the loader and a
+fixture of 19 of its alerts.
+
+```sh
+# ~96 MB download, ~2.8 GB extracted: keep it outside the repository and outside /tmp
+python -m tests.fixtures.aitads fetch ~/datasets/aitads
+python -m tests.fixtures.aitads build ~/datasets/aitads --out ~/datasets/aitads/aitads_v1.jsonl.gz
+# Default sample: 5,000 alerts per scenario (--per-scenario), 20% from the attack phases (--attack-share),
+# seed 20261108. Expected: 40,000 items, sha256 of the JSONL text
+# 597b9dc75967a72ea6cb1ce9ae8654e3c148085fe478d0fecf71f9024c6c8330.
+LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset ~/datasets/aitads/aitads_v1.jsonl.gz --split shaw \
+    --report ~/lg-sotf-eval/aitads-shaw.json
+```
+
+`fetch` checks the md5 sums Zenodo publishes. Each scenario is a split, so
+it runs in its own tenant, as eight customers would.
+
+**Labels: per alert, only from time.** `labels.csv`, the only labels in the
+release, gives each scenario's attack phases with a start and an end time.
+Upstream's per-alert labels (`event_label`) are computed from the raw logs
+of AIT-LDSv2 and the flows of AIT-NDS, which are not in the release. The
+loader therefore labels what the times allow
+(`tests/fixtures/aitads/loader.py`):
+
+| Label | Rule | In `aitads_v1` |
+|---|---|---|
+| `benign` | The alert's time is outside every attack phase of its scenario (upstream's `time_label`). The attacker acts only inside the phases, so this is reliable. | 32,000 |
+| `malicious` | Inside a phase, and its detection (rule id and description; Suricata alerts share rule 86601) never fires outside a phase in any scenario: web 400 bursts, the Nmap user agent, forbidden-file probes, SSH scan attempts | 583 |
+| `inconclusive` | Inside a phase, but the detection also fires outside the phases (web 400s, Dovecot logins, IDS events): the attack or the background, the release cannot say. Left out of the headline rates. | 7,417 |
+
+Source addresses do not separate them either: in the scenarios checked, the
+address the web scans come from also produces alerts outside the phases (in
+`russellmitchell` it is the VPN gateway's). Read a malicious auto-close on this set
+as "of the alerts only attacks produce"; the benign closure rate is the
+number this set is for.
+
+**Sampling.** Per scenario, a uniform sample of each stratum (each attack
+phase, and outside the phases), seeded: the attack share is spread evenly
+over the phases, the rest is benign. Uniform sampling keeps the benign
+volume as repetitive as it is. The release's `agent.name` is the replay
+client (`wazuh-client`); the loader restores the monitored host's name from
+the agent address. Items are in event-time order within each scenario.
+
+**Cost.** 40,000 items is far too many for a hosted model: run one scenario
+(`--split`), about 5,000 items, or `--limit`.
 
 ## Shadow agreement: a candidate beside production
 
@@ -974,6 +1235,8 @@ outside the repository or in a private fork.
 Record which benchmark version you used, the conversion script's commit and
 the resulting dataset's sha256 (in every report) next to the numbers.
 
+The [AIT Alert Data Set](#ait-ads) has a loader in this repository.
+
 ## Cost of a model run
 
 Every item makes one or more real model calls. Estimate before running:
@@ -996,5 +1259,5 @@ report's later items no longer reflect the model.
   interact too and split metrics are not independent.
 * The harness evaluates the automated decision up to the first human
   interrupt. What happens after an analyst decision (response planning on a
-  `true_positive`, suppression suggestions) is covered by the test suite, not
-  by these metrics.
+  `true_positive`, suppression suggestions) is covered by the test suite and,
+  with perfect analysts, by the [analyst oracle](#analyst-oracle).

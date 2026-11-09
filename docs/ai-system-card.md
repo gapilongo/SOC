@@ -174,7 +174,7 @@ dangerous case.
 
 | Decision | Who makes it | The model's part |
 |---|---|---|
-| Close an alert as benign | The routing policy (`lg_sotf.domain.routing`). Never for high or critical alerts (INV-03): those close only by an analyst decision, an admin-enabled suppression rule, or an analyst-confirmed verdict (not for critical). Low and medium alerts close only when rules corroborate the model | Its assessment is one input; a benign verdict alone never closes |
+| Close an alert as benign | The routing policy (`lg_sotf.domain.routing`). Never for high or critical alerts (INV-03): those close only by an analyst decision, an admin-enabled suppression rule, or an analyst-confirmed verdict (not for critical). Low and medium alerts close on a benign verdict only with approved benign evidence an attacker cannot write (the detection rule's own words, the EICAR hash, a test source, or a scanner the tenant declared as the source of the activity, never for a never-close class), or as a model-led close when the tenant's autonomy tier is `auto_full_audit` (FIX-1) | Its assessment is one input; a benign verdict alone never closes |
 | Escalate to an analyst | The routing policy. Uncertain cases, model refusals (`model_refused`), alerts from the fallback normaliser, and failed responses always go to a person | Its uncertainty raises escalation |
 | Plan a response | The routing policy, from the threat score | It recommends actions; the planner validates every target |
 | Run a response action | The tenant's **autonomy policy** per risk level (`auto`, `approval` or `disabled`; default `approval` for low, medium and high, `disabled` for critical), then the **guardrails** (protected assets, target checks, hourly caps, blast radius). Containment on model-only evidence always waits for a person, even under `auto` (INV-11) | None beyond the recommendation |
@@ -202,7 +202,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 |---|---|---|---|---|
 | INV-01 | Every tenant table has forced row-level security, and the runtime role cannot bypass it | enforced | `rls_catalog`, `runtime_role`, `rls_probe` | TM-DB-1, TM-DB-2, TM-SCH-1, TM-API-3 |
 | INV-02 | No response action runs without an approval or an autonomy rule that allows it; the kill switch wins | enforced | `kill_switch` | TM-WRK-3, TM-RSP-4, TM-RSP-5, TM-MCP-6 |
-| INV-03 | An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2 |
+| INV-03 | An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
 | INV-04 | Every LLM call records its prompt hash and model id | enforced | none | TM-WRK-8 |
 | INV-05 | Every LLM and tool step of a run is in the trace store | enforced | none | TM-WRK-8, TM-EVT-6 |
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
@@ -357,16 +357,19 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
   * **The gate.** The items are in the gated `adversarial` split, 0 of 3
     closed.
 * **Activity words in rule names** (AI-E6.4,
-  [#305](https://github.com/gapilongo/SOC/issues/305), in review as #314 on
+  [#305](https://github.com/gapilongo/SOC/issues/305), merged as #314 on
   2026-11-08). `scheduled`, `update`, `backup` and `scan` in a rule name
-  usually describe the detected activity, not benign intent, yet they still
-  count as benign evidence. AI-E6.4 counts them only with a trusted
-  qualifier, such as a maintenance window or a known scanner, and adds
-  adversarial items for them. Until it merges, the gap is open.
+  usually describe the detected activity, not benign intent. AI-E6.4 counts
+  them only with a trusted qualifier (an intent word in the rule name, a
+  test-environment source or, for `scan`, a known scanner) and gates the
+  `activity-camouflage` family.
 * **No benign auto-close on the attack-emulation corpus** (section 7.1). The
   routing policy and the eval replay, not the model, held all 312 benign
   alerts. The proposed changes are hypotheses in
-  [RUN.md](scorecards/v2/deepseek-v4/RUN.md), not made.
+  [RUN.md](scorecards/v2/deepseek-v4/RUN.md), measured offline in
+  [CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md); decision policy
+  v2 (FIX-1) replaced the routing they tuned.
+  A real-model re-run (v2.1) is still to do.
 * **Models follow injected text.** Up to 44% of the time in one family with
   a 7B local model. The policy contains the effect; the model is not robust.
 * **Steering through the verdict.** The injection-followed metric checks
@@ -467,8 +470,8 @@ change a customer's environment.
 * On the attack-emulation corpus automation closed no benign alert (0 of
   312), so the measured analyst-time saving is zero (section 7.1).
 * Rule-name words that describe the detected activity (`scheduled`,
-  `update`, `backup`, `scan`) still count as benign evidence until AI-E6.4
-  (#305) merges. Title camouflage (#299) is fixed and gated (AI-E6.3).
+  `update`, `backup`, `scan`) count as benign evidence only with a trusted
+  qualifier (AI-E6.4). Title camouflage (#299) is fixed and gated (AI-E6.3).
 * Models follow injected text a substantial share of the time; only the
   policy contains it.
 * Shadow mode (running a candidate configuration side by side without side

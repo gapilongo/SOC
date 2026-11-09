@@ -20,6 +20,7 @@ pytestmark = pytest.mark.integration
 
 API = "/api/v1"
 SIGN_IN = "Unusual sign-in pattern"
+VPN = {"users": ["j.doe@a.example"], "processes": ["c:\\program files\\vpn\\vpnagent.exe"]}
 
 
 async def escalation(
@@ -152,8 +153,8 @@ async def test_bulk_close_decides_each_item_with_one_note_and_resumes_runs(api: 
 
 async def test_bulk_close_can_propose_one_suppression(api: ApiHarness) -> None:
     analyst = await api.user(TENANT_A, "analyst")
-    low = await escalation(api, severity="low")
-    medium = await escalation(api, severity="medium")
+    low = await escalation(api, severity="low", entities=VPN)
+    medium = await escalation(api, severity="medium", entities=VPN)
     body = {"items": items(low, medium), "notes": "known scanner", "propose_suppression": True}
     out = (await api.client.post(f"{API}/escalations/bulk/close", json=body, headers=api.auth(analyst))).json()
     assert out["succeeded"] == 2 and out["suppression_created"] is True
@@ -167,9 +168,13 @@ async def test_bulk_close_can_propose_one_suppression(api: ApiHarness) -> None:
 
 async def test_propose_suppression_is_all_or_nothing(api: ApiHarness) -> None:
     analyst = await api.user(TENANT_A, "analyst")
-    benign = await escalation(api, severity="high")
+    benign = await escalation(api, severity="high", entities=VPN)
     await api.repos.escalations.decide(
         TENANT_A, benign.id, decision="benign_positive", decided_by=analyst.id, expected_version=benign.version
+    )
+    sign_in = await escalation(api, severity="low")  # a user and nothing that ran: no verdict key, no rule
+    await api.repos.escalations.decide(
+        TENANT_A, sign_in.id, decision="false_positive", decided_by=analyst.id, expected_version=sign_in.version
     )
     pending = await escalation(api)
     foreign = await escalation(api, TENANT_B)
@@ -179,6 +184,9 @@ async def test_propose_suppression_is_all_or_nothing(api: ApiHarness) -> None:
     refused = await api.client.post(url, json={"escalation_ids": [benign.id, pending.id]}, headers=headers)
     assert refused.status_code == 422 and refused.json()["error"]["code"] == "not_confirmed_benign"
     assert refused.json()["error"]["details"] == [{"escalation_id": pending.id}]
+    unkeyed = await api.client.post(url, json={"escalation_ids": [benign.id, sign_in.id]}, headers=headers)
+    assert unkeyed.status_code == 422 and unkeyed.json()["error"]["code"] == "no_verdict_key"
+    assert unkeyed.json()["error"]["details"] == [{"escalation_id": sign_in.id}]
     missing = await api.client.post(url, json={"escalation_ids": [benign.id, foreign.id]}, headers=headers)
     assert missing.status_code == 404
     assert await api.repos.suppressions.list(TENANT_A) == [] and await api.repos.suppressions.list(TENANT_B) == []

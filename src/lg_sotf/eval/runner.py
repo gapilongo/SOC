@@ -12,7 +12,9 @@ worker uses, minus the queue.
 A run that stops at an analyst or approval interrupt is left waiting and
 recorded as ``review="unreviewed"``; an ``eval.review_not_performed`` event is
 appended to the alert's timeline. The harness never resumes a run with an
-invented analyst decision.
+invented analyst decision, except in the labelled analyst-oracle mode
+(:mod:`lg_sotf.eval.oracle`, ``oracle=True``), which decides from the ground
+truth through the real decision path and runs items in event-time order.
 
 Items run in dataset order, one at a time by default: correlation reads the
 tenant's earlier alerts, so a fixed order keeps a run reproducible. With
@@ -57,7 +59,10 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain.routing import refused_by
 from lg_sotf.eval.adversarial import injection_followed
+from lg_sotf.eval.calibration import decision_inputs
+from lg_sotf.eval.closure import close_mechanism, event_time_order
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset, EvalItem, InjectionSpec
+from lg_sotf.eval.oracle import AnalystOracle, oracle_info
 from lg_sotf.eval.results import REVIEW_UNREVIEWED, ItemResult, llm_provenance
 from lg_sotf.eval.tool_fixtures import fixture_enrichment
 from lg_sotf.ingestion.batch import IngestResult
@@ -68,6 +73,7 @@ from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.redaction import safe_error_text
 from lg_sotf.security.shadow import REFUSE, egress
+from lg_sotf.services.review import ReviewService
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -79,6 +85,7 @@ Isolation = Literal["splits", "none"]
 ISOLATION_MODES: Tuple[str, ...] = ("splits", "none")
 MAX_TENANT_ID_CHARS = 63
 EMAIL_EVAL_SOURCE = email_source_id("eval")
+ORACLE_FAILED = "oracle_failed"
 
 
 class EvalSetupError(RuntimeError):
@@ -119,12 +126,15 @@ class EvalRunner:
     run_timeout_s: float = 900.0
     concurrency: int = 1
     cassettes: Optional[CassetteSet] = None
+    oracle: Optional[AnalystOracle] = None
     _sources: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
     _source_lock: asyncio.Lock = field(default_factory=asyncio.Lock, init=False, repr=False)
 
     async def run(self, items: Sequence[EvalItem], progress: Optional[Progress] = None) -> List[ItemResult]:
         if self.concurrency < 1:
             raise ValueError("concurrency must be at least 1")
+        if self.oracle is not None and self.concurrency != 1:
+            raise ValueError("the analyst oracle decides alerts in event-time order: concurrency must be 1")
         results: List[Optional[ItemResult]] = [None] * len(items)
         semaphore = asyncio.Semaphore(self.concurrency)
         done = 0
@@ -139,8 +149,9 @@ class EvalRunner:
                 progress(done, len(items), result)
 
         if self.concurrency == 1:
-            for index, item in enumerate(items):
-                await one(index, item)
+            position = {id(item): index for index, item in enumerate(items)}
+            for item in event_time_order(items) if self.oracle is not None else items:
+                await one(position[id(item)], item)
         else:
             await asyncio.gather(*(one(i, item) for i, item in enumerate(items)))
         return [r for r in results if r is not None]
@@ -181,6 +192,8 @@ class EvalRunner:
             run = await asyncio.wait_for(self.engine.run(self.tenant_id, outcome.alert_id), self.run_timeout_s)
             result.latency_s = time.perf_counter() - started
             await self._collect(result, run, item.injection)
+            if self.oracle is not None:
+                await self._settle(item, result, run)
         except TimeoutError:
             result.latency_s = time.perf_counter() - started
             result.status = "error"
@@ -193,6 +206,15 @@ class EvalRunner:
             log_failure(log, "eval.item_failed", exc, level="warning", item_id=item.id, error_type=type(exc).__name__)
             await self._usage_after_error(result)
         return result
+
+    async def _settle(self, item: EvalItem, result: ItemResult, run: RunOutcome) -> None:
+        """The oracle's decisions; a failure there keeps what automation did and marks ``final_status``."""
+        assert self.oracle is not None
+        try:
+            await asyncio.wait_for(self.oracle.settle(self.tenant_id, item, result, run), self.run_timeout_s)
+        except Exception as exc:  # noqa: BLE001 - automation's outcome stands; the oracle's part is reported
+            result.final_status = ORACLE_FAILED
+            log_failure(log, "eval.oracle_failed", exc, level="warning", item_id=item.id, error_type=type(exc).__name__)
 
     async def _usage_after_error(self, result: ItemResult) -> None:
         """Best effort: model calls made before a failure are still billed, so record them."""
@@ -222,6 +244,8 @@ class EvalRunner:
         result.severity = alert.severity
         result.disposition = alert.disposition
         result.decision_code = decision.get("code")
+        if decision:
+            result.decision_inputs = decision_inputs(state)
         result.close_reason = state.get("close_reason") or summary.get("close_reason")
         result.model_refused = refused_by(state) is not None
         if decision.get("route"):
@@ -237,6 +261,7 @@ class EvalRunner:
         if run.status == "completed" and alert.status == "closed":
             result.status = "closed"
             result.predicted = alert.disposition if alert.disposition in DISPOSITIONS else "inconclusive"
+            result.close_mechanism = close_mechanism(result.close_reason, state)
         elif run.status == "waiting_approval":
             result.status = "waiting_approval"
             result.approval_requested = True
@@ -250,7 +275,7 @@ class EvalRunner:
             result.status = "error"
             result.error = f"run ended with alert status {alert.status!r}"
             return
-        if result.review == REVIEW_UNREVIEWED:
+        if result.review == REVIEW_UNREVIEWED and self.oracle is None:
             await self.repos.alert_events.append(
                 self.tenant_id,
                 result.alert_id,
@@ -379,6 +404,8 @@ async def run_evaluation(
     create_tenant: Optional[Callable[[Settings, str], Awaitable[None]]] = None,
     secret_box: Optional[SecretBox] = None,
     cassettes: Optional[CassetteSet] = None,
+    oracle: bool = False,
+    accept_suppressions: bool = False,
 ) -> EvalRun:
     """Evaluate ``dataset`` against the database and Redis named by ``settings``.
 
@@ -392,12 +419,11 @@ async def run_evaluation(
     evaluation database: runs, escalations and alerts stay there afterwards.
     ``secret_box`` (built by the CLI) decrypts tenant credentials, as in a worker.
     ``cassettes`` records each item's observations, or replays them (see the module docs).
+    ``oracle`` decides every escalation from the ground truth (:mod:`lg_sotf.eval.oracle`);
+    ``accept_suppressions`` lets it enable the suppression rules its decisions suggest.
     """
-    import asyncpg
-
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.db.pool import Database
-    from lg_sotf.errors import OperationError
     from lg_sotf.queue.redis import ShadowSafeRedis
 
     if settings.environment == "production":
@@ -407,15 +433,10 @@ async def run_evaluation(
         )
     if isolate not in ISOLATION_MODES:
         raise EvalSetupError(f"unknown isolation mode {isolate!r}; use one of {', '.join(ISOLATION_MODES)}")
+    if oracle and concurrency != 1:
+        raise EvalSetupError("the analyst oracle runs items one at a time in event-time order; use concurrency 1")
     base = tenant_id or new_eval_tenant_id()
-    if isolate == "splits":
-        groups = group_by_split(dataset.items)
-        tenants = split_tenant_ids(base, [name for name, _ in groups])
-        plan = [(tenants[name], group) for name, group in groups]
-    else:
-        tenants = {}
-        plan = [(base, list(dataset.items))]
-
+    tenants, plan = _plan(dataset, base, isolate)
     started = time.perf_counter()
     async with AsyncExitStack() as stack:
         db = Database(settings.database, application_name="lg-sotf-eval")
@@ -435,41 +456,74 @@ async def run_evaluation(
         )
         stack.push_async_callback(engine.close)
         # Tenants last: a configuration or service problem above leaves nothing behind.
-        for tenant, _ in plan:
-            try:
-                await (create_tenant or _create_tenant)(settings, tenant)
-            except OperationError as exc:
-                raise EvalSetupError(str(exc)) from exc
-            except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
-                raise EvalSetupError(f"cannot create evaluation tenant {tenant!r}: {exc}") from exc
-        repos = Repositories.create(db)
-        for tenant, _ in plan:
-            await apply_tenant_settings(repos, tenant, dataset.tenant_settings)
-        total = len(dataset.items)
-        done = 0
-
-        def forward(_done: int, _total: int, result: ItemResult) -> None:
-            nonlocal done
-            done += 1
-            if progress is not None:
-                progress(done, total, result)
-
-        by_id: Dict[str, ItemResult] = {}
-        for tenant, group in plan:
-            runner = EvalRunner(
-                tenant_id=tenant,
-                repos=repos,
-                ingestion=ingestion,
-                engine=engine,
-                run_timeout_s=settings.worker.run_timeout_s,
-                concurrency=concurrency,
-                cassettes=cassettes,
+        repos = await _prepare_tenants(settings, db, dataset, [tenant for tenant, _ in plan], create_tenant)
+        analyst = AnalystOracle(repos, engine, ReviewService(repos, settings), accept_suppressions) if oracle else None
+        runners = [
+            EvalRunner(
+                tenant_id=tenant, repos=repos, ingestion=ingestion, engine=engine,
+                run_timeout_s=settings.worker.run_timeout_s, concurrency=concurrency, cassettes=cassettes,
+                oracle=analyst,
             )
-            for result in await runner.run(group, progress=forward):
-                by_id[result.item_id] = result
-        results = [by_id[item.id] for item in dataset.items if item.id in by_id]
+            for tenant, _ in plan
+        ]
+        results = await _run_groups(runners, [group for _, group in plan], dataset, progress)
     info = _run_info(settings, base, isolate, tenants, concurrency, started)
-    return EvalRun(results=results, info={**info, **cassette_info(cassettes)})
+    return EvalRun(results=results, info={**info, **cassette_info(cassettes), **oracle_info(analyst)})
+
+
+def _plan(dataset: Dataset, base: str, isolate: Isolation) -> Tuple[Dict[str, str], List[Tuple[str, List[EvalItem]]]]:
+    """The per-split tenant ids (empty without isolation) and the (tenant, items) groups to run."""
+    if isolate == "splits":
+        groups = group_by_split(dataset.items)
+        tenants = split_tenant_ids(base, [name for name, _ in groups])
+        return tenants, [(tenants[name], group) for name, group in groups]
+    return {}, [(base, list(dataset.items))]
+
+
+async def _prepare_tenants(
+    settings: Settings,
+    db: Any,
+    dataset: Dataset,
+    tenants: Sequence[str],
+    create_tenant: Optional[Callable[[Settings, str], Awaitable[None]]],
+) -> Repositories:
+    """Create each evaluation tenant and apply the dataset's tenant settings; the repositories to run with."""
+    import asyncpg
+
+    from lg_sotf.db.errors import DatabaseError
+    from lg_sotf.errors import OperationError
+
+    for tenant in tenants:
+        try:
+            await (create_tenant or _create_tenant)(settings, tenant)
+        except OperationError as exc:
+            raise EvalSetupError(str(exc)) from exc
+        except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
+            raise EvalSetupError(f"cannot create evaluation tenant {tenant!r}: {exc}") from exc
+    repos = Repositories.create(db)
+    for tenant in tenants:
+        await apply_tenant_settings(repos, tenant, dataset.tenant_settings)
+    return repos
+
+
+async def _run_groups(
+    runners: Sequence[EvalRunner], groups: Sequence[Sequence[EvalItem]], dataset: Dataset, progress: Optional[Progress]
+) -> List[ItemResult]:
+    """Run each group with its runner, one group after another; results in dataset order."""
+    total = len(dataset.items)
+    done = 0
+
+    def forward(_done: int, _total: int, result: ItemResult) -> None:
+        nonlocal done
+        done += 1
+        if progress is not None:
+            progress(done, total, result)
+
+    by_id: Dict[str, ItemResult] = {}
+    for runner, group in zip(runners, groups, strict=True):
+        for result in await runner.run(group, progress=forward):
+            by_id[result.item_id] = result
+    return [by_id[item.id] for item in dataset.items if item.id in by_id]
 
 
 async def open_engine(

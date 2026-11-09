@@ -23,6 +23,8 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
+from lg_sotf.audit.logger import Actor
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
@@ -37,25 +39,34 @@ from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.observability.logging import get_logger, log_failure
+from lg_sotf.observability.metrics import REVOCATION_FAILURES
 from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.escalation_views import EscalationView, escalation_views
 
 log = get_logger(__name__)
 
 
-async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
-    """Drop cached benign verdicts of these alerts' fingerprints (an analyst confirmed a threat)."""
+async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str], actor: Actor) -> int:
+    """An analyst confirmed a threat: drop these alerts' cached benign verdicts and disable the rules matching them.
+
+    The decision is already recorded, so a failure does not fail the request:
+    it is logged as an error and counted in ``lgsotf_revocation_failures_total``
+    (path ``api``), and the run's ``plan_response`` revokes again. Returns the
+    number of alerts that failed.
+    """
     cache = VerdictCache(ctx.redis, ctx.prefix)
+    failed = 0
     for alert_id in alert_ids:
         try:
             alert = await ctx.repos.alerts.get(tenant_id, alert_id)
-            if alert.fingerprint:
-                await cache.invalidate(tenant_id, alert.fingerprint)
-        except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
+            await forget_benign_learning(ctx.repos, cache, tenant_id, alert, actor=actor)
+        except Exception as exc:  # noqa: BLE001 - counted and logged as an error: an alerting rule can page on it
+            failed += 1
+            REVOCATION_FAILURES.labels(path="api").inc()
             log_failure(
-                log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,
-                error_type=type(exc).__name__,
+                log, "api.revocation_failed", exc, level="error", alert_id=alert_id, error_type=type(exc).__name__,
             )
+    return failed
 
 
 def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:

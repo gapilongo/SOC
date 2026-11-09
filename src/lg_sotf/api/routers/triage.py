@@ -198,6 +198,13 @@ async def bulk_propose_suppression(
         created_by=principal.local_user_id,
         name=body.name,
     )
+    if proposal.no_behaviour:
+        raise ApiError(
+            422,
+            "no_verdict_key",
+            "an alert has no process, command, service or named object to match, or may never be suppressed",
+            details=[{"escalation_id": i} for i in proposal.no_behaviour],
+        )
     if proposal.rule is None:
         raise ApiError(
             422,

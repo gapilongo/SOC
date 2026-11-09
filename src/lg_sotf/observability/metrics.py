@@ -100,6 +100,13 @@ LLM_SKIPPED = Counter(
     ["agent", "reason", "mode"],
     registry=REGISTRY,
 )
+# A confirmed threat could not revoke the benign learning (verdict cache, suppression rules) for an alert.
+REVOCATION_FAILURES = Counter(
+    "lgsotf_revocation_failures_total",
+    "Confirmed threats whose cached benign verdicts and matching suppression rules could not be revoked, by path.",
+    ["path"],
+    registry=REGISTRY,
+)
 ENRICHMENT_LOOKUPS = Counter(
     "lgsotf_enrichment_lookups_total",
     "Indicator enrichment lookups, by provider and result status (cache hits are status 'cached').",
