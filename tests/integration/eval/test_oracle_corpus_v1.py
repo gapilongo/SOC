@@ -48,4 +48,6 @@ async def test_the_oracle_closes_no_attack_on_corpus_v1(eval_settings: Settings,
     closed = {r.item_id for r in run.results if r.auto_closed}
     assert not closed & COLLISIONS
     # The learning still pays: analysts' repeated benign decisions close benign repeats.
-    assert summary["headline"]["benign_closure"]["k"] > 8
+    # 4 since FIX-2 (9 before): Wazuh authentication-failure rules outside credential access by ATT&CK (logon
+    # failures mapped to T1531, the auth-failure rule groups) are a never-close class now, so they get no verdict key.
+    assert summary["headline"]["benign_closure"]["k"] >= 4
