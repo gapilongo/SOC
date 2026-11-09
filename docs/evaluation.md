@@ -516,6 +516,27 @@ same fingerprint and, unlike the cache, are not dropped by a later
 it informs the model's verdict but is never rule evidence. These numbers
 use the fake model; a hosted model's run belongs in a scorecard.
 
+**After the verdict-key fix** ([#343](https://github.com/gapilongo/SOC/issues/343);
+`corpus_v1`, fake model, decision policy v2 at tier `off`, 2026-11-09). Before is
+today's code with the cache and suggestions keyed by fingerprint and one
+decision; after is the shipped key (fingerprint plus process, command shape,
+service, user/uid and parent) with two analyst decisions per cache close and
+rules disabled by a confirmed threat
+(`tests/integration/eval/test_oracle_corpus_v1.py`):
+
+| Run | Benign closure rate | Malicious auto-close | Closes by mechanism (benign) |
+|---|---|---|---|
+| `--oracle propose`, before | 26.3% (82 of 312; 95% CI 21.7% to 31.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | cache 80, model 2 |
+| `--oracle propose`, after | 9.3% (29 of 312; 95% CI 6.5% to 13.0%) | 0 of 208 (95% CI 0.0% to 1.8%) | cache 25, model 4 |
+| `--oracle accept`, before (227 rules enabled) | 27.2% (85 of 312; 95% CI 22.6% to 32.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | suppression 83, model 2 |
+| `--oracle accept`, after (232 rules enabled) | 25.6% (80 of 312; 95% CI 21.1% to 30.8%) | 0 of 208 (95% CI 0.0% to 1.8%) | suppression 78, model 2 |
+
+The stricter key costs little where an admin enables the suggestions (85 to
+80 benign closes) and more for the cache alone (82 to 29), mostly from the
+second analyst decision: the unit replay of the same corpus with one decision
+on the new key closes 60 benign repeats and still no attack
+(`tests/unit/core/test_verdict_cache_replay.py`).
+
 ## The shipped synthetic dataset
 
 `tests/fixtures/eval/synthetic_v1.jsonl` has 64 hand-written items across all
