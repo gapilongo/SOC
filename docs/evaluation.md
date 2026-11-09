@@ -406,7 +406,7 @@ It is a test fixture, not evidence of detection quality.
 ## Adversarial corpus v2
 
 `tests/fixtures/eval/adversarial_v2.jsonl` (version 2, sha256
-`d3817373d8357ccffa7ff38f58a7bd8d5963a9caf1cdeee248c3d2b921955c1a`) is a
+`4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1`) is a
 synthetic set of 97 hand-written alerts that try to steer the model or the
 rules, all in the gated `adversarial` split, in seven families. Its
 `_meta.tenant_settings` names the corpus scanner (`triage.known_scanners`).
@@ -739,8 +739,8 @@ generator writes what a 4.14 manager would write to `alerts.json`.
 3. `make eval-corpus-cassettes` runs the corpus through the pipeline with the
    fake model and records one gzip-compressed cassette per item in
    `tests/fixtures/eval/cassettes/corpus_v1/`.
-4. CI (`tests/integration/eval/test_corpus_v1_eval.py`, about two minutes)
-   replays all 520 from the cassettes, with every outbound connection blocked
+4. CI (`tests/integration/eval/test_corpus_v1_eval.py`, about four minutes)
+   replays all 520 from the cassettes, at both model-led closure tiers, with every outbound connection blocked
    and the model unusable, and gates the report with
    `tests/fixtures/eval/corpus_v1_thresholds.yaml`. It needs no Ollama and no
    Wazuh. `LG_SOTF_CORPUS_REPORT=path.json` also writes the report.
@@ -757,24 +757,29 @@ cassettes.
 
 ### The gate
 
-With the fake model (recorded run, 2026-11-08):
+With the fake model (recorded run, 2026-11-09, decision policy v2):
 
 ```text
 items 520 (scored 520, errors 0)
 malicious false-negative rate 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
 malicious closed by automation 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
-benign auto-close rate 0.0% (0 of 312); benign routed to response 37.5% (117 of 312)
-escalation rate 56.7%; approval request rate 43.3%; malicious recall 52.4%; macro F1 0.322
-gate PASSED (16 checks)
+benign auto-close rate 0.0% (0 of 312); benign routed to response 0.0% (0 of 312)
+escalation rate 100.0%; approval request rate 0.0%; malicious recall 1.4%; macro F1 0.176
+gate PASSED (16 checks), with model-led closure off and at the tier auto_full_audit
 ```
 
 The bounds: no error; no malicious alert closed by automation, overall and
 in each of the seven families; no high or critical alert closed as benign;
 and regression bounds on what the fake model does (benign alerts routed to a
-response plan at most 45%, malicious recall at least 45%, escalation at most
-65%). The Wazuh texts hold few of the fake model's keywords, so it closes
-nothing on its own and sends every benign alert to a human or to an approval:
-the gate measures the routing policy, not a model. A real model's numbers on
+response plan at most 2%, malicious recall at least 1.4% (all three of today's 3 of 208), escalation at most
+100%). The Wazuh texts hold few of the fake model's keywords, so its analysis
+rates most of them in the grey zone: it closes nothing on its own and sends
+every alert to a human. The gate measures the routing policy, not a model.
+Before decision policy v2 (FIX-1), correlation skipped analysis and raised
+the confidence to the response policy: 117 benign alerts got a response
+plan, and those plans were most of the malicious recall (52%). The test
+replays the cassettes twice, with model-led closure off and at
+`auto_full_audit`; both runs must pass. A real model's numbers on
 this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
 
 **The first real model on it** is

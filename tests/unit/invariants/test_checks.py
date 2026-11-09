@@ -78,13 +78,17 @@ def test_kill_switch_fails_when_a_dry_run_tenant_would_act(
 
 def test_routing_policy(make_settings: Callable[..., Settings], monkeypatch: pytest.MonkeyPatch) -> None:
     assert check_routing_policy(make_settings()).outcome == "pass"
-    monkeypatch.setattr(checks, "decide", lambda state, t: Decision("close", "x", "benign", "rule_corroborated_benign"))
+    monkeypatch.setattr(
+        checks, "decide", lambda state, t, tier="off": Decision("close", "x", "benign", "model_closed")
+    )
     result = check_routing_policy(make_settings())
     assert result.outcome == "fail"
     assert result.detail.split("; ") == [
         "critical alert closed on a benign verdict",
         "high alert closed on a benign verdict",
-        "low alert closed on the model's verdict without rule corroboration",
+        "low alert closed on the models' verdict with model-led closure off",
+        "credential access alert closed on the models' verdict",
+        "low alert closed on benign evidence despite rule evidence of a threat",
     ]
 
 
@@ -208,11 +212,18 @@ def test_probe_plan_reads_only_small_tables_and_unanalyzed_tiny_ones() -> None:
 
 
 def test_the_synthetic_routing_states_are_ones_the_policy_would_otherwise_close() -> None:
-    """Guards check_routing_policy against passing vacuously: the same benign, corroborated state closes at low severity."""
+    """Guards check_routing_policy against passing vacuously: the same benign states close at low severity (with
+    evidence at any tier; without it, through a model-led close at auto_full_audit when no never-close class)."""
     t = RoutingThresholds()
-    low = checks._benign_state("low", rule_threat=0)
+    low = checks._benign_state("low")
     assert route_after_triage(low, t) == "close" and decide(low, t).route == "close"
-    assert decide(checks._benign_state("high", rule_threat=0), t).code == "false_positive_review"
+    assert decide(checks._benign_state("high"), t, "auto_full_audit").code == "false_positive_review"
+    assert decide(checks._benign_state("low", evidence=False), t, "auto_full_audit").code == "model_closed"
+    credential = checks._benign_state("low", evidence=False, tactic="Credential Access")
+    assert decide(credential, t, "auto_full_audit").code == "false_positive_review"
+    corroborated = checks._benign_state("low")
+    corroborated["analysis"].update(rule_corroborated=True)
+    assert decide(corroborated, t).code == "false_positive_review"
 
 
 def test_audit_append_only(make_settings: Callable[..., Settings]) -> None:

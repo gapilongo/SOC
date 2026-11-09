@@ -61,7 +61,7 @@ JSONL; keep every message synthetic.
 
 | File | Purpose |
 |---|---|
-| `adversarial_v2.jsonl` | 97 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `d3817373d8357ccffa7ff38f58a7bd8d5963a9caf1cdeee248c3d2b921955c1a` |
+| `adversarial_v2.jsonl` | 97 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1` |
 | `adversarial_v2_thresholds.yaml` | Its gate with the fake LLM: no malicious item of the `adversarial` split closed by automation |
 
 All 97 items are in the gated `adversarial` split, in seven families

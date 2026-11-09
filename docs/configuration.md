@@ -364,19 +364,21 @@ Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-for
 | `routing.triage_close_min_fp` | `LG_SOTF_ROUTING__TRIAGE_CLOSE_MIN_FP` | integer | `2` | False-positive signals required with `triage_close_max_confidence` (at least one must come from rules). |
 | `routing.triage_fp_majority_min` | `LG_SOTF_ROUTING__TRIAGE_FP_MAJORITY_MIN` | integer | `3` | Alternative close rule: at least this many false-positive signals outnumbering true-positive ones... |
 | `routing.triage_fp_majority_max_confidence` | `LG_SOTF_ROUTING__TRIAGE_FP_MAJORITY_MAX_CONFIDENCE` | integer | `20` | ...and confidence at most this. |
-| `routing.correlation_strong_score` | `LG_SOTF_ROUTING__CORRELATION_STRONG_SCORE` | integer | `85` | Correlation score above which, with enough related alerts, analysis is skipped. |
-| `routing.correlation_strong_min_related` | `LG_SOTF_ROUTING__CORRELATION_STRONG_MIN_RELATED` | integer | `5` | Related alerts required for the strong-correlation shortcut. |
-| `routing.correlation_grey_zone_min` | `LG_SOTF_ROUTING__CORRELATION_GREY_ZONE_MIN` | integer | `30` | Lower bound of the confidence grey zone that goes to an analyst. |
-| `routing.correlation_grey_zone_max` | `LG_SOTF_ROUTING__CORRELATION_GREY_ZONE_MAX` | integer | `70` | Upper bound of the confidence grey zone. |
-| `routing.human_review_min` | `LG_SOTF_ROUTING__HUMAN_REVIEW_MIN` | integer | `20` | Below this confidence and correlation score (low/medium severity, no burst) analysis is skipped. |
+| `routing.correlation_strong_score` | `LG_SOTF_ROUTING__CORRELATION_STRONG_SCORE` | integer | `85` | Correlation score above which, with enough related alerts, a high or critical alert skips analysis (it never closes automatically). Low and medium alerts are always analysed. |
+| `routing.correlation_strong_min_related` | `LG_SOTF_ROUTING__CORRELATION_STRONG_MIN_RELATED` | integer | `5` | Related alerts required for the strong-correlation shortcut (high and critical alerts only). |
+| `routing.correlation_grey_zone_min` | `LG_SOTF_ROUTING__CORRELATION_GREY_ZONE_MIN` | integer | `30` | Lower bound of the grey zone that goes to an analyst, tested on the analysis threat score (the triage confidence when no analysis ran). |
+| `routing.correlation_grey_zone_max` | `LG_SOTF_ROUTING__CORRELATION_GREY_ZONE_MAX` | integer | `70` | Upper bound of the grey zone. |
+| `routing.human_review_min` | `LG_SOTF_ROUTING__HUMAN_REVIEW_MIN` | integer | `20` | Lowest triage confidence once the fast model was consulted and the rules alone do not close the alert. |
 | `routing.human_review_max` | `LG_SOTF_ROUTING__HUMAN_REVIEW_MAX` | integer | `60` | Reserved upper bound of the human-review band. |
 | `routing.analysis_threshold` | `LG_SOTF_ROUTING__ANALYSIS_THRESHOLD` | integer | `40` | Reserved analysis threshold (kept for configuration compatibility). |
 | `routing.response_threshold` | `LG_SOTF_ROUTING__RESPONSE_THRESHOLD` | integer | `80` | Threat score at which the policy plans a response. |
 | `routing.response_combo_threat` | `LG_SOTF_ROUTING__RESPONSE_COMBO_THREAT` | integer | `60` | Alternative response rule: threat score at least this... |
 | `routing.response_combo_confidence` | `LG_SOTF_ROUTING__RESPONSE_COMBO_CONFIDENCE` | integer | `80` | ...with confidence at least this. |
-| `routing.close_max_threat` | `LG_SOTF_ROUTING__CLOSE_MAX_THREAT` | integer | `30` | Below this threat score a low/medium alert closes if rules corroborate; high/critical go to an analyst. |
+| `routing.close_max_threat` | `LG_SOTF_ROUTING__CLOSE_MAX_THREAT` | integer | `30` | Below this threat score a low/medium alert with a benign verdict closes on approved benign evidence, or by a model-led close its tenant's `ai_closure.tier` allows; high/critical go to an analyst. |
 | `routing.max_more_info_loops` | `LG_SOTF_ROUTING__MAX_MORE_INFO_LOOPS` | integer | `1` | How often an analyst's `needs_more_info` re-runs analysis before the case returns to the analyst. |
 | `routing.max_alert_age_hours` | `LG_SOTF_ROUTING__MAX_ALERT_AGE_HOURS` | integer | `72` | Reserved alert-age limit (not enforced by routing in this release). |
+| `routing.model_close_max_likelihood` | `LG_SOTF_ROUTING__MODEL_CLOSE_MAX_LIKELIHOOD` | integer | `8` | Model-led close: the fast tier must call the alert `benign` with a threat likelihood of at most this. Install-wide: a tenant chooses `ai_closure.tier`, never looser numbers. |
+| `routing.model_close_min_certainty` | `LG_SOTF_ROUTING__MODEL_CLOSE_MIN_CERTAINTY` | integer | `85` | Model-led close: the deep tier must call the alert `benign` with a certainty of at least this. |
 
 ### `ingestion`
 

@@ -80,6 +80,7 @@ from lg_sotf.agents.base import AccountedRun, AgentContext, BaseAgent, LLMResult
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain import routing
 from lg_sotf.domain.benign_evidence import (
+    INJECTION_SIGNAL,
     KnownScanners,
     attacker_values,
     detector_words,
@@ -134,7 +135,6 @@ TP_TEXT_FIELDS = ("title", "rule_name", "description", "category")
 # Raw event fields holding process names or command lines.
 TP_RAW_FIELDS = ("process_name", "command_line", "commandline", "cmdline", "CommandLine", "parent_process", "image")
 MAX_TP_TEXT_CHARS = 8_000
-INJECTION_SIGNAL = "prompt_injection_suspected"
 # False-positive signals that come from content or configuration, not text (lg_sotf.domain.benign_evidence).
 EICAR_SIGNAL = "eicar_test_file"
 SCANNER_SIGNAL = "known_scanner"
@@ -222,6 +222,8 @@ class TriageResult:
     llm_skipped: Optional[str] = None
     llm_refusal: Optional[Dict[str, Optional[str]]] = None
     threat_assessment: Optional[str] = None
+    #: The fast-tier model's own threat likelihood (0-100), before blending; ``None`` when it was not consulted.
+    threat_likelihood: Optional[int] = None
     threat_categories: List[str] = field(default_factory=list)
     reasoning: Optional[str] = None
     notes: List[str] = field(default_factory=list)
@@ -636,6 +638,7 @@ class TriageAgent(BaseAgent):
             llm_tp=[i for i in a.true_positive_indicators if i not in rule_tp][:MAX_INDICATORS],
             llm_used=True,
             threat_assessment=a.threat_assessment,
+            threat_likelihood=a.threat_likelihood,
             threat_categories=list(a.threat_categories),
             reasoning=a.reasoning,
         )
