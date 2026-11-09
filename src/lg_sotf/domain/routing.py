@@ -12,7 +12,9 @@ Safety rules enforced here (contract section 8):
   severity alert only with approved benign evidence (:func:`benign_evidence`:
   triage's rule false-positive signals, which come only from the detection
   rule's name, the EICAR hash, a test source or the tenant's declared
-  context; a cached analyst verdict closes earlier, at the gate) or, when the
+  context; a cached analyst verdict closes earlier, at the gate; never past
+  steering text, a recent true positive or, for a declared scanner or a test
+  source, a never-close class: :func:`closure.evidence_close_blockers`) or, when the
   tenant's autonomy tier is ``auto_full_audit``, through a model-led close
   (:mod:`lg_sotf.domain.closure`, code ``model_closed``) that every condition
   of that module allows. With the tier ``off`` a model never closes alone.
@@ -248,6 +250,10 @@ def _low_threat(
     if verdict not in (None, "benign"):
         return Decision("escalate", "low threat score without a benign verdict", None, "false_positive_review")
     if benign_evidence(triage):
+        overruled = closure.evidence_close_blockers(state)
+        if overruled:
+            reason = f"approved benign evidence overruled by {', '.join(overruled)}"
+            return Decision("escalate", reason, None, "false_positive_review")
         return Decision("close", "low threat corroborated by approved benign evidence", "benign", "rule_corroborated_benign")
     blockers = closure.model_close_blockers(
         state, tier=tier, max_likelihood=t.model_close_max_likelihood, min_certainty=t.model_close_min_certainty

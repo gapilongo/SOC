@@ -240,7 +240,8 @@ close a dangerous alert or trigger containment.
    what the attacker cannot write: words of the detection rule's name (with
    quoted spans and every attacker-named value masked out), an alert whose
    only file hashes are the EICAR test file's, a host or address the tenant
-   lists in `triage.known_scanners`, and test-like tags in the configured
+   lists in `triage.known_scanners` as the source of the activity (never as
+   its victim or destination), and test-like tags in the configured
    source id. Never from the title (integrations build it from the names of
    the objects involved, and the attacker names those: "Scheduled task
    created: Windows Update Test"), descriptions, entity names, command lines,
@@ -251,7 +252,8 @@ close a dangerous alert or trigger containment.
    alone, marked `ai_closed:audit_required`, but never a never-close class
    (credential access, log clearing, tampering, ransomware, persistence
    through attacker-named objects, or an alert without an ATT&CK mapping),
-   never with steering text or a recent true positive on its entities, and
+   never with steering text, a recent true positive on its entities or a
+   campaign in progress among its related alerts, and
    only when the fast tier's likelihood is at most 8 and the deep tier's
    certainty at least 85 (install settings). The routing policy chooses to plan a response from the threat
    score; what then runs automatically is decided per action: automatic

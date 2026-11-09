@@ -77,10 +77,14 @@ def test_activity_words_alone_are_not_benign_evidence(rule_name: str) -> None:
         (_alert("uptime health-check monitoring"), ["health_check_detected", "monitoring_detected"]),
         # A test-like source id qualifies them too.
         (_alert("scheduled-task-created", source_id="splunk-staging"), ["scheduled_detected", "test_environment"]),
-        # A configured scanner among the entities qualifies "scan", and only "scan".
-        (_alert("vuln-scan-started", entities={"ips": ["10.0.5.10"]}), ["scan_detected", SCANNER_SIGNAL]),
-        (_alert("scheduled-scan-update", entities={"hosts": ["scanner-01"]}), ["scan_detected", SCANNER_SIGNAL]),
-        (_alert("vuln-scan-started", entities={"ips": ["10.0.6.10"]}), []),
+        # A configured scanner as the source of the activity qualifies "scan", and only "scan".
+        (_alert("vuln-scan-started", entities={"ips": ["10.0.5.10"]}, raw={"src_ip": "10.0.5.10"}),
+         ["scan_detected", SCANNER_SIGNAL]),
+        (_alert("scheduled-scan-update", raw={"src_host": "scanner-01"}), ["scan_detected", SCANNER_SIGNAL]),
+        (_alert("vuln-scan-started", entities={"ips": ["10.0.6.10"]}, raw={"src_ip": "10.0.6.10"}), []),
+        # FIX-1 review: a scanner that is only an entity (the victim, the destination) is no benign evidence.
+        (_alert("vuln-scan-started", entities={"ips": ["10.0.5.10"], "hosts": ["scanner-01"]},
+                raw={"dst_ip": "10.0.5.10", "src_ip": "203.0.113.9"}), []),
         # Intent words need no qualifier.
         (_alert("ups-test"), ["test_detected"]),
         (_alert("pipeline-selftest"), ["selftest_detected"]),

@@ -13,9 +13,13 @@
 #   to a response plan for approval (0 since FIX-1; 0.375 before, when correlation skipped analysis
 #   and raised the confidence to the response policy), how many malicious verdicts the model gets
 #   right and the escalation share. Since FIX-1 every low and medium alert is analysed and the fake
-#   model rates most Wazuh texts in the grey zone, so recall is 0.014 (0.52 before, from those
-#   correlation-driven response plans) and the escalation share 1.0. A prompt or policy change that
-#   moves them re-records the cassettes and revisits these numbers in the same change.
+#   model rates most Wazuh texts in the grey zone, so recall is 3 of 208 = 0.0144 (0.52 before, from
+#   those correlation-driven response plans) and the escalation share 1.0. The recall floor keeps
+#   all three: losing one (2 of 208 = 0.0096) fails. Malicious alerts that used to get a
+#   correlation-driven response plan now go to an analyst instead: safe, but a known change; response
+#   planning for corroborated attacks should come from evidence, not correlation (follow-up). A
+#   prompt or policy change that moves these numbers re-records the cassettes and revisits them in
+#   the same change.
 #
 # Real-model results on this corpus belong in a scorecard (docs/scorecards/), not here.
 version: 1
@@ -35,7 +39,7 @@ metrics:
   families.web.malicious_false_negative_rate: {max: 0}
   # Benign alerts the policy turned into a response plan waiting for approval (a human still decides).
   benign_auto_response_rate: {max: 0.02}
-  per_class.malicious.recall: {min: 0.01}
+  per_class.malicious.recall: {min: 0.014}
   escalation_rate: {max: 1}
   latency_s.p95: {max: 10}
 regressions:

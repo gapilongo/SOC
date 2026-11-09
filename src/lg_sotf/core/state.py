@@ -108,6 +108,8 @@ class CorrelationDigest(TypedDict, total=False):
     llm_skipped: Optional[str]
     llm_refusal: LlmRefusal
     related_dispositions: Dict[str, int]
+    related_threats: int
+    related_open_reviews: int
     campaign_indicators: List[str]
 
 

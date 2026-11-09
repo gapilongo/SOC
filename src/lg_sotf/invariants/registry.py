@@ -110,12 +110,14 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed "
             "verdict. A low or medium alert closes when approved benign evidence an attacker cannot write "
             "corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a "
-            "test source or the tenant's declared context, such as its scanners. Without such evidence it closes "
-            "on the models' word only when the tenant's autonomy tier is auto_full_audit and both model tiers judge "
-            "it benign within the install's thresholds, never for the never-close classes (credential access, log "
-            "clearing, security-tool tampering, ransomware behaviour), steering text or entities with a recent "
-            "true positive; such a close is marked model_closed for audit. With the tier off, the default, a model "
-            "never closes an alert alone."
+            "test source or the tenant's declared context, such as a scanner as the source of the activity; never "
+            "past steering text or a recent true positive, and a scanner or test source never for a never-close "
+            "class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is "
+            "auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the "
+            "never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, "
+            "persistence through attacker-named objects, unmapped alerts), steering text, entities with a recent "
+            "true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier "
+            "off, the default, a model never closes an alert alone."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2"),
@@ -129,6 +131,10 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::test_high_and_critical_never_close_at_any_tier",
             "tests/unit/domain/test_closure.py::test_never_close_classes_never_close_on_the_models_word",
             "tests/unit/domain/test_closure.py::test_each_condition_alone_blocks_a_model_led_close",
+            "tests/unit/domain/test_closure.py::test_approved_benign_evidence_never_closes_past_a_hard_flag",
+            "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
+            "tests/unit/domain/test_closure.py::test_a_campaign_in_progress_is_never_model_closed",
+            "tests/unit/domain/test_closure.py::test_review_f2_sentinel_credential_access_is_a_never_close_class",
             "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
             "tests/integration/eval/test_adversarial_v2_eval.py::test_no_malicious_close_with_model_led_closure_on",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",

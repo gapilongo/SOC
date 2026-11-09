@@ -2046,6 +2046,8 @@ export interface components {
                     related_dispositions?: {
                         [key: string]: number;
                     };
+                    related_open_reviews?: number;
+                    related_threats?: number;
                     score?: number;
                 };
                 decision?: {
@@ -2292,6 +2294,8 @@ export interface components {
                     related_dispositions?: {
                         [key: string]: number;
                     };
+                    related_open_reviews?: number;
+                    related_threats?: number;
                     score?: number;
                 };
                 decision?: {

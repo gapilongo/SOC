@@ -75,6 +75,7 @@ def test_a_model_led_close_needs_the_tier_and_is_marked_for_audit() -> None:
         ("analysis.rule_evidence", ["prior_malicious_history"], "recent_true_positive"),
         ("analysis.rule_corroborated", True, "recent_true_positive"),
         ("correlation.related_dispositions", {"malicious": 1, "benign": 4}, "recent_true_positive"),
+        ("correlation.related_count", 2, "campaign_in_progress"),  # related alerts, but nothing known about them
         ("triage.threat_assessment", "suspicious", "fast_tier_not_benign"),
         ("triage.threat_likelihood", 9, "fast_tier_not_benign"),
         ("triage.threat_likelihood", None, "fast_tier_not_benign"),
@@ -222,3 +223,134 @@ def test_the_setting_is_validated() -> None:
     for bad in ({"tier": "auto_sampled"}, {"tier": "off", "max_likelihood": 50}, {"tier": None}, "off", []):
         with pytest.raises(ValueError, match="ai_closure"):
             validate_ai_closure_settings(bad)
+
+
+# --------------------------------------------------------------------------- independent review of #341 (adopted)
+# The reviewer's proofs (scratchpad rev341/test_rev341_findings.py), each asserting the safe behaviour.
+
+
+def _review_state(**changes: Any) -> Dict[str, Any]:
+    """The reviewer's base: a medium alert both tiers call benign (likelihood 2, certainty 95), no evidence."""
+    return benign_state(severity="medium", **{"triage.threat_likelihood": 2, "analysis.certainty": 95,
+                                               "analysis.threat_score": 5}, **changes)
+
+
+def test_review_f1_evidence_never_closes_past_threat_intel_history_related_malicious_and_steering() -> None:
+    state = _review_state(**{
+        "alert.mitre": {"tactics": ["Credential Access"], "techniques": ["T1110.003"]},
+        "triage.rule_fp": ["known_scanner"], "triage.rule_tp": [INJECTION],
+        "analysis.rule_threat_score": 95, "analysis.rule_corroborated": True,
+        "analysis.rule_evidence": ["threat_intel_malicious", "prior_malicious_history"],
+        "correlation": {"related_count": 6, "burst": True, "related_dispositions": {"malicious": 3}},
+    })
+    for tier in AUTONOMY_TIERS:
+        decision = routing.decide(state, T, tier)
+        assert (decision.route, decision.code) == ("escalate", "false_positive_review"), decision
+    assert set(closure.evidence_close_blockers(state)) == {"steering_text", "recent_true_positive", "never_close_class"}
+
+
+def test_review_f2_sentinel_credential_access_is_a_never_close_class() -> None:
+    from datetime import UTC, datetime
+
+    from lg_sotf.ingestion.normalizers import NormalizeContext, get_normalizer
+
+    ctx = NormalizeContext(source_id="src-1", source_type="sentinel", now=datetime(2024, 3, 5, 12, tzinfo=UTC))
+    for tactics in ("CredentialAccess", "Credential Access", "credential_access", "TA0006"):
+        event = {"SystemAlertId": "a1", "AlertName": "Password spray", "AlertSeverity": "Medium", "Tactics": tactics,
+                 "TimeGenerated": "2024-03-05T11:00:00Z", "ProductName": "Azure Sentinel"}
+        alert = get_normalizer("sentinel").normalize(event, ctx).model_dump(mode="json")
+        assert never_close_class(alert) == "credential_access", (tactics, alert.get("mitre"))
+        assert routing.decide(_review_state(alert=alert), T, AUTO).route != "close"
+
+
+def test_review_f2b_pascal_case_tactics_are_never_closed_on_the_models_word() -> None:
+    state = _review_state(**{"alert.mitre": {"tactics": ["CredentialAccess"], "techniques": []}})
+    assert routing.decide(state, T, AUTO).route != "close"
+
+
+def test_review_f3_a_burst_of_undecided_related_alerts_is_never_model_closed() -> None:
+    state = _review_state(correlation={"related_count": 25, "burst": True, "score": 100, "frequency_level": "critical",
+                                       "related_dispositions": {"undecided": 10}})
+    assert routing.decide(state, T, AUTO).route != "close"
+
+
+# --------------------------------------------------------------------------- F1: the evidence gate's hard checks
+
+EVIDENCE = ("known_scanner", "test_environment", "eicar_test_file", "test_detected",
+            "email_internal_sender_authenticated")
+HARD_FLAGS: Dict[str, Dict[str, Any]] = {
+    "steering_text": {"triage.rule_tp": [INJECTION]},
+    "rule_corroborated": {"analysis.rule_corroborated": True},
+    "threat_intel_and_history": {"analysis.rule_evidence": ["prior_malicious_history"]},
+    "related_malicious": {"correlation.related_dispositions": {"malicious": 1}},
+}
+
+
+def test_approved_benign_evidence_still_closes_without_a_flag() -> None:
+    for signal in EVIDENCE:
+        decision = routing.decide(benign_state(**{"triage.rule_fp": [signal]}), T, "off")
+        assert (decision.route, decision.code) == ("close", "rule_corroborated_benign"), signal
+
+
+def test_approved_benign_evidence_never_closes_past_a_hard_flag() -> None:
+    """F1: whatever the evidence, steering text or a recent true positive escalates, at every tier and severity."""
+    for signal, (flag, change), severity, tier in itertools.product(
+        EVIDENCE, HARD_FLAGS.items(), ("info", "low", "medium"), AUTONOMY_TIERS
+    ):
+        state = benign_state(severity=severity, **{"triage.rule_fp": [signal], **change})
+        decision = routing.decide(state, T, tier)
+        assert (decision.route, decision.code) == ("escalate", "false_positive_review"), (signal, flag, tier)
+
+
+@pytest.mark.parametrize(
+    "mitre",
+    [
+        {"tactics": ["Credential Access"], "techniques": []},
+        {"tactics": ["CredentialAccess"], "techniques": []},
+        {"tactics": [], "techniques": ["T1003.001"]},
+        {"tactics": [], "techniques": ["T1070.001"]},
+        {"tactics": [], "techniques": ["T1562.001"]},
+        {"tactics": [], "techniques": ["T1486"]},
+        {"tactics": [], "techniques": ["T1053.005"]},
+    ],
+)
+def test_a_scanner_or_test_source_never_closes_a_never_close_class(mitre: Dict[str, Any]) -> None:
+    """F1: where the activity came from (a declared scanner, a test source) is context an attacker borrows by acting
+    from there; it never closes a mapped never-close class. The rule's own test intent and EICAR are exempt."""
+    for signal in ("known_scanner", "test_environment"):
+        state = benign_state(**{"triage.rule_fp": [signal], "alert.mitre": copy.deepcopy(mitre)})
+        assert closure.evidence_close_blockers(state) == ["never_close_class"]
+        assert routing.decide(state, T, "off").route == "escalate"
+    for signal in ("eicar_test_file", "test_detected"):
+        state = benign_state(**{"triage.rule_fp": [signal], "alert.mitre": copy.deepcopy(mitre)})
+        assert routing.decide(state, T, "off").code == "rule_corroborated_benign"
+    unmapped = benign_state(**{"triage.rule_fp": ["known_scanner"], "alert.mitre": {"tactics": [], "techniques": []}})
+    assert routing.decide(unmapped, T, "off").code == "rule_corroborated_benign"
+
+
+# --------------------------------------------------------------------------- F3: a campaign in progress
+
+
+@pytest.mark.parametrize(
+    "correlation",
+    [
+        {"related_count": 3, "burst": True, "related_threats": 0, "related_open_reviews": 0},
+        {"related_count": 3, "burst": False, "related_threats": 1, "related_open_reviews": 0},
+        {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 2},
+        {"related_count": 3, "burst": False},  # counts unknown: fail closed
+        {"related_count": 3, "related_threats": 0, "related_open_reviews": 0},  # burst unknown
+        {},  # nothing known about related alerts
+    ],
+)
+def test_a_campaign_in_progress_is_never_model_closed(correlation: Dict[str, Any]) -> None:
+    state = benign_state(correlation={**correlation, "related_dispositions": {"benign": 3}})
+    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["campaign_in_progress"]
+    assert routing.decide(state, T, AUTO).route == "escalate"
+
+
+def test_quiet_related_alerts_do_not_block_a_model_led_close() -> None:
+    quiet = {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 0,
+             "related_dispositions": {"benign": 2, "undecided": 1}}
+    assert routing.decide(benign_state(correlation=quiet), T, AUTO).code == MODEL_CLOSED
+    ai_closed = {**quiet, "related_dispositions": {"ai_closed_unaudited": 3}}
+    assert routing.decide(benign_state(correlation=ai_closed), T, AUTO).code == MODEL_CLOSED

@@ -272,10 +272,11 @@ correlation no longer raises the confidence, the grey zone reads the
 analysis threat score, and a benign close needs approved benign evidence
 instead of the rules' score, or the tenant's opt-in to model-led closure
 (`ai_closure.tier`, off by default). Offline, on this run's recorded model
-outputs, model-led closure at the default thresholds would close 4 of the
-312 benign alerts the deep model judged (up to 25 once every low and medium
-alert is analysed) and none of the 208 malicious ones. That is a
-simulation, not a re-measurement. The miss-rate result stands; the
+outputs, model-led closure at the default thresholds would close none of the
+208 malicious alerts. It would close no benign alert with the replay's
+compressed related alerts and bursts (a campaign in progress blocks it), and
+4 of the 312 (up to 25 once every low and medium alert is analysed) on a
+queue without them. That is a simulation, not a re-measurement. The miss-rate result stands; the
 auto-close result is not yet a statement about the model.
 
 ### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama

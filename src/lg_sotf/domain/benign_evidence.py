@@ -21,8 +21,12 @@ Triage therefore takes false-positive evidence only from:
   hash of the EICAR anti-virus test file (:func:`eicar_only`);
 * **configuration**: a host or address the tenant lists as its own
   vulnerability scanner (``triage.known_scanners``, :class:`KnownScanners`)
-  appears among the alert's structured entities. Entities come from the
-  normalizer's field mapping, never from free text;
+  is the *source* of the activity: it appears in one of the event's
+  structured source fields (:data:`SOURCE_FIELDS`: ``srcip``, ``src_ip``,
+  ``source_ip``, Windows logon source address or workstation, ...). A
+  scanner that is the host or address the activity reached (the victim, a
+  destination, the agent that saw it) is no benign evidence: an attack on
+  the scanner is still an attack;
 * **source metadata**: the environment tag of the configured source id (in
   :mod:`lg_sotf.agents.triage.base`).
 
@@ -42,7 +46,7 @@ scheduled backups inhibits recovery (T1490). :func:`rule_name_keywords` therefor
 counts an activity word only with a trusted qualifier: an intent word in the
 same rule name (``Scheduled maintenance: package update installed``), a
 test-environment source id, or, for ``scan``, one of the tenant's known
-scanners among the entities.
+scanners as the source of the activity.
 """
 
 from __future__ import annotations
@@ -64,11 +68,13 @@ __all__ = [
     "INJECTION_SIGNAL",
     "KnownScanners",
     "RULE_NAME_KEYWORDS",
+    "SOURCE_FIELDS",
     "TriageSettings",
     "attacker_values",
     "detector_words",
     "eicar_only",
     "rule_name_keywords",
+    "source_values",
     "validate_triage_settings",
 ]
 
@@ -172,7 +178,7 @@ def rule_name_keywords(
     An intent word always counts. An activity word (:data:`ACTIVITY_KEYWORDS`)
     counts only with a trusted qualifier: an intent word in the same rule
     name, a test-environment source (``test_environment``) or, for ``scan``,
-    a configured scanner among the entities (``known_scanner``).
+    a configured scanner as the source of the activity (``known_scanner``).
     """
     present = [k for k in RULE_NAME_KEYWORDS if k in words]
     qualified = test_environment or any(k not in ACTIVITY_KEYWORDS for k in present)
@@ -220,7 +226,7 @@ class TriageSettings(BaseModel):
     """Schema of ``tenants.settings["triage"]``.
 
     ``known_scanners``: host names, IP addresses or CIDR ranges of the
-    tenant's own vulnerability scanners. An alert whose entities include one
+    tenant's own vulnerability scanners. An alert whose activity comes from one
     gets the ``known_scanner`` false-positive signal.
     """
 
@@ -282,14 +288,36 @@ class KnownScanners:
         return bool(self.hosts or self.networks)
 
     def matches(self, alert: Mapping[str, Any]) -> bool:
-        """Whether one of the alert's host or IP entities is a configured scanner."""
-        entities = alert.get("entities")
-        if not self or not isinstance(entities, Mapping):
+        """Whether a configured scanner is the source of the activity (:func:`source_values`); a scanner that is
+        only a host or address entity (the victim, a destination, the agent) never matches."""
+        if not self:
             return False
-        if any(h.strip().lower().rstrip(".") in self.hosts for h in _scalars(entities.get("hosts"), MAX_MASKED_VALUES)):
-            return True
-        for value in _scalars(entities.get("ips"), MAX_MASKED_VALUES):
+        for value in source_values(alert):
+            if value.strip().lower().rstrip(".") in self.hosts:
+                return True
             address = _ip(value)
             if address is not None and any(address in network for network in self.networks):
                 return True
         return False
+
+
+#: Paths in the raw event of the fields that name where the activity came from (an address or a host), across the
+#: normalised vendors: generic and Splunk CIM names, Wazuh decoders, Windows logon events, AWS, webhook ``network``.
+SOURCE_FIELDS: Tuple[Tuple[str, ...], ...] = (
+    ("srcip",), ("src_ip",), ("source_ip",), ("sourceip",), ("src",), ("src_host",), ("source_host",), ("client_ip",),
+    ("data", "srcip"), ("data", "src_ip"), ("data", "aws", "sourceIPAddress"),
+    ("data", "win", "eventdata", "ipAddress"), ("data", "win", "eventdata", "sourceIp"),
+    ("data", "win", "eventdata", "workstationName"), ("network", "src"),
+)
+
+
+def source_values(alert: Mapping[str, Any]) -> List[str]:
+    """The values of the raw event's source fields (:data:`SOURCE_FIELDS`): where the activity came from."""
+    raw = _raw(alert)
+    found: List[str] = []
+    for path in SOURCE_FIELDS:
+        value: Any = raw
+        for key in path:
+            value = value.get(key) if isinstance(value, Mapping) else None
+        found.extend(_scalars(value, MAX_MASKED_VALUES))
+    return found[:MAX_MASKED_VALUES]

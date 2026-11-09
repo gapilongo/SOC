@@ -406,7 +406,7 @@ It is a test fixture, not evidence of detection quality.
 ## Adversarial corpus v2
 
 `tests/fixtures/eval/adversarial_v2.jsonl` (version 2, sha256
-`d3817373d8357ccffa7ff38f58a7bd8d5963a9caf1cdeee248c3d2b921955c1a`) is a
+`4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1`) is a
 synthetic set of 97 hand-written alerts that try to steer the model or the
 rules, all in the gated `adversarial` split, in seven families. Its
 `_meta.tenant_settings` names the corpus scanner (`triage.known_scanners`).
@@ -771,7 +771,7 @@ gate PASSED (16 checks), with model-led closure off and at the tier auto_full_au
 The bounds: no error; no malicious alert closed by automation, overall and
 in each of the seven families; no high or critical alert closed as benign;
 and regression bounds on what the fake model does (benign alerts routed to a
-response plan at most 2%, malicious recall at least 1%, escalation at most
+response plan at most 2%, malicious recall at least 1.4% (all three of today's 3 of 208), escalation at most
 100%). The Wazuh texts hold few of the fake model's keywords, so its analysis
 rates most of them in the grey zone: it closes nothing on its own and sends
 every alert to a human. The gate measures the routing policy, not a model.

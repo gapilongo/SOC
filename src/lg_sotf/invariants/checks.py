@@ -124,8 +124,8 @@ def _benign_state(severity: str, *, evidence: bool = True, tactic: Optional[str]
     analysis = {"threat_score": 0, "rule_threat_score": 0, "verdict": "benign", "certainty": 100, "llm_used": True,
                 "rule_evidence": [], "rule_corroborated": False}
     alert = {"mitre": {"tactics": [tactic or "Initial Access"], "techniques": [] if tactic else ["T1078"]}}
-    return {"severity": severity, "confidence": 0, "alert": alert, "triage": triage, "correlation": {},
-            "analysis": analysis}
+    return {"severity": severity, "confidence": 0, "alert": alert, "triage": triage,
+            "correlation": {"related_count": 0, "related_dispositions": {}}, "analysis": analysis}
 
 
 def check_routing_policy(settings: Settings) -> CheckResult:
@@ -144,11 +144,15 @@ def check_routing_policy(settings: Settings) -> CheckResult:
     credential = _benign_state("low", evidence=False, tactic="Credential Access")
     if decide(credential, thresholds, MODEL_CLOSE_TIER).route == "close":
         closed.append("credential access alert closed on the models' verdict")
+    corroborated = _benign_state("low")
+    corroborated["analysis"].update(rule_corroborated=True, rule_evidence=["threat_intel_malicious"])
+    if decide(corroborated, thresholds, "off").route == "close":
+        closed.append("low alert closed on benign evidence despite rule evidence of a threat")
     return _result(
         "routing_policy",
         not closed,
         "; ".join(closed) or "a benign model verdict closes no high or critical alert, nothing with model-led closure "
-        "off, and no never-close class",
+        "off, no never-close class, and no alert with evidence of a threat",
     )
 
 

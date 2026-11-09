@@ -144,14 +144,19 @@ def test_known_scanners_come_from_tenant_configuration() -> None:
     settings = {"triage": {"known_scanners": ["Scanner-01.corp.example.", "10.0.5.0/28", 7, "not a host!"]}}
     scanners = KnownScanners.from_settings(settings)
     assert scanners.hosts == {"scanner-01.corp.example"} and len(scanners.networks) == 1
-    assert scanners.matches({"entities": {"hosts": ["SCANNER-01.corp.example"]}})
-    assert scanners.matches({"entities": {"ips": ["10.0.5.10"]}})
-    assert not scanners.matches({"entities": {"ips": ["10.0.6.10"], "hosts": ["scanner-02"]}})
-    # Only structured entities count: a scanner's name in the title or a raw field is attacker-writable.
-    assert not scanners.matches({"title": "scan from scanner-01.corp.example", "raw": {"src": "10.0.5.10"}})
+    assert scanners.matches({"raw": {"src_host": "SCANNER-01.corp.example"}})
+    assert scanners.matches({"raw": {"src": "10.0.5.10"}})
+    assert scanners.matches({"raw": {"raw_data": {"data": {"srcip": "10.0.5.3"}}}})  # Wazuh, nested
+    assert scanners.matches({"raw": {"data": {"win": {"eventdata": {"ipAddress": "10.0.5.4"}}}}})
+    assert not scanners.matches({"raw": {"src_ip": "10.0.6.10", "src_host": "scanner-02"}})
+    # FIX-1 review: only the source of the activity counts. A scanner that is the victim, the destination or the
+    # agent that saw the event (an entity, a destination field) is no benign evidence, nor a name in the title.
+    assert not scanners.matches({"entities": {"hosts": ["scanner-01.corp.example"], "ips": ["10.0.5.10"]}})
+    assert not scanners.matches({"raw": {"dst_ip": "10.0.5.10", "agent": {"ip": "10.0.5.10"}}})
+    assert not scanners.matches({"title": "scan from scanner-01.corp.example", "raw": {"src": "203.0.113.7"}})
     assert not KnownScanners.from_settings({}) and not KnownScanners.from_settings({"triage": ["x"]})
     alert = {"title": "Port scan", "rule_name": "ids-portscan", "severity": "low", "source_id": "ids",
-             "entities": {"ips": ["10.0.5.3"]}}
+             "entities": {"ips": ["10.0.5.3"]}, "raw": {"src_ip": "10.0.5.3"}}
     assert rule_indicators(alert, scanners=scanners)[0] == [SCANNER_SIGNAL]
     assert rule_indicators(alert)[0] == []
 
@@ -169,8 +174,8 @@ def test_the_onboarding_samples_are_still_recognised_through_trusted_signals() -
     samples = {e["source_alert_id"]: {**e, "source_id": "sample"} for e in sample_events()}
     fp, _ = rule_indicators(samples["sample-002-eicar"])
     assert {EICAR_SIGNAL, "test_detected"} <= set(fp)
-    scan = samples["sample-005-scan"]
-    scanners = KnownScanners.from_settings({"triage": {"known_scanners": ["scanner-01.corp.example"]}})
+    scan = {**samples["sample-005-scan"], "raw": samples["sample-005-scan"]}  # the canonical event is the raw event
+    scanners = KnownScanners.from_settings({"triage": {"known_scanners": ["192.0.2.10"]}})
     assert {SCANNER_SIGNAL, "scan_detected"} <= set(rule_indicators(scan, scanners=scanners)[0])
     assert SCANNER_SIGNAL not in rule_indicators(scan)[0]
 
@@ -179,7 +184,7 @@ async def test_triage_reads_the_tenant_scanners(make_settings: Callable[..., Set
     settings = make_settings()
     repos = fake_repos(tenant_settings={"t1": {"triage": {"known_scanners": ["10.0.9.9"]}}})
     alert = {"title": "Vulnerability scan", "rule_name": "ids-portscan", "severity": "low", "source_id": "ids",
-             "entities": {"ips": ["10.0.9.9"]}}
+             "entities": {"ips": ["10.0.9.9"]}, "raw": {"source_ip": "10.0.9.9"}}
     agent = TriageAgent(settings=settings, model_factory=factory(scripted()))
     result = await agent.run(ctx(settings, repos=repos), alert)
     assert SCANNER_SIGNAL in result.rule_fp and repos.tenants.reads == 1

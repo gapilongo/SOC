@@ -21,6 +21,10 @@ missing or unreadable value blocks the close.
   malicious history (``prior_malicious_history``), no related alert of the
   correlation window closed as malicious, and no rule evidence that
   corroborates a threat (``rule_corroborated``);
+* no campaign in progress: no burst of related alerts, no related alert a
+  model judged malicious or suspicious, none still open for an analyst or an
+  approval (counted over every related alert, not only those shown to the
+  correlation model), so an attack is never closed alert by alert;
 * both model tiers say benign: the fast tier's assessment is ``benign`` with
   a threat likelihood at most ``routing.model_close_max_likelihood``
   (default 8), and the deep tier's verdict is ``benign`` with a certainty of
@@ -29,6 +33,13 @@ missing or unreadable value blocks the close.
 
 A model-led close carries the decision code ``model_closed`` and the close
 reason ``ai_closed:audit_required``: an analyst is expected to audit it.
+Correlation shows such an alert to later models as ``ai_closed_unaudited``,
+never as ``benign``, so one persuaded close cannot vouch for the next.
+
+Approved benign evidence closes without the tier, but never past steering
+text or a recent true positive, and context evidence (a declared scanner, a
+test source) never past a mapped never-close class
+(:func:`evidence_close_blockers`).
 The thresholds are install settings (``routing``), so a tenant can turn
 model-led closure on or off but never loosen what it needs.
 """
@@ -47,6 +58,7 @@ __all__ = [
     "AiClosureSettings",
     "AutonomyTier",
     "CLOSABLE_SEVERITIES",
+    "CONTEXT_EVIDENCE",
     "MODEL_CLOSED",
     "MODEL_CLOSE_REASON",
     "MODEL_CLOSE_TIER",
@@ -55,6 +67,7 @@ __all__ = [
     "SETTING",
     "UNMAPPED",
     "autonomy_tier",
+    "evidence_close_blockers",
     "model_close_blockers",
     "never_close_class",
     "validate_ai_closure_settings",
@@ -70,9 +83,13 @@ SETTING = "ai_closure"
 MODEL_CLOSED = "model_closed"
 MODEL_CLOSE_REASON = "ai_closed:audit_required"
 CLOSABLE_SEVERITIES: FrozenSet[str] = frozenset({"info", "low", "medium"})
+#: Triage's rule false-positive signals that say where the activity came from (a scanner the tenant declared, a
+#: test-environment source), as opposed to what was detected (the rule's own test intent, the EICAR file).
+CONTEXT_EVIDENCE: FrozenSet[str] = frozenset({"known_scanner", "test_environment"})
 
-#: ATT&CK tactics (names as Wazuh writes them, or ids) whose alerts a model never closes.
-NEVER_CLOSE_TACTICS: Mapping[str, str] = {"credential access": "credential_access", "ta0006": "credential_access"}
+#: ATT&CK tactics whose alerts a model never closes, keyed by name or id in lower case without separators, so
+#: Wazuh's "Credential Access", Sentinel's "CredentialAccess", "credential_access" and "TA0006" all match.
+NEVER_CLOSE_TACTICS: Mapping[str, str] = {"credentialaccess": "credential_access", "ta0006": "credential_access"}
 #: ATT&CK techniques (sub-techniques included) whose alerts a model never closes.
 NEVER_CLOSE_TECHNIQUES: Mapping[str, str] = {
     "T1003": "credential_access",  # OS credential dumping
@@ -97,7 +114,7 @@ NEVER_CLOSE_TECHNIQUES: Mapping[str, str] = {
 }
 #: The class of an alert without any ATT&CK mapping: whether it is a never-close class is unknown, so it is one.
 UNMAPPED = "unmapped"
-_TACTIC_SEPARATORS = re.compile(r"[\s_-]+")
+_NOT_ALNUM = re.compile(r"[^a-z0-9]")
 MAX_MITRE_VALUES = 50
 
 
@@ -145,7 +162,7 @@ def never_close_class(alert: Any) -> Optional[str]:
         return UNMAPPED
     tactics, techniques = _mitre(alert, "tactics"), _mitre(alert, "techniques")
     for tactic in tactics:
-        found = NEVER_CLOSE_TACTICS.get(_TACTIC_SEPARATORS.sub(" ", tactic.lower()))
+        found = NEVER_CLOSE_TACTICS.get(_NOT_ALNUM.sub("", tactic.lower()))
         if found is not None:
             return found
     for technique in techniques:
@@ -190,23 +207,66 @@ def _recent_true_positive(analysis: Mapping[str, Any], correlation: Mapping[str,
     )
 
 
+def _campaign_in_progress(correlation: Mapping[str, Any]) -> bool:
+    """Related alerts that may be one attack: a burst, one a model judged malicious or suspicious, or one still
+    open for review. Unknown counts (a digest without them) fail closed."""
+    related = _number(correlation.get("related_count"))
+    if related is None:
+        return True
+    if related == 0:
+        return False
+    if correlation.get("burst") is not False:
+        return True
+    counts = [_number(correlation.get(key)) for key in ("related_threats", "related_open_reviews")]
+    return any(count is None or count > 0 for count in counts)
+
+
+def _steering_text(triage: Mapping[str, Any]) -> bool:
+    rule_tp = triage.get("rule_tp")
+    return not isinstance(rule_tp, list) or INJECTION_SIGNAL in rule_tp
+
+
 def _digest(state: Mapping[str, Any], key: str) -> Mapping[str, Any]:
     value = state.get(key)
     return value if isinstance(value, Mapping) else {}
+
+
+def evidence_close_blockers(state: Mapping[str, Any]) -> List[str]:
+    """Why approved benign evidence may not close this alert; empty when it may.
+
+    Whatever the evidence: steering text, or a recent true positive on the
+    alert's entities. For context evidence (:data:`CONTEXT_EVIDENCE`: a
+    declared scanner or a test source, which say where the activity came
+    from and which an attacker borrows by acting from that host), also a
+    never-close class the detection rule maps the alert to. Evidence about
+    what was detected (the rule's own test intent, the EICAR file) is exempt
+    from the class test, and so is an unmapped alert: the class is unknown,
+    but the benign fact is declared, not a model's judgement.
+    """
+    triage = _digest(state, "triage")
+    fp = triage.get("rule_fp")
+    context = isinstance(fp, list) and any(signal in CONTEXT_EVIDENCE for signal in fp)
+    found = never_close_class(state.get("alert"))
+    checks = (
+        ("steering_text", _steering_text(triage)),
+        ("recent_true_positive", _recent_true_positive(_digest(state, "analysis"), _digest(state, "correlation"))),
+        ("never_close_class", context and found not in (None, UNMAPPED)),
+    )
+    return [name for name, blocked in checks if blocked]
 
 
 def model_close_blockers(
     state: Mapping[str, Any], *, tier: str, max_likelihood: int, min_certainty: int
 ) -> List[str]:
     """Why the models may not close this alert on their own; empty when they may (see the module docs)."""
-    triage, analysis = _digest(state, "triage"), _digest(state, "analysis")
-    rule_tp = triage.get("rule_tp")
+    triage, analysis, correlation = _digest(state, "triage"), _digest(state, "analysis"), _digest(state, "correlation")
     checks = (
         ("tier_off", tier != MODEL_CLOSE_TIER),
         ("severity", state.get("severity") not in CLOSABLE_SEVERITIES),
         ("never_close_class", never_close_class(state.get("alert")) is not None),
-        ("steering_text", not isinstance(rule_tp, list) or INJECTION_SIGNAL in rule_tp),
-        ("recent_true_positive", _recent_true_positive(analysis, _digest(state, "correlation"))),
+        ("steering_text", _steering_text(triage)),
+        ("recent_true_positive", _recent_true_positive(analysis, correlation)),
+        ("campaign_in_progress", _campaign_in_progress(correlation)),
         ("fast_tier_not_benign", not _fast_tier_benign(triage, max_likelihood)),
         ("deep_tier_not_benign", not _deep_tier_benign(analysis, min_certainty)),
     )

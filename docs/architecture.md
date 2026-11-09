@@ -276,9 +276,11 @@ Rules:
     approved benign evidence (`rule_corroborated_benign`): a rule
     false-positive signal of triage, which comes only from the detection
     rule's name, the EICAR hash, a test-environment source, a scanner the
-    tenant declared or an authenticated internal sender. A cached analyst
-    verdict closes earlier, at the gate. The rules' threat score no longer
-    gates a close.
+    tenant declared (as the source of the activity) or an authenticated
+    internal sender. A cached analyst verdict closes earlier, at the gate.
+    The rules' threat score no longer gates a close. Evidence never closes
+    past steering text or a recent true positive, and a scanner or test
+    source never closes a never-close class (`evidence_close_blockers`).
   * Without such evidence the models close the alert alone (`model_closed`,
     close reason `ai_closed:audit_required`) only when the tenant's
     autonomy tier `ai_closure.tier` is `auto_full_audit` (default `off`),
@@ -286,7 +288,9 @@ Rules:
     ATT&CK and not to a never-close class (credential access, log clearing,
     tampering, ransomware, persistence through an object the attacker
     names), triage found no steering text, no entity has a recent true
-    positive, and both model tiers say `benign`: fast-tier likelihood at
+    positive, no campaign is in progress (a burst, or a related alert a
+    model judged malicious or suspicious or still open for review), and
+    both model tiers say `benign`: fast-tier likelihood at
     most `routing.model_close_max_likelihood` (8) and deep-tier certainty at
     least `routing.model_close_min_certainty` (85). The `decide` node reads
     the tier from the tenant's settings at every decision.

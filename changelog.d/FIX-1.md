@@ -44,3 +44,22 @@
   related alert closed as malicious or rule evidence of a threat. A verdict
   the rules produced because a model was not consulted never counts. With
   the tier `off`, nothing closes on the models' word alone.
+- Nor while a campaign may be in progress: a burst of related alerts, a
+  related alert a model judged malicious or suspicious, or one still waiting
+  for an analyst or an approval. These are counted over every related alert,
+  not only the ten shown to the correlation model. A related alert the models
+  closed alone is shown to later models as `ai_closed_unaudited`, never as
+  `benign`, so one persuaded close cannot vouch for the next.
+- Approved benign evidence no longer closes an alert past text written to
+  steer a model, analyst-confirmed malicious history, rule evidence of a
+  threat or a related alert closed as malicious. A declared scanner or a
+  test source never closes credential access, log clearing, tampering,
+  ransomware or named persistence.
+- `triage.known_scanners` now counts only when the scanner is the source of
+  the activity (a source address or host field of the event, such as
+  `srcip` or the Windows logon source), never when it is the host or address
+  the activity reached. An attack on your scanner is still an attack. If
+  your scanner alerts carry the scanner only as an entity, they now go to
+  the model and, when needed, an analyst.
+- ATT&CK tactics are matched whatever their spelling, so Sentinel's
+  `CredentialAccess` is a never-close class like Wazuh's `Credential Access`.
