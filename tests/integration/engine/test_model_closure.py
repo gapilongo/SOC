@@ -61,10 +61,13 @@ async def test_the_tenant_tier_decides_whether_the_models_close(engine: Workflow
     assert alert.summary["decision"]["code"] == "model_closed"
     assert {"code": "model_closed", "autonomy_tier": "auto_full_audit"}.items() <= (await decide_event(repos, on)).items()
 
-    # Never for high severity or a never-close class, whatever the tier.
+    # Policy v3: a high alert closes on the models' word at the tier; never a critical one or a never-close class.
     high = await routine_alert(repos, "high", severity="high")
-    assert (await engine.run(TENANT_A, high)).status != "completed"
-    assert (await repos.alerts.get(TENANT_A, high)).disposition != "benign"
+    assert (await engine.run(TENANT_A, high)).status == "completed"
+    assert (await decide_event(repos, high))["code"] == "model_closed"
+    critical = await routine_alert(repos, "critical", severity="critical")
+    assert (await engine.run(TENANT_A, critical)).status != "completed"
+    assert (await repos.alerts.get(TENANT_A, critical)).disposition != "benign"
     spray = await routine_alert(
         repos, "spray", mitre={"tactics": ["Credential Access"], "techniques": ["T1110.003"]}
     )
@@ -91,12 +94,12 @@ async def wazuh_alert(repos: Repositories, name: str, rule_id: str, description:
                             raw=raw, normalized=fields)
 
 
-async def test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not(
+async def test_catalogued_noise_is_named_and_an_unreadable_wazuh_rule_does_not_close(
     engine: WorkflowEngine, repos: Repositories
 ) -> None:
-    """FIX-2 through the real workflow: an unmapped Wazuh package install (rule 2902, catalogued) closes on the
-    models' word, marked with its family; a custom rule copying the description stays unmapped and goes to an
-    analyst."""
+    """Through the real workflow: an unmapped Wazuh package install (rule 2902, catalogued) closes on the models'
+    word with its family in the reason; a custom rule copying the description closes too (policy v3 lifts unmapped),
+    without the family; a Wazuh alert whose rule cannot be read (vendor_unknown) goes to an analyst."""
     await repos.tenants.update_settings(TENANT_A, {"ai_closure": {"tier": "auto_full_audit"}})
     package = await wazuh_alert(repos, "package", "2902", DPKG)
     assert (await engine.run(TENANT_A, package)).status == "completed"
@@ -104,5 +107,14 @@ async def test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_ru
     assert decided["code"] == "model_closed" and "catalogued noise linux_package_install" in decided["reason"]
 
     custom = await wazuh_alert(repos, "custom", "100200", DPKG, entities={"hosts": ["db-08"]})
-    assert (await engine.run(TENANT_A, custom)).status == "waiting_human"
-    assert (await decide_event(repos, custom))["code"] == "false_positive_review"
+    assert (await engine.run(TENANT_A, custom)).status == "completed"
+    custom_decided = await decide_event(repos, custom)
+    assert custom_decided["code"] == "model_closed" and "catalogued noise" not in custom_decided["reason"]
+
+    unreadable = await make_alert(
+        repos, TENANT_A, source_alert_id="fix3-unreadable", title=ROUTINE, severity="medium", raw={"vendor": "x"},
+        normalized={"title": ROUTINE, "rule_name": f"2902: {DPKG}", "description": ROUTINE, "normalizer": "wazuh",
+                    "entities": {"hosts": ["db-09"]}, "mitre": {"tactics": [], "techniques": []}},
+    )
+    assert (await engine.run(TENANT_A, unreadable)).status == "waiting_human"
+    assert (await decide_event(repos, unreadable))["code"] == "false_positive_review"

@@ -94,7 +94,7 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/domain/test_noise_families.py::test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes`
   * `tests/unit/domain/test_noise_families.py::test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping`
   * `tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close`
-  * `tests/integration/engine/test_model_closure.py::test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not`
+  * `tests/integration/engine/test_model_closure.py::test_catalogued_noise_is_named_and_an_unreadable_wazuh_rule_does_not_close`
   * `tests/integration/eval/test_adversarial_v2_eval.py::test_model_led_closure_on_closes_only_what_policy_v3_allows`
   * `tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert`
   * `tests/unit/agents/test_title_camouflage.py::test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules`

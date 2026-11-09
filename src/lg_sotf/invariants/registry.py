@@ -173,7 +173,7 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping",
             "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
             "tests/integration/engine/test_model_closure.py::"
-            "test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not",
+            "test_catalogued_noise_is_named_and_an_unreadable_wazuh_rule_does_not_close",
             "tests/integration/eval/test_adversarial_v2_eval.py::test_model_led_closure_on_closes_only_what_policy_v3_allows",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"
