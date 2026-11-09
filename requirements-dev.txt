@@ -19,9 +19,9 @@ annotated-types==0.8.0 \
     #   -c requirements.txt
     #   lg-sotf (pyproject.toml)
     #   pydantic
-anthropic==2.5.0 \
-    --hash=sha256:79756a8cafa23a8c0ab636700914d34ee968039eb6e466a8aa748210713f4c00 \
-    --hash=sha256:898848f23c473aca52b4d1b496c22e5f6125246c31e0b2161ef98cb0384131a0
+anthropic==2.6.0 \
+    --hash=sha256:4325cdf9346fa29183674b6ee6289ebad5b2b0a935758f7350fa504032da1d9b \
+    --hash=sha256:a38d8698258a4cb33a9bc9d2f0ced1d96b71010870e5ed703807d21021a0da24
     # via
     #   -c requirements.txt
     #   langchain-anthropic
@@ -2469,9 +2469,9 @@ structlog==26.1.0 \
     # via
     #   -c requirements.txt
     #   lg-sotf (pyproject.toml)
-tenacity==9.1.4 \
-    --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55 \
-    --hash=sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
+tenacity==9.2.1 \
+    --hash=sha256:9e56f17539296baab7beabb08b92f6ee3d7be92d8be72d763360677c2ad6580e \
+    --hash=sha256:a606b5c808d0cded4a359d5b9932d867ff2a6a6b64d37350260fd01bbdf83839
     # via
     #   -c requirements.txt
     #   google-genai
