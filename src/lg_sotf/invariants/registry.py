@@ -115,11 +115,11 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is "
             "auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the "
             "never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, "
-            "persistence through attacker-named objects, unmapped alerts unless the vendor rule id is in the reviewed "
-            "noise catalogue, never matched on text), steering text, entities with a recent true positive or a "
-            "campaign in progress (anything but the same detection rule repeating as benign noise over a complete "
-            "related set); such a close is marked model_closed for audit. With the tier off, the default, a model "
-            "never closes an alert alone."
+            "persistence through attacker-named objects, authentication failures by vendor rule group, unmapped "
+            "alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering "
+            "text, entities with a recent true positive or a campaign in progress (anything but the same detection "
+            "rule repeating as benign noise over a complete related set); such a close is marked model_closed for "
+            "audit. With the tier off, the default, a model never closes an alert alone."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2"),
@@ -150,6 +150,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/agents/test_campaign_split.py::test_a_different_detection_on_the_same_host_is_a_possible_kill_chain",
             "tests/unit/agents/test_campaign_split.py::test_a_same_rule_alert_still_counts_against_closing_when",
             "tests/unit/agents/test_campaign_split.py::test_an_incomplete_related_set_fails_closed",
+            "tests/unit/agents/test_campaign_split.py::test_review_m1_a_steering_msi_does_not_vouch_for_the_next",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping",
             "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
             "tests/integration/engine/test_model_closure.py::"
             "test_catalogued_noise_and_its_repeats_close_but_another_rule_on_the_host_does_not",

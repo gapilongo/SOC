@@ -25,12 +25,17 @@ from tests.unit.agents._support import NOW, FakeBlindAudit, Related, StoredAlert
 T = RoutingThresholds()
 AUTO = "auto_full_audit"
 HOST = "web-01"
-BENIGN_SUMMARY: Dict[str, Any] = {"triage": {"threat_assessment": "benign", "threat_likelihood": 3},
-                                  "analysis": {"verdict": "benign", "certainty": 90}}
+BENIGN_TRIAGE: Dict[str, Any] = {"threat_assessment": "benign", "threat_likelihood": 3, "llm_used": True,
+                                 "rule_fp": [], "rule_tp": []}
+BENIGN_ANALYSIS: Dict[str, Any] = {"verdict": "benign", "certainty": 90, "threat_score": 8, "llm_used": True,
+                                   "rule_evidence": [], "rule_corroborated": False}
+#: What a sibling the models could close themselves has stored: both tiers benign within the thresholds.
+BENIGN_SUMMARY: Dict[str, Any] = {"triage": BENIGN_TRIAGE, "analysis": BENIGN_ANALYSIS}
 RULES = {
     "2902": "New dpkg (Debian Package) installed.",
     "5402": "Successful sudo to ROOT executed.",
     "80792": "Audit: Command: /usr/bin/curl.",
+    "60612": "Application installed Product: Helper -- Installation completed successfully.",
 }
 
 
@@ -38,17 +43,18 @@ def wazuh(rule_id: str, *, mitre: Optional[Dict[str, List[str]]] = None) -> Dict
     """A Wazuh alert on ``HOST`` as the correlation agent sees it: canonical fields and the raw event."""
     description = RULES[rule_id]
     return {
-        "title": description, "severity": "medium", "rule_name": f"{rule_id}: {description}",
+        "title": description, "severity": "medium", "rule_name": f"{rule_id}: {description}", "normalizer": "wazuh",
         "entities": {"hosts": [HOST]}, "mitre": mitre or {"tactics": [], "techniques": []},
         "raw": {"rule": {"id": rule_id, "level": 7, "description": description}, "agent": {"name": HOST}},
     }
 
 
 def stored(alert_id: str, rule_id: str, *, status: str = "waiting_human", summary: Optional[Dict[str, Any]] = None,
+           severity: str = "medium",
            disposition: Optional[str] = None, mitre: Optional[Dict[str, List[str]]] = None) -> StoredAlert:
     document = wazuh(rule_id, mitre=mitre)
     raw = document.pop("raw")
-    return StoredAlert(id=alert_id, title=document["title"], status=status, disposition=disposition,
+    return StoredAlert(id=alert_id, title=document["title"], severity=severity, status=status, disposition=disposition,
                        normalized=document, raw=raw, summary=BENIGN_SUMMARY if summary is None else summary)
 
 
@@ -107,16 +113,35 @@ async def test_a_different_detection_on_the_same_host_is_a_possible_kill_chain(
 @pytest.mark.parametrize(
     ("why", "repeat"),
     [
-        ("a model judged it malicious", {"summary": {**BENIGN_SUMMARY, "analysis": {"verdict": "malicious"}}}),
+        ("a model judged it malicious",
+         {"summary": {**BENIGN_SUMMARY, "analysis": {**BENIGN_ANALYSIS, "verdict": "malicious"}}}),
         ("the fast tier judged it suspicious",
-         {"summary": {**BENIGN_SUMMARY, "triage": {"threat_assessment": "suspicious"}}}),
+         {"summary": {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "threat_assessment": "suspicious"}}}),
         ("the fast tier judged it a likely threat",
-         {"summary": {**BENIGN_SUMMARY, "triage": {"threat_assessment": "likely_threat"}}}),
-        ("the deep tier could not tell", {"summary": {**BENIGN_SUMMARY, "analysis": {"verdict": "inconclusive"}}}),
+         {"summary": {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "threat_assessment": "likely_threat"}}}),
+        ("the deep tier could not tell",
+         {"summary": {**BENIGN_SUMMARY, "analysis": {**BENIGN_ANALYSIS, "verdict": "inconclusive"}}}),
         ("no model judged it yet (still in flight)", {"status": "processing", "summary": {}}),
-        ("only the rules judged it", {"summary": {"triage": {"llm_used": False}}}),
+        ("only the rules judged it", {"summary": {"triage": {**BENIGN_TRIAGE, "llm_used": False}}}),
         ("it is a response plan awaiting approval", {"status": "waiting_approval"}),
         ("it is in a never-close class", {"mitre": {"tactics": ["Credential Access"], "techniques": ["T1110"]}}),
+        ("it is high severity", {"severity": "high"}),
+        # Review of #345 (M1): what FIX-1 blocked on in the sibling itself blocks it as a repeat.
+        ("(a) it carries steering text",
+         {"summary": {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "rule_tp": ["prompt_injection_suspected"]}}}),
+        ("(b) rule evidence corroborates a threat",
+         {"summary": {**BENIGN_SUMMARY, "analysis": {**BENIGN_ANALYSIS, "rule_corroborated": True}}}),
+        ("(b) its entities have analyst-confirmed malicious history",
+         {"summary": {**BENIGN_SUMMARY,
+                      "analysis": {**BENIGN_ANALYSIS, "rule_evidence": ["prior_malicious_history"]}}}),
+        ("(b) one of its own related alerts closed as malicious",
+         {"summary": {**BENIGN_SUMMARY, "correlation": {"related_dispositions": {"malicious": 1}}}}),
+        ("(c) the fast tier said benign at likelihood 40",
+         {"summary": {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "threat_likelihood": 40}}}),
+        ("(c) the deep tier said benign at certainty 60",
+         {"summary": {**BENIGN_SUMMARY, "analysis": {**BENIGN_ANALYSIS, "certainty": 60}}}),
+        ("(d) it is still in flight without a deep verdict",
+         {"status": "processing", "summary": {"triage": BENIGN_TRIAGE}}),
     ],
 )
 async def test_a_same_rule_alert_still_counts_against_closing_when(
@@ -152,8 +177,12 @@ async def test_an_unknown_rule_on_either_side_is_never_a_repeat(make_settings: C
     no_raw.raw = {}
     renamed = stored("r1", "2902")
     renamed.normalized = {**renamed.normalized, "rule_name": "New dpkg (Debian Package) installed."}
-    result = await correlate(settings, [no_raw, renamed])
-    assert (result.related_count, result.related_rule_repeats) == (2, 0) and decide(result).route == "escalate"
+    pushed = stored("r2", "2902")  # a canonical push that copies a Wazuh document: not the Wazuh normalizer
+    pushed.normalized = {**pushed.normalized, "normalizer": "canonical"}
+    legacy = stored("r3", "2902")  # stored before the format was recorded
+    legacy.normalized = {k: v for k, v in legacy.normalized.items() if k != "normalizer"}
+    result = await correlate(settings, [no_raw, renamed, pushed, legacy])
+    assert (result.related_count, result.related_rule_repeats) == (4, 0) and decide(result).route == "escalate"
 
     agent = CorrelationAgent(settings=settings, config={"enable_llm_correlation": False})
     others = [stored("r0", "2902")]
@@ -173,3 +202,24 @@ async def test_the_new_counts_are_in_the_digest_but_never_in_the_correlation_pro
     assert digest["related_rule_repeats"] == 1 and digest["related_complete"] is True
     view = CorrelationAgent.alert_view(wazuh("2902"))
     assert "raw" not in view and "related_rule_repeats" not in str(view)
+
+
+async def test_a_sibling_closed_as_benign_is_a_quiet_repeat(make_settings: Callable[..., Settings]) -> None:
+    """An analyst (or approved evidence) who closed a sibling as benign looked at it: it counts as a repeat even when
+    its own model judgement would not have closed it. Closed as malicious, it is a recent true positive instead."""
+    steering = {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "rule_tp": ["prompt_injection_suspected"]}}
+    looked_at = stored("r0", "2902", status="closed", disposition="benign", summary=steering)
+    result = await correlate(make_settings(), [looked_at, stored("r1", "2902")])
+    assert (result.related_count, result.related_rule_repeats) == (2, 2) and decide(result).code == MODEL_CLOSED
+    bad = stored("r0", "2902", status="closed", disposition="malicious")
+    result = await correlate(make_settings(), [bad])
+    assert result.related_rule_repeats == 1 and decide(result).route == "escalate"  # recent true positive
+
+
+async def test_review_m1_a_steering_msi_does_not_vouch_for_the_next(make_settings: Callable[..., Settings]) -> None:
+    """Review of #345 (M1a): MSI install #1 carries steering text and waits for an analyst; a clean MSI #2 on the same
+    host is not closed on the strength of #1 being the same rule."""
+    steering = {**BENIGN_SUMMARY, "triage": {**BENIGN_TRIAGE, "rule_tp": ["prompt_injection_suspected"]}}
+    result = await correlate(make_settings(), [stored("msi1", "60612", summary=steering)], rule_id="60612")
+    assert (result.related_count, result.related_rule_repeats) == (1, 0)
+    assert decide(result, "60612").route == "escalate"

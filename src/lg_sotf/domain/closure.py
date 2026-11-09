@@ -27,15 +27,23 @@ missing or unreadable value blocks the close.
 * no campaign in progress (FIX-2): every related alert of the correlation
   window is the same detection rule repeating as noise
   (``related_rule_repeats`` equals ``related_count``): the same vendor rule
-  id as this alert, judged benign by the fast tier, judged a threat by no
-  model, not a never-close class and not a response plan awaiting approval.
-  A related alert of a different rule on the same entities is a possible
-  kill chain and blocks, whatever its status. A burst of one rule judged
-  benign is repetition, not a campaign. The set must be complete
-  (``related_complete``): when the correlation query hit its limit or a
-  related alert was hidden for a blind audit, the close is blocked. A digest
-  without these fields (unknown) blocks too, so an attack is never closed
-  alert by alert;
+  id as this alert (known for Wazuh only: for other vendors every related
+  alert blocks), judged a threat by no model, not a response plan awaiting
+  approval, and either closed as benign (by an analyst, approved evidence or
+  a model-led close) or itself a model-led close candidate: its own
+  conditions here, apart from the tier and this one, all hold (no steering
+  text, no recent true positive, both model tiers benign at the thresholds,
+  no never-close class). A sibling still waiting for its deep verdict
+  blocks. A related alert of a different rule on the same entities is a
+  possible kill chain and blocks, whatever its status. A burst of one rule
+  that passes these tests is repetition, not a campaign. The set must be
+  complete (``related_complete``): when the correlation query hit its
+  limit (``agents.correlation.max_correlations``: 10 by default, 20 at
+  most; a complete set holds fewer, so a close stands behind at most 9
+  repeats in the 60-minute window by default, 19 at most) or a related alert was hidden for a blind audit, the close
+  is blocked. A digest from before FIX-2 with related alerts blocks (its
+  repeat count is unknown); one with none (``related_count`` 0) has
+  nothing to count and does not;
 * both model tiers say benign: the fast tier's assessment is ``benign`` with
   a threat likelihood at most ``routing.model_close_max_likelihood``
   (default 8), and the deep tier's verdict is ``benign`` with a certainty of
@@ -65,7 +73,7 @@ from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
-from lg_sotf.domain.noise_families import NoiseFamily, noise_family
+from lg_sotf.domain.noise_families import NoiseFamily, noise_family, vendor_never_close_class
 
 __all__ = [
     "AUTONOMY_TIERS",
@@ -114,6 +122,8 @@ NEVER_CLOSE_TECHNIQUES: Mapping[str, str] = {
     "T1555": "credential_access",  # credentials from password stores
     "T1556": "credential_access",  # modify authentication process
     "T1558": "credential_access",  # Kerberos tickets (Kerberoasting)
+    # Account access removal: Wazuh maps its Windows logon-failure rules (60122-60130) and others to it (FIX-2 review).
+    "T1531": "credential_access",
     "T1070": "log_clearing",  # indicator removal: clearing event logs and shell history
     "T1562": "tampering",  # impair defenses: disabling security tools and logging
     "T1485": "ransomware",  # data destruction
@@ -168,7 +178,12 @@ def _mitre(alert: Mapping[str, Any], key: str) -> List[str]:
 
 
 def never_close_class(alert: Any) -> Optional[str]:
-    """The never-close class the detection rule's ATT&CK mapping puts the alert in, or ``None``.
+    """The never-close class the detection rule's ATT&CK mapping (or the vendor rule itself) puts the alert in, or
+    ``None``.
+
+    A Wazuh rule in an authentication-failure group, or one of a few listed
+    rule ids, is credential access whatever its ATT&CK id
+    (:func:`lg_sotf.domain.noise_families.vendor_never_close_class`).
 
     An alert the rule maps to no tactic and no technique is :data:`UNMAPPED`:
     nothing shows it is outside the never-close classes, so it is treated as
@@ -185,6 +200,9 @@ def never_close_class(alert: Any) -> Optional[str]:
         found = NEVER_CLOSE_TECHNIQUES.get(technique.upper().split(".", 1)[0])
         if found is not None:
             return found
+    vendor = vendor_never_close_class(alert)
+    if vendor is not None:
+        return vendor
     return None if tactics or techniques else UNMAPPED
 
 

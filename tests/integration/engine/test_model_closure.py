@@ -83,7 +83,7 @@ DPKG = "New dpkg (Debian Package) installed."
 async def wazuh_alert(repos: Repositories, name: str, rule_id: str, description: str, **normalized: Any) -> str:
     """A Wazuh alert on host db-07 as the Wazuh normalizer stores it: the rule id in the raw event and the rule name."""
     fields: Dict[str, Any] = {
-        "title": ROUTINE, "rule_name": f"{rule_id}: {description}", "description": ROUTINE,
+        "title": ROUTINE, "rule_name": f"{rule_id}: {description}", "description": ROUTINE, "normalizer": "wazuh",
         "entities": {"hosts": ["db-07"]}, "mitre": {"tactics": [], "techniques": []}, **normalized,
     }
     raw = {"rule": {"id": rule_id, "level": 7, "description": description}, "agent": {"name": "db-07"}}

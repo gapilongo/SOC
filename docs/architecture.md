@@ -292,11 +292,13 @@ Rules:
     installs, Windows software installs, Defender scan and signature status,
     web 4xx; keyed by vendor and rule id, never by text), triage found no
     steering text, no entity has a recent true positive, no campaign is in
-    progress (every related alert must be the same detection rule repeating,
-    judged benign by the fast tier and a threat by no model, outside the
-    never-close classes and not a plan awaiting approval, over a complete
-    related set: a different rule on the same entities is a possible kill
-    chain), and both model tiers say `benign`: fast-tier likelihood at
+    progress (every related alert must be the same Wazuh detection rule
+    repeating, a threat to no model, not a plan awaiting approval, and
+    either closed as benign or itself closable by the models, over a
+    complete related set: a different rule on the same entities is a
+    possible kill chain, and other vendors' related alerts always block),
+    authentication failures are credential access whatever their ATT&CK id
+    (Wazuh rule groups, T1531), and both model tiers say `benign`: fast-tier likelihood at
     most `routing.model_close_max_likelihood` (8) and deep-tier certainty at
     least `routing.model_close_min_certainty` (85). The `decide` node reads
     the tier from the tenant's settings at every decision.

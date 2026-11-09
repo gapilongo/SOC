@@ -21,14 +21,32 @@ What an entry is keyed on, and why:
   description can interpolate event fields (``$(win.eventdata...)``), and a
   custom rule can copy a stock description word for word.
 * The id is read from the vendor's own event (``raw.rule.id``), and only
-  when the canonical rule name is the one the Wazuh normalizer writes
-  (``"<id>: <description>"``). A canonical alert without its raw event
-  (dropped by the state size cap) has no detection rule, so it stays
-  ``unmapped`` (fail closed).
-* The actor can still choose **which** rule fires (writing a ``dpkg.log``
-  line fires 2902). Each entry therefore records the abuse it could hide,
-  and every family with a known abuse has a test that a malicious or
-  suspicious model verdict still escalates it.
+  when the Wazuh normalizer built the alert: the ingestion service records
+  the format on the alert (``normalizer``, never read from the event) and
+  the canonical rule name is the one that normalizer writes
+  (``"<id>: <description>"``). An alert from another format (a canonical
+  or generic webhook push that copies a Wazuh document, an older alert
+  stored before the format was recorded) or without its raw event (dropped
+  by the state size cap) has no detection rule, so it stays ``unmapped``
+  (fail closed).
+* The actor can still choose **which** rule fires, often without
+  privileges: any local user can write a syslog line (``logger -t yum
+  Installed: x`` fires 2932) and a per-user MSI install produces 60612
+  without admin rights. Each entry therefore records the abuse it could
+  hide, and every family with a known abuse has a test that a malicious or
+  suspicious model verdict still escalates it. A forged repeat can also be
+  a decoy, or flood the related set: past the correlation limit the set is
+  incomplete and the close fails closed.
+
+The module also holds the vendor facts that put an alert **into** a
+never-close class whatever its ATT&CK mapping (:func:`vendor_never_close_class`):
+Wazuh maps many authentication-failure rules outside credential access
+(Windows logon failures 60122-60130 to T1531, a failed logon from a malicious
+IP to T1078, "possible replay attack" to T1550), so the rule's own groups
+(``authentication_failed``, ``authentication_failures``, ``invalid_login``,
+``login_denied``) and a short list of rule ids without those groups make
+it credential access. These checks only ever block a close, so they read
+the raw event whatever format built the alert.
 
 Changing the catalogue is a reviewed change to the decision policy: bump
 :data:`CATALOGUE_VERSION`, justify the entry from the vendor ruleset's
@@ -43,17 +61,20 @@ from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, Mapping, NamedTuple, Optional, Tuple
 
 __all__ = [
+    "AUTH_FAILURE_GROUPS",
     "CATALOGUE",
+    "NEVER_CLOSE_RULE_IDS",
     "CATALOGUE_VERSION",
     "WAZUH",
     "DetectionRule",
     "NoiseFamily",
     "detection_rule",
     "noise_family",
+    "vendor_never_close_class",
 ]
 
 #: Bumped on every reviewed change to :data:`CATALOGUE`.
-CATALOGUE_VERSION = "2026-11-09.1"
+CATALOGUE_VERSION = "2026-11-09.2"
 WAZUH = "wazuh"
 _RULE_ID = re.compile(r"^[0-9]{1,7}$")
 
@@ -94,7 +115,8 @@ CATALOGUE: Tuple[NoiseFamily, ...] = (
         ),
         could_hide=(
             "A malicious or backdoored package installed by an actor with root (T1546.016 installer packages, "
-            "T1195 supply chain); the actor can also write a dpkg.log line to fire the rule."
+            "T1195 supply chain). Any local user can also fire these rules with a forged syslog line ("
+            "`logger -t yum`, and likely dpkg lines through syslog): a decoy, or a flood of repeats."
         ),
         abuse_known=True,
     ),
@@ -110,7 +132,7 @@ CATALOGUE: Tuple[NoiseFamily, ...] = (
         ),
         could_hide=(
             "Software install as execution: a malicious MSI run through msiexec (T1218.007) or a remote-access "
-            "tool installed for persistence (T1219)."
+            "tool installed for persistence (T1219). A per-user MSI install fires the rule without admin rights."
         ),
         abuse_known=True,
     ),
@@ -137,9 +159,10 @@ CATALOGUE: Tuple[NoiseFamily, ...] = (
         rationale=(
             "A single 4xx answer in a web access log: broken links, crawlers and expired sessions produce these "
             "constantly. Attack signatures in the same access log (SQL injection, XSS, common web attacks, an "
-            "attack answered with 200) and repeated 4xx from one source (31151, level 10, high) are separate, "
-            "mapped rules and are not catalogued. 5xx answers (31120-31123) are left out: a server error can be "
-            "the side effect of an exploit attempt."
+            "attack answered with 200) and repeated 4xx from one source (31151, level 10, which maps to medium) "
+            "are separate rules and are not catalogued; as a different rule on the same source, 31151 blocks a "
+            "model close of the 4xx repeats around it. 5xx answers (31120-31123) are left out: a server error can "
+            "be the side effect of an exploit attempt."
         ),
         could_hide=(
             "Probing or a failed exploit attempt that matched no attack signature (T1595 active scanning, T1190)."
@@ -153,37 +176,75 @@ _INDEX: Dict[DetectionRule, NoiseFamily] = {
 }
 
 
-def _wazuh_rule(alert: Mapping[str, Any]) -> Optional[DetectionRule]:
+#: Wazuh rule groups of authentication failures: credential access whatever ATT&CK id the rule carries.
+AUTH_FAILURE_GROUPS: FrozenSet[str] = frozenset(
+    {"authentication_failed", "authentication_failures", "invalid_login", "login_denied"}
+)
+#: Wazuh rules that report authentication failures without one of :data:`AUTH_FAILURE_GROUPS`.
+NEVER_CLOSE_RULE_IDS: Mapping[str, str] = {
+    "6250": "credential_access",  # Asterisk: multiple failed logins
+    "44733": "credential_access",  # FortiAuthenticator: authentication failed
+}
+MAX_RULE_GROUPS = 50
+
+
+def _raw_rule(alert: Mapping[str, Any]) -> Optional[Mapping[str, Any]]:
     raw = alert.get("raw")
     rule = raw.get("rule") if isinstance(raw, Mapping) else None
-    if not isinstance(rule, Mapping):
-        return None
+    return rule if isinstance(rule, Mapping) else None
+
+
+def _rule_id(rule: Mapping[str, Any]) -> Optional[str]:
     rule_id = rule.get("id")
     if isinstance(rule_id, int) and not isinstance(rule_id, bool):
         rule_id = str(rule_id)
     if not isinstance(rule_id, str) or not _RULE_ID.match(rule_id.strip()):
         return None
-    rule_id = rule_id.strip()
-    # What the Wazuh normalizer writes (``"<id>: <description>"``): the canonical alert was built from this event.
-    rule_name = alert.get("rule_name")
-    if not isinstance(rule_name, str) or not rule_name.startswith(f"{rule_id}: "):
-        return None
-    return DetectionRule(WAZUH, rule_id)
+    return rule_id.strip()
 
 
 def detection_rule(alert: Any) -> Optional[DetectionRule]:
     """The vendor detection rule of a canonical alert with its raw event, or ``None`` when it is not known.
 
     Only Wazuh is recognised today: the rule id of the event (``raw.rule.id``,
-    digits only), when the canonical rule name is the Wazuh normalizer's
-    ``"<id>: <description>"``. Titles and descriptions are never read.
+    digits only), when the Wazuh normalizer built the alert (``normalizer``
+    is ``wazuh``, recorded by the ingestion service) and the canonical rule
+    name is that normalizer's ``"<id>: <description>"``. Titles and
+    descriptions are never read.
     """
-    if not isinstance(alert, Mapping):
+    if not isinstance(alert, Mapping) or alert.get("normalizer") != WAZUH:
         return None
-    return _wazuh_rule(alert)
+    rule = _raw_rule(alert)
+    rule_id = _rule_id(rule) if rule is not None else None
+    rule_name = alert.get("rule_name")
+    if rule_id is None or not isinstance(rule_name, str) or not rule_name.startswith(f"{rule_id}: "):
+        return None
+    return DetectionRule(WAZUH, rule_id)
 
 
 def noise_family(alert: Any) -> Optional[NoiseFamily]:
     """The catalogued noise family of the alert's detection rule, or ``None``."""
     rule = detection_rule(alert)
     return None if rule is None else _INDEX.get(rule)
+
+
+def vendor_never_close_class(alert: Any) -> Optional[str]:
+    """The never-close class the vendor's own rule puts the alert in, whatever its ATT&CK mapping, or ``None``.
+
+    ``credential_access`` for a Wazuh rule in an authentication-failure group
+    (:data:`AUTH_FAILURE_GROUPS`) or in :data:`NEVER_CLOSE_RULE_IDS`. These
+    checks only block, so they read the raw event whatever format built the
+    alert. When the state size cap dropped the raw event they cannot run and
+    the alert falls back to its ATT&CK mapping alone (an unmapped one stays
+    ``unmapped``, which blocks too).
+    """
+    rule = _raw_rule(alert) if isinstance(alert, Mapping) else None
+    if rule is None:
+        return None
+    groups = rule.get("groups")
+    if isinstance(groups, list):
+        names = {g.strip().lower() for g in groups[:MAX_RULE_GROUPS] if isinstance(g, str)}
+        if names & AUTH_FAILURE_GROUPS:
+            return "credential_access"
+    rule_id = _rule_id(rule)
+    return NEVER_CLOSE_RULE_IDS.get(rule_id) if rule_id is not None else None

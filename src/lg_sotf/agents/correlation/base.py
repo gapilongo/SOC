@@ -26,13 +26,16 @@ digest counts dispositions, alerts a model judged malicious or suspicious
 (``related_threats``) and alerts still waiting for an analyst or an approval
 (``related_open_reviews``). Since FIX-2 it also counts the related alerts
 that are this alert's own detection rule repeating as noise
-(``related_rule_repeats``: the same vendor rule id, judged benign by the fast
-tier, a threat by no model, no never-close class, no response plan awaiting
-approval) and records whether the related set is complete
+(``related_rule_repeats``: the same vendor rule id, a threat to no model, no
+response plan awaiting approval, and either closed as benign or one the
+models could close themselves; see :func:`quiet_rule_repeat`) and records whether the related set is complete
 (``related_complete``: the query stayed under its limit and no related alert
 was hidden for a blind audit). A model-led close needs every related alert
 to be such a repeat over a complete set (:mod:`lg_sotf.domain.closure`): a
-different detection on the same entities is a possible kill chain. A related
+different detection on the same entities is a possible kill chain. The rule
+id is known for Wazuh alerts only, so for other vendors every related alert
+blocks a model-led close. The set is bounded by ``max_correlations``
+(default 10, at most 20): a complete set holds fewer. A related
 alert the models closed alone counts and shows as ``ai_closed_unaudited``,
 never as ``benign``.
 
@@ -115,9 +118,8 @@ class CorrelationResult:
     # malicious or suspicious, and how many still wait for an analyst or an approval.
     related_threats: int = 0
     related_open_reviews: int = 0
-    # FIX-2: how many related alerts are this alert's detection rule repeating as noise (same vendor rule id, fast tier
-    # benign, no model threat judgement, no never-close class, no response plan awaiting approval), and whether the
-    # related set is complete (the query did not hit its limit and no related alert was hidden for a blind audit).
+    # FIX-2: how many related alerts are this alert's detection rule repeating as noise (quiet_rule_repeat), and
+    # whether the related set is complete (the query did not hit its limit and no related alert was hidden for a blind audit).
     # Fail closed: the defaults (0, False) block a model-led close whenever there is a related alert.
     related_rule_repeats: int = 0
     related_complete: bool = False
@@ -137,6 +139,7 @@ AI_CLOSED = "ai_closed_unaudited"
 #: A related alert's model assessments that count as judged a threat: the fast tier's, or the deep tier's verdict.
 THREAT_ASSESSMENTS = frozenset({"suspicious", "likely_threat", "confirmed_threat"})
 APPROVAL_STATUS = "waiting_approval"
+DEFAULT_THRESHOLDS = RoutingThresholds()
 OPEN_REVIEW_STATUSES = frozenset({"waiting_human", APPROVAL_STATUS})
 
 
@@ -162,24 +165,64 @@ def related_document(other: Any) -> Dict[str, Any]:
     return {**normalized, "raw": raw if isinstance(raw, Mapping) else {}}
 
 
-def quiet_rule_repeat(rule: Optional[DetectionRule], other: Any, *, judged_threat: bool) -> bool:
-    """Whether a related alert is ``rule`` repeating as noise (FIX-2): the same vendor detection rule, judged benign by
-    the fast tier, a threat by no model, not a never-close class, and not a response plan awaiting approval.
+#: What a sibling's own model-close check may still report and leave it a quiet repeat: the tier (this alert's tier
+#: decides) and the campaign check (the sibling's own related alerts are this alert's concern, counted here).
+SIBLING_EXEMPT_BLOCKERS = frozenset({"tier_off", "campaign_in_progress"})
 
-    Anything unknown (no rule on either side, no fast-tier judgement, a deep verdict other than benign) is not quiet.
+
+def _sibling_state(other: Any) -> Dict[str, Any]:
+    """A related alert as routing state, from what is stored: its severity, alert document and agent digests."""
+    return {
+        "severity": other.severity,
+        "alert": related_document(other),
+        "triage": dict(_summary_part(other, "triage")),
+        "analysis": dict(_summary_part(other, "analysis")),
+        "correlation": dict(_summary_part(other, "correlation")),
+    }
+
+
+def quiet_rule_repeat(
+    rule: Optional[DetectionRule],
+    other: Any,
+    *,
+    judged_threat: bool,
+    max_likelihood: int = DEFAULT_THRESHOLDS.model_close_max_likelihood,
+    min_certainty: int = DEFAULT_THRESHOLDS.model_close_min_certainty,
+) -> bool:
+    """Whether a related alert is ``rule`` repeating as noise (FIX-2).
+
+    The same vendor detection rule, judged a threat by no model, not a
+    response plan awaiting approval, and either closed as benign (by an
+    analyst, approved evidence or a model-led close) or a model-led close
+    candidate itself: its own :func:`closure.model_close_blockers`, apart
+    from the tier and the campaign check, are empty (no steering text, no
+    recent true positive, both tiers benign at the thresholds, no never-close
+    class, a low enough severity). A sibling still waiting for a model, or
+    for its deep verdict, is not quiet: anything unknown blocks.
     """
     if rule is None or judged_threat or other.status == APPROVAL_STATUS:
         return False
-    document = related_document(other)
-    if detection_rule(document) != rule or closure.model_close_class(document) is not None:
+    if detection_rule(related_document(other)) != rule:
         return False
-    return (_summary_part(other, "triage").get("threat_assessment") == "benign"
-            and _summary_part(other, "analysis").get("verdict") in (None, "benign"))
+    if other.status == "closed" and other.disposition == "benign":
+        return True
+    blockers = closure.model_close_blockers(
+        _sibling_state(other), tier=closure.MODEL_CLOSE_TIER, max_likelihood=max_likelihood,
+        min_certainty=min_certainty,
+    )
+    return not set(blockers) - SIBLING_EXEMPT_BLOCKERS
 
 
-def tally_related(result: CorrelationResult, others: List[Any], rule: Optional[DetectionRule] = None) -> None:
+def tally_related(
+    result: CorrelationResult,
+    others: List[Any],
+    rule: Optional[DetectionRule] = None,
+    *,
+    thresholds: Optional[RoutingThresholds] = None,
+) -> None:
     """Count every related alert's disposition, model judgement, open review and quiet repeat of ``rule`` (this
     alert's detection rule) into ``result``."""
+    t = thresholds or DEFAULT_THRESHOLDS
     for other in others:
         key = related_disposition(other)
         result.related_dispositions[key] = result.related_dispositions.get(key, 0) + 1
@@ -188,7 +231,10 @@ def tally_related(result: CorrelationResult, others: List[Any], rule: Optional[D
         )
         result.related_threats += int(judged)
         result.related_open_reviews += int(other.status in OPEN_REVIEW_STATUSES)
-        result.related_rule_repeats += int(quiet_rule_repeat(rule, other, judged_threat=judged))
+        result.related_rule_repeats += int(quiet_rule_repeat(
+            rule, other, judged_threat=judged, max_likelihood=t.model_close_max_likelihood,
+            min_certainty=t.model_close_min_certainty,
+        ))
 
 
 def frequency_level(alerts_per_hour: float) -> str:
@@ -294,7 +340,8 @@ class CorrelationAgent(BaseAgent):
             return result
 
         others = await self.related_alerts(ctx, related)
-        tally_related(result, [other for _, _, other in others], detection_rule(alert))
+        thresholds = RoutingThresholds.from_settings(ctx.settings.routing)
+        tally_related(result, [other for _, _, other in others], detection_rule(alert), thresholds=thresholds)
         digests = [self.related_digest(*found) for found in others[:MAX_DIGESTS]]
 
         llm: LLMResult[CorrelationAssessment] = await self.call_llm(
@@ -318,7 +365,7 @@ class CorrelationAgent(BaseAgent):
         result.llm_skipped = llm.skipped
         result.llm_refusal = agent_refusal(llm, self.name)
         if llm.refused:
-            grey = RoutingThresholds.from_settings(ctx.settings.routing).correlation_grey_zone_min
+            grey = thresholds.correlation_grey_zone_min
             result.confidence = max(result.confidence, grey)
             result.notes.append("correlation: model refused; confidence held in the grey zone for review")
         if llm.value is not None:

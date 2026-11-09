@@ -252,7 +252,9 @@ close a dangerous alert or trigger containment.
    alone, marked `ai_closed:audit_required`, but never a never-close class
    (credential access, log clearing, tampering, ransomware, persistence
    through attacker-named objects, or an alert without an ATT&CK mapping
-   unless its vendor rule id is in the reviewed noise catalogue, FIX-2),
+   unless its vendor rule id is in the reviewed noise catalogue, FIX-2;
+   authentication failures count as credential access whatever their
+   ATT&CK id),
    never with steering text, a recent true positive on its entities or a
    campaign in progress among its related alerts (anything but the same
    detection rule repeating as benign noise), and

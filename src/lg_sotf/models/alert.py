@@ -234,6 +234,15 @@ class Mitre(BaseModel):
         return _dedup_capped(v, MAX_MITRE_CHARS, MAX_MITRE_ITEMS)
 
 
+#: Canonical alert keys that are platform bookkeeping, not alert content: left out of what a model reads.
+MODEL_HIDDEN_ALERT_KEYS = frozenset({"normalizer"})
+
+
+def model_view(alert: Mapping[str, Any]) -> Dict[str, Any]:
+    """The alert as a model reads it: without :data:`MODEL_HIDDEN_ALERT_KEYS`."""
+    return {k: v for k, v in alert.items() if k not in MODEL_HIDDEN_ALERT_KEYS}
+
+
 class CanonicalAlert(BaseModel):
     """A normalized alert. ``raw`` is the original (redacted, size-capped) event."""
 
@@ -259,6 +268,10 @@ class CanonicalAlert(BaseModel):
     # URLs, attachment hashes, reporter), written by the email normalizer from the platform's own
     # MIME parse. Other normalizers never set it, so it cannot be supplied by a pushed event.
     email: Optional[Dict[str, Any]] = None
+    # The format whose normalizer built this alert (``wazuh``, ``canonical``, ``webhook``, ``llm``...), set by the
+    # ingestion service after normalizing, never read from the event (FIX-2: the noise catalogue trusts a vendor rule
+    # id only from that vendor's normalizer). Kept out of model prompts (:data:`MODEL_HIDDEN_ALERT_KEYS`).
+    normalizer: Optional[str] = Field(default=None, max_length=32)
 
     @property
     def severity_id(self) -> int:

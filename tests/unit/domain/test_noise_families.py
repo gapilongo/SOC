@@ -10,7 +10,7 @@ from __future__ import annotations
 import copy
 import json
 from datetime import UTC, datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import pytest
 
@@ -18,6 +18,7 @@ from lg_sotf.core.graph import cap_alert
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.closure import MODEL_CLOSED, UNMAPPED, model_close_blockers, model_close_class, never_close_class
 from lg_sotf.domain.noise_families import (
+    AUTH_FAILURE_GROUPS,
     CATALOGUE,
     CATALOGUE_VERSION,
     WAZUH,
@@ -36,8 +37,10 @@ DPKG = "New dpkg (Debian Package) installed."
 
 
 def wazuh_event(rule_id: Any, description: str, *, level: int = 7, mitre: Optional[Dict[str, Any]] = None,
-                full_log: str = "2026-11-09 10:00:00 status installed htop:amd64 3.3.0-4") -> Dict[str, Any]:
-    rule: Dict[str, Any] = {"id": rule_id, "level": level, "description": description, "groups": ["syslog", "dpkg"]}
+                full_log: str = "2026-11-09 10:00:00 status installed htop:amd64 3.3.0-4",
+                groups: Optional[List[str]] = None) -> Dict[str, Any]:
+    rule: Dict[str, Any] = {"id": rule_id, "level": level, "description": description,
+                            "groups": groups if groups is not None else ["syslog", "dpkg"]}
     if mitre is not None:
         rule["mitre"] = mitre
     return {"timestamp": "2026-11-09T10:00:00.000+0000", "id": "1792751768.1", "rule": rule,
@@ -49,6 +52,7 @@ def state_alert(event: Dict[str, Any]) -> Dict[str, Any]:
     """What ``initial_state`` puts in the workflow state: the canonical alert, its raw event, size-capped."""
     canonical = json.loads(get_normalizer("wazuh").normalize(event, CTX).model_dump_json())
     canonical["raw"] = copy.deepcopy(event)
+    canonical["normalizer"] = "wazuh"  # what the ingestion service records after the Wazuh normalizer
     return cap_alert(canonical)
 
 
@@ -160,6 +164,9 @@ def test_the_rule_id_comes_from_the_vendor_event_and_the_wazuh_rule_name_only() 
     forged_name = {**alert, "raw": {**alert["raw"], "rule": {**alert["raw"]["rule"], "id": "100200"}}}
     assert detection_rule(forged_name) is None  # rule_name says 2902, the vendor event says 100200
     for broken in (
+        {**alert, "normalizer": "canonical"},  # a canonical push that copies a Wazuh document
+        {**alert, "normalizer": "webhook"},
+        {k: v for k, v in alert.items() if k != "normalizer"},  # stored before the format was recorded
         {**alert, "rule_name": DPKG},  # no Wazuh rule-name prefix: not built by the Wazuh normalizer
         {**alert, "rule_name": None},
         {**alert, "rule_name": "29021: x"},
@@ -255,3 +262,62 @@ def test_a_malicious_or_suspicious_model_verdict_on_a_catalogued_rule_still_esca
     for tier in ("off", AUTO):
         decision = routing.decide(state, T, tier)
         assert decision.route in ("escalate", "plan_response") and decision.disposition != "benign", (tier, decision)
+
+
+# --------------------------------------------------------------------------- review of #345 (H1): authentication failures
+
+WIN = ["windows", "windows_security"]
+AUTH_FAILURES = [
+    # (rule id, description, level, groups, mitre): Wazuh 4.14 stock rules mapped outside credential access.
+    ("60122", "Logon Failure - Unknown user or bad password", 5, WIN + ["authentication_failed"],
+     {"id": ["T1531"], "tactic": ["Impact"]}),
+    ("60130", "Logon Failure - Account locked out", 5, WIN + ["authentication_failed"],
+     {"id": ["T1531"], "tactic": ["Impact"]}),
+    ("99919", "Failed logon from malicious IP", 10, ["authentication_failed", "invalid_login"],
+     {"id": ["T1078"], "tactic": ["Defense Evasion", "Persistence", "Privilege Escalation", "Initial Access"]}),
+    ("60196", "Possible replay attack", 8, WIN + ["authentication_failures"],
+     {"id": ["T1550"], "tactic": ["Defense Evasion", "Lateral Movement"]}),
+    ("5302", "User missed the password to change UID to root.", 9, ["syslog", "su", "authentication_failed"],
+     {"id": ["T1548.003"], "tactic": ["Privilege Escalation", "Defense Evasion"]}),
+    # No authentication-failure group: listed by rule id.
+    ("6250", "Asterisk: Multiple failed logins (user enumeration in process).", 10, ["asterisk", "syslog"], None),
+    ("44733", "FortiAuth: Authentication failed.", 5, ["fortiauth"], {"id": ["T1078"], "tactic": ["Initial Access"]}),
+]
+
+
+@pytest.mark.parametrize(("rule_id", "description", "level", "groups", "mitre"), AUTH_FAILURES)
+def test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping(
+    rule_id: str, description: str, level: int, groups: List[str], mitre: Optional[Dict[str, Any]]
+) -> None:
+    """A password spray of one rule repeating looks like noise to the campaign check, so authentication failures
+    must be a never-close class on their own: by the vendor rule's groups, a listed rule id, or T1531."""
+    event = wazuh_event(rule_id, description, level=level, mitre=mitre, groups=groups,
+                        full_log="An account failed to log on. Account Name: svc-backup Failure Reason: bad password")
+    state = wazuh_state(event, severity="medium")
+    assert never_close_class(state["alert"]) == "credential_access"
+    assert model_close_class(state["alert"]) == "credential_access"
+    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["never_close_class"]
+    assert routing.decide(state, T, AUTO).route == "escalate"
+    # The groups and ids only ever block, so they count whatever format built the alert.
+    pushed = {**state["alert"], "normalizer": "canonical"}
+    assert never_close_class(pushed) == "credential_access"
+
+
+def test_review_h1_the_groups_are_matched_exactly_and_t1531_alone_is_enough() -> None:
+    assert AUTH_FAILURE_GROUPS == {"authentication_failed", "authentication_failures", "invalid_login", "login_denied"}
+    assert never_close_class({"mitre": {"tactics": ["Impact"], "techniques": ["T1531"]}}) == "credential_access"
+    ok = state_alert(wazuh_event("60106", "Windows logon success", groups=WIN + ["authentication_success"],
+                                 mitre={"id": ["T1078"], "tactic": ["Initial Access"]}))
+    assert never_close_class(ok) is None
+    upper = state_alert(wazuh_event("100300", "Custom", groups=["Authentication_Failed "],
+                                    mitre={"id": ["T1078"], "tactic": ["Initial Access"]}))
+    assert never_close_class(upper) == "credential_access"
+
+
+def test_review_h1_without_the_raw_event_only_the_attack_mapping_is_left() -> None:
+    """Documented: when the state size cap drops the raw event, the groups cannot be read. 60122 still blocks on
+    T1531; 99919 (T1078) then rests on its ATT&CK mapping alone, like any mapped alert before FIX-2."""
+    spray = state_alert(wazuh_event(*AUTH_FAILURES[0][:2], groups=AUTH_FAILURES[0][3], mitre=AUTH_FAILURES[0][4]))
+    assert never_close_class({k: v for k, v in spray.items() if k != "raw"}) == "credential_access"
+    bad_ip = state_alert(wazuh_event(*AUTH_FAILURES[2][:2], groups=AUTH_FAILURES[2][3], mitre=AUTH_FAILURES[2][4]))
+    assert never_close_class({k: v for k, v in bad_ip.items() if k != "raw"}) is None
