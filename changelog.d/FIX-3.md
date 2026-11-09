@@ -22,8 +22,11 @@
   escalation whose model verdict is malicious or suspicious, an analyst
   `true_positive`, a blind-audit `malicious` label), every alert the models
   closed alone in the previous 24 hours that shares a host, user or IP with
-  it is reopened: queued for a new run that sends it to an analyst, attached
-  to the threat's escalation and audited `alert.reopened` (reason
-  `related_threat`). The alert summary records it under `reopened`.
+  it is reopened. When the threat has an open escalation, the alert is
+  folded into it: attached as a related alert and set to `waiting_human`
+  under that one case (no new run, no new escalation), and the analyst's
+  decision on the case settles it. Without an open case it is queued for its
+  own review run instead. Either way it is audited `alert.reopened` (reason
+  `related_threat`) and its summary records it under `reopened`.
   Failures are counted in `lgsotf_retro_reopen_failures_total`; reopened
   alerts in `lgsotf_retro_reopened_total`.

@@ -20,6 +20,7 @@ from lg_sotf.core import retro_reopen
 from lg_sotf.core.graph import initial_state
 from lg_sotf.core.retro_reopen import REOPEN_ACTION, reopen_counted, reopen_related_model_closes
 from lg_sotf.core.workflow import WorkflowEngine
+from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.domain import closure
 from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES
@@ -43,9 +44,13 @@ async def model_closed(repos: Repositories, entities: Dict[str, List[str]], tena
     return alert_id
 
 
-async def reopened(repos: Repositories, alert_id: str, tenant_id: str = TENANT_A) -> bool:
+async def reopened(repos: Repositories, alert_id: str, mode: str, tenant_id: str = TENANT_A) -> bool:
+    """Folded into an open case (``waiting_human``, no new run) or, without one, queued for its own review run."""
     alert = await repos.alerts.get(tenant_id, alert_id)
-    return alert.status == "queued" and alert.summary.get("reopened", {}).get("reason") == "related_threat"
+    marker = alert.summary.get("reopened") or {}
+    status = "waiting_human" if mode == "folded" else "queued"
+    return (alert.status, marker.get("reason"), marker.get("mode"), alert.disposition) == (
+        status, "related_threat", mode, None)
 
 
 async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes(
@@ -65,11 +70,16 @@ async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_close
     analysis = (await repos.alerts.get(TENANT_A, threat)).summary.get("analysis") or {}
     assert retro_reopen.judged_threat(triage, analysis), (triage, analysis)
 
+    case = outcome.interrupt["escalation_id"]
     for alert_id in (same_host, same_user, same_ip):
-        assert await reopened(repos, alert_id), alert_id
-        marker = (await repos.alerts.get(TENANT_A, alert_id)).summary["reopened"]
-        assert marker == {"reason": "related_threat", "threat_alert_id": threat,
-                          "escalation_id": outcome.interrupt["escalation_id"]}
+        assert await reopened(repos, alert_id, "folded"), alert_id
+        folded = await repos.alerts.get(TENANT_A, alert_id)
+        assert folded.summary["reopened"] == {"reason": "related_threat", "threat_alert_id": threat,
+                                              "escalation_id": case, "mode": "folded"}
+        assert folded.summary["escalation_id"] == case
+        assert await repos.escalations.get_active_for_alert(TENANT_A, alert_id) is None  # no case of its own
+        with pytest.raises(NotFound):  # and no new run (these alerts were closed without one in this test)
+            await repos.runs.get(TENANT_A, alert_id)
     for alert_id, tenant in ((unrelated, TENANT_A), (stale, TENANT_A), (other_tenant, TENANT_B)):
         alert = await repos.alerts.get(tenant, alert_id)
         assert (alert.status, alert.disposition) == ("closed", "benign"), alert_id
@@ -84,10 +94,20 @@ async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_close
     again = await reopen_related_model_closes(repos, TENANT_A, await repos.alerts.get(TENANT_A, threat), actor=ACTOR)
     assert again == []
 
-    # A reopened alert runs again and never closes on the models' word.
+    # Should a reopened alert run again, it never closes on the models' word.
     state = initial_state(TENANT_A, await repos.alerts.get(TENANT_A, same_host))
     assert state["alert"]["reopened"] == {"reason": "related_threat"}
     assert "reopened" in closure.model_close_blockers(state, tier=closure.MODEL_CLOSE_TIER)
+
+    # The analyst's decision on the one case settles the folded alerts with it (their runs are finished).
+    user_id = await analyst(repos)
+    for alert_id, decision, disposition in ((same_host, "false_positive", "benign"),
+                                            (same_user, "true_positive", "malicious")):
+        payload = {"type": "analyst_decision", "escalation_id": case, "decision": decision,
+                   "approved_actions": [], "decided_by": user_id, "notes": ""}
+        settled = await engine.resume(TENANT_A, alert_id, payload)
+        assert (settled.alert_status, (await repos.alerts.get(TENANT_A, alert_id)).disposition) == (
+            "closed", disposition)
 
 
 async def test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes(
@@ -102,7 +122,7 @@ async def test_a_response_plan_and_the_malicious_close_each_reopen_related_model
     before_plan = await model_closed(repos, {"hosts": ["ws-042"]})
     second = await decide(engine, repos, threat, first.interrupt["escalation_id"], "true_positive", user_id)
     assert second.status == "waiting_approval"
-    assert await reopened(repos, before_plan)  # plan_response
+    assert await reopened(repos, before_plan, "requeued")  # plan_response: the case is decided, nothing to fold into
 
     before_close = await model_closed(repos, {"users": ["jdoe"]})
     done = await engine.resume(
@@ -112,7 +132,7 @@ async def test_a_response_plan_and_the_malicious_close_each_reopen_related_model
     )
     assert done.status == "completed"
     assert (await repos.alerts.get(TENANT_A, threat)).disposition == "malicious"
-    assert await reopened(repos, before_close)  # the malicious close
+    assert await reopened(repos, before_close, "requeued")  # the malicious close
 
 
 async def test_a_benign_escalation_reopens_nothing(engine: WorkflowEngine, repos: Repositories) -> None:

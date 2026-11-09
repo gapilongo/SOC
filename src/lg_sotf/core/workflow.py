@@ -46,6 +46,7 @@ from lg_sotf.core.graph import (
     initial_state,
 )
 from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
+from lg_sotf.core.retro_reopen import settle_folded
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.checkpointer import TenantScopedPostgresSaver
@@ -377,7 +378,12 @@ class WorkflowEngine:
             if pending is None:
                 if self._unfinished(snapshot):
                     return await self._continue(graph, tenant_id, alert_id, snapshot, config)
-                if snapshot.values:
+                # An alert retro-reopen folded into this case has no run waiting: the decision settles it.
+                folded = data["type"] == "analyst_decision" and await settle_folded(
+                    self.repos, tenant_id, alert_id, escalation_id=data["escalation_id"],
+                    decision=data["decision"], decided_by=data["decided_by"],
+                )
+                if snapshot.values or folded:
                     alert = await self.repos.alerts.get(tenant_id, alert_id)
                     return RunOutcome("completed", alert.status, None)
                 raise InvalidResumePayload("there is no workflow run to resume for this alert")

@@ -85,6 +85,8 @@ async def enqueue_reopened(ctx: ApiContext, tenant_id: str, alert_id: str) -> No
     """Queue a reopened alert's new run now (the orphan sweep would pick it up later otherwise)."""
     try:
         alert = await ctx.repos.alerts.get(tenant_id, alert_id)
+        if alert.status != "queued":
+            return  # folded into an open case: no run to start
         await ctx.queue.enqueue_process(tenant_id, alert_id, alert.severity)
     except Exception as exc:  # noqa: BLE001 - the run is queued in the database; the orphan sweep dispatches it
         log_failure(log, "api.reopen_enqueue_failed", exc, alert_id=alert_id, error_type=type(exc).__name__)

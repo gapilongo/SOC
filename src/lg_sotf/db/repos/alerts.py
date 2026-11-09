@@ -48,7 +48,9 @@ ALERT_TRANSITIONS: Dict[str, FrozenSet[str]] = {
     "processing": frozenset({"waiting_human", "waiting_approval", "closed", "failed"}),
     "waiting_human": frozenset({"processing"}),
     "waiting_approval": frozenset({"processing"}),
-    "closed": frozenset({"queued"}),
+    # closed -> waiting_human: decision policy v3 folds a model-closed alert into a related threat's open case
+    # (lg_sotf.core.retro_reopen).
+    "closed": frozenset({"queued", "waiting_human"}),
     "failed": frozenset({"processing", "queued"}),
 }
 

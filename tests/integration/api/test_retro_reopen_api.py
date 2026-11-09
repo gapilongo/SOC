@@ -29,11 +29,14 @@ async def model_closed(api: ApiHarness, entities: Dict[str, List[str]]) -> str:
     return alert_id
 
 
-async def assert_reopened(api: ApiHarness, alert_id: str, escalation_id: str) -> None:
+async def assert_reopened(api: ApiHarness, alert_id: str, escalation_id: str, mode: str) -> None:
     alert = await api.repos.alerts.get(TENANT_A, alert_id)
-    assert alert.status == "queued" and alert.disposition is None
+    assert alert.status == ("waiting_human" if mode == "folded" else "queued") and alert.disposition is None
+    assert alert.summary["reopened"]["mode"] == mode
     assert alert.summary["reopened"]["reason"] == "related_threat"
-    assert alert_id in (await api.repos.escalations.get(TENANT_A, escalation_id)).related_alert_ids
+    attached = alert_id in (await api.repos.escalations.get(TENANT_A, escalation_id)).related_alert_ids
+    assert attached is (mode == "folded")
+    assert alert.summary["reopened"]["escalation_id"] == escalation_id
     assert [e.resource_id for e in (await api.repos.audit.list(TENANT_A, action=REOPEN_ACTION)).items] == [alert_id]
 
 
@@ -50,7 +53,7 @@ async def test_an_analyst_true_positive_reopens_related_model_closes(api: ApiHar
         json={"decision": "true_positive", "version": escalation.version}, headers=analyst,
     )
     assert response.status_code == 200, response.text
-    await assert_reopened(api, closed_alert, escalation.id)
+    await assert_reopened(api, closed_alert, escalation.id, "requeued")  # the case is decided: its own review
 
 
 async def test_a_malicious_blind_audit_label_reopens_related_model_closes(api: ApiHarness) -> None:
@@ -68,7 +71,7 @@ async def test_a_malicious_blind_audit_label_reopens_related_model_closes(api: A
     assert response.status_code == 200, response.text
     escalation = await api.repos.escalations.get_active_for_alert(TENANT_A, sampled.id)
     assert escalation is not None
-    await assert_reopened(api, closed_alert, escalation.id)
+    await assert_reopened(api, closed_alert, escalation.id, "folded")  # into the open blind-audit case
 
 
 async def test_an_api_reopen_failure_is_counted_not_swallowed(api: ApiHarness, monkeypatch: pytest.MonkeyPatch) -> None:

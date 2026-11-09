@@ -15,11 +15,15 @@ becomes a threat:
 :func:`reopen_related_model_closes` reopens every alert of the same tenant
 that the models closed alone (close reason ``ai_closed:*``) in the previous
 :data:`REOPEN_WINDOW`, and that shares a host, user or IP with it. Each one
-is put back in the queue (its run is reset, as on a reprocess), marked
-``reopened`` so the policy never closes it on the models' word again,
-attached to the threat's escalation as a related alert when there is one,
-and audited ``alert.reopened`` (reason ``related_threat``), with an
-``alert.reopened`` event on its timeline. A single attack step the model
+is **folded** into the threat's open escalation: attached to it as a
+related alert and set to ``waiting_human`` under that case, with no new run
+and no new escalation, so the analyst sees one case holding the related
+alerts; the analyst's decision on the case settles it
+(:func:`settle_folded`). Only when there is no open case (a response plan
+without an escalation, or a case already decided) is it queued for a new
+run instead, marked ``reopened`` so the policy never closes it on the
+models' word again. Either way it is audited ``alert.reopened`` (reason
+``related_threat``), with an ``alert.reopened`` event on its timeline. A single attack step the model
 misjudged therefore resurfaces as soon as the attack shows itself anywhere.
 
 It is idempotent (an alert already reopened is no longer closed, so it is
@@ -41,6 +45,7 @@ from typing import Any, List, Mapping, Optional, Sequence
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
+from lg_sotf.models.vocabulary import BENIGN_DECISIONS
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES, RETRO_REOPENED
 
@@ -51,6 +56,9 @@ REOPEN_REASON = "related_threat"
 REOPEN_ACTION = "alert.reopened"
 #: The close reason a reopened alert carries until it closes again (it no longer reads ``ai_closed:*``).
 REOPENED_CLOSE_REASON = "reopened:related_threat"
+#: How a reopened alert came back: folded into the threat's open case, or queued for its own review run.
+FOLDED, REQUEUED = "folded", "requeued"
+ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
 MAX_ENTITY_VALUES = 50
 #: The model verdicts that make an escalated alert a threat for the safety net.
@@ -106,34 +114,46 @@ async def reopen_related_model_closes(
     return reopened
 
 
+async def _active_escalation(repos: Repositories, tenant_id: str, escalation_id: Optional[str], conn: Any) -> Any:
+    if escalation_id is None:
+        return None
+    try:
+        escalation = await repos.escalations.get(tenant_id, escalation_id, conn=conn)
+    except NotFound:
+        return None
+    return escalation if escalation.status in ACTIVE_ESCALATION_STATUSES else None
+
+
 async def _reopen_one(
     repos: Repositories, tenant_id: str, alert_id: str, *, threat_id: str, actor: Actor, escalation_id: Optional[str]
 ) -> bool:
-    marker = {"reason": REOPEN_REASON, "threat_alert_id": threat_id, "escalation_id": escalation_id}
     async with repos.db.tenant_tx(tenant_id) as conn:
         alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
         if not _closed_by_models(alert):
             return False  # reopened already, or closed again by a person: nothing to do
-        run = await repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=True, conn=conn)
-        if run.status != "queued":
-            raise InvalidTransition("workflow run", alert_id, run.status, "queued")
-        await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
-        await repos.alerts.update(
-            tenant_id, alert_id, disposition=None,
-            summary={"reopened": marker, "close_reason": REOPENED_CLOSE_REASON},
-            conn=conn,
-        )
-        if escalation_id is not None:
-            try:
-                escalation = await repos.escalations.get(tenant_id, escalation_id, conn=conn)
-            except NotFound:
-                escalation = None
-            if escalation is not None:  # also a decided one: the link records why the alert reopened
-                deadline = escalation.sla_deadline or datetime.now(UTC) + REOPEN_WINDOW
-                await repos.escalations.attach(
-                    tenant_id, escalation_id, alert_id, priority=escalation.priority, level=escalation.level,
-                    sla_deadline=deadline, conn=conn,
-                )
+        escalation = await _active_escalation(repos, tenant_id, escalation_id, conn)
+        marker = {
+            "reason": REOPEN_REASON, "threat_alert_id": threat_id, "escalation_id": escalation_id,
+            "mode": FOLDED if escalation is not None else REQUEUED,
+        }
+        if escalation is not None:
+            # Folded into the threat's case: one escalation holds the related alerts, no new run, no new case.
+            deadline = escalation.sla_deadline or datetime.now(UTC) + REOPEN_WINDOW
+            await repos.escalations.attach(
+                tenant_id, escalation.id, alert_id, priority=escalation.priority, level=escalation.level,
+                sla_deadline=deadline, conn=conn,
+            )
+            await repos.alerts.update_status(tenant_id, alert_id, "waiting_human", conn=conn)
+            summary = {"reopened": marker, "close_reason": REOPENED_CLOSE_REASON, "escalation_id": escalation.id,
+                       "escalation_attached": True}
+        else:
+            # No open case to fold into (a plan without an escalation, a decided one): a new run reviews it.
+            run = await repos.runs.upsert_queued(tenant_id, alert_id, requeue_terminal=True, conn=conn)
+            if run.status != "queued":
+                raise InvalidTransition("workflow run", alert_id, run.status, "queued")
+            await repos.alerts.update_status(tenant_id, alert_id, "queued", conn=conn)
+            summary = {"reopened": marker, "close_reason": REOPENED_CLOSE_REASON}
+        await repos.alerts.update(tenant_id, alert_id, disposition=None, summary=summary, conn=conn)  # type: ignore[arg-type]
         await repos.alert_events.append(
             tenant_id, alert_id, REOPEN_ACTION, node="retro_reopen", actor_type=actor.type, actor_id=actor.id,
             data=dict(marker), conn=conn,
@@ -141,6 +161,40 @@ async def _reopen_one(
         await AuditLogger(repos).record(
             tenant_id, REOPEN_ACTION, "alert", alert_id, actor_type=actor.type, actor_id=actor.id,
             details=dict(marker), conn=conn,
+        )
+    return True
+
+
+async def settle_folded(
+    repos: Repositories, tenant_id: str, alert_id: str, *, escalation_id: str, decision: str, decided_by: str
+) -> bool:
+    """Apply the analyst's decision on the case to an alert folded into it (it has no run waiting): close it
+    ``malicious`` on ``true_positive``, ``benign`` on a benign decision; ``needs_more_info`` leaves it open.
+    Returns whether the alert was folded into this escalation."""
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
+        marker = alert.summary.get("reopened") if isinstance(alert.summary, Mapping) else None
+        folded = (
+            alert.status == "waiting_human" and isinstance(marker, Mapping) and marker.get("mode") == FOLDED
+            and alert.summary.get("escalation_id") == escalation_id
+        )
+        if not folded:
+            return False
+        if decision == "true_positive":
+            disposition = "malicious"
+        elif decision in BENIGN_DECISIONS:
+            disposition = "benign"
+        else:
+            return True
+        await repos.alerts.update_status(tenant_id, alert_id, "processing", conn=conn)
+        await repos.alerts.update(
+            tenant_id, alert_id, disposition=disposition,
+            summary={"close_reason": f"analyst:{decision}", "analyst_decision": decision}, conn=conn,
+        )
+        await repos.alerts.update_status(tenant_id, alert_id, "closed", conn=conn)
+        await repos.alert_events.append(
+            tenant_id, alert_id, "analyst.decision", node="await_analyst", actor_type="user", actor_id=decided_by,
+            data={"decision": decision, "escalation_id": escalation_id, "folded": True}, conn=conn,
         )
     return True
 

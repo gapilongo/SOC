@@ -300,9 +300,10 @@ Rules:
     response plan or malicious close, an escalation a model judged
     malicious or suspicious, an analyst true positive or a blind-audit
     malicious label reopens every model-closed alert of the tenant that
-    shares a host, user or IP with it and closed in the previous 24 hours
-    (queued for a new run, attached to the escalation, audited
-    `alert.reopened`).
+    shares a host, user or IP with it and closed in the previous 24 hours:
+    folded into the threat's open escalation (attached, `waiting_human`, no
+    new run or case; the decision on the case settles it), or, without an
+    open case, queued for its own review run; audited `alert.reopened`.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,
