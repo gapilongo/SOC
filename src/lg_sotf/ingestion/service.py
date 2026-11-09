@@ -282,6 +282,7 @@ class IngestionService:
         messages: Sequence[bytes],
         *,
         reporter: Optional[str] = None,
+        received_at: Optional[datetime] = None,
     ) -> IngestResult:
         """Parse raw RFC 5322 ``messages`` (user reports) and store them for the reserved ``source_id``.
 
@@ -289,11 +290,14 @@ class IngestionService:
         that cannot be parsed (too large, too deeply nested, malformed) is
         rejected with the reason. ``reporter`` overrides the reporter read from
         a forwarded report's envelope. Deduplication is on the message's
-        Message-ID plus the reporter.
+        Message-ID plus the reporter. ``received_at`` (default: now) is when
+        the reports arrived and becomes each alert's ``occurred_at``; the
+        evaluation runner passes the report's own date so a run does not
+        depend on the hour it starts.
         """
         if not SOURCE_ID_PATTERN.match(source_id or "") or not is_email_source_id(source_id):
             raise ValueError("email pushes use the reserved source ids 'email' and 'email:<suffix>'")
-        received_at = datetime.now(UTC)
+        received_at = received_at or datetime.now(UTC)
         events: List[Dict[str, Any]] = []
         for data in messages:
             try:

@@ -43,6 +43,9 @@ than a report full of per-item errors. Tests and embedders construct
 from __future__ import annotations
 
 import asyncio
+import email.parser
+import email.policy
+import email.utils
 import hashlib
 import json
 import re
@@ -86,6 +89,28 @@ ISOLATION_MODES: Tuple[str, ...] = ("splits", "none")
 MAX_TENANT_ID_CHARS = 63
 EMAIL_EVAL_SOURCE = email_source_id("eval")
 ORACLE_FAILED = "oracle_failed"
+EMAIL_FALLBACK_RECEIVED_AT = datetime(2026, 1, 5, 12, 0, tzinfo=UTC)
+"""When an email item whose report has no usable ``Date`` header was received (a fixed weekday noon)."""
+
+
+def email_received_at(mime: str) -> datetime:
+    """When an email item's report was received: its top-level ``Date`` header, never the wall clock.
+
+    Production stamps a pushed report with the time it arrived, and that time
+    becomes the alert's ``occurred_at``, which triage scores (an after-hours
+    alert gains rule confidence). An evaluation that did the same would build a
+    different triage prompt depending on the hour it ran, so a recorded
+    cassette would stop replaying. The report's own date is fixed by the
+    dataset; a report without one gets :data:`EMAIL_FALLBACK_RECEIVED_AT`.
+    """
+    header = email.parser.HeaderParser(policy=email.policy.compat32).parsestr(mime).get("Date")
+    try:
+        parsed = email.utils.parsedate_to_datetime(str(header)) if header else None
+    except (TypeError, ValueError, IndexError, OverflowError):
+        parsed = None
+    if parsed is None:
+        return EMAIL_FALLBACK_RECEIVED_AT
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
 
 
 class EvalSetupError(RuntimeError):
@@ -291,7 +316,11 @@ class EvalRunner:
         if item.source_type == "email":
             message = item.email
             return await self.ingestion.ingest_email(
-                self.tenant_id, source_id, [message.mime.encode("utf-8")], reporter=message.reporter
+                self.tenant_id,
+                source_id,
+                [message.mime.encode("utf-8")],
+                reporter=message.reporter,
+                received_at=email_received_at(message.mime),
             )
         return await self.ingestion.ingest(self.tenant_id, source_id, [dict(item.alert)])
 
