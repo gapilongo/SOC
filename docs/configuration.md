@@ -377,8 +377,6 @@ Routing policy thresholds (`lg_sotf.domain.routing.RoutingThresholds`). Free-for
 | `routing.close_max_threat` | `LG_SOTF_ROUTING__CLOSE_MAX_THREAT` | integer | `30` | Below this threat score a low/medium alert with a benign verdict closes on approved benign evidence, or by a model-led close its tenant's `ai_closure.tier` allows; high/critical go to an analyst. |
 | `routing.max_more_info_loops` | `LG_SOTF_ROUTING__MAX_MORE_INFO_LOOPS` | integer | `1` | How often an analyst's `needs_more_info` re-runs analysis before the case returns to the analyst. |
 | `routing.max_alert_age_hours` | `LG_SOTF_ROUTING__MAX_ALERT_AGE_HOURS` | integer | `72` | Reserved alert-age limit (not enforced by routing in this release). |
-| `routing.model_close_max_likelihood` | `LG_SOTF_ROUTING__MODEL_CLOSE_MAX_LIKELIHOOD` | integer | `8` | Model-led close: the fast tier must call the alert `benign` with a threat likelihood of at most this. Install-wide: a tenant chooses `ai_closure.tier`, never looser numbers. |
-| `routing.model_close_min_certainty` | `LG_SOTF_ROUTING__MODEL_CLOSE_MIN_CERTAINTY` | integer | `85` | Model-led close: the deep tier must call the alert `benign` with a certainty of at least this. |
 
 ### `ingestion`
 

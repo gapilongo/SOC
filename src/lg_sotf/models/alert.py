@@ -235,7 +235,7 @@ class Mitre(BaseModel):
 
 
 #: Canonical alert keys that are platform bookkeeping, not alert content: left out of what a model reads.
-MODEL_HIDDEN_ALERT_KEYS = frozenset({"normalizer"})
+MODEL_HIDDEN_ALERT_KEYS = frozenset({"normalizer", "reopened"})
 
 
 def model_view(alert: Mapping[str, Any]) -> Dict[str, Any]:

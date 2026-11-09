@@ -128,9 +128,9 @@ def test_the_catalogue_lifts_only_unmapped_never_a_mapped_never_close_class() ->
         assert noise_family(state["alert"]) is not None  # the rule is catalogued ...
         assert closure.catalogued_noise(state["alert"]) is None  # ... but it is not unmapped
         assert model_close_class(state["alert"]) == found
-        assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["never_close_class"]
+        assert model_close_blockers(state, tier=AUTO) == ["never_close_class"]
     mapped = wazuh_state(wazuh_event("2902", DPKG, mitre={"tactic": ["Execution"], "id": ["T1072"]}))
-    assert routing.decide(mapped, T, AUTO).reason == "AI-closed, audit required: both model tiers judged it benign"
+    assert routing.decide(mapped, T, AUTO).reason == "AI-closed, audit required: the analysis judged it benign"
 
 
 # --------------------------------------------------------------------------- rule id only, never text
@@ -152,10 +152,11 @@ def test_the_catalogue_lifts_only_unmapped_never_a_mapped_never_close_class() ->
 def test_a_forged_or_borrowed_title_on_an_uncatalogued_rule_stays_unmapped(rule_id: str, description: str) -> None:
     event = wazuh_event(rule_id, description, full_log="New dpkg (Debian Package) installed. rule 2902 62130 31101")
     state = wazuh_state(event, **{"alert.title": DPKG, "alert.description": "2902: " + DPKG})
-    assert noise_family(state["alert"]) is None
-    assert model_close_class(state["alert"]) == UNMAPPED
-    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["never_close_class"]
-    assert routing.decide(state, T, AUTO).route == "escalate"
+    assert noise_family(state["alert"]) is None and never_close_class(state["alert"]) == UNMAPPED
+    # Policy v3: an unmapped alert closes on the models' word; the catalogue only names a known rule in the reason,
+    # so a borrowed title never earns the catalogue's name.
+    decision = routing.decide(state, T, AUTO)
+    assert decision.code == MODEL_CLOSED and "catalogued noise" not in decision.reason
 
 
 def test_the_rule_id_comes_from_the_vendor_event_and_the_wazuh_rule_name_only() -> None:
@@ -184,10 +185,10 @@ def test_the_rule_id_comes_from_the_vendor_event_and_the_wazuh_rule_name_only() 
         assert detection_rule(broken) is None, broken
         assert noise_family(broken) is None
         # Unmapped either way; a Wazuh-built alert whose rule cannot be read is vendor_unknown (re-check of #345).
-        assert model_close_class(broken) in (UNMAPPED, VENDOR_UNKNOWN)
+        assert model_close_class(broken) in (None, VENDOR_UNKNOWN)
     # A title, description or rule name alone is never a rule id (a canonical alert without a vendor event).
     canonical = {"title": DPKG, "description": DPKG, "rule_name": f"2902: {DPKG}", "mitre": {}, "raw": {}}
-    assert noise_family(canonical) is None and model_close_class(canonical) == UNMAPPED
+    assert noise_family(canonical) is None and never_close_class(canonical) == UNMAPPED
 
 
 def test_an_oversized_raw_event_keeps_its_rule_through_the_state_cap() -> None:
@@ -213,30 +214,26 @@ def test_an_oversized_raw_event_keeps_its_rule_through_the_state_cap() -> None:
 @pytest.mark.parametrize(
     ("change", "blocker"),
     [
-        ({"severity": "high"}, "severity"),
         ({"severity": "critical"}, "severity"),
         ({"triage.rule_tp": ["prompt_injection_suspected"]}, "steering_text"),
         ({"analysis.rule_evidence": ["prior_malicious_history"]}, "recent_true_positive"),
         ({"analysis.rule_corroborated": True}, "recent_true_positive"),
         ({"correlation.related_dispositions": {"malicious": 1}}, "recent_true_positive"),
-        ({"correlation": {"related_count": 2, "related_dispositions": {}}}, "campaign_in_progress"),
-        ({"triage.threat_likelihood": 9}, "fast_tier_not_benign"),
-        ({"triage.threat_assessment": "suspicious"}, "fast_tier_not_benign"),
-        ({"triage.llm_used": False}, "fast_tier_not_benign"),
-        ({"analysis.certainty": 84}, "deep_tier_not_benign"),
+        ({"triage.threat_assessment": "likely_threat"}, "fast_tier_threat"),
         ({"analysis.verdict": "inconclusive"}, "deep_tier_not_benign"),
+        ({"alert.reopened": {"reason": "related_threat"}}, "reopened"),
     ],
 )
 def test_every_other_condition_still_blocks_a_catalogued_rule(change: Dict[str, Any], blocker: str) -> None:
     state = wazuh_state(wazuh_event("2902", DPKG), **change)
-    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == [blocker]
+    assert model_close_blockers(state, tier=AUTO) == [blocker]
     assert routing.decide(state, T, AUTO).route != "close"
-    assert model_close_blockers(state, tier="off", max_likelihood=8, min_certainty=85)[0] == "tier_off"
+    assert model_close_blockers(state, tier="off")[0] == "tier_off"
 
 
-def test_a_high_level_catalogued_rule_never_closes_on_the_models_word() -> None:
-    state = wazuh_state(wazuh_event("2902", DPKG, level=12))
-    assert state["severity"] == "high"
+def test_a_critical_catalogued_rule_never_closes_on_the_models_word() -> None:
+    state = wazuh_state(wazuh_event("2902", DPKG, level=14))
+    assert state["severity"] == "critical"
     assert routing.decide(state, T, AUTO).route == "escalate"
 
 
@@ -255,8 +252,8 @@ MALICIOUS_VERDICTS = [
      "analysis.threat_score": 90, "analysis.certainty": 90},
     # The deep tier says malicious at a low threat score.
     {"analysis.verdict": "malicious", "analysis.threat_score": 20, "analysis.certainty": 70},
-    # Only the fast tier is suspicious; the deep tier was persuaded.
-    {"triage.threat_assessment": "suspicious", "triage.threat_likelihood": 40},
+    # Only the fast tier calls it a likely threat; the deep tier was persuaded.
+    {"triage.threat_assessment": "likely_threat", "triage.threat_likelihood": 70},
     # The deep tier cannot tell.
     {"analysis.verdict": "inconclusive", "analysis.threat_score": 50, "analysis.certainty": 40},
 ]
@@ -308,7 +305,7 @@ def test_review_h1_authentication_failures_are_credential_access_whatever_their_
     state = wazuh_state(event, severity="medium")
     assert never_close_class(state["alert"]) == "credential_access"
     assert model_close_class(state["alert"]) == "credential_access"
-    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["never_close_class"]
+    assert model_close_blockers(state, tier=AUTO) == ["never_close_class"]
     assert routing.decide(state, T, AUTO).route == "escalate"
     # The groups and ids only ever block, so they count whatever format built the alert.
     pushed = {**state["alert"], "normalizer": "canonical"}

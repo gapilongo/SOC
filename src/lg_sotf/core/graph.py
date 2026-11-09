@@ -51,6 +51,7 @@ from lg_sotf.core.state import (
     TriageDigest,
 )
 from lg_sotf.domain import routing
+from lg_sotf.domain.closure import REOPENED
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.domain.verdict_key import verdict_key_of
 
@@ -141,7 +142,7 @@ MAX_OMITTED_KEYS = 20
 MAX_OMITTED_KEY_CHARS = 64
 OMITTED_RESERVE_CHARS = 1_600
 PROTECTED_ALERT_KEYS = frozenset(
-    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities", "email"}
+    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities", "email", "reopened"}
 )
 # (items per list, chars per string, keys per mapping, depth), tried in order until entities fit.
 ENTITY_SHRINK_STEPS = (
@@ -281,6 +282,12 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[in
     )
     if "raw" not in canonical:
         canonical["raw"] = alert.raw
+    # Decision policy v3: an alert the safety net reopened (lg_sotf.core.retro_reopen) never closes on the models'
+    # word again. Taken from the stored summary, never from the event; models never see it (MODEL_HIDDEN_ALERT_KEYS).
+    canonical.pop(REOPENED, None)
+    reopened = alert.summary.get(REOPENED) if isinstance(alert.summary, Mapping) else None
+    if reopened:
+        canonical[REOPENED] = {"reason": str(reopened.get("reason")) if isinstance(reopened, Mapping) else "reopened"}
     return {
         "tenant_id": tenant_id,
         "alert_id": alert.id,

@@ -1,54 +1,57 @@
-"""Model-led closure (decision policy v2.1, FIX-1 and FIX-2): the tenant's autonomy tier and when a model may close.
+"""Model-led closure (decision policy v3, FIX-3): the tenant's autonomy tier and when the models close an alert.
 
-Without approved benign evidence (:func:`lg_sotf.domain.routing.decide`), a
-low or medium alert is closed on the models' word only when the tenant chose
-the autonomy tier ``auto_full_audit`` (tenant setting ``ai_closure.tier``,
-default ``off``) and every condition below holds. Each one fails closed: a
-missing or unreadable value blocks the close.
+Founder decision 2026-11-09: every alert the AI judges benign closes, and a
+backward safety net replaces the forward gates of FIX-1 and FIX-2. Without
+approved benign evidence (:func:`lg_sotf.domain.routing.decide`), an alert
+closes on the models' word only when the tenant chose the autonomy tier
+``auto_full_audit`` (tenant setting ``ai_closure.tier``, default ``off``)
+and every condition below holds. Each one fails closed: a missing or
+unreadable value blocks the close.
 
-* severity ``info``, ``low`` or ``medium`` (high and critical never close on a
-  model's word, at any tier);
-* not a never-close class (:func:`never_close_class`), by the ATT&CK tactic
-  or technique the detection rule declares: credential access, log clearing
-  and other indicator removal, security-tool tampering, ransomware
-  behaviour, and persistence through an object the attacker creates and
-  names (scheduled tasks, services, autostart entries, WMI subscriptions,
-  accounts), whose alert text is the attacker's. An alert the rule maps to
-  no tactic or technique is ``unmapped`` and counts as a never-close class:
-  nothing shows it is outside them. The one exception is a detection rule in
-  the reviewed noise catalogue (:mod:`lg_sotf.domain.noise_families`,
-  FIX-2), keyed by vendor and rule id, never by title or description text:
-  it lifts ``unmapped`` and nothing else (:func:`model_close_class`);
+* the deep tier (analysis) says ``benign``, at any certainty; a verdict the
+  rules produced because a model was not consulted never counts;
+* the fast tier (triage) did not call it a threat (``likely_threat`` or
+  ``confirmed_threat``);
+* severity ``info``, ``low``, ``medium`` or ``high`` (critical never closes
+  on a model's word, at any tier);
+* not a never-close class (:func:`model_close_class`): credential access by
+  ATT&CK tactic or technique (T1531 included) or by the vendor's own
+  authentication-failure rule groups and ids
+  (:func:`lg_sotf.domain.noise_families.vendor_never_close_class`), a Wazuh
+  alert whose rule cannot be read (``vendor_unknown``), log clearing and
+  other indicator removal, security-tool tampering, ransomware behaviour,
+  and persistence through an object the attacker creates and names. An alert
+  without an ATT&CK mapping (``unmapped``) is no longer blocked;
 * no steering text: triage did not flag ``prompt_injection_suspected``;
 * no recent true positive on the alert's entities: no analyst-confirmed
   malicious history (``prior_malicious_history``), no related alert of the
   correlation window closed as malicious, and no rule evidence that
   corroborates a threat (``rule_corroborated``);
-* no campaign in progress: no burst of related alerts, no related alert a
-  model judged malicious or suspicious, none still open for an analyst or an
-  approval (counted over every related alert, not only those shown to the
-  correlation model), so an attack is never closed alert by alert. (A
-  check that lets one rule repeat was deferred from FIX-2: three review
-  rounds found ways to launder a block through it);
-* both model tiers say benign: the fast tier's assessment is ``benign`` with
-  a threat likelihood at most ``routing.model_close_max_likelihood``
-  (default 8), and the deep tier's verdict is ``benign`` with a certainty of
-  at least ``routing.model_close_min_certainty`` (default 85). A verdict the
-  rules produced because a model was not consulted never counts.
+* not normalised by a model (the LLM-fallback normalizer chose its fields),
+  and not reopened by the safety net (``reopened``): a reopened alert goes
+  to an analyst.
+
+Removed in v3: the install thresholds on the model tiers (likelihood 8,
+certainty 85), the campaign check and the ``unmapped`` block.
+
+The safety net (:mod:`lg_sotf.core.retro_reopen`): when an alert becomes a
+threat (a response plan, an escalation with a malicious or suspicious model
+verdict, an analyst true positive, a blind-audit malicious label), every
+model-closed alert of the tenant that shares a host, user or IP with it and
+closed in the previous 24 hours is reopened, attached to that escalation and
+audited ``alert.reopened``.
 
 A model-led close carries the decision code ``model_closed`` and the close
 reason ``ai_closed:audit_required``: an analyst is expected to audit it.
-When the noise catalogue lifted ``unmapped``, the decision reason names the
-family and the catalogue version.
-Correlation shows such an alert to later models as ``ai_closed_unaudited``,
-never as ``benign``, so one persuaded close cannot vouch for the next.
+When the noise catalogue knows the detection rule, the decision reason names
+the family and the catalogue version. Correlation shows such an alert to
+later models as ``ai_closed_unaudited``, never as ``benign``, so one
+persuaded close cannot vouch for the next.
 
 Approved benign evidence closes without the tier, but never past steering
 text or a recent true positive, and context evidence (a declared scanner, a
 test source) never past a mapped never-close class
 (:func:`evidence_close_blockers`).
-The thresholds are install settings (``routing``), so a tenant can turn
-model-led closure on or off but never loosen what it needs.
 """
 
 from __future__ import annotations
@@ -67,11 +70,13 @@ __all__ = [
     "AutonomyTier",
     "CLOSABLE_SEVERITIES",
     "CONTEXT_EVIDENCE",
+    "FAST_TIER_THREATS",
     "MODEL_CLOSED",
     "MODEL_CLOSE_REASON",
     "MODEL_CLOSE_TIER",
     "NEVER_CLOSE_TACTICS",
     "NEVER_CLOSE_TECHNIQUES",
+    "REOPENED",
     "SETTING",
     "UNMAPPED",
     "autonomy_tier",
@@ -92,7 +97,12 @@ SETTING = "ai_closure"
 #: The decision code and the close reason of a model-led close.
 MODEL_CLOSED = "model_closed"
 MODEL_CLOSE_REASON = "ai_closed:audit_required"
-CLOSABLE_SEVERITIES: FrozenSet[str] = frozenset({"info", "low", "medium"})
+CLOSABLE_SEVERITIES: FrozenSet[str] = frozenset({"info", "low", "medium", "high"})
+#: Fast-tier assessments that block a model-led close.
+FAST_TIER_THREATS: FrozenSet[str] = frozenset({"likely_threat", "confirmed_threat"})
+#: The alert key the safety net sets on a reopened alert (lg_sotf.core.retro_reopen); it never model-closes.
+REOPENED = "reopened"
+LLM_NORMALIZED_FLAG = "llm_normalized"
 #: Triage's rule false-positive signals that say where the activity came from (a scanner the tenant declared, a
 #: test-environment source), as opposed to what was detected (the rule's own test intent, the EICAR file).
 CONTEXT_EVIDENCE: FrozenSet[str] = frozenset({"known_scanner", "test_environment"})
@@ -203,36 +213,22 @@ def catalogued_noise(alert: Any) -> Optional[NoiseFamily]:
 
 
 def model_close_class(alert: Any) -> Optional[str]:
-    """The never-close class that blocks a model-led close: :func:`never_close_class`, except that a detection rule
-    in the noise catalogue lifts ``unmapped`` (and only ``unmapped``)."""
+    """The never-close class that blocks a model-led close: :func:`never_close_class`, except that ``unmapped``
+    does not block it (policy v3). ``vendor_unknown`` and every mapped class do."""
     found = never_close_class(alert)
-    if found == UNMAPPED and catalogued_noise(alert) is not None:
-        return None
-    return found
+    return None if found == UNMAPPED else found
 
 
 def _number(value: Any) -> Optional[float]:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
-def _fast_tier_benign(triage: Mapping[str, Any], max_likelihood: int) -> bool:
-    likelihood = _number(triage.get("threat_likelihood"))
-    return (
-        triage.get("llm_used") is True
-        and triage.get("threat_assessment") == "benign"
-        and likelihood is not None
-        and likelihood <= max_likelihood
-    )
+def _fast_tier_threat(triage: Mapping[str, Any]) -> bool:
+    return triage.get("threat_assessment") in FAST_TIER_THREATS
 
 
-def _deep_tier_benign(analysis: Mapping[str, Any], min_certainty: int) -> bool:
-    certainty = _number(analysis.get("certainty"))
-    return (
-        analysis.get("llm_used") is True
-        and analysis.get("verdict") == "benign"
-        and certainty is not None
-        and certainty >= min_certainty
-    )
+def _deep_tier_benign(analysis: Mapping[str, Any]) -> bool:
+    return analysis.get("llm_used") is True and analysis.get("verdict") == "benign"
 
 
 def _recent_true_positive(analysis: Mapping[str, Any], correlation: Mapping[str, Any]) -> bool:
@@ -244,20 +240,6 @@ def _recent_true_positive(analysis: Mapping[str, Any], correlation: Mapping[str,
         or analysis.get("rule_corroborated") is True
         or (_number(related_malicious) or 0) > 0
     )
-
-
-def _campaign_in_progress(correlation: Mapping[str, Any]) -> bool:
-    """Related alerts that may be one attack: a burst, one a model judged malicious or suspicious, or one still
-    open for review. Unknown counts (a digest without them) fail closed."""
-    related = _number(correlation.get("related_count"))
-    if related is None:
-        return True
-    if related == 0:
-        return False
-    if correlation.get("burst") is not False:
-        return True
-    counts = [_number(correlation.get(key)) for key in ("related_threats", "related_open_reviews")]
-    return any(count is None or count > 0 for count in counts)
 
 
 def _steering_text(triage: Mapping[str, Any]) -> bool:
@@ -294,19 +276,24 @@ def evidence_close_blockers(state: Mapping[str, Any]) -> List[str]:
     return [name for name, blocked in checks if blocked]
 
 
-def model_close_blockers(
-    state: Mapping[str, Any], *, tier: str, max_likelihood: int, min_certainty: int
-) -> List[str]:
+def _flagged(alert: Any, flag: str) -> bool:
+    flags = alert.get("flags") if isinstance(alert, Mapping) else None
+    return isinstance(flags, list) and flag in flags
+
+
+def model_close_blockers(state: Mapping[str, Any], *, tier: str) -> List[str]:
     """Why the models may not close this alert on their own; empty when they may (see the module docs)."""
     triage, analysis, correlation = _digest(state, "triage"), _digest(state, "analysis"), _digest(state, "correlation")
+    alert = state.get("alert")
     checks = (
         ("tier_off", tier != MODEL_CLOSE_TIER),
         ("severity", state.get("severity") not in CLOSABLE_SEVERITIES),
-        ("never_close_class", model_close_class(state.get("alert")) is not None),
+        ("never_close_class", model_close_class(alert) is not None),
+        ("llm_normalized", _flagged(alert, LLM_NORMALIZED_FLAG)),
+        ("reopened", not isinstance(alert, Mapping) or alert.get(REOPENED) is not None),
         ("steering_text", _steering_text(triage)),
         ("recent_true_positive", _recent_true_positive(analysis, correlation)),
-        ("campaign_in_progress", _campaign_in_progress(correlation)),
-        ("fast_tier_not_benign", not _fast_tier_benign(triage, max_likelihood)),
-        ("deep_tier_not_benign", not _deep_tier_benign(analysis, min_certainty)),
+        ("fast_tier_threat", _fast_tier_threat(triage)),
+        ("deep_tier_not_benign", not _deep_tier_benign(analysis)),
     )
     return [name for name, blocked in checks if blocked]
