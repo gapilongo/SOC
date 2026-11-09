@@ -1,4 +1,4 @@
-"""Model-led closure (decision policy v2, FIX-1): the tenant's autonomy tier and when a model may close.
+"""Model-led closure (decision policy v2.1, FIX-1 and FIX-2): the tenant's autonomy tier and when a model may close.
 
 Without approved benign evidence (:func:`lg_sotf.domain.routing.decide`), a
 low or medium alert is closed on the models' word only when the tenant chose
@@ -15,7 +15,10 @@ missing or unreadable value blocks the close.
   names (scheduled tasks, services, autostart entries, WMI subscriptions,
   accounts), whose alert text is the attacker's. An alert the rule maps to
   no tactic or technique is ``unmapped`` and counts as a never-close class:
-  nothing shows it is outside them;
+  nothing shows it is outside them. The one exception is a detection rule in
+  the reviewed noise catalogue (:mod:`lg_sotf.domain.noise_families`,
+  FIX-2), keyed by vendor and rule id, never by title or description text:
+  it lifts ``unmapped`` and nothing else (:func:`model_close_class`);
 * no steering text: triage did not flag ``prompt_injection_suspected``;
 * no recent true positive on the alert's entities: no analyst-confirmed
   malicious history (``prior_malicious_history``), no related alert of the
@@ -24,7 +27,9 @@ missing or unreadable value blocks the close.
 * no campaign in progress: no burst of related alerts, no related alert a
   model judged malicious or suspicious, none still open for an analyst or an
   approval (counted over every related alert, not only those shown to the
-  correlation model), so an attack is never closed alert by alert;
+  correlation model), so an attack is never closed alert by alert. (A
+  check that lets one rule repeat was deferred from FIX-2: three review
+  rounds found ways to launder a block through it);
 * both model tiers say benign: the fast tier's assessment is ``benign`` with
   a threat likelihood at most ``routing.model_close_max_likelihood``
   (default 8), and the deep tier's verdict is ``benign`` with a certainty of
@@ -33,6 +38,8 @@ missing or unreadable value blocks the close.
 
 A model-led close carries the decision code ``model_closed`` and the close
 reason ``ai_closed:audit_required``: an analyst is expected to audit it.
+When the noise catalogue lifted ``unmapped``, the decision reason names the
+family and the catalogue version.
 Correlation shows such an alert to later models as ``ai_closed_unaudited``,
 never as ``benign``, so one persuaded close cannot vouch for the next.
 
@@ -52,6 +59,7 @@ from typing import Any, Dict, FrozenSet, List, Literal, Mapping, Optional, Tuple
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from lg_sotf.domain.benign_evidence import INJECTION_SIGNAL
+from lg_sotf.domain.noise_families import NoiseFamily, noise_family, vendor_never_close_class
 
 __all__ = [
     "AUTONOMY_TIERS",
@@ -67,8 +75,10 @@ __all__ = [
     "SETTING",
     "UNMAPPED",
     "autonomy_tier",
+    "catalogued_noise",
     "evidence_close_blockers",
     "model_close_blockers",
+    "model_close_class",
     "never_close_class",
     "validate_ai_closure_settings",
 ]
@@ -98,6 +108,8 @@ NEVER_CLOSE_TECHNIQUES: Mapping[str, str] = {
     "T1555": "credential_access",  # credentials from password stores
     "T1556": "credential_access",  # modify authentication process
     "T1558": "credential_access",  # Kerberos tickets (Kerberoasting)
+    # Account access removal: Wazuh maps its Windows logon-failure rules (60122-60130) and others to it (FIX-2 review).
+    "T1531": "credential_access",
     "T1070": "log_clearing",  # indicator removal: clearing event logs and shell history
     "T1562": "tampering",  # impair defenses: disabling security tools and logging
     "T1485": "ransomware",  # data destruction
@@ -152,7 +164,12 @@ def _mitre(alert: Mapping[str, Any], key: str) -> List[str]:
 
 
 def never_close_class(alert: Any) -> Optional[str]:
-    """The never-close class the detection rule's ATT&CK mapping puts the alert in, or ``None``.
+    """The never-close class the detection rule's ATT&CK mapping (or the vendor rule itself) puts the alert in, or
+    ``None``.
+
+    A Wazuh rule in an authentication-failure group, or one of a few listed
+    rule ids, is credential access whatever its ATT&CK id
+    (:func:`lg_sotf.domain.noise_families.vendor_never_close_class`).
 
     An alert the rule maps to no tactic and no technique is :data:`UNMAPPED`:
     nothing shows it is outside the never-close classes, so it is treated as
@@ -169,7 +186,29 @@ def never_close_class(alert: Any) -> Optional[str]:
         found = NEVER_CLOSE_TECHNIQUES.get(technique.upper().split(".", 1)[0])
         if found is not None:
             return found
+    vendor = vendor_never_close_class(alert)
+    if vendor is not None:
+        return vendor
     return None if tactics or techniques else UNMAPPED
+
+
+def catalogued_noise(alert: Any) -> Optional[NoiseFamily]:
+    """The catalogued noise family that lifts the alert's ``unmapped`` class, or ``None`` (FIX-2).
+
+    ``None`` unless the alert is :data:`UNMAPPED` and its vendor detection rule
+    id is in the catalogue: a mapped alert never needs the lift, and a mapped
+    never-close class is never lifted.
+    """
+    return noise_family(alert) if never_close_class(alert) == UNMAPPED else None
+
+
+def model_close_class(alert: Any) -> Optional[str]:
+    """The never-close class that blocks a model-led close: :func:`never_close_class`, except that a detection rule
+    in the noise catalogue lifts ``unmapped`` (and only ``unmapped``)."""
+    found = never_close_class(alert)
+    if found == UNMAPPED and catalogued_noise(alert) is not None:
+        return None
+    return found
 
 
 def _number(value: Any) -> Optional[float]:
@@ -263,7 +302,7 @@ def model_close_blockers(
     checks = (
         ("tier_off", tier != MODEL_CLOSE_TIER),
         ("severity", state.get("severity") not in CLOSABLE_SEVERITIES),
-        ("never_close_class", never_close_class(state.get("alert")) is not None),
+        ("never_close_class", model_close_class(state.get("alert")) is not None),
         ("steering_text", _steering_text(triage)),
         ("recent_true_positive", _recent_true_positive(analysis, correlation)),
         ("campaign_in_progress", _campaign_in_progress(correlation)),

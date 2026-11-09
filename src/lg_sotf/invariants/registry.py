@@ -115,9 +115,11 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is "
             "auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the "
             "never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, "
-            "persistence through attacker-named objects, unmapped alerts), steering text, entities with a recent "
-            "true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier "
-            "off, the default, a model never closes an alert alone. A cached analyst verdict closes only a "
+            "persistence through attacker-named objects, authentication failures by vendor rule group, unmapped "
+            "alerts unless the vendor rule id is in the reviewed noise catalogue, never matched on text), steering "
+            "text, entities with a recent true positive or a campaign in progress; such a close is marked "
+            "model_closed for audit. With the tier off, the default, a model never closes an alert alone. A cached "
+            "analyst verdict closes only a "
             "non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) "
             "that two different analysts decided benign, with no threat on it since; alerts in a never-close "
             "class, normalised by a model or without a process, command line, service, scheduled task, registry "
@@ -130,8 +132,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
         threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
         code=(
             "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/closure.py", "src/lg_sotf/domain/benign_evidence.py",
-            "src/lg_sotf/domain/verdict_key.py", "src/lg_sotf/core/verdict_cache.py",
-            "src/lg_sotf/core/benign_learning.py",
+            "src/lg_sotf/domain/noise_families.py", "src/lg_sotf/domain/verdict_key.py",
+            "src/lg_sotf/core/verdict_cache.py", "src/lg_sotf/core/benign_learning.py",
         ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
@@ -146,7 +148,17 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
             "tests/unit/domain/test_closure.py::test_a_campaign_in_progress_is_never_model_closed",
             "tests/unit/domain/test_closure.py::test_review_f2_sentinel_credential_access_is_a_never_close_class",
+            "tests/unit/domain/test_noise_families.py::test_a_forged_or_borrowed_title_on_an_uncatalogued_rule_stays_unmapped",
+            "tests/unit/domain/test_noise_families.py::test_the_catalogue_lifts_only_unmapped_never_a_mapped_never_close_class",
+            "tests/unit/domain/test_noise_families.py::test_every_other_condition_still_blocks_a_catalogued_rule",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_a_malicious_or_suspicious_model_verdict_on_a_catalogued_rule_still_escalates",
+            "tests/unit/domain/test_noise_families.py::test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping",
             "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
+            "tests/integration/engine/test_model_closure.py::"
+            "test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not",
             "tests/integration/eval/test_adversarial_v2_eval.py::test_no_malicious_close_with_model_led_closure_on",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"

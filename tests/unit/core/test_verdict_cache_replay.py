@@ -177,4 +177,5 @@ async def test_the_verdict_key_alone_already_closes_no_malicious_alert(monkeypat
     """With one analyst enough, the finer key still closes none: two analysts are defence in depth."""
     monkeypatch.setattr(verdict_cache, "MIN_ANALYSTS", 1)
     closed = await replay(corpus())
-    assert closed["malicious"] == [] and len(closed["benign"]) > 15
+    # 14 since FIX-2: Wazuh authentication-failure rules are a never-close class, so they get no verdict key.
+    assert closed["malicious"] == [] and len(closed["benign"]) >= 14

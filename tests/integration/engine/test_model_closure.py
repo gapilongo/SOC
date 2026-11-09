@@ -75,3 +75,34 @@ async def test_the_tenant_tier_decides_whether_the_models_close(engine: Workflow
     await repos.tenants.update_settings(TENANT_A, {"ai_closure": {"tier": "off"}})
     again = await routine_alert(repos, "again")
     assert (await engine.run(TENANT_A, again)).status == "waiting_human"
+
+
+DPKG = "New dpkg (Debian Package) installed."
+
+
+async def wazuh_alert(repos: Repositories, name: str, rule_id: str, description: str, **normalized: Any) -> str:
+    """A Wazuh alert on host db-07 as the Wazuh normalizer stores it: the rule id in the raw event and the rule name."""
+    fields: Dict[str, Any] = {
+        "title": ROUTINE, "rule_name": f"{rule_id}: {description}", "description": ROUTINE, "normalizer": "wazuh",
+        "entities": {"hosts": ["db-07"]}, "mitre": {"tactics": [], "techniques": []}, **normalized,
+    }
+    raw = {"rule": {"id": rule_id, "level": 7, "description": description}, "agent": {"name": "db-07"}}
+    return await make_alert(repos, TENANT_A, source_alert_id=f"fix2-{name}", title=ROUTINE, severity="medium",
+                            raw=raw, normalized=fields)
+
+
+async def test_catalogued_noise_closes_on_the_models_word_and_an_uncatalogued_rule_does_not(
+    engine: WorkflowEngine, repos: Repositories
+) -> None:
+    """FIX-2 through the real workflow: an unmapped Wazuh package install (rule 2902, catalogued) closes on the
+    models' word, marked with its family; a custom rule copying the description stays unmapped and goes to an
+    analyst."""
+    await repos.tenants.update_settings(TENANT_A, {"ai_closure": {"tier": "auto_full_audit"}})
+    package = await wazuh_alert(repos, "package", "2902", DPKG)
+    assert (await engine.run(TENANT_A, package)).status == "completed"
+    decided = await decide_event(repos, package)
+    assert decided["code"] == "model_closed" and "catalogued noise linux_package_install" in decided["reason"]
+
+    custom = await wazuh_alert(repos, "custom", "100200", DPKG, entities={"hosts": ["db-08"]})
+    assert (await engine.run(TENANT_A, custom)).status == "waiting_human"
+    assert (await decide_event(repos, custom))["code"] == "false_positive_review"

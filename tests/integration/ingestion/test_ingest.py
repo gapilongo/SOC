@@ -10,6 +10,7 @@ import pytest
 
 from lg_sotf.db.repos import NewAlert, Repositories
 from lg_sotf.db.repos.alerts import AlertsRepo
+from lg_sotf.domain.noise_families import detection_rule
 from lg_sotf.ingestion.errors import SourceDisabled, SourceNotPushable
 from lg_sotf.ingestion.fingerprint import compute_fingerprint
 from lg_sotf.ingestion.service import IngestionService, api_source_id
@@ -158,10 +159,12 @@ async def test_registered_sources_choose_their_normalizer(
     assert len(hook.inserted) == 2
     stored = await repos.alerts.get(TENANT_A, hook.inserted[0].alert_id)
     assert stored.severity == "high" and stored.normalized["source_type"] == "webhook"
+    assert stored.normalized["normalizer"] == "webhook"  # FIX-2: the format that built it, from the source
 
     gd = await service.ingest(TENANT_A, "gd-1", vendor_events("guardduty_findings"))
     assert len(gd.inserted) == 2
     finding = await repos.alerts.get(TENANT_A, gd.inserted[1].alert_id)
+    assert finding.normalized["normalizer"] == "guardduty"
     assert "AKIAIOSFODNN7EXAMPLE" not in json.dumps(finding.raw)
 
     with pytest.raises(SourceDisabled):
@@ -192,6 +195,7 @@ async def test_vendor_fixtures_ingest_end_to_end_through_a_webhook(
     assert len(result.inserted) == expected, result.rejected
     stored = await repos.alerts.get(TENANT_A, result.inserted[0].alert_id)
     assert stored.normalized["source_type"] == "webhook"
+    assert stored.normalized["normalizer"] == fmt  # FIX-2: the noise catalogue trusts a Wazuh rule id only from `wazuh`
 
 
 @pytest.mark.parametrize("source_type", ["qradar", "splunk", "sentinel", "crowdstrike", "wazuh", "file"])
@@ -226,7 +230,7 @@ async def test_llm_fallback_normalizes_unknown_events(
     on = await service_factory(llm_fallback=True).ingest(TENANT_A, "api", [unknown])
     assert len(on.inserted) == 1, on.rejected
     stored = await repos.alerts.get(TENANT_A, on.inserted[0].alert_id)
-    assert "llm_normalized" in stored.normalized["flags"]
+    assert "llm_normalized" in stored.normalized["flags"] and stored.normalized["normalizer"] == "llm"
     assert "source_alert_id_from_hash" in stored.normalized["flags"]
     assert stored.severity in ("medium", "high", "critical")
     haystack = json.dumps(unknown).lower()
@@ -379,3 +383,17 @@ async def test_llm_fallback_honours_the_tenant_token_budget(
     result = await service.ingest(TENANT_A, "api", [{"product": "AcmeEDR", "n": i} for i in range(5)])
     assert model.calls == []
     assert len(result.rejected) == 5 and all("budget" in r.reason for r in result.rejected)
+
+
+async def test_a_pushed_event_cannot_claim_the_wazuh_normalizer(
+    repos: Repositories, service_factory: Callable[..., IngestionService]
+) -> None:
+    """FIX-2: a canonical push that copies a Wazuh document, and says which normalizer built it, is recorded as
+    `canonical`: the noise catalogue never reads its rule id."""
+    forged = {"id": "forged-1", "title": "New dpkg (Debian Package) installed.", "severity": "low",
+              "rule_name": "2902: New dpkg (Debian Package) installed.", "normalizer": "wazuh",
+              "rule": {"id": "2902", "level": 7, "description": "New dpkg (Debian Package) installed."}}
+    result = await service_factory().ingest(TENANT_A, "api", [forged])
+    stored = await repos.alerts.get(TENANT_A, result.inserted[0].alert_id)
+    assert stored.normalized["normalizer"] == "canonical"
+    assert detection_rule({**stored.normalized, "raw": stored.raw}) is None

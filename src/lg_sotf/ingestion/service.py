@@ -112,6 +112,8 @@ SOURCE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 FLAG_RAW_TRUNCATED = "raw_truncated"
 FLAG_REDACTED = "secrets_redacted"
 FLAG_SAMPLE = "sample"
+#: What ``CanonicalAlert.normalizer`` records for an alert a model normalized (the LLM fallback).
+LLM_NORMALIZER = "llm"
 MAX_CACHED_CONNECTORS = 512
 MAX_ERROR_CHARS = 500
 API_SOURCE_ID = "api"
@@ -537,9 +539,11 @@ class IngestionService:
             return _Outcome(reason=str(exc))
         except NormalizationError as exc:
             return _Outcome(reason=str(exc))
-        return _Outcome(prepared=self._finish(index, alert, redacted, redactions))
+        return _Outcome(prepared=self._finish(index, alert, redacted, redactions, normalizer.name))
 
-    def _finish(self, index: int, alert: CanonicalAlert, redacted: Mapping[str, Any], redactions: int) -> PreparedEvent:
+    def _finish(
+        self, index: int, alert: CanonicalAlert, redacted: Mapping[str, Any], redactions: int, normalizer: str
+    ) -> PreparedEvent:
         raw = cap_mapping(redacted, self._options.max_raw_bytes)
         flags = list(alert.flags)
         if TRUNCATED_MARKER in raw and TRUNCATED_MARKER not in redacted:
@@ -548,7 +552,8 @@ class IngestionService:
             flags.append(FLAG_REDACTED)
         if alert.source_id == SAMPLE_SOURCE_ID:
             flags.append(FLAG_SAMPLE)
-        alert = alert.model_copy(update={"raw": raw, "flags": flags})
+        # The format that built the alert, never the event's word for it (FIX-2: the noise catalogue reads it).
+        alert = alert.model_copy(update={"raw": raw, "flags": flags, "normalizer": normalizer})
         row = NewAlert(
             source_id=alert.source_id,
             source_alert_id=alert.source_alert_id,
@@ -575,7 +580,7 @@ class IngestionService:
             alert = await llm_normalize(
                 redacted, ctx, settings=self._settings, tenant_id=tenant_id, budget=self._budget, budget_limit=budget_limit
             )
-            prepared = self._finish(index, alert, redacted, redactions)
+            prepared = self._finish(index, alert, redacted, redactions, LLM_NORMALIZER)
         except asyncio.CancelledError:
             raise
         except LLMBudgetExceeded:

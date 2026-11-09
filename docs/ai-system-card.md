@@ -279,6 +279,12 @@ compressed related alerts and bursts (a campaign in progress blocks it), and
 queue without them. That is a simulation, not a re-measurement. The miss-rate result stands; the
 auto-close result is not yet a statement about the model.
 
+Decision policy v2.1 (FIX-2) adds a reviewed catalogue of unmapped Wazuh
+noise rules (by rule id) and makes authentication failures a never-close
+class whatever their ATT&CK id; the campaign check stays FIX-1's.
+Simulated on the FIX-1 dev run's 100 recorded alerts, 2 of the 60
+benign alerts close and none of the 40 malicious.
+
 ### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama
 
 [scorecards/v1/qwen2.5-7b/scorecard.md](scorecards/v1/qwen2.5-7b/scorecard.md),

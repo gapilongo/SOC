@@ -91,6 +91,7 @@ from lg_sotf.domain.phishing import PhishingAssessment, PhishingProfile, assess
 from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
+from lg_sotf.models.alert import model_view
 
 if TYPE_CHECKING:
     from lg_sotf.core.state import TriageDigest
@@ -550,7 +551,7 @@ class TriageAgent(BaseAgent):
     @staticmethod
     def prompt_data(alert: Mapping[str, Any], rule_fp: List[str], rule_tp: List[str], rule_score: int) -> Dict[str, Any]:
         return {
-            "alert": dict(alert),
+            "alert": model_view(alert),
             "rule_assessment": {"confidence": rule_score, "fp_signals": rule_fp, "tp_signals": rule_tp},
         }
 
