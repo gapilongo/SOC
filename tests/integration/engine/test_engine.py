@@ -239,7 +239,8 @@ async def test_needs_more_info_returns_to_analysis_at_most_once(
 async def test_verdict_cache_closes_repeats_but_never_critical(
     engine: WorkflowEngine, repos: Repositories, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two analyst-benign decisions on one verdict key close a repeat; one does not, nor other behaviour or critical."""
+    """Two analysts' benign decisions on one verdict key close a repeat; one analyst (even twice) does not, nor
+    another behaviour or a critical alert."""
     alert_id = await suspicious_alert(repos)
     user_id = await analyst(repos)
     first = await engine.run(TENANT_A, alert_id)
@@ -259,6 +260,11 @@ async def test_verdict_cache_closes_repeats_but_never_critical(
     second = await engine.run(TENANT_A, second_id)
     assert second.interrupt is not None and (await repos.alerts.get(TENANT_A, second_id)).status != "closed"
     await decide(engine, repos, second_id, second.interrupt["escalation_id"], "false_positive", user_id)
+    # The same analyst twice is still one analyst: a third repeat goes to an analyst, this time another one.
+    third_id = await repeat("medium")
+    third = await engine.run(TENANT_A, third_id)
+    assert third.interrupt is not None and (await repos.alerts.get(TENANT_A, third_id)).status != "closed"
+    await decide(engine, repos, third_id, third.interrupt["escalation_id"], "false_positive", await analyst(repos))
     triage_calls = count_calls(monkeypatch, engine.agents.triage, "run")
 
     medium = await repeat("medium")
@@ -645,3 +651,46 @@ async def test_spoofed_fp_keywords_never_close_high_severity(
     assert outcome.status == "waiting_human"
     nodes = [e.node for e in (await repos.alert_events.list_for_alert(TENANT_A, alert_id)).items]
     assert nodes[:4] == ["gate", "triage", "correlation", "analysis"]
+
+
+async def test_plan_response_and_the_malicious_close_revoke_the_benign_learning(
+    engine: WorkflowEngine, repos: Repositories, redis_client: Any
+) -> None:
+    """#343 M3: a response planned for the alert, and the malicious close after it, disable the rules that match it
+    and tombstone its verdict key and fingerprint."""
+    from lg_sotf.core.verdict_cache import MALICIOUS_FIELD
+
+    alert_id = await suspicious_alert(repos)
+    user_id = await analyst(repos)
+    first = await engine.run(TENANT_A, alert_id)
+    assert first.status == "waiting_human"
+    stored = await repos.alerts.get(TENANT_A, alert_id)
+    key = verdict_key_of(stored)
+    assert key is not None
+    rule = await repos.suppressions.create(TENANT_A, "suggested", {"verdict_key": key}, enabled=True)
+    cache = engine.node_deps.verdicts
+    for analyst_id in ("a1", "a2"):
+        await cache.put_analyst_benign(TENANT_A, key, decision="false_positive", alert_id="earlier",
+                                       escalation_id=None, decided_by=analyst_id, severity="medium")
+
+    second = await decide(engine, repos, alert_id, first.interrupt["escalation_id"], "true_positive", user_id)
+    assert second.status == "waiting_approval"
+    assert (await repos.suppressions.get(TENANT_A, rule.id)).enabled is False  # plan_response
+    record = await cache.get(TENANT_A, key, fingerprint=stored.fingerprint)
+    assert record is not None and record["decisions"] == [] and len(record["threats"]) == 2
+
+    # Enabled again by hand before the response finished: the malicious close disables it again.
+    await repos.suppressions.update(TENANT_A, rule.id, enabled=True)
+    await redis_client.delete(cache.key(TENANT_A, key))
+    done = await engine.resume(
+        TENANT_A, alert_id,
+        {"type": "approval", "approved_action_ids": [], "rejected_action_ids": [], "decided_by": user_id,
+         "reject_remaining": True},
+    )
+    assert done.status == "completed"
+    alert = await repos.alerts.get(TENANT_A, alert_id)
+    assert (alert.status, alert.disposition) == ("closed", "malicious")
+    assert (await repos.suppressions.get(TENANT_A, rule.id)).enabled is False
+    assert await redis_client.hexists(cache.key(TENANT_A, key), MALICIOUS_FIELD)
+    revoked = [e.resource_id for e in (await repos.audit.list(TENANT_A, action="suppression.revoked")).items]
+    assert revoked == [rule.id, rule.id]

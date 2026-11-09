@@ -27,8 +27,11 @@ async def user(repos: Repositories, role: str, tenant: str = TENANT_A) -> UUID:
     return (await repos.users.create(tenant, f"{role}-{uuid4().hex[:8]}@example.com", role)).id
 
 
-PARENT_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "users": ["jdoe"]}
-ATTACHED_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["srv-db-prod"], "users": ["jdoe"]}
+PARENT_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "users": ["jdoe"], "processes": ["beacon.exe"]}
+ATTACHED_ENTITIES = {
+    "ips": ["185.220.101.44"], "hosts": ["srv-db-prod"], "users": ["jdoe"], "processes": ["beacon.exe"],
+}
+SCANNER = {"processes": ["c:\\tools\\nightly-scan.exe"]}
 
 
 async def grouped_escalation(
@@ -125,7 +128,8 @@ async def test_false_positive_creates_a_disabled_suppression_suggestion(
 ) -> None:
     settings = make_settings()
     review = ReviewService(repos, settings)
-    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner", severity="medium")
+    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner", severity="medium",
+                               entities=SCANNER)
     ticket = await EscalationService(repos, None, settings).open_or_attach(
         TENANT_A, alert_id, severity="medium", confidence=50, threat_score=20, reason="review"
     )
@@ -428,7 +432,7 @@ async def test_a_confirmed_threat_disables_the_suppression_rules_that_would_clos
 
     settings = make_settings()
     review = ReviewService(repos, settings)
-    benign = await add_alert(repos, TENANT_A, fingerprint="fp-svc", title="New service", severity="low")
+    benign = await add_alert(repos, TENANT_A, fingerprint="fp-svc", title="New service", severity="low", entities=SCANNER)
     ticket = await EscalationService(repos, None, settings).open_or_attach(
         TENANT_A, benign, severity="low", confidence=50, threat_score=20, reason="review"
     )

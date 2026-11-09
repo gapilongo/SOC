@@ -244,7 +244,7 @@ DESCRIPTIONS: Dict[str, str] = {
     "integrations.smtp_password": "SMTP password (optional).",
     "integrations.smtp_from": "Sender address of notification emails.",
     "integrations.smtp_timeout_s": "SMTP connection and command timeout.",
-    "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `correlation.clock` (`wall` or `event`) is set by `lg-sotf eval` and reserved: the correlation agent runs on the wall clock. `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
+    "agents": "Free-form per-agent tuning, keyed by agent name (`triage`, `correlation`, `analysis`, `human_loop`). `human_loop` holds install defaults of the escalation policy (`sla_minutes`, `level_thresholds`, `min_level`, `grouping`, `suggest_suppressions`; see `lg_sotf.services.escalation`).",
     "tools": "Enrichment providers (`virustotal`, `abuseipdb`, `http`) with install keys and `share_with_tenants`, plus `internal_domains`, `cache` and `lookup_timeout_s` (see `lg_sotf.tools.enrichment.service`). Nothing is sent to a provider without a key and consent.",
     "routing": "See the routing table below.",
     "ingestion": "See the ingestion table below.",

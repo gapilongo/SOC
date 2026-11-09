@@ -35,6 +35,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from lg_sotf.domain.closure import MODEL_CLOSE_REASON
 from lg_sotf.domain.rates import format_rate, rate_interval, upper_bound
 from lg_sotf.eval.context import CONTEXT_KINDS, TenantContext, context_matches
 from lg_sotf.eval.dataset import Dataset, EvalItem
@@ -54,6 +55,8 @@ def close_mechanism(close_reason: Optional[str], state: Mapping[str, Any]) -> Op
         return "cache"
     if close_reason == "triage:false_positive":
         return "rules"
+    if close_reason == MODEL_CLOSE_REASON:  # a model-led close at the auto_full_audit tier (FIX-1)
+        return "model"
     if close_reason == "policy:response":
         return "response"
     if close_reason != "policy:close":

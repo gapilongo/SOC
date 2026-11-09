@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
@@ -40,7 +40,7 @@ from lg_sotf.db.tenancy import thread_id_for
 from lg_sotf.domain import closure, routing
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
-from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
+from lg_sotf.domain.suppression import alert_match_view, fingerprint_suggestion, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
@@ -187,6 +187,11 @@ class WorkflowNodes:
 
     async def gate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert = state["tenant_id"], state["alert"]
+        raw_flags = alert.get("flags")
+        # An LLM-normalised alert's fields were chosen by a model from attacker-shaped text: no suppression
+        # rule and no cached verdict closes it.
+        if "llm_normalized" in (raw_flags if isinstance(raw_flags, list) else []):
+            return {"gate": {"suppressed": False}, EVENT_KEY: {"suppressed": False}}
         view = alert_match_view(
             title=str(alert.get("title", "")),
             severity=state["severity"],
@@ -197,17 +202,14 @@ class WorkflowNodes:
             normalized=alert,
             verdict_key=state.get("verdict_key"),
         )
-        rules = await self.deps.repos.suppressions.list_active(tenant_id)
+        # Suggestions written before verdict keys matched a fingerprint alone; migration 0016 disabled them.
+        rules = [r for r in await self.deps.repos.suppressions.list_active(tenant_id) if not fingerprint_suggestion(r)]
         match = first_matching_rule(rules, view)
         if match is not None:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
             by: SuppressedBy = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
-        raw_flags = alert.get("flags")
-        flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
-        # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
-        # attacker-shaped text: it never inherits a cached verdict.
-        if state["severity"] != "critical" and "llm_normalized" not in flags:
+        if state["severity"] != "critical":
             cached = await self.deps.verdicts.closing_decision(
                 tenant_id, state.get("verdict_key"), state["severity"], fingerprint=state.get("fingerprint")
             )
@@ -623,6 +625,7 @@ class WorkflowNodes:
                 decision=str(analyst["decision"]),
                 alert_id=alert_id,
                 escalation_id=state.get("escalation_id"),
+                decided_by=str(analyst.get("decided_by") or "") or None,
                 severity=state["severity"],
             )
         elif disposition == "malicious":

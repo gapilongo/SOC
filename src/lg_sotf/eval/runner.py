@@ -546,7 +546,6 @@ async def open_engine(
     from lg_sotf.db.errors import DatabaseError
     from lg_sotf.llm import get_chat_model
 
-    settings = event_time_settings(settings)
     agents: Optional[AgentSet] = None
     enrichment = None
     if dataset is not None and dataset.has_tool_fixtures:
@@ -567,23 +566,6 @@ async def open_engine(
         )
     except (DatabaseError, asyncpg.PostgresError, OSError) as exc:
         raise EvalSetupError(f"cannot start the workflow engine: {type(exc).__name__}: {exc}") from exc
-
-
-def event_time_settings(settings: Settings) -> Settings:
-    """``settings`` with correlation on each alert's own time (``agents.correlation.clock: event``).
-
-    A replay sends days of alerts through in minutes; on the wall clock every
-    alert would find the whole corpus inside its correlation window and burst
-    test. In production alerts arrive as they happen, so ingestion time is close
-    to event time and the wall clock stays the default there. Settings that
-    already choose a clock (``LG_SOTF_AGENTS__CORRELATION__CLOCK=wall`` to
-    reproduce a 1.2 report) are kept.
-    """
-    correlation = dict(settings.agents.get("correlation") or {})
-    if "clock" in correlation:
-        return settings
-    agents = {**settings.agents, "correlation": {**correlation, "clock": "event"}}
-    return settings.model_copy(update={"agents": agents})
 
 
 def cassette_info(cassettes: Optional[CassetteSet]) -> Dict[str, Any]:
@@ -610,6 +592,5 @@ def _run_info(
         "deep_model": "fake" if fake else settings.llm.deep.model,
         "environment": settings.environment,
         "concurrency": concurrency,
-        "correlation_clock": event_time_settings(settings).agents["correlation"]["clock"],
         "duration_s": round(time.perf_counter() - started, 3),
     }

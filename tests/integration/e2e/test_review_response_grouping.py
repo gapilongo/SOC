@@ -57,7 +57,8 @@ async def test_benign_group_decision_does_not_close_or_learn_a_different_attache
     review = ReviewService(repos, stack.settings, stack.events)
     verdicts = VerdictCache(stack.redis, stack.settings.redis.key_prefix)
 
-    noisy = event("n1", "Possible C2 beacon from workstation", "medium", hosts=["ws-042"], ips=["185.220.101.44"])
+    noisy = event("n1", "Possible C2 beacon from workstation", "medium", hosts=["ws-042"], ips=["185.220.101.44"],
+                  processes=["c:\\program files\\agent\\agent.exe"])
     threat = event("m1", "Possible C2 beacon to rare domain", "high", hosts=["ws-042"], ips=["45.9.148.3"])
     r1 = await stack.ingest(TENANT_A, "api", [noisy])
     r2 = await stack.ingest(TENANT_A, "api", [threat])

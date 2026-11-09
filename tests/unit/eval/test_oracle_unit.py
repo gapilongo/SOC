@@ -81,11 +81,11 @@ def test_the_loop_is_bounded_and_records_what_it_did() -> None:
     asyncio.run(oracle.settle("t", _item("benign"), result, waiting))
     assert result.oracle_decisions == ["reject_actions"] * MAX_ORACLE_STEPS
     assert result.review == "oracle" and result.final_status == "waiting_approval"
-    assert oracle.repos.created == ["admin"]  # type: ignore[attr-defined]
+    assert oracle.repos.created == ["admin", "admin"]  # type: ignore[attr-defined]  # two analysts
     stuck = _result()
     asyncio.run(oracle.settle("t", _item("benign"), stuck, RunOutcome("waiting_human", "waiting_human", {})))
     assert stuck.oracle_decisions == [] and stuck.final_status == "waiting_approval"
-    assert oracle.repos.created == ["admin"]  # type: ignore[attr-defined]  # one account per tenant
+    assert oracle.repos.created == ["admin", "admin"]  # type: ignore[attr-defined]  # two accounts per tenant
 
 
 def test_run_info_names_the_mode() -> None:

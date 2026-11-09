@@ -67,30 +67,16 @@ code 2 before a tenant is created or a token is spent.
   tenant, correlation reads earlier alerts and escalation grouping attaches
   related alerts, so a fixed order keeps runs reproducible. `--concurrency N` is
   faster but correlation-dependent outcomes may vary between runs.
-* **Event time.** A replay sends days of alerts through in minutes. Since
-  AI-E1.9 the harness correlates on each alert's own time
-  (`agents.correlation.clock: event`, set by `lg-sotf eval` unless the
-  settings choose a clock): the correlation and burst windows end at the
-  alert's `occurred_at`, sightings are recorded at that time, and an alert
-  never sees sightings from its own future. The times are shifted by one
-  constant so the replay starts at the wall clock: correlation sees the real
-  gaps between alerts, and the tenant-history tool, which counts back 30
-  days from the wall clock, still finds the replayed alerts whatever the
-  dataset's dates. Production keeps the wall clock:
-  alerts arrive as they happen, so ingestion time is close to event time, and
-  an alert's own time is whatever its source wrote. `run.correlation_clock`
-  records the clock; `LG_SOTF_AGENTS__CORRELATION__CLOCK=wall` reproduces a
-  report written before AI-E1.9 (scorecard v2 ran on the wall clock).
-  **Not active yet:** decision policy v2 (FIX-1) rewrote the correlation
-  agent, and the event-time clock has not been carried over to it, so
-  `lg-sotf eval` still sets the setting but correlation runs on the wall
-  clock. Correlation is evidence for the model only since FIX-1 (it no
-  longer moves the confidence), so this changes digests, not routing.
+* **Event time.** Correlation runs on the wall clock in a replay too, so
+  a replay of days of alerts in minutes sees more of the corpus inside each
+  correlation window than production would. AI-E1.9's event-time clock was not
+  carried over to decision policy v2 (FIX-1), where correlation is evidence
+  for the model only and no longer moves the confidence.
 * **Decision inputs.** Each report item records what `decide` read
   (`decision_inputs`: the confidence, the triage, correlation and analysis
-  scores, the verdict, the rule signals), so `python -m
-  lg_sotf.eval.calibration REPORT` can re-decide the run under each routing
-  policy without a model
+  scores, the verdict, the rule signals) for reading why it was routed; the
+  AI-E1.9 offline simulator that re-decided a run under its routing policies
+  was removed with decision policy v2
   ([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)).
 * **Where data goes.** The run writes alerts, runs, escalations, actions and
   checkpoints to the configured database. Use a **dedicated evaluation
@@ -464,12 +450,13 @@ analysts decided every escalation correctly and at once?**
 lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.jsonl.gz --oracle propose --report ~/lg-sotf-eval/oracle.json
 ```
 
-* **Real decision path.** After an item's run stops, a simulated analyst (a
-  user created in the evaluation tenant) decides its escalation with
+* **Real decision path.** After an item's run stops, a simulated analyst (one
+  of two users created in the evaluation tenant, taking turns item by item:
+  the verdict cache needs two analysts) decides its escalation with
   `ReviewService.decide`, as `POST /escalations/{id}/decision` does:
   `false_positive` for an expected-benign item, `true_positive` for an
-  expected-malicious one (which also drops the fingerprint's cached benign
-  verdict). The run resumes with the decision, so the close node writes the
+  expected-malicious one (which also revokes the alert's cached benign
+  verdicts and the suppression rules matching it). The run resumes with the decision, so the close node writes the
   verdict cache and later history lookups see an analyst's outcome. Response
   actions waiting for approval are rejected (an evaluation never executes a
   response); the run then closes or comes back as an escalation. Items
@@ -517,25 +504,29 @@ it informs the model's verdict but is never rule evidence. These numbers
 use the fake model; a hosted model's run belongs in a scorecard.
 
 **After the verdict-key fix** ([#343](https://github.com/gapilongo/SOC/issues/343);
-`corpus_v1`, fake model, decision policy v2 at tier `off`, 2026-11-09). Before is
-today's code with the cache and suggestions keyed by fingerprint and one
-decision; after is the shipped key (fingerprint plus process, command shape,
-service, user/uid and parent) with two analyst decisions per cache close and
-rules disabled by a confirmed threat
-(`tests/integration/eval/test_oracle_corpus_v1.py`):
+`corpus_v1`, fake model, decision policy v2 at tier `off`, two oracle analysts
+taking turns, 2026-11-09; `tests/integration/eval/test_oracle_corpus_v1.py`).
+Before is today's code with the cache and suggestions keyed by fingerprint and
+one decision enough. After is the shipped key: what ran compared in full, no
+key for alerts without a process, command, service or named object or in a
+never-close class, two different analysts per cache close, and rules disabled
+by a confirmed threat.
 
 | Run | Benign closure rate | Malicious auto-close | Closes by mechanism (benign) |
 |---|---|---|---|
 | `--oracle propose`, before | 26.3% (82 of 312; 95% CI 21.7% to 31.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | cache 80, model 2 |
-| `--oracle propose`, after | 9.3% (29 of 312; 95% CI 6.5% to 13.0%) | 0 of 208 (95% CI 0.0% to 1.8%) | cache 25, model 4 |
+| `--oracle propose`, after | 3.5% (11 of 312; 95% CI 2.0% to 6.2%) | 0 of 208 (95% CI 0.0% to 1.8%) | cache 7, model 4 |
 | `--oracle accept`, before (227 rules enabled) | 27.2% (85 of 312; 95% CI 22.6% to 32.4%) | **4 of 208** (1.9%; 95% CI 0.8% to 4.8%) | suppression 83, model 2 |
-| `--oracle accept`, after (232 rules enabled) | 25.6% (80 of 312; 95% CI 21.1% to 30.8%) | 0 of 208 (95% CI 0.0% to 1.8%) | suppression 78, model 2 |
+| `--oracle accept`, after (104 rules enabled) | 9.9% (31 of 312; 95% CI 7.1% to 13.8%) | 0 of 208 (95% CI 0.0% to 1.8%) | suppression 27, model 4 |
 
-The stricter key costs little where an admin enables the suggestions (85 to
-80 benign closes) and more for the cache alone (82 to 29), mostly from the
-second analyst decision: the unit replay of the same corpus with one decision
-on the new key closes 60 benign repeats and still no attack
-(`tests/unit/core/test_verdict_cache_replay.py`).
+The safety costs closures. Most of the loss comes from alerts that no longer
+get a key: new services, scheduled tasks, account changes and brute force are
+never-close classes, and sign-in and audit alerts that name only users have
+nothing that ran to compare. Requiring two different analysts and comparing
+command lines unmasked cost the rest: with one analyst enough, the unit replay
+of the same corpus closes about 20 benign repeats and still no attack
+(`tests/unit/core/test_verdict_cache_replay.py`). Declared tenant context
+(PRD-15.1) is the planned way back for routine identity noise.
 
 ## The shipped synthetic dataset
 

@@ -408,6 +408,24 @@ def explain_rule(match: Any, view: Mapping[str, Any], budget: Optional[WorkBudge
     return RuleExplanation(matched, tuple(results), error)
 
 
+#: The ``match`` keys of a suggestion written before verdict keys (one false positive, or a bulk proposal).
+FINGERPRINT_SUGGESTION_KEYS = frozenset({"fingerprint", "source_id", "severity"})
+
+
+def fingerprint_suggestion(rule: Any) -> bool:
+    """A suggested rule that matches a fingerprint alone: written before verdict keys, never applied at the gate.
+
+    A fingerprint is the detection and its entities, not what ran, so such a
+    rule closed a malicious service or command next to a benign one (#343).
+    It is a suggestion when it came from an analyst's false positive
+    (``source_feedback_id``) or has exactly the suggestions' shape.
+    """
+    match = getattr(rule, "match", None)
+    if not isinstance(match, Mapping) or "fingerprint" not in match:
+        return False
+    return bool(getattr(rule, "source_feedback_id", None)) or set(match) == FINGERPRINT_SUGGESTION_KEYS
+
+
 def matching_rules(rules: Iterable[Any], views: Sequence[Mapping[str, Any]]) -> List[Any]:
     """Every valid rule that matches any of ``views`` (each rule with its own work budget per view)."""
     out: List[Any] = []

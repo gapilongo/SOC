@@ -267,12 +267,19 @@ close a dangerous alert or trigger containment.
    benign; only an analyst decision, an admin-enabled suppression rule or an
    analyst-confirmed verdict (not for critical) does. The verdict cache is
    keyed by a verdict key: the alert fingerprint (rule, hosts, users, IPs,
-   hashes, domains) plus the behaviour of the event (process image,
-   normalised command line, service name and image path, user/uid, parent
-   process), so a malicious service or command on a host never matches the
-   benign one analysts closed there. A cached verdict closes an alert only
-   after two distinct analyst-benign decisions on its key within 7 days at
-   the alert's severity or above (a benign medium never closes a high
+   hashes, domains) plus the behaviour of the event (process image, command
+   line, service name and image path, user/uid, parent process, and the
+   objects an attacker creates and names: scheduled tasks, registry values,
+   WMI subscriptions), compared in full, so a malicious service or command on
+   a host never matches the benign one analysts closed there. Nothing is
+   masked or truncated; only whitespace and Windows path case are
+   normalised. Alerts with no process, command, service or named object, in
+   a never-close class (credential access, log clearing, tampering,
+   ransomware, named persistence) or normalised by a model get no key, so
+   the cache never closes them and no rule is suggested. A cached verdict
+   closes an alert only after two different analysts decided its key benign
+   within 7 days at the alert's severity or above (one analyst's decisions,
+   bulk closes included, count once; a benign medium never closes a high
    repeat), and never within 7 days of a threat on the key or its
    fingerprint: an analyst `true_positive`, a blind-audit malicious label, a
    planned response or a malicious close drops the key's decisions and
@@ -286,7 +293,11 @@ close a dangerous alert or trigger containment.
    an alert (an analyst `true_positive`, a blind-audit malicious label, a
    planned response or a malicious close), every enabled suppression rule
    that would close that alert, at its severity or the lowest, is disabled
-   and audited as `suppression.revoked`.
+   and audited as `suppression.revoked`; a failure to revoke is logged as an
+   error and counted in `lgsotf_revocation_failures_total`. Suggestions
+   written before verdict keys, which matched a fingerprint alone, were
+   disabled by migration 0016 (audited) and are ignored at the gate. Alerts
+   normalised by a model skip suppression rules too.
    Alerts mapped by the optional LLM-fallback normalizer
    (`llm_normalized`) have no trusted text, never use the verdict cache
    and are never closed automatically. A response the policy

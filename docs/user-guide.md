@@ -105,8 +105,8 @@ alerts where text in the alert tried to steer the model carry a
      admin's approval.
    * `false_positive` (the detection was wrong) or `benign_positive` (the
      detection was right but the activity is legitimate): the alert closes
-     as benign, and the verdict is cached. Once analysts have made two such
-     decisions within 7 days on the same detection with the same behaviour
+     as benign, and the verdict is cached. Once two different analysts have
+     made such decisions within 7 days on the same detection and behaviour
      (same rule and entities, and the same process, command line, service,
      user and parent process), its repeats at that severity or lower close
      automatically, never for critical alerts, and not for 7 days after a

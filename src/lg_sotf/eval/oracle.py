@@ -8,8 +8,9 @@ automation close if analysts decided every escalation correctly and at
 once?".
 
 It is a labelled measurement mode, never a default. For each item, after the
-run stops at an interrupt, a simulated analyst (a user created in the
-evaluation tenant) acts through the real decision path, the one the API uses:
+run stops at an interrupt, a simulated analyst (one of two users created in the
+evaluation tenant, taking turns item by item, since the verdict cache needs two
+analysts) acts through the real decision path, the one the API uses:
 
 * an analyst escalation is decided with :meth:`ReviewService.decide
   <lg_sotf.services.review.ReviewService.decide>`: ``false_positive`` for an
@@ -52,6 +53,8 @@ if TYPE_CHECKING:
     from lg_sotf.eval.dataset import EvalItem
 
 ORACLE_EMAIL = "analyst-oracle@eval.example.com"
+# A team of two: the verdict cache closes a repeat only after two different analysts decided it benign.
+ORACLE_EMAILS = (ORACLE_EMAIL, "analyst-oracle-2@eval.example.com")
 ORACLE_ROLE = "admin"  # decides escalations, rejects actions of any risk, enables suggested suppressions
 ORACLE_NOTES = "Analyst oracle: decided from the evaluation dataset's ground truth."
 MAX_ORACLE_STEPS = 6
@@ -68,15 +71,20 @@ class AnalystOracle:
     review: ReviewService
     accept_suppressions: bool = False
     suppressions_enabled: int = 0
-    _users: Dict[str, UUID] = field(default_factory=dict, init=False, repr=False)
+    _users: Dict[str, List[UUID]] = field(default_factory=dict, init=False, repr=False)
+    _turn: int = field(default=0, init=False, repr=False)
 
     async def user(self, tenant_id: str) -> UUID:
-        """The oracle's account in ``tenant_id`` (created on first use)."""
+        """The next of the oracle's two analysts in ``tenant_id`` (created on first use): they take turns, item by item."""
         if tenant_id not in self._users:
-            existing = await self.repos.users.get_by_email(tenant_id, ORACLE_EMAIL)
-            account = existing or await self.repos.users.create(tenant_id, ORACLE_EMAIL, ORACLE_ROLE)
-            self._users[tenant_id] = account.id
-        return self._users[tenant_id]
+            self._users[tenant_id] = []
+            for email in ORACLE_EMAILS:
+                existing = await self.repos.users.get_by_email(tenant_id, email)
+                account = existing or await self.repos.users.create(tenant_id, email, ORACLE_ROLE)
+                self._users[tenant_id].append(account.id)
+        user = self._users[tenant_id][self._turn % len(ORACLE_EMAILS)]
+        self._turn += 1
+        return user
 
     async def settle(self, tenant_id: str, item: EvalItem, result: ItemResult, outcome: RunOutcome) -> None:
         """Decide ``item``'s waiting run until it stops waiting (at most :data:`MAX_ORACLE_STEPS` decisions)."""

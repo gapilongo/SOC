@@ -366,8 +366,9 @@ split since AI-E6.3 ([evaluation.md](evaluation.md#adversarial-corpus-v2)).
 * **No benign auto-close on the attack-emulation corpus** (section 7.1). The
   routing policy and the eval replay, not the model, held all 312 benign
   alerts. The proposed changes are hypotheses in
-  [RUN.md](scorecards/v2/deepseek-v4/RUN.md); AI-E1.9 shipped those that
-  passed offline ([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)).
+  [RUN.md](scorecards/v2/deepseek-v4/RUN.md), measured offline in
+  [CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md); decision policy
+  v2 (FIX-1) replaced the routing they tuned.
   A real-model re-run (v2.1) is still to do.
 * **Models follow injected text.** Up to 44% of the time in one family with
   a 7B local model. The policy contains the effect; the model is not robust.
@@ -471,9 +472,6 @@ change a customer's environment.
 * Rule-name words that describe the detected activity (`scheduled`,
   `update`, `backup`, `scan`) count as benign evidence only with a trusted
   qualifier (AI-E6.4). Title camouflage (#299) is fixed and gated (AI-E6.3).
-* A declared scanner corroborates a benign verdict on any alert naming it as
-  a host or IP entity, including alerts about the scanner host itself
-  (AI-E1.9; a source-only match is a follow-up).
 * Models follow injected text a substantial share of the time; only the
   policy contains it.
 * Shadow mode (running a candidate configuration side by side without side
@@ -577,7 +575,7 @@ articles anyway, this is where each requirement is met and what is missing.
 | **Art. 12 record-keeping**: automatic logging of events over the lifetime, enough to identify risks (Art. 12(2)(a)), support post-market monitoring (12(2)(b)) and deployer monitoring (12(2)(c)) | Per-call prompt hash and model id (INV-04); the investigation trace (INV-05); the alert timeline and response ledger; the hash-chained, append-only audit log (INV-06); sealed evidence packs (INV-08) (section 8) | Default alert and trace retention is 90 days; Art. 26(6) asks deployers for at least six months (section 9) |
 | **Art. 13 transparency and instructions for use**: deployers can interpret the output; instructions state the provider, capabilities and limits, accuracy metrics, human oversight measures, resources and log handling (13(3)) | This card (capabilities, limits, models, accuracy evidence, oversight, logging); per-alert reasoning, confidence, evidence and model provenance in the UI and evidence packs; [user-guide.md](user-guide.md), [configuration.md](configuration.md) | Accuracy is declared for synthetic sets only (section 7) |
 | **Art. 14 human oversight** (14(4)(a) to (e)) | (a) understand capacities and limits and watch for anomalies: this card, the scorecards, the dashboard, usage and error metrics; (b) awareness of automation bias: rule corroboration for closes, model evidence shown next to rule evidence, oversight counts per case (section 10); (c) interpret output: reasoning, confidence, evidence and provenance per step; (d) decide not to use, override or reverse: analyst decisions override verdicts, actions can be rejected or rolled back, `llm.enabled=false`; (e) intervene or stop: the install and tenant kill switches (INV-02), approval by default, critical actions disabled | Shadow mode for testing a change without effects is pending (INV-09) |
-| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); a declared scanner corroborates alerts about its own host (AI-E1.9); models follow injected text (section 7.4); no third-party penetration test |
+| **Art. 15 accuracy, robustness and cybersecurity**: appropriate, declared accuracy (15(1), 15(3)); resilience to errors and faults (15(4)); resistance to manipulation, including adversarial examples and data poisoning (15(5)) | The evaluation harness with a regression gate and per-split and per-family intervals ([evaluation.md](evaluation.md)); the adversarial corpus v2 gated in CI; the untrusted-data boundary, injection detection as evidence and rule corroboration ([security.md](security.md#5-prompt-injection-defences)); schema-validated output, refusals escalated, node timeouts and retries that never default a score; signed release images (INV-10); the threat model's OWASP Agentic and MITRE ATLAS mapping ([threat-model.md](threat-model.md)) | Synthetic evidence; no benign auto-close on the attack-emulation corpus (section 7.1); models follow injected text (section 7.4); no third-party penetration test |
 | **Art. 26(5) deployer monitoring and (6) log retention** (deployer duties) | Dashboard, LLM usage and cost, the AI-versus-analyst report ([reporting.md](reporting.md)), evidence packs, audit verification; `retention.*` settings | Raise retention to at least six months yourself (section 9) |
 
 [compliance.md](compliance.md#eu-ai-act-human-oversight-and-record-keeping)

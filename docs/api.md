@@ -366,8 +366,10 @@ window.
 * `POST /escalations/bulk/propose-suppression` `{"escalation_ids", "name"?}`
   is all or nothing: 404 when an escalation is not found, 422
   `not_confirmed_benign` (`details` lists them) when one has no
-  `false_positive` or `benign_positive` decision. Otherwise one disabled rule
-  matching the alerts' fingerprints and sources, up to the most severe of
+  `false_positive` or `benign_positive` decision, 422 `no_verdict_key` when an
+  alert has no verdict key (no process, command, service or named object, a
+  never-close class, or a model-normalised event). Otherwise one disabled rule
+  matching the alerts' verdict keys and sources, up to the most severe of
   their severities: 201 `{suppression, created: true, escalation_ids}`, or
   200 with the unexpired rule that already has the same match.
 * `GET /escalations/{id}/response-preview` computes the plan a

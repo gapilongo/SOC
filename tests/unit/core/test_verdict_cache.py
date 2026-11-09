@@ -1,4 +1,4 @@
-"""Verdict cache: analyst-benign decisions only, two of them to close, none after a threat, tenant-scoped, 7 days."""
+"""Verdict cache: analyst-benign decisions only, two analysts to close, none after a threat, tenant-scoped, 7 days."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _cache() -> tuple[VerdictCache, fakeredis.aioredis.FakeRedis, Clock]:
 async def _benign(cache: VerdictCache, key: str, n: int, severity: str = "medium", tenant: str = "t1") -> None:
     for i in range(n):
         await cache.put_analyst_benign(tenant, key, decision="false_positive", alert_id=f"a{i}",
-                                       escalation_id=f"e{i}", severity=severity)
+                                       escalation_id=f"e{i}", decided_by=f"analyst-{i}", severity=severity)
 
 
 async def test_only_benign_analyst_decisions_are_cached() -> None:
@@ -46,19 +46,23 @@ async def test_only_benign_analyst_decisions_are_cached() -> None:
     assert 0 < await redis.ttl(cache.key("t1", "vk")) <= VERDICT_TTL_S
 
 
-async def test_one_analyst_decision_is_not_enough_two_distinct_ones_are() -> None:
+async def test_one_analyst_is_not_enough_two_different_ones_are() -> None:
+    """M1: what counts is analysts, not alerts or escalations: a group decision or a bulk close by one analyst
+    (many escalations at once) is one."""
     cache, _, _ = _cache()
-    await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id="a1", escalation_id="e1",
-                                   severity="medium")
+    for n in range(5):  # one analyst's bulk close of five escalations
+        await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id=f"a{n}", escalation_id=f"e{n}",
+                                       decided_by="alice", severity="medium")
     assert await cache.closing_decision("t1", "vk", "medium") is None
-    # Another alert closed by the same (group) decision counts once.
-    await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id="a2", escalation_id="e1",
-                                   severity="medium")
-    assert await cache.closing_decision("t1", "vk", "medium") is None
-    await cache.put_analyst_benign("t1", "vk", decision="benign_positive", alert_id="a3", escalation_id="e2",
-                                   severity="medium")
+    # Decisions without a known analyst (an MSSP operator under a grant) are one unknown analyst.
+    for n in range(2):
+        await cache.put_analyst_benign("t1", "anon", decision="false_positive", alert_id=f"x{n}",
+                                       escalation_id=f"x{n}", decided_by=None, severity="medium")
+    assert await cache.closing_decision("t1", "anon", "medium") is None
+    await cache.put_analyst_benign("t1", "vk", decision="benign_positive", alert_id="b1", escalation_id="eb",
+                                   decided_by="bob", severity="medium")
     hit = await cache.closing_decision("t1", "vk", "medium")
-    assert hit is not None and hit["alert_id"] in {"a1", "a3"}
+    assert hit is not None and hit["decided_by"] in {"alice", "bob"}
     assert await cache.closing_decision("t1", "other", "medium") is None
 
 
@@ -73,9 +77,9 @@ async def test_a_cached_verdict_closes_only_at_or_below_the_decided_severity_and
     assert await cache.closing_decision("t1", "crit", "critical") is None
     # Only decisions at the alert's severity or above count towards the two.
     await cache.put_analyst_benign("t1", "mixed", decision="false_positive", alert_id="x", escalation_id="e1",
-                                   severity="low")
+                                   decided_by="alice", severity="low")
     await cache.put_analyst_benign("t1", "mixed", decision="false_positive", alert_id="y", escalation_id="e2",
-                                   severity="medium")
+                                   decided_by="bob", severity="medium")
     assert await cache.closing_decision("t1", "mixed", "medium") is None
     assert await cache.closing_decision("t1", "mixed", "low") is not None
 
@@ -97,7 +101,7 @@ async def test_decisions_expire_after_seven_days() -> None:
     await _benign(cache, "vk", 1)
     clock.now = T0 + timedelta(days=6)
     await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id="b", escalation_id="eb",
-                                   severity="medium")
+                                   decided_by="bob", severity="medium")
     assert await cache.closing_decision("t1", "vk", "medium") is not None
     clock.now = T0 + timedelta(days=7, hours=1)
     assert await cache.closing_decision("t1", "vk", "medium") is None
@@ -128,7 +132,7 @@ async def test_invalidate_without_keys_does_nothing() -> None:
     assert not await cache.invalidate("t1", None)
     assert not await cache.invalidate("t1", "vk")  # nothing was cached; the threat is still marked
     assert await redis.hexists(cache.key("t1", "vk"), MALICIOUS_FIELD)
-    assert await redis.keys("pfx:t:t1:verdict:v2:fp:*") == []
+    assert await redis.keys(f"pfx:t:t1:verdict:v{KEY_VERSION}:fp:*") == []
 
 
 async def test_entries_of_the_fingerprint_keyed_cache_are_never_read() -> None:
@@ -144,8 +148,8 @@ async def test_entries_of_the_fingerprint_keyed_cache_are_never_read() -> None:
 
 async def test_garbage_fields_are_ignored() -> None:
     cache, redis, _ = _cache()
-    await redis.hset(cache.key("t1", "vk"), "e:x", "not json")
-    await redis.hset(cache.key("t1", "vk"), "e:y", "[1]")
+    await redis.hset(cache.key("t1", "vk"), "u:x", "not json")
+    await redis.hset(cache.key("t1", "vk"), "u:y", "[1]")
     assert await cache.get("t1", "vk") is None
     await redis.hset(cache.fingerprint_key("t1", "fp"), MALICIOUS_FIELD, "not json")
     await _benign(cache, "vk", 2)
@@ -158,8 +162,8 @@ async def test_old_and_excess_decisions_are_pruned() -> None:
     await _benign(cache, "vk", 1)
     clock.now = T0 + timedelta(days=8)
     await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id="n", escalation_id="en",
-                                   severity="medium")
-    assert await redis.hkeys(cache.key("t1", "vk")) == [b"e:en"]
+                                   decided_by="nora", severity="medium")
+    assert await redis.hkeys(cache.key("t1", "vk")) == [b"u:nora"]
     await _benign(cache, "many", 25)
     assert await redis.hlen(cache.key("t1", "many")) == 20
 

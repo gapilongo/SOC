@@ -118,9 +118,11 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "persistence through attacker-named objects, unmapped alerts), steering text, entities with a recent "
             "true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier "
             "off, the default, a model never closes an alert alone. A cached analyst verdict closes only a "
-            "non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign "
-            "twice, with no threat on it since; a suggested suppression rule matches the verdict key, and a "
-            "confirmed threat disables the rules that match it."
+            "non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) "
+            "that two different analysts decided benign, with no threat on it since; alerts in a never-close "
+            "class, normalised by a model or without a process, command, service or named object get no key. "
+            "A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never "
+            "apply, and a confirmed threat disables the rules that match it."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
@@ -150,7 +152,17 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence",
             "tests/unit/core/test_verdict_cache_replay.py::test_analyst_oracle_replay_closes_no_malicious_alert",
             "tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes",
-            "tests/unit/core/test_verdict_cache.py::test_one_analyst_decision_is_not_enough_two_distinct_ones_are",
+            "tests/unit/core/test_verdict_cache.py::test_one_analyst_is_not_enough_two_different_ones_are",
+            "tests/unit/domain/test_verdict_key.py::test_never_close_classes_get_no_key",
+            "tests/unit/domain/test_verdict_key.py::test_attacker_writable_differences_never_share_a_key",
+            "tests/unit/domain/test_verdict_key_review.py::"
+            "test_a_malicious_scheduled_task_does_not_inherit_a_benign_tasks_verdict",
+            "tests/unit/domain/test_verdict_key_review.py::test_a_payload_appended_past_512_characters_changes_the_key",
+            "tests/integration/api/test_revocation.py::"
+            "test_a_true_positive_decision_disables_matching_rules_and_tombstones_the_cache",
+            "tests/integration/engine/test_engine.py::test_plan_response_and_the_malicious_close_revoke_the_benign_learning",
+            "tests/integration/db/test_migrations.py::"
+            "test_0016_disables_fingerprint_suggestions_and_audits_each_in_its_chain",
             "tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window",
             "tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read",
             "tests/integration/eval/test_oracle_corpus_v1.py::test_the_oracle_closes_no_attack_on_corpus_v1",

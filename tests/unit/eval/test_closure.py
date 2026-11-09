@@ -36,6 +36,7 @@ def _result(item_id: str, expected: str, status: str = "waiting_human", **fields
         ("verdict_cache", {}, "cache"),
         ("triage:false_positive", {}, "rules"),
         ("policy:response", {}, "response"),
+        ("ai_closed:audit_required", {"analysis": {"verdict": "benign"}}, "model"),
         ("policy:close", {}, "rules"),
         ("policy:close", {"analysis": {"verdict": "benign", "history": [{"verdict": "unknown"}]}}, "model"),
         ("policy:close", {"analysis": {"verdict": "benign", "history": [{"verdict": "harmless"}]}}, "history"),

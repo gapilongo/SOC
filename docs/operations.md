@@ -287,7 +287,7 @@ startup while it is set; remove it from your configuration. Metrics are Promethe
 | Overview | request rate and 5xx ratio `sum(rate(lgsotf_http_requests_total{status=~"5.."}[5m])) / sum(rate(lgsotf_http_requests_total[5m]))`; p95 latency `histogram_quantile(0.95, sum by (le, route) (rate(lgsotf_http_request_seconds_bucket[5m])))`; pod restarts |
 | Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket{mode="live"}[15m])))`; worker replicas; transactions retried after a migration `increase(lgsotf_db_stale_statement_retries_total[1h])` (expected only around an upgrade) |
 | LLM | calls `sum by (model, agent, outcome) (rate(lgsotf_llm_calls_total{mode="live"}[5m]))`; tokens `sum by (model, kind) (rate(lgsotf_llm_tokens_total{mode="live"}[1h]))`; spend `sum by (model) (increase(lgsotf_llm_cost_usd_total{mode="live"}[1d]))`; refusals and skipped calls by reason `sum by (agent, category) (rate(lgsotf_llm_refusals_total{mode="live"}[1h]))`, `sum by (agent, reason) (rate(lgsotf_llm_skipped_total{mode="live"}[1h]))`; shadow runs: the same series with `mode="shadow"` |
-| Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))` |
+| Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))`; confirmed threats whose verdict-cache entries and suppression rules could not be revoked `increase(lgsotf_revocation_failures_total[1h]) > 0` (page on it) |
 | Ingestion | `lgsotf_ingest_events_total`, `lgsotf_source_polls_total` by outcome, `lgsotf_source_poll_seconds` |
 
 ### Alerts to create

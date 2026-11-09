@@ -4,16 +4,18 @@ The key is the alert's verdict key (:mod:`lg_sotf.domain.verdict_key`): its
 fingerprint refined with the process, command line, service, user and parent
 process of the event, so a malicious service or command on a host never
 matches the benign one an analyst closed there. Each key holds a Redis hash
-with one field per analyst decision: per escalation, so one decision on a
-group counts once.
+with one field per analyst (``decided_by``): the latest benign decision of
+that analyst on the key. One analyst's decisions, however many alerts or
+escalations they close at once (a group decision, a bulk close), count once.
 
 Only verdicts an analyst confirmed as benign (``false_positive`` or
 ``benign_positive``) are written, with the severity of the alert decided.
 The gate closes an alert from the cache (:func:`closing_decisions`) only when,
 within :data:`VERDICT_TTL_S` (7 days):
 
-* at least :data:`MIN_ANALYST_DECISIONS` distinct analyst decisions on the
-  key were benign at the alert's severity or above;
+* at least :data:`MIN_ANALYSTS` different analysts decided the key benign,
+  each at the alert's severity or above (decisions without a known analyst,
+  such as an MSSP operator's under a grant, count as one unknown analyst);
 * no threat was confirmed on the key, nor on any alert with its fingerprint
   (the same rule on the same hosts, users and indicators);
 * the alert is not critical (critical alerts always go through the workflow).
@@ -41,10 +43,11 @@ from lg_sotf.security.shadow import REFUSE, egress, sink
 
 VERDICT_TTL_S = 7 * 24 * 3600
 MAX_KEY_CHARS = 256
-KEY_VERSION = 2
-# corpus_v1 analyst-oracle replay (tests/unit/core/test_verdict_cache_replay.py): with verdict keys,
-# 2 decisions close 15 benign repeats and no malicious alert; 3 would close only 3 benign repeats.
-MIN_ANALYST_DECISIONS = 2
+KEY_VERSION = 3
+# Two different analysts: one analyst's mistake, or one bulk close, never teaches the cache alone. The
+# corpus_v1 analyst-oracle replay (tests/unit/core/test_verdict_cache_replay.py) closes no attack even at 1.
+MIN_ANALYSTS = 2
+UNKNOWN_ANALYST = "?"
 MAX_DECISIONS = 20
 MALICIOUS_FIELD = "!malicious"
 
@@ -84,7 +87,7 @@ def closing_decisions(record: Optional[Mapping[str, Any]], severity: str, now: d
         if decided in SEVERITY_RANK and SEVERITY_RANK[str(decided)] >= SEVERITY_RANK[severity]:
             supporting.append(decision)
     supporting.sort(key=lambda d: str(d.get("confirmed_at")), reverse=True)
-    return supporting if len(supporting) >= MIN_ANALYST_DECISIONS else []
+    return supporting if len(supporting) >= MIN_ANALYSTS else []
 
 
 def _stale_fields(fields: Mapping[Any, Any], cutoff: datetime) -> List[str]:
@@ -171,12 +174,13 @@ class VerdictCache:
         decision: str,
         alert_id: str,
         escalation_id: Optional[str],
+        decided_by: Optional[str] = None,
         severity: Optional[str] = None,
     ) -> bool:
         """Record an analyst-confirmed benign decision. Returns False (and writes nothing) for other decisions.
 
-        A decision is stored once per escalation (per alert without one), so
-        the alerts one group decision closes count as one decision.
+        The decision replaces the same analyst's earlier one on the key, so
+        what counts towards a close is the number of analysts, not of alerts.
         """
         if decision not in BENIGN_DECISIONS or not verdict_key:
             return False
@@ -185,10 +189,11 @@ class VerdictCache:
             "decision": decision,
             "alert_id": alert_id,
             "escalation_id": escalation_id,
+            "decided_by": decided_by,
             "severity": severity,
             "confirmed_at": self._clock().isoformat(),
         }
-        await self._redis.hsetnx(key, f"e:{escalation_id}" if escalation_id else f"a:{alert_id}", json.dumps(value))
+        await self._redis.hset(key, f"u:{decided_by or UNKNOWN_ANALYST}", json.dumps(value))
         stale = _stale_fields(await self._redis.hgetall(key) or {}, self._clock() - timedelta(seconds=self._ttl_s))
         if stale:
             await self._redis.hdel(key, *stale)

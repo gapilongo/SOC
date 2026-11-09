@@ -1,7 +1,7 @@
 ### Added
 
-- `lg-sotf eval --oracle propose|accept`: a measurement mode in which a
-  simulated analyst decides every escalation at once from the dataset's
+- `lg-sotf eval --oracle propose|accept`: a measurement mode in which two
+  simulated analysts, taking turns, decide every escalation at once from the dataset's
   labels (`false_positive` for benign, `true_positive` for malicious;
   response actions are rejected), through the same decision path as the API,
   with items in event-time order. It shows how much the verdict cache, the

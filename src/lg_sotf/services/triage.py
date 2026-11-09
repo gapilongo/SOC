@@ -71,12 +71,14 @@ class ItemOutcome:
 @dataclass
 class SuppressionProposal:
     """``rule`` is ``None`` (and nothing was written) when ``unconfirmed`` lists escalations without a benign
-    analyst decision."""
+    analyst decision, or ``no_behaviour`` those whose alert has no verdict key (no process, command, service or
+    named object, a never-close class, a model-normalised or truncated event): no rule may match them."""
 
     rule: Optional[SuppressionRule] = None
     created: bool = False
     escalation_ids: List[str] = field(default_factory=list)
     unconfirmed: List[str] = field(default_factory=list)
+    no_behaviour: List[str] = field(default_factory=list)
 
 
 def _check_batch(ids: Sequence[str]) -> None:
@@ -168,16 +170,17 @@ async def propose_suppression(
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
         escalations = [await repos.escalations.get(tenant_id, i, conn=conn) for i in ids]
         alerts = await repos.views.alert_digests(tenant_id, [e.alert_id for e in escalations], conn=conn)
-        keys = {verdict_key_of(await repos.alerts.get(tenant_id, e.alert_id, conn=conn)) for e in escalations}
+        keys = {e.id: verdict_key_of(await repos.alerts.get(tenant_id, e.alert_id, conn=conn)) for e in escalations}
     unconfirmed = [e.id for e in escalations if e.status != "decided" or e.decision not in BENIGN_DECISIONS]
     if unconfirmed:
         return SuppressionProposal(unconfirmed=unconfirmed)
-    if None in keys:
-        raise ReviewError("an alert's event could not be read completely; no rule can match its behaviour")
+    no_behaviour = [i for i, k in keys.items() if k is None]
+    if no_behaviour:
+        return SuppressionProposal(no_behaviour=no_behaviour)
     digests = [alerts[e.alert_id] for e in escalations if e.alert_id in alerts]
     rank = max(SEVERITIES.index(d.severity) for d in digests if d.severity in SEVERITIES) if digests else 0
     match: Dict[str, Any] = {
-        "verdict_key": {"in": sorted(str(k) for k in keys)},
+        "verdict_key": {"in": sorted({str(k) for k in keys.values()})},
         "source_id": {"in": sorted({d.source_id for d in digests})},
         "severity": {"in": list(SEVERITIES[: rank + 1])},
     }

@@ -5,13 +5,20 @@
   domains). On one host, a ransomware `PSEXESVC` service matched an Edge
   update service an analyst had closed as benign, and a web shell's `ps`
   running as uid 33 matched monitoring's `ps` running as root. The cache now
-  uses a verdict key: the fingerprint plus the process image, normalised
-  command line, service name and image path, user/uid and parent process.
-- A cached verdict now closes an alert only after two separate analyst
-  benign decisions on the same verdict key within 7 days, at the alert's
-  severity or higher. It is never used for critical alerts, nor within 7
-  days of a confirmed threat on that key or on any alert with the same
-  fingerprint. One decision on a grouped escalation counts once.
+  uses a verdict key: the fingerprint plus the process image, command line,
+  service name and image path, user/uid, parent process and the objects an
+  attacker creates and names (scheduled tasks, registry values, WMI
+  subscriptions), compared in full: nothing is masked or truncated.
+- Alerts with no process, command, service or named object, alerts in a
+  never-close class (credential access, log clearing, tampering, ransomware,
+  persistence through named objects) and alerts normalised by a model never
+  close from the cache and get no suggested rule. Model-normalised alerts
+  also skip suppression rules.
+- A cached verdict now closes an alert only after two different analysts
+  decided it benign within 7 days, at the alert's severity or higher. One
+  analyst's decisions, including a bulk close, count once. It is never used
+  for critical alerts, nor within 7 days of a confirmed threat on that key or
+  on any alert with the same fingerprint.
 - Suppression rules suggested from false-positive decisions (one decision, or
   a batch of escalations) match the alert's verdict key instead of its
   fingerprint, so enabling one no longer suppresses a different service or
@@ -20,11 +27,15 @@
 - When a threat is confirmed on an alert (an analyst `true_positive`, a
   blind-audit malicious label, a planned response or a malicious close),
   every enabled suppression rule that would close that alert is disabled and
-  recorded as `suppression.revoked` in the audit log. Rules suggested before
-  this change still match by fingerprint: review and replace them.
+  recorded as `suppression.revoked` in the audit log. A failure is logged as
+  an error and counted in `lgsotf_revocation_failures_total`.
+- Migration 0016 disables every enabled suggested rule that matches a
+  fingerprint alone (audited `suppression.revoked`, reason
+  `fingerprint_suggestion`), and the gate ignores such rules even if they are
+  enabled again. Replace them with rules on `verdict_key`.
 - A benign decision on a grouped escalation now closes an attached alert only
   when it has the same verdict key as the reviewed alert; otherwise the
   attached alert gets its own escalation, as before.
 - Cached verdicts written before this change are no longer read, so repeats
-  are investigated until analysts have decided them twice again. They expire
+  are investigated until two analysts have decided them again. They expire
   within 7 days; `DELETE /tenant/verdict-cache` removes them now.
