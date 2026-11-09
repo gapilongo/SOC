@@ -40,13 +40,14 @@ depends_on: Union[str, Sequence[str], None] = None
 DISABLE = f"""
 DO $$
 DECLARE
+    previous TEXT := current_setting('app.bypass_rls', true);
     r RECORD;
     prev TEXT;
     entry_id BIGINT;
     entry_ts TIMESTAMPTZ;
     details JSONB;
 BEGIN
-    PERFORM set_config('app.bypass_rls', 'on', true);  -- every tenant's rules and chain
+    PERFORM set_config('app.bypass_rls', 'on', true);  -- every tenant's rules and chain, restored below
     FOR r IN
         UPDATE suppression_rules SET enabled = false
         WHERE enabled AND match ? 'fingerprint'
@@ -67,6 +68,7 @@ BEGIN
                 audit_entry_hash(r.tenant_id, entry_id, entry_ts, 'system', 'migration-0016',
                                  'suppression.revoked', 'suppression_rule', r.id, details, prev));
     END LOOP;
+    PERFORM set_config('app.bypass_rls', COALESCE(previous, ''), true);
 END
 $$;
 """  # noqa: S608 - the only interpolation is the lock class constant

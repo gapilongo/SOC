@@ -96,3 +96,42 @@ async def test_a_payload_appended_past_512_characters_changes_the_key() -> None:
     assert benign[2] is not None and attack[2] is not None
     assert benign[2] != attack[2], "command lines are cut at 512 characters before hashing"
     assert not await _closes_after_two_analysts(benign, attack)
+
+
+def _splunk_sqli(url: str, sid: str) -> Built:
+    event = {"_time": "2026-11-01T10:00:00Z", "search_name": "Web - SQL Injection Attempt - Rule", "event_id": sid,
+             "urgency": "medium", "src": "10.0.5.10", "dest": "shop-web-01", "url": url,
+             "http_user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0", "http_method": "GET",
+             "status": "200", "annotations.mitre_attack": ["T1190"]}
+    ctx = NormalizeContext(source_id="splunk-prod", source_type="splunk", config={},
+                           now=datetime(2026, 11, 1, tzinfo=UTC))
+    al = get_normalizer("splunk").normalize(event, ctx)
+    fp = compute_fingerprint(al)
+    return al, fp, verdict_key(fp, al.normalized_document(), event)  # the raw event, as ingestion stores it
+
+
+async def test_a_real_sql_injection_does_not_inherit_a_false_positives_verdict() -> None:
+    """N1 (re-review of #344): a user agent was enough to anchor a key. Same proxy, same UA, same fingerprint."""
+    benign = _splunk_sqli("https://shop/search?q=o'reilly+books", "1")
+    attack = _splunk_sqli("https://shop/search?q=1' UNION SELECT username,password FROM users--", "2")
+    assert benign[1] == attack[1]  # the fingerprint cannot tell them apart
+    assert benign[2] is None and attack[2] is None  # nothing that ran: no key, so the cache never closes it
+    assert not await _closes_after_two_analysts(benign, attack)
+
+
+async def test_an_inbox_forward_rule_does_not_inherit_a_sorting_rules_verdict() -> None:
+    """N1: an O365 operation name alone anchored a key; a forward to an attacker matched a sorting rule."""
+    cache = VerdictCache(fakeredis.aioredis.FakeRedis(), "pfx")
+    fp = "f" * 64
+
+    def key(parameters: list) -> Optional[str]:
+        raw = {"Operation": "New-InboxRule", "UserId": "ceo@corp", "Parameters": parameters}
+        return verdict_key(fp, {"entities": {}, "mitre": {"techniques": ["T1114.003"]}}, raw)
+
+    benign = key([{"Name": "Name", "Value": "Sort newsletters"}, {"Name": "MoveToFolder", "Value": "News"}])
+    attack = key([{"Name": "Name", "Value": "."}, {"Name": "ForwardTo", "Value": "attacker@evil.example"}])
+    assert benign is None and attack is None
+    for n in (1, 2):
+        await cache.put_analyst_benign("t1", benign, decision="false_positive", alert_id=f"b{n}", escalation_id=None,
+                                       decided_by=f"analyst-{n}", severity="medium")
+    assert await cache.closing_decision("t1", attack, "medium", fingerprint=fp) is None

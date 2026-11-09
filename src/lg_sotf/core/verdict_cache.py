@@ -14,8 +14,10 @@ The gate closes an alert from the cache (:func:`closing_decisions`) only when,
 within :data:`VERDICT_TTL_S` (7 days):
 
 * at least :data:`MIN_ANALYSTS` different analysts decided the key benign,
-  each at the alert's severity or above (decisions without a known analyst,
-  such as an MSSP operator's under a grant, count as one unknown analyst);
+  each at the alert's severity or above. The analyst is the decision's ``decided_by``, the
+  deciding user's id, which every decision records (an MSSP operator's too); a
+  decision without one, from a run paused before it was recorded, counts as one
+  unknown analyst;
 * no threat was confirmed on the key, nor on any alert with its fingerprint
   (the same rule on the same hosts, users and indicators);
 * the alert is not critical (critical alerts always go through the workflow).

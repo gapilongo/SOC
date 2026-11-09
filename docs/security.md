@@ -268,12 +268,16 @@ close a dangerous alert or trigger containment.
    analyst-confirmed verdict (not for critical) does. The verdict cache is
    keyed by a verdict key: the alert fingerprint (rule, hosts, users, IPs,
    hashes, domains) plus the behaviour of the event (process image, command
-   line, service name and image path, user/uid, parent process, and the
-   objects an attacker creates and names: scheduled tasks, registry values,
-   WMI subscriptions), compared in full, so a malicious service or command on
-   a host never matches the benign one analysts closed there. Nothing is
-   masked or truncated; only whitespace and Windows path case are
-   normalised. Alerts with no process, command, service or named object, in
+   line, service name and image path, user/uid, parent process, scheduled
+   tasks, registry keys, target files and Sysmon WMI objects, plus context
+   such as URLs, user agents, O365 operations and their parameters, queries,
+   registry value details and process-access rights), compared in full, so a
+   malicious service, command or request on a host never matches the benign
+   one analysts closed there. Nothing is masked or truncated; only
+   whitespace and Windows path case are normalised. Context is set by
+   whoever sends the request, so it is never enough for a key. Alerts with no
+   process, command, service or created object (task, registry key, target
+   file, Sysmon WMI object), in
    a never-close class (credential access, log clearing, tampering,
    ransomware, named persistence) or normalised by a model get no key, so
    the cache never closes them and no rule is suggested. A cached verdict

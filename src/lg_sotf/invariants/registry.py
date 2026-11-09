@@ -120,7 +120,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "off, the default, a model never closes an alert alone. A cached analyst verdict closes only a "
             "non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) "
             "that two different analysts decided benign, with no threat on it since; alerts in a never-close "
-            "class, normalised by a model or without a process, command, service or named object get no key. "
+            "class, normalised by a model or without a process, command line, service, scheduled task, registry "
+            "key, target file or Sysmon WMI object get no key (a URL, user agent, O365 operation or other "
+            "request-set context is in the key but never enough for one). "
             "A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never "
             "apply, and a confirmed threat disables the rules that match it."
         ),
@@ -154,6 +156,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes",
             "tests/unit/core/test_verdict_cache.py::test_one_analyst_is_not_enough_two_different_ones_are",
             "tests/unit/domain/test_verdict_key.py::test_never_close_classes_get_no_key",
+            "tests/unit/domain/test_verdict_key.py::test_context_alone_never_makes_a_key",
+            "tests/unit/domain/test_verdict_key_review.py::test_a_real_sql_injection_does_not_inherit_a_false_positives_verdict",
+            "tests/unit/core/test_gate.py::test_a_fingerprint_suggestion_never_closes_even_enabled_again_by_an_admin",
             "tests/unit/domain/test_verdict_key.py::test_attacker_writable_differences_never_share_a_key",
             "tests/unit/domain/test_verdict_key_review.py::"
             "test_a_malicious_scheduled_task_does_not_inherit_a_benign_tasks_verdict",

@@ -13,11 +13,21 @@ combinations, and records the policy that shipped.
 > changes what the model says, and only a new run can measure that. The
 > follow-up DeepSeek run on `corpus_v1` (v2.1) does that.
 
+> **Superseded by decision policy v2 (FIX-1, #341).** P1, P3, P4 and P5 below
+> are no longer in the product: the routing switches
+> (`routing.benign_verdict_precedence`, `routing.context_corroboration`,
+> `routing.cap_correlated_confidence`) and the event-time correlation clock
+> were removed when FIX-1 replaced the routing they tuned, and the offline
+> simulator that produced these tables went with them. P2 (the corpus declares
+> its scanner) stays. A declared scanner now counts only as the source of the
+> activity, and a model-led close needs the tenant's autonomy tier. This page
+> records the measurement as it was.
+
 ## Summary
 
-* **Shipped:** event-time correlation in the evaluation harness (P1), the
-  corpus declares its authorised scanner (P2), and two routing changes, both
-  on by default:
+* **Shipped at the time (now superseded, see above):** event-time correlation
+  in the evaluation harness (P1), the corpus declares its authorised scanner
+  (P2), and two routing changes, both on by default then:
   * **P3, benign verdict precedence**
     (`routing.benign_verdict_precedence`). A benign deep-model verdict with a
     threat score below 30 skips the grey-zone test on the pre-analysis

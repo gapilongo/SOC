@@ -54,7 +54,7 @@ async def test_one_analyst_is_not_enough_two_different_ones_are() -> None:
         await cache.put_analyst_benign("t1", "vk", decision="false_positive", alert_id=f"a{n}", escalation_id=f"e{n}",
                                        decided_by="alice", severity="medium")
     assert await cache.closing_decision("t1", "vk", "medium") is None
-    # Decisions without a known analyst (an MSSP operator under a grant) are one unknown analyst.
+    # Decisions without an analyst id (runs paused before decided_by was recorded) are one unknown analyst.
     for n in range(2):
         await cache.put_analyst_benign("t1", "anon", decision="false_positive", alert_id=f"x{n}",
                                        escalation_id=f"x{n}", decided_by=None, severity="medium")

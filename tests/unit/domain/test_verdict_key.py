@@ -12,6 +12,7 @@ from lg_sotf.models.alert import TRUNCATED_MARKER
 pytestmark = pytest.mark.unit
 
 FP = "a" * 64
+SYSMON_19 = {"eventID": "19", "providerName": "Microsoft-Windows-Sysmon"}
 
 
 def _service(name: str, image: str) -> Dict[str, Any]:
@@ -92,8 +93,14 @@ def test_only_layout_is_normalised() -> None:
          {"image": "C:\\Windows\\System32\\reg.exe", "targetObject": "HKLM\\Run\\Evil", "details": "C:\\Users\\Public\\e.exe"}),
         ({"win": {"eventdata": {"taskName": "\\GoogleUpdateTaskMachineUA", "taskContent": "<Command>G.exe</Command>"}}},
          {"win": {"eventdata": {"taskName": "\\Updater", "taskContent": "<Command>C:\\Users\\Public\\b.exe</Command>"}}}),
-        ({"eventdata": {"operation": "Created", "name": "SCM Event Log Filter", "query": "SELECT * FROM Win32_Svc"}},
-         {"eventdata": {"operation": "Created", "name": "Updater", "query": "SELECT * FROM __InstanceModificationEvent"}}),
+        ({"system": SYSMON_19, "eventdata": {"operation": "Created", "name": "SCM Filter", "query": "SELECT * FROM X"}},
+         {"system": SYSMON_19, "eventdata": {"operation": "Created", "name": "Updater", "query": "SELECT * FROM Y"}}),
+        ({"sourceImage": "C:\\Windows\\System32\\svchost.exe", "targetImage": "C:\\Windows\\System32\\lsass.exe",
+          "grantedAccess": "0x1000"},
+         {"sourceImage": "C:\\Windows\\System32\\svchost.exe", "targetImage": "C:\\Windows\\System32\\lsass.exe",
+          "grantedAccess": "0x1FFFFF", "callTrace": "C:\\Windows\\SYSTEM32\\ntdll.dll+9d204|UNKNOWN(1ABCDE)"}),
+        ({"image": "C:\\inetpub\\w3wp.exe", "url": "https://shop/search?q=o'reilly+books"},
+         {"image": "C:\\inetpub\\w3wp.exe", "url": "https://shop/search?q=1' UNION SELECT password FROM users--"}),
     ],
 )
 def test_attacker_writable_differences_never_share_a_key(benign: Dict[str, Any], attack: Dict[str, Any]) -> None:
@@ -164,3 +171,35 @@ def test_verdict_key_of_a_stored_alert() -> None:
     assert verdict_key_of(Row()) == verdict_key(FP, _audit("33"), {})
     assert verdict_key_of({"fingerprint": FP, "normalized": _audit("33"), "raw": None}) == verdict_key(FP, _audit("33"))
     assert verdict_key_of({"fingerprint": FP, "normalized": None}) is None
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        # Set by whoever sends the request, or too generic to say what ran: in the key, never enough for one.
+        {"http_user_agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/120", "url": "https://shop/item?id=5"},
+        {"Operation": "New-InboxRule", "UserId": "ceo@corp", "Parameters": [{"Name": "ForwardTo", "Value": "x@evil"}]},
+        {"details": "Login succeeded", "user": "bob"},
+        {"query": "updates.vendor.com", "destination": "10.0.0.5"},
+        {"win": {"eventdata": {"name": "Microsoft-Windows-Something", "subjectUserName": "bob"}}},  # not Sysmon WMI
+        {"consumer": "SCM Event Log Consumer", "filter": "SCM Event Log Filter"},  # not Sysmon WMI
+    ],
+)
+def test_context_alone_never_makes_a_key(event: Dict[str, Any]) -> None:
+    """N1: a user agent, URL, O365 operation or generic WMI-looking field is attacker-set or generic."""
+    assert _key(event) is None
+
+
+def test_wmi_fields_anchor_only_sysmon_wmi_events() -> None:
+    wmi = {"name": "Updater", "consumer": "CommandLineEventConsumer"}
+    assert _key({"win": {"system": SYSMON_19, "eventdata": wmi}}) is not None
+    assert _key({"win": {"system": {**SYSMON_19, "eventID": "1"}, "eventdata": wmi}}) is None
+    assert _key({"win": {"system": {**SYSMON_19, "providerName": "Other"}, "eventdata": wmi}}) is None
+
+
+def test_o365_parameters_are_part_of_the_key() -> None:
+    def rule(forward: str) -> Dict[str, Any]:
+        return {"Operation": "New-InboxRule", "Parameters": [{"Name": "ForwardTo", "Value": forward}]}
+
+    with_process = {"processes": ["c:\\program files\\exchange\\msexchange.exe"]}
+    assert _key(rule("archive@corp"), with_process) != _key(rule("attacker@evil.example"), with_process)

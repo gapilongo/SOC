@@ -22,8 +22,13 @@ the event has, by its role, to its values:
 * the parent: parent image and command line (also ECS ``process.parent.*``
   and Defender ``InitiatingProcess*``);
 * the objects an attacker creates and names: scheduled task name and
-  content, registry key and value, WMI filter and consumer names, queries
-  and destinations, target file names.
+  content, registry key, target file name and, in Sysmon WMI events (19 to
+  21), the filter, consumer and name;
+* context that tells two requests or operations apart but says nothing about
+  what ran: URLs and request paths and queries, user agents, registry value
+  details, DNS and WMI queries, destinations, O365 operations and their
+  parameters, Sysmon process-access rights (``GrantedAccess``) and call
+  traces, file paths.
 
 The fields are found by name anywhere in the alert's ``unmapped`` section and
 its ``raw`` event, so they work for every normalizer. Values are compared in
@@ -36,8 +41,10 @@ masked or truncated part would let a payload match a benign value.
 :func:`verdict_key` returns ``None`` (the alert never closes from the cache,
 gets no suggested rule and inherits no benign group decision) when:
 
-* the event names no process, command, service or attacker-named object:
-  the key would only be the fingerprint again;
+* the event names no process, command, service or attacker-created object
+  (the *anchors*): context alone, such as a user agent, a URL or an O365
+  operation, is set by whoever sends the request, so the key would be the
+  fingerprint plus attacker-chosen text;
 * the alert is in a never-close class (:func:`lg_sotf.domain.closure.never_close_class`:
   credential access, log clearing, tampering, ransomware, persistence through
   named objects). Unmapped alerts keep a key: unlike a model-led close, a
@@ -61,7 +68,7 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Set, Tuple
 
 from lg_sotf.domain.closure import UNMAPPED, never_close_class
 
-VERSION = 3
+VERSION = 4
 MAX_VALUE_CHARS = 16_384
 MAX_VALUES_PER_FIELD = 32
 MAX_WALK_NODES = 5_000
@@ -69,9 +76,13 @@ MAX_WALK_DEPTH = 12
 TRUNCATED_MARKER = "_lgsotf_truncated"  # lg_sotf.models.alert.TRUNCATED_MARKER
 LLM_NORMALIZED_FLAG = "llm_normalized"  # lg_sotf.domain.routing.LLM_NORMALIZED_FLAG
 
-PROCESS, COMMAND, SERVICE, USER, PARENT, OBJECT = "process", "command", "service", "user", "parent", "object"
+PROCESS, COMMAND, SERVICE, USER, PARENT = "process", "command", "service", "user", "parent"
+OBJECT, CONTEXT, META = "object", "context", "meta"
 #: Roles that say what ran or what was created; without one of them the key is only the fingerprint.
 ANCHORS = frozenset({PROCESS, COMMAND, SERVICE, OBJECT})
+#: WMI fields that anchor the key only in a Sysmon WMI event (19 to 21): elsewhere they are generic.
+WMI_ANCHORS = frozenset({"name.wmi", "consumer", "filter"})
+SYSMON_WMI_EVENTS = frozenset({"19", "20", "21"})
 
 
 def _names(role: str, *names: str) -> Dict[str, str]:
@@ -93,12 +104,16 @@ FIELD_ROLES: Dict[str, str] = {
              "parent.commandline", "parent.args", "initiatingprocessfilename", "initiatingprocessfolderpath",
              "initiatingprocesscommandline"),
     # Objects the attacker creates and names (lg_sotf.domain.benign_evidence.ATTACKER_NAMED_RAW_FIELDS and the
-    # Windows, Sysmon and WMI fields that carry them).
-    **_names(OBJECT, "taskname", "taskcontent", "targetobject", "details", "targetfilename", "filepath",
-             "consumer", "filter", "query", "destination", "operation", "name.wmi", "useragent",
-             "httpuseragent"),
+    # Windows and Sysmon fields that carry them).
+    **_names(OBJECT, "taskname", "taskcontent", "targetobject", "targetfilename"),
+    # In the key, never an anchor: set by whoever sends the request, or too generic to say what ran.
+    **_names(CONTEXT, "details", "filepath", "consumer", "filter", "query", "destination", "operation", "name.wmi",
+             "useragent", "httpuseragent", "url", "urls", "uri", "httpurl", "urlpath", "uripath", "uriquery",
+             "uristem", "querystring", "requestpath", "requesturi", "grantedaccess", "calltrace", "parameters"),
+    # Read to recognise Sysmon WMI events, never part of the key.
+    **_names(META, "eventid", "providername"),
 }
-ENTITY_FIELDS = (("processes", "processes"), ("command_lines", "commandlines"))
+ENTITY_FIELDS = (("processes", "processes"), ("command_lines", "commandlines"), ("urls", "urls"))
 # Keys whose ``name`` child is a WMI object name (Sysmon 19-21 put it at eventdata.name).
 _WMI_PARENTS = frozenset({"eventdata"})
 _WINDOWS_PATH = re.compile(r"^(?:[a-z]:\\|\\\\|%[a-z_]+%)", re.IGNORECASE)
@@ -134,6 +149,14 @@ def _execve(args: Mapping[str, Any]) -> str:
     return " ".join(str(v) for _, v in numbered)
 
 
+def _parameters(items: List[Any]) -> Iterator[Tuple[str, str]]:
+    """O365 ``Parameters`` (``[{"Name": ..., "Value": ...}]``) as ``Name=Value`` pairs."""
+    for item in items[:MAX_VALUES_PER_FIELD + 1]:
+        if isinstance(item, Mapping):
+            named = {str(k).lower(): v for k, v in item.items()}
+            yield "parameters", f"{named.get('name')}={named.get('value')}"
+
+
 def _walk(node: Any) -> Iterator[Tuple[str, Any]]:
     """``(field, scalar value)`` pairs of a document; raises ``OverflowError`` past the caps.
 
@@ -153,6 +176,8 @@ def _walk(node: Any) -> Iterator[Tuple[str, Any]]:
                 child_path = (*path, str(key))
                 if str(key).lower() == "execve" and isinstance(child, Mapping):
                     yield "command", _execve(child)
+                elif _norm(str(key)) == "parameters" and isinstance(child, list):
+                    yield from _parameters(child)
                 else:
                     stack.append((child_path, _field(child_path), child))
         elif isinstance(value, list):
@@ -163,6 +188,24 @@ def _walk(node: Any) -> Iterator[Tuple[str, Any]]:
 
 def behaviour(normalized: Mapping[str, Any], raw: Optional[Mapping[str, Any]] = None) -> Optional[Dict[str, List[str]]]:
     """The behaviour fields of an alert by field name, or ``None`` when they cannot be read completely."""
+    found = _fields(normalized, raw)
+    if found is None:
+        return None
+    return {f: v for f, v in found.items() if FIELD_ROLES.get(f) != META}
+
+
+def _sysmon_wmi(found: Mapping[str, List[str]]) -> bool:
+    return bool(set(found.get("eventid", [])) & SYSMON_WMI_EVENTS) and any(
+        "sysmon" in p.lower() for p in found.get("providername", [])
+    )
+
+
+def _anchored(found: Mapping[str, List[str]]) -> bool:
+    wmi = _sysmon_wmi(found)
+    return any(FIELD_ROLES.get(f) in ANCHORS or (wmi and f in WMI_ANCHORS) for f in found)
+
+
+def _fields(normalized: Mapping[str, Any], raw: Optional[Mapping[str, Any]]) -> Optional[Dict[str, List[str]]]:
     pairs: List[Tuple[str, Any]] = []
     entities = normalized.get("entities")
     for kind, field in ENTITY_FIELDS:
@@ -196,9 +239,10 @@ def verdict_key(fingerprint: Optional[str], normalized: Mapping[str, Any], raw: 
         return None
     if never_close_class(normalized) not in (None, UNMAPPED):
         return None
-    fields = behaviour(normalized, raw)
-    if fields is None or not any(FIELD_ROLES.get(f) in ANCHORS for f in fields):
+    found = _fields(normalized, raw)
+    if found is None or not _anchored(found):
         return None
+    fields = {f: v for f, v in found.items() if FIELD_ROLES.get(f) != META}
     payload = json.dumps({"v": VERSION, "fingerprint": fingerprint, "behaviour": fields}, sort_keys=True,
                          separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

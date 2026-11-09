@@ -6,14 +6,17 @@
   update service an analyst had closed as benign, and a web shell's `ps`
   running as uid 33 matched monitoring's `ps` running as root. The cache now
   uses a verdict key: the fingerprint plus the process image, command line,
-  service name and image path, user/uid, parent process and the objects an
-  attacker creates and names (scheduled tasks, registry values, WMI
-  subscriptions), compared in full: nothing is masked or truncated.
-- Alerts with no process, command, service or named object, alerts in a
+  service name and image path, user/uid, parent process, the objects an
+  attacker creates (scheduled tasks, registry keys, target files, Sysmon WMI
+  subscriptions) and the request context (URLs, user agents, O365 operations
+  and parameters, queries, process-access rights), compared in full: nothing
+  is masked or truncated.
+- Alerts with no process, command, service or created object, alerts in a
   never-close class (credential access, log clearing, tampering, ransomware,
   persistence through named objects) and alerts normalised by a model never
-  close from the cache and get no suggested rule. Model-normalised alerts
-  also skip suppression rules.
+  close from the cache and get no suggested rule; request context alone (a
+  user agent, a URL, an O365 operation) is never enough. Model-normalised
+  alerts also skip suppression rules.
 - A cached verdict now closes an alert only after two different analysts
   decided it benign within 7 days, at the alert's severity or higher. One
   analyst's decisions, including a bulk close, count once. It is never used
