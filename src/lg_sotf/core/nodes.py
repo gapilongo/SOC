@@ -24,7 +24,7 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
-from lg_sotf.core.retro_reopen import judged_threat, reopen_counted
+from lg_sotf.core.retro_reopen import judged_threat, refold, reopen_counted
 from lg_sotf.core.state import (
     AlertSummary,
     AnalystInput,
@@ -345,6 +345,8 @@ class WorkflowNodes:
         await self.deps.repos.alerts.update(
             tenant_id, alert_id, summary={"escalation_id": ticket.id, "escalation_attached": ticket.attached}
         )
+        # Alerts folded into this threat's earlier case (decided needs_more_info) follow it to this one.
+        await refold(self.deps.repos, tenant_id, alert_id, ticket.id)
         if judged_threat(state.get("triage") or {}, analysis):
             # A model judged it a threat: the alerts the models closed alone on its entities reopen (policy v3).
             stored = await self.deps.repos.alerts.get(tenant_id, alert_id)

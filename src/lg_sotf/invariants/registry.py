@@ -160,6 +160,10 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/integration/engine/test_retro_reopen.py::"
             "test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes",
             "tests/integration/engine/test_retro_reopen.py::test_a_reopen_failure_is_counted_not_swallowed",
+            "tests/integration/api/test_retro_reopen_api.py::"
+            "test_the_case_decision_settles_folded_alerts_in_its_own_transaction",
+            "tests/integration/engine/test_review_349.py::test_worker_delivers_the_case_decision_to_a_folded_alert",
+            "tests/integration/engine/test_review_349.py::test_needs_more_info_strands_a_folded_alert",
             "tests/integration/api/test_retro_reopen_api.py::test_an_analyst_true_positive_reopens_related_model_closes",
             "tests/integration/api/test_retro_reopen_api.py::"
             "test_a_malicious_blind_audit_label_reopens_related_model_closes",

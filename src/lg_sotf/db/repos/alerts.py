@@ -559,6 +559,26 @@ class AlertsRepo(Repository):
             )
         return [str(r["id"]) for r in rows]
 
+    async def folded_for_threat(
+        self, tenant_id: str, threat_alert_id: str, *, exclude_escalation_id: str, conn: Optional[Connection] = None
+    ) -> List[str]:
+        """Alerts retro-reopen folded for ``threat_alert_id`` that still wait in another case than the given one."""
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT id FROM alerts
+                WHERE tenant_id = $1 AND status = 'waiting_human'
+                  AND summary->'reopened'->>'mode' = 'folded'
+                  AND summary->'reopened'->>'threat_alert_id' = $2
+                  AND summary->>'escalation_id' IS DISTINCT FROM $3
+                ORDER BY id LIMIT 200
+                """,
+                tenant_id,
+                threat_alert_id,
+                exclude_escalation_id,
+            )
+        return [str(r["id"]) for r in rows]
+
     # -- recovery sweeps (runtime/orphans.py) ------------------------------------------------------
 
     async def find_stranded_new_all_tenants(self, *, older_than_s: float, limit: int) -> List[StrandedAlertRef]:

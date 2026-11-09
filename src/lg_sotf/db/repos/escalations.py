@@ -71,7 +71,7 @@ _ATTACH_SQL = """
         sla_deadline = CASE WHEN sla_deadline IS NULL THEN $6 ELSE LEAST(sla_deadline, $6) END,
         summary = summary || jsonb_build_object('attached_count', cardinality(related_alert_ids) + 1),
         version = version + 1
-    WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(related_alert_ids))
+    WHERE tenant_id = $1 AND id = $2 AND NOT ($3 = ANY(related_alert_ids)) AND status IN ('open', 'claimed')
     RETURNING *
 """
 
@@ -472,7 +472,8 @@ class EscalationsRepo(Repository):
         sla_deadline: datetime,
         conn: Connection,
     ) -> Optional[Escalation]:
-        """Add ``alert_id`` to the escalation's ``related_alert_ids``; ``None`` if it is already there.
+        """Add ``alert_id`` to the escalation's ``related_alert_ids``; ``None`` if it is already there or the case is
+        no longer open or claimed (decided meanwhile).
 
         Priority only rises, the SLA deadline only shortens, ``level`` is set as given.
         """

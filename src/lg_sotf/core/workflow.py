@@ -46,7 +46,6 @@ from lg_sotf.core.graph import (
     initial_state,
 )
 from lg_sotf.core.nodes import NodeDeps, WorkflowNodes
-from lg_sotf.core.retro_reopen import settle_folded
 from lg_sotf.core.retry import attempts_within_budget, build_retry_policy
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.checkpointer import TenantScopedPostgresSaver
@@ -66,6 +65,7 @@ from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.folded import settle_folded
 from lg_sotf.services.response import Connector, ResponseService
 from lg_sotf.settings import Settings
 

@@ -65,8 +65,8 @@ async def invalidate_verdicts(
     cache = VerdictCache(ctx.redis, ctx.prefix)
     failed = 0
     for alert_id in alert_ids:
+        alert = await ctx.repos.alerts.get(tenant_id, alert_id)
         try:
-            alert = await ctx.repos.alerts.get(tenant_id, alert_id)
             await forget_benign_learning(ctx.repos, cache, tenant_id, alert, actor=actor)
         except Exception as exc:  # noqa: BLE001 - counted and logged as an error: an alerting rule can page on it
             failed += 1
@@ -74,7 +74,7 @@ async def invalidate_verdicts(
             log_failure(
                 log, "api.revocation_failed", exc, level="error", alert_id=alert_id, error_type=type(exc).__name__,
             )
-            continue
+        # The safety net runs whatever happened to the revocation (counted on its own when it fails).
         for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path,
                                              escalation_id=escalation_id):
             await enqueue_reopened(ctx, tenant_id, reopened)

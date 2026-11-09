@@ -74,6 +74,37 @@ async def test_a_malicious_blind_audit_label_reopens_related_model_closes(api: A
     await assert_reopened(api, closed_alert, escalation.id, "folded")  # into the open blind-audit case
 
 
+async def test_the_case_decision_settles_folded_alerts_in_its_own_transaction(api: ApiHarness) -> None:
+    """INV-03 (FIX-3 review): an alert folded into an open case has no run waiting; the decision service closes it
+    with the case decision (benign or malicious, audited) and sends it no resume message."""
+    from lg_sotf.audit.logger import Actor
+    from lg_sotf.core.retro_reopen import reopen_related_model_closes
+    from lg_sotf.services.folded import SETTLED_ACTION
+
+    for decision, disposition in (("false_positive", "benign"), ("true_positive", "malicious")):
+        host = f"srv-{decision}"
+        threat = await make_alert(api.repos, TENANT_A, title="Beacon", severity="medium",
+                                  normalized={"entities": {"hosts": [host]}})
+        closed_alert = await model_closed(api, {"hosts": [host]})
+        case, _ = await api.repos.escalations.create_or_attach(
+            TENANT_A, threat, reason="review", sla_deadline=datetime.now(UTC) + timedelta(hours=1)
+        )
+        await reopen_related_model_closes(api.repos, TENANT_A, await api.repos.alerts.get(TENANT_A, threat),
+                                          actor=Actor("system", "test"), escalation_id=case.id)
+        assert (await api.repos.alerts.get(TENANT_A, closed_alert)).status == "waiting_human"
+        case = await api.repos.escalations.get(TENANT_A, case.id)
+        analyst = await api.login_headers(TENANT_A, "analyst")
+        response = await api.client.post(
+            f"/api/v1/escalations/{case.id}/decision",
+            json={"decision": decision, "version": case.version}, headers=analyst,
+        )
+        assert response.status_code == 200, response.text
+        settled = await api.repos.alerts.get(TENANT_A, closed_alert)
+        assert (settled.status, settled.disposition) == ("closed", disposition), decision
+        audited = [e.resource_id for e in (await api.repos.audit.list(TENANT_A, action=SETTLED_ACTION)).items]
+        assert closed_alert in audited
+
+
 async def test_an_api_reopen_failure_is_counted_not_swallowed(api: ApiHarness, monkeypatch: pytest.MonkeyPatch) -> None:
     from lg_sotf.api import common
     from lg_sotf.audit.logger import Actor

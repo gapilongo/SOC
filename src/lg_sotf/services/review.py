@@ -68,6 +68,7 @@ from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINA
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
+from lg_sotf.services.folded import settle_case
 from lg_sotf.services.response import (
     ACTION_CATALOG,
     ResponseService,
@@ -334,9 +335,8 @@ class ReviewService:
     ) -> DecisionResult:
         """Record the analyst decision and return one resume message per waiting alert.
 
-        The escalation's own alert and every attached alert are resumed with
-        the decision (what it means for attached alerts is limited, see the
-        module docstring and :attr:`DecisionResult.own_review_alert_ids`).
+        The escalation's own alert and every attached alert are resumed with the decision (limits: module docstring,
+        :attr:`DecisionResult.own_review_alert_ids`); alerts folded into the case (policy v3) are settled instead.
         ``approved_actions`` (``"action_type"`` or ``"action_type:target"``)
         pre-approves actions for the escalation's own alert only and only
         with ``true_positive``; a bare ``"action_type"`` is resolved to that
@@ -367,8 +367,9 @@ class ReviewService:
                 suggest=lambda: self._suggest(tenant.settings, suggest_suppression),
                 now=now,
             )
-        decided = recorded.escalation
-        requests = _resume_requests(escalation_id, decided, request, approved, actor)
+            folded = await settle_case(self._repos, tenant_id, recorded.escalation, request.decision, user_id, conn)
+        decided = recorded.escalation  # folded alerts (policy v3) have no run waiting: settled above, never resumed
+        requests = [r for r in _resume_requests(escalation_id, decided, request, approved, actor) if r.alert_id not in folded]
         for resume in requests:
             await publish_event(
                 self._events, "escalation.updated", tenant_id, resume.alert_id,

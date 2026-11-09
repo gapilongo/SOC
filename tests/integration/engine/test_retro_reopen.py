@@ -99,16 +99,6 @@ async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_close
     assert state["alert"]["reopened"] == {"reason": "related_threat"}
     assert "reopened" in closure.model_close_blockers(state, tier=closure.MODEL_CLOSE_TIER)
 
-    # The analyst's decision on the one case settles the folded alerts with it (their runs are finished).
-    user_id = await analyst(repos)
-    for alert_id, decision, disposition in ((same_host, "false_positive", "benign"),
-                                            (same_user, "true_positive", "malicious")):
-        payload = {"type": "analyst_decision", "escalation_id": case, "decision": decision,
-                   "approved_actions": [], "decided_by": user_id, "notes": ""}
-        settled = await engine.resume(TENANT_A, alert_id, payload)
-        assert (settled.alert_status, (await repos.alerts.get(TENANT_A, alert_id)).disposition) == (
-            "closed", disposition)
-
 
 async def test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes(
     engine: WorkflowEngine, repos: Repositories
