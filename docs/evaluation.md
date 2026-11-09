@@ -81,6 +81,11 @@ code 2 before a tenant is created or a token is spent.
   an alert's own time is whatever its source wrote. `run.correlation_clock`
   records the clock; `LG_SOTF_AGENTS__CORRELATION__CLOCK=wall` reproduces a
   report written before AI-E1.9 (scorecard v2 ran on the wall clock).
+  **Not active yet:** decision policy v2 (FIX-1) rewrote the correlation
+  agent, and the event-time clock has not been carried over to it, so
+  `lg-sotf eval` still sets the setting but correlation runs on the wall
+  clock. Correlation is evidence for the model only since FIX-1 (it no
+  longer moves the confidence), so this changes digests, not routing.
 * **Decision inputs.** Each report item records what `decide` read
   (`decision_inputs`: the confidence, the triage, correlation and analysis
   scores, the verdict, the rule signals), so `python -m
@@ -527,7 +532,7 @@ It is a test fixture, not evidence of detection quality.
 ## Adversarial corpus v2
 
 `tests/fixtures/eval/adversarial_v2.jsonl` (version 2, sha256
-`d3817373d8357ccffa7ff38f58a7bd8d5963a9caf1cdeee248c3d2b921955c1a`) is a
+`4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1`) is a
 synthetic set of 97 hand-written alerts that try to steer the model or the
 rules, all in the gated `adversarial` split, in seven families. Its
 `_meta.tenant_settings` names the corpus scanner (`triage.known_scanners`).
@@ -868,8 +873,8 @@ generator writes what a 4.14 manager would write to `alerts.json`.
 3. `make eval-corpus-cassettes` runs the corpus through the pipeline with the
    fake model and records one gzip-compressed cassette per item in
    `tests/fixtures/eval/cassettes/corpus_v1/`.
-4. CI (`tests/integration/eval/test_corpus_v1_eval.py`, about two minutes)
-   replays all 520 from the cassettes, with every outbound connection blocked
+4. CI (`tests/integration/eval/test_corpus_v1_eval.py`, about four minutes)
+   replays all 520 from the cassettes, at both model-led closure tiers, with every outbound connection blocked
    and the model unusable, and gates the report with
    `tests/fixtures/eval/corpus_v1_thresholds.yaml`. It needs no Ollama and no
    Wazuh. `LG_SOTF_CORPUS_REPORT=path.json` also writes the report.
@@ -944,31 +949,30 @@ narrow what a model, the rules or an analyst already judged benign.
 
 ### The gate
 
-With the fake model (recorded run, 2026-11-08, event-time correlation and
-the declared scanner, AI-E1.9):
+With the fake model (recorded run, 2026-11-09, decision policy v2):
 
 ```text
 items 520 (scored 520, errors 0)
 malicious false-negative rate 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
 malicious closed by automation 0.0% (0 of 208; 95% CI 0.0% to 1.8%)
-benign auto-close rate 2.6% (8 of 312); benign routed to response 1.3% (4 of 312)
-escalation rate 94.2%; approval request rate 4.2%; malicious recall 16.3%; macro F1 0.268
-gate PASSED (24 checks)
+benign auto-close rate 0.0% (0 of 312); benign routed to response 0.0% (0 of 312)
+escalation rate 100.0%; approval request rate 0.0%; malicious recall 1.4%; macro F1 0.176
+gate PASSED (16 checks), with model-led closure off and at the tier auto_full_audit
 ```
 
 The bounds: no error; no malicious alert closed by automation, overall and
 in each of the seven families; no high or critical alert closed as benign;
-a floor on benign auto-close (at least 2%: the 8 scan look-alikes that the
-declared scanner corroborates); and regression bounds on what the fake
-model does (benign alerts routed to a response plan at most 3%, malicious
-recall at least 12%, escalation at most 97%). The Wazuh texts hold few of
-the fake model's keywords, so the gate measures the routing policy, not a
-model. Before AI-E1.9 the replay ran on the wall clock and these bounds
-were 45%, 45% and 65%: correlation saw twelve days as one storm and its
-raised confidence, not the model, sent most alerts to a response plan
-([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md)). A real
-model's numbers on this corpus belong in a scorecard
-([docs/scorecards](scorecards/README.md)).
+and regression bounds on what the fake model does (benign alerts routed to a
+response plan at most 2%, malicious recall at least 1.4% (all three of today's 3 of 208), escalation at most
+100%). The Wazuh texts hold few of the fake model's keywords, so its analysis
+rates most of them in the grey zone: it closes nothing on its own and sends
+every alert to a human. The gate measures the routing policy, not a model.
+Before decision policy v2 (FIX-1), correlation skipped analysis and raised
+the confidence to the response policy: 117 benign alerts got a response
+plan, and those plans were most of the malicious recall (52%). The test
+replays the cassettes twice, with model-led closure off and at
+`auto_full_audit`; both runs must pass. A real model's numbers on
+this corpus belong in a scorecard ([docs/scorecards](scorecards/README.md)).
 
 **The first real model on it** is
 [scorecard v2](scorecards/v2/deepseek-v4/scorecard.md), DeepSeek V4 through

@@ -105,6 +105,7 @@ _SAMPLES: List[Dict[str, Any]] = [
             "scheduled vulnerability scan window."
         ),
         "entities": {"hosts": ["scanner-01.corp.example"], "ips": ["192.0.2.10"]},
+        "source_ip": "192.0.2.10",
         "mitre": {"tactics": ["TA0007"], "techniques": ["T1046"]},
         "minutes_ago": 10,
     },

@@ -37,7 +37,7 @@ from lg_sotf.core.state import (
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
-from lg_sotf.domain import routing
+from lg_sotf.domain import closure, routing
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
@@ -306,8 +306,11 @@ class WorkflowNodes:
         }
 
     async def decide(self, state: WorkflowState) -> Dict[str, Any]:
-        decision = routing.decide(state, self.deps.thresholds).as_dict()
-        return {"decision": decision, EVENT_KEY: decision}
+        """Route on the analysed alert, with the tenant's model-led closure tier as it is now (``off`` if unset)."""
+        tenant = await self.deps.repos.tenants.get(state["tenant_id"])
+        tier = closure.autonomy_tier(tenant.settings)
+        decision = routing.decide(state, self.deps.thresholds, tier).as_dict()
+        return {"decision": decision, EVENT_KEY: {**decision, "autonomy_tier": tier}}
 
     async def escalate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]
@@ -330,7 +333,9 @@ class WorkflowNodes:
             threat_score=float(analysis.get("threat_score", confidence)),
             reason=str(decision.get("reason") or "analyst review required"),
             reason_code=code,
-            summary=_escalation_summary(state, routing.routing_digest(code, confidence, self.deps.thresholds)),
+            summary=_escalation_summary(
+                state, routing.routing_digest(code, routing.assessed_threat(state), self.deps.thresholds)
+            ),
             correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
             fingerprint=state.get("fingerprint") or None,
         )
@@ -568,7 +573,8 @@ class WorkflowNodes:
         decided = cast(DecisionDigest, state.get("decision") or {})
         route = decided.get("route")
         if route == "close":
-            return str(decided.get("disposition") or "benign"), "policy:close"
+            model_led = decided.get("code") == closure.MODEL_CLOSED
+            return str(decided.get("disposition") or "benign"), closure.MODEL_CLOSE_REASON if model_led else "policy:close"
         if route == "plan_response":
             return "malicious", "policy:response"
         return "benign", "triage:false_positive"

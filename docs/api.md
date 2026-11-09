@@ -469,9 +469,15 @@ default false; `sample_rate`, default 0.02; `min_per_week`, default 5: the
 weekly blind-audit sample, docs/reporting.md), `phishing` (`protected_brands`,
 `executives`, `trusted_authserv_ids`; see `docs/phishing.md`) and `triage`
 (`known_scanners`: up to 256 host names, IP addresses or CIDR ranges of the
-tenant's own vulnerability scanners; an alert whose host or IP entities
-include one gets the `known_scanner` false-positive signal; the section is
-replaced whole). Secrets
+tenant's own vulnerability scanners; an alert whose activity comes from one
+(a source address or host field of the event, never a victim or destination)
+gets the `known_scanner` false-positive signal; the section is
+replaced whole) and `ai_closure` (`tier`: `off`, the default, or
+`auto_full_audit`, which lets both model tiers close a low or medium alert
+on their own under the conditions of `docs/architecture.md`, decision policy
+v2; such closes carry the close reason `ai_closed:audit_required`; the
+section is replaced whole, and the audit event records the tier set; a new
+tenant never copies it from a template). Secrets
 (`response.webhook_secret`, `tools.<provider>.api_key`) are encrypted before
 they are stored and cannot be read back; ciphertext fields cannot be written
 directly. Invalid settings are refused with `422 invalid_settings` listing

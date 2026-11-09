@@ -57,7 +57,9 @@ yourself; they never change model weights.
 several customers, to triage security alerts: rate how likely an alert is
 malicious, gather context (related alerts, threat intelligence, the tenant's
 own history), explain the reasoning, route the alert to an analyst or close
-low-risk noise under rule corroboration, and propose response actions that
+low-risk noise on benign evidence an attacker cannot write (or, where the
+tenant opts in, when both model tiers agree it is benign; such closes are
+marked for audit), and propose response actions that
 run only under the tenant's autonomy policy and guardrails, by default after
 a person approves them.
 
@@ -200,7 +202,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 |---|---|---|---|---|
 | INV-01 | Every tenant table has forced row-level security, and the runtime role cannot bypass it | enforced | `rls_catalog`, `runtime_role`, `rls_probe` | TM-DB-1, TM-DB-2, TM-SCH-1, TM-API-3 |
 | INV-02 | No response action runs without an approval or an autonomy rule that allows it; the kill switch wins | enforced | `kill_switch` | TM-WRK-3, TM-RSP-4, TM-RSP-5, TM-MCP-6 |
-| INV-03 | The model's verdict alone never closes a high or critical alert; the routing policy decides | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
+| INV-03 | An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium alert closes on the models' word only at the tenant's autonomy tier | enforced | `routing_policy` | TM-WRK-1, TM-WRK-2, TM-WRK-10 |
 | INV-04 | Every LLM call records its prompt hash and model id | enforced | none | TM-WRK-8 |
 | INV-05 | Every LLM and tool step of a run is in the trace store | enforced | none | TM-WRK-8, TM-EVT-6 |
 | INV-06 | The audit log is append-only for the runtime role | enforced | `audit_append_only` | TM-DB-3, TM-API-9, TM-SCH-2 |
@@ -264,14 +266,18 @@ saved no analyst time.
   The lowest rules' threat score among benign alerts was 42, against a
   requirement below 30.
 
-RUN.md proposes changes to test. AI-E1.9 tested them offline
-([CALIBRATION.md](scorecards/v2/deepseek-v4/CALIBRATION.md), a simulation,
-not a new model run) and shipped event-time correlation in the harness, the
-corpus's declared scanner, and a benign verdict corroborated by that
-context. On v2's recorded outputs no policy closes anything; with the fake
-model the corpus closes 8 of 312 benign alerts and no malicious one. The
-miss-rate result stands; the auto-close result is not yet a statement about
-the model.
+RUN.md proposes changes to test. Decision policy v2 (FIX-1) removes the
+second and third causes: every low and medium alert is analysed,
+correlation no longer raises the confidence, the grey zone reads the
+analysis threat score, and a benign close needs approved benign evidence
+instead of the rules' score, or the tenant's opt-in to model-led closure
+(`ai_closure.tier`, off by default). Offline, on this run's recorded model
+outputs, model-led closure at the default thresholds would close none of the
+208 malicious alerts. It would close no benign alert with the replay's
+compressed related alerts and bursts (a campaign in progress blocks it), and
+4 of the 312 (up to 25 once every low and medium alert is analysed) on a
+queue without them. That is a simulation, not a re-measurement. The miss-rate result stands; the
+auto-close result is not yet a statement about the model.
 
 ### 7.2 Scorecard v1: `qwen2.5:7b` on a local Ollama
 
@@ -448,8 +454,10 @@ change a customer's environment.
 * **People can stop it.** The install and tenant kill switches stop every
   real action; `llm.enabled=false` stops every model call.
 * **Automation bias.** Escalations show the model's assessment next to the
-  rule evidence, and auto-closes need rule corroboration, so an analyst is not
-  asked to rubber-stamp a model. The evidence pack's human oversight section
+  rule evidence, and auto-closes need benign evidence an attacker cannot
+  write, so an analyst is not asked to rubber-stamp a model. A tenant that
+  opts in to model-led closure gets those closes marked
+  `ai_closed:audit_required` for audit. The evidence pack's human oversight section
   counts automated and human steps and every override per case, which lets a
   reviewer spot cases that closed with no human involvement.
 

@@ -16,17 +16,29 @@ domains (``tools.internal_domains``) are left out, as is the reporter (see
 :mod:`lg_sotf.domain.indicators`), so ordinary internal mail
 and a prolific reporter never look like a campaign.
 
+Correlation is evidence, not a score boost (decision policy v2, FIX-1): its
+digest (related alerts, burst, frequency, campaign rating) goes to the
+analysis model and into the alert summary, but the alert's confidence is
+left as triage set it. Related alerts, bursts and alert rates therefore
+never move an alert into the grey zone or to the response policy on their
+own. Over every related alert (not only the digests the model sees) the
+digest counts dispositions, alerts a model judged malicious or suspicious
+(``related_threats``) and alerts still waiting for an analyst or an approval
+(``related_open_reviews``); any of them, or a burst, blocks a model-led
+close (:mod:`lg_sotf.domain.closure`). A related alert the models closed
+alone counts and shows as ``ai_closed_unaudited``, never as ``benign``.
+
 A refusal of that call leaves the alert's assessment open: its confidence is
-raised to the grey zone (``routing.correlation_grey_zone_min``) so it goes
-on to analysis and an analyst instead of an automatic close, and the digest
-carries ``llm_refusal``.
+raised to the grey zone (``routing.correlation_grey_zone_min``) and the
+digest carries ``llm_refusal``, so routing sends it to an analyst instead of
+an automatic close.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Tuple, cast
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field
@@ -36,7 +48,7 @@ from lg_sotf.agents.triage.base import agent_refusal
 from lg_sotf.db.errors import NotFound
 from lg_sotf.domain.indicators import Indicator, extract_indicators
 from lg_sotf.domain.phishing import PhishingProfile
-from lg_sotf.domain.routing import RoutingThresholds, correlated_confidence
+from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.errors import AgentError
 from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str
@@ -89,6 +101,10 @@ class CorrelationResult:
     llm_skipped: Optional[str] = None
     llm_refusal: Optional[Dict[str, Optional[str]]] = None
     related_dispositions: Dict[str, int] = field(default_factory=dict)
+    # Over every related alert (routing's model-led close reads them, lg_sotf.domain.closure): how many a model judged
+    # malicious or suspicious, and how many still wait for an analyst or an approval.
+    related_threats: int = 0
+    related_open_reviews: int = 0
     campaign_indicators: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
@@ -98,6 +114,40 @@ class CorrelationResult:
         if data["llm_refusal"] is None:
             data.pop("llm_refusal")
         return cast("CorrelationDigest", data)
+
+
+#: How a related alert closed by the models alone (close reason ``ai_closed:*``) is shown and counted: not ``benign``.
+AI_CLOSED = "ai_closed_unaudited"
+#: A related alert's model assessments that count as judged a threat: the fast tier's, or the deep tier's verdict.
+THREAT_ASSESSMENTS = frozenset({"suspicious", "likely_threat", "confirmed_threat"})
+OPEN_REVIEW_STATUSES = frozenset({"waiting_human", "waiting_approval"})
+
+
+def _summary_part(other: Any, key: str) -> Mapping[str, Any]:
+    summary = other.summary if isinstance(other.summary, Mapping) else {}
+    part = summary.get(key)
+    return part if isinstance(part, Mapping) else {}
+
+
+def related_disposition(other: Any) -> str:
+    """The disposition a related alert counts as: ``ai_closed_unaudited`` after a model-led close, else its own."""
+    summary = other.summary if isinstance(other.summary, Mapping) else {}
+    reason = summary.get("close_reason")
+    if isinstance(reason, str) and reason.startswith("ai_closed:"):
+        return AI_CLOSED
+    return str(other.disposition or "undecided")
+
+
+def tally_related(result: CorrelationResult, others: List[Any]) -> None:
+    """Count every related alert's disposition, model judgement and open review into ``result``."""
+    for other in others:
+        key = related_disposition(other)
+        result.related_dispositions[key] = result.related_dispositions.get(key, 0) + 1
+        judged = _summary_part(other, "analysis").get("verdict") == "malicious" or (
+            _summary_part(other, "triage").get("threat_assessment") in THREAT_ASSESSMENTS
+        )
+        result.related_threats += int(judged)
+        result.related_open_reviews += int(other.status in OPEN_REVIEW_STATUSES)
 
 
 def frequency_level(alerts_per_hour: float) -> str:
@@ -121,8 +171,6 @@ class CorrelationAgent(BaseAgent):
         self.max_related = min(MAX_RELATED, int(self.get_config("max_correlations", 10)))
         self.enable_llm = bool(self.get_config("enable_llm_correlation", True))
         self.llm_weight = float(self.get_config("llm_weight", 0.3))
-        self.event_time = self.get_config("clock", "wall") == "event"
-        self._replay_offset: Optional[timedelta] = None
 
     @staticmethod
     async def indicators(ctx: AgentContext, alert: Mapping[str, Any]) -> List[Indicator]:
@@ -171,9 +219,14 @@ class CorrelationAgent(BaseAgent):
     ) -> CorrelationResult:
         if ctx.repos is None:
             raise AgentError("correlation needs repositories in the agent context")
-        now = now or self.clock(alert)
+        now = now or datetime.now(UTC)
         indicators = await self.indicators(ctx, alert)
-        related = await self._related(ctx, indicators, now)
+        hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
+        if hashed and ctx.persist:
+            await ctx.repos.indicators.add_sightings(
+                ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
+            )
+        related = await self._related(ctx, [(i.type, h) for i, h in hashed], now)
 
         type_counts: Dict[str, int] = {}
         for ind in indicators:
@@ -182,8 +235,7 @@ class CorrelationAgent(BaseAgent):
         burst = len(recent) >= self.burst_threshold
         per_hour = len(related) / max(self.window.total_seconds() / 3600.0, 1e-9)
         rule_score = self._rule_score(related, indicators, burst)
-        adjusted = self._adjust_confidence(base_confidence, len(related), burst, frequency_level(per_hour))
-        confidence = correlated_confidence(base_confidence, adjusted, RoutingThresholds.from_settings(ctx.settings.routing))
+        confidence = max(0, min(100, round(base_confidence)))
 
         result = CorrelationResult(
             score=rule_score,
@@ -199,10 +251,9 @@ class CorrelationAgent(BaseAgent):
             result.llm_skipped = self.skip_llm("no_related_alerts").skipped
             return result
 
-        digests = await self.related_digests(ctx, related[:MAX_DIGESTS])
-        for d in digests:
-            key = str(d.get("disposition") or "undecided")
-            result.related_dispositions[key] = result.related_dispositions.get(key, 0) + 1
+        others = await self.related_alerts(ctx, related)
+        tally_related(result, [other for _, _, other in others])
+        digests = [self.related_digest(*found) for found in others[:MAX_DIGESTS]]
 
         llm: LLMResult[CorrelationAssessment] = await self.call_llm(
             ctx,
@@ -236,58 +287,6 @@ class CorrelationAgent(BaseAgent):
             result.campaign_indicators = list(llm.value.attack_campaign_indicators)
         return result
 
-    def clock(self, alert: Mapping[str, Any]) -> datetime:
-        """Correlation's "now": the wall clock, or with ``clock: event`` the alert's own time, replayed.
-
-        An evaluation replays days of alerts in minutes, so it correlates on each
-        alert's time (:func:`lg_sotf.eval.runner.event_time_settings`). The times
-        are shifted by one constant, fixed at the first alert, so the replay starts
-        at the wall clock: correlation sees the real gaps between alerts, and
-        lookups that count back from the wall clock (the tenant-history tool)
-        still find the replayed alerts whatever the dataset's dates. Production
-        keeps the wall clock: alerts arrive as they happen, and an alert's own time
-        is whatever its source wrote.
-        """
-        wall = datetime.now(UTC)
-        occurred = alert.get("occurred_at") if self.event_time else None
-        try:
-            at = datetime.fromisoformat(occurred) if isinstance(occurred, str) else None
-        except ValueError:
-            at = None
-        if at is None or at.tzinfo is None:
-            return wall
-        if self._replay_offset is None:
-            self._replay_offset = wall - at
-        return at + self._replay_offset
-
-    async def _related(self, ctx: AgentContext, indicators: List[Indicator], now: datetime) -> List[Any]:
-        """Record this alert's sightings at ``now`` and read the alerts that shared one in the window before it.
-
-        A sample waiting for its blind-audit label is left out: its disposition must not reach this alert's
-        digest or the model (it is hidden until labelled).
-        """
-        assert ctx.repos is not None
-        hashed = [(i, hmac_indicator(i.type, i.value, settings=ctx.settings)) for i in indicators]
-        if not hashed:
-            return []
-        if ctx.persist:
-            await ctx.repos.indicators.add_sightings(
-                ctx.tenant_id, ctx.alert_id, [(i.type, h, i.display, now) for i, h in hashed]
-            )
-        related = await ctx.repos.indicators.related_alerts(
-            ctx.tenant_id,
-            [(i.type, h) for i, h in hashed],
-            since=now - self.window,
-            # On event time an alert replayed out of order must not see sightings from its future.
-            until=now + timedelta(microseconds=1) if self.event_time else None,
-            limit=self.max_related,
-            exclude_alert_id=ctx.alert_id,
-        )
-        if not related:
-            return []
-        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
-        return [r for r in related if r.alert_id not in hidden]
-
     @staticmethod
     def alert_view(alert: Mapping[str, Any]) -> Dict[str, Any]:
         """The alert without its raw event: correlation reasons over entities and detections."""
@@ -295,37 +294,59 @@ class CorrelationAgent(BaseAgent):
         return {k: alert[k] for k in keys if k in alert}
 
     @staticmethod
-    async def related_digests(ctx: AgentContext, related: List[Any]) -> List[Dict[str, Any]]:
-        """Compact, bounded view of each related alert (no raw events, no ids)."""
+    async def related_alerts(ctx: AgentContext, related: List[Any]) -> List[Tuple[int, Any, Any]]:
+        """``(position, related row, stored alert)`` of each related alert still stored, in order."""
         repos = ctx.repos
         if repos is None or not related:
             return []
-        out: List[Dict[str, Any]] = []
+        out: List[Tuple[int, Any, Any]] = []
         async with repos.db.tenant_tx(ctx.tenant_id) as conn:
             for idx, r in enumerate(related, start=1):
                 try:
-                    other = await repos.alerts.get(ctx.tenant_id, r.alert_id, conn=conn)
+                    out.append((idx, r, await repos.alerts.get(ctx.tenant_id, r.alert_id, conn=conn)))
                 except NotFound:
                     continue
-                normalized = other.normalized if isinstance(other.normalized, Mapping) else {}
-                mitre = normalized.get("mitre") if isinstance(normalized.get("mitre"), Mapping) else {}
-                techniques = [str(t)[:40] for t in (mitre or {}).get("techniques") or [] if isinstance(t, (str, int))]
-                verdict = other.summary.get("verdict") if isinstance(other.summary, Mapping) else None
-                out.append(
-                    {
-                        "ref": f"r{idx}",
-                        "title": other.title[:DIGEST_TITLE_CHARS],
-                        "severity": other.severity,
-                        "category": other.category,
-                        "status": other.status,
-                        "disposition": other.disposition,
-                        "verdict": verdict if isinstance(verdict, str) else None,
-                        "occurred_at": other.occurred_at.isoformat(),
-                        "shared_indicators": r.shared_indicator_count,
-                        "mitre_techniques": techniques[:5],
-                    }
-                )
         return out
+
+    @staticmethod
+    def related_digest(idx: int, r: Any, other: Any) -> Dict[str, Any]:
+        """Compact view of one related alert (no raw event, no id). A model-led close shows as
+        ``ai_closed_unaudited``, never as ``benign``: the model must not read it as evidence against a campaign."""
+        normalized = other.normalized if isinstance(other.normalized, Mapping) else {}
+        mitre = normalized.get("mitre") if isinstance(normalized.get("mitre"), Mapping) else {}
+        techniques = [str(t)[:40] for t in (mitre or {}).get("techniques") or [] if isinstance(t, (str, int))]
+        verdict = other.summary.get("verdict") if isinstance(other.summary, Mapping) else None
+        ai_closed = related_disposition(other) == AI_CLOSED
+        return {
+            "ref": f"r{idx}",
+            "title": other.title[:DIGEST_TITLE_CHARS],
+            "severity": other.severity,
+            "category": other.category,
+            "status": other.status,
+            "disposition": AI_CLOSED if ai_closed else other.disposition,
+            "verdict": verdict if isinstance(verdict, str) and not ai_closed else None,
+            "occurred_at": other.occurred_at.isoformat(),
+            "shared_indicators": r.shared_indicator_count,
+            "mitre_techniques": techniques[:5],
+        }
+
+    @classmethod
+    async def related_digests(cls, ctx: AgentContext, related: List[Any]) -> List[Dict[str, Any]]:
+        """Compact, bounded view of each related alert (no raw events, no ids)."""
+        return [cls.related_digest(idx, r, other) for idx, r, other in await cls.related_alerts(ctx, related)]
+
+    async def _related(self, ctx: AgentContext, keys: List[Tuple[str, str]], now: datetime) -> List[Any]:
+        """Alerts sharing an indicator within the window. A sample waiting for its blind-audit label is left
+        out: its disposition must not reach this alert's digest or the model (it is hidden until labelled)."""
+        if not keys or ctx.repos is None:
+            return []
+        related = await ctx.repos.indicators.related_alerts(
+            ctx.tenant_id, keys, since=now - self.window, limit=self.max_related, exclude_alert_id=ctx.alert_id
+        )
+        if not related:
+            return []
+        hidden = await ctx.repos.blind_audit.pending_alert_ids(ctx.tenant_id, [r.alert_id for r in related])
+        return [r for r in related if r.alert_id not in hidden]
 
     @staticmethod
     def _rule_score(related: List[Any], indicators: List[Indicator], burst: bool) -> int:
@@ -336,12 +357,4 @@ class CorrelationAgent(BaseAgent):
         if burst:
             score += 20
         return max(0, min(100, score))
-
-    @staticmethod
-    def _adjust_confidence(base: float, related: int, burst: bool, level: str) -> int:
-        adjustment = min(20, related * 5)
-        if burst:
-            adjustment += 15
-        adjustment += {"critical": 15, "high": 10}.get(level, 0)
-        return max(0, min(100, round(base + adjustment)))
 

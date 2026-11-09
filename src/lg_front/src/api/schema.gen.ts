@@ -2046,6 +2046,8 @@ export interface components {
                     related_dispositions?: {
                         [key: string]: number;
                     };
+                    related_open_reviews?: number;
+                    related_threats?: number;
                     score?: number;
                 };
                 decision?: {
@@ -2119,6 +2121,7 @@ export interface components {
                     rule_tp?: string[];
                     threat_assessment?: string | null;
                     threat_categories?: string[];
+                    threat_likelihood?: number | null;
                     trusted_score?: number | null;
                 };
                 verdict?: string;
@@ -2291,6 +2294,8 @@ export interface components {
                     related_dispositions?: {
                         [key: string]: number;
                     };
+                    related_open_reviews?: number;
+                    related_threats?: number;
                     score?: number;
                 };
                 decision?: {
@@ -2364,6 +2369,7 @@ export interface components {
                     rule_tp?: string[];
                     threat_assessment?: string | null;
                     threat_categories?: string[];
+                    threat_likelihood?: number | null;
                     trusted_score?: number | null;
                 };
                 verdict?: string;

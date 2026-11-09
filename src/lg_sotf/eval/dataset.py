@@ -3,9 +3,8 @@
 One JSON object per line. An optional first line ``{"_meta": {...}}``
 describes the file (``synthetic``, ``description``, ``version``, optional
 ``tenant_settings`` applied to every evaluation tenant: ``tools.internal_domains``,
-the ``phishing`` section and ``triage.known_scanners``, and optional
-``tenant_context``, the estate facts a customer would declare, measured but not
-applied: :mod:`lg_sotf.eval.context`); every other line is an :class:`EvalItem`::
+the ``phishing`` section, ``triage.known_scanners`` and the model-led closure tier
+``ai_closure.tier``); every other line is an :class:`EvalItem`::
 
     {"id": "syn-007",
      "source_type": "crowdstrike",          # canonical | splunk | crowdstrike | sentinel |
@@ -45,6 +44,7 @@ from typing import Annotated, Any, Dict, Iterable, List, Literal, Mapping, Optio
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
 from lg_sotf.domain.benign_evidence import TriageSettings
+from lg_sotf.domain.closure import AiClosureSettings
 from lg_sotf.domain.phishing import PhishingSettings
 from lg_sotf.eval.context import TenantContext
 from lg_sotf.models.vocabulary import DISPOSITIONS as DISPOSITIONS
@@ -90,13 +90,15 @@ class EvalTools(BaseModel):
 
 
 class EvalTenantSettings(BaseModel):
-    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile, scanners)."""
+    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile, scanners)
+    and the model-led closure tier it runs at."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tools: Optional[EvalTools] = None
     phishing: Optional[PhishingSettings] = None
     triage: Optional[TriageSettings] = None
+    ai_closure: Optional[AiClosureSettings] = None
 
     def patch(self) -> Dict[str, Any]:
         """The tenant settings merge patch (only the sections that were given)."""

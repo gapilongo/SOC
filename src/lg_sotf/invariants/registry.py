@@ -101,30 +101,49 @@ INVARIANTS: Tuple[Invariant, ...] = (
     ),
     Invariant(
         id="INV-03",
-        title="The model's verdict alone never closes a high or critical alert; the routing policy decides",
+        title=(
+            "An AI verdict alone never closes a high or critical alert or a never-close class; a low or medium "
+            "alert closes on the models' word only at the tenant's autonomy tier"
+        ),
         rationale=(
             "A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure "
-            "policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and "
-            "lower severities close only when rules, or context the tenant declared (a configured scanner), "
-            "corroborate the model. A cached analyst verdict closes only a non-critical repeat of the same "
-            "detection and behaviour (verdict key) that analysts decided benign twice, with no threat on it since; "
-            "a suggested suppression rule matches the verdict key, and a confirmed threat disables the rules "
-            "that match it."
+            "policy. High and critical alerts close only by an analyst, a suppression rule or an analyst-confirmed "
+            "verdict. A low or medium alert closes when approved benign evidence an attacker cannot write "
+            "corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a "
+            "test source or the tenant's declared context, such as a scanner as the source of the activity; never "
+            "past steering text or a recent true positive, and a scanner or test source never for a never-close "
+            "class. Without such evidence it closes on the models' word only when the tenant's autonomy tier is "
+            "auto_full_audit and both model tiers judge it benign within the install's thresholds, never for the "
+            "never-close classes (credential access, log clearing, security-tool tampering, ransomware behaviour, "
+            "persistence through attacker-named objects, unmapped alerts), steering text, entities with a recent "
+            "true positive or a campaign in progress; such a close is marked model_closed for audit. With the tier "
+            "off, the default, a model never closes an alert alone. A cached analyst verdict closes only a "
+            "non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign "
+            "twice, with no threat on it since; a suggested suppression rule matches the verdict key, and a "
+            "confirmed threat disables the rules that match it."
         ),
         epic="AI-E6",
         threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
         code=(
-            "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/benign_evidence.py",
+            "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/closure.py", "src/lg_sotf/domain/benign_evidence.py",
             "src/lg_sotf/domain/verdict_key.py", "src/lg_sotf/core/verdict_cache.py",
             "src/lg_sotf/core/benign_learning.py",
         ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
             "tests/unit/domain/test_routing.py::test_decide_never_closes_high_severity",
-            "tests/unit/domain/test_routing.py::test_decide_closes_only_with_rule_corroboration",
+            "tests/unit/domain/test_routing.py::test_decide_closes_only_with_approved_benign_evidence",
             "tests/unit/domain/test_routing.py::test_attacker_controlled_fp_words_never_close_high_severity",
-            "tests/unit/domain/test_routing_calibration.py::test_tenant_context_never_closes_high_severity",
-            "tests/unit/domain/test_routing_calibration.py::test_nothing_else_corroborates_a_benign_close",
+            "tests/unit/domain/test_closure.py::test_with_the_tier_off_a_model_never_closes_alone",
+            "tests/unit/domain/test_closure.py::test_high_and_critical_never_close_at_any_tier",
+            "tests/unit/domain/test_closure.py::test_never_close_classes_never_close_on_the_models_word",
+            "tests/unit/domain/test_closure.py::test_each_condition_alone_blocks_a_model_led_close",
+            "tests/unit/domain/test_closure.py::test_approved_benign_evidence_never_closes_past_a_hard_flag",
+            "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
+            "tests/unit/domain/test_closure.py::test_a_campaign_in_progress_is_never_model_closed",
+            "tests/unit/domain/test_closure.py::test_review_f2_sentinel_credential_access_is_a_never_close_class",
+            "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
+            "tests/integration/eval/test_adversarial_v2_eval.py::test_no_malicious_close_with_model_led_closure_on",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"
             "test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules",

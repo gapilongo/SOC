@@ -206,7 +206,7 @@ def test_an_untiered_base_takes_the_revision_s_tiers() -> None:
     assert tiers == {"/a": "beta", "/b": "stable", "/gone": "stable", "/c": "stable"}
 
 
-@pytest.mark.skipif(OASDIFF is None, reason="oasdiff is not installed (the CI api-compat job pins it)")
+@pytest.mark.skipif(OASDIFF is None, reason="no oasdiff: install it or set OASDIFF=scripts/ci/oasdiff.sh")
 def test_oasdiff_blocks_a_breaking_change_to_a_stable_operation(capsys: pytest.CaptureFixture[str]) -> None:
     """Acceptance (ARCH-E2.2): the gate's self-test on the committed document, plus the deprecation flow."""
     assert OASDIFF is not None

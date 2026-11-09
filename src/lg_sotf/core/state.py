@@ -89,6 +89,7 @@ class TriageDigest(TypedDict, total=False):
     llm_skipped: Optional[str]
     llm_refusal: LlmRefusal
     threat_assessment: Optional[str]
+    threat_likelihood: Optional[int]
     threat_categories: List[str]
     reasoning: Optional[str]
     phishing: PhishingDigest
@@ -107,6 +108,8 @@ class CorrelationDigest(TypedDict, total=False):
     llm_skipped: Optional[str]
     llm_refusal: LlmRefusal
     related_dispositions: Dict[str, int]
+    related_threats: int
+    related_open_reviews: int
     campaign_indicators: List[str]
 
 

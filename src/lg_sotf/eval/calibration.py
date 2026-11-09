@@ -35,7 +35,6 @@ from lg_sotf.domain.routing import (
     REFUSAL_DIGESTS,
     Decision,
     RoutingThresholds,
-    correlated_confidence,
     decide,
     llm_normalized,
     refused_by,
@@ -104,12 +103,9 @@ def _present(digest: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 def decide_state(inputs: Mapping[str, Any], thresholds: RoutingThresholds) -> Dict[str, Any]:
-    """The state ``decide`` reads, rebuilt from ``inputs``; the correlation cap applies when ``thresholds`` say so."""
+    """The state ``decide`` reads, rebuilt from ``inputs``."""
     triage = _present(inputs.get("triage") or {})
     confidence = _number(inputs.get("confidence"))
-    base = _number(triage.get("confidence"))
-    if thresholds.cap_correlated_confidence and confidence is not None and base is not None:
-        confidence = float(correlated_confidence(base, round(confidence), thresholds))
     state: Dict[str, Any] = {
         "severity": inputs.get("severity"),
         "more_info_loops": int(inputs.get("more_info_loops") or 0),
