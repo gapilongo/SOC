@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -29,6 +30,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.eval.dataset import EvalItem, load_dataset, parse_dataset
 from lg_sotf.eval.results import ItemResult
 from lg_sotf.eval.runner import EvalRunner, open_engine, run_evaluation
+from lg_sotf.ingestion import service as ingestion_service
 from lg_sotf.ingestion.service import IngestionService
 from lg_sotf.llm.cassette import CassetteSet, cassette_name, recording_model_factory
 from lg_sotf.llm.fake import ScriptedChatModel
@@ -183,3 +185,35 @@ async def test_the_committed_cassettes_replay_offline_like_a_live_run(
     assert guard.attempts == []
     assert outcomes(replay.results) == outcomes(live.results)
     assert replay.info["llm_provider"] == "cassette" and replay.info["cassettes"]["mode"] == "replay"
+
+
+@pytest.mark.parametrize("wall_clock", ["2026-11-09T03:30:00+00:00", "2026-11-10T21:00:00+00:00"])
+async def test_the_phishing_cassettes_replay_at_any_hour_of_the_wall_clock(
+    wall_clock: str, eval_settings: Settings, repos: Repositories, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #346: the hour an evaluation runs never reaches a prompt.
+
+    The cassettes were recorded in the morning (UTC). A pushed report used to be
+    stamped with the wall clock, which became the alert's ``occurred_at``, and
+    triage adds rule confidence to an alert outside 06:00-18:00: a replay in the
+    evening or at night built another prompt and missed. Both clocks here are
+    after hours.
+    """
+    frozen = datetime.fromisoformat(wall_clock)
+
+    class FrozenClock(datetime):
+        @classmethod
+        def now(cls, tz: Any = None) -> datetime:  # type: ignore[override]
+            return frozen.astimezone(tz) if tz is not None else frozen.replace(tzinfo=None)
+
+    monkeypatch.setattr(ingestion_service, "datetime", FrozenClock)
+    assert ingestion_service.datetime.now(UTC) == frozen
+    name = "phishing_v1"
+    dataset = load_dataset(FIXTURES / f"{name}.jsonl").select(limit=COMMITTED[name])
+    guard = block_network_and_model(eval_settings, monkeypatch)
+    replay = await run_evaluation(
+        eval_settings, dataset, tenant_id=f"clock-{frozen:%d%H}",
+        cassettes=CassetteSet(FIXTURES / "cassettes" / name, "replay"),
+    )
+    assert [(r.item_id, r.error) for r in replay.results if r.status == "error"] == []
+    assert guard.attempts == []
