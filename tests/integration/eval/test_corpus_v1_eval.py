@@ -22,13 +22,14 @@ from pathlib import Path
 
 import pytest
 
+from lg_sotf.db.repos import Repositories
 from lg_sotf.eval.dataset import load_dataset
 from lg_sotf.eval.gate import evaluate_gate, load_thresholds
 from lg_sotf.eval.report import build_report, render_markdown, write_json
 from lg_sotf.eval.runner import run_evaluation
 from lg_sotf.llm.cassette import CassetteSet, cassette_name
 from lg_sotf.settings import Settings
-from tests.integration.eval._support import at_tier, block_network_and_model, closures
+from tests.integration.eval._support import NetworkGuard, at_tier, block_network_and_model, closures, v3_closures
 
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(1800)]
 
@@ -42,7 +43,7 @@ FAMILIES = {"sysmon", "windows", "syscheck", "audit", "sshd", "syslog", "web"}
 
 
 async def test_corpus_v1_replays_offline_and_passes_its_gate(
-    eval_settings: Settings, monkeypatch: pytest.MonkeyPatch
+    eval_settings: Settings, monkeypatch: pytest.MonkeyPatch, repos: Repositories
 ) -> None:
     dataset = load_dataset(DATASET)
     assert len(dataset.items) >= 500 and set(dataset.families()) == FAMILIES
@@ -54,6 +55,16 @@ async def test_corpus_v1_replays_offline_and_passes_its_gate(
                                         cassettes=recording)
         assert [(r.item_id, r.error) for r in recorded.results if r.status == "error"] == []
     assert {p.name for p in CASSETTES.iterdir()} == {cassette_name(i.id) + ".gz" for i in dataset.items}
+
+    # FIX-3: model-led closure on. Model closes change what later alerts' correlation shows to the model, so the
+    # tier-off cassettes no longer answer every call: this run uses the fake model itself, with the network blocked.
+    net = NetworkGuard(eval_settings)
+    net.install(monkeypatch)
+    on = await run_evaluation(eval_settings, at_tier(dataset, "auto_full_audit"),
+                              tenant_id=f"play-cv1on-{secrets.token_hex(3)}")
+    assert [(r.item_id, r.error) for r in on.results if r.status == "error"] == [] and net.attempts == []
+    counts = await v3_closures(repos, on)
+    assert counts["forbidden"] == [], counts
 
     guard = block_network_and_model(eval_settings, monkeypatch)
     replay = await run_evaluation(eval_settings, dataset, tenant_id=f"play-cv1-{secrets.token_hex(3)}",
@@ -74,12 +85,3 @@ async def test_corpus_v1_replays_offline_and_passes_its_gate(
     assert metrics["scored"] == len(dataset.items) and metrics["errors"] == 0
     assert set(report["families"]) == FAMILIES
     assert closures(replay.results)["benign_model_closed"] == 0  # the tier is off by default
-
-    # FIX-1: model-led closure on. The tier only changes what decide does after analysis, so the same cassettes
-    # answer every call, and the gate (no malicious alert closed in any family) still holds.
-    on = await run_evaluation(eval_settings, at_tier(dataset, "auto_full_audit"),
-                              tenant_id=f"play-cv1on-{secrets.token_hex(3)}", cassettes=CassetteSet(CASSETTES, "replay"))
-    assert [(r.item_id, r.error) for r in on.results if r.status == "error"] == [] and guard.attempts == []
-    on_gate = evaluate_gate(build_report(on.results, dataset=dataset, run_info=on.info), load_thresholds(THRESHOLDS))
-    assert on_gate.passed, [v.message for v in on_gate.violations]
-    assert closures(on.results)["malicious_closed"] == 0

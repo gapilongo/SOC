@@ -129,14 +129,16 @@ def _benign_state(severity: str, *, evidence: bool = True, tactic: Optional[str]
 
 
 def check_routing_policy(settings: Settings) -> CheckResult:
-    """With this install's thresholds, a benign verdict never closes a high alert at any autonomy tier, a model
-    never closes alone with the tier ``off``, and never a never-close class (INV-03)."""
+    """With this install's thresholds, a benign verdict never closes a critical alert at any autonomy tier nor a
+    high one with the tier ``off`` (policy v3), a model never closes alone with the tier ``off``, and never a
+    never-close class (INV-03)."""
     thresholds = RoutingThresholds.from_settings(settings.routing)
     closed: List[str] = []
     for severity in sorted(HIGH_SEVERITIES):
         state = _benign_state(severity)
+        tiers = AUTONOMY_TIERS if severity == "critical" else ("off",)
         if route_after_triage(state, thresholds) == "close" or any(
-            decide(state, thresholds, tier).route == "close" for tier in AUTONOMY_TIERS
+            decide(state, thresholds, tier).route == "close" for tier in tiers
         ):
             closed.append(f"{severity} alert closed on a benign verdict")
     if decide(_benign_state("low", evidence=False), thresholds, "off").route == "close":
@@ -151,8 +153,8 @@ def check_routing_policy(settings: Settings) -> CheckResult:
     return _result(
         "routing_policy",
         not closed,
-        "; ".join(closed) or "a benign model verdict closes no high or critical alert, nothing with model-led closure "
-        "off, no never-close class, and no alert with evidence of a threat",
+        "; ".join(closed) or "a benign model verdict closes no critical alert, no high alert and nothing else with "
+        "model-led closure off, no never-close class, and no alert with evidence of a threat",
     )
 
 

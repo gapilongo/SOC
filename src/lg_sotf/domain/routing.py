@@ -2,8 +2,10 @@
 
 Safety rules enforced here (contract section 8):
 
-* Automation never closes a high/critical alert: only an analyst decision,
-  a suppression rule or an analyst-confirmed verdict (not for critical) does.
+* Automation never closes a critical alert: only an analyst decision or a
+  suppression rule does. A high alert closes on approved evidence or a cache
+  only through an analyst-confirmed verdict, and on the models' word only at
+  the tenant's autonomy tier ``auto_full_audit`` (policy v3, FIX-3).
 * Decision policy v2 (FIX-1). Every low/medium alert is analysed: correlation
   never skips analysis for it, and correlation is evidence for the model, not
   a confidence boost. The grey zone and the response policy read the
@@ -18,9 +20,12 @@ Safety rules enforced here (contract section 8):
   tenant's autonomy tier is ``auto_full_audit``, through a model-led close
   (:mod:`lg_sotf.domain.closure`, code ``model_closed``) that every condition
   of that module allows. With the tier ``off`` a model never closes alone.
-  Policy v2.1 (FIX-2) lets a catalogued noise rule (vendor and rule id,
-  :mod:`lg_sotf.domain.noise_families`) lift only the ``unmapped`` class;
-  the campaign check is FIX-1's.
+  Policy v3 (FIX-3): at that tier the models close every alert the deep
+  tier judged benign (info to high severity, any certainty or threat score
+  below the response policy) unless a hard block applies; the thresholds,
+  the campaign check and the ``unmapped`` block are gone, and the retro-reopen
+  safety net (:mod:`lg_sotf.core.retro_reopen`) reopens such closes when a
+  related threat appears.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
@@ -90,10 +95,6 @@ class RoutingThresholds(BaseModel):
     close_max_threat: int = 30
     max_more_info_loops: int = 1
     max_alert_age_hours: int = 72
-    # Model-led close (lg_sotf.domain.closure): the fast tier's likelihood at most this, the deep tier's
-    # certainty at least this. Install-wide on purpose: a tenant chooses the tier, never looser numbers.
-    model_close_max_likelihood: int = 8
-    model_close_min_certainty: int = 85
 
     @classmethod
     def from_settings(cls, routing: Optional[Mapping[str, Any]]) -> RoutingThresholds:
@@ -231,19 +232,34 @@ def decide(state: Mapping[str, Any], t: RoutingThresholds, tier: str = "off") ->
             "plan_response", f"threat score {threat:.0f} meets the response policy", "malicious", "high_risk"
         )
 
-    if verdict == "inconclusive" or t.correlation_grey_zone_min <= threat <= t.correlation_grey_zone_max:
+    grey = verdict == "inconclusive" or t.correlation_grey_zone_min <= threat <= t.correlation_grey_zone_max
+    low = None if grey or threat >= t.close_max_threat else _low_threat(state, triage, verdict)
+    if low is not None and low.route == "close":
+        return low  # approved benign evidence closes first: it needs no audit
+    model = _model_close(state, tier)
+    if model is not None:
+        return model
+    if grey:
         return Decision("escalate", "assessment in the grey zone", None, "grey_zone")
-
-    if threat < t.close_max_threat:
-        return _low_threat(state, triage, verdict, t, tier)
-
+    if low is not None:
+        return low
     return Decision("escalate", "no automatic policy applies", None, "inconclusive")
 
 
-def _low_threat(
-    state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Optional[str], t: RoutingThresholds, tier: str
-) -> Decision:
-    """A low threat: close on approved benign evidence or a model-led close the tier allows, else an analyst."""
+def _model_close(state: Mapping[str, Any], tier: str) -> Optional[Decision]:
+    """Decision policy v3 (FIX-3): the models close an alert the deep tier judged benign, at the tenant's tier,
+    whatever the assessed threat score or certainty, unless a hard block applies (:mod:`lg_sotf.domain.closure`)."""
+    if closure.model_close_blockers(state, tier=tier):
+        return None
+    reason = "AI-closed, audit required: the analysis judged it benign"
+    family = closure.catalogued_noise(state.get("alert"))
+    if family is not None:
+        reason += f" (catalogued noise {family.family}, catalogue {noise_families.CATALOGUE_VERSION})"
+    return Decision("close", reason, "benign", closure.MODEL_CLOSED)
+
+
+def _low_threat(state: Mapping[str, Any], triage: Mapping[str, Any], verdict: Optional[str]) -> Decision:
+    """A low threat: close on approved benign evidence, else an analyst (the model-led close is tried after)."""
     if _is_high(state):
         return Decision("escalate", "high severity alerts are closed only by an analyst", None, "false_positive_review")
     if llm_normalized(state):
@@ -258,15 +274,6 @@ def _low_threat(
             reason = f"approved benign evidence overruled by {', '.join(overruled)}"
             return Decision("escalate", reason, None, "false_positive_review")
         return Decision("close", "low threat corroborated by approved benign evidence", "benign", "rule_corroborated_benign")
-    blockers = closure.model_close_blockers(
-        state, tier=tier, max_likelihood=t.model_close_max_likelihood, min_certainty=t.model_close_min_certainty
-    )
-    if not blockers:
-        reason = "AI-closed, audit required: both model tiers judged it benign"
-        family = closure.catalogued_noise(state.get("alert"))
-        if family is not None:
-            reason += f" (catalogued noise {family.family}, catalogue {noise_families.CATALOGUE_VERSION})"
-        return Decision("close", reason, "benign", closure.MODEL_CLOSED)
     return Decision("escalate", "low threat verdict lacks approved benign evidence", None, "false_positive_review")
 
 

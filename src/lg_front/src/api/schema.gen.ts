@@ -2075,6 +2075,9 @@ export interface components {
                 llm_usage?: {
                     [key: string]: unknown;
                 };
+                reopened?: {
+                    [key: string]: string | null;
+                };
                 /** @description ``alerts.summary.response``: the response plan's playbook, evidence and action counts. */
                 response?: {
                     auto?: number;
@@ -2322,6 +2325,9 @@ export interface components {
                 }[];
                 llm_usage?: {
                     [key: string]: unknown;
+                };
+                reopened?: {
+                    [key: string]: string | null;
                 };
                 /** @description ``alerts.summary.response``: the response plan's playbook, evidence and action counts. */
                 response?: {

@@ -65,33 +65,52 @@ def test_a_model_led_close_needs_the_tier_and_is_marked_for_audit() -> None:
 @pytest.mark.parametrize(
     ("path", "value", "blocker"),
     [
-        ("severity", "high", "severity"),
         ("severity", "critical", "severity"),
         ("severity", "unknown", "severity"),
         ("alert.mitre.tactics", ["Credential Access"], "never_close_class"),
         ("alert.mitre.techniques", ["T1070.001"], "never_close_class"),
+        ("alert.mitre.techniques", ["T1531"], "never_close_class"),
+        ("alert.flags", ["llm_normalized"], "llm_normalized"),
+        ("alert.reopened", {"reason": "related_threat"}, "reopened"),
         ("triage.rule_tp", [INJECTION], "steering_text"),
         ("triage.rule_tp", None, "steering_text"),
         ("analysis.rule_evidence", ["prior_malicious_history"], "recent_true_positive"),
         ("analysis.rule_corroborated", True, "recent_true_positive"),
         ("correlation.related_dispositions", {"malicious": 1, "benign": 4}, "recent_true_positive"),
-        ("correlation.related_count", 2, "campaign_in_progress"),  # related alerts, but nothing known about them
-        ("triage.threat_assessment", "suspicious", "fast_tier_not_benign"),
-        ("triage.threat_likelihood", 9, "fast_tier_not_benign"),
-        ("triage.threat_likelihood", None, "fast_tier_not_benign"),
-        ("triage.threat_likelihood", True, "fast_tier_not_benign"),
-        ("triage.llm_used", False, "fast_tier_not_benign"),
+        ("triage.threat_assessment", "likely_threat", "fast_tier_threat"),
+        ("triage.threat_assessment", "confirmed_threat", "fast_tier_threat"),
         ("analysis.verdict", "inconclusive", "deep_tier_not_benign"),
-        ("analysis.certainty", 84, "deep_tier_not_benign"),
-        ("analysis.certainty", None, "deep_tier_not_benign"),
+        ("analysis.verdict", "malicious", "deep_tier_not_benign"),
+        ("analysis.verdict", None, "deep_tier_not_benign"),
         ("analysis.llm_used", False, "deep_tier_not_benign"),
     ],
 )
 def test_each_condition_alone_blocks_a_model_led_close(path: str, value: Any, blocker: str) -> None:
     state = benign_state(**{path: value})
-    blockers = model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85)
-    assert blockers == [blocker]
+    assert model_close_blockers(state, tier=AUTO) == [blocker]
     assert routing.decide(state, T, AUTO).route != "close"
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        ("severity", "high"),  # high closes on the models' word at the tier (v3)
+        ("triage.threat_assessment", "suspicious"),  # only likely_threat and confirmed_threat block
+        ("triage.threat_likelihood", 60),  # the install thresholds are gone
+        ("triage.llm_used", False),
+        ("analysis.certainty", 5),  # any certainty
+        ("analysis.threat_score", 50),  # the grey zone does not hold a benign verdict back
+        ("alert.mitre", {"tactics": [], "techniques": []}),  # unmapped no longer blocks
+        ("correlation", {"related_count": 9, "burst": True, "related_threats": 3, "related_open_reviews": 9,
+                         "related_dispositions": {"undecided": 9}}),  # no campaign check: retro-reopen instead
+    ],
+)
+def test_v3_removed_the_forward_gates(path: str, value: Any) -> None:
+    """FIX-3: the thresholds, the grey zone for a benign verdict, the campaign check and the unmapped block are
+    gone; the safety net reopens a close when a related threat appears (lg_sotf.core.retro_reopen)."""
+    state = benign_state(**{path: value})
+    assert model_close_blockers(state, tier=AUTO) == []
+    assert routing.decide(state, T, AUTO).code == MODEL_CLOSED
 
 
 def test_model_normalised_alerts_and_refusals_never_close_on_the_models_word() -> None:
@@ -103,18 +122,11 @@ def test_model_normalised_alerts_and_refusals_never_close_on_the_models_word() -
     assert routing.decide(asked, T, AUTO).code == "analyst_request"
 
 
-def test_the_thresholds_are_inclusive_and_install_settings() -> None:
-    assert (T.model_close_max_likelihood, T.model_close_min_certainty) == (8, 85)
-    edge = benign_state(**{"triage.threat_likelihood": 8, "analysis.certainty": 85})
-    assert routing.decide(edge, T, AUTO).code == MODEL_CLOSED
-    stricter = RoutingThresholds.from_settings({"model_close_max_likelihood": 4, "model_close_min_certainty": 95})
-    assert routing.decide(benign_state(), stricter, AUTO).route == "escalate"
-    assert routing.decide(benign_state(**{"triage.threat_likelihood": 4, "analysis.certainty": 95}), stricter, AUTO).code == MODEL_CLOSED
-
-
-def test_a_model_led_close_still_needs_a_low_threat_outside_the_grey_zone() -> None:
-    for threat, code in ((29, MODEL_CLOSED), (30, "grey_zone"), (75, "inconclusive"), (85, "high_risk")):
+def test_a_benign_verdict_closes_below_the_response_policy_and_evidence_closes_first() -> None:
+    for threat, code in ((5, MODEL_CLOSED), (30, MODEL_CLOSED), (75, MODEL_CLOSED), (85, "high_risk")):
         assert routing.decide(benign_state(**{"analysis.threat_score": threat}), T, AUTO).code == code
+    evidence = benign_state(**{"triage.rule_fp": ["test_detected"]})
+    assert routing.decide(evidence, T, AUTO).code == "rule_corroborated_benign"
 
 
 def _grid(severities: List[str], evidence: bool) -> List[Dict[str, Any]]:
@@ -156,13 +168,18 @@ def test_with_the_tier_off_a_model_never_closes_alone() -> None:
             assert routing.route_after_triage(state, T) != "close"
 
 
-def test_high_and_critical_never_close_at_any_tier() -> None:
-    """INV-03: with or without benign evidence, at every tier, a high or critical alert never closes."""
+def test_critical_never_closes_at_any_tier_and_high_only_on_the_models_word_at_the_tier() -> None:
+    """INV-03 (v3): with or without benign evidence, at every tier, a critical alert never closes; a high alert never
+    closes on evidence or at tier off, and on the models' word only at auto_full_audit."""
     for tier, evidence in itertools.product(AUTONOMY_TIERS, (False, True)):
-        for state in _grid(["high", "critical"], evidence=evidence):
+        for state in _grid(["critical"], evidence=evidence):
             assert routing.decide(state, T, tier).route != "close", (tier, state)
             assert routing.route_after_triage(state, T) != "close"
-            assert "severity" in model_close_blockers(state, tier=tier, max_likelihood=100, min_certainty=0)
+            assert "severity" in model_close_blockers(state, tier=tier)
+        for state in _grid(["high"], evidence=evidence):
+            decision = routing.decide(state, T, tier)
+            assert decision.route != "close" or (tier == AUTO and decision.code == MODEL_CLOSED), (tier, state)
+            assert routing.route_after_triage(state, T) != "close"
 
 
 @pytest.mark.parametrize(
@@ -185,7 +202,7 @@ def test_high_and_critical_never_close_at_any_tier() -> None:
         (["Discovery", "Execution"], ["T1059.001", "T1083"], None),
         (["Persistence", "Initial Access"], ["T1078"], None),
         (["Defense Evasion"], [], None),
-        ([], [], "unmapped"),
+        ([], ["T1531"], "credential_access"),
     ],
 )
 def test_never_close_classes_never_close_on_the_models_word(
@@ -198,15 +215,19 @@ def test_never_close_classes_never_close_on_the_models_word(
     assert (decision.code == MODEL_CLOSED) is (expected is None)
 
 
-def test_an_alert_without_a_readable_attack_mapping_is_a_never_close_class() -> None:
-    """Fail closed: nothing shows an unmapped alert is outside the never-close classes."""
+def test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not() -> None:
+    """v3: nothing shows an unmapped alert is outside the never-close classes, but the safety net now reopens it on
+    a related threat, so it closes; a Wazuh alert whose rule cannot be read (vendor_unknown) still never does."""
     for alert in (None, {}, {"mitre": "T1003"}, {"mitre": {"tactics": [], "techniques": []}},
                   {"mitre": {"tactics": [" "], "techniques": [1003, None]}}, {"category": "authentication_success"}):
         assert never_close_class(alert) == "unmapped", alert
+        assert closure.model_close_class(alert) is None
     assert never_close_class({"mitre": {"tactics": "Credential Access"}}) == "credential_access"
     assert never_close_class({"mitre": {"techniques": [1003, None, "T1486"]}}) == "ransomware"
     unmapped = benign_state(**{"alert.mitre": {"tactics": [], "techniques": []}})
-    assert model_close_blockers(unmapped, tier=AUTO, max_likelihood=8, min_certainty=85) == ["never_close_class"]
+    assert model_close_blockers(unmapped, tier=AUTO) == []
+    unreadable = benign_state(**{"alert.mitre": {"tactics": [], "techniques": []}, "alert.normalizer": "wazuh"})
+    assert model_close_blockers(unreadable, tier=AUTO) == ["never_close_class"]
 
 
 def test_the_autonomy_tier_fails_closed() -> None:
@@ -268,12 +289,6 @@ def test_review_f2b_pascal_case_tactics_are_never_closed_on_the_models_word() ->
     assert routing.decide(state, T, AUTO).route != "close"
 
 
-def test_review_f3_a_burst_of_undecided_related_alerts_is_never_model_closed() -> None:
-    state = _review_state(correlation={"related_count": 25, "burst": True, "score": 100, "frequency_level": "critical",
-                                       "related_dispositions": {"undecided": 10}})
-    assert routing.decide(state, T, AUTO).route != "close"
-
-
 # --------------------------------------------------------------------------- F1: the evidence gate's hard checks
 
 EVIDENCE = ("known_scanner", "test_environment", "eicar_test_file", "test_detected",
@@ -326,31 +341,3 @@ def test_a_scanner_or_test_source_never_closes_a_never_close_class(mitre: Dict[s
         assert routing.decide(state, T, "off").code == "rule_corroborated_benign"
     unmapped = benign_state(**{"triage.rule_fp": ["known_scanner"], "alert.mitre": {"tactics": [], "techniques": []}})
     assert routing.decide(unmapped, T, "off").code == "rule_corroborated_benign"
-
-
-# --------------------------------------------------------------------------- F3: a campaign in progress
-
-
-@pytest.mark.parametrize(
-    "correlation",
-    [
-        {"related_count": 3, "burst": True, "related_threats": 0, "related_open_reviews": 0},
-        {"related_count": 3, "burst": False, "related_threats": 1, "related_open_reviews": 0},
-        {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 2},
-        {"related_count": 3, "burst": False},  # counts unknown: fail closed
-        {"related_count": 3, "related_threats": 0, "related_open_reviews": 0},  # burst unknown
-        {},  # nothing known about related alerts
-    ],
-)
-def test_a_campaign_in_progress_is_never_model_closed(correlation: Dict[str, Any]) -> None:
-    state = benign_state(correlation={**correlation, "related_dispositions": {"benign": 3}})
-    assert model_close_blockers(state, tier=AUTO, max_likelihood=8, min_certainty=85) == ["campaign_in_progress"]
-    assert routing.decide(state, T, AUTO).route == "escalate"
-
-
-def test_quiet_related_alerts_do_not_block_a_model_led_close() -> None:
-    quiet = {"related_count": 3, "burst": False, "related_threats": 0, "related_open_reviews": 0,
-             "related_dispositions": {"benign": 2, "undecided": 1}}
-    assert routing.decide(benign_state(correlation=quiet), T, AUTO).code == MODEL_CLOSED
-    ai_closed = {**quiet, "related_dispositions": {"ai_closed_unaudited": 3}}
-    assert routing.decide(benign_state(correlation=ai_closed), T, AUTO).code == MODEL_CLOSED

@@ -1270,6 +1270,19 @@
                 "additionalProperties": true,
                 "type": "object"
               },
+              "reopened": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
               "response": {
                 "description": "``alerts.summary.response``: the response plan's playbook, evidence and action counts.",
                 "properties": {
@@ -2209,6 +2222,19 @@
               },
               "llm_usage": {
                 "additionalProperties": true,
+                "type": "object"
+              },
+              "reopened": {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
                 "type": "object"
               },
               "response": {

@@ -239,6 +239,8 @@ class AlertSummary(TypedDict, total=False):
     # The outcome (close node).
     verdict: str
     close_reason: str
+    # Decision policy v3 safety net (lg_sotf.core.retro_reopen): why a model-closed alert was reopened.
+    reopened: Dict[str, Optional[str]]
     confidence: Optional[float]
     threat_score: Optional[float]
     decision: Optional[DecisionDigest]

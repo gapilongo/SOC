@@ -517,6 +517,46 @@ class AlertsRepo(Repository):
             resolved=row["resolved"],
         )
 
+    async def model_closed_sharing_entities(
+        self,
+        tenant_id: str,
+        *,
+        hosts: Sequence[str],
+        users: Sequence[str],
+        ips: Sequence[str],
+        since: datetime,
+        exclude_alert_id: str,
+        limit: int = 200,
+        conn: Optional[Connection] = None,
+    ) -> List[str]:
+        """Ids of alerts the models closed alone (close reason ``ai_closed:*``) since ``since`` that share a host,
+        user or IP with the given ones, newest first (the retro-reopen of decision policy v3)."""
+        require_aware(since, "since")
+        check_limit(limit, 1_000)
+        if not (hosts or users or ips):
+            return []
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT id FROM alerts
+                WHERE tenant_id = $1 AND status = 'closed' AND id <> $2 AND closed_at >= $3
+                  AND starts_with(summary->>'close_reason', 'ai_closed:')
+                  AND (COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[]
+                       OR COALESCE(normalized->'entities'->'users', '[]'::jsonb) ?| $5::text[]
+                       OR COALESCE(normalized->'entities'->'ips', '[]'::jsonb) ?| $6::text[])
+                ORDER BY closed_at DESC, id
+                LIMIT $7
+                """,
+                tenant_id,
+                exclude_alert_id,
+                since,
+                list(hosts),
+                list(users),
+                list(ips),
+                limit,
+            )
+        return [str(r["id"]) for r in rows]
+
     # -- recovery sweeps (runtime/orphans.py) ------------------------------------------------------
 
     async def find_stranded_new_all_tenants(self, *, older_than_s: float, limit: int) -> List[StrandedAlertRef]:

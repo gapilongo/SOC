@@ -25,6 +25,7 @@ from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
 from lg_sotf.audit.logger import Actor
 from lg_sotf.core.benign_learning import forget_benign_learning
+from lg_sotf.core.retro_reopen import reopen_counted
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
@@ -46,13 +47,20 @@ from lg_sotf.services.escalation_views import EscalationView, escalation_views
 log = get_logger(__name__)
 
 
-async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str], actor: Actor) -> int:
+async def invalidate_verdicts(
+    ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str], actor: Actor, *, escalation_id: Optional[str] = None,
+    path: str = "api",
+) -> int:
     """An analyst confirmed a threat: drop these alerts' cached benign verdicts and disable the rules matching them.
 
     The decision is already recorded, so a failure does not fail the request:
     it is logged as an error and counted in ``lgsotf_revocation_failures_total``
     (path ``api``), and the run's ``plan_response`` revokes again. Returns the
     number of alerts that failed.
+
+    Decision policy v3: the alerts the models closed alone on these alerts' entities reopen too, attached to
+    ``escalation_id`` (:mod:`lg_sotf.core.retro_reopen`); a failure there is counted in
+    ``lgsotf_retro_reopen_failures_total`` (``path``), not raised.
     """
     cache = VerdictCache(ctx.redis, ctx.prefix)
     failed = 0
@@ -66,7 +74,20 @@ async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequen
             log_failure(
                 log, "api.revocation_failed", exc, level="error", alert_id=alert_id, error_type=type(exc).__name__,
             )
+            continue
+        for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path,
+                                             escalation_id=escalation_id):
+            await enqueue_reopened(ctx, tenant_id, reopened)
     return failed
+
+
+async def enqueue_reopened(ctx: ApiContext, tenant_id: str, alert_id: str) -> None:
+    """Queue a reopened alert's new run now (the orphan sweep would pick it up later otherwise)."""
+    try:
+        alert = await ctx.repos.alerts.get(tenant_id, alert_id)
+        await ctx.queue.enqueue_process(tenant_id, alert_id, alert.severity)
+    except Exception as exc:  # noqa: BLE001 - the run is queued in the database; the orphan sweep dispatches it
+        log_failure(log, "api.reopen_enqueue_failed", exc, alert_id=alert_id, error_type=type(exc).__name__)
 
 
 def user_ref(principal: Principal, value: Optional[str], name: str) -> Optional[UUID]:

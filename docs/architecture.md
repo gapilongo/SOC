@@ -286,20 +286,23 @@ Rules:
     source never closes a never-close class (`evidence_close_blockers`).
   * Without such evidence the models close the alert alone (`model_closed`,
     close reason `ai_closed:audit_required`) only when the tenant's
-    autonomy tier `ai_closure.tier` is `auto_full_audit` (default `off`),
-    the severity is info, low or medium, the detection rule maps it to
-    ATT&CK and not to a never-close class (credential access, log clearing,
-    tampering, ransomware, persistence through an object the attacker
-    names), or it is unmapped but its vendor rule id is in the reviewed
-    noise catalogue (`lg_sotf.domain.noise_families`, FIX-2: package
-    installs, Windows software installs, Defender scan and signature status,
-    web 4xx; keyed by vendor and rule id, never by text), triage found no
-    steering text, no entity has a recent true positive, no campaign is in progress (a burst, or a related alert a model judged
-    malicious or suspicious or still open for review), authentication failures are credential access whatever their ATT&CK id
-    (Wazuh rule groups, T1531), and both model tiers say `benign`: fast-tier likelihood at
-    most `routing.model_close_max_likelihood` (8) and deep-tier certainty at
-    least `routing.model_close_min_certainty` (85). The `decide` node reads
-    the tier from the tenant's settings at every decision.
+    autonomy tier `ai_closure.tier` is `auto_full_audit` (default `off`):
+    decision policy v3 (FIX-3) closes an info to high alert whose deep
+    verdict is `benign` (any certainty, below the response policy) unless
+    the fast tier said `likely_threat` or `confirmed_threat`, it is
+    critical, a never-close class (credential access including the vendor's
+    authentication-failure rules and T1531, `vendor_unknown`, log clearing,
+    tampering, ransomware, named persistence), carries steering text or a
+    recent true positive, was normalised by a model, or was reopened. The
+    `decide` node reads the tier from the tenant's settings at every
+    decision.
+  * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
+    response plan or malicious close, an escalation a model judged
+    malicious or suspicious, an analyst true positive or a blind-audit
+    malicious label reopens every model-closed alert of the tenant that
+    shares a host, user or IP with it and closed in the previous 24 hours
+    (queued for a new run, attached to the escalation, audited
+    `alert.reopened`).
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,

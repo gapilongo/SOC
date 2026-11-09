@@ -107,6 +107,18 @@ REVOCATION_FAILURES = Counter(
     ["path"],
     registry=REGISTRY,
 )
+RETRO_REOPEN_FAILURES = Counter(
+    "lgsotf_retro_reopen_failures_total",
+    "Threats whose related model-closed alerts could not all be reopened (decision policy v3 safety net), by path.",
+    ["path"],
+    registry=REGISTRY,
+)
+RETRO_REOPENED = Counter(
+    "lgsotf_retro_reopened_total",
+    "Model-closed alerts reopened because a related alert became a threat, by path.",
+    ["path"],
+    registry=REGISTRY,
+)
 ENRICHMENT_LOOKUPS = Counter(
     "lgsotf_enrichment_lookups_total",
     "Indicator enrichment lookups, by provider and result status (cache hits are status 'cached').",

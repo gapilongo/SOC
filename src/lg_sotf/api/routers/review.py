@@ -209,7 +209,8 @@ async def decide(
         delegated=principal.delegated,
     )
     if body.decision == "true_positive":
-        await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id], principal.actor)
+        await invalidate_verdicts(ctx, principal.tenant_id, [result.escalation.alert_id], principal.actor,
+                                  escalation_id=result.escalation.id, path="analyst")
     # A blind-audit escalation of an alert whose run has ended: re-triage, the new run starts at this decision.
     severity = await BlindAuditService(ctx.repos).requeue_after_decision(
         principal.tenant_id, result.escalation, principal.actor

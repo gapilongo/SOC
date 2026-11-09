@@ -24,6 +24,7 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.retro_reopen import judged_threat, reopen_counted
 from lg_sotf.core.state import (
     AlertSummary,
     AnalystInput,
@@ -344,6 +345,11 @@ class WorkflowNodes:
         await self.deps.repos.alerts.update(
             tenant_id, alert_id, summary={"escalation_id": ticket.id, "escalation_attached": ticket.attached}
         )
+        if judged_threat(state.get("triage") or {}, analysis):
+            # A model judged it a threat: the alerts the models closed alone on its entities reopen (policy v3).
+            stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
+            await reopen_counted(self.deps.repos, tenant_id, stored, actor=WORKFLOW_ACTOR, path="escalation",
+                                 escalation_id=ticket.id)
         return {
             "escalation_id": ticket.id,
             EVENT_KEY: {
@@ -424,9 +430,12 @@ class WorkflowNodes:
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
     async def _forget_benign_learning(self, state: WorkflowState) -> None:
-        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again."""
+        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again, and the
+        alerts the models closed alone on its entities reopen (decision policy v3 safety net)."""
         alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
         await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
+        await reopen_counted(self.deps.repos, state["tenant_id"], alert, actor=WORKFLOW_ACTOR, path="workflow",
+                             escalation_id=state.get("escalation_id"))
 
     def _evidence(self, state: WorkflowState) -> str:
         """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.

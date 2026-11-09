@@ -217,7 +217,10 @@ def test_the_synthetic_routing_states_are_ones_the_policy_would_otherwise_close(
     t = RoutingThresholds()
     low = checks._benign_state("low")
     assert route_after_triage(low, t) == "close" and decide(low, t).route == "close"
-    assert decide(checks._benign_state("high"), t, "auto_full_audit").code == "false_positive_review"
+    # Policy v3: a high alert both tiers call benign closes on the models' word at the tier, never with it off.
+    assert decide(checks._benign_state("high"), t, "auto_full_audit").code == "model_closed"
+    assert decide(checks._benign_state("high"), t, "off").code == "false_positive_review"
+    assert decide(checks._benign_state("critical"), t, "auto_full_audit").code == "false_positive_review"
     assert decide(checks._benign_state("low", evidence=False), t, "auto_full_audit").code == "model_closed"
     credential = checks._benign_state("low", evidence=False, tactic="Credential Access")
     assert decide(credential, t, "auto_full_audit").code == "false_positive_review"

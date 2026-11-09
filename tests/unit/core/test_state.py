@@ -156,7 +156,7 @@ def test_alert_summary_declares_what_the_close_node_writes() -> None:
     }
     accounting = {"llm_usage", "llm_models", "llm_refusals", "llm_budget_exceeded"}
     nodes = {"triage", "correlation", "analysis", "response", "escalation_attached", "detached_from"}
-    review = {"blind_audit_review"}  # the blind audit (services.blind_audit) and the run it re-triages
+    review = {"blind_audit_review", "reopened"}  # the blind audit, and the retro-reopen of policy v3 (core.retro_reopen)
     assert closed | accounting | nodes | review == declared(AlertSummary)
     assert declared(ResponseSummary) == {"threat_type", "evidence", "auto", "awaiting", "blocked", "done"}
 
