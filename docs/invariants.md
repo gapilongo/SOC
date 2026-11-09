@@ -61,12 +61,12 @@ Containment changes a customer's environment. An action executes only once it is
 
 ## INV-03: The model's verdict alone never closes a high or critical alert; the routing policy decides
 
-A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and lower severities close only when rules, or context the tenant declared (a configured scanner), corroborate the model. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign twice, with no threat on it since.
+A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and lower severities close only when rules, or context the tenant declared (a configured scanner), corroborate the model. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key) that analysts decided benign twice, with no threat on it since; a suggested suppression rule matches the verdict key, and a confirmed threat disables the rules that match it.
 
 * **Status:** enforced
 * **Owner epic:** AI-E6
 * **Threats:** TM-WRK-1, TM-WRK-2, TM-WRK-10
-* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/benign_evidence.py`, `src/lg_sotf/domain/verdict_key.py`, `src/lg_sotf/core/verdict_cache.py`
+* **Enforced in:** `src/lg_sotf/domain/routing.py`, `src/lg_sotf/domain/benign_evidence.py`, `src/lg_sotf/domain/verdict_key.py`, `src/lg_sotf/core/verdict_cache.py`, `src/lg_sotf/core/benign_learning.py`
 * **Runtime checks:** `routing_policy`
 * **Evaluation metric:** `high_severity_auto_closed_benign`
 * **Proved by:**
@@ -84,6 +84,8 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/core/test_verdict_cache.py::test_one_analyst_decision_is_not_enough_two_distinct_ones_are`
   * `tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window`
   * `tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read`
+  * `tests/integration/eval/test_oracle_corpus_v1.py::test_the_oracle_closes_no_attack_on_corpus_v1`
+  * `tests/integration/services/test_review.py::test_a_confirmed_threat_disables_the_suppression_rules_that_would_close_it`
 
 ## INV-04: Every LLM call records its prompt hash and model id
 

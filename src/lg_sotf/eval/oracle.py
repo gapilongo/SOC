@@ -14,8 +14,8 @@ evaluation tenant) acts through the real decision path, the one the API uses:
 * an analyst escalation is decided with :meth:`ReviewService.decide
   <lg_sotf.services.review.ReviewService.decide>`: ``false_positive`` for an
   expected-benign item, ``true_positive`` for an expected-malicious one (and,
-  as ``POST /escalations/{id}/decision`` does, the fingerprint's cached benign
-  verdict is dropped). The run is then resumed with the decision, so the close
+  as ``POST /escalations/{id}/decision`` does, the alert's cached benign
+  verdicts are dropped and the suppression rules matching it disabled). The run is then resumed with the decision, so the close
   node writes the verdict cache and the history provider sees an analyst's
   outcome. A ``false_positive`` creates the disabled suppression suggestion the
   tenant's review policy asks for; with ``accept_suppressions`` the oracle
@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor, AuditLogger
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.eval.results import REVIEW_ORACLE, ItemResult
 from lg_sotf.services.review import ResumeRequest, ReviewService
@@ -110,8 +111,7 @@ class AnalystOracle:
         )
         if decision == "true_positive":
             alert = await self.repos.alerts.get(tenant_id, decided.escalation.alert_id)
-            if alert.fingerprint:
-                await self._verdicts.invalidate(tenant_id, alert.fingerprint)
+            await forget_benign_learning(self.repos, self._verdicts, tenant_id, alert, actor=Actor("user", str(user)))
         if self.accept_suppressions and decided.suppression_suggestion_id:
             actor = Actor("user", str(user))
             await update_rule(

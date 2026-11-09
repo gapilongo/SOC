@@ -22,6 +22,7 @@ from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
 from lg_sotf.core.state import (
     AlertSummary,
@@ -45,7 +46,7 @@ from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.security.shadow import shadow_run_id
-from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.escalation import WORKFLOW_ACTOR, EscalationService
 from lg_sotf.services.plan_context import plan_context
 from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
@@ -194,6 +195,7 @@ class WorkflowNodes:
             source_alert_id=str(alert.get("source_alert_id", "")),
             fingerprint=state.get("fingerprint", ""),
             normalized=alert,
+            verdict_key=state.get("verdict_key"),
         )
         rules = await self.deps.repos.suppressions.list_active(tenant_id)
         match = first_matching_rule(rules, view)
@@ -414,6 +416,11 @@ class WorkflowNodes:
         own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
+    async def _forget_benign_learning(self, state: WorkflowState) -> None:
+        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again."""
+        alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
+        await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
+
     def _evidence(self, state: WorkflowState) -> str:
         """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.
 
@@ -455,7 +462,7 @@ class WorkflowNodes:
             approver_role=analyst.get("approver_role") if is_tp else None,
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
-        await self.deps.verdicts.invalidate(tenant_id, state.get("verdict_key"), fingerprint=state.get("fingerprint"))
+        await self._forget_benign_learning(state)
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
         response: ResponseSummary = {
             "threat_type": plan.threat_type,
@@ -613,7 +620,7 @@ class WorkflowNodes:
                 severity=state["severity"],
             )
         elif disposition == "malicious":
-            await self.deps.verdicts.invalidate(tenant_id, state.get("verdict_key"), fingerprint=state.get("fingerprint"))
+            await self._forget_benign_learning(state)
         return {
             "disposition": disposition,
             "close_reason": reason,

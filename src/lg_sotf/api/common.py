@@ -23,6 +23,8 @@ from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertDetailOut, AlertOut, EntitiesPreviewOut, EscalationOut, FindingOut, RoutingOut
+from lg_sotf.audit.logger import Actor
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos import Alert, AlertListItem, Escalation
@@ -35,7 +37,6 @@ from lg_sotf.domain.blind_audit import (
 )
 from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
-from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.passwords import password_problem
@@ -44,13 +45,13 @@ from lg_sotf.services.escalation_views import EscalationView, escalation_views
 log = get_logger(__name__)
 
 
-async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str]) -> None:
-    """Drop these alerts' cached benign verdicts and block their keys (an analyst confirmed a threat)."""
+async def invalidate_verdicts(ctx: ApiContext, tenant_id: str, alert_ids: Sequence[str], actor: Actor) -> None:
+    """An analyst confirmed a threat: drop these alerts' cached benign verdicts and disable the rules matching them."""
     cache = VerdictCache(ctx.redis, ctx.prefix)
     for alert_id in alert_ids:
         try:
             alert = await ctx.repos.alerts.get(tenant_id, alert_id)
-            await cache.invalidate(tenant_id, verdict_key_of(alert), fingerprint=alert.fingerprint)
+            await forget_benign_learning(ctx.repos, cache, tenant_id, alert, actor=actor)
         except Exception as exc:  # noqa: BLE001 - the workflow invalidates again when it plans the response
             log_failure(
                 log, "api.verdict_invalidate_failed", exc, level="warning", alert_id=alert_id,

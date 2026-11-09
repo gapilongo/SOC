@@ -271,7 +271,13 @@ close a dangerous alert or trigger containment.
    truncated event) never uses the cache, a benign group decision applies to
    an attached alert only with the same verdict key, and admins can clear a
    tenant's cache (`DELETE /tenant/verdict-cache`). Suppression rules suggested from
-   false-positive decisions are bounded to the decided severity and below.
+   false-positive decisions (one per decision, or one for a batch of
+   escalations) match the same verdict key, not the fingerprint, and are
+   bounded to the decided severity and below. When a threat is confirmed on
+   an alert (an analyst `true_positive`, a blind-audit malicious label, a
+   planned response or a malicious close), every enabled suppression rule
+   that would close that alert, at its severity or the lowest, is disabled
+   and audited as `suppression.revoked`.
    Alerts mapped by the optional LLM-fallback normalizer
    (`llm_normalized`) have no trusted text, never use the verdict cache
    and are never closed automatically. A response the policy

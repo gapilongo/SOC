@@ -207,7 +207,7 @@ async def label_item(
         user_id=principal.local_user_id, organisation=principal.home_tenant_id if principal.delegated else None,
     )
     if body.label == "malicious":
-        await invalidate_verdicts(ctx, principal.tenant_id, [result.item.alert_id])
+        await invalidate_verdicts(ctx, principal.tenant_id, [result.item.alert_id], principal.actor)
     # The alert counts again in the dashboard and report figures (pending samples are left out of them).
     await forget_cached_figures(ctx, principal.tenant_id)
     await publish_event(ctx.events, "alert.updated", principal.tenant_id, result.item.alert_id, {"blind_audit": "labelled"})

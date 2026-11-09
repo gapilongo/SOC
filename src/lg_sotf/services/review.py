@@ -23,7 +23,7 @@ unless ``reject_remaining=True`` is passed, which explicitly rejects the
 alert's other pending actions.
 
 A ``false_positive`` decision may create a *disabled* suppression rule
-suggestion matching the alert's fingerprint (``source_feedback_id`` links it
+suggestion matching the alert's verdict key (``source_feedback_id`` links it
 to the analyst's feedback); an admin reviews and enables it.
 
 Grouped escalations: the decision is recorded once and every attached alert's
@@ -495,17 +495,16 @@ class ReviewService:
     async def _suggest_suppression(
         self, tenant_id: str, escalation: Escalation, feedback_id: str, actor: _Actor, now: datetime, conn: Connection
     ) -> Optional[str]:
-        """A disabled rule matching the alert's fingerprint (and source), for an admin to review and enable."""
+        """A disabled rule matching the alert's verdict key (and source), for an admin to review and enable."""
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
-        if not alert.fingerprint:
+        if not (key := verdict_key_of(alert)):
             return None
-        # Bounded to the severity the analyst judged (and below): a benign medium detection says
-        # nothing about a later critical one with the same fingerprint, which fingerprints do not
-        # distinguish (no severity, command line or process in them).
+        # The same detection and behaviour (verdict key: the fingerprint plus process, command line, service,
+        # user and parent; a fingerprint alone matched attacks), at the severity judged or below.
         decided_rank = SEVERITIES.index(alert.severity) if alert.severity in SEVERITIES else 0
         severities = list(SEVERITIES[: decided_rank + 1])
         match: Dict[str, Any] = {
-            "fingerprint": alert.fingerprint,
+            "verdict_key": key,
             "source_id": alert.source_id,
             "severity": {"in": severities},
         }

@@ -22,8 +22,9 @@ One *disabled* suppression rule is proposed from all the escalations, or
 nothing is written. Every escalation must exist in the tenant and carry an
 analyst's ``false_positive`` or ``benign_positive`` decision: a proposal
 needs that evidence, as for the detection report's proposals. The rule
-matches the escalations' alerts' fingerprints (the same detection on the
-same entities) and sources, bounded to the most severe of their severities
+matches the escalations' alerts' verdict keys (the same detection on the
+same entities with the same process, command line, service, user and
+parent: :mod:`lg_sotf.domain.verdict_key`) and sources, bounded to the most severe of their severities
 (``{"severity": {"in": [...]}}``), so it never covers a more severe alert.
 It is created through :meth:`ReviewService.propose_suppression
 <lg_sotf.services.review.ReviewService.propose_suppression>` (audited as
@@ -39,6 +40,7 @@ from uuid import UUID
 
 from lg_sotf.db.errors import AlreadyInState, Conflict, InvalidTransition, InvalidValue, NotFound
 from lg_sotf.db.repos import Escalation, Repositories, SuppressionRule
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, SEVERITIES
 from lg_sotf.services.review import DecisionResult, ReviewDenied, ReviewError, ReviewService
 
@@ -166,13 +168,16 @@ async def propose_suppression(
     async with repos.db.tenant_tx(tenant_id, readonly=True) as conn:
         escalations = [await repos.escalations.get(tenant_id, i, conn=conn) for i in ids]
         alerts = await repos.views.alert_digests(tenant_id, [e.alert_id for e in escalations], conn=conn)
+        keys = {verdict_key_of(await repos.alerts.get(tenant_id, e.alert_id, conn=conn)) for e in escalations}
     unconfirmed = [e.id for e in escalations if e.status != "decided" or e.decision not in BENIGN_DECISIONS]
     if unconfirmed:
         return SuppressionProposal(unconfirmed=unconfirmed)
+    if None in keys:
+        raise ReviewError("an alert's event could not be read completely; no rule can match its behaviour")
     digests = [alerts[e.alert_id] for e in escalations if e.alert_id in alerts]
     rank = max(SEVERITIES.index(d.severity) for d in digests if d.severity in SEVERITIES) if digests else 0
     match: Dict[str, Any] = {
-        "fingerprint": {"in": sorted({d.fingerprint for d in digests})},
+        "verdict_key": {"in": sorted(str(k) for k in keys)},
         "source_id": {"in": sorted({d.source_id for d in digests})},
         "severity": {"in": list(SEVERITIES[: rank + 1])},
     }

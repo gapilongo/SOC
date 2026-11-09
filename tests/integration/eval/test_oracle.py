@@ -1,11 +1,12 @@
 """The analyst oracle against the real database, Redis, ingestion and workflow engine (fake LLM).
 
-A repeated benign pattern: the first alert is escalated, the oracle decides it
-``false_positive`` through ``ReviewService.decide`` and the run resumes, so the
-close node writes the verdict cache; the repeat (same detection on the same
-entities, later in event time) then closes at the gate on the cache. A
-malicious alert with the same fingerprint is closed by the cache too, and the
-closure summary lists it.
+A repeated benign pattern: the first two alerts are escalated, the oracle
+decides each ``false_positive`` through ``ReviewService.decide`` and the runs
+resume, so the close node writes two analyst decisions to the verdict cache;
+the repeat (same detection, entities and behaviour, later in event time) then
+closes at the gate on the cache. A malicious alert with the same fingerprint
+but another command line is not the same verdict key: the cache leaves it to
+the workflow, and the oracle decides it ``true_positive``.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from tests.integration.eval._support import EVAL_TENANT
 pytestmark = [pytest.mark.integration, pytest.mark.timeout(300)]
 
 
-def _item(item_id: str, at: str, disposition: str) -> Dict[str, Any]:
+def _item(item_id: str, at: str, disposition: str, command: str = "report.exe --nightly") -> Dict[str, Any]:
     return {
         "id": item_id,
         "source_type": "canonical",
@@ -38,7 +39,7 @@ def _item(item_id: str, at: str, disposition: str) -> Dict[str, Any]:
             "severity": "medium",
             "occurred_at": at,
             "description": "A sign-in from a host this account rarely uses.",
-            "entities": {"hosts": ["srv-app-7"], "users": ["svc_report"]},
+            "entities": {"hosts": ["srv-app-7"], "users": ["svc_report"], "command_lines": [command]},
         },
         "expected": {"disposition": disposition},
     }
@@ -60,11 +61,12 @@ async def test_the_oracle_decides_through_the_real_path_and_the_cache_closes_the
     items = _items(
         _item("repeat", "2026-10-20T09:00:00Z", "benign"),
         _item("first", "2026-10-20T08:00:00Z", "benign"),
-        _item("attack", "2026-10-20T10:00:00Z", "malicious"),
+        _item("second", "2026-10-20T08:30:00Z", "benign"),
+        _item("attack", "2026-10-20T10:00:00Z", "malicious", command="report.exe -enc SQBFAFgA"),
     )
     order: List[str] = []
     results = {r.item_id: r for r in await eval_runner.run(items, progress=lambda d, t, r: order.append(r.item_id))}
-    assert order == ["first", "repeat", "attack"]
+    assert order == ["first", "second", "repeat", "attack"]
     assert all(r.error is None for r in results.values()), [r.error for r in results.values()]
 
     first = results["first"]
@@ -80,23 +82,25 @@ async def test_the_oracle_decides_through_the_real_path_and_the_cache_closes_the
     assert oracle_user is not None and decided.decided_by == oracle_user.id
     alert = await repos.alerts.get(EVAL_TENANT, first.alert_id)
     assert alert.status == "closed" and (alert.summary or {}).get("close_reason") == "analyst:false_positive"
-    # The false positive suggested a suppression rule, disabled until an admin enables it.
+    # Each false positive suggested a suppression rule, disabled until an admin enables it.
     rules = await repos.suppressions.list(EVAL_TENANT)
-    assert len(rules) == 1 and rules[0].enabled is False
+    assert len(rules) == 2 and not any(r.enabled for r in rules)
 
     repeat = results["repeat"]
     assert (repeat.status, repeat.close_reason, repeat.close_mechanism) == ("closed", "verdict_cache", "cache")
     assert repeat.oracle_decisions == [] and repeat.llm_calls == 0
 
-    # Same detection on the same entities: the cache closes the attack too, and the summary says so.
+    # One analyst decision is not enough for the cache: the second alert went to the oracle too.
+    assert results["second"].oracle_decisions == ["false_positive"] and results["second"].final_status == "closed"
+
+    # Same fingerprint, another command line: the cache does not close the attack.
     attack = results["attack"]
-    assert (attack.status, attack.close_mechanism) == ("closed", "cache")
+    assert attack.close_mechanism != "cache" and attack.oracle_decisions[:1] == ["true_positive"]
     summary = closure_summary(list(results.values()))
-    assert summary["headline"]["benign_closure"]["k"] == 1 and summary["headline"]["benign_closure"]["n"] == 2
-    assert summary["headline"]["malicious_auto_close"]["k"] == 1
-    assert [c["item_id"] for c in summary["malicious_closed"]] == ["attack"]
+    assert summary["headline"]["benign_closure"]["k"] == 1 and summary["headline"]["benign_closure"]["n"] == 3
+    assert summary["headline"]["malicious_auto_close"]["k"] == 0 and summary["malicious_closed"] == []
     cache = next(row for row in summary["by_mechanism"] if row["mechanism"] == "cache")
-    assert cache["benign"]["k"] == 1 and cache["malicious"] == 1
+    assert cache["benign"]["k"] == 1 and cache["malicious"] == 0
 
 
 async def test_accepted_suppressions_close_the_repeat_and_a_true_positive_clears_the_cache(
