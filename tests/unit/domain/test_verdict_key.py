@@ -203,3 +203,12 @@ def test_o365_parameters_are_part_of_the_key() -> None:
 
     with_process = {"processes": ["c:\\program files\\exchange\\msexchange.exe"]}
     assert _key(rule("archive@corp"), with_process) != _key(rule("attacker@evil.example"), with_process)
+
+
+def test_o365_parameters_past_the_cap_give_no_key() -> None:
+    """Repeated benign parameters must not hide one appended past the cap (PR #344 final review)."""
+    benign = [{"Name": "MoveToFolder", "Value": "Archive"}] * 40
+    malicious = benign + [{"Name": "ForwardTo", "Value": "attacker@evil.example"}]
+    with_process = {"processes": ["c:\\program files\\exchange\\msexchange.exe"]}
+    assert _key({"Operation": "New-InboxRule", "Parameters": malicious}, with_process) is None
+    assert _key({"Operation": "New-InboxRule", "Parameters": benign}, with_process) is None

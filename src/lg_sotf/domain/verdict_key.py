@@ -150,8 +150,14 @@ def _execve(args: Mapping[str, Any]) -> str:
 
 
 def _parameters(items: List[Any]) -> Iterator[Tuple[str, str]]:
-    """O365 ``Parameters`` (``[{"Name": ..., "Value": ...}]``) as ``Name=Value`` pairs."""
-    for item in items[:MAX_VALUES_PER_FIELD + 1]:
+    """O365 ``Parameters`` (``[{"Name": ..., "Value": ...}]``) as ``Name=Value`` pairs.
+
+    A longer list than the cap gives no key (``OverflowError``): reading only its first items would let repeated
+    benign parameters hide one appended after them.
+    """
+    if len(items) > MAX_VALUES_PER_FIELD:
+        raise OverflowError("too many parameters to read the behaviour")
+    for item in items:
         if isinstance(item, Mapping):
             named = {str(k).lower(): v for k, v in item.items()}
             yield "parameters", f"{named.get('name')}={named.get('value')}"
