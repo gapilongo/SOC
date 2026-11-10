@@ -217,3 +217,22 @@ async def reopen_counted(
         RETRO_REOPENED.labels(path=path).inc(len(reopened))
         log.info("retro_reopen.reopened", alert_id=threat.id, path=path, count=len(reopened))
     return reopened
+
+
+async def enqueue_requeued(repos: Repositories, queue: Any, tenant_id: str, alert_ids: Sequence[str]) -> int:
+    """After the reopen committed: a run message for each alert it requeued (folded ones have no run to start), the
+    same producer ingestion and the API use. A failure is logged, not raised: the orphan sweep is the backstop.
+    Returns the number enqueued."""
+    if queue is None:
+        return 0
+    enqueued = 0
+    for alert_id in alert_ids:
+        try:
+            alert = await repos.alerts.get(tenant_id, alert_id)
+            if alert.status != "queued":
+                continue
+            await queue.enqueue_process(tenant_id, alert_id, alert.severity)
+            enqueued += 1
+        except Exception as exc:  # noqa: BLE001 - the run is queued in the database; the orphan sweep dispatches it
+            log_failure(log, "retro_reopen.enqueue_failed", exc, alert_id=alert_id, error_type=type(exc).__name__)
+    return enqueued

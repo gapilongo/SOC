@@ -61,6 +61,7 @@ from lg_sotf.llm import TokenBudget
 from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
+from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.security.shadow import REFUSE, egress
@@ -190,6 +191,7 @@ async def build_node_deps(
         thresholds=RoutingThresholds.from_settings(settings.routing),
         events=events,
         budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
+        queue=WorkQueue(redis, settings),
     )
 
 

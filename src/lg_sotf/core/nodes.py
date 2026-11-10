@@ -24,7 +24,7 @@ from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
 from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
-from lg_sotf.core.retro_reopen import judged_threat, refold, reopen_counted
+from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat, refold, reopen_counted
 from lg_sotf.core.state import (
     AlertSummary,
     AnalystInput,
@@ -46,6 +46,7 @@ from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
+from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.shadow import shadow_run_id
 from lg_sotf.services.escalation import WORKFLOW_ACTOR, EscalationService
 from lg_sotf.services.plan_context import plan_context
@@ -71,6 +72,8 @@ class NodeDeps:
     thresholds: RoutingThresholds
     events: Optional[EventPublisher] = None
     budget: Optional[TokenBudget] = None
+    # Run messages for alerts retro-reopen requeued (lg_sotf.core.retro_reopen.enqueue_requeued).
+    queue: Optional[WorkQueue] = None
 
 
 def _small(data: Mapping[str, Any]) -> Dict[str, Any]:
@@ -350,7 +353,7 @@ class WorkflowNodes:
         if judged_threat(state.get("triage") or {}, analysis):
             # A model judged it a threat: the alerts the models closed alone on its entities reopen (policy v3).
             stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
-            await reopen_counted(self.deps.repos, tenant_id, stored, actor=WORKFLOW_ACTOR, path="escalation",
+            await self._reopen(stored, path="escalation",
                                  escalation_id=ticket.id)
         return {
             "escalation_id": ticket.id,
@@ -431,12 +434,19 @@ class WorkflowNodes:
         own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
+    async def _reopen(self, threat: Any, *, path: str, escalation_id: Optional[str]) -> None:
+        """Retro-reopen for a threat, then a run message for each alert it requeued (#350): it runs now, not after
+        the orphan sweep (which stays the backstop)."""
+        reopened = await reopen_counted(self.deps.repos, threat.tenant_id, threat, actor=WORKFLOW_ACTOR, path=path,
+                                        escalation_id=escalation_id)
+        await enqueue_requeued(self.deps.repos, self.deps.queue, threat.tenant_id, reopened)
+
     async def _forget_benign_learning(self, state: WorkflowState) -> None:
         """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again, and the
         alerts the models closed alone on its entities reopen (decision policy v3 safety net)."""
         alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
         await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
-        await reopen_counted(self.deps.repos, state["tenant_id"], alert, actor=WORKFLOW_ACTOR, path="workflow",
+        await self._reopen(alert, path="workflow",
                              escalation_id=state.get("escalation_id"))
 
     def _evidence(self, state: WorkflowState) -> str:
