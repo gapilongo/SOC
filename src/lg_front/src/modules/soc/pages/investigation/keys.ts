@@ -1,11 +1,13 @@
 /**
  * Keyboard shortcuts of the investigation view. Every shortcut has a visible
  * control; a single-key shortcut acts only outside text fields and can be
- * switched off (WCAG 2.1.4). The switch lasts for the tab: it is kept in
- * memory, not in browser storage, whose keys are a closed set.
+ * switched off (WCAG 2.1.4). The switch is a display preference each user
+ * keeps (lib/prefs.ts); without a user account it lasts for the page.
  */
 
 import { useEffect, useRef, useState } from 'react';
+
+import { readUserPref, writeUserPref } from '../../../../lib/prefs';
 
 /** Inputs that take no text: a character typed on them is free for a shortcut. */
 const NOT_TEXT = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'image', 'range', 'color']);
@@ -22,17 +24,14 @@ export function isSingleKey(e: KeyboardEvent): boolean {
   return !e.ctrlKey && !e.metaKey && !e.altKey && !e.defaultPrevented && !isTyping(e.target);
 }
 
-/** The switch, for this tab: the next alert opened keeps it. */
-let singleKeysOn = true;
-
-/** Whether single-key shortcuts are on (the default), and the switch. */
-export function useSingleKeys(): [boolean, (on: boolean) => void] {
-  const [on, setOn] = useState(singleKeysOn);
+/** Whether single-key shortcuts are on (the default) for this user, and the switch. */
+export function useSingleKeys(userId: string | null | undefined): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => readUserPref('single-keys', userId) !== 'off');
   return [
     on,
     (next: boolean) => {
-      singleKeysOn = next;
       setOn(next);
+      writeUserPref('single-keys', userId, next ? 'on' : 'off');
     },
   ];
 }

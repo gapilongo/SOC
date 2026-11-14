@@ -6,8 +6,9 @@
 
 import type { ReactNode } from 'react';
 
-import type { NotEstablishedItemOut, NotEstablishedOut } from '../../api/investigation';
+import type { InvestigationObservationOut, NotEstablishedOut } from '../../api/types';
 import { Glyph, type GlyphName } from './glyphs';
+import { observationName, observationSubject } from './Observation';
 
 function Kind({ glyph, title, count, children }: { glyph: GlyphName; title: string; count: number; children: ReactNode }) {
   return (
@@ -25,7 +26,7 @@ function Kind({ glyph, title, count, children }: { glyph: GlyphName; title: stri
   );
 }
 
-function Items({ items }: { items: NotEstablishedItemOut[] }) {
+function Items({ items }: { items: Array<{ what: string; why?: string | null; source?: string | null }> }) {
   return (
     <ul>
       {items.map((item, i) => (
@@ -34,41 +35,66 @@ function Items({ items }: { items: NotEstablishedItemOut[] }) {
           className="relative break-words py-1 pl-5 text-ctl text-body before:absolute before:left-1 before:top-2.5 before:h-px before:w-1 before:bg-control"
         >
           {item.what}
-          {item.why && <small className="block text-xs text-muted">{item.why}</small>}
+          {(item.why || item.source) && (
+            <small className="block text-xs text-muted">
+              {item.source && <span className="font-mono">{item.source}: </span>}
+              {item.why}
+            </small>
+          )}
         </li>
       ))}
     </ul>
   );
 }
 
-/** "Reputation of IP 203.0.113.50" -> "reputation of IP 203.0.113.50", for a sentence that lists several. */
-const lowerFirst = (value: string) => value.charAt(0).toLowerCase() + value.slice(1);
+/**
+ * The lookups that found nothing on one line, each kind of lookup named once:
+ * "Threat-intelligence reputation: IP address 203.0.113.50, file hash 5d1e...;
+ * earlier alerts of this customer for the same entity: user m.keller."
+ */
+export function emptyLine(ids: readonly string[], byId: ReadonlyMap<string, InvestigationObservationOut>): string {
+  const groups = new Map<string, string[]>();
+  for (const id of ids) {
+    const o = byId.get(id);
+    const title = o ? o.title : `Lookup ${id}`;
+    const subject = o ? observationSubject(o) : null;
+    groups.set(title, [...(groups.get(title) ?? []), ...(subject ? [subject] : [])]);
+  }
+  const parts = [...groups].map(([title, subjects], i) => {
+    const name = i === 0 ? title : title.charAt(0).toLowerCase() + title.slice(1);
+    return subjects.length ? `${name}: ${subjects.join(', ')}` : name;
+  });
+  return `${parts.join('; ')}.`;
+}
 
 export function NotEstablished({
   value,
+  observations,
   notCheckedNote,
 }: {
   value: NotEstablishedOut;
+  /** The observations of the investigation: `value.empty` names the ones that found nothing by id. */
+  observations: InvestigationObservationOut[];
   /** Said under "Not checked" when the data cannot list everything that was left out. */
   notCheckedNote?: string;
 }) {
-  const empty = value.checked_empty;
+  const byId = new Map(observations.map((o) => [o.id, o]));
+  const empty = value.empty.map((id) => ({ id, name: byId.has(id) ? observationName(byId.get(id) as InvestigationObservationOut) : `Lookup ${id}` }));
   return (
     <div>
       <Kind glyph="empty" title="Checked, found nothing" count={empty.length}>
-        <p className="break-words text-ctl text-body">
-          {empty.map((item, i) => (i === 0 ? item.what : lowerFirst(item.what))).join(', ')}.
-        </p>
+        <p className="break-words text-ctl text-body">{emptyLine(value.empty, byId)}</p>
         <details className="mt-1 text-xs">
           <summary className="flex min-h-6 w-fit cursor-pointer items-center text-link">
             Show the {empty.length} {empty.length === 1 ? 'lookup' : 'lookups'}
           </summary>
           <ul className="font-mono leading-relaxed text-body">
-            {empty.map((item, i) => (
-              <li key={`${item.what}-${i}`} className="break-words">
-                {item.observation_id ? `${item.observation_id}  ` : ''}
-                {item.what}
-                {item.why ? `  ${item.why}` : ''}
+            {empty.map((item) => (
+              <li key={item.id} className="break-words">
+                {item.id}
+                {'  '}
+                {item.name}
+                {byId.get(item.id)?.sources.length ? `  (${byId.get(item.id)?.sources.join(', ')})` : ''}
               </li>
             ))}
           </ul>

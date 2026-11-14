@@ -1544,3 +1544,209 @@ export interface PovRunOut {
   cancelled_at?: string | null;
   cancelled_by?: string | null;
 }
+
+// The investigation read model (`GET /alerts/{id}/investigation`) --------------------------------
+
+/** The four outcomes, each tied to what happens next. */
+export const OUTCOME_CATEGORIES = ['ai_closed_evidence', 'ai_closed_audit', 'needs_decision', 'needs_review'] as const;
+export type OutcomeCategory = (typeof OUTCOME_CATEGORIES)[number];
+export const CLOSED_BY_KINDS = ['ai', 'suppression_rule', 'cached_verdict', 'analyst'] as const;
+export type ClosedByKind = (typeof CLOSED_BY_KINDS)[number];
+export const CLAIM_CHECKS = ['supported', 'unsupported', 'rejected'] as const;
+export type ClaimCheck = (typeof CLAIM_CHECKS)[number];
+export const OBSERVATION_OUTCOMES = ['success', 'empty', 'failed'] as const;
+export type ObservationOutcome = (typeof OBSERVATION_OUTCOMES)[number];
+export const STEP_ACTORS = ['code', 'model', 'check', 'policy', 'person'] as const;
+export type StepActor = (typeof STEP_ACTORS)[number];
+
+/** A decide code, blocker or close reason, and the same in plain words (fixed text). */
+export interface InvestigationReasonOut {
+  code: string;
+  sentence: string;
+}
+
+/** Who or what closed the alert, and why. */
+export interface InvestigationClosedByOut {
+  kind: Open<ClosedByKind>;
+  reason: InvestigationReasonOut;
+  at: string | null;
+  /** analyst or cached_verdict: the analyst's decision. */
+  decision: string | null;
+  rule_id: string | null;
+  /** suppression_rule: its name, as data. */
+  rule_name: string | null;
+  /** cached_verdict: the alert the analyst decided. */
+  source_alert_id: string | null;
+}
+
+export interface InvestigationOutcomeOut {
+  /** Null when a suppression rule or a cached analyst verdict closed the alert before the AI looked at it. */
+  category: Open<OutcomeCategory> | null;
+  /** Why the alert is with a person, or why it was closed. */
+  reason: InvestigationReasonOut | null;
+  /** Why the AI may not close this alert on its own (needs_* categories). */
+  blockers: InvestigationReasonOut[];
+  /** ai_closed_evidence: the approved benign signals the rules found (codes). */
+  evidence: string[];
+  /** Null while the alert is open. */
+  closed_by: InvestigationClosedByOut | null;
+}
+
+/** The conclusion as it was written, and who wrote it. */
+export interface InvestigationSummaryOut {
+  text: string | null;
+  written_by: 'model' | 'rules' | null;
+}
+
+export interface InvestigationClaimOut {
+  id: string;
+  /** A model claim in the model's words (data), or the fixed sentence of a rule claim. */
+  text: string;
+  written_by: Open<'model' | 'rules'>;
+  direction: Open<'malicious' | 'benign'>;
+  /** The observations the claim rests on. */
+  observation_ids: string[];
+  check: Open<ClaimCheck>;
+  check_reason: string | null;
+}
+
+/** A highlighted character range of an excerpt line (`start` inclusive, `end` exclusive). */
+export interface ObservationMarkOut {
+  start: number;
+  end: number;
+}
+
+export interface ObservationExcerptLineOut {
+  text: string;
+  marks: ObservationMarkOut[];
+}
+
+/** One tool call and what it returned. */
+export interface InvestigationObservationOut {
+  id: string;
+  tool: string;
+  /** What the tool looks up, in plain words. */
+  title: string;
+  /** The kind of value looked up (ip, domain, hash, user, ...). */
+  kind: string | null;
+  /** The value looked up: data. */
+  target: string | null;
+  /** The providers that answered or failed. */
+  sources: string[];
+  at: string | null;
+  outcome: Open<ObservationOutcome>;
+  /** The worst provider verdict of a success. */
+  verdict: string | null;
+  cached: boolean;
+  excerpt: ObservationExcerptLineOut[];
+  excerpt_truncated: boolean;
+  /** From the trace store, when it has the call. */
+  input_sha256: string | null;
+  output_sha256: string | null;
+}
+
+export interface NotCheckedItemOut {
+  what: string;
+  why: string;
+}
+
+export interface UnavailableItemOut {
+  what: string;
+  why: string;
+  kind: Open<'no_source' | 'tool_failed'>;
+  source: string | null;
+  observation_id: string | null;
+}
+
+/** What the investigation does not establish: nothing here counts for or against the outcome. */
+export interface NotEstablishedOut {
+  /** Observation ids: checked, found nothing. */
+  empty: string[];
+  not_checked: NotCheckedItemOut[];
+  /** Could not be checked for this customer. */
+  unavailable: UnavailableItemOut[];
+}
+
+/** One thing the investigation did, in plain words (no engine node names). */
+export interface PlainStepOut {
+  ts: string;
+  actor: Open<StepActor>;
+  text: string;
+  produced: string | null;
+}
+
+/** How often people confirmed this outcome category for this tenant: the counts, and a rate only with enough of them. */
+export interface OutcomeTrackRecordOut {
+  category: Open<OutcomeCategory>;
+  basis: Open<'analyst_decisions' | 'blind_audit_labels'>;
+  window_days: number;
+  total: number;
+  confirmed: number;
+  min_samples: number;
+  /** confirmed / total; null when total is below min_samples. */
+  rate: number | null;
+}
+
+export interface ProposedActionGuardrailOut {
+  verdict: Open<'passed' | 'blocked'>;
+  code: string | null;
+  reason: string | null;
+}
+
+/** One action of the proposed response: on the ledger (`plan`, with its status) or previewed for the caller's role. */
+export interface ProposedActionOut {
+  /** plan: the action on the ledger. */
+  action_id: string | null;
+  action_type: string;
+  /** The exact target: data. */
+  target: string;
+  description: string | null;
+  risk: Open<RiskLevel>;
+  reversible: boolean | null;
+  inverse_action: string | null;
+  irreversible_note: string | null;
+  guardrail: ProposedActionGuardrailOut | null;
+  /** plan: the action's status; null in a preview. */
+  status: Open<ActionStatus> | null;
+  /** preview: what happens to it when nothing is pre-approved. */
+  without_preapproval: Open<'automatic' | 'awaiting_approval' | 'blocked'> | null;
+  /** preview: the caller's role may pre-approve it. */
+  can_preapprove: boolean | null;
+  role_lock: Open<'admin' | 'disabled'> | null;
+  /** preview: its `approved_actions` entry. */
+  approval_entry: string | null;
+}
+
+export interface ProposedResponseOut {
+  /** plan: recorded by the workflow. preview: what a true positive would propose now. none: nothing is proposed. */
+  source: Open<'plan' | 'preview' | 'none'>;
+  actions: ProposedActionOut[];
+}
+
+/** A field that stays empty until the investigation harness fills it. */
+export interface PendingHarnessFieldOut {
+  field: string;
+  why: string;
+  /** The GitHub issue of the story that fills it. */
+  issue: number;
+}
+
+/** `GET /alerts/{id}/investigation`: one read model that explains the AI's decision on an alert. */
+export interface InvestigationOut {
+  schema_version: number;
+  alert_id: string;
+  tenant_id: string;
+  generated_at: string;
+  /** The alert waits for its blind-audit label: the AI's side is withheld and every list is empty. */
+  hidden_for_blind_audit: boolean;
+  /** Null while the alert is still being processed. */
+  outcome: InvestigationOutcomeOut | null;
+  summary: InvestigationSummaryOut;
+  claims: InvestigationClaimOut[];
+  observations: InvestigationObservationOut[];
+  not_established: NotEstablishedOut;
+  steps: PlainStepOut[];
+  track_record: OutcomeTrackRecordOut | null;
+  response: ProposedResponseOut;
+  pending_harness: PendingHarnessFieldOut[];
+}

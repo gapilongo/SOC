@@ -10,6 +10,11 @@
  *   05 the proposed response, with exact targets
  *   06 the decision bar
  *
+ * The page renders the investigation read model
+ * (`GET /alerts/{id}/investigation`, see useInvestigation.ts); what the read
+ * model lists in `pending_harness` is said on the page as not yet available,
+ * in the read model's own words, and nothing else is.
+ *
  * Three voices are kept apart everywhere: what a tool returned (observed),
  * what the model wrote (claimed), what a check, the policy or a person
  * decided. "Hide the verdict" (V) withholds the verdict and the claims so
@@ -25,9 +30,8 @@ import { ApiError } from '../../../../api/client';
 import { endpoints } from '../../api/endpoints';
 import { decidedByLabel, escalationConflictNotice, escalationOwner, text } from '../../api/fields';
 import { useTenantLabel } from '../../api/hooks';
-import type { ClaimOut, InvestigationOut, ObservationOut } from '../../api/investigation';
-import { afterEscalationChange } from '../../api/invalidate';
-import type { AlertDetailOut, EscalationOut } from '../../api/types';
+import { afterAlertChange, afterEscalationChange } from '../../api/invalidate';
+import type { AlertDetailOut, EscalationOut, InvestigationClaimOut, InvestigationObservationOut, InvestigationOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can, escalationDecisionBlockedReason } from '../../../../auth/roles';
 import type { Principal } from '../../../../auth/store';
@@ -42,11 +46,9 @@ import {
   StepList,
   TrackRecord,
   VoiceTag,
-  outcomeKind,
-  type OutcomeKind,
 } from '../../components/investigation';
 import { useToast } from '../../../../components/Toast';
-import { Banner, Button, ErrorMessage, LoadingState, Spinner, cx } from '../../../../components/ui';
+import { Button, ErrorMessage, LoadingState, Spinner, cx } from '../../../../components/ui';
 import { formatDateTime } from '../../../../lib/format';
 import { APPROVALS_HREF, alertHref, alertsHref, escalationHref } from '../../lib/links';
 import { asObjectOrNull } from '../../../../lib/json';
@@ -88,6 +90,45 @@ function DocSection({ n, title, note, right, children }: { n: string; title: str
 
 const LINK = 'text-link underline hover:text-link-hover';
 
+/**
+ * What the read model says stays empty until the harness, for the fields
+ * whose path starts with one of `prefixes`: each reason once, in the read
+ * model's own words.
+ */
+export function pendingWhy(investigation: Pick<InvestigationOut, 'pending_harness'>, ...prefixes: string[]): string[] {
+  const out: string[] = [];
+  for (const p of investigation.pending_harness) {
+    if (prefixes.some((prefix) => p.field === prefix || p.field.startsWith(`${prefix}[`) || p.field.startsWith(`${prefix}.`)) && !out.includes(p.why)) out.push(p.why);
+  }
+  return out;
+}
+
+/**
+ * What a section cannot show yet, as the read model says it; nothing when it
+ * lists nothing for the section. One reason is a line; several fold into a
+ * list the reader opens.
+ */
+function Pending({ why }: { why: string[] }) {
+  if (why.length === 0) return null;
+  if (why.length === 1) {
+    return (
+      <p data-pending className="pt-2 text-xs text-muted">
+        Not yet available: {why[0]}
+      </p>
+    );
+  }
+  return (
+    <details data-pending className="pt-2 text-xs text-muted">
+      <summary className="flex min-h-6 w-fit cursor-pointer items-center text-link">Not yet available in this section ({why.length})</summary>
+      <ul className="list-disc pl-5">
+        {why.map((w) => (
+          <li key={w}>{w}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 // 01: the subject of the alert -------------------------------------------------------
 
 const ENTITY_WORDS: Record<string, string> = {
@@ -104,6 +145,16 @@ const ENTITY_WORDS: Record<string, string> = {
 /** Values shown per entity kind; the rest are counted. */
 const MAX_PER_KIND = 2;
 
+/**
+ * Where an entity chip leads: the alert list (every status) searched for the
+ * value. The list's search is the API's title search (`q`, the last 30 days
+ * by default); there is no entity filter yet, and the link's name says what
+ * it finds.
+ */
+export function entityHref(value: string): string {
+  return alertsHref({ view: 'all', q: value });
+}
+
 function Subject({ alert }: { alert: AlertDetailOut }) {
   const normalized = asObjectOrNull(alert.normalized);
   const techniques = strings(asObjectOrNull(normalized?.mitre)?.techniques);
@@ -114,9 +165,16 @@ function Subject({ alert }: { alert: AlertDetailOut }) {
         const label = ENTITY_WORDS[kind] ?? kind.replace(/_/g, ' ');
         const shown = values.slice(0, MAX_PER_KIND).map((value, i) => (
           <li key={`${kind}-${i}`} className="max-w-full">
-            <FactChip label={label} mono>
-              {value}
-            </FactChip>
+            <Link
+              to={entityHref(value)}
+              title={`Alerts whose title names ${value}`}
+              className="inline-flex max-w-full rounded-tag hover:underline"
+            >
+              <FactChip label={label} mono>
+                {value}
+              </FactChip>
+              <span className="sr-only">: alerts whose title names it</span>
+            </Link>
           </li>
         ));
         if (values.length > MAX_PER_KIND) {
@@ -147,15 +205,8 @@ function Subject({ alert }: { alert: AlertDetailOut }) {
   );
 }
 
-const TRACK_OUTCOME: Partial<Record<OutcomeKind, string>> = {
-  needs_decision_malicious: 'alerts sent to a person as likely malicious',
-  needs_decision_unsure: 'alerts sent to a person as unsure',
-  ai_closed: 'alerts the AI closed',
-  ai_closed_audit: 'alerts the AI closed and sampled for audit',
-};
-
 /** "2 of the 5 claims are backed by what the tools returned; 3 cite no fact." */
-export function checkLine(claims: readonly ClaimOut[]): string | undefined {
+export function checkLine(claims: ReadonlyArray<Pick<InvestigationClaimOut, 'check'>>): string | undefined {
   if (claims.length === 0) return undefined;
   const backed = claims.filter((c) => c.check === 'supported').length;
   const rejected = claims.filter((c) => c.check === 'rejected').length;
@@ -182,7 +233,7 @@ function Claims({
   const byId = new Map(investigation.observations.map((o) => [o.id, o]));
   const shown = new Set<string>();
   const rows = investigation.claims.map((claim, i) => {
-    const cited = claim.observation_ids.flatMap((id): ObservationOut[] => (byId.has(id) ? [byId.get(id) as ObservationOut] : []));
+    const cited = claim.observation_ids.flatMap((id): InvestigationObservationOut[] => (byId.has(id) ? [byId.get(id) as InvestigationObservationOut] : []));
     const observations = cited.map((o) => {
       const repeated = shown.has(o.id);
       shown.add(o.id);
@@ -200,9 +251,11 @@ function Claims({
     <>
       {rows.length === 0 && (
         <p className="py-3 text-ctl text-muted">
-          {investigation.observations.length === 0 && !investigation.summary
-            ? 'No investigation ran for this alert: there are no claims and no observations.'
-            : 'The analysis recorded no claim for this alert.'}
+          {investigation.hidden_for_blind_audit
+            ? 'The claims and the observations are withheld with the verdict.'
+            : investigation.observations.length === 0 && !investigation.summary.text
+              ? 'No investigation ran for this alert: there are no claims and no observations.'
+              : 'The analysis recorded no claim for this alert.'}
         </p>
       )}
       {rows}
@@ -269,6 +322,8 @@ function useClaim(e: EscalationOut | undefined) {
     } finally {
       setBusy(false);
       void afterEscalationChange(client);
+      // The proposed response is computed for the caller: it is theirs to tick once the claim is.
+      void afterAlertChange(client, e.alert_id);
     }
   };
   return { busy, run: () => void run() };
@@ -296,18 +351,19 @@ function Investigation({ alertId }: { alertId: string }) {
   const api = useApi();
   const navigate = useNavigate();
   const toast = useToast();
+  const client = useQueryClient();
   const { principal } = useAuth();
   const tenant = useTenantLabel();
-  const { alert, escalation, escalationLoading, events, preview, investigation, active } = useInvestigation(alertId);
+  const { alert, model, escalation, escalationLoading, events, preview, investigation, source, active } = useInvestigation(alertId);
   const [blind, setBlind] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [preapproved, setPreapproved] = useState<Set<string>>(new Set());
-  const [singleKeys, setSingleKeys] = useSingleKeys();
+  const [singleKeys, setSingleKeys] = useSingleKeys(principal?.userId);
   const e = escalation.data;
   const claim = useClaim(e);
   const a = alert.data;
   // A blind-audit sample: the API withholds the AI's side for everyone, so there is nothing to reveal.
-  const withheld = Boolean(a?.hidden_for_blind_audit);
+  const withheld = Boolean(a?.hidden_for_blind_audit || investigation?.hidden_for_blind_audit);
   const hidden = withheld || blind;
 
   const select = (id: string) => {
@@ -326,13 +382,15 @@ function Investigation({ alertId }: { alertId: string }) {
     }
   });
 
-  if (alert.isPending) return <LoadingState label="Loading the investigation" />;
+  if (alert.isPending || (alert.isSuccess && !investigation && !model.isError)) return <LoadingState label="Loading the investigation" />;
   if (alert.isError || !a || !investigation) {
-    const missing = alert.error instanceof ApiError && alert.error.status === 404;
+    // The alert could not be read, or it could and its investigation could not (a 404 there falls back to the adapter).
+    const error = alert.isError ? alert.error : model.error;
+    const missing = error instanceof ApiError && error.status === 404;
     return (
       <div className="flex flex-col gap-4">
-        <h1 className="text-xl font-semibold text-fg">{missing ? 'Alert not found' : 'Alert'}</h1>
-        <ErrorMessage error={alert.error} onRetry={missing ? undefined : () => void alert.refetch()} />
+        <h1 className="text-xl font-semibold text-fg">{alert.isError && missing ? 'Alert not found' : (a?.title ?? 'Alert')}</h1>
+        <ErrorMessage error={error} onRetry={missing ? undefined : () => void (alert.isError ? alert.refetch() : model.refetch())} />
         <Link to="/alerts" className={cx('text-ctl', LINK)}>
           Back to the alerts
         </Link>
@@ -340,14 +398,17 @@ function Investigation({ alertId }: { alertId: string }) {
     );
   }
 
-  const kind = outcomeKind(investigation.outcome, a.status);
   const owner = e && active ? escalationOwner(e, principal?.userId) : null;
-  const planned = investigation.response?.actions ?? [];
-  const gaps = new Set(investigation.not_yet_available);
+  const response = investigation.response;
+  // What a true positive would propose: only a preview can be ticked, and only while the decision is open.
+  const proposed = response.source === 'preview' && e && active;
+  const planned = proposed ? response.actions : [];
   const description = text(asObjectOrNull(a.normalized)?.description);
+  const mine = Boolean(e && e.assigned_to && e.assigned_to === principal?.userId);
 
   const openNext = async () => {
     if (!e) return;
+    void afterAlertChange(client, a.id);
     try {
       const next = await findNextEscalation(api, principal, e.id);
       if (next) navigate(alertHref(next.alert_id));
@@ -357,10 +418,8 @@ function Investigation({ alertId }: { alertId: string }) {
     }
   };
 
-  const mine = Boolean(e && e.assigned_to && e.assigned_to === principal?.userId);
-
   return (
-    <div data-investigation={hidden ? 'hidden' : 'shown'}>
+    <div data-investigation={hidden ? 'hidden' : 'shown'} data-source={source ?? undefined}>
       <nav aria-label="Breadcrumb" className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
         <Link to="/alerts" className="text-secondary hover:underline">
           Alerts
@@ -390,7 +449,7 @@ function Investigation({ alertId }: { alertId: string }) {
           <SeverityBars value={a.severity} />
           {e && active && <SlaChip e={e} />}
           {owner && <FactChip label="Owner">{owner.kind === 'you' ? 'you' : owner.label}</FactChip>}
-          <Button size="sm" aria-pressed={hidden} disabled={withheld} onClick={() => setBlind((on) => !on)}>
+          <Button aria-pressed={hidden} disabled={withheld} onClick={() => setBlind((on) => !on)}>
             {hidden ? 'Show the verdict' : 'Hide the verdict'}
             <Keycap className="hidden min-[900px]:inline-flex">V</Keycap>
           </Button>
@@ -437,7 +496,17 @@ function Investigation({ alertId }: { alertId: string }) {
           {hidden ? (
             <p className="text-ctl text-muted">Hidden with the verdict.</p>
           ) : (
-            <TrackRecord record={investigation.track_record} outcome={TRACK_OUTCOME[kind] ?? 'alerts with this outcome'} scope={tenant} />
+            <TrackRecord
+              record={investigation.track_record}
+              scope={tenant}
+              none={
+                pendingWhy(investigation, 'track_record')[0]
+                  ? `Not yet available: ${pendingWhy(investigation, 'track_record')[0]}`
+                  : investigation.outcome?.category
+                    ? 'Not measured for this alert.'
+                    : 'The track record counts the four AI outcomes. This alert has none of them.'
+              }
+            />
           )}
         </aside>
       </div>
@@ -447,7 +516,7 @@ function Investigation({ alertId }: { alertId: string }) {
           <DocSection
             n="02"
             title="Claims, each beside the fact it rests on"
-            note={investigation.summary?.source === 'rules' ? 'Left: what the analysis rules state. Right: what a tool returned, unedited.' : 'Left: what the model says. Right: what a tool returned, unedited.'}
+            note="Left: what the model says. Right: what a tool returned, unedited."
             right={
               <>
                 <VoiceTag voice="claimed">Claimed</VoiceTag>
@@ -456,19 +525,15 @@ function Investigation({ alertId }: { alertId: string }) {
             }
           >
             <Claims investigation={investigation} hidden={hidden} selected={selected} onSelect={select} />
-            {gaps.has('claims.check') && investigation.claims.length > 0 && !hidden && (
-              <p className="pt-2 text-xs text-muted">
-                Not yet available: the evidence checker. Until it is in place, a claim counts as backed when it names the target of a lookup that returned data,
-                and observations carry no hash.
-              </p>
-            )}
+            {!hidden && <Pending why={pendingWhy(investigation, 'claims', 'observations')} />}
           </DocSection>
         </div>
         <div className="min-w-0 min-[1200px]:sticky min-[1200px]:top-16">
           <DocSection n="03" title="What is not established">
             <NotEstablished
               value={investigation.not_established}
-              notCheckedNote={gaps.has('not_established.not_checked') ? 'Not yet available: what the playbook leaves out. This lists only the indicators of the alert that no lookup was recorded for.' : undefined}
+              observations={investigation.observations}
+              notCheckedNote={pendingWhy(investigation, 'not_established')[0] ? `Not yet available: ${pendingWhy(investigation, 'not_established')[0]}` : undefined}
             />
           </DocSection>
         </div>
@@ -488,31 +553,28 @@ function Investigation({ alertId }: { alertId: string }) {
             </>
           }
         >
-          {events.isPending && (
+          {source === 'adapter' && events.isPending && (
             <div className="py-3">
               <Spinner label="Loading the steps" />
             </div>
           )}
-          {events.isError && (
+          {source === 'adapter' && events.isError && (
             <div className="py-3">
               <ErrorMessage error={events.error} onRetry={() => void events.refetch()} compact />
             </div>
           )}
-          {events.isSuccess && investigation.steps.length === 0 && <p className="py-3 text-ctl text-muted">No step is recorded for this alert yet.</p>}
-          <StepList steps={investigation.steps} hideModelOutput={hidden} />
-          {events.hasNextPage && (
-            <Button size="sm" className="mt-3" onClick={() => void events.fetchNextPage()} busy={events.isFetchingNextPage}>
-              Load more steps
-            </Button>
+          {investigation.steps.length === 0 && !(source === 'adapter' && !events.isSuccess) && (
+            <p className="py-3 text-ctl text-muted">No step is recorded for this alert yet.</p>
           )}
-          <p className="mt-2 text-xs text-muted">Not yet available: the cost of the run, its tool budget and the check of the evidence chain.</p>
+          <StepList steps={investigation.steps} hideModelOutput={hidden} />
+          <Pending why={pendingWhy(investigation, 'steps')} />
           <div id="evidence-record" className="mt-4 scroll-mt-20">
             <h3 className="mb-1.5 text-ctl font-semibold text-fg">Evidence record</h3>
             <EvidenceActions alertId={a.id} />
           </div>
         </DocSection>
 
-        {e && active ? (
+        {proposed ? (
           <DocSection
             n="05"
             title="Proposed response"
@@ -526,29 +588,42 @@ function Investigation({ alertId }: { alertId: string }) {
               </>
             }
           >
-            {preview.isPending && (
+            <ResponseTable actions={planned} selected={preapproved} onChange={setPreapproved} disabled={!mine || blockedReason(e, principal) !== null} />
+          </DocSection>
+        ) : response.source === 'plan' ? (
+          <DocSection
+            n="05"
+            title="Response"
+            note={
+              <>
+                The actions the workflow recorded for this alert, each with its status. What waits is approved in{' '}
+                <Link to={APPROVALS_HREF} className={LINK}>
+                  Approvals
+                </Link>
+                .
+              </>
+            }
+          >
+            <ResponseTable actions={response.actions} planned selected={preapproved} onChange={setPreapproved} disabled />
+          </DocSection>
+        ) : source === 'adapter' && !active ? (
+          // An API without the read model: the ledger's own list says what ran.
+          <DocSection n="05" title="Response" note="What ran, what waits for an approval and what was blocked.">
+            <div className="pt-3">{escalationLoading ? <Spinner label="Loading the escalation" /> : <ResponseActions alertId={a.id} />}</div>
+          </DocSection>
+        ) : (
+          <DocSection n="05" title={e && active ? 'Proposed response' : 'Response'}>
+            {source === 'adapter' && preview.isPending && active ? (
               <div className="py-3">
                 <Spinner label="Computing the proposed response" />
               </div>
-            )}
-            {preview.isError && (
+            ) : source === 'adapter' && preview.isError ? (
               <div className="py-3">
                 <ErrorMessage error={preview.error} onRetry={() => void preview.refetch()} compact />
               </div>
+            ) : (
+              <p className="py-3 text-ctl text-muted">{e && active ? 'A true positive would propose no response action for this alert.' : 'No response is proposed for this alert.'}</p>
             )}
-            {investigation.response?.dry_run_forced && (
-              <Banner tone="info" title="Dry run" className="mt-3">
-                Response actions are recorded but not executed (the tenant’s dry-run setting or kill switch).
-              </Banner>
-            )}
-            {preview.isSuccess && planned.length === 0 && <p className="py-3 text-ctl text-muted">The policy plans no response action for this alert.</p>}
-            {planned.length > 0 && (
-              <ResponseTable actions={planned} selected={preapproved} onChange={setPreapproved} disabled={!mine || blockedReason(e, principal) !== null} />
-            )}
-          </DocSection>
-        ) : (
-          <DocSection n="05" title="Response" note="What ran, what waits for an approval and what was blocked.">
-            <div className="pt-3">{escalationLoading ? <Spinner label="Loading the escalation" /> : <ResponseActions alertId={a.id} />}</div>
           </DocSection>
         )}
 

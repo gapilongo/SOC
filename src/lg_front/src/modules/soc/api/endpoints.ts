@@ -39,6 +39,7 @@ import type {
   IntegrationTestOut,
   GuidedCheckOut,
   IntegrationUpdateIn,
+  InvestigationOut,
   JsonObject,
   LlmTestOut,
   MicrosoftCatalogOut,
@@ -161,6 +162,8 @@ export const endpoints = {
   alerts: (api: ApiClient, filters: AlertFilters, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<AlertOut>>('/alerts', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),
   alert: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<AlertDetailOut>(`/alerts/${enc(id)}`, { signal }),
+  /** The investigation read model: one shape that explains the AI's decision (404 on an API that predates it). */
+  investigation: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<InvestigationOut>(`/alerts/${enc(id)}/investigation`, { signal }),
   alertEvents: (api: ApiClient, id: string, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<AlertEventOut>>(`/alerts/${enc(id)}/events`, { query: { cursor, limit: 200 }, signal }),
   addNote: (api: ApiClient, id: string, text: string) => api.post<AlertEventOut>(`/alerts/${enc(id)}/notes`, { text }),

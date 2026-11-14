@@ -1,6 +1,7 @@
 /**
  * Display preferences kept in localStorage: the theme and the table density,
- * and per user the work queue's row density and saved views.
+ * and per user the work queue's row density and saved views and whether
+ * single-key shortcuts are on.
  *
  * The one place the app touches localStorage (eslint bans it elsewhere:
  * credentials are never persisted). Only small, non-sensitive UI choices go
@@ -31,12 +32,13 @@ export function writePref(key: PrefKey, value: string): void {
 
 /**
  * Display preferences of one page that each signed-in user keeps separately
- * (the work queue's row density and saved views). The key is closed like
+ * (the work queue's row density and saved views, the investigation view's
+ * single-key shortcuts on or off). The key is closed like
  * `PrefKey`, and the user id is part of the storage key, so two people on one
  * browser do not share them. Not for anything sensitive: a saved view holds
  * filter names only.
  */
-export type UserPrefKey = 'queue-density' | 'queue-views';
+export type UserPrefKey = 'queue-density' | 'queue-views' | 'single-keys';
 
 /** The longest value a user preference may hold (characters). */
 export const USER_PREF_MAX = 8_000;

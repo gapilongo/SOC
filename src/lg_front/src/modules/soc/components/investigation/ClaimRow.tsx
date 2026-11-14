@@ -1,17 +1,18 @@
 /**
- * Claimed: one statement of the analysis, beside the observations it rests
- * on. The check is always visible: backed by named observations, rejected
+ * Claimed: one statement of the model (or, marked as such, of the rules),
+ * beside the observations it rests on. The check is always visible: backed by named observations, rejected
  * by the checker (struck through, with the reason) or unsupported (no fact
  * cited). With the verdict hidden only the number and the observations stay.
  */
 
 import type { ReactNode } from 'react';
 
-import type { ClaimOut } from '../../api/investigation';
+import type { InvestigationClaimOut } from '../../api/types';
 import { cx } from '../../../../components/ui';
 import { Glyph } from './glyphs';
+import { VoiceTag } from './voices';
 
-function Stance({ direction }: { direction: ClaimOut['direction'] }) {
+function Stance({ direction }: { direction: InvestigationClaimOut['direction'] }) {
   if (direction !== 'malicious' && direction !== 'benign') return null;
   const malicious = direction === 'malicious';
   return (
@@ -22,7 +23,7 @@ function Stance({ direction }: { direction: ClaimOut['direction'] }) {
   );
 }
 
-function Check({ claim }: { claim: ClaimOut }) {
+function Check({ claim }: { claim: InvestigationClaimOut }) {
   if (claim.check === 'supported') {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-ok-fg">
@@ -55,7 +56,7 @@ export function ClaimRow({
   onSelect,
   children,
 }: {
-  claim: ClaimOut;
+  claim: InvestigationClaimOut;
   /** The claim's number on the page (also its keyboard shortcut). */
   number: number;
   selected?: boolean;
@@ -92,6 +93,7 @@ export function ClaimRow({
         <div className="min-w-0">
           <p className={cx('break-words text-sm leading-snug', rejected ? 'text-secondary line-through decoration-control' : 'text-fg')}>{claim.text}</p>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-xs text-muted">
+            {claim.written_by === 'rules' && <VoiceTag voice="decided">Stated by the rules</VoiceTag>}
             <Stance direction={claim.direction} />
             <Check claim={claim} />
           </div>
