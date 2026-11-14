@@ -1,5 +1,5 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 
 import { ROW_HEIGHT, useDensity } from '../theme/density';
 import { Button, cx } from './ui';
@@ -18,6 +18,12 @@ export interface Column<T> {
 export interface VirtualTableApi {
   /** Move the cursor to this row (clamped), scroll it into view and focus it. */
   focusRow: (index: number) => void;
+  /**
+   * Where the cursor is now. Keyboard focus follows the cursor an animation frame later, so a
+   * key that arrives within that frame still comes from the row left behind: a page that acts
+   * on "the current row" asks here, not the row the key came from.
+   */
+  activeIndex: () => number;
 }
 
 /** How a row stands, for `rowClassName`. */
@@ -102,6 +108,12 @@ export function VirtualTable<T>({
   const rowHeight = rowHeightProp ?? ROW_HEIGHT[density];
   const scrollRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+  // The cursor as of the last key or focus, ahead of the next render and of the focus that follows it.
+  const cursor = useRef(0);
+  const setCursor = useCallback((index: number) => {
+    cursor.current = index;
+    setActive(index);
+  }, []);
   const template = columns.map((c) => c.width).join(' ');
 
   const virtualizer = useVirtualizer({
@@ -121,8 +133,8 @@ export function VirtualTable<T>({
   }, [autoLoad, hasMore, loadingMore, onLoadMore, lastIndex, rows.length]);
 
   useEffect(() => {
-    if (active >= rows.length && rows.length > 0) setActive(rows.length - 1);
-  }, [active, rows.length]);
+    if (active >= rows.length && rows.length > 0) setCursor(rows.length - 1);
+  }, [active, rows.length, setCursor]);
 
   useEffect(() => {
     onActiveChange?.(active);
@@ -133,25 +145,31 @@ export function VirtualTable<T>({
   const focusRow = useCallback(
     (index: number) => {
       const clamped = Math.max(0, Math.min(rows.length - 1, index));
-      setActive(clamped);
+      setCursor(clamped);
       virtualizer.scrollToIndex(clamped, { align: 'auto' });
       requestAnimationFrame(() => {
+        // Several moves within one frame: only the last one takes the focus.
+        if (cursor.current !== clamped) return;
         scrollRef.current?.querySelector<HTMLElement>(`[data-row-index="${clamped}"]`)?.focus();
       });
     },
-    [rows.length, virtualizer],
+    [rows.length, virtualizer, setCursor],
+  );
+  const api = useMemo<VirtualTableApi>(
+    () => ({ focusRow, activeIndex: () => Math.max(0, Math.min(rows.length - 1, cursor.current)) }),
+    [focusRow, rows.length],
   );
 
   useEffect(() => {
     if (!apiRef) return;
-    apiRef.current = { focusRow };
+    apiRef.current = api;
     return () => {
       apiRef.current = null;
     };
-  }, [apiRef, focusRow]);
+  }, [apiRef, api]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, index: number, row: T) => {
-    if (onRowKeyDown?.(e, row, index, { focusRow })) return;
+    if (onRowKeyDown?.(e, row, index, api)) return;
     const page = Math.max(1, Math.floor((scrollRef.current?.clientHeight ?? 400) / rowHeight) - 1);
     switch (e.key) {
       case 'ArrowDown':
@@ -222,7 +240,7 @@ export function VirtualTable<T>({
                     aria-label={rowLabel(row)}
                     data-row-index={vi.index}
                     tabIndex={vi.index === active ? 0 : -1}
-                    onFocus={() => setActive(vi.index)}
+                    onFocus={() => setCursor(vi.index)}
                     onClick={openOnClick ? () => onOpen?.(row) : undefined}
                     onKeyDown={(e) => onKeyDown(e, vi.index, row)}
                     className={cx(

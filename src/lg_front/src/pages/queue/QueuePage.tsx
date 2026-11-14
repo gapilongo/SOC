@@ -88,8 +88,14 @@ export default function QueuePage() {
   const [saved, setSavedState] = useState<SavedView[]>(() => parseSavedViews(readUserPref('queue-views', userId)));
   const [previewOpen, setPreviewOpen] = useState(true);
   const [active, setActive] = useState(0);
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [picked, setPickedState] = useState<ReadonlySet<string>>(new Set());
   const [capped, setCapped] = useState(false);
+  // The selection as of the last key: X then C may arrive before the page has rendered the X.
+  const pickedNow = useRef<ReadonlySet<string>>(picked);
+  const setPicked = useCallback((next: ReadonlySet<string>) => {
+    pickedNow.current = next;
+    setPickedState(next);
+  }, []);
   const [result, setResult] = useState<BulkResult | null>(null);
 
   const setDensity = useCallback(
@@ -129,7 +135,7 @@ export default function QueuePage() {
   useEffect(() => {
     setPicked(new Set());
     setCapped(false);
-  }, [viewKey]);
+  }, [viewKey, setPicked]);
 
   // The saved view's density applies when the view is opened.
   const savedDensity = view.saved?.density;
@@ -142,14 +148,14 @@ export default function QueuePage() {
     enabled: canAct,
     isSelected: (id) => picked.has(id),
     toggle: (row) => {
-      const next = new Set(picked);
+      const next = new Set(pickedNow.current);
       if (next.has(row.id)) next.delete(row.id);
       else if (next.size < BULK_MAX_ITEMS) next.add(row.id);
       setCapped(!next.has(row.id) && next.size >= BULK_MAX_ITEMS);
       setPicked(next);
     },
     setAll: (all, on) => {
-      const next = new Set(picked);
+      const next = new Set(pickedNow.current);
       for (const e of all) {
         if (!on) next.delete(e.id);
         else if (next.size < BULK_MAX_ITEMS) next.add(e.id);
@@ -165,45 +171,58 @@ export default function QueuePage() {
 
   const { claim, busy: claiming } = useClaim();
   const bulkClaim = useBulkClaim();
-  const claimSelected = () =>
-    bulkClaim.mutate(toBulkItems(selected), {
+  const selectedNow = () => rows.filter((e) => pickedNow.current.has(e.id));
+  const claimSelected = () => {
+    const items = selectedNow();
+    bulkClaim.mutate(toBulkItems(items), {
       onSuccess: (out) => {
-        setResult({ kind: 'claim', out, titles: Object.fromEntries(selected.map((e) => [e.id, escalationTitle(e)])) });
+        setResult({ kind: 'claim', out, titles: Object.fromEntries(items.map((e) => [e.id, escalationTitle(e)])) });
         clearSelection();
       },
     });
+  };
 
   const open = (row: EscalationOut) => navigate(escalationHref(row));
 
   // Keys. The same letters work on a focused row and anywhere on the page outside a field, a menu or a dialog.
+  // They act on the cursor row as the table has it now: focus (and this page's render) follow the cursor a
+  // frame later, and a key that arrives within that frame must not act on the row left behind.
   const table = useRef<VirtualTableApi | null>(null);
-  const onLetter = (key: string, row: EscalationOut | null, index: number): boolean => {
+  const cursorRow = (): EscalationOut | null => rows[table.current?.activeIndex() ?? 0] ?? null;
+  const onKey = (key: string): boolean => {
+    const index = table.current?.activeIndex() ?? 0;
+    const row = cursorRow();
     switch (key) {
       case 'j':
+      case 'ArrowDown':
         table.current?.focusRow(index + 1);
         return true;
       case 'k':
+      case 'ArrowUp':
         table.current?.focusRow(index - 1);
         return true;
       case 'x':
         if (row && canAct) selection.toggle(row);
         return true;
       case 'c':
-        if (canAct && selected.length) claimSelected();
+        if (canAct && selectedNow().length) claimSelected();
         else if (canAct && row) void claim(row);
         return true;
       case ' ':
         setPreviewOpen((on) => !on);
         return true;
+      case 'Enter':
+        if (row) open(row);
+        return true;
       default:
         return false;
     }
   };
-  const onRowKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>, row: EscalationOut, index: number): boolean => {
+  const onRowKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): boolean => {
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     // Space and Enter on the row's own checkbox or link do what they do there.
     if (e.target !== e.currentTarget && (e.key === ' ' || e.key === 'Enter')) return true;
-    if (!onLetter(keyOf(e.key), row, index)) return false;
+    if (!onKey(keyOf(e.key))) return false;
     e.preventDefault();
     return true;
   };
@@ -214,12 +233,11 @@ export default function QueuePage() {
     const target = e.target instanceof HTMLElement ? e.target : null;
     if (target && (isTyping(target) || target.closest('[role="dialog"], [role="menu"], [role="listbox"]'))) return;
     const key = keyOf(e.key);
-    if ((key === ' ' || key === 'Enter') && target?.closest('a, button, input, summary, [role="row"]')) return;
-    if (key === 'Enter') {
-      if (!current) return;
-      e.preventDefault();
-      open(current);
-    } else if (onLetter(key, current, Math.min(active, rows.length - 1))) e.preventDefault();
+    // Keys a control uses itself stay with it (Enter and Space on a button, the arrows on tabs and radios).
+    if (key.length !== 1 || key === ' ') {
+      if (target?.closest('a, button, input, summary, [role="row"]')) return;
+    }
+    if (onKey(key)) e.preventDefault();
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => pageKeys.current(e);

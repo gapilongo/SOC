@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
@@ -377,6 +377,30 @@ describe('the queue: keyboard', () => {
     expect(a).toHaveAttribute('tabindex', '0');
     expect(a).toHaveAttribute('aria-selected', 'false');
     expect(preview()).toBeInTheDocument();
+  });
+
+  it('acts on the cursor, not on the row that still has focus, when keys arrive within one frame', async () => {
+    // Focus follows the cursor an animation frame later. Keys queued behind a busy page arrive back to back,
+    // before that frame: each must still move, select and open from where the cursor is.
+    const { calls } = await renderQueue(items(), { handler: (m, path) => (m === 'POST' && path === '/escalations/bulk/claim' ? { succeeded: 2, failed: 0, results: [] } : undefined) });
+    const [a, b, c, d] = await rows();
+    a.focus();
+    for (const key of ['j', 'x', 'j', 'j', 'x']) fireEvent.keyDown(a, { key });
+    expect(a).toHaveFocus();
+    expect([a, b, c, d].map((r) => r.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false', 'true']);
+    expect(screen.getByRole('region', { name: 'Bulk actions' })).toHaveTextContent('2 selected');
+    expect(within(preview()).getByRole('heading', { level: 2 })).toHaveTextContent('Item d');
+    // C right after the last X claims the two selected rows, not the cursor row alone.
+    fireEvent.keyDown(a, { key: 'x' });
+    fireEvent.keyDown(a, { key: 'x' });
+    fireEvent.keyDown(a, { key: 'c' });
+    await waitFor(() => expect(calls.find((call) => call.method === 'POST')).toMatchObject({ path: '/escalations/bulk/claim', body: { items: [{ escalation_id: 'b', version: 3 }, { escalation_id: 'd', version: 3 }] } }));
+    await waitFor(() => expect(d).toHaveFocus());
+    // Enter opens the cursor row as well.
+    fireEvent.keyDown(d, { key: 'k' });
+    fireEvent.keyDown(d, { key: 'Enter' });
+    expect(await screen.findByText('decision page')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/escalations/c');
   });
 
   it('claims the selected rows in one request with C, and reports each result', async () => {
