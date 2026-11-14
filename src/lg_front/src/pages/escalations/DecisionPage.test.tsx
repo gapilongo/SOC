@@ -86,11 +86,19 @@ const preview: ResponsePreviewOut = {
   actions: [
     action({}),
     action({ action_type: 'disable_user', description: 'Disable account j.doe', risk: 'high', can_preapprove: false, role_lock: 'admin', approval_entry: 'disable_user:j.doe@acme.example' }),
-    action({ action_type: 'create_ticket', description: 'Open an incident ticket', risk: 'low', reversible: false, irreversible_note: 'Tickets stay open.', can_preapprove: false, without_preapproval: 'automatic', approval_entry: 'create_ticket:SOC' }),
-    action({ action_type: 'block_ip', description: 'Block 192.0.2.10', can_preapprove: false, without_preapproval: 'blocked', guardrail: { verdict: 'blocked', reason: 'no firewall connector' }, connector: { name: 'Firewall', source: 'webhook', live: false, ready: false }, approval_entry: 'block_ip:192.0.2.10' }),
-    action({ action_type: 'isolate_host', description: 'Isolate the laptop', can_preapprove: false, role_lock: 'disabled', approval_entry: 'isolate_host:LT-1' }),
+    action({ action_type: 'create_ticket', target: 'alert:alert-1', description: 'Open an incident ticket', risk: 'low', reversible: false, irreversible_note: 'Tickets stay open.', can_preapprove: false, without_preapproval: 'automatic', approval_entry: 'create_ticket:alert:alert-1' }),
+    action({ action_type: 'block_ip', target: '192.0.2.10', description: 'Block 192.0.2.10', can_preapprove: false, without_preapproval: 'blocked', guardrail: { verdict: 'blocked', reason: 'no firewall connector' }, connector: { name: 'Firewall', source: 'webhook', live: false, ready: false }, approval_entry: 'block_ip:192.0.2.10' }),
+    action({ action_type: 'isolate_host', target: 'LT-1', description: 'Isolate the laptop', can_preapprove: false, role_lock: 'disabled', approval_entry: 'isolate_host:LT-1' }),
   ],
 };
+
+/** A plan of these actions, as the answer to the preview request. */
+const planOf = (...actions: PreviewActionOut[]): Handler => (method, path) =>
+  method === 'GET' && path === '/escalations/esc-1/response-preview' ? { ...preview, actions } : undefined;
+
+/** Two actions of one type and one description: only the target tells them apart. */
+const terminate = (target: string) =>
+  action({ action_type: 'terminate_process', target, description: 'Terminate a process through EDR', reversible: false, approval_entry: `terminate_process:${target}` });
 
 const decided = (e: EscalationOut) => ({
   escalation: { ...e, status: 'decided' },
@@ -145,6 +153,7 @@ async function renderDecision({ esc = escalation(), role = 'analyst', id = 'u-1'
 }
 
 const form = () => within(screen.getByRole('form', { name: 'Your decision' }));
+const planRegion = () => screen.findByRole('region', { name: 'Expected response plan' });
 const decisionBody = (calls: Array<{ method: string; path: string; body?: unknown }>) =>
   calls.find((c) => c.method === 'POST' && c.path.endsWith('/decision'))?.body as DecisionIn | undefined;
 
@@ -238,8 +247,7 @@ describe('decision form', () => {
     expect(form().queryByLabelText('Suggest a suppression rule')).not.toBeInTheDocument();
 
     const plan = within(await screen.findByRole('list', { name: 'Planned actions' }));
-    expect(form().getByText('Expected response plan')).toBeInTheDocument();
-    expect(form().getByText('Dry run')).toBeInTheDocument();
+    expect(within(await planRegion()).getByText('Dry run')).toBeInTheDocument();
     const revoke = plan.getByRole('checkbox', { name: /Revoke all sessions for j.doe/ });
     expect(revoke).toBeEnabled();
     expect(plan.getAllByText('Entra ID · reversible · medium risk').length).toBeGreaterThan(0);
@@ -404,6 +412,85 @@ describe('decision form', () => {
     await user.click(form().getByRole('radio', { name: /^Benign positive/ }));
     await user.click(form().getByRole('button', { name: 'Record and open next' }));
     expect(await screen.findByText('No other escalation is waiting for you.')).toBeInTheDocument();
+  });
+});
+
+describe('expected response plan', () => {
+  it('names the target of every planned action, outside the form, which keeps Record decision', async () => {
+    const user = userEvent.setup();
+    await renderDecision();
+    await user.click(form().getByRole('radio', { name: /^True positive/ }));
+    const region = await planRegion();
+    const items = await within(region).findAllByRole('listitem');
+    expect(items.map((li) => li.querySelector('code')?.textContent)).toEqual(['j.doe@acme.example', 'j.doe@acme.example', 'alert:alert-1', '192.0.2.10', 'LT-1']);
+    for (const li of items) expect(li).toHaveTextContent(/Target: \S/);
+    // The plan is in the main column, under the investigation; the form holds the verdict, the notes and the buttons.
+    expect(screen.getByRole('region', { name: 'Investigation' }).parentElement).toContainElement(region);
+    expect(screen.getByRole('form', { name: 'Your decision' })).not.toContainElement(region);
+    expect(form().queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(form().getByRole('button', { name: 'Record decision' })).toBeEnabled();
+    expect(form().getByText(/^No action is pre-approved\. Choose them in the response plan, under the investigation\.$/)).toBeInTheDocument();
+  });
+
+  it('tells two actions of one type apart by their targets, and pre-approves only the one ticked', async () => {
+    const user = userEvent.setup();
+    const { calls } = await renderDecision({ handler: planOf(terminate('powershell.exe'), terminate('rundll32.exe')) });
+    await user.click(form().getByRole('radio', { name: /^True positive/ }));
+    const plan = within(await screen.findByRole('list', { name: 'Planned actions' }));
+    expect(plan.getAllByText('Terminate a process through EDR')).toHaveLength(2);
+    const first = plan.getByRole('checkbox', { name: /Target: powershell\.exe/ });
+    const second = plan.getByRole('checkbox', { name: /Target: rundll32\.exe/ });
+    expect(first).not.toBe(second);
+    await user.click(second);
+    expect(first).not.toBeChecked();
+    expect(form().getByText(/^1 action is pre-approved\./)).toBeInTheDocument();
+    await user.type(form().getByLabelText(/Notes for the record/), 'Injected loader.');
+    await user.click(form().getByRole('button', { name: 'Record decision' }));
+    await screen.findByText('Decision recorded; 1 alert(s) resumed.');
+    expect(decisionBody(calls)?.approved_actions).toEqual(['terminate_process:rundll32.exe']);
+  });
+
+  it('does not let an action without a target be pre-approved', async () => {
+    const user = userEvent.setup();
+    const { calls } = await renderDecision({
+      handler: planOf(terminate(''), action({ action_type: 'quarantine_file', target: '  ', description: 'Quarantine a file', approval_entry: 'quarantine_file' }), terminate('rundll32.exe')),
+    });
+    await user.click(form().getByRole('radio', { name: /^True positive/ }));
+    const plan = within(await screen.findByRole('list', { name: 'Planned actions' }));
+    const boxes = plan.getAllByRole('checkbox');
+    expect(boxes.map((b) => (b as HTMLInputElement).disabled)).toEqual([true, true, false]);
+    expect(plan.getAllByText('not sent')).toHaveLength(2);
+    expect(plan.getAllByText(/The plan sent no target for this action, so it cannot be pre-approved here; approve it on the Approvals page\./)).toHaveLength(2);
+    await user.click(boxes[0]);
+    await user.click(boxes[1]);
+    expect(boxes[0]).not.toBeChecked();
+    expect(form().getByText(/^No action is pre-approved\./)).toBeInTheDocument();
+    await user.type(form().getByLabelText(/Notes for the record/), 'Confirmed.');
+    await user.click(form().getByRole('button', { name: 'Record decision' }));
+    await screen.findByText('Decision recorded; 1 alert(s) resumed.');
+    expect(decisionBody(calls)?.approved_actions).toEqual([]);
+  });
+
+  it('drops the pre-approvals with the form when the page moves to another escalation', async () => {
+    const user = userEvent.setup();
+    await renderDecision({
+      handler: (method, path) => {
+        if (method === 'GET' && path === '/escalations') return { items: [escalation({ id: 'esc-1' }), escalation({ id: 'esc-2' })], next_cursor: null };
+        if (method === 'GET' && path === '/escalations/esc-2') return escalation({ id: 'esc-2' });
+        if (method === 'GET' && path === '/escalations/esc-2/response-preview') return preview;
+        return undefined;
+      },
+    });
+    await user.click(form().getByRole('radio', { name: /^True positive/ }));
+    await user.click(await screen.findByRole('checkbox', { name: /Revoke all sessions for j.doe/ }));
+    await user.type(form().getByLabelText(/Notes for the record/), 'Confirmed.');
+    await user.click(form().getByRole('button', { name: 'Record and open next' }));
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/escalations/esc-2'));
+    await waitFor(() => expect(form().getByRole('radio', { name: /^True positive/ })).not.toBeChecked());
+    expect(screen.queryByRole('region', { name: 'Expected response plan' })).not.toBeInTheDocument();
+    await user.click(form().getByRole('radio', { name: /^True positive/ }));
+    expect(await screen.findByRole('checkbox', { name: /Revoke all sessions for j.doe/ })).not.toBeChecked();
+    expect(form().getByText(/^No action is pre-approved\./)).toBeInTheDocument();
   });
 });
 

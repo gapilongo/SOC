@@ -1,7 +1,8 @@
 /**
  * One escalation, decided here: the header (severity, SLA, owner, level,
- * routing), the claim or take-over banner, the investigation tabs and the
- * decision form. Deciding needs your claim: an unclaimed escalation offers
+ * routing), the claim or take-over banner, the investigation tabs, under
+ * them the expected response plan of a true positive, and the decision
+ * form. Deciding needs your claim: an unclaimed escalation offers
  * Claim, one claimed by someone else offers Take over to admins only (as
  * the API enforces).
  */
@@ -198,6 +199,7 @@ export default function DecisionPage() {
   const queueHref = useQueueHref();
   const interval = useLivePollInterval();
   const now = useNow(1_000);
+  const [planSlot, setPlanSlot] = useState<HTMLDivElement | null>(null);
   const q = useEscalation(id, { refetchInterval: interval });
   const e = q.data;
   const alert = useQuery({
@@ -239,17 +241,19 @@ export default function DecisionPage() {
       <Header e={e} now={now} queueHref={queueHref} />
       <ClaimState e={e} now={now} />
       <div className="flex flex-wrap items-start gap-5">
-        <div className="min-w-0 flex-[999_1_520px]">
+        <div className="flex min-w-0 flex-[999_1_520px] flex-col gap-5">
           <Investigation
             escalation={e}
             alert={alert.data}
             alertState={{ isPending: alert.isPending && alert.fetchStatus !== 'idle', error: alert.error, retry: () => void alert.refetch() }}
           />
+          {/* The decision form shows the expected response plan here: this column has the room to name every target. */}
+          <div ref={setPlanSlot} className="empty:hidden" />
         </div>
         {ACTIVE.has(e.status) && (
           <div className="w-full min-w-0 flex-[1_1_380px]">
-            {/* A new form per escalation: "Record and open next" must not carry the verdict over. */}
-            <DecisionForm key={e.id} escalation={e} disabledReason={formBlockedReason(e, principal)} onDecided={onDecided} />
+            {/* A new form per escalation: "Record and open next" must not carry the verdict or the pre-approvals over. */}
+            <DecisionForm key={e.id} escalation={e} planSlot={planSlot} disabledReason={formBlockedReason(e, principal)} onDecided={onDecided} />
           </div>
         )}
       </div>

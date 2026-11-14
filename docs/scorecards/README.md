@@ -51,6 +51,11 @@ lg-sotf eval-scorecard synthetic.json phishing.json \
 
 The command reads files only; it needs no database or model.
 
+The nightly workflow generates one this way from the synthetic and phishing
+sets, with a pinned EU or local model, and keeps it as the `eval-scorecard`
+artifact of the run ([evaluation.md](../evaluation.md#evaluation-gate-in-ci)).
+Those nightly scorecards are not committed.
+
 ## The template
 
 Every scorecard has the same sections, in this order.

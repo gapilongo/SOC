@@ -30,13 +30,15 @@ from urllib.parse import quote
 
 from lg_sotf.ingestion.errors import SourceConfigError, SourceProtocolError
 from lg_sotf.ingestion.sources.base import FetchedPage, PullConnector, SourceHealth, iso, window_cursor
-from lg_sotf.ingestion.sources.http import BasicAuth, SourceHttpClient, json_mapping
+from lg_sotf.ingestion.sources.http import BasicAuth, HttpResponse, SourceHttpClient, json_mapping
 from lg_sotf.ingestion.timeparse import parse_timestamp
 
 _INDEX = re.compile(r"^[a-z0-9*][a-z0-9*_.,-]{0,254}$")
 _FIELD = re.compile(r"^[A-Za-z@_][A-Za-z0-9@_.]{0,127}$")
+DEFAULT_INDEX = "wazuh-alerts-*"
 DEFAULT_TIME_FIELD = "timestamp"
 DEFAULT_MAX_EVENT_LAG_S = 900
+CLOCK_AGG = "clock"
 
 
 class WazuhConnector(PullConnector):
@@ -44,7 +46,7 @@ class WazuhConnector(PullConnector):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        index = self.config_str("index", "wazuh-alerts-*")
+        index = self.config_str("index", DEFAULT_INDEX)
         if not _INDEX.match(index):
             raise SourceConfigError("wazuh config.index must be an index name or pattern")
         self._index = quote(index, safe="*,")
@@ -67,6 +69,33 @@ class WazuhConnector(PullConnector):
     async def test(self) -> SourceHealth:
         body = json_mapping(await self._http.request("GET", f"/{self._index}/_count"), "count")
         return SourceHealth(True, f"indexer reachable; {body.get('count', 'unknown')} alerts in {self._index}")
+
+    @property
+    def index(self) -> str:
+        """The index name or pattern this source reads, as it is sent in the URL."""
+        return self._index
+
+    @property
+    def time_field(self) -> str:
+        return self._time_field
+
+    async def probe(self) -> HttpResponse:
+        """One read-only search for the guided setup; the response is returned whatever its status.
+
+        It asks for the newest alert and for the indexer's own clock: a
+        ``date_range`` aggregation from ``now`` answers with the time the
+        indexer resolved ``now`` to. It needs the permission the poller
+        needs (``indices:data/read/search`` on the index) and nothing more.
+        Network failures raise as they do for a poll.
+        """
+        query = {
+            "size": 1,
+            "_source": False,
+            "sort": [{self._time_field: {"order": "desc"}}],
+            "aggs": {CLOCK_AGG: {"date_range": {"field": self._time_field, "ranges": [{"from": "now"}]}}},
+        }
+        headers = await self._http.auth.headers(self._http)
+        return await self._http.send("POST", f"/{self._index}/_search", json_body=query, headers=headers)
 
     def _query(self, lo: datetime, until: datetime, after: Optional[List[Any]]) -> Dict[str, Any]:
         filters: List[Dict[str, Any]] = [{"range": {self._time_field: {"gt": iso(lo), "lte": iso(until)}}}]

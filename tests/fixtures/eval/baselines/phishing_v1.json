@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "description": "Baseline of the CI evaluation gate for phishing_v1.jsonl with the fake model (scripts/ci/eval_gate.py). Do not edit: record it again with `make eval-baselines`.",
+  "dataset": {
+    "path": "tests/fixtures/eval/phishing_v1.jsonl",
+    "sha256": "5e12e74b9380d09802bd74a3a976ffd1478327439ae74258a997ca84c4b9b263",
+    "items": 39
+  },
+  "run": {
+    "llm_provider": "fake",
+    "selection": {
+      "splits": [],
+      "tags": [],
+      "limit": null,
+      "isolation": "splits"
+    }
+  },
+  "metrics": {
+    "items": 39,
+    "scored": 39,
+    "errors": 0,
+    "malicious_items": 24,
+    "benign_items": 11,
+    "malicious_false_negatives": 0,
+    "malicious_false_negative_rate": 0.0,
+    "malicious_auto_closed": 0,
+    "malicious_auto_close_rate": 0.0,
+    "benign_auto_close_rate": 0.2727272727272727,
+    "benign_auto_response_rate": 0.0,
+    "benign_escalation_rate": 0.7272727272727273,
+    "auto_close_rate": 0.07692307692307693,
+    "escalation_rate": 0.9230769230769231,
+    "approval_request_rate": 0.0
+  },
+  "splits": {
+    "adversarial": {
+      "metrics": {
+        "items": 7,
+        "scored": 7,
+        "errors": 0,
+        "malicious_items": 6,
+        "benign_items": 1,
+        "malicious_false_negatives": 0,
+        "malicious_false_negative_rate": 0.0,
+        "malicious_auto_closed": 0,
+        "malicious_auto_close_rate": 0.0,
+        "benign_auto_close_rate": 0.0,
+        "benign_auto_response_rate": 0.0,
+        "benign_escalation_rate": 1.0,
+        "auto_close_rate": 0.0,
+        "escalation_rate": 1.0,
+        "approval_request_rate": 0.0
+      }
+    },
+    "standard": {
+      "metrics": {
+        "items": 32,
+        "scored": 32,
+        "errors": 0,
+        "malicious_items": 18,
+        "benign_items": 10,
+        "malicious_false_negatives": 0,
+        "malicious_false_negative_rate": 0.0,
+        "malicious_auto_closed": 0,
+        "malicious_auto_close_rate": 0.0,
+        "benign_auto_close_rate": 0.3,
+        "benign_auto_response_rate": 0.0,
+        "benign_escalation_rate": 0.7,
+        "auto_close_rate": 0.09375,
+        "escalation_rate": 0.90625,
+        "approval_request_rate": 0.0
+      }
+    }
+  },
+  "outcomes": {
+    "phish-001": "waiting_human",
+    "phish-002": "waiting_human",
+    "phish-003": "waiting_human",
+    "phish-004": "waiting_human",
+    "phish-005": "waiting_human",
+    "phish-006": "waiting_human",
+    "phish-007": "waiting_human",
+    "phish-008": "waiting_human",
+    "phish-009": "waiting_human",
+    "phish-010": "waiting_human",
+    "phish-011": "waiting_human",
+    "phish-012": "waiting_human",
+    "phish-013": "waiting_human",
+    "phish-014": "waiting_human",
+    "phish-015": "waiting_human",
+    "phish-016": "waiting_human",
+    "phish-017": "waiting_human",
+    "phish-018": "waiting_human",
+    "phish-019": "closed:benign",
+    "phish-020": "waiting_human",
+    "phish-021": "closed:benign",
+    "phish-022": "waiting_human",
+    "phish-023": "waiting_human",
+    "phish-024": "waiting_human",
+    "phish-025": "waiting_human",
+    "phish-026": "waiting_human",
+    "phish-027": "waiting_human",
+    "phish-028": "closed:benign",
+    "phish-029": "waiting_human",
+    "phish-030": "waiting_human",
+    "phish-031": "waiting_human",
+    "phish-032": "waiting_human",
+    "phish-033": "waiting_human",
+    "phish-034": "waiting_human",
+    "phish-035": "waiting_human",
+    "phish-036": "waiting_human",
+    "phish-037": "waiting_human",
+    "phish-038": "waiting_human",
+    "phish-039": "waiting_human"
+  }
+}

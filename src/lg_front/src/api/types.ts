@@ -945,6 +945,42 @@ export interface SetupIn {
   llm_profile?: LlmProfileId | null;
 }
 
+/** Guided source setup (`POST /onboarding/connectors/wazuh/check`): one result per check, in order. */
+export const SETUP_CHECK_STATUSES = ['passed', 'failed', 'skipped'] as const;
+export type SetupCheckStatus = (typeof SETUP_CHECK_STATUSES)[number];
+
+export interface SetupCheckOut {
+  id: string;
+  title: string;
+  status: Open<SetupCheckStatus>;
+  message: string;
+  /** What to change; set on a failed check. */
+  fix?: string | null;
+}
+
+export interface GuidedCheckOut {
+  /** No check failed and at least one passed. */
+  ok: boolean;
+  checks: SetupCheckOut[];
+}
+
+/** An unsaved Wazuh indexer source; the credentials are used for the check only. */
+export interface WazuhPullIn {
+  config: JsonObject;
+  secret: Record<string, string>;
+}
+
+export interface WazuhPushIn {
+  source_id?: string;
+  /** The API key the Wazuh manager sends; checked, never stored. */
+  api_key?: string | null;
+}
+
+export interface WazuhCheckIn {
+  pull?: WazuhPullIn | null;
+  push?: WazuhPushIn | null;
+}
+
 export interface SampleAlertsOut {
   source_id: string;
   received: number;

@@ -3,6 +3,7 @@ import { useId, type ReactNode } from 'react';
 
 import type { ActionOut } from '../../api/types';
 import { useAuth } from '../../auth/AuthContext';
+import { ActionTarget } from '../../components/ActionTarget';
 import { RiskBadge } from '../../components/Badge';
 import type { PendingDecision } from '../actions/ApprovalDialog';
 import { Button, Card, cx } from '../../components/ui';
@@ -119,7 +120,7 @@ export function PendingCard({
 
           <dl className="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-4">
             <Item term="Target">
-              <code className="break-all font-mono text-xs text-fg">{action.target}</code>
+              <ActionTarget target={action.target} />
             </Item>
             <BlastRadiusFigure action={action} />
             {action.connector && <Item term="Runs via">{action.connector}</Item>}

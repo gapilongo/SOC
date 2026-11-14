@@ -34,6 +34,10 @@ package-lock.json
 coverage.xml
 junit.xml
 
+# scripts/ci/eval_gate.py reports (make eval-gate, make eval-baselines)
+/eval-gate/
+/eval-nightly/
+
 # scripts/quickstart.sh state (secrets, admin credentials, logs)
 .quickstart/
 # scripts/pov.sh state (secrets, admin credentials, backtest reports)

@@ -17,7 +17,11 @@ metrics:
   high_severity_auto_closed_benign: {max: 0}
   benign_auto_close_rate: {min: 0.1}
   latency_s.p95: {max: 10}
+# Checked against the committed baseline, baselines/phishing_v1.json, by the CI evaluation gate
+# (scripts/ci/eval_gate.py pr). The fake model is deterministic, so the two gate metrics are exact:
+# one more missed attack or one fewer benign item closed fails. After an intended change, record
+# the baseline again with `make eval-baselines`.
 regressions:
   malicious_false_negative_rate: {max_increase: 0}
-  benign_auto_close_rate: {max_decrease: 0.05}
+  benign_auto_close_rate: {max_decrease: 0}
   escalation_rate: {max_increase: 0.05}
