@@ -48,6 +48,7 @@ async def test_reads_and_writes_across_tenants_are_not_found(api: ApiHarness) ->
     by_id = [
         ("GET", f"/api/v1/alerts/{b['alert']}", None),
         ("GET", f"/api/v1/alerts/{b['alert']}/events", None),
+        ("GET", f"/api/v1/alerts/{b['alert']}/investigation", None),
         ("POST", f"/api/v1/alerts/{b['alert']}/notes", {"text": "x"}),
         ("POST", f"/api/v1/alerts/{b['alert']}/reprocess", None),
         ("GET", f"/api/v1/escalations/{b['escalation'].id}", None),

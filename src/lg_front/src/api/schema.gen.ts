@@ -245,6 +245,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/alerts/{alert_id}/investigation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the AI concluded about the alert and why (the investigation view)
+         * @description One read model for the investigation view: the outcome and its reason in plain words, the summary, the
+         *     claims and the observations they rest on, what is not established, the steps, the track record of the
+         *     outcome category and the proposed response. Built from stored data: no model is called, nothing is written.
+         *
+         *     ``pending_harness`` names the fields that stay empty until the investigation harness fills them. While the
+         *     alert waits for its blind-audit label, the AI's side is withheld (``hidden_for_blind_audit``).
+         */
+        get: operations["get_investigation_api_v1_alerts__alert_id__investigation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/alerts/{alert_id}/notes": {
         parameters: {
             query?: never;
@@ -4143,6 +4168,225 @@ export interface components {
                 [key: string]: string | null;
             } | null;
         };
+        /** Investigation */
+        Investigation: {
+            /** Alert Id */
+            alert_id: string;
+            /** Claims */
+            claims: components["schemas"]["InvestigationClaim"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Hidden For Blind Audit
+             * @description The alert waits for its blind-audit label: the AI's side is withheld and every list is empty.
+             * @default false
+             */
+            hidden_for_blind_audit: boolean;
+            not_established: components["schemas"]["NotEstablished"];
+            /** Observations */
+            observations: components["schemas"]["InvestigationObservation"][];
+            /** @description Null while the alert is still being processed. */
+            outcome: components["schemas"]["InvestigationOutcome"] | null;
+            /** Pending Harness */
+            pending_harness: components["schemas"]["PendingHarnessField"][];
+            response: components["schemas"]["ProposedResponse"];
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Steps */
+            steps: components["schemas"]["PlainStep"][];
+            summary: components["schemas"]["InvestigationSummary"];
+            /** Tenant Id */
+            tenant_id: string;
+            track_record: components["schemas"]["OutcomeTrackRecord"] | null;
+        };
+        /** InvestigationClaim */
+        InvestigationClaim: {
+            /**
+             * Check
+             * @description Today: supported when a lookup backs the claim, otherwise unsupported; rejected comes with the checker.
+             * @enum {string}
+             */
+            check: "supported" | "unsupported" | "rejected";
+            /**
+             * Check Reason
+             * @description Why the claim is not supported, in plain words.
+             */
+            check_reason: string | null;
+            /**
+             * Direction
+             * @description What the claim points to.
+             * @enum {string}
+             */
+            direction: "malicious" | "benign";
+            /** Id */
+            id: string;
+            /**
+             * Observation Ids
+             * @description The observations the claim rests on.
+             */
+            observation_ids: string[];
+            /**
+             * Text
+             * @description A model claim in the model's words (data), or the fixed sentence of a rule claim.
+             */
+            text: string;
+            /**
+             * Written By
+             * @enum {string}
+             */
+            written_by: "model" | "rules";
+        };
+        /**
+         * InvestigationClosedBy
+         * @description Who or what closed the alert, and why.
+         */
+        InvestigationClosedBy: {
+            /** At */
+            at: string | null;
+            /**
+             * Decision
+             * @description analyst or cached_verdict: the analyst's decision.
+             */
+            decision: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ai" | "suppression_rule" | "cached_verdict" | "analyst";
+            reason: components["schemas"]["InvestigationReason"];
+            /**
+             * Rule Id
+             * @description suppression_rule: the rule.
+             */
+            rule_id: string | null;
+            /**
+             * Rule Name
+             * @description suppression_rule: its name, as data.
+             */
+            rule_name: string | null;
+            /**
+             * Source Alert Id
+             * @description cached_verdict: the alert the analyst decided.
+             */
+            source_alert_id: string | null;
+        };
+        /**
+         * InvestigationObservation
+         * @description One tool call and what it returned.
+         */
+        InvestigationObservation: {
+            /** At */
+            at: string | null;
+            /**
+             * Cached
+             * @description Every result came from the lookup cache.
+             * @default false
+             */
+            cached: boolean;
+            /** Excerpt */
+            excerpt: components["schemas"]["ObservationExcerptLine"][];
+            /**
+             * Excerpt Truncated
+             * @default false
+             */
+            excerpt_truncated: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Input Sha256
+             * @description From the trace store, when it has the call.
+             */
+            input_sha256: string | null;
+            /**
+             * Kind
+             * @description The kind of value looked up (ip, domain, hash, user, ...).
+             */
+            kind: string | null;
+            /**
+             * Outcome
+             * @description success: a source returned data. empty: the sources answered and found nothing. failed: none answered.
+             * @enum {string}
+             */
+            outcome: "success" | "empty" | "failed";
+            /** Output Sha256 */
+            output_sha256: string | null;
+            /**
+             * Sources
+             * @description The providers that answered or failed.
+             */
+            sources: string[];
+            /**
+             * Target
+             * @description The value looked up: data, redacted, at most 128 characters.
+             */
+            target: string | null;
+            /**
+             * Title
+             * @description What the tool looks up, in plain words.
+             */
+            title: string;
+            /** Tool */
+            tool: string;
+            /**
+             * Verdict
+             * @description The worst provider verdict of a success (malicious ... unknown).
+             */
+            verdict: string | null;
+        };
+        /** InvestigationOutcome */
+        InvestigationOutcome: {
+            /**
+             * Blockers
+             * @description Why the AI may not close this alert on its own (needs_* categories).
+             */
+            blockers: components["schemas"]["InvestigationReason"][];
+            /**
+             * Category
+             * @description What happens next. ai_closed_evidence: closed by the AI on approved evidence. ai_closed_audit: closed on the model's word and sampled for audit. needs_decision: with a person, likely malicious. needs_review: with a person, not proven either way. Null when a suppression rule or a cached analyst verdict closed the alert before the AI looked at it.
+             */
+            category: ("ai_closed_evidence" | "ai_closed_audit" | "needs_decision" | "needs_review") | null;
+            /** @description Null while the alert is open. */
+            closed_by: components["schemas"]["InvestigationClosedBy"] | null;
+            /**
+             * Evidence
+             * @description ai_closed_evidence: the approved benign signals the rules found (codes written by code).
+             */
+            evidence: string[];
+            /** @description Why the alert is with a person, or why it was closed. */
+            reason: components["schemas"]["InvestigationReason"] | null;
+        };
+        /** InvestigationReason */
+        InvestigationReason: {
+            /**
+             * Code
+             * @description The decide code, blocker or close reason, for filters and tests.
+             */
+            code: string;
+            /**
+             * Sentence
+             * @description The same in plain words (fixed text, never built from alert content).
+             */
+            sentence: string;
+        };
+        /** InvestigationSummary */
+        InvestigationSummary: {
+            /**
+             * Text
+             * @description The conclusion as it was written: data, at most 2000 characters.
+             */
+            text: string | null;
+            /**
+             * Written By
+             * @description model: a model wrote the text. rules: the rule-based assessment did. Null without a text, or when the stored row does not say.
+             */
+            written_by: ("model" | "rules") | null;
+        };
         /** LLMTestOut */
         LLMTestOut: {
             /** Enabled */
@@ -4520,10 +4764,55 @@ export interface components {
             tenant_name: string;
             value: components["schemas"]["ValueReport"];
         };
+        /** NotCheckedItem */
+        NotCheckedItem: {
+            /** What */
+            what: string;
+            /** Why */
+            why: string;
+        };
+        /**
+         * NotEstablished
+         * @description What the investigation does not establish. Nothing here counts for or against the outcome.
+         */
+        NotEstablished: {
+            /**
+             * Empty
+             * @description Observation ids: checked, found nothing.
+             */
+            empty: string[];
+            /** Not Checked */
+            not_checked: components["schemas"]["NotCheckedItem"][];
+            /**
+             * Unavailable
+             * @description Could not be checked for this customer (no source connected, or it failed).
+             */
+            unavailable: components["schemas"]["UnavailableItem"][];
+        };
         /** NoteIn */
         NoteIn: {
             /** Text */
             text: string;
+        };
+        /** ObservationExcerptLine */
+        ObservationExcerptLine: {
+            /** Marks */
+            marks: components["schemas"]["ObservationMark"][];
+            /**
+             * Text
+             * @description One line of what the tool returned: data, at most 200 characters.
+             */
+            text: string;
+        };
+        /**
+         * ObservationMark
+         * @description A highlighted character range of an excerpt line (``start`` inclusive, ``end`` exclusive).
+         */
+        ObservationMark: {
+            /** End */
+            end: number;
+            /** Start */
+            start: number;
         };
         /** OnboardingStatusOut */
         OnboardingStatusOut: {
@@ -4595,6 +4884,36 @@ export interface components {
              */
             tenant_id: string;
         };
+        /**
+         * OutcomeTrackRecord
+         * @description How often people confirmed this outcome category for this tenant: the counts, and a rate only with enough of them.
+         */
+        OutcomeTrackRecord: {
+            /**
+             * Basis
+             * @description analyst_decisions (needs_*): total is the alerts of the category analysts decided, confirmed those decided true_positive. blind_audit_labels (ai_closed_*): total is the closes of the category an analyst labelled blind, confirmed those whose label agrees with the AI.
+             * @enum {string}
+             */
+            basis: "analyst_decisions" | "blind_audit_labels";
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "ai_closed_evidence" | "ai_closed_audit" | "needs_decision" | "needs_review";
+            /** Confirmed */
+            confirmed: number;
+            /** Min Samples */
+            min_samples: number;
+            /**
+             * Rate
+             * @description confirmed / total; null when total is below min_samples.
+             */
+            rate: number | null;
+            /** Total */
+            total: number;
+            /** Window Days */
+            window_days: number;
+        };
         /** PageOut[ActionOut] */
         PageOut_ActionOut_: {
             /** Items */
@@ -4658,6 +4977,21 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** PendingHarnessField */
+        PendingHarnessField: {
+            /**
+             * Field
+             * @description The path of a field that stays empty until the investigation harness fills it.
+             */
+            field: string;
+            /**
+             * Issue
+             * @description The GitHub issue of the story that fills it.
+             */
+            issue: number;
+            /** Why */
+            why: string;
+        };
         /** PermissionCheck */
         PermissionCheck: {
             /** Api */
@@ -4689,6 +5023,29 @@ export interface components {
              * @default
              */
             warning?: string;
+        };
+        /**
+         * PlainStep
+         * @description One thing the investigation did, in plain words (no engine node names).
+         */
+        PlainStep: {
+            /**
+             * Actor
+             * @enum {string}
+             */
+            actor: "code" | "model" | "check" | "policy" | "person";
+            /**
+             * Produced
+             * @description What the step produced: counts and vocabulary values only, never alert text.
+             */
+            produced: string | null;
+            /** Text */
+            text: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
         };
         /** PlatformEscalationOut */
         PlatformEscalationOut: {
@@ -4971,6 +5328,83 @@ export interface components {
             source_id: string;
             /** To */
             to?: string | null;
+        };
+        /** ProposedAction */
+        ProposedAction: {
+            /**
+             * Action Id
+             * @description plan: the action on the ledger.
+             */
+            action_id: string | null;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
+            /**
+             * Approval Entry
+             * @description preview: its approved_actions entry.
+             */
+            approval_entry: string | null;
+            /**
+             * Can Preapprove
+             * @description preview: your role may pre-approve it.
+             */
+            can_preapprove: boolean | null;
+            /** Description */
+            description: string | null;
+            guardrail: components["schemas"]["ProposedActionGuardrail"] | null;
+            /** Inverse Action */
+            inverse_action: string | null;
+            /** Irreversible Note */
+            irreversible_note: string | null;
+            /** Reversible */
+            reversible: boolean | null;
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "low" | "medium" | "high" | "critical";
+            /** Role Lock */
+            role_lock: ("admin" | "disabled") | null;
+            /**
+             * Status
+             * @description plan: the action's status; null in a preview.
+             */
+            status: ("proposed" | "awaiting_approval" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "dry_run" | "blocked") | null;
+            /**
+             * Target
+             * @description The exact target: data, at most 512 characters.
+             */
+            target: string;
+            /**
+             * Without Preapproval
+             * @description preview: what happens to it when nothing is pre-approved.
+             */
+            without_preapproval: ("automatic" | "awaiting_approval" | "blocked") | null;
+        };
+        /** ProposedActionGuardrail */
+        ProposedActionGuardrail: {
+            /** Code */
+            code: string | null;
+            /** Reason */
+            reason: string | null;
+            /**
+             * Verdict
+             * @enum {string}
+             */
+            verdict: "passed" | "blocked";
+        };
+        /** ProposedResponse */
+        ProposedResponse: {
+            /** Actions */
+            actions: components["schemas"]["ProposedAction"][];
+            /**
+             * Source
+             * @description plan: the actions the workflow recorded for this alert. preview: what a true_positive decision would propose now (nothing is written). none: no response is proposed.
+             * @enum {string}
+             */
+            source: "plan" | "preview" | "none";
         };
         /** QuotaUsageOut */
         QuotaUsageOut: {
@@ -5857,6 +6291,25 @@ export interface components {
             token_type?: "bearer";
             user: components["schemas"]["UserOut"];
         };
+        /** UnavailableItem */
+        UnavailableItem: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "no_source" | "tool_failed";
+            /** Observation Id */
+            observation_id: string | null;
+            /**
+             * Source
+             * @description The provider, as data.
+             */
+            source: string | null;
+            /** What */
+            what: string;
+            /** Why */
+            why: string;
+        };
         /**
          * UncoveredSpan
          * @description Time in the report's window that no run sampled: alerts closed then are in no frame.
@@ -6649,6 +7102,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IncidentReportOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_investigation_api_v1_alerts__alert_id__investigation_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Investigation"];
                 };
             };
             /** @description Validation Error */
