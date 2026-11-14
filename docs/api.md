@@ -259,6 +259,8 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/blind-audit/items/{id}/label` (`malicious`, `benign`, `unsure`; once; reveals the AI verdict) | analyst (user accounts) |
 | GET | `/blind-audit/runs` (sampling runs: window, seed, frame, counts) | viewer / `read` |
 | POST | `/blind-audit/runs` (draw a sample now, server seed; `dry_run` records nothing) | admin, not under an MSSP grant |
+| GET | `/pov/runs`, `/pov/runs/{id}` (proof-of-value runs: status, backtest result, shadow period; docs/pov.md) | viewer / `read` |
+| POST | `/pov/runs` (start a proof of value: a read-only backtest, then a shadow period), `/pov/runs/{id}/cancel` | admin |
 | GET | `/audit`, `/audit/verify` | admin |
 | GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |

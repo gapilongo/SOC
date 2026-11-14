@@ -91,6 +91,9 @@ export const afterBlindAuditLabel = (client: QueryClient, escalationCreated: boo
 /** A sampling run was drawn: the queue, the runs and the estimate. */
 export const afterBlindAuditSample = (client: QueryClient) => invalidate(client, qk.blindAudit.all, qk.reportBlindAudit.all);
 
+/** A proof-of-value run was started or cancelled: the runs and each run's detail. */
+export const afterPovRunChange = (client: QueryClient) => invalidate(client, qk.pov.all);
+
 // Tenant configuration -------------------------------------------------------
 
 export const afterSourceChange = (client: QueryClient) => invalidate(client, qk.sources.all);

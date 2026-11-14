@@ -14,6 +14,7 @@ faith.
 | Propose a suppression for a detection | `POST /api/v1/reports/detections/propose-suppression` | analyst (`write` API keys) |
 | Monthly report (print to PDF) | `GET /api/v1/reports/monthly?month=YYYY-MM[&format=json]`, Reports > Open monthly report | viewer |
 | Backtest a model on your history | `lg-sotf eval --from-history --tenant T --days N` | operator (CLI) |
+| Proof of value: a backtest over history, then a shadow period, without the CLI | Proof of value page, `POST /api/v1/pov/runs` (docs/pov.md) | admin |
 | Blind audit: production false-negative rate among auto-closed alerts | `GET /api/v1/reports/blind-audit?from=&to=`, Reports > Blind audit | viewer |
 | Label blind-audit samples | Blind audit page, `/api/v1/blind-audit/items` | analyst (user accounts) |
 | Draw a blind-audit sample | `lg-sotf audit-sample --tenant T`, `POST /api/v1/blind-audit/runs`, Blind audit page | admin (not under an MSSP grant), operator (CLI) |

@@ -48,6 +48,8 @@ import type {
   OnboardingStatusOut,
   Page,
   PlatformEscalationOut,
+  PovRunIn,
+  PovRunOut,
   RecoveryCodesOut,
   ResponseRoutesOut,
   RollbackOut,
@@ -328,6 +330,14 @@ export const endpoints = {
   blindAuditRuns: (api: ApiClient, signal?: AbortSignal) =>
     api.get<Page<BlindAuditRunSummary>>('/blind-audit/runs', { query: { limit: 20 }, signal }),
   sampleBlindAudit: (api: ApiClient, body: BlindAuditSampleIn) => api.post<BlindAuditRunSummary>('/blind-audit/runs', body),
+
+  /** Proof-of-value runs, newest first (without the backtest result). */
+  povRuns: (api: ApiClient, signal?: AbortSignal) => api.get<Page<PovRunOut>>('/pov/runs', { query: { limit: 20 }, signal }),
+  /** One run with its backtest result. */
+  povRun: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<PovRunOut>(`/pov/runs/${enc(id)}`, { signal }),
+  /** Start a proof of value: records the run; the backtest then runs read-only on the server. */
+  createPovRun: (api: ApiClient, body: PovRunIn) => api.post<PovRunOut>('/pov/runs', body),
+  cancelPovRun: (api: ApiClient, id: string) => api.post<PovRunOut>(`/pov/runs/${enc(id)}/cancel`),
 
   /** The self-contained monthly HTML report (to save and print). */
   monthlyReportHtml: (api: ApiClient, month: string) =>

@@ -8362,6 +8362,33 @@
         "title": "PageOut[PlatformEscalationOut]",
         "type": "object"
       },
+      "PageOut_PovRunOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PovRunOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PageOut[PovRunOut]",
+        "type": "object"
+      },
       "PermissionCheck": {
         "properties": {
           "api": {
@@ -8547,6 +8574,239 @@
           "created_at"
         ],
         "title": "PlatformEscalationOut",
+        "type": "object"
+      },
+      "PovBacktestOut": {
+        "description": "The backtest: analyst-decided alerts of the history window replayed read-only through the pipeline.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A completed backtest's evaluation report without its per-alert items (docs/evaluation.md). On the run's own read only.",
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "description": "no_data: no analyst-decided alert in the window, nothing was replayed.",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "no_data",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "status"
+        ],
+        "title": "PovBacktestOut",
+        "type": "object"
+      },
+      "PovRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "backtest_days": {
+            "default": 90,
+            "description": "History to replay: the alerts analysts decided in this many days before now.",
+            "maximum": 366.0,
+            "minimum": 1.0,
+            "title": "Backtest Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "shadow_days": {
+            "default": 14,
+            "description": "The shadow period: this many days of live alerts from now.",
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Shadow Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PovRunIn",
+        "type": "object"
+      },
+      "PovRunOut": {
+        "properties": {
+          "backtest": {
+            "$ref": "#/components/schemas/PovBacktestOut"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shadow": {
+            "$ref": "#/components/schemas/PovShadowOut"
+          },
+          "status": {
+            "description": "The phase the run is in.",
+            "enum": [
+              "backtest",
+              "shadow",
+              "completed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "backtest",
+          "shadow",
+          "created_at"
+        ],
+        "title": "PovRunOut",
+        "type": "object"
+      },
+      "PovShadowOut": {
+        "description": "The shadow period: the run observes the live alerts of this window and changes none of them.",
+        "properties": {
+          "reports": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The tenant's reports over the shadow period: API paths, relative to the API prefix.",
+            "title": "Reports",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "running",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "status",
+          "reports"
+        ],
+        "title": "PovShadowOut",
         "type": "object"
       },
       "PreviewActionOut": {
@@ -16364,6 +16624,197 @@
         "summary": "Invoicing figures per tenant for a month (JSON or CSV)",
         "tags": [
           "platform"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_pov_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_PovRunOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Proof-of-value runs, newest first",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      },
+      "post": {
+        "operationId": "create_run_api_v1_pov_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PovRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a proof of value: a read-only backtest over history, then a shadow period",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs/{pov_run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_pov_runs__pov_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pov_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pov Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One proof-of-value run with its backtest result",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs/{pov_run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_v1_pov_runs__pov_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pov_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pov Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel a proof-of-value run in progress",
+        "tags": [
+          "pov"
         ],
         "x-stability": "beta"
       }
