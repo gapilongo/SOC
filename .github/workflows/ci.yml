@@ -9,10 +9,13 @@ on:
   schedule:
     - cron: "17 3 * * 1"
 
-# Cancel superseded runs of the same branch / pull request.
+# Cancel superseded runs of the same pull request (or of a branch other than main). A run on main is
+# never cancelled and never waits for another: every commit on main gets its own result, because Release
+# images builds and deploys only a commit whose CI passed, and the release train tags only such a commit.
+# With one shared group, a merge shortly after another cancelled the earlier run and dev fell behind.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Least privilege: every job only reads the repository. No job pushes images,
 # writes packages, or comments; add per-job permissions if that changes.
