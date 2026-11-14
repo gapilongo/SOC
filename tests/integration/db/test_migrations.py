@@ -567,3 +567,32 @@ async def test_0016_disables_fingerprint_suggestions_and_audits_each_in_its_chai
         assert (await Repositories.create(database).audit.verify_chain(tenant)).ok
     finally:
         await database.close()
+
+
+async def test_0018_tool_outcomes_are_stored_and_mapped_back_on_downgrade(migrated_database_url: str) -> None:
+    """AI-E2.1: a tool step is stored as ``empty`` or ``failed``; the downgrade maps both back before narrowing."""
+    url = migrated_database_url
+    cfg = alembic_config(url, URL_TLS)
+    tenant = f"m18-{uuid.uuid4().hex[:8]}"
+    insert = (
+        "INSERT INTO investigation_steps (tenant_id, alert_id, run_id, step_index, agent, kind, tool, input_hash, "
+        "outcome, started_at) VALUES (%s, %s, 'r1', %s, 'analysis', 'tool', 'history', %s, %s, now())"
+    )
+    with _owner(url) as conn:
+        alert = _seed(conn, tenant)
+        for index, outcome in enumerate(("success", "empty", "failed")):
+            conn.execute(insert, (tenant, alert, index, "a" * 64, outcome))
+        conn.commit()
+    stored = "SELECT step_index, outcome FROM investigation_steps WHERE tenant_id = %s ORDER BY step_index"
+    command.downgrade(cfg, "0020")
+    try:
+        with _owner(url) as conn:
+            assert conn.execute(stored, (tenant,)).fetchall() == [(0, "success"), (1, "success"), (2, "error")]
+            with pytest.raises(psycopg.errors.CheckViolation):
+                conn.execute(insert, (tenant, alert, 9, "a" * 64, "empty"))
+    finally:
+        command.upgrade(cfg, "head")
+    with _owner(url) as conn:
+        conn.execute(insert, (tenant, alert, 9, "a" * 64, "empty"))
+        conn.commit()
+    assert current_revision(url, URL_TLS) == head_revision()
