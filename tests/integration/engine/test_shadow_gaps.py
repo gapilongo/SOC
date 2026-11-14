@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from asyncpg.exceptions import ActiveSQLTransactionError
 
+from lg_sotf.db.errors import SystemScopeDenied
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.queue.redis import create_redis
@@ -29,8 +30,9 @@ async def test_gap_bare_connection_cannot_turn_read_write(db: Database, repos: R
 
 @pytest.mark.parametrize("sql", ["COMMIT", "/* x */ COMMIT"])
 async def test_gap_system_tx_refuses_transaction_control(db: Database, sql: str) -> None:
+    """The shadow role cannot bypass isolation, so a shadow ``system_tx`` is refused before any statement."""
     with shadow_scope(ShadowRun("shadow/gap-system")):
-        with pytest.raises(ShadowEgressRefused):
+        with pytest.raises(SystemScopeDenied):
             async with db.system_tx() as conn:
                 await conn.execute(sql)
 

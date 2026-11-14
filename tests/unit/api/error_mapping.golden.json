@@ -24,6 +24,7 @@
   "lg_sotf.db.errors.RefreshTokenInvalid": [500, "internal_error"],
   "lg_sotf.db.errors.RefreshTokenReuse": [409, "conflict"],
   "lg_sotf.db.errors.RunNotClaimable": [409, "conflict"],
+  "lg_sotf.db.errors.ShadowRoleRequired": [500, "internal_error"],
   "lg_sotf.db.errors.SystemScopeDenied": [500, "internal_error"],
   "lg_sotf.db.repos.integrations.IntegrationExists": [409, "conflict"],
   "lg_sotf.domain.connectors.ConnectorConfigError": [400, "invalid_request"],

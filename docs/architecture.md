@@ -298,8 +298,8 @@ Rules:
     `decide` node reads the tier from the tenant's settings at every
     decision.
   * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
-    response plan or malicious close, an escalation a model judged
-    malicious or suspicious, an analyst true positive or a blind-audit
+    response plan or malicious close, an escalation a model judged a
+    threat (not a merely suspicious one), an analyst true positive or a blind-audit
     malicious label reopens every model-closed alert of the tenant that
     shares a host, user or IP with it and closed in the previous 24 hours:
     folded into the threat's open escalation (attached, `waiting_human`, no
@@ -328,17 +328,20 @@ Rules:
   function decorated with `@egress` refuses in shadow mode, or records the
   call in the run's sink and returns a stand-in ("would have done X"), or,
   for the local health listener only, runs. Every database transaction of
-  a shadow run is read only, and its connection refuses the statements that
-  would reach past it (`COMMIT`, `SET TRANSACTION`, `NOTIFY`/`pg_notify`,
-  session settings and advisory locks); its Redis client
+  a shadow run comes from a pool of its own, logged in as the SELECT-only
+  shadow role (`database.shadow_url`, `db/shadow_role.py`; no role, no
+  shadow run, and never the runtime pool), and is read only; its connection
+  also refuses the statements that would reach past it (`COMMIT`,
+  `SET TRANSACTION`, `NOTIFY`/`pg_notify`, session settings and advisory
+  locks), as defence in depth; its Redis client
   (`ShadowSafeRedis`) sends reads only. Threat-intelligence lookups answer
   from the cache only (a miss is `skipped`: no provider call, no quota, no
   production rate limit), so a shadow verdict can see fewer
   threat-intelligence answers than production's. LLM use stays on the run
   (never `llm_usage_daily`, which bills the tenant and seeds its budget),
   and metrics are labelled `mode="shadow"`. After the run, the sink is
-  written to `shadow_effects`, the run's only write (`lg-sotf shadow-run` then stores the
-  candidate's verdict beside production's in `shadow_verdicts`, `core/shadow_replay.py`;
+  written to `shadow_effects` by the runtime role, the run's only write (`lg-sotf shadow-run` then stores the
+  candidate's verdict beside production's in `shadow_verdicts`, also by the runtime role, `core/shadow_replay.py`;
   docs/evaluation.md, "Shadow agreement"). `tests/unit/architecture/test_shadow_egress.py`
   finds the egress call sites (HTTP, SMTP, socket, database and Redis
   clients, every Redis write command, WebSocket sends, connector execution,
@@ -388,6 +391,8 @@ Rules:
   mark `summary.llm_budget_exceeded`.
 * Per-model concurrency semaphores (`llm.<tier>.max_concurrency`, default
   `worker.concurrency`; waits exported as `lgsotf_llm_slot_wait_seconds`).
+  Shadow runs take separate slots (`llm.<tier>.shadow_max_concurrency`,
+  default 1), so a live call never waits on a shadow call.
 
 ## 10. API
 

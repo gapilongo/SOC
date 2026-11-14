@@ -12,7 +12,7 @@ cancel one (``cancelled_at``, ``cancelled_by``). The backtest columns are
 written by the scheduler, which connects as the schema owner.
 
 Revision ID: 0019
-Revises: 0016
+Revises: 0017
 Create Date: 2026-11-14
 """
 
@@ -25,7 +25,7 @@ from alembic import op
 from lg_sotf.db.partitions import TENANT_POLICY_PREDICATE
 
 revision: str = "0019"
-down_revision: Union[str, None] = "0016"
+down_revision: Union[str, None] = "0017"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

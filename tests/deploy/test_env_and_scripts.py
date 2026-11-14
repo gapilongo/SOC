@@ -283,6 +283,7 @@ def test_only_useful_scripts_remain() -> None:
         "export_openapi.py",
         "export_schemas.py",
         "generate_secrets.py",
+        "load_corpus_telemetry.py",
         "load_test.py",
         "lock_requirements.sh",
         "make_tour_media.sh",

@@ -125,6 +125,10 @@ class ShadowAgreementReport(BaseModel):
     report_id: str
     tenant_id: str
     candidate: str
+    candidate_host: Optional[str] = Field(
+        default=None,
+        description="The host the candidate's LLM calls went to (empty: no network); never its key.",
+    )
     alerts: int = Field(description="Alerts replayed.")
     compared: int = Field(description="Alerts with a production verdict and a usable candidate verdict.")
     candidate_failed: int = Field(description="Candidate runs that raised: no verdict.")
@@ -305,7 +309,7 @@ def _deltas(usable: Sequence[Comparison]) -> Dict[str, ShadowDelta]:
 
 def build_report(
     rows: Sequence[Comparison], *, report_id: str, tenant_id: str, candidate: str,
-    min_samples: int = MIN_AGREEMENT_SAMPLES,
+    min_samples: int = MIN_AGREEMENT_SAMPLES, candidate_host: Optional[str] = None,
 ) -> ShadowAgreementReport:
     """The agreement report of one shadow replay's comparisons."""
     sample = [c for c in rows if has_production(c)]
@@ -321,6 +325,7 @@ def build_report(
         report_id=report_id,
         tenant_id=tenant_id,
         candidate=candidate,
+        candidate_host=candidate_host,
         alerts=len(rows),
         compared=len(usable),
         candidate_failed=sum(c.candidate.error is not None or c.candidate.route not in ROUTES for c in failures),
@@ -385,6 +390,10 @@ def _headline(report: ShadowAgreementReport) -> List[str]:
         f"Report `{_cell(report.report_id)}`, tenant `{_cell(report.tenant_id)}`: {report.alerts} alerts replayed, "
         f"{report.compared} with a usable candidate verdict, {report.candidate_failed} candidate runs failed, "
         f"{report.candidate_degraded} fell back to rules, {report.no_production_verdict} without a production verdict.",
+        "",
+        f"Candidate LLM host: `{_cell(report.candidate_host or 'none (no network)')}`"
+        if report.candidate_host is not None
+        else "Candidate LLM host: not recorded",
         "",
         f"**Agreement: {report.agreement_text}** (failed and rules-fallback runs count as disagreement; "
         f"over usable verdicts only: {report.agreement_usable_text})",

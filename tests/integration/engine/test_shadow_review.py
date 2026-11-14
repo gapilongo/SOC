@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 
 import pytest
 import redis.asyncio as aioredis
-from asyncpg.exceptions import ReadOnlySQLTransactionError
+from asyncpg.exceptions import InsufficientPrivilegeError, ReadOnlySQLTransactionError
 
 from lg_sotf.core import shadow as core_shadow
 from lg_sotf.core.shadow import ShadowRunner
@@ -127,8 +127,8 @@ async def test_shadow_transactions_refuse_what_read_only_lets_through(db: Databa
         async with db.tenant_tx(TENANT_A) as conn:
             with pytest.raises(ReadOnlySQLTransactionError):
                 await conn.execute("CREATE SEQUENCE IF NOT EXISTS probe_seq")
-        async with db.system_tx() as conn:
-            with pytest.raises(ReadOnlySQLTransactionError):
+        async with db.tenant_tx(TENANT_A) as conn:  # the shadow role has no sequence privilege either (AI-E1.5c)
+            with pytest.raises((ReadOnlySQLTransactionError, InsufficientPrivilegeError)):
                 await conn.fetchval("SELECT nextval(pg_get_serial_sequence('alert_events', 'id'))")
         async with db.connection() as conn:
             with pytest.raises(ShadowEgressRefused):

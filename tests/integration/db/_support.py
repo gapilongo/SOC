@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import os
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Optional
+from urllib.parse import quote, urlsplit, urlunsplit
 from uuid import uuid4
 
 import asyncpg
@@ -13,6 +16,7 @@ import psycopg
 import pytest
 from pydantic import SecretStr
 
+from lg_sotf.db.migrate import SHADOW_TABLES, grant_shadow_privileges
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
@@ -27,6 +31,34 @@ TENANT_A = "tenant-a"
 TENANT_B = "tenant-b"
 # Acts like the production API/worker role (see tests/integration/db/conftest.py, ``app_db``).
 RUNTIME_ROLE = "pg_database_owner"
+
+
+# The SELECT-only shadow role (AI-E1.5c), a login of the test cluster: scripts/ci/create_test_role.sql creates it.
+SHADOW_ROLE = "lgsotf_shadow"
+
+
+def shadow_url(url: str) -> str:
+    """``url`` logged in as :data:`SHADOW_ROLE` (password: ``LG_SOTF_TEST_SHADOW_PASSWORD``, else the CI one)."""
+    password = os.environ.get("LG_SOTF_TEST_SHADOW_PASSWORD") or "ci_only_" + "password"
+    parts = urlsplit(url)
+    host = parts.netloc.rpartition("@")[2]
+    return urlunsplit(parts._replace(netloc=f"{SHADOW_ROLE}:{quote(password, safe='')}@{host}"))
+
+
+async def ensure_shadow_grants(db: Database, url: str) -> bool:
+    """Grant :data:`SHADOW_ROLE` its privileges when a migration dropped them; False when the cluster lacks the role."""
+    async with db.connection() as conn:
+        granted = await conn.fetchval(
+            "SELECT CASE WHEN to_regrole($1) IS NULL THEN NULL ELSE bool_and(has_table_privilege($1, 'public.' || t, "
+            "'SELECT') AND has_schema_privilege($1, 'public', 'USAGE')) END FROM unnest($2::text[]) AS t",
+            SHADOW_ROLE,
+            list(SHADOW_TABLES),
+        )
+    if granted is None:
+        return False
+    if not granted:
+        await asyncio.to_thread(grant_shadow_privileges, SHADOW_ROLE, url, DatabaseSettings())
+    return True
 
 
 def db_settings(url: str, **overrides: object) -> DatabaseSettings:

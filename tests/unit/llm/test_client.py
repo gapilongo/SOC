@@ -18,6 +18,7 @@ from lg_sotf.llm.client import (
 )
 from lg_sotf.llm.errors import LLMUnavailable
 from lg_sotf.llm.fake import FakeChatModel
+from lg_sotf.security.shadow import ShadowRun, shadow_scope
 from lg_sotf.settings import Settings
 
 
@@ -217,3 +218,43 @@ async def test_llm_slots_default_to_worker_concurrency(make_settings: Callable[.
     await asyncio.gather(*(call() for _ in range(30)))
     assert peak == 24
     assert LLM_SLOT_WAIT_SECONDS.labels(tier="deep", mode="live")._sum.get() > before  # type: ignore[attr-defined]
+
+
+async def test_a_shadow_call_never_holds_a_live_llm_slot(make_settings: Callable[..., Settings]) -> None:
+    """AI-E1.5d: a shadow call holding its slot leaves production's single deep slot free."""
+    s = make_settings(llm={"deep": {"model": "d", "max_concurrency": 1}})
+    release, holding = asyncio.Event(), asyncio.Event()
+
+    async def shadow_call() -> None:
+        with shadow_scope(ShadowRun("shadow/slot")):
+            async with llm_slot("deep", s):
+                holding.set()
+                await release.wait()
+
+    task = asyncio.create_task(shadow_call())
+    await holding.wait()
+    async with asyncio.timeout(1):
+        async with llm_slot("deep", s):  # a live production call, while the shadow call holds its slot
+            pass
+    release.set()
+    await task
+
+
+async def test_shadow_calls_are_bounded_by_their_own_slots(make_settings: Callable[..., Settings]) -> None:
+    s = make_settings(llm={"fast": {"model": "f", "max_concurrency": 8, "shadow_max_concurrency": 2}})
+    assert make_settings().llm.fast.shadow_max_concurrency == make_settings().llm.deep.shadow_max_concurrency == 1
+    active = peak = 0
+
+    async def call() -> None:
+        nonlocal active, peak
+        async with llm_slot("fast", s):
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+
+    with shadow_scope(ShadowRun("shadow/bounded")):
+        await asyncio.gather(*(call() for _ in range(6)))
+    assert peak == 2
+    with pytest.raises(ValueError):
+        make_settings(llm={"fast": {"model": "f", "shadow_max_concurrency": 0}})

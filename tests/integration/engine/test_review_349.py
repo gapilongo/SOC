@@ -17,7 +17,7 @@ from lg_sotf.queue.streams import Message
 from lg_sotf.runtime.worker import Worker
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, make_alert
-from tests.integration.engine._support import RecordingEvents, analyst, decide, suspicious_alert
+from tests.integration.engine._support import RecordingEvents, analyst, decide, threat_alert
 
 pytestmark = pytest.mark.integration
 
@@ -41,7 +41,7 @@ async def test_worker_delivers_the_case_decision_to_a_folded_alert(
     engine_settings: Settings,
 ) -> None:
     folded = await model_closed_with_run(repos, {"hosts": ["ws-042"]})
-    threat = await suspicious_alert(repos)
+    threat = await threat_alert(repos)
     outcome = await engine.run(TENANT_A, threat)
     case = outcome.interrupt["escalation_id"]
     assert (await repos.alerts.get(TENANT_A, folded)).status == "waiting_human"
@@ -61,7 +61,7 @@ async def test_worker_delivers_the_case_decision_to_a_folded_alert(
 
 async def test_needs_more_info_strands_a_folded_alert(engine: WorkflowEngine, repos: Repositories) -> None:
     folded = await model_closed_with_run(repos, {"hosts": ["ws-042"]})
-    threat = await suspicious_alert(repos)
+    threat = await threat_alert(repos)
     first = await engine.run(TENANT_A, threat)
     case1 = first.interrupt["escalation_id"]
     assert (await repos.alerts.get(TENANT_A, folded)).summary["escalation_id"] == case1

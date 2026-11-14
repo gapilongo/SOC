@@ -50,7 +50,9 @@ from tests.integration.db._support import (
     TENANT_B,
     assert_rls_applies,
     db_settings,
+    ensure_shadow_grants,
     reset_schema,
+    shadow_url,
     truncate_all,
 )
 from tests.integration.integrations._support import no_sleep
@@ -124,8 +126,12 @@ def checkpointed_database_url(migrated_database_url: str) -> str:
 
 @pytest_asyncio.fixture
 async def db(migrated_database_url: str) -> AsyncIterator[Database]:
-    database = Database(db_settings(migrated_database_url), application_name="lg-sotf-tests")
+    """The schema owner's pool, plus the shadow runs' pool as the SELECT-only shadow role (AI-E1.5c)."""
+    settings = db_settings(migrated_database_url, shadow_url=shadow_url(migrated_database_url))
+    database = Database(settings, application_name="lg-sotf-tests")
     await database.open()
+    if await ensure_shadow_grants(database, migrated_database_url):
+        await database.open_shadow()
     await truncate_all(database)
     try:
         yield database
