@@ -157,7 +157,7 @@ next two partitions ahead and drops expired ones.
 | `indicator_sightings` | `tenant_id`, `indicator_type`, `value_hash` (HMAC-SHA256 with per-install key), `value_display` (truncated, redacted), `alert_id`, `seen_at`. Index (`tenant_id`, `indicator_type`, `value_hash`, `seen_at DESC`). Correlation reads this instead of scanning JSONB |
 | `llm_usage_daily` | PK (`tenant_id`, `day`, `model`, `agent`); `calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd NUMERIC(12,6)`, `refusals`, `errors` (UPSERT) |
 | `integrations` | `id UUID` PK, `tenant_id`, `kind` (slack/teams/email/webhook/jira/servicenow), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `events TEXT[]`, `min_severity` (docs/integrations.md) |
-| `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
+| `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test, or email: a break-glass alert mailed to one platform admin, the only rows without an `integration_id`), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
 | `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
 | `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
 | `shadow_effects` | Shadow-mode sink, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id` (`shadow/...`), `seq` (UNIQUE per run), `boundary`, `operation`, `outcome` (sunk/refused), `detail JSONB` (event and action types, action targets; size-capped). What a shadow run would have done (§8); no API reads it |
@@ -297,14 +297,32 @@ Rules:
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
-  * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
-    response plan or malicious close, an escalation a model judged a
-    threat (not a merely suspicious one), an analyst true positive or a blind-audit
-    malicious label reopens every model-closed alert of the tenant that
-    shares a host, user or IP with it and closed in the previous 24 hours:
-    folded into the threat's open escalation (attached, `waiting_human`, no
-    new run or case; the decision on the case settles it), or, without an
-    open case, queued for its own review run; audited `alert.reopened`.
+  * The safety net (`core/retro_reopen.py`) replaces the forward gates.
+    It looks at every model-closed alert of the tenant that shares a host,
+    user or IP with a threat and closed in the previous 24 hours, and what
+    it does depends on who stands behind the threat (AI-E3.15):
+    * a model only (an escalation a model judged a threat, not a merely
+      suspicious one; a response the workflow only proposes, or only
+      simulates in the tenant's dry-run mode): the alert is
+      **linked**. It is attached to the threat's open escalation as a
+      related alert, so the analyst sees it in the case, gets a `linked`
+      entry in its summary and is audited `alert.linked`. It stays closed
+      with its close reason `ai_closed:audit_required`, no run starts, no
+      decision on the case settles it, and the evidence pack and the NIS2
+      draft show no human decision for it. Linked alerts do not use up the
+      case's room for waiting alerts;
+    * a confirmation (an analyst true positive, an analyst's own approval
+      of a response action, a blind-audit malicious label, or a response
+      action that really ran (`succeeded`, never `dry_run`) when the
+      workflow carried it out alone under the tenant's autonomy policy:
+      once the platform has acted on a threat, the related alerts do not
+      stay closed): the alert is
+      **reopened**, and
+      so is every alert linked to the threat or into its case earlier,
+      however long ago it closed. It is folded into the threat's open
+      escalation (attached, `waiting_human`, no new run or case; the
+      decision on the case settles it), or, without an open case, queued
+      for its own review run; audited `alert.reopened`.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,
@@ -515,6 +533,7 @@ Everything else is per stack, on purpose:
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier,mode}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
+  `lgsotf_security_alerts_undelivered_total{event_type}`,
   `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed
   ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing

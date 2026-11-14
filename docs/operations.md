@@ -243,6 +243,10 @@ compromise, and expect reduced correlation for that window.
   with the SOAR, which verifies the HMAC signature.
 * LLM API keys: create the new key at the provider, update the Secret, roll
   workers, revoke the old key.
+* `LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH`: after every use and every
+  drill, `lg-sotf break-glass-credential` prints a new credential and hash;
+  seal the credential, update the Secret, roll the API
+  ([runbooks/break-glass.md](runbooks/break-glass.md)).
 
 ## 8. Incident checklist
 
@@ -287,7 +291,7 @@ startup while it is set; remove it from your configuration. Metrics are Promethe
 | Overview | request rate and 5xx ratio `sum(rate(lgsotf_http_requests_total{status=~"5.."}[5m])) / sum(rate(lgsotf_http_requests_total[5m]))`; p95 latency `histogram_quantile(0.95, sum by (le, route) (rate(lgsotf_http_request_seconds_bucket[5m])))`; pod restarts |
 | Pipeline | `lgsotf_queue_depth` and `lgsotf_queue_pending` by stream; `sum by (outcome) (rate(lgsotf_runs_total[5m]))`; node p90 `histogram_quantile(0.9, sum by (le, node) (rate(lgsotf_node_seconds_bucket{mode="live"}[15m])))`; worker replicas; transactions retried after a migration `increase(lgsotf_db_stale_statement_retries_total[1h])` (expected only around an upgrade) |
 | LLM | calls `sum by (model, agent, outcome) (rate(lgsotf_llm_calls_total{mode="live"}[5m]))`; tokens `sum by (model, kind) (rate(lgsotf_llm_tokens_total{mode="live"}[1h]))`; spend `sum by (model) (increase(lgsotf_llm_cost_usd_total{mode="live"}[1d]))`; refusals and skipped calls by reason `sum by (agent, category) (rate(lgsotf_llm_refusals_total{mode="live"}[1h]))`, `sum by (agent, reason) (rate(lgsotf_llm_skipped_total{mode="live"}[1h]))`; shadow runs: the same series with `mode="shadow"` |
-| Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))`; confirmed threats whose verdict-cache entries and suppression rules could not be revoked `increase(lgsotf_revocation_failures_total[1h]) > 0` (page on it); threats whose related model-closed alerts could not be reopened (decision policy v3 safety net) `increase(lgsotf_retro_reopen_failures_total[1h]) > 0` (page on it), and alerts reopened `sum by (path) (increase(lgsotf_retro_reopened_total[1d]))` |
+| Analysts | `lgsotf_escalations_open`; actions by status `sum by (status) (rate(lgsotf_actions_total[1h]))`; confirmed threats whose verdict-cache entries and suppression rules could not be revoked `increase(lgsotf_revocation_failures_total[1h]) > 0` (page on it); threats whose related model-closed alerts could not be linked or reopened (decision policy v3 safety net) `increase(lgsotf_retro_reopen_failures_total[1h]) > 0` (page on it), alerts reopened because a related threat was confirmed, by a person or by a response action that really ran (path `response`; a dry run does not count) `sum by (path) (increase(lgsotf_retro_reopened_total[1d]))`, and alerts only linked to a threat a model judged (they stay closed; each counts once per threat) `sum by (path) (increase(lgsotf_retro_linked_total[1d]))` |
 | Ingestion | `lgsotf_ingest_events_total`, `lgsotf_source_polls_total` by outcome, `lgsotf_source_poll_seconds` |
 
 ### Alerts to create
