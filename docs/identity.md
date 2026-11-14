@@ -140,6 +140,8 @@ policy). API keys are unaffected.
 | `auth.mfa_recovery_codes_regenerated` | new recovery codes |
 | `auth.mfa_disabled` | the user turned MFA off |
 | `auth.mfa_reset` | an admin, a platform admin or the CLI removed a user's MFA |
+| `auth.break_glass_used` | a break-glass sign-in (the account, source address, reason, session end, admins notified). Every later entry of that session carries `auth_method: break_glass` in its details |
+| `auth.break_glass_failed` | a refused break-glass attempt: `bad_credential` naming a real platform admin (that account's tenant), or `unknown_account` with the right credential (the bootstrap tenant's log, with a short hash of the name, never the name) |
 | `auth.login` | `details.method` is `password`, `password+totp`, `password+recovery_code` or `password+mfa_enrollment` |
 
 ## Recovery procedures
@@ -163,7 +165,7 @@ platform admin's. A platform admin can reset any tenant's user with
 a new password for the user (`PATCH /users/{id}`), which clears the lock and
 signs the user out.
 
-**The last admin, or a platform admin, lost every factor (break-glass).**
+**The last admin, or a platform admin, lost every factor.**
 Run on a host with the schema-owner database connection (as for `lg-sotf
 migrate`):
 
@@ -175,6 +177,13 @@ It asks for confirmation (`--yes` skips it), removes the user's MFA, revokes
 their refresh tokens and writes `auth.mfa_reset` with actor `system/cli` to
 the tenant's audit log. Keep access to this command as tightly controlled as
 database access.
+
+**Nobody can sign in the normal way (break-glass).**
+An operator can prepare a sealed credential that opens a short
+platform-admin session over the API. It is off by default, and every use is
+audited and mailed to all platform admins. The procedure, the rotation
+after use and the drill are in
+[runbooks/break-glass.md](runbooks/break-glass.md).
 
 ## OIDC single sign-on
 

@@ -58,6 +58,16 @@ def test_access_token_round_trip_carries_contract_claims(tokens: TokenService) -
     assert is_local_token(issued.token)
 
 
+def test_a_break_glass_token_is_marked_and_never_outlives_a_normal_one(make_settings: Callable[..., Settings]) -> None:
+    short = TokenService(make_settings(auth={"break_glass_ttl_s": 120}), secret=SECRET)
+    issued = short.issue_access(_user(), break_glass=True)
+    claims = short.verify_access(issued.token)
+    assert issued.expires_in == claims["exp"] - claims["iat"] == 120 and claims["auth_method"] == "break_glass"
+    assert "auth_method" not in short.verify_access(short.issue_access(_user()).token)
+    capped = TokenService(make_settings(auth={"access_token_ttl_s": 300, "break_glass_ttl_s": 900}), secret=SECRET)
+    assert capped.issue_access(_user(), break_glass=True).expires_in == 300
+
+
 def test_expired_tokens_are_rejected(tokens: TokenService) -> None:
     issued = tokens.issue_access(_user(), now=datetime.now(UTC) - timedelta(hours=1))
     with pytest.raises(InvalidToken):

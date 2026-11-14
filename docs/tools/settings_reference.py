@@ -150,6 +150,12 @@ DESCRIPTIONS: Dict[str, str] = {
     ),
     "auth.mfa_issuer": "Issuer name shown in authenticator apps (`otpauth://` URI).",
     "auth.mfa_challenge_ttl_s": "Lifetime of the MFA challenge token between password and code (30-900).",
+    "auth.break_glass_credential_hash": (
+        "argon2id hash of the sealed break-glass credential (`lg-sotf break-glass-credential`). Unset: break-glass "
+        "sign-in is off. Needs `integrations.enabled`, `smtp_host` and `smtp_from`, because every use is mailed to all "
+        "platform admins. See [runbooks/break-glass.md](runbooks/break-glass.md)."
+    ),
+    "auth.break_glass_ttl_s": "Lifetime of a break-glass session (60-900). It has no refresh token and cannot be extended.",
     "auth.bootstrap_admin_email": "`lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist.",
     "auth.bootstrap_admin_password": "Password of the bootstrap admin. Give it to the migrate job only, then remove it.",
     "auth.bootstrap_tenant_id": "Tenant created by `lg-sotf migrate`.",

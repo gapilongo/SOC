@@ -243,6 +243,10 @@ compromise, and expect reduced correlation for that window.
   with the SOAR, which verifies the HMAC signature.
 * LLM API keys: create the new key at the provider, update the Secret, roll
   workers, revoke the old key.
+* `LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH`: after every use and every
+  drill, `lg-sotf break-glass-credential` prints a new credential and hash;
+  seal the credential, update the Secret, roll the API
+  ([runbooks/break-glass.md](runbooks/break-glass.md)).
 
 ## 8. Incident checklist
 

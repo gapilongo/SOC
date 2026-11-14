@@ -48,6 +48,14 @@ class User(Record):
         return self.locked_until is not None and self.locked_until > (now or utcnow())
 
 
+class PlatformAdmin(Record):
+    """An active platform admin, as ``lgsotf_auth_platform_admins`` returns it (no credentials)."""
+
+    tenant_id: str
+    id: UUID
+    email: str
+
+
 def normalize_email(email: str) -> str:
     value = email.strip().lower()
     local, sep, domain = value.partition("@")
@@ -125,6 +133,12 @@ class UsersRepo(Repository):
         async with self._lookup() as c:
             rows = await c.fetch("SELECT * FROM lgsotf_auth_users_by_email($1)", email)
         return to_models(User, rows)
+
+    async def platform_admins_all_tenants(self) -> List[PlatformAdmin]:
+        """The active platform admins of every tenant (``lgsotf_auth_platform_admins``; works for the runtime role)."""
+        async with self._lookup() as c:
+            rows = await c.fetch("SELECT * FROM lgsotf_auth_platform_admins()")
+        return to_models(PlatformAdmin, rows)
 
     async def list(
         self,

@@ -114,7 +114,7 @@ when the JWT secret is shorter than 32 bytes, when encryption keys or the
 indicator HMAC key are missing, when a published placeholder secret is used,
 or when CORS is a wildcard, cookies are insecure, the fake model runs
 without `llm.allow_fake`, or the development database password is in the
-URL (`src/lg_sotf/settings.py:509-545`).
+URL (`src/lg_sotf/settings.py:521-557`).
 
 **Check.** Compose: `docker compose -f docker/docker-compose.yml -f
 docker/docker-compose.prod.yml config | grep LG_SOTF_ENVIRONMENT`. Helm:
@@ -197,7 +197,7 @@ reads it from `serviceMonitor.apiBearerTokenSecret`.
 
 **Level:** L1. **Default:** met: `response.dry_run=true`, and autonomy is
 `approval` for low, medium and high risk and `disabled` for critical
-(`src/lg_sotf/settings.py:303-315`).
+(`src/lg_sotf/settings.py:315-327`).
 
 **Rationale.** A misconfigured connector or policy acts on the customer's
 production systems. Dry run records what would happen and sends nothing.
@@ -244,7 +244,7 @@ MFA enforced at the IdP.
 ### HG-APP-9 Shorten the refresh-token lifetime
 
 **Level:** L2. **Default:** operator. Refresh tokens last 14 days
-(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:176`).
+(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:178`).
 
 **Rationale.** A shorter lifetime limits how long a stolen browser session
 stays useful. Per-tenant session policy (idle timeout, absolute lifetime)
@@ -561,7 +561,7 @@ the Kubernetes audit log.
 **Rationale.** Row-level security protects tenants only if the API and
 worker connect as a role that cannot bypass it. `lg-sotf migrate` refuses to
 grant to a runtime role that is a superuser, has `BYPASSRLS` or belongs to
-the owner role (`src/lg_sotf/db/migrate.py:235-257`).
+the owner role (`src/lg_sotf/db/migrate.py:236-258`).
 
 **Check.**
 
@@ -727,7 +727,7 @@ must change nothing. Its statement guard is a pattern match that a crafted
 statement can slip past; the database role is the boundary. `lg-sotf
 migrate` grants `database.shadow_role` `SELECT` on the tenant tables except
 the credentials, and nothing else, and refuses a role that may write or
-bypass isolation (`src/lg_sotf/db/migrate.py:302-337`).
+bypass isolation (`src/lg_sotf/db/migrate.py:303-338`).
 
 **Check.** The query must return `false`, `false`, `false`, `{}` and
 `{default_transaction_read_only=on}`:

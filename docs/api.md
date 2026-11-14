@@ -218,6 +218,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET | `/healthz` (liveness), `/readyz` (database and Redis) | none |
 | GET | `/metrics` (Prometheus) | `Authorization: Bearer <api.metrics_token>` when configured |
 | POST | `/auth/login` | public |
+| POST | `/auth/break-glass` | the install's sealed credential (body). Mounted only while the operator has enabled it, so it is not in the OpenAPI document of a default install ([runbook](runbooks/break-glass.md)) |
 | POST | `/auth/refresh`, `/auth/logout` | refresh cookie |
 | GET | `/auth/me` | any principal |
 | POST | `/auth/mfa/verify` | MFA challenge token (body) |
