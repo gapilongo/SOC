@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.1.0",
+  "id": "fact-prevalence-psexesvc",
+  "kind": "prevalence",
+  "subject": {"type": "service", "value": "PSEXESVC"},
+  "observed_at": "2026-11-07T09:41:00Z",
+  "source": {"name": "wazuh.prevalence", "version": "1"},
+  "complete": true,
+  "ttl_seconds": 3600,
+  "value": {
+    "scope": "tenant_fleet",
+    "window_start": "2026-10-24T00:00:00Z",
+    "window_end": "2026-11-07T09:41:00Z",
+    "first_seen_at": "2026-11-07T09:15:40Z",
+    "last_seen_at": "2026-11-07T09:15:40Z",
+    "host_count": 1,
+    "event_count": 1,
+    "fleet_size": 212
+  }
+}
