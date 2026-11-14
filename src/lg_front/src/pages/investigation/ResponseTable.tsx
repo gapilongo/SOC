@@ -3,26 +3,28 @@
  * every planned action with its exact target, whether it can be undone, the
  * guardrail result and what approval it needs. Nothing has run. A ticked
  * action runs the moment a true positive is recorded; the rest waits on the
- * Approvals page. The rules are those of the response preview
- * (`can_preapprove`, `role_lock`) and of the decision page: an action
- * without a target cannot be pre-approved.
+ * Approvals page. What may be ticked is the decision page's rule
+ * (escalations/preapproval.ts), and a target is shown as everywhere a human
+ * approves an action (ActionTarget).
  */
 
 import { useId } from 'react';
 
 import { text } from '../../api/fields';
 import type { PreviewActionOut } from '../../api/types';
+import { ActionTarget } from '../../components/ActionTarget';
 import { Glyph, SeverityBars } from '../../components/investigation';
 import { cx } from '../../components/ui';
 import { humanize } from '../../lib/format';
+import { canPreapprove } from '../escalations/preapproval';
 
 /** Whether the caller may tick this action to run on a true positive; when not, what happens to it instead. */
 export function preapproval(a: PreviewActionOut): { allowed: boolean; instead: string | null } {
+  if (canPreapprove(a)) return { allowed: true, instead: null };
   if (a.role_lock === 'disabled' || a.without_preapproval === 'blocked') return { allowed: false, instead: 'Not available' };
   if (a.role_lock === 'admin') return { allowed: false, instead: 'Needs an admin' };
   if (!text(a.target)) return { allowed: false, instead: 'No target sent: approve it on the Approvals page' };
-  if (!a.can_preapprove) return { allowed: false, instead: a.without_preapproval === 'automatic' ? 'Runs automatically' : 'Waits on the Approvals page' };
-  return { allowed: true, instead: null };
+  return { allowed: false, instead: a.without_preapproval === 'automatic' ? 'Runs automatically' : 'Waits on the Approvals page' };
 }
 
 /** The `approved_actions` entries of the ticked actions that may still be pre-approved. */
@@ -54,7 +56,10 @@ function Row({ a, checked, disabled, onToggle }: { a: PreviewActionOut; checked:
       <td className={TD}>
         <Label>Target</Label>
         {target ? (
-          <code className={cx('inline-block max-w-full break-words align-top font-mono text-[12.5px] font-medium min-[900px]:max-w-[20rem]', blocked ? 'text-secondary' : 'text-fg')}>{target}</code>
+          // As wide as the target up to 20rem, so a short one never breaks inside a word in a tight column.
+          <span className="inline-block max-w-full align-top min-[900px]:w-max min-[900px]:max-w-[20rem]">
+            <ActionTarget target={target} />
+          </span>
         ) : (
           <span className="text-warn-fg">not sent</span>
         )}

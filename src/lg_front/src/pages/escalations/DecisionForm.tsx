@@ -2,18 +2,22 @@
 
 import { Ban, Check, Clock, Lock } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 
+import { text } from '../../api/fields';
 import { useResponsePreview, useTenantLabel } from '../../api/hooks';
 import type { DecisionOut, EscalationOut, PreviewActionOut } from '../../api/types';
+import { ActionTarget } from '../../components/ActionTarget';
 import { Banner, Button, Checkbox, ErrorMessage, SelectField, Spinner, TextField, cx } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
 import { APPROVALS_HREF } from '../../lib/links';
 import { DECISION_LABELS, VERDICTS, type Verdict } from './labels';
+import { canPreapprove } from './preapproval';
 import { MAX_NOTES, notesRequired, useRecordDecision, type DecisionInput } from './useRecordDecision';
 
 const HINTS: Record<Verdict, string> = {
-  true_positive: 'Malicious. The response plan below runs or waits for approval.',
+  true_positive: 'Malicious. The response plan runs or waits for approval.',
   false_positive: 'Not malicious. Closes the alert and feeds back to triage.',
   benign_positive: 'Real activity, but expected here. Closes the alert.',
 };
@@ -44,10 +48,15 @@ function PlanAction({ a, checked, onToggle, disabled }: { a: PreviewActionOut; c
   const outcome = OUTCOME[a.without_preapproval] ?? OUTCOME.awaiting_approval;
   const locked = a.role_lock === 'admin' || a.role_lock === 'disabled';
   const selectable = a.can_preapprove || locked;
-  const title = a.description || `${humanize(a.action_type)} ${a.target}`;
+  // What the action acts on: always shown, and without it the action cannot be pre-approved here.
+  const target = text(a.target);
+  const off = disabled || !canPreapprove(a);
   const details = (
     <span className="flex flex-col gap-0.5">
-      <span className={cx('font-medium', locked ? 'text-secondary' : 'text-fg')}>{title}</span>
+      <span className={cx('font-medium', locked ? 'text-secondary' : 'text-fg')}>{a.description || humanize(a.action_type)}</span>
+      <span className="text-xs text-secondary">
+        Target: {target ? <ActionTarget target={target} /> : <span className="text-warn-fg">not sent</span>}
+      </span>
       <span className="text-xs text-secondary">{actionMeta(a)}</span>
       <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-body">
         <span className="inline-flex items-center gap-1">
@@ -72,6 +81,12 @@ function PlanAction({ a, checked, onToggle, disabled }: { a: PreviewActionOut; c
           The tenant’s autonomy policy disables this action.
         </span>
       )}
+      {!target && selectable && (
+        <span className="flex items-start gap-1.5 text-xs text-body">
+          <Lock className="mt-px h-3.5 w-3.5 flex-none" strokeWidth={2} aria-hidden="true" />
+          The plan sent no target for this action, so it cannot be pre-approved here; approve it on the Approvals page.
+        </span>
+      )}
     </span>
   );
   if (!selectable) {
@@ -89,10 +104,10 @@ function PlanAction({ a, checked, onToggle, disabled }: { a: PreviewActionOut; c
         type="checkbox"
         className="mt-0.5 h-4 w-4 flex-none accent-accent disabled:cursor-not-allowed"
         checked={checked}
-        disabled={disabled || locked}
+        disabled={off}
         onChange={(e) => onToggle(e.target.checked)}
       />
-      <label htmlFor={id} className={cx(locked || disabled ? 'cursor-not-allowed' : 'cursor-pointer')}>
+      <label htmlFor={id} className={cx(off ? 'cursor-not-allowed' : 'cursor-pointer')}>
         <span className="sr-only">Pre-approve: </span>
         {details}
       </label>
@@ -102,13 +117,16 @@ function PlanAction({ a, checked, onToggle, disabled }: { a: PreviewActionOut; c
 
 function ResponsePlan({ escalationId, selected, onChange, disabled }: { escalationId: string; selected: ReadonlySet<string>; onChange: (next: Set<string>) => void; disabled: boolean }) {
   const q = useResponsePreview(escalationId);
+  const headingId = useId();
   const actions = Array.isArray(q.data?.actions) ? q.data.actions : [];
   return (
-    <fieldset className="flex flex-col gap-2.5 rounded-control border border-strong p-3.5">
-      <legend className="px-1.5 text-ctl font-semibold text-fg">Expected response plan</legend>
+    <section aria-labelledby={headingId} className="flex flex-col gap-2.5 rounded-card border border-strong bg-raised p-4 md:p-5">
+      <h2 id={headingId} className="text-base font-semibold text-fg">
+        Expected response plan
+      </h2>
       <p className="text-xs text-secondary">
         What a true-positive decision would do, computed now as a dry run. The final plan is computed when you record the decision; whatever you do not
-        pre-approve waits on the <Link to={APPROVALS_HREF} className="text-link hover:text-link-hover hover:underline">Approvals</Link> page.
+        pre-approve waits on the <Link to={APPROVALS_HREF} className="text-link underline hover:text-link-hover">Approvals</Link> page.
       </p>
       {q.isPending && <Spinner label="Computing the expected plan" />}
       {q.isError && <ErrorMessage error={q.error} compact onRetry={() => void q.refetch()} />}
@@ -137,21 +155,31 @@ function ResponsePlan({ escalationId, selected, onChange, disabled }: { escalati
         </ul>
       )}
       {q.data?.generated_at && <p className="text-2xs text-muted">Computed {formatDateTime(q.data.generated_at)}</p>}
-    </fieldset>
+    </section>
   );
 }
+
+const preapprovedText = (n: number) => (n === 0 ? 'No action is pre-approved.' : n === 1 ? '1 action is pre-approved.' : `${n} actions are pre-approved.`);
 
 /**
  * Record a decision (useRecordDecision: optimistic concurrency on the version
  * the analyst looked at). On 409 the escalation is re-read, the form keeps
  * what the analyst entered, and they confirm again against the new state.
+ *
+ * The expected response plan of a true positive is rendered into `planSlot`,
+ * in the page's main column, so the form stays short. Its pre-approvals stay
+ * state of this form: they are sent with the decision, and they go with the
+ * form when the page moves to another escalation.
  */
 export function DecisionForm({
   escalation,
+  planSlot,
   disabledReason,
   onDecided,
 }: {
   escalation: EscalationOut;
+  /** Where the page shows the expected response plan; null until the page has rendered it. */
+  planSlot: HTMLElement | null;
   /** Why the form cannot be submitted (not claimed by you, read-only role, ...), or null. */
   disabledReason: string | null;
   /** After a recorded decision; `openNext` when "Record and open next" was used. */
@@ -297,7 +325,10 @@ export function DecisionForm({
       </div>
 
       {verdict === 'true_positive' && (
-        <ResponsePlan escalationId={escalation.id} selected={preapproved} onChange={setPreapproved} disabled={disabled} />
+        <>
+          <p className="text-ctl text-body">{preapprovedText(preapproved.size)} Choose them in the response plan, under the investigation.</p>
+          {planSlot && createPortal(<ResponsePlan escalationId={escalation.id} selected={preapproved} onChange={setPreapproved} disabled={disabled} />, planSlot)}
+        </>
       )}
 
       {(verdict === 'false_positive' || verdict === 'benign_positive') && (

@@ -289,6 +289,30 @@ organisations and grants.
 | TM-KEY-2 | I | Secrets in Helm values or ConfigMaps | Values schema rejects secret-bearing keys (`deploy/helm/lg-sotf/values.schema.json:8-9`) | In place |
 | TM-KEY-3 | I | Backup gives keys and data together | Keys documented as stored apart from dumps | Partial: operator procedure (HG-PG-8) |
 
+### 2.14 Vulnerability Operations Center
+
+Nothing of the VOC ships yet. [ADR-0016](adr/0016-vulnerability-operations-center.md) adds it as the
+first platform module: a shared asset inventory, vulnerability findings from Wazuh agents, a shared
+read-only store of advisory feeds, a deterministic priority, remediation cases, exceptions and a
+per-tenant evidence pack. Release 1 runs no active scan; external discovery and scanning arrive with
+release 2 (epics `VOC2-*`), and TM-VOC-4 and TM-VOC-5 are their threats. The stories are in
+[design/voc-stories.md](design/voc-stories.md).
+
+| ID | STRIDE | Threat | Controls | Status |
+|---|---|---|---|---|
+| TM-VOC-1 | I/E | Scanner credentials are stolen or over-privileged | Release 1 holds only read-only API credentials (an indexer read role, a read-only Wazuh server API role), encrypted in the source row, never returned, set by a tenant admin and not under a grant. The platform never stores a credential that logs in to a scanned host: authenticated network scanning keeps credentials in the integrated scanner | Planned (VOC1.5, VOC1.12) |
+| TM-VOC-2 | I | One tenant's findings, assets or exceptions reach another | Forced RLS on every VOC tenant table (INV-01); the shared feed schema holds no tenant data and no tenant table references it; a per-tenant scope filter and document-level security on shared Wazuh clusters (TM-EVT-9); the cross-tenant leak suite covers every VOC route; no signal is shared across tenants | Planned (VOC1.1, VOC1.6, VOC1.11, VOC1.12) |
+| TM-VOC-3 | T | A poisoned or replayed feed hides an exploited vulnerability, or raises every priority | Feed hosts are constants, never configuration; HTTPS through the egress policy; schema validation and sanity gates per feed; a disappearance needs two snapshots a day apart; snapshots are immutable and hashed and every score names its snapshot; a rejected snapshot changes no score; offline bundles are signed (Ed25519) and refused when older than the active data | Planned (VOC1.7, VOC1.10) |
+| TM-VOC-4 | E/D | A tenant aims a scan at systems it does not control, or at the operator's own network | No active scanning in release 1. Then: proof of control for external targets; an allow-list set by the platform operator, not the tenant; private, loopback, link-local and metadata addresses refused for external scope; rate limits, non-intrusive templates only, scan windows, an audited requester, a kill switch | Planned (VOC2-A, VOC2-B) |
+| TM-VOC-5 | I/E | SSRF through discovery: a tenant-supplied name resolves or redirects into the platform's network | Scanners run in a separate role and image with no route to PostgreSQL, Redis or the model; every resolved address is checked against the egress policy at connect time and the connection pinned to it; redirects are validated again; results return as data over the queue | Planned (VOC2-A) |
+| TM-VOC-6 | T | Text in a finding, a package name, a host name or an advisory steers a model | A canonical finding with bounded fields; feed and finding text only inside the untrusted-data block; the assistant tasks have a closed action space and no write path; no model output is an input to the score | Planned (VOC1.11, VOC1.13, VOC2-G) |
+| TM-VOC-7 | T | A finding reads as fixed because a scan was missing, partial or rebuilt | A finding is fixed only when two consecutive runs that covered its asset no longer find it; partial and failed runs prove nothing; a run that would fix a large share of a tenant's findings at once is held; no route sets `fixed`; a resolved ticket is not evidence | Planned (VOC1.17) |
+| TM-VOC-8 | E/R | An exception hides a risk: self-approval, no end date, approval by the provider | Approval by a second person holding the tenant's admin role, never under a grant; a mandatory, bounded review date; expiry returns the findings to open; every exception is in the register; audited | Planned (VOC1.18) |
+| TM-VOC-9 | T | A compromised host reports a clean software inventory, so its findings disappear | None for agent-based detection: the agent reports what the host says. The coverage register names the detection method per asset | Accepted for release 1; a network cross-check for critical assets is planned (VOC3-E) |
+| TM-VOC-10 | D | Vulnerability findings flood the SOC queue | A finding reaches the SOC only when it is exploited, on an internet-facing asset and open; once per finding; capped per tenant per day, with one summary item beyond the cap | Planned (VOC1.21) |
+| TM-VOC-11 | T | An attacker-chosen host name links an alert to another asset, or creates a false asset | A host seen in an alert never creates an asset; the exposure tool resolves only the detector-written reporting host; a weak identifier never merges two live strong identifiers; an ambiguous resolution is an incomplete fact | Planned (VOC1.1, VOC1.19) |
+| TM-VOC-12 | I | The vulnerability register leaves the tenant: an export, a model provider, a route without an entitlement | The evidence pack export is an admin action, audited and sealed; the assistant tasks are off by default and use the tenant's model routing; every VOC route checks the entitlement on the server | Planned (VOC1.3, VOC1.22) |
+
 ## 3. OWASP Top 10 for Agentic Applications (2026)
 
 | ID | Risk | Where it applies | Controls | Status |
@@ -380,6 +404,8 @@ covers it. The gate has three steps:
 | SEC6 MSSP identity hardening | IdP per tenant, grants UX, break-glass | TM-MSP-5 to TM-MSP-7 | Rows present (planned) |
 | SEC9 AI safety evidence | Invariants ([invariants.md](invariants.md)), kill switches | ASI10 | Rows present; invariant registry in place (SEC9.1) |
 | INT1–INT4 connectors | New sources and response targets | TM-ING-*, TM-RSP-* | Add a row per new connector that holds credentials |
+| VOC1 Vulnerability Operations Center, release 1 | Asset inventory, findings, shared feed store, exceptions, evidence pack | TM-VOC-1 to TM-VOC-3, TM-VOC-6 to TM-VOC-12 | Rows present (planned) |
+| VOC2 External discovery and scanning | Scan targets, scanner role | TM-VOC-4, TM-VOC-5 | Rows present (planned) |
 
 Stories of tier T3 (authorisation, RLS, migrations, signing, response
 execution, the LLM tool boundary) cite the rows they change in their
