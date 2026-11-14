@@ -3,7 +3,7 @@
  * the authority; the UI only hides or disables what the API would refuse.
  */
 
-import type { Role } from '../modules/soc/api/types';
+import type { Role } from '../api/types';
 import type { Principal } from './store';
 
 /** Roles from least to most privileged. */

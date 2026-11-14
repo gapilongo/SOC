@@ -1,20 +1,18 @@
 /**
- * React Query hooks for the console's read models and triage mutations, so
+ * React Query hooks for the SOC's read models and triage mutations, so
  * pages share one query key, one fetcher and one invalidation policy per
  * resource. Lists that page use `useKeysetList` (lib/pagination.ts); the
  * overview's short lists use `useEscalationsTop` (one request, no paging).
  *
  * Polling is a fallback to the live stream: pass `refetchInterval` from
- * `useLivePollInterval`, which slows down while live events flow and stops
- * while the tab is hidden.
+ * `useLivePollInterval` (the kernel's, re-exported here), which slows down
+ * while live events flow and stops while the tab is hidden.
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useApi, useAuth } from '../../../auth/AuthContext';
+import { useApi } from '../../../auth/AuthContext';
 import { useKeysetList } from '../../../lib/pagination';
-import { usePollInterval } from '../../../lib/visibility';
-import { useLive } from '../../../live/LiveProvider';
 import {
   endpoints,
   type AlertCountsWindow,
@@ -32,41 +30,12 @@ import type {
   SuppressionProposalOut,
 } from './types';
 
+export { useLivePollInterval, useMe, useTenantLabel } from '../../../api/hooks';
+
 interface PollOptions {
   /** Poll interval in ms, or false (default) for none. */
   refetchInterval?: number | false;
   enabled?: boolean;
-}
-
-/** Poll every `liveMs` while the live stream is open, every `fallbackMs` otherwise; paused while the tab is hidden. */
-export function useLivePollInterval(liveMs = 60_000, fallbackMs = 20_000): number | false {
-  const { status } = useLive();
-  return usePollInterval(status === 'open' ? liveMs : fallbackMs);
-}
-
-/** GET /auth/me for the tenant the caller acts on (cached five minutes). */
-export function useMe() {
-  const api = useApi();
-  const { principal } = useAuth();
-  const tenantId = principal?.tenantId ?? '';
-  return useQuery({
-    queryKey: qk.me.forTenant(tenantId),
-    queryFn: ({ signal }) => endpoints.me(api, signal),
-    enabled: Boolean(tenantId),
-    staleTime: 5 * 60_000,
-  });
-}
-
-/**
- * The current tenant's display name: `tenant_name` from GET /auth/me when the
- * API sends it, otherwise the tenant id.
- */
-export function useTenantLabel(): string {
-  const { principal } = useAuth();
-  const tenantId = principal?.tenantId ?? '';
-  const me = useMe();
-  const name = me.data?.tenant_name;
-  return typeof name === 'string' && name.trim() && me.data?.tenant_id === tenantId ? name.trim() : tenantId || '-';
 }
 
 /** GET /dashboard/summary over the last `windowHours` (the queue figures are always "now"). */

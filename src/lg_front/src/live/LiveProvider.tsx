@@ -1,7 +1,7 @@
 import { hashKey, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import type { LiveEvent } from '../modules/soc/api/types';
+import type { LiveEvent } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { wsEndpoint } from '../config';
 import { invalidateBounded } from '../lib/pagination';

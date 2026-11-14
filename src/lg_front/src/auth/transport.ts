@@ -1,5 +1,5 @@
 import type { ApiClient } from '../api/client';
-import type { LoginOut, MeOut, MfaConfirmOut, MfaEnrollOut, TokenOut } from '../modules/soc/api/types';
+import type { LoginOut, MeOut, MfaConfirmOut, MfaEnrollOut, TokenOut } from '../api/types';
 import type { AuthTransport } from './store';
 
 /** Auth endpoints. They bypass the client's refresh-on-401 (anonymous) to avoid recursion. */

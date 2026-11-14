@@ -18,17 +18,17 @@ const CACHE_CLEAR = [
 const QUERY_KEY_LITERAL = [
   {
     selector: "Property[key.name='queryKey'][value.type='ArrayExpression']",
-    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+    message: "Build query keys with the module's api/queryKeys.ts (qk), not array literals.",
   },
   {
     selector: "CallExpression[callee.property.name=/^(get|set)QueryData$/][arguments.0.type='ArrayExpression']",
-    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+    message: "Build query keys with the module's api/queryKeys.ts (qk), not array literals.",
   },
 ];
 const INVALIDATE = [
   {
     selector: "CallExpression[callee.property.name='invalidateQueries']",
-    message: 'Use a named policy from api/invalidate.ts (or invalidateBounded from lib/pagination.ts).',
+    message: "Use a named policy from the module's api/invalidate.ts (or invalidateBounded from lib/pagination.ts).",
   },
 ];
 
@@ -61,11 +61,12 @@ const UP_TO_PAGES_OR_APP = {
   regex: '^(\\.\\./)+(pages|app)(/|$)',
   message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
 };
-// The generated OpenAPI types (npm run gen:api) are read only by src/api: types.ts stays the app's
-// vocabulary and contract.check.ts holds it to the schema.
+// The generated OpenAPI types (npm run gen:api) are read only by src/api: the hand-written types.ts
+// files stay the app's vocabulary, and each contract.check.ts holds its types to the schema through
+// api/contract.ts.
 const SCHEMA_GEN = {
   regex: '(^|/)api/schema\\.gen$',
-  message: 'Import API types from api/types.ts; only src/api reads the generated schema (contract.check.ts).',
+  message: "Import API types from the module's api/types.ts; only src/api reads the generated schema (a contract check uses api/contract.ts).",
 };
 const DATA_IN_COMPONENTS = {
   regex: '^(\\.\\./)+api/endpoints$',
@@ -145,8 +146,8 @@ export default tseslint.config(
     },
   },
   {
-    // The owners of invalidation: named policies, and bounded refetch for paged lists and live events.
-    files: ['src/api/invalidate.ts', 'src/lib/pagination.ts'],
+    // The owners of invalidation: each module's named policies, and bounded refetch for paged lists and live events.
+    files: ['src/modules/*/api/invalidate.ts', 'src/lib/pagination.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...PALETTE],
     },

@@ -89,6 +89,9 @@ export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
       (r.shell === false ? bareRoutes : routes).push({ ...r, module: m.id, enabled });
     }
     for (const [type, keys] of Object.entries(m.liveEvents ?? {})) {
+      for (const key of keys) {
+        if (key[0] !== m.id) fail(`${m.id}: live event "${type}" names the query key ${JSON.stringify(key)}, which is not the module's own`);
+      }
       live.set(type, [...(live.get(type) ?? []), ...keys]);
     }
     extensions.push(...(m.extensions ?? []));

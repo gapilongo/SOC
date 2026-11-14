@@ -23,7 +23,7 @@ import {
 } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { Page } from '../modules/soc/api/types';
+import type { Page } from '../api/types';
 
 /** The cursor for the page after `last`, or undefined when the listing is complete. */
 export function nextCursor<T>(last: Page<T> | undefined): string | undefined {

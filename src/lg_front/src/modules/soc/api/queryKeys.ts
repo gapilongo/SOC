@@ -1,11 +1,13 @@
 /**
- * React Query keys, declared once.
+ * The SOC module's React Query keys, declared once.
  *
- * Each group has an `all` key, and every other key of the group starts with
- * it, so invalidating `qk.<group>.all` reaches every list, detail and
- * sub-resource of that group (queryKeys.test.ts checks the invariant). The
- * values are the literal keys the pages used before this module existed;
- * live events and invalidation policies (`api/invalidate.ts`) rely on them.
+ * Every key starts with the module id (`NS`), so the SOC's invalidation
+ * policies and live events can only reach the SOC's cache (ADR 0015). Each
+ * group has an `all` key, and every other key of the group starts with it,
+ * so invalidating `qk.<group>.all` reaches every list, detail and
+ * sub-resource of that group (queryKeys.test.ts checks both invariants).
+ * Live events (the manifest's `liveEvents`) and invalidation policies
+ * (`invalidate.ts`) rely on them.
  */
 
 import type {
@@ -17,137 +19,135 @@ import type {
   EscalationGroupFilters,
 } from './endpoints';
 
+/** The module id: the first element of every key. */
+export const NS = 'soc';
+
 export const qk = {
   alerts: {
-    all: ['alerts'] as const,
-    list: (filters: AlertFilters) => ['alerts', filters] as const,
+    all: [NS, 'alerts'] as const,
+    list: (filters: AlertFilters) => [NS, 'alerts', filters] as const,
     /** Status counts of the view tabs (GET /alerts/counts); stale whenever an alert changes. */
-    counts: (window: AlertCountsWindow) => ['alerts', 'counts', window] as const,
+    counts: (window: AlertCountsWindow) => [NS, 'alerts', 'counts', window] as const,
   },
   /** One alert and what hangs off it (the drawer). */
   alert: {
-    all: ['alert'] as const,
-    detail: (id: string | null) => ['alert', id] as const,
-    events: (id: string) => ['alert', id, 'events'] as const,
+    all: [NS, 'alert'] as const,
+    detail: (id: string | null) => [NS, 'alert', id] as const,
+    events: (id: string) => [NS, 'alert', id, 'events'] as const,
   },
   escalations: {
-    all: ['escalations'] as const,
-    list: (filters: EscalationFilters) => ['escalations', filters] as const,
+    all: [NS, 'escalations'] as const,
+    list: (filters: EscalationFilters) => [NS, 'escalations', filters] as const,
     /** The first `limit` rows only (overview panels), not a paged list. */
-    top: (filters: EscalationFilters, limit: number) => ['escalations', 'top', filters, limit] as const,
-    groups: (filters: EscalationGroupFilters) => ['escalations', 'groups', filters] as const,
+    top: (filters: EscalationFilters, limit: number) => [NS, 'escalations', 'top', filters, limit] as const,
+    groups: (filters: EscalationGroupFilters) => [NS, 'escalations', 'groups', filters] as const,
   },
   /** One escalation (the decision page) and what hangs off it. */
   escalation: {
-    all: ['escalation'] as const,
-    detail: (id: string) => ['escalation', id] as const,
-    responsePreview: (id: string) => ['escalation', id, 'response-preview'] as const,
+    all: [NS, 'escalation'] as const,
+    detail: (id: string) => [NS, 'escalation', id] as const,
+    responsePreview: (id: string) => [NS, 'escalation', id, 'response-preview'] as const,
   },
   actions: {
-    all: ['actions'] as const,
-    list: (filters: ActionFilters) => ['actions', filters] as const,
+    all: [NS, 'actions'] as const,
+    list: (filters: ActionFilters) => [NS, 'actions', filters] as const,
   },
   tickets: {
-    all: ['tickets'] as const,
-    forAlert: (alertId: string) => ['tickets', 'alert', alertId] as const,
-    forEscalations: (escalationIds: readonly string[]) => ['tickets', 'escalations', escalationIds] as const,
-  },
-  /** The caller as the API sees it (GET /auth/me), per acting tenant. */
-  me: {
-    all: ['me'] as const,
-    forTenant: (tenantId: string) => ['me', tenantId] as const,
+    all: [NS, 'tickets'] as const,
+    forAlert: (alertId: string) => [NS, 'tickets', 'alert', alertId] as const,
+    forEscalations: (escalationIds: readonly string[]) => [NS, 'tickets', 'escalations', escalationIds] as const,
   },
   dashboard: {
-    all: ['dashboard'] as const,
-    summary: (windowHours: number) => ['dashboard', windowHours] as const,
+    all: [NS, 'dashboard'] as const,
+    summary: (windowHours: number) => [NS, 'dashboard', windowHours] as const,
   },
   sources: {
-    all: ['sources'] as const,
+    all: [NS, 'sources'] as const,
   },
   suppressions: {
-    all: ['suppressions'] as const,
+    all: [NS, 'suppressions'] as const,
     /** Every rule, disabled ones included (the page filters them). */
-    includingDisabled: ['suppressions', 'all'] as const,
+    includingDisabled: [NS, 'suppressions', 'all'] as const,
   },
   users: {
-    all: ['users'] as const,
-    list: (includeInactive: boolean) => ['users', includeInactive] as const,
+    all: [NS, 'users'] as const,
+    list: (includeInactive: boolean) => [NS, 'users', includeInactive] as const,
   },
   apiKeys: {
-    all: ['api-keys'] as const,
-    list: (includeRevoked: boolean) => ['api-keys', includeRevoked] as const,
+    all: [NS, 'api-keys'] as const,
+    list: (includeRevoked: boolean) => [NS, 'api-keys', includeRevoked] as const,
   },
   /** MFA status of the signed-in account. */
   mfaStatus: {
-    all: ['mfa-status'] as const,
+    all: [NS, 'mfa-status'] as const,
   },
   onboarding: {
-    all: ['onboarding-status'] as const,
+    all: [NS, 'onboarding-status'] as const,
   },
   /** First-run setup wizard state (GET /onboarding/setup). */
   setup: {
-    all: ['onboarding-setup'] as const,
+    all: [NS, 'onboarding-setup'] as const,
   },
   tenantSettings: {
-    all: ['tenant-settings'] as const,
+    all: [NS, 'tenant-settings'] as const,
   },
   responseRoutes: {
-    all: ['response-routes'] as const,
+    all: [NS, 'response-routes'] as const,
     /** Re-read whenever the settings they derive from change. */
-    forSettings: (settingsUpdatedAt: string) => ['response-routes', settingsUpdatedAt] as const,
+    forSettings: (settingsUpdatedAt: string) => [NS, 'response-routes', settingsUpdatedAt] as const,
   },
   /** The integrations list; delivery logs hang off it, so invalidating `all` reaches them too. */
   integrations: {
-    all: ['integrations'] as const,
-    deliveries: (integrationId: string) => ['integrations', integrationId, 'deliveries'] as const,
+    all: [NS, 'integrations'] as const,
+    deliveries: (integrationId: string) => [NS, 'integrations', integrationId, 'deliveries'] as const,
   },
   microsoftCatalog: {
-    all: ['microsoft-catalog'] as const,
+    all: [NS, 'microsoft-catalog'] as const,
   },
   audit: {
-    all: ['audit'] as const,
-    list: (filters: AuditFilters) => ['audit', filters] as const,
+    all: [NS, 'audit'] as const,
+    list: (filters: AuditFilters) => [NS, 'audit', filters] as const,
   },
   usage: {
-    all: ['usage'] as const,
-    range: (from: string, to: string) => ['usage', from, to] as const,
+    all: [NS, 'usage'] as const,
+    range: (from: string, to: string) => [NS, 'usage', from, to] as const,
   },
   reportValue: {
-    all: ['report-value'] as const,
-    range: (from: string, to: string) => ['report-value', from, to] as const,
+    all: [NS, 'report-value'] as const,
+    range: (from: string, to: string) => [NS, 'report-value', from, to] as const,
   },
   reportAccuracy: {
-    all: ['report-accuracy'] as const,
-    range: (from: string, to: string) => ['report-accuracy', from, to] as const,
+    all: [NS, 'report-accuracy'] as const,
+    range: (from: string, to: string) => [NS, 'report-accuracy', from, to] as const,
   },
   reportDetections: {
-    all: ['report-detections'] as const,
-    range: (from: string, to: string) => ['report-detections', from, to] as const,
+    all: [NS, 'report-detections'] as const,
+    range: (from: string, to: string) => [NS, 'report-detections', from, to] as const,
   },
   reportBlindAudit: {
-    all: ['report-blind-audit'] as const,
-    range: (from: string, to: string) => ['report-blind-audit', from, to] as const,
+    all: [NS, 'report-blind-audit'] as const,
+    range: (from: string, to: string) => [NS, 'report-blind-audit', from, to] as const,
   },
   /** The blind audit queue, one sample, and the sampling runs. */
   blindAudit: {
-    all: ['blind-audit'] as const,
-    queue: (status: 'pending' | 'labelled') => ['blind-audit', 'items', status] as const,
-    item: (id: string) => ['blind-audit', 'item', id] as const,
-    runs: ['blind-audit', 'runs'] as const,
+    all: [NS, 'blind-audit'] as const,
+    queue: (status: 'pending' | 'labelled') => [NS, 'blind-audit', 'items', status] as const,
+    item: (id: string) => [NS, 'blind-audit', 'item', id] as const,
+    runs: [NS, 'blind-audit', 'runs'] as const,
   },
   reportMonthly: {
-    all: ['report-monthly'] as const,
-    month: (month: string) => ['report-monthly', month] as const,
+    all: [NS, 'report-monthly'] as const,
+    month: (month: string) => [NS, 'report-monthly', month] as const,
   },
   platformTenants: {
-    all: ['platform-tenants'] as const,
+    all: [NS, 'platform-tenants'] as const,
   },
   platformEscalations: {
-    all: ['platform-escalations'] as const,
-    list: (tenantId: string) => ['platform-escalations', tenantId] as const,
+    all: [NS, 'platform-escalations'] as const,
+    list: (tenantId: string) => [NS, 'platform-escalations', tenantId] as const,
   },
   platformUsage: {
-    all: ['platform-usage'] as const,
-    month: (month: string) => ['platform-usage', month] as const,
+    all: [NS, 'platform-usage'] as const,
+    month: (month: string) => [NS, 'platform-usage', month] as const,
   },
 } as const;

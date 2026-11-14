@@ -1,7 +1,7 @@
 import { Building2, Menu } from 'lucide-react';
 import { forwardRef } from 'react';
 
-import { useTenantLabel } from '../../modules/soc/api/hooks';
+import { useTenantLabel } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { isTenantOverride } from '../../auth/roles';
 import { TenantSwitcher } from '../../modules/soc/pages/platform/TenantSwitcher';

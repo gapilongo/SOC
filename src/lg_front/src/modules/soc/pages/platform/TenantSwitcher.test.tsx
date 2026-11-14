@@ -80,7 +80,7 @@ describe('usePlatformTenants', () => {
     );
     const { result } = renderHook(() => usePlatformTenants(options), { wrapper });
     await waitFor(() => expect(result.current.isSuccess || !options.enabled).toBe(true));
-    const query = client.getQueryCache().find({ queryKey: ['platform-tenants'] });
+    const query = client.getQueryCache().find({ queryKey: ['soc', 'platform-tenants'] });
     return query?.observers[0]?.options;
   }
 

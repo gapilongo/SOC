@@ -1,7 +1,8 @@
 /**
- * Contract check between the hand-written API types (types.ts) and the OpenAPI document
- * (docs/openapi.json, generated into schema.gen.ts by `npm run gen:api`). Compiled by `tsc -b`, never
- * imported, so it has no runtime cost; a drift fails the type check with the field that differs.
+ * Contract check between the SOC's hand-written API types (types.ts) and the OpenAPI document
+ * (docs/openapi.json, generated into src/api/schema.gen.ts by `npm run gen:api`). Compiled by `tsc -b`,
+ * never imported, so it has no runtime cost; a drift fails the type check with the field that differs.
+ * The identity types every module shares are checked by the kernel (src/api/contract.check.ts).
  *
  * - Responses: what the API sends (`Wire<Schemas['X']>`) must be assignable to the hand-written `X`,
  *   so the app never assumes a field or a value the API does not promise.
@@ -11,7 +12,7 @@
  * When a type is added on either side, give it a line here (README "API types").
  */
 
-import type { components } from '../../../api/schema.gen';
+import type { Request, Response, Schemas, Wire } from '../../../api/contract';
 import type {
   AccuracyBlock,
   AccuracyReportOut,
@@ -69,10 +70,6 @@ import type {
   LlmProfileOut,
   LlmTestOut,
   LlmTierCheckOut,
-  MeOut,
-  MfaChallengeOut,
-  MfaConfirmOut,
-  MfaEnrollOut,
   MfaStatusOut,
   MicrosoftActionSupportOut,
   MicrosoftCapabilityCheck,
@@ -125,31 +122,15 @@ import type {
   TenantUpdateIn,
   TenantUsageOut,
   TicketOut,
-  TokenOut,
   UsageDayOut,
   UsageOut,
   UsageReportOut,
   UserCreateIn,
-  UserOut,
   UserUpdateIn,
   ValueDay,
   ValueMetrics,
   ValueReportOut,
 } from './types';
-
-type Schemas = components['schemas'];
-
-/**
- * A response as it is on the wire: FastAPI serialises every field of a response model, defaults
- * included, so a field the schema marks optional (it has a default) is always present.
- */
-type Wire<T> = T extends readonly (infer U)[] ? Wire<U>[] : T extends object ? { [K in keyof T]-?: Wire<Exclude<T[K], undefined>> } : T;
-
-/** Fails to compile unless `Generated` (the API's response) is assignable to `Hand`. */
-type Response<Generated extends Hand, Hand> = [Generated, Hand];
-
-/** Fails to compile unless `Hand` (the body the app sends) is assignable to `Generated`. */
-type Request<Hand extends Generated, Generated> = [Hand, Generated];
 
 export interface ResponseContract {
   AccuracyBlock: Response<Wire<Schemas['AccuracyBlock']>, AccuracyBlock>;
@@ -195,10 +176,6 @@ export interface ResponseContract {
   IntegrationTestOut: Response<Wire<Schemas['IntegrationTestOut']>, IntegrationTestOut>;
   LlmTestOut: Response<Wire<Schemas['LLMTestOut']>, LlmTestOut>;
   LlmTierCheckOut: Response<Wire<Schemas['LLMTierCheckOut']>, LlmTierCheckOut>;
-  MeOut: Response<Wire<Schemas['MeOut']>, MeOut>;
-  MfaChallengeOut: Response<Wire<Schemas['MfaChallengeOut']>, MfaChallengeOut>;
-  MfaConfirmOut: Response<Wire<Schemas['MfaConfirmOut']>, MfaConfirmOut>;
-  MfaEnrollOut: Response<Wire<Schemas['MfaEnrollOut']>, MfaEnrollOut>;
   MfaStatusOut: Response<Wire<Schemas['MfaStatusOut']>, MfaStatusOut>;
   MicrosoftActionSupportOut: Response<Wire<Schemas['MicrosoftActionSupportOut']>, MicrosoftActionSupportOut>;
   MicrosoftCapabilityCheck: Response<Wire<Schemas['CapabilityCheck']>, MicrosoftCapabilityCheck>;
@@ -244,11 +221,9 @@ export interface ResponseContract {
   TenantSummaryOut: Response<Wire<Schemas['TenantSummaryOut']>, TenantSummaryOut>;
   TenantUsageOut: Response<Wire<Schemas['TenantUsageOut']>, TenantUsageOut>;
   TicketOut: Response<Wire<Schemas['TicketOut']>, TicketOut>;
-  TokenOut: Response<Wire<Schemas['TokenOut']>, TokenOut>;
   UsageDayOut: Response<Wire<Schemas['UsageDayOut']>, UsageDayOut>;
   UsageOut: Response<Wire<Schemas['UsageOut']>, UsageOut>;
   UsageReportOut: Response<Wire<Schemas['UsageReportOut']>, UsageReportOut>;
-  UserOut: Response<Wire<Schemas['UserOut']>, UserOut>;
   ValueDay: Response<Wire<Schemas['ValueDay']>, ValueDay>;
   ValueMetrics: Response<Wire<Schemas['ValueMetrics']>, ValueMetrics>;
   ValueReportOut: Response<Wire<Schemas['ValueReport']>, ValueReportOut>;

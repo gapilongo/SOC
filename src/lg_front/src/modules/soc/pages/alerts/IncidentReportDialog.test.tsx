@@ -51,7 +51,7 @@ describe('IncidentReportDialog', () => {
     expect(within(narrative).getByText(AI_LABEL)).toBeInTheDocument();
     // Model output is shown as text, never as markup.
     expect(within(narrative).getByText('The attacker <b>phished</b> a user.')).toBeInTheDocument();
-    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['alert', 'a-1', 'events'] }));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledWith({ queryKey: ['soc', 'alert', 'a-1', 'events'] }));
   });
 
   it('can leave the AI narrative out', async () => {

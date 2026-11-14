@@ -5,11 +5,14 @@
  * (ESLint bans `invalidateQueries` elsewhere, except `lib/pagination.ts` for
  * live events and `auth/cacheBinding.ts` for session changes). Each policy
  * invalidates the listed keys in order and resolves once they have all been
- * refetched, exactly as the inline calls it replaced.
+ * refetched, exactly as the inline calls it replaced. The keys are the SOC's
+ * own, with one exception: the setup wizard renames the tenant, which the
+ * kernel's `GET /auth/me` shows.
  */
 
 import type { QueryClient, QueryKey } from '@tanstack/react-query';
 
+import { coreKeys } from '../../../api/queryKeys';
 import { qk } from './queryKeys';
 
 function invalidate(client: QueryClient, ...keys: QueryKey[]): Promise<void> {
@@ -110,7 +113,7 @@ export const afterTenantSettingsChange = (client: QueryClient) => invalidate(cli
 export const afterOnboardingChange = (client: QueryClient) => invalidate(client, qk.onboarding.all);
 
 /** The setup wizard saved the tenant name: the header and the MSSP console show it. */
-export const afterSetupSaved = (client: QueryClient) => invalidate(client, qk.me.all, qk.platformTenants.all);
+export const afterSetupSaved = (client: QueryClient) => invalidate(client, coreKeys.me.all, qk.platformTenants.all);
 
 // Users and credentials ------------------------------------------------------
 

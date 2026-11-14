@@ -114,7 +114,8 @@ describe('bulk mutations', () => {
     const { result } = renderHook(() => ({ claim: useBulkClaim(), close: useBulkClose() }), { wrapper });
     await act(() => result.current.claim.mutateAsync([{ escalation_id: 'e-1', version: 2 }]));
     expect(calls.at(-1)?.body).toEqual({ items: [{ escalation_id: 'e-1', version: 2 }] });
-    const invalidated = () => spy.mock.calls.map(([f]) => (f as { queryKey: unknown[] }).queryKey[0]);
+    // The group each invalidated key names (after the module id).
+    const invalidated = () => spy.mock.calls.map(([f]) => (f as { queryKey: unknown[] }).queryKey[1]);
     expect(invalidated()).toEqual(['escalations', 'escalation', 'alerts', 'dashboard']);
 
     spy.mockClear();

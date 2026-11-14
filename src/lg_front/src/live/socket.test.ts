@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { LiveEvent } from '../modules/soc/api/types';
+import type { LiveEvent } from '../api/types';
 import { backoffDelay, LiveSocket, UNAVAILABLE_AFTER, type WebSocketLike } from './socket';
 
 class FakeSocket implements WebSocketLike {

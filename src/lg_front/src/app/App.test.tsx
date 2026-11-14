@@ -3,7 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { UserOut } from '../modules/soc/api/types';
+import type { UserOut } from '../api/types';
 import { AuthStore } from '../auth/store';
 import { fakeApi, fakeTransport, renderWithSession, signedInSession, token } from '../test/helpers';
 import { App, AppRoutes } from './App';

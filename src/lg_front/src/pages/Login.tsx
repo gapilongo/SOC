@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
-import type { MfaEnrollOut } from '../modules/soc/api/types';
+import type { MfaEnrollOut } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { forgetCachedData } from '../auth/cacheBinding';
 import { beginLogin, safeReturnTo } from '../auth/oidc';

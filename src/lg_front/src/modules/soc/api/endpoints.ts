@@ -1,4 +1,4 @@
-/** Typed wrappers for the API endpoints used by the web app. */
+/** Typed wrappers for the API endpoints the SOC module uses. */
 
 import type { ApiClient } from '../../../api/client';
 import type {
@@ -40,7 +40,6 @@ import type {
   IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
-  MeOut,
   MicrosoftCatalogOut,
   MfaConfirmOut,
   MfaEnrollOut,
@@ -152,9 +151,6 @@ export interface AuditFilters {
 }
 
 export const endpoints = {
-  /** Who the caller is, in the tenant it acts on (tenant_name on newer APIs). */
-  me: (api: ApiClient, signal?: AbortSignal) => api.get<MeOut>('/auth/me', { signal }),
-
   dashboard: (api: ApiClient, windowHours: number, signal?: AbortSignal) =>
     api.get<DashboardOut>('/dashboard/summary', { query: { window_hours: windowHours }, signal }),
 
