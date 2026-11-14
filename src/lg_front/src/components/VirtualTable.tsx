@@ -1,23 +1,44 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MutableRefObject, type ReactNode } from 'react';
 
 import { ROW_HEIGHT, useDensity } from '../theme/density';
 import { Button, cx } from './ui';
 
 export interface Column<T> {
   key: string;
-  header: string;
+  /** The column's name, or a control standing in for it (a select-all checkbox). */
+  header: ReactNode;
   /** CSS grid track, e.g. `minmax(12rem, 3fr)` or `8rem`. */
   width: string;
   render: (row: T) => ReactNode;
   className?: string;
 }
 
+/** What a page may ask of the table from outside its rows (a page-wide shortcut). */
+export interface VirtualTableApi {
+  /** Move the cursor to this row (clamped), scroll it into view and focus it. */
+  focusRow: (index: number) => void;
+}
+
+/** How a row stands, for `rowClassName`. */
+export interface RowState {
+  /** The cursor is on this row. */
+  active: boolean;
+  selected: boolean;
+}
+
+const ROW_STATE = 'hover:bg-raised-2 focus:bg-raised-2 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-focus';
+
 /**
  * A windowed table for long keyset-paginated lists. Only visible rows are
  * rendered. Keyboard: Up/Down/Home/End/PageUp/PageDown move between rows,
  * Enter or Space opens the focused row. More pages load when the end comes
  * into view, and a "Load more" button offers the same explicitly.
+ *
+ * A page that needs more (the work queue) adds its own keys with
+ * `onRowKeyDown`, follows the cursor with `onActiveChange`, moves it with
+ * `apiRef`, marks several rows selected with `isRowSelected`, styles row
+ * states with `rowClassName`, and draws its own frame with `plain`.
  */
 export function VirtualTable<T>({
   label,
@@ -27,6 +48,14 @@ export function VirtualTable<T>({
   rowLabel,
   onOpen,
   selectedKey,
+  isRowSelected,
+  onActiveChange,
+  onRowKeyDown,
+  openOnClick = true,
+  rowClassName,
+  headerClassName,
+  apiRef,
+  plain = false,
   hasMore = false,
   loadingMore = false,
   onLoadMore,
@@ -42,6 +71,22 @@ export function VirtualTable<T>({
   rowLabel: (row: T) => string;
   onOpen?: (row: T) => void;
   selectedKey?: string | null;
+  /** Rows marked selected (several may be); with it every row says whether it is selected. */
+  isRowSelected?: (row: T) => boolean;
+  /** The cursor moved to this row (by key, click or focus). */
+  onActiveChange?: (index: number) => void;
+  /** Runs before the table's own keys; return true when the key was handled (the table then does nothing). */
+  onRowKeyDown?: (e: KeyboardEvent<HTMLDivElement>, row: T, index: number, api: VirtualTableApi) => boolean;
+  /** A click opens the row (default); false: it only moves the cursor there. */
+  openOnClick?: boolean;
+  /** Classes for a row's states, replacing the default hover, focus and selected look. */
+  rowClassName?: (row: T, state: RowState) => string;
+  /** Classes of the header row, replacing the default look. */
+  headerClassName?: string;
+  /** Filled with the table's API while it is mounted. */
+  apiRef?: MutableRefObject<VirtualTableApi | null>;
+  /** No card frame and no footer line: the page draws its own. */
+  plain?: boolean;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
@@ -79,6 +124,12 @@ export function VirtualTable<T>({
     if (active >= rows.length && rows.length > 0) setActive(rows.length - 1);
   }, [active, rows.length]);
 
+  useEffect(() => {
+    onActiveChange?.(active);
+    // A cursor move is reported, not a new callback identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
+
   const focusRow = useCallback(
     (index: number) => {
       const clamped = Math.max(0, Math.min(rows.length - 1, index));
@@ -91,7 +142,16 @@ export function VirtualTable<T>({
     [rows.length, virtualizer],
   );
 
+  useEffect(() => {
+    if (!apiRef) return;
+    apiRef.current = { focusRow };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef, focusRow]);
+
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>, index: number, row: T) => {
+    if (onRowKeyDown?.(e, row, index, { focusRow })) return;
     const page = Math.max(1, Math.floor((scrollRef.current?.clientHeight ?? 400) / rowHeight) - 1);
     switch (e.key) {
       case 'ArrowDown':
@@ -130,14 +190,14 @@ export function VirtualTable<T>({
   };
 
   return (
-    <div className="overflow-hidden rounded-card border border-subtle bg-raised">
+    <div className={plain ? undefined : 'overflow-hidden rounded-card border border-subtle bg-raised'}>
       <div className="relative overflow-x-auto">
         <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} style={{ minWidth }}>
           <div role="rowgroup">
             <div
               role="row"
               aria-rowindex={1}
-              className="table-grid grid border-b border-subtle bg-raised text-xs font-semibold uppercase tracking-wide text-muted"
+              className={cx('table-grid grid', headerClassName ?? 'border-b border-subtle bg-raised text-xs font-semibold uppercase tracking-wide text-muted')}
               style={{ gridTemplateColumns: template }}
             >
               {columns.map((c) => (
@@ -152,22 +212,23 @@ export function VirtualTable<T>({
               {items.map((vi) => {
                 const row = rows[vi.index];
                 const key = rowKey(row);
+                const selected = isRowSelected ? isRowSelected(row) : selectedKey === key;
                 return (
                   <div
                     role="row"
                     key={key}
                     aria-rowindex={vi.index + 2}
-                    aria-selected={selectedKey === key || undefined}
+                    aria-selected={isRowSelected ? selected : selected || undefined}
                     aria-label={rowLabel(row)}
                     data-row-index={vi.index}
                     tabIndex={vi.index === active ? 0 : -1}
                     onFocus={() => setActive(vi.index)}
-                    onClick={() => onOpen?.(row)}
+                    onClick={openOnClick ? () => onOpen?.(row) : undefined}
                     onKeyDown={(e) => onKeyDown(e, vi.index, row)}
                     className={cx(
-                      'table-grid absolute left-0 top-0 grid w-full cursor-pointer items-center border-b border-subtle text-sm',
-                      'hover:bg-raised-2 focus:bg-raised-2 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-focus',
-                      selectedKey === key && 'bg-raised-2',
+                      'table-grid absolute left-0 top-0 grid w-full items-center border-b border-subtle text-sm',
+                      openOnClick && 'cursor-pointer',
+                      rowClassName ? rowClassName(row, { active: vi.index === active, selected }) : cx(ROW_STATE, selected && 'bg-raised-2'),
                     )}
                     style={{ gridTemplateColumns: template, height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
@@ -183,16 +244,18 @@ export function VirtualTable<T>({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-subtle px-3 py-2 text-xs text-muted">
-        <span aria-live="polite">
-          {rows.length} {rows.length === 1 ? 'row' : 'rows'} loaded{hasMore ? ', more available' : ''}
-        </span>
-        {hasMore && onLoadMore && (
-          <Button size="sm" onClick={onLoadMore} busy={loadingMore}>
-            Load more
-          </Button>
-        )}
-      </div>
+      {!plain && (
+        <div className="flex items-center justify-between border-t border-subtle px-3 py-2 text-xs text-muted">
+          <span aria-live="polite">
+            {rows.length} {rows.length === 1 ? 'row' : 'rows'} loaded{hasMore ? ', more available' : ''}
+          </span>
+          {hasMore && onLoadMore && (
+            <Button size="sm" onClick={onLoadMore} busy={loadingMore}>
+              Load more
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -30,10 +30,44 @@ const ROUTING_LABELS: Record<string, string> = {
   response_review: 'Response review',
   group_review: 'Group review',
   blind_audit: 'Blind audit',
+  high_risk: 'High risk',
+  complex_attack: 'Complex attack',
+  conflicting_evidence: 'Conflicting evidence',
+  regulatory_compliance: 'Compliance rule',
+  policy_exception: 'Policy exception',
 };
 
 export function routingLabel(code: string): string {
   return ROUTING_LABELS[code] ?? humanize(code);
+}
+
+/**
+ * Why an item needs a person, in plain words, by routing code: the one table
+ * the work queue's rows and preview read. Unknown codes fall back to their
+ * short name (`routingWhy`).
+ */
+const ROUTING_WHY: Record<string, string> = {
+  grey_zone: 'Not proven either way: the assessed threat is in the grey zone.',
+  false_positive_review: 'Probably harmless, but the AI may not close it without a person.',
+  inconclusive: 'The analysis reached no conclusion.',
+  model_refused: 'The model declined to assess this alert.',
+  llm_normalized: 'A model had to normalize this alert; check the extracted fields.',
+  analyst_request: 'An analyst asked for another look.',
+  response_review: 'The planned response did not complete; a person decides what happens next.',
+  group_review: 'Under review together with similar alerts.',
+  blind_audit: 'A blind audit disagreed: an analyst labelled this AI close malicious.',
+  high_risk: 'The threat score meets the response policy.',
+  complex_attack: 'Several steps of one attack are linked.',
+  conflicting_evidence: 'The evidence points both ways.',
+  regulatory_compliance: 'A compliance rule requires a person.',
+  policy_exception: 'A policy exception applies.',
+};
+
+/** The plain reason for this routing, or null without one (escalations opened before it was recorded). */
+export function routingWhy(value: unknown): string | null {
+  const routing = readRouting(value);
+  if (!routing) return null;
+  return ROUTING_WHY[routing.code] ?? `Needs a person: ${routingLabel(routing.code).toLowerCase()}.`;
 }
 
 /** "42%", or null without a confidence. */

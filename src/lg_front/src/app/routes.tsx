@@ -20,6 +20,7 @@ import {
   FlaskConical,
   KeyRound,
   LayoutDashboard,
+  ListTodo,
   Plug,
   Rocket,
   Send,
@@ -37,6 +38,7 @@ import type { NavCount, NavGroup, NavItem } from './shell/nav';
 // One chunk per route.
 const OverviewPage = lazy(() => import('../pages/overview/OverviewPage'));
 const AlertsPage = lazy(() => import('../pages/alerts/AlertsPage'));
+const QueuePage = lazy(() => import('../pages/queue/QueuePage'));
 const EscalationsPage = lazy(() => import('../pages/escalations/EscalationsPage'));
 const DecisionPage = lazy(() => import('../pages/escalations/DecisionPage'));
 const ApprovalsPage = lazy(() => import('../pages/approvals/ApprovalsPage'));
@@ -84,6 +86,8 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 export const APP_ROUTES: readonly AppRoute[] = [
   // Operate
   { path: '/', Page: OverviewPage, allowed: can.view, nav: { group: 'operate', label: 'Overview', icon: LayoutDashboard } },
+  // The work queue of console v2, beside the Escalations page until the shell switches over.
+  { path: '/queue', Page: QueuePage, allowed: can.view, nav: { group: 'operate', label: 'Queue', icon: ListTodo } },
   {
     path: '/escalations',
     Page: EscalationsPage,

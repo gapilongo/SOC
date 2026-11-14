@@ -2,7 +2,8 @@
  * The analyst workflow through the real UI, against a running stack:
  * security headers and sign-in, provisioning (API key, analyst, viewer),
  * the Overview updating live after alerts arrive through the ingest API,
- * alert filters and pagination, the alert timeline, claiming and deciding
+ * alert filters and pagination, the alert timeline, the work queue by
+ * keyboard (20 rows on a screen, both themes, a phone), claiming and deciding
  * the escalation as an analyst, approving its response as an admin until
  * the alert closes, role gating for analyst and viewer, sign-out, and no
  * token in browser storage. The Content-Security-Policy is checked on the
@@ -316,6 +317,104 @@ test('an analyst has no administration either', async ({ browser }) => {
   await context.close();
 });
 
+/** Queue rows wholly inside the list and the window: what an analyst sees without scrolling. */
+async function visibleQueueRows(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const list = document.querySelector('[role="grid"] [data-testid="virtual-scroll"]');
+    if (!list) return 0;
+    const box = list.getBoundingClientRect();
+    const bottom = Math.min(box.bottom, window.innerHeight);
+    return Array.from(list.querySelectorAll('[role="row"]')).filter((row) => {
+      const r = row.getBoundingClientRect();
+      return r.top >= box.top - 0.5 && r.bottom <= bottom + 0.5;
+    }).length;
+  });
+}
+
+// The work queue of console v2 (/queue), on the alerts this run ingested: more than 20 wait for a person.
+test('the work queue: 20 rows on one screen, the keyboard, both themes and a phone', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, analyst);
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Queue', exact: true }).click();
+  await expect(page).toHaveURL(/\/queue$/);
+  await expect(page.getByRole('heading', { name: 'Queue', level: 1 })).toBeVisible();
+  const grid = page.getByRole('grid', { name: /^Work queue/ });
+  const rows = grid.locator('[role="row"][data-row-index]');
+  const preview = page.getByRole('complementary', { name: 'Preview of the highlighted row' });
+  await expect(page.getByRole('tab', { name: /^Needs a person/ })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByText(/items need a person\./)).toBeVisible();
+
+  await test.step('compact density shows at least 20 rows at 1440 by 900, and the page does not scroll', async () => {
+    await expect(page.getByRole('group', { name: 'Row density' }).getByRole('button', { name: 'Compact' })).toHaveAttribute('aria-pressed', 'true');
+    await expect.poll(() => visibleQueueRows(page), { timeout: 120_000 }).toBeGreaterThanOrEqual(20);
+    await expect(preview).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight), 'the list scrolls, not the page').toBeLessThanOrEqual(0);
+    await screenshot(page, '05-queue');
+    await page.getByRole('group', { name: 'Row density' }).getByRole('button', { name: 'Dense' }).click();
+    await expect.poll(() => visibleQueueRows(page)).toBeGreaterThanOrEqual(24);
+    await page.getByRole('group', { name: 'Row density' }).getByRole('button', { name: 'Compact' }).click();
+  });
+
+  await test.step('J and K move, X selects, Space shows and hides the preview', async () => {
+    await page.keyboard.press('j');
+    await expect(rows.nth(1)).toBeFocused();
+    await page.keyboard.press('j');
+    await expect(rows.nth(2)).toBeFocused();
+    await page.keyboard.press('k');
+    await expect(rows.nth(1)).toBeFocused();
+    const title = (await rows.nth(1).getByRole('link').first().textContent()) ?? '';
+    expect(title).not.toBe('');
+    await expect(preview.getByRole('heading', { level: 2 })).toHaveText(title);
+    await page.keyboard.press('x');
+    await expect(rows.nth(1)).toHaveAttribute('aria-selected', 'true');
+    const bulk = page.getByRole('region', { name: 'Bulk actions' });
+    await expect(bulk).toContainText('1 selected');
+    await assertAccessible(page, '/queue (a row selected)');
+    await screenshot(page, '05-queue-selected');
+    await page.keyboard.press('x');
+    await expect(bulk).toHaveCount(0);
+    await page.keyboard.press(' ');
+    await expect(preview).toHaveCount(0);
+    await page.keyboard.press(' ');
+    await expect(preview).toBeVisible();
+  });
+
+  await test.step('axe passes in the dark and the light theme', async () => {
+    await assertAccessible(page, '/queue');
+    await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await assertAccessible(page, '/queue (light theme)');
+    await screenshot(page, '05-queue-light');
+  });
+
+  await test.step('a phone: stacked records, nothing scrolls sideways', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(grid.getByRole('columnheader', { name: 'Severity' })).toHaveCount(0);
+    await expect(rows.first()).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, 'sideways overflow at 390 px').toBeLessThanOrEqual(0);
+    await assertAccessible(page, '/queue (390 px, light theme)');
+    await screenshot(page, '05-queue-phone');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  });
+
+  await test.step('Enter opens the highlighted item', async () => {
+    await expect(grid.getByRole('columnheader', { name: 'Severity' })).toBeVisible();
+    await page.keyboard.press('j');
+    await expect(rows.nth(1)).toBeFocused();
+    const title = (await rows.nth(1).getByRole('link').first().textContent()) ?? '';
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/escalations\/[^/?]+$/);
+    await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+  });
+
+  await assertNoTokenInStorage(page);
+  await watch.assertClean();
+  await context.close();
+});
+
 /**
  * Viewer gating in the queue and on the decision page, then the analyst
  * claims the escalation from its queue row and records `decision` on its
@@ -502,6 +601,7 @@ test('main pages render under the CSP (and screenshots for the README)', async (
   await signIn(page, admin);
   const pages: [string, string, string][] = [
     ['/alerts', 'Alerts', '03-alerts'],
+    ['/queue', 'Queue', '05-queue-admin'],
     ['/escalations', 'Escalations', '05-escalations'],
     ['/escalations?status=decided', 'Escalations', '05-escalations-decided'],
     ['/approvals?view=all', 'Approvals', '07-approvals-ledger'],

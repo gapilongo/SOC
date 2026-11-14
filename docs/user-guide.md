@@ -94,6 +94,19 @@ alerts where text in the alert tried to steer the model carry a
 
 ### 3. Decide an escalation
 
+In the web app the **Queue** page lists what waits for a person in one dense
+list, soonest deadline first: the deadline (overdue and under ten minutes are
+marked), the severity, what the item is and why it needs you, and what the
+analysis made of it so far. It works from the keyboard: `J` and `K` (or the
+arrow keys) move, `Enter` opens the item, `Space` shows or hides the preview
+beside the list, `X` selects a row and `C` claims it (or the selected rows).
+The tabs are views with their counts (Needs a person, Mine, Unassigned,
+Deadline under 15 min, Likely malicious); "Save view" keeps the current view,
+filters and row density under a name. Row density (Dense, Compact, Two
+lines) and saved views are remembered per user in the browser. The queue
+shows the tenant you are acting on. The **Escalations** page remains, with
+grouping by rule and bulk close.
+
 1. **Claim** it so colleagues know you are on it:
    `POST /escalations/{id}/claim` with the escalation's current `version`.
    A `409 conflict` means someone else changed it; re-read and retry.

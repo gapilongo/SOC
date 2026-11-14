@@ -71,7 +71,7 @@ export function BulkResultPanel({ result, onDismiss }: { result: BulkResult; onD
   );
 }
 
-function CloseDialog({ items, onClose, onDone }: { items: EscalationOut[]; onClose: () => void; onDone: (r: BulkResult) => void }) {
+export function CloseDialog({ items, onClose, onDone }: { items: EscalationOut[]; onClose: () => void; onDone: (r: BulkResult) => void }) {
   const close = useBulkClose();
   const [decision, setDecision] = useState<BulkCloseDecision | null>(null);
   const [notes, setNotes] = useState('');

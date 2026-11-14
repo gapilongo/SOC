@@ -63,12 +63,12 @@ const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !LINKED_ONLY.inc
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
-  ['viewer', { role: 'viewer' }, null, 7],
-  ['analyst', { role: 'analyst' }, null, 8],
-  ['admin', { role: 'admin' }, null, 16],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 17],
+  ['viewer', { role: 'viewer' }, null, 8],
+  ['analyst', { role: 'analyst' }, null, 9],
+  ['admin', { role: 'admin' }, null, 17],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 18],
   // No MSSP console, no account security and no blind audit (a person's label) while acting on another tenant.
-  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 14],
+  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 15],
 ];
 
 describe('route gates and navigation agree', () => {
