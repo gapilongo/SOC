@@ -62,7 +62,7 @@ sample alerts under Getting started (docs/onboarding.md).
 The frame is the same on every page.
 
 * **The rail** on the left lists the pages you may open, in five groups:
-  **Work** (Overview, Escalations, Approvals), **Detect and respond**
+  **Work** (Overview, Queue, Escalations, Approvals), **Detect and respond**
   (Alerts, Suppressions, Blind audit), **Assure** (Reports, Audit log, LLM
   usage, Proof of value), **Configure** and **Platform**. A number next to a
   page counts what waits for a person there. You are at the bottom: your
