@@ -26,6 +26,7 @@ describe('route table', () => {
   it('names pages for the breadcrumb', () => {
     expect(pageLabel('/')).toBe('Overview');
     expect(pageLabel('/approvals')).toBe('Approvals');
+    expect(pageLabel('/queue')).toBe('Queue');
     expect(pageLabel('/escalations/esc-1')).toBe('Escalations');
     expect(pageLabel('/reports/x')).toBe('Reports');
     expect(pageLabel('/account')).toBe('Account security');

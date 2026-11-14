@@ -28,7 +28,7 @@ from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.retro_reopen import reopen_counted
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.errors import NotFound
-from lg_sotf.db.repos import Alert, AlertListItem, Escalation
+from lg_sotf.db.repos import Alert, AlertListItem, Escalation, ResponseAction
 from lg_sotf.domain.blind_audit import (
     HIDDEN,
     HIDDEN_ALERT_FIELDS,
@@ -40,7 +40,7 @@ from lg_sotf.domain.digests import entities_preview, findings
 from lg_sotf.domain.suppression import InvalidRule
 from lg_sotf.models.vocabulary import SEVERITIES
 from lg_sotf.observability.logging import get_logger, log_failure
-from lg_sotf.observability.metrics import REVOCATION_FAILURES
+from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES, REVOCATION_FAILURES
 from lg_sotf.security.passwords import password_problem
 from lg_sotf.services.escalation_views import EscalationView, escalation_views
 
@@ -58,9 +58,8 @@ async def invalidate_verdicts(
     (path ``api``), and the run's ``plan_response`` revokes again. Returns the
     number of alerts that failed.
 
-    Decision policy v3: the alerts the models closed alone on these alerts' entities reopen too, attached to
-    ``escalation_id`` (:mod:`lg_sotf.core.retro_reopen`); a failure there is counted in
-    ``lgsotf_retro_reopen_failures_total`` (``path``), not raised.
+    Decision policy v3: the alerts the models closed alone on these alerts' entities reopen too
+    (:func:`reopen_confirmed`).
     """
     cache = VerdictCache(ctx.redis, ctx.prefix)
     failed = 0
@@ -75,10 +74,42 @@ async def invalidate_verdicts(
                 log, "api.revocation_failed", exc, level="error", alert_id=alert_id, error_type=type(exc).__name__,
             )
         # The safety net runs whatever happened to the revocation (counted on its own when it fails).
-        for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path,
-                                             escalation_id=escalation_id):
-            await enqueue_reopened(ctx, tenant_id, reopened)
+        await reopen_confirmed(ctx, tenant_id, alert, actor, escalation_id=escalation_id, path=path)
     return failed
+
+
+async def reopen_confirmed(
+    ctx: ApiContext, tenant_id: str, alert: Alert, actor: Actor, *, escalation_id: Optional[str], path: str
+) -> None:
+    """A person confirmed the threat on ``alert`` (a true positive, a blind-audit malicious label, an approved
+    response action): the alerts the models closed alone on its entities reopen, those linked to it earlier
+    included, attached to ``escalation_id`` while it is open (:mod:`lg_sotf.core.retro_reopen`). A failure is
+    counted in ``lgsotf_retro_reopen_failures_total`` (``path``), not raised."""
+    for reopened in await reopen_counted(ctx.repos, tenant_id, alert, actor=actor, path=path, confirmed=True,
+                                         escalation_id=escalation_id):
+        await enqueue_reopened(ctx, tenant_id, reopened)
+
+
+async def reopen_for_approval(ctx: ApiContext, tenant_id: str, action: ResponseAction, user_id: Any) -> None:
+    """``user_id`` approved ``action`` (as read after the approve call): that confirms the threat on its alert, so
+    the safety net reopens the related model closes (:func:`reopen_confirmed`).
+
+    Only an approval this person gave under their own authority counts: an approve call on an action the policy
+    approved alone, or that somebody else approved, changes nothing and confirms nothing. Approving a rollback
+    confirms nothing either: it undoes a response. The approval is committed, so nothing here is raised.
+    """
+    if action.rollback_of is not None or action.approved_by != str(user_id):
+        return
+    try:
+        alert = await ctx.repos.alerts.get(tenant_id, action.alert_id)
+    except Exception as exc:  # noqa: BLE001 - counted like any failed reopen: an alerting rule can page on it
+        RETRO_REOPEN_FAILURES.labels(path="approval").inc()
+        log_failure(log, "retro_reopen.failed", exc, level="error", alert_id=action.alert_id, path="approval",
+                    error_type=type(exc).__name__)
+        return
+    case = alert.summary.get("escalation_id")
+    await reopen_confirmed(ctx, tenant_id, alert, Actor("user", str(user_id)), path="approval",
+                           escalation_id=case if isinstance(case, str) else None)
 
 
 async def enqueue_reopened(ctx: ApiContext, tenant_id: str, alert_id: str) -> None:

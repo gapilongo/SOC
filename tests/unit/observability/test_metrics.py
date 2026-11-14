@@ -28,6 +28,7 @@ CONTRACT_METRICS = {
     "lgsotf_revocation_failures_total": ("path",),
     "lgsotf_retro_reopen_failures_total": ("path",),
     "lgsotf_retro_reopened_total": ("path",),
+    "lgsotf_retro_linked_total": ("path",),
     # Integrations outbox and ticket sync (docs/integrations.md).
     "lgsotf_integration_deliveries_total": ("kind", "outcome"),
     "lgsotf_ticket_syncs_total": ("system", "outcome"),

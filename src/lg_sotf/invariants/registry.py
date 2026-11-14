@@ -103,7 +103,7 @@ INVARIANTS: Tuple[Invariant, ...] = (
         id="INV-03",
         title=(
             "An AI verdict alone never closes a critical alert or a never-close class; an alert closes on the "
-            "models' word only at the tenant's autonomy tier, and a related threat reopens it"
+            "models' word only at the tenant's autonomy tier, and a confirmed related threat reopens it"
         ),
         rationale=(
             "A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure "
@@ -118,13 +118,21 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
-            "such a close is marked model_closed for audit. When an alert becomes a threat (a response plan, an "
-            "escalation a model judged a threat (deep verdict malicious, or fast tier likely_threat or "
-            "confirmed_threat; a merely suspicious one reopens nothing until an analyst confirms it), an analyst "
-            "true positive, a blind-audit malicious "
-            "label), every model-closed alert sharing a host, user or IP with it in the previous 24 hours is "
-            "reopened: folded into its open case as a related alert, or queued for review without one, and "
-            "audited. With the tier off, the default, a model never "
+            "such a close is marked model_closed for audit. When an alert becomes a threat, the safety net looks "
+            "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
+            "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
+            "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
+            "suspicious one; a response the workflow only proposes, or only simulates in dry-run mode) links "
+            "those alerts to its open case as related alerts, audited, and they stay closed and marked for audit; "
+            "no decision on the case settles them, so a benign one never makes them analyst-confirmed benign, and "
+            "the compliance evidence shows no human decision for them. A "
+            "confirmed threat (an analyst true positive, an analyst's own approval of a response action, a "
+            "blind-audit malicious label, or a response action that really ran, succeeded, when the workflow "
+            "carried it out alone under the tenant's autonomy policy: once the platform has acted, the related "
+            "alerts do not stay closed) reopens them, "
+            "with every alert linked to the threat or into its case "
+            "earlier, however long ago it closed: folded into its open case as a related alert, or queued for "
+            "review without one, and audited. With the tier off, the default, a model never "
             "closes an alert alone. A cached "
             "analyst verdict closes only a "
             "non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) "
@@ -158,12 +166,39 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/domain/test_closure.py::"
             "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",
             "tests/integration/engine/test_retro_reopen.py::"
-            "test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes",
+            "test_an_escalation_a_model_judged_a_threat_links_related_model_closes_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_the_models_only_found_suspicious_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
-            "test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes",
-            "tests/integration/engine/test_retro_reopen.py::test_a_reopen_failure_is_counted_not_swallowed",
+            "test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_response_the_workflow_only_simulates_in_dry_run_links_and_reopens_nothing",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_an_analysts_true_positive_reopens_at_the_response_plan_and_at_the_malicious_close",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_confirmed_threat_reopens_what_was_linked_earlier_however_long_ago",
+            "tests/integration/engine/test_retro_reopen.py::test_a_later_case_of_the_threat_shows_what_it_linked_before",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_benign_decision_on_the_case_leaves_a_linked_alert_closed_by_the_models",
+            "tests/integration/engine/test_retro_reopen.py::test_a_reopen_or_link_failure_is_counted_not_swallowed",
+            "tests/integration/api/test_retro_reopen_api.py::"
+            "test_a_linked_alert_is_listed_on_the_case_and_a_benign_decision_leaves_it_closed_by_the_models",
+            "tests/integration/api/test_retro_reopen_api.py::"
+            "test_an_analyst_true_positive_reopens_the_alert_linked_to_the_case_and_resumes_only_the_threat",
+            "tests/integration/api/test_retro_reopen_api.py::test_an_approved_response_action_reopens_related_model_closes",
+            "tests/integration/integrations/test_slack.py::test_an_approval_from_slack_reopens_related_model_closes",
+            "tests/integration/api/test_review_423.py::"
+            "test_probe_evidence_pack_of_a_linked_alert_claims_no_human_decision",
+            "tests/integration/api/test_review_423.py::test_the_incident_report_of_a_linked_alert_names_no_analyst_decision",
+            "tests/integration/api/test_review_423.py::"
+            "test_probe_replaying_approve_on_an_action_nobody_approved_reopens",
+            "tests/integration/api/test_review_423.py::"
+            "test_probe_two_threats_linking_the_same_alert_at_once_keep_both_links",
+            "tests/integration/api/test_review_423.py::test_probe_link_never_gets_past_the_newest_cap",
+            "tests/integration/api/test_review_423.py::"
+            "test_probe_linked_closed_alerts_use_up_the_case_grouping_room",
             "tests/integration/api/test_retro_reopen_api.py::"
             "test_the_case_decision_settles_folded_alerts_in_its_own_transaction",
             "tests/integration/engine/test_review_349.py::test_worker_delivers_the_case_decision_to_a_folded_alert",

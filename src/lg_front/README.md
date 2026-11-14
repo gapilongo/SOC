@@ -112,6 +112,11 @@ attempts the header shows "Live updates unavailable" instead of
   store); it is never written to localStorage, sessionStorage or cookies.
   ESLint forbids `localStorage`, and `tests/deploy/test_frontend.py` checks
   the sources.
+* The browser keeps display preferences only, through `src/lib/prefs.ts`
+  (the one file that touches `localStorage`): the theme and the table
+  density, and per user the work queue's row density and saved views (a
+  name and filter names, nothing else). The keys are closed types, every
+  access is guarded, and a stored value is parsed defensively.
 * One exception to "not in URLs": browsers cannot set headers on a
   WebSocket, and the API reads the token from the query string of
   `/api/v1/ws?token=...`. The nginx proxy never logs query strings in its

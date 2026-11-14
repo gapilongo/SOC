@@ -35,11 +35,14 @@ Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block.
 
 The safety net (:mod:`lg_sotf.core.retro_reopen`): when an alert becomes a
-threat (a response plan, an escalation a model judged a threat, an analyst
-true positive, a blind-audit malicious label), every
-model-closed alert of the tenant that shares a host, user or IP with it and
-closed in the previous 24 hours is reopened, attached to that escalation and
-audited ``alert.reopened``.
+threat, every model-closed alert of the tenant that shares a host, user or
+IP with it and closed in the previous 24 hours is looked at. A threat only a
+model stands behind (an escalation a model judged a threat, a response plan
+or a malicious close with no analyst decision) links it to the threat's case
+and leaves it closed, audited ``alert.linked``. A threat a person confirmed
+(an analyst true positive, an approved response action, a blind-audit
+malicious label) reopens it, attached to that escalation and audited
+``alert.reopened``.
 
 A model-led close carries the decision code ``model_closed`` and the close
 reason ``ai_closed:audit_required``: an analyst is expected to audit it.
@@ -82,6 +85,7 @@ __all__ = [
     "autonomy_tier",
     "catalogued_noise",
     "evidence_close_blockers",
+    "linked_only_cases",
     "model_close_blockers",
     "model_close_class",
     "never_close_class",
@@ -103,6 +107,17 @@ FAST_TIER_THREATS: FrozenSet[str] = frozenset({"likely_threat", "confirmed_threa
 #: The alert key the safety net sets on a reopened alert (lg_sotf.core.retro_reopen); it never model-closes.
 REOPENED = "reopened"
 LLM_NORMALIZED_FLAG = "llm_normalized"
+
+
+def linked_only_cases(summary: Mapping[str, Any]) -> FrozenSet[str]:
+    """The cases the safety net only linked this alert into (its summary's ``linked`` entries): the alert stayed
+    closed by the models, so nobody's claim or decision on such a case is a human step of this alert. A case the
+    alert was later reopened through is not one of them."""
+    links = summary.get("linked")
+    cases = {link.get("escalation_id") for link in links if isinstance(link, Mapping)} if isinstance(links, list) else set()
+    reopened = summary.get(REOPENED)
+    through = reopened.get("escalation_id") if isinstance(reopened, Mapping) else None
+    return frozenset(case for case in cases if isinstance(case, str) and case != through)
 #: Triage's rule false-positive signals that say where the activity came from (a scanner the tenant declared, a
 #: test-environment source), as opposed to what was detected (the rule's own test intent, the EICAR file).
 CONTEXT_EVIDENCE: FrozenSet[str] = frozenset({"known_scanner", "test_environment"})
