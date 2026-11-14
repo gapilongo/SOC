@@ -35,6 +35,7 @@ from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed, InvalidStatus
 
 from lg_sotf.db.repos import NewAlert
+from lg_sotf.domain.pov import plan_windows
 from lg_sotf.integrations.http import IntegrationHttp
 from lg_sotf.integrations.slack import slack_signature
 from lg_sotf.mcp.base import ToolContext
@@ -120,10 +121,14 @@ async def _seed_victim(api: ApiHarness) -> Dict[str, str]:
         frame_size=1, items=[(alert.id, 1, "benign")], trigger="cli", created_by=MARKER,
     )
     item = (await api.repos.blind_audit.list_items(VICTIM)).items[0]
+    pov = await api.repos.pov_runs.create(
+        VICTIM, f"{MARKER} pov", plan_windows(now, backtest_days=30, shadow_days=14), created_by=MARKER
+    )
     return {
         "alert_id": alert.id, "escalation_id": escalation.id, "action_id": str(action.id), "source_id": source.id,
         "rule_id": rule.id, "integration_id": str(integration.id), "user_id": str(user.id), "key_id": str(key.id),
         "grant_id": str(grant.id), "tenant_id": VICTIM, "item_id": str(item.id), "run_id": "shr_" + "0" * 32,
+        "pov_run_id": str(pov.id),
     }
 
 

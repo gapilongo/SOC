@@ -55,18 +55,18 @@ const DENIED = 'You do not have access to this page';
 
 /**
  * Every static page of the route table (parameterised routes and redirects are covered by their pages' tests;
- * the setup wizard and the proof-of-value page are reached from in-page links, and pages/setup tests their gates).
+ * the setup wizard and the proof-of-value wizard are reached from in-page links, and their pages' tests cover them).
  */
-const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !['/actions', '/setup', '/pov'].includes(r.path));
+const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !['/actions', '/setup', '/pov/new'].includes(r.path));
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
   ['viewer', { role: 'viewer' }, null, 7],
   ['analyst', { role: 'analyst' }, null, 8],
-  ['admin', { role: 'admin' }, null, 15],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 16],
+  ['admin', { role: 'admin' }, null, 16],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 17],
   // No MSSP console, no account security and no blind audit (a person's label) while acting on another tenant.
-  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 13],
+  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 14],
 ];
 
 describe('route gates and navigation agree', () => {

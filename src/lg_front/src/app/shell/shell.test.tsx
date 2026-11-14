@@ -58,7 +58,7 @@ describe('navigation model', () => {
     expect(titles(principal())).toEqual(['Operate: Overview, Escalations, Approvals, Alerts, Suppressions, Blind audit', 'Report: Reports']);
     expect(titles(principal({ role: 'admin' }))).toEqual([
       'Operate: Overview, Escalations, Approvals, Alerts, Suppressions, Blind audit',
-      'Report: Reports, LLM usage, Audit log',
+      'Report: Reports, LLM usage, Audit log, Proof of value',
       'Configure: Getting started, Sources, Integrations, Users and API keys, Tenant settings',
     ]);
     expect(titles(principal({ role: 'admin', isPlatformAdmin: true })).at(-1)).toBe('Platform: MSSP console');

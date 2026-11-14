@@ -1,10 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultRange, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rateDetail } from './reports';
+import { reportsHref } from './links';
+import { defaultRange, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rangeFromQuery, rateDetail } from './reports';
 
 describe('report helpers', () => {
   it('defaults to the 30 days ending today (UTC)', () => {
     expect(defaultRange(new Date('2026-09-30T23:00:00Z'))).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+  });
+
+  it('opens on the window a link asks for, when it is a valid one', () => {
+    const today = new Date('2026-11-20T08:00:00Z');
+    const fallback = { from: '2026-10-22', to: '2026-11-20' };
+    expect(rangeFromQuery(new URLSearchParams(reportsHref({ from: '2026-11-14', to: '2026-11-28' }).split('?')[1]), today)).toEqual({
+      from: '2026-11-14',
+      to: '2026-11-28',
+    });
+    for (const query of ['', 'from=2026-11-14', 'from=2026-11-28&to=2026-11-14', 'from=14/11/2026&to=2026-11-28', 'from=2024-01-01&to=2026-11-28']) {
+      expect(rangeFromQuery(new URLSearchParams(query), today)).toEqual(fallback);
+    }
+    expect(reportsHref({ from: '2026-11-14', to: '2026-11-28' })).toBe('/reports?from=2026-11-14&to=2026-11-28');
   });
 
   it('validates windows like the API', () => {
