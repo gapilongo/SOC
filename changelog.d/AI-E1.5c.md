@@ -13,6 +13,16 @@
   page the operator. The shadow run now records that the reopen would have
   run, and reopens and enqueues nothing.
 
+- `lg-sotf shadow-run` now refuses to start when `database.shadow_url` is
+  set but unusable: a role that may write, or a login that fails. Before,
+  it audited the replay, retried the login for every alert and printed a
+  report with no agreement. A database or shadow-role failure during a
+  replay now stops it.
+- A role is also refused as the shadow role when it holds an `INSERT` or
+  `UPDATE` grant on a single column, or is a member of any other role.
+- A candidate profile can no longer set `llm.<tier>.shadow_max_concurrency`:
+  the shadow slots are always production's.
+
 ### Added
 
 - New settings `database.shadow_url` (the shadow role's login),
@@ -21,7 +31,10 @@
   `database.shadow_pool_max`. Without `database.shadow_url` shadow runs
   refuse to start; they never fall back to the runtime role. `lg-sotf
   migrate` refuses a shadow role that could write or bypass tenant
-  isolation, and changes nothing in that case.
+  isolation, and changes nothing in that case: it reports the role and the
+  fix after the schema upgrade, which stays in place. `database.shadow_url`
+  accepts the same URL forms as `database.url` (`postgresql+asyncpg://`,
+  `postgresql+psycopg://`).
 - Production compose: set `LGSOTF_SHADOW_PASSWORD` before the first start
   to create `lgsotf_shadow`, grant it and give its login to the worker.
   Helm: the new `secrets.shadowSecret` (key `LG_SOTF_DATABASE__SHADOW_URL`,

@@ -718,7 +718,7 @@ managed service's PITR window is at least 7 days.
 ### HG-PG-11 Shadow runs connect only as a SELECT-only role
 
 **Level:** L1. **Default:** operator. Without the role shadow runs refuse to
-start (`src/lg_sotf/db/pool.py:243-270`); they never fall back to the runtime
+start (`src/lg_sotf/db/pool.py:244-271`); they never fall back to the runtime
 role. The production compose override creates it when
 `LGSOTF_SHADOW_PASSWORD` is set (`docker/postgres/init-roles.sh:27-47`).
 

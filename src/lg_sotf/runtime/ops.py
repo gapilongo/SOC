@@ -115,7 +115,14 @@ async def migrate(settings: Settings) -> MigrateReport:
         report.runtime_role_granted = role
     shadow_role = settings.database.shadow_role
     if shadow_role:
-        await asyncio.to_thread(grant_shadow_privileges, shadow_role, url, settings.database)
+        try:
+            await asyncio.to_thread(grant_shadow_privileges, shadow_role, url, settings.database)
+        except ValueError as exc:
+            raise OperationError(
+                f"the schema is up to date, but database.shadow_role was not granted: {exc}. Create it as a "
+                "SELECT-only login (docs/deployment.md, section 4) or unset database.shadow_role, then run "
+                "`lg-sotf migrate` again"
+            ) from exc
         report.shadow_role_granted = shadow_role
 
     db = owner_database(settings, "lg-sotf-migrate")

@@ -30,13 +30,18 @@ def test_shadow_role_configured(make_settings: Callable[..., Settings]) -> None:
 
 
 def test_unsafe_role_reasons() -> None:
-    assert unsafe_role_reasons((False, False, False, []), "r") == []
+    assert unsafe_role_reasons((False, False, False, [], []), "r") == []
     assert unsafe_role_reasons(None, "r") == ["database role 'r' does not exist"]
-    assert unsafe_role_reasons((True, True, True, ["alerts", "lgsotf_create_tenant"]), "r") == [
+    assert unsafe_role_reasons((True, True, True, ["alerts", "lgsotf_create_tenant"], ["lgsotf_owner"]), "r") == [
         "is a superuser",
         "has BYPASSRLS",
         "is a member of the schema owner",
         "may write to alerts, lgsotf_create_tenant",
+        "is a member of lgsotf_owner",
+    ]
+    # Review of #323: a member of any other role could SET ROLE into it, whatever that role may do today.
+    assert unsafe_role_reasons((False, False, False, [], ["pg_read_all_data"]), "r") == [
+        "is a member of pg_read_all_data"
     ]
 
 
@@ -87,6 +92,14 @@ async def test_migrate_grants_the_shadow_role(
     with pytest.raises(Stop):
         await ops.migrate(s)
     assert granted == [("lgsotf_shadow", "postgresql://own:y@h/db")]
+
+    # Review of #323: a missing or unsafe role is an operator error with its fix, not a traceback.
+    def refuse(role: str, url: str, database: Any) -> None:
+        raise ValueError(f"shadow role {role!r} must be SELECT-only, but it database role {role!r} does not exist")
+
+    monkeypatch.setattr(ops, "grant_shadow_privileges", refuse)
+    with pytest.raises(ops.OperationError, match="schema is up to date.*does not exist.*lg-sotf migrate"):
+        await ops.migrate(s)
 
 
 def test_a_shadow_candidate_calls_only_production_s_llm_host_or_an_allowed_one(

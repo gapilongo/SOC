@@ -34,13 +34,13 @@ def _prepare() -> Settings:
 
 
 def _run(coro: Coroutine[Any, Any, T]) -> T:
-    from lg_sotf.db.errors import DatabaseUnavailable
+    from lg_sotf.db.errors import DatabaseUnavailable, ShadowRoleRequired
     from lg_sotf.runtime.ops import OperationError
     from lg_sotf.security.hashing import SecurityConfigError
 
     try:
         return asyncio.run(coro)
-    except (OperationError, SecurityConfigError) as exc:
+    except (OperationError, SecurityConfigError, ShadowRoleRequired) as exc:
         raise click.ClickException(str(exc)) from exc
     except DatabaseUnavailable as exc:
         raise click.ClickException(f"database unavailable: {exc}") from exc

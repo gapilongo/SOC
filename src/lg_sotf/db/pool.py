@@ -193,7 +193,8 @@ class Database:
             raise ValueError("invalid pool size: require 0 <= min_size <= max_size and max_size >= 1")
         self._server_settings = dict(server_settings or {})
         self._pool: Optional[asyncpg.Pool] = None
-        self._shadow_dsn = shadow_dsn(settings)
+        shadow = shadow_dsn(settings)
+        self._shadow_dsn = None if shadow is None else to_libpq_url(shadow)
         self._shadow_pool: Optional[asyncpg.Pool] = None
         self._lock = asyncio.Lock()
         self._system_scope_verified = False

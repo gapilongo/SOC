@@ -10,7 +10,9 @@ shadow mode, and returns the agreement report built from the stored rows.
 database role (AI-E1.5c, :mod:`lg_sotf.db.shadow_role`). Without
 ``database.shadow_url`` the command refuses to run (:func:`check_shadow_gate`,
 :class:`~lg_sotf.db.errors.ShadowRoleRequired`), in every environment and
-with no override; with it, the shadow runs read as that role, and the
+with no override. It also refuses, before the audit and the first alert,
+when that login cannot connect or its role may write
+(:meth:`~lg_sotf.db.pool.Database.open_shadow`). With it, the shadow runs read as that role, and the
 verdict rows, the would-be effects and the audit entries are written by the
 runtime role after each run has left shadow mode.
 
@@ -204,6 +206,9 @@ def _candidate_api_key(value: Any) -> Any:
 def _candidate_llm(settings: Settings, override: Mapping[str, Any]) -> LLMSettings:
     """Production's ``llm`` with the profile's on top; production's API key never goes to another endpoint."""
     merged = _merge(settings.llm.model_dump(), override)
+    for tier in ("fast", "deep"):  # the shadow slots are production's: a candidate cannot raise its own limit
+        if isinstance(merged.get(tier), dict):
+            merged[tier]["shadow_max_concurrency"] = getattr(settings.llm, tier).shadow_max_concurrency
     moved = any(key in override and override[key] != getattr(settings.llm, key) for key in ("provider", "base_url"))
     if moved and "api_key" not in override:
         merged["api_key"] = None
@@ -246,6 +251,8 @@ async def run_shadow_replay(
     redis = create_redis(settings)
     await db.open()
     try:
+        # A shadow login that may write or cannot connect is refused here: nothing is read, audited or stored.
+        await db.open_shadow()
         deps = await build_node_deps(
             settings=candidate_settings, db=db, redis=redis, events=None, secret_box=secret_box
         )

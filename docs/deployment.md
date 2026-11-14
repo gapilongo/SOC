@@ -585,8 +585,11 @@ function. A shadow run's record (`shadow_effects`, and the replay's verdict
 rows) is written after the run has left shadow mode, by the runtime role. Never
 make the shadow role a member of another role. `lg-sotf migrate` refuses, and
 changes nothing, when `database.shadow_role` names a role that may write or
-bypass isolation (for example `lgsotf_app`), and a worker refuses to open the
-shadow pool when `database.shadow_url` logs in as such a role. Row-level
+bypass isolation (for example `lgsotf_app`), holds an `INSERT` or `UPDATE`
+grant on a single column, is a member of another role or does not exist; it
+says so after the schema upgrade, which stays in place. A worker and
+`lg-sotf shadow-run` refuse to open the shadow pool when
+`database.shadow_url` logs in as such a role or cannot log in. Row-level
 security applies to the shadow role like to the runtime role.
 
 Use TLS to the database: `settings.database.ssl_mode: verify-full` and, for a

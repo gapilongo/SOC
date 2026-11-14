@@ -25,7 +25,8 @@ from lg_sotf.settings import DatabaseSettings, Settings
 
 DEFAULT_SHADOW_ROLE = "lgsotf_shadow"
 
-# What makes a role unfit to be the shadow role: anything that can write or bypass isolation.
+# What makes a role unfit to be the shadow role: anything that can write or bypass isolation, a write grant
+# on a single column and membership of any other role (it could SET ROLE into it) included.
 # ``{role}`` is the role name expression: a bind parameter, or ``current_user`` on the role's own session.
 UNSAFE_ROLE_SQL = """
 SELECT r.rolsuper, r.rolbypassrls,
@@ -34,13 +35,16 @@ SELECT r.rolsuper, r.rolbypassrls,
            SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
            WHERE n.nspname = 'public' AND (
                (c.relkind IN ('r', 'p', 'v', 'm', 'f')
-                AND has_table_privilege(r.oid, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE'))
+                AND (has_table_privilege(r.oid, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE')
+                     OR has_any_column_privilege(r.oid, c.oid, 'INSERT, UPDATE')))
                OR (c.relkind = 'S' AND has_sequence_privilege(r.oid, c.oid, 'USAGE, UPDATE')))
            UNION ALL
            SELECT p.proname::text FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
            WHERE n.nspname = 'public' AND p.prosecdef AND has_function_privilege(r.oid, p.oid, 'EXECUTE')
            ORDER BY 1
-       )
+       ),
+       ARRAY(SELECT g.rolname::text FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid
+             WHERE m.member = r.oid ORDER BY 1)
 FROM pg_roles r WHERE r.rolname = {role}
 """
 
@@ -49,12 +53,15 @@ def unsafe_role_reasons(row: Optional[tuple[object, ...]], role: str) -> list[st
     """Why the role described by a :data:`UNSAFE_ROLE_SQL` row cannot be the shadow role (empty: it can)."""
     if row is None:
         return [f"database role {role!r} does not exist"]
-    superuser, bypassrls, owner_member, writable = row
+    superuser, bypassrls, owner_member, writable, member_of = row
     flags = ((superuser, "is a superuser"), (bypassrls, "has BYPASSRLS"), (owner_member, "is a member of the schema owner"))
     reasons = [text for flag, text in flags if flag]
     names = [str(name) for name in cast(Sequence[object], writable or ())]
     if names:
         reasons.append("may write to " + ", ".join(names[:10]))
+    groups = [str(name) for name in cast(Sequence[object], member_of or ())]
+    if groups:  # it could SET ROLE into any of them
+        reasons.append("is a member of " + ", ".join(groups[:10]))
     return reasons
 
 

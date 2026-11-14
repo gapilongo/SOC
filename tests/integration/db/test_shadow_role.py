@@ -40,7 +40,9 @@ PROVEN_BYPASSES: dict[str, Callable[[Any], Awaitable[Any]]] = {
     "commit behind $$--$$": lambda c: c.execute(f"SELECT $$--$$; COMMIT; {SCOPE}{ESCAPE}"),
     # A COMMIT through fetchmany, then the write in autocommit.
     "commit via fetchmany": lambda c: _then(c.fetchmany("COMMIT", [()]), c.execute(SCOPE + ESCAPE)),
-    # The same, with the session switched back to read write: only the missing privilege is left.
+    # A COMMIT behind '--', then the session default set to read write. The default applies from the next
+    # transaction, so the write is still refused as read only; "begin read write" below is the case where
+    # only the missing privilege is left.
     "commit, then read write": lambda c: c.execute(
         f"SELECT '--'; COMMIT; SET default_transaction_read_only = off; {SCOPE}{ESCAPE}"
     ),
