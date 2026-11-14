@@ -35,7 +35,16 @@ from lg_sotf.tools.wazuh.tools import (
 from tests.fixtures.attack_corpus import gold
 from tests.fixtures.attack_corpus.fleet import HOSTS
 from tests.unit.tools._support import Ctx, Settings, registry
-from tests.unit.tools.wazuh._support import Corpus, Investigation, corpus, investigate, minutes, over, raw
+from tests.unit.tools.wazuh._support import (
+    Corpus,
+    Investigation,
+    corpus,
+    investigate,
+    minutes,
+    nothing_found,
+    over,
+    raw,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -69,7 +78,7 @@ def _is_address(text: str) -> bool:
 
 async def _logon_reading(c: Corpus, item: Any) -> Tuple[Set[str], Set[str]]:
     """``(malicious indicators, benign proofs supported)`` of a 4625 or 4740 alert, read from the tools' facts."""
-    alert, at, user = item.alert, event_time(item.alert), raw(item.alert, "targetUserName")
+    alert, at, user = item.alert, event_time(item.alert), raw(item.alert, "targetUserName").casefold()
     if field_values(alert, dsl.EVENT_ID) == ["4740"]:
         host: Optional[str] = raw(alert, "callerComputerName") or None
         ip = HOSTS[host].ip if host in HOSTS else None
@@ -81,15 +90,18 @@ async def _logon_reading(c: Corpus, item: Any) -> Tuple[Set[str], Set[str]]:
     by_ip = {"pivot": "source_ip", "value": ip, **window}
     near = await look.fact("logon_fanout", before_min=30, **by_ip) if ip and _is_address(ip) else None
     day = await look.fact("logon_fanout", before_min=DAY, **by_ip) if ip and _is_address(ip) else None
-    caller = (
-        await look.fact("logon_fanout", pivot="source_host", value=host, before_min=DAY, outcomes=["failure", "lockout"], **window)
-        if host else None
-    )
-    by_user = await look.fact("logon_fanout", pivot="target_user", value=user, before_min=DAY, outcomes=["failure"], **window)
+    caller = await look.fact("logon_fanout", pivot="source_host", value=host, before_min=DAY, **window) if host else None
+    by_user = await look.fact("logon_fanout", pivot="target_user", value=user, before_min=DAY, **window)
+    # A fact counts every logon of its pivot, successes too. Which of the account's sources *failed* is read
+    # by asking about each source in turn: no call can be narrowed to one outcome.
+    failing = 0
+    for source in _names(by_user, "sources"):
+        seen = await look.fact("logon_fanout", pivot="source_ip", value=source, before_min=DAY, **window) if _is_address(source) else None
+        failing += user in _names(seen, "failed_users")
     failed_near, failed_day = _names(near, "failed_users"), _names(day, "failed_users")
     indicators = {
         "password_spray": len(failed_near) >= 3 or len(failed_day) >= 5,
-        "guessing": _number(by_user, "distinct_sources") >= 3 or _number(near, "unknown_user_failures") >= 3,
+        "guessing": failing >= 3 or _number(near, "unknown_user_failures") >= 3,
         "valid_account_after_failures": len(failed_near) >= 2 and _number(near, "successes") >= 1,
         "lockouts_from_one_source": _number(caller, "lockouts") >= 2,
     }
@@ -99,8 +111,7 @@ async def _logon_reading(c: Corpus, item: Any) -> Tuple[Set[str], Set[str]]:
         and _number(near, "failures") <= 3 and quick is not None and quick <= 600
         and set(_names(near, "success_users")) <= {user} and failed_day == [user]
         and all(fact_is_complete(f) for f in (near, day) if f is not None),
-        "stale_credentials": failed_day == [user] and _number(day, "successes") == 0
-        and _number(by_user, "distinct_sources") <= 2,
+        "stale_credentials": failed_day == [user] and _number(day, "successes") == 0 and failing <= 2,
     }
     return {name for name, true in indicators.items() if true}, {name for name, true in proofs.items() if true}
 
@@ -133,7 +144,7 @@ async def test_the_password_spray_reads_as_the_adr_describes_it() -> None:
     assert (value.failures, value.successes, value.distinct_target_users, value.distinct_sources) == (4, 1, 4, 1)
     assert value.failed_users == ["aturner", "lgarcia", "mjones", "sbrown"] and value.success_users == ["sbrown"]
     assert value.first_success_after_failure_s == 60 and value.logon_types == ["3"]
-    assert value.source_hosts == ["SALES-WS-03"] and value.sources == ["10.20.1.83"]
+    assert value.source_hosts == ["sales-ws-03"] and value.sources == ["10.20.1.83"]  # a host name is given in lower case
     assert (value.window_start, value.window_end) == (at - minutes(30), at + minutes(10))
     assert fact.complete is True and fact.source.model_dump() == {"name": LOGON_FANOUT, "version": "1"}
     # The reference reading of the same window agrees, number for number.
@@ -151,7 +162,7 @@ async def test_the_password_spray_reads_as_the_adr_describes_it() -> None:
 # ---- the service-install family: PsExec, the IT-admin look-alike, vendor updaters ------------------------------
 
 
-async def _service_facts(c: Corpus, item: Any) -> Dict[str, Optional[EvidenceFact]]:
+async def _service_facts(c: Corpus, item: Any) -> Dict[str, Any]:
     alert, at, host = item.alert, event_time(item.alert), str(item.alert["agent"]["name"])
     look = investigate(c, item, settle_min=15)
     if field_values(alert, dsl.EVENT_ID) == ["7045"]:
@@ -161,22 +172,22 @@ async def _service_facts(c: Corpus, item: Any) -> Dict[str, Optional[EvidenceFac
         image_path = gold.PSEXESVC_SERVICE_PATH
         subject = {"process_guid": raw(alert, "parentProcessGuid")}
     return {
-        "inbound": await look.fact("logon_fanout", pivot="target_host", value=host, at=at, before_min=15, after_min=1,
-                                   logon_types=["3"], outcomes=["success"]),
-        "lineage": await look.fact("process_lineage", host=host, at=at, after_min=15, **subject),
+        "inbound": await look.fact("logon_fanout", pivot="target_host", value=host, at=at, before_min=15, after_min=1),
+        # One fact per process that matches (a list): a 7045 names an image, which several processes may have.
+        "lineage": await look.facts("process_lineage", host=host, at=at, after_min=15, **subject),
         "seen": await look.fact("prevalence", kind="service_image_path", value=image_path, days=30),
         "around": await look.fact("host_activity", host=host, at=at, before_min=30, after_min=15),
     }
 
 
-def _service_reading(item: Any, facts: Mapping[str, Optional[EvidenceFact]]) -> Tuple[Set[str], Set[str]]:
+def _service_reading(item: Any, facts: Mapping[str, Any]) -> Tuple[Set[str], Set[str]]:
     alert, at = item.alert, event_time(item.alert)
     install = field_values(alert, dsl.EVENT_ID) == ["7045"]
     image_path = raw(alert, "imagePath") if install else gold.PSEXESVC_SERVICE_PATH
     exe = gold.service_exe(image_path) if install else raw(alert, "parentImage")
     psexec = gold.basename(exe) == "psexesvc.exe"
-    lineage, seen = _value(facts["lineage"]), _value(facts["seen"])
-    children = list(lineage.children or []) if lineage is not None else []
+    seen = _value(facts["seen"])
+    children = [child for lineage in facts["lineage"] for child in lineage.value.children or []]
     sources, users = _names(facts["inbound"], "sources"), set(_names(facts["inbound"], "success_users"))
     first_seen = seen.first_seen_at if seen is not None and seen.first_seen_at is not None else at
     indicators = {
@@ -190,7 +201,7 @@ def _service_reading(item: Any, facts: Mapping[str, Optional[EvidenceFact]]) -> 
     proofs = {
         "sanctioned_remote_admin": psexec and len(sources) == 1 and sources[0] in gold.DECLARED.admin_workstation_ips
         and bool(users) and users <= set(gold.DECLARED.admin_accounts) and routine
-        and all(fact_is_complete(facts[name]) for name in ("inbound", "lineage", "around") if facts[name] is not None),
+        and all(fact_is_complete(fact) for fact in (facts["inbound"], facts["around"], *facts["lineage"]) if fact is not None),
         "vendor_updater_service": not psexec and gold.path_class(image_path) == "program_files"
         and _number(facts["seen"], "host_count") >= 10 and at - first_seen >= timedelta(days=7),
     }
@@ -218,7 +229,8 @@ async def test_psexec_and_the_it_admin_lookalike_differ_in_what_the_service_star
     c = corpus("corpus_v1")
     attack, admin = c.items["cv1-0113"], c.items["cv1-0069"]
     facts = {item.id: await _service_facts(c, item) for item in (attack, admin)}
-    lineage = _value(facts[attack.id]["lineage"])
+    assert len(facts[attack.id]["lineage"]) == 1, "one PSEXESVC process started around the alert"
+    lineage = facts[attack.id]["lineage"][0].value
     assert [node.image_name for node in lineage.chain] == ["services.exe", "PSEXESVC.exe"]
     assert lineage.chain[0].started_at is None and lineage.chain[1].started_at == event_time(attack.alert) + timedelta(seconds=2.11)
     # Two levels: the shell PsExec started, and what the shell ran (the discovery commands are the grandchildren).
@@ -231,18 +243,18 @@ async def test_psexec_and_the_it_admin_lookalike_differ_in_what_the_service_star
     around = _value(facts[attack.id]["around"])
     assert "T1562.001" in around.techniques and around.max_level == 12 and around.total == len(around.events) == 7
     assert around.events[0].level == 12 and around.events[0].image_name == "powershell.exe"  # highest level first
-    assert _names(facts[attack.id]["inbound"], "source_hosts") == ["MKT-WS-11"]
+    assert _names(facts[attack.id]["inbound"], "source_hosts") == ["mkt-ws-11"]
     assert _service_reading(attack, facts[attack.id]) == ({"discovery_through_the_service", "hands_on_keyboard_nearby"}, set())
     # Desktop support: the declared admin workstation, an admin account, one routine command.
     benign = facts[admin.id]
     assert _names(benign["inbound"], "sources") == ["10.20.1.120"] and _names(benign["inbound"], "success_users")[0].startswith("adm.")
-    assert [child.command_template for child in _value(benign["lineage"]).children] == ["gpupdate /force"]
+    assert [child.command_template for child in benign["lineage"][0].value.children] == ["gpupdate /force"]
     assert _service_reading(admin, benign) == (set(), {"sanctioned_remote_admin"})
-    assert all(fact.complete is True for fact in benign.values() if fact is not None and fact.kind != "prevalence")
+    assert all(fact.complete is True for fact in (benign["inbound"], benign["around"], *benign["lineage"]))
     # A process named by its GUID gives the same children as the same process named by its image.
     child_alert = next(i for i in c.items.values() if i.alert["rule"]["id"] == "92068")
-    by_guid = _value((await _service_facts(c, child_alert))["lineage"])
-    assert by_guid.chain[-1].image_name == "PSEXESVC.exe" and by_guid.children
+    (by_guid,) = (await _service_facts(c, child_alert))["lineage"]
+    assert by_guid.value.chain[-1].image_name == "PSEXESVC.exe" and by_guid.value.children and by_guid.complete is True
 
 
 async def test_prevalence_counts_the_agents_and_reports_the_window_it_covered() -> None:
@@ -292,9 +304,15 @@ async def test_sshd_logons_are_read_by_rule_group() -> None:
     login = next(d for d in sshd if "authentication_success" in d["rule"]["groups"])
     by_user = await Investigation(c.store, event_time(login) + minutes(15)).fact(
         "logon_fanout", pivot="target_user", value=login["data"]["dstuser"], at=event_time(login), before_min=60, after_min=10,
-        family="sshd", outcomes=["success"])
+        family="sshd")
     assert by_user is not None and by_user.value.successes >= 1 and by_user.value.success_users == [login["data"]["dstuser"]]
-    assert login["data"]["srcip"] in by_user.value.sources and (by_user.value.failures, by_user.value.failed_users) == (0, [])
+    assert login["data"]["srcip"] in by_user.value.sources
+    # An sshd user name is exact (Linux tells Root from root); a host name is not.
+    assert await Investigation(c.store, event_time(login) + minutes(15)).fact(
+        "logon_fanout", pivot="target_user", value=login["data"]["dstuser"].upper(), at=event_time(login), before_min=60, family="sshd") is None
+    by_host = await Investigation(c.store, at + minutes(15)).fact(
+        "logon_fanout", pivot="target_host", value=guess["agent"]["name"].upper(), at=at, before_min=60, family="sshd")
+    assert by_host is not None and by_host.value.failures >= 1
 
 
 # ---- the as-of rule ----------------------------------------------------------------------------------------
@@ -390,8 +408,9 @@ class Down:
         return self.answer
 
 
-PARTIAL = {"timed_out": True, "_shards": {"failed": 0}, "hits": {"hits": []},
-           "aggregations": {"total": {"value": 0}, "hosts": {"value": 0}}}
+PARTIAL = nothing_found(timed_out=True)
+UNASSIGNED = nothing_found(_shards={"total": 5, "successful": 3, "skipped": 0, "failed": 0})  # neither successful nor failed
+NO_AGGREGATIONS = {key: value for key, value in nothing_found().items() if key != "aggregations"}
 CALLS = (
     (HOST_ACTIVITY, {"host": "SRV-01", "at": T0, "before_min": 5, "after_min": 5}),
     (LOGON_FANOUT, {"pivot": "target_user", "value": "ann", "at": T0, "before_min": 30}),
@@ -407,6 +426,9 @@ CALLS = (
         (Down("credentials_refused"), "credentials_refused"),
         (Down(answer={"error": {"type": "security_exception"}, "status": 403}), "bad_response"),
         (Down(answer=PARTIAL), "partial_answer"),  # it matched nothing, but it did not finish: not "nothing found"
+        (Down(answer=UNASSIGNED), "partial_answer"),  # two of five shards were not searched
+        (Down(answer=NO_AGGREGATIONS), "bad_response"),  # not the answer that was asked for
+        (Down(answer={**nothing_found(), "aggregations": {"total": {"value": 0}}}), "bad_response"),
     ],
 )
 async def test_an_unreachable_or_refusing_indexer_is_failed_never_empty(backend: Down, reason: str) -> None:
@@ -457,17 +479,25 @@ async def test_a_capped_result_is_not_complete() -> None:
     # 30 events, all listed, but 60 rule groups: the list of groups is cut at 50, so the fact is not complete.
     groups = await Investigation(_store(30, groups=2), T0 + minutes(30)).call("host_activity", **window)
     assert (len(groups.value[0].value.events), len(groups.value[0].value.by_group), groups.complete) == (30, 50, False)
-    # Children beyond the 50 a search returns: the lineage is not complete either.
+    # Children beyond the 50 a search returns: the lineage is not complete either. The process's own event is
+    # there, so the cap is the only thing that makes the difference.
     guid = "{11111111-1111-1111-1111-111111111111}"
+    old = _doc(9_000, T0 - timedelta(days=3), agent="OLD-01")
+    parent = _doc(8_000, T0 - timedelta(seconds=30), image="C:\\\\x\\\\p.exe", processGuid=guid)
     docs = [_doc(n, T0 + timedelta(seconds=n), image="C:\\\\x\\\\child.exe", parentProcessGuid=guid, parentImage="C:\\\\x\\\\p.exe",
                  processGuid="{" + f"{n:08d}" + "-2222-2222-2222-222222222222}") for n in range(dsl.MAX_HITS + 5)]
-    store = EventStore([_doc(9_000, T0 - timedelta(days=3), agent="OLD-01"), *docs])
-    lineage = await Investigation(store, T0 + minutes(30)).call("process_lineage", host="SRV-01", process_guid=guid, at=T0, after_min=10)
-    assert (lineage.outcome, lineage.complete, len(lineage.value[0].value.children)) == ("success", False, 50)
-    assert lineage.value[0].value.chain[0].name == "C:\\x\\p.exe", "the process is named by what its children say of it"
-    few = EventStore([_doc(9_000, T0 - timedelta(days=3), agent="OLD-01"), *docs[:3]])
-    named = await Investigation(few, T0 + minutes(30)).call("process_lineage", host="SRV-01", process_guid=guid, at=T0, after_min=10)
-    assert (len(named.value[0].value.children), named.complete) == (3, False), "its own creation event was not found"
+
+    async def lineage(*events: Dict[str, Any]) -> Tuple[int, bool]:
+        result = await Investigation(EventStore([old, *events]), T0 + minutes(30)).call(
+            "process_lineage", host="SRV-01", process_guid=guid, at=T0, after_min=10, child_depth=1)
+        assert result.outcome == "success" and result.value[0].value.chain[-1].name == "C:\\x\\p.exe"
+        return len(result.value[0].value.children), result.complete
+
+    assert await lineage(parent, *docs[:49]) == (49, True)
+    assert await lineage(parent, *docs[:50]) == (50, False), "as many as one search returns: more may exist"
+    assert await lineage(parent, *docs) == (50, False)
+    # Without its own creation event the process is named by what its children say of it, and the fact is not complete.
+    assert await lineage(*docs[:3]) == (3, False)
 
 
 # ---- the registry: one step per call, hashes, replay ------------------------------------------------------------
@@ -533,7 +563,8 @@ async def test_the_tools_are_declared_read_only_capped_and_switched_per_tenant()
     for name in tools.names:
         spec = tools.get(name)
         assert (spec.version, spec.risk, spec.egress, spec.egress_boundary) == (1, "read_internal", "tenant_source", "wazuh_indexer")
-        assert (spec.shadow, spec.tenant_setting, spec.row_cap, spec.window_cap) == ("live", "wazuh_indexer", 1, caps[name])
+        facts = 3 if name == PROCESS_LINEAGE else 1  # one per process an image names; one for everything else
+        assert (spec.shadow, spec.tenant_setting, spec.row_cap, spec.window_cap) == ("live", "wazuh_indexer", facts, caps[name])
         assert spec.produces == frozenset({name.split(".")[1]}) and 0 < spec.time_cap_s <= 60
     with pytest.raises(ToolParamsInvalid):  # a bound the model states, before anything is asked
         await tools.call(Ctx(), HOST_ACTIVITY, {"host": "SRV-01", "at": T0, "before_min": 61, "after_min": 0}, agent="a")
@@ -569,18 +600,53 @@ async def test_the_ancestry_is_walked_up_to_the_asked_depth() -> None:
                          parentProcessGuid=guid(n - 1), parentImage=f"C:\\\\Windows\\\\{names[n - 1]}", parentProcessId=str(99 + n)))
     look = Investigation(EventStore(docs), T0 + minutes(30))
 
-    async def chain(depth: int) -> List[Optional[str]]:
+    async def chain(depth: int) -> Tuple[List[Optional[str]], Optional[bool], List[Tuple[str, str]]]:
         fact = await look.fact("process_lineage", host="SRV-01", process_guid=guid(3), at=T0, after_min=10, depth=depth)
-        assert fact is not None and fact.complete is True and [c.image_name for c in fact.value.children] == ["whoami.exe"]
+        assert fact is not None and [c.image_name for c in fact.value.children] == ["whoami.exe"]
         assert fact.value.chain[-1].started_at == T0 + timedelta(seconds=3) and fact.value.chain[-1].pid == 103
-        return [node.image_name for node in fact.value.chain]
+        return [node.image_name for node in fact.value.chain], fact.complete, [(r.path, r.reason) for r in fact.redactions]
 
-    # The process above the oldest event found is named from that event's parent fields.
-    assert await chain(0) == ["cmd.exe", "powershell.exe"]
-    assert await chain(1) == ["explorer.exe", "cmd.exe", "powershell.exe"]
-    assert await chain(2) == await chain(8) == ["winlogon.exe", "explorer.exe", "cmd.exe", "powershell.exe"]
+    # The process above the oldest event found is named from that event's parent fields. A walk that used every
+    # look-up and still has a parent above it was cut: the fact says so and is not complete.
+    cut = [("/value/chain", "truncated")]
+    assert await chain(0) == (["cmd.exe", "powershell.exe"], False, cut)
+    assert await chain(1) == (["explorer.exe", "cmd.exe", "powershell.exe"], False, cut)
+    whole = ["winlogon.exe", "explorer.exe", "cmd.exe", "powershell.exe"]
+    assert await chain(2) == (whole, False, cut), "the second look-up found explorer; nothing says winlogon is the top"
+    assert await chain(3) == await chain(8) == (whole, True, []), "the look-up above explorer found nothing: the chain ends there"
     by_image = await look.fact("process_lineage", host="SRV-01", image="C:\\Windows\\powershell.exe", at=T0, after_min=10, depth=1)
     assert by_image is not None and [node.process_guid for node in by_image.value.chain] == [guid(1), guid(2), guid(3)]
+
+
+async def test_several_processes_of_one_image_are_each_described_and_none_is_complete() -> None:
+    """An image names every process that started around the alert: a decoy seconds earlier cannot stand in for it."""
+    def guid(n: int) -> str:
+        return "{" + f"{n:08d}" + "-aaaa-bbbb-cccc-dddddddddddd}"
+
+    ps = "C:\\\\Windows\\\\powershell.exe"
+    old = _doc(9_000, T0 - timedelta(days=3), agent="OLD-01")
+    decoy = _doc(1, T0 - timedelta(seconds=3), image=ps, processGuid=guid(11), parentProcessGuid=guid(10), parentImage="C:\\\\Windows\\\\explorer.exe")
+    real = _doc(2, T0, image=ps, processGuid=guid(21), parentProcessGuid=guid(20), parentImage="C:\\\\Office\\\\WINWORD.EXE")
+    child = _doc(3, T0 + timedelta(seconds=5), image="C:\\\\Windows\\\\whoami.exe", processGuid=guid(22), parentProcessGuid=guid(21), parentImage=ps)
+    extra = [_doc(10 + n, T0 + timedelta(seconds=n), image=ps, processGuid=guid(30 + n)) for n in range(1, 4)]
+    by_image = {"host": "SRV-01", "image": "C:\\Windows\\powershell.exe", "at": T0, "after_min": 10}
+
+    look = Investigation(EventStore([old, decoy, real, child]), T0 + minutes(30))
+    both = await look.call("process_lineage", **by_image)
+    assert (both.outcome, both.rows, both.complete) == ("success", 2, False)
+    assert [[node.image_name for node in fact.value.chain] for fact in both.value] == [
+        ["explorer.exe", "powershell.exe"], ["WINWORD.EXE", "powershell.exe"]]
+    assert [[c.image_name for c in fact.value.children] for fact in both.value] == [[], ["whoami.exe"]]
+    assert [fact.complete for fact in both.value] == [False, False] and [fact.id for fact in both.value] == [
+        "wazuh.process_lineage:0", "wazuh.process_lineage:1"]
+    # The alert's own process, named by its GUID, is one process: its chain, its children, complete.
+    own = await look.call("process_lineage", host="SRV-01", process_guid=guid(21), at=T0, after_min=10)
+    assert (own.rows, own.complete) == (1, True) and [n.image_name for n in own.value[0].value.chain] == ["WINWORD.EXE", "powershell.exe"]
+    alone = await Investigation(EventStore([old, real, child]), T0 + minutes(30)).call("process_lineage", **by_image)
+    assert (alone.rows, alone.complete) == (1, True)
+    # More matches than a call describes: the first three, and not a complete answer.
+    many = await Investigation(EventStore([old, decoy, real, child, *extra]), T0 + minutes(30)).call("process_lineage", **by_image)
+    assert (many.outcome, many.rows, many.complete) == ("success", 3, False)
 
 
 EXAMPLE = {

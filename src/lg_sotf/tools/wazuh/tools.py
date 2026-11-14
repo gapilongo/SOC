@@ -1,8 +1,10 @@
 """The Wazuh evidence tools (INT3.4): four query templates as registered tools.
 
 * ``wazuh.host_activity``: what a host's alerts show around a moment;
-* ``wazuh.logon_fanout``: the logons of one source address, source host, user or target host;
-* ``wazuh.process_lineage``: a process's parents and what it started, down to what its children started;
+* ``wazuh.logon_fanout``: every logon of one source address, source host, user or target host (a caller
+  cannot narrow it to an outcome or a logon type, so a fact never leaves out what was not asked for);
+* ``wazuh.process_lineage``: a process's parents and what it started, down to what its children started
+  (one fact per process that matches; several matches are an ambiguous answer, and say so);
 * ``wazuh.prevalence``: on how many of the tenant's agents a file hash, a process image, a service's image
   path or a service name was seen.
 
@@ -15,7 +17,7 @@ is ``failed`` and ``Evidence.error`` says why in a fixed code (``unreachable``, 
 ``credentials_refused``, ``index_not_found``, ``not_configured``, ``disabled``, ``partial_answer``...): an
 indexer that is down, refuses the credentials or answers half a search never reads as "nothing found".
 
-**Complete.** A fact, and the call's result, is ``complete`` only when the indexer finished every search,
+**Complete.** A fact, and the call's result, is ``complete`` only when every shard answered every search,
 nothing the fact lists was cut by a cap, the window had closed when it was read (its end is older than
 the source's ingest lag) and the index still held alerts as old as the window's start. Otherwise what the
 fact shows still counts, but no claim of absence can rest on it. An empty answer carries the same flag.
@@ -127,38 +129,44 @@ async def _evidence(
     name: str,
     kind: FactKind,
     subject: Tuple[SubjectType, str],
-    mapped: Optional[Mapped[Any]],
+    mapped: Sequence[Mapped[Any]],
     start: datetime,
     end: datetime,
 ) -> Evidence:
-    """The call's answer: the fact with its computed ``complete``, or an empty answer that says whether it is whole."""
+    """The call's answer: each fact with its computed ``complete``, or an empty answer that says whether it is whole."""
     backend = reader.backend
     settled = end <= backend.now() - backend.lag
     if settled:
         oldest = await reader.oldest()
         settled = oldest is not None and oldest <= start
-    if mapped is None:
+    if not mapped:
         if reader.partial:  # the indexer did not finish: "nothing matched" is not known
             raise IndexerUnavailable("partial_answer")
         return Evidence(complete=settled)
-    complete = mapped.whole and not reader.partial and settled
-    fact = parse_fact({
-        "id": f"{name}:0",
-        "kind": kind,
-        "subject": {"type": subject[0], "value": subject[1]},
-        "observed_at": backend.now(),
-        "source": {"name": name, "version": str(VERSION)},
-        "value": mapped.value,
-        "complete": complete,
-        "redactions": list(mapped.redactions),
-    })
-    return Evidence([fact], complete=complete)
+    facts = [
+        parse_fact({
+            "id": f"{name}:{n}",
+            "kind": kind,
+            "subject": {"type": subject[0], "value": subject[1]},
+            "observed_at": backend.now(),
+            "source": {"name": name, "version": str(VERSION)},
+            "value": one.value,
+            "complete": one.whole and not reader.partial and settled,
+            "redactions": list(one.redactions),
+        })
+        for n, one in enumerate(mapped)
+    ]
+    return Evidence(facts, complete=all(fact.complete for fact in facts))
+
+
+def _found(mapped: Optional[Mapped[Any]]) -> List[Mapped[Any]]:
+    return [mapped] if mapped is not None else []
 
 
 async def _host_activity(reader: _Reader, params: HostActivityParams) -> Evidence:
     start, end = params.at - minutes(params.before_min), params.at + minutes(params.after_min)
     mapped = mappers.host_activity(await reader.ask(templates.host_activity(params)), start, end)
-    return await _evidence(reader, HOST_ACTIVITY, "host_activity", ("host", params.host), mapped, start, end)
+    return await _evidence(reader, HOST_ACTIVITY, "host_activity", ("host", params.host), _found(mapped), start, end)
 
 
 async def _logon_fanout(reader: _Reader, params: LogonFanoutParams) -> Evidence:
@@ -172,7 +180,7 @@ async def _logon_fanout(reader: _Reader, params: LogonFanoutParams) -> Evidence:
         success = mappers.instant((await reader.ask(templates.first_success(params, first_failure))).aggs, "first")
     mapped = mappers.logon_fanout(params, answer, start=start, end=end, lockouts=locked, success_after_failure=success)
     subject = (_SUBJECTS[params.pivot], params.value)
-    return await _evidence(reader, LOGON_FANOUT, "logon_fanout", subject, mapped, start, end)
+    return await _evidence(reader, LOGON_FANOUT, "logon_fanout", subject, _found(mapped), start, end)
 
 
 Find = Callable[[str, List[str], datetime], Awaitable[List[Document]]]
@@ -192,30 +200,38 @@ async def _descendants(find: Find, roots: Sequence[str], levels: int, since: dat
     return found
 
 
-async def _ancestry(find: Find, subject: Document, depth: int, since: datetime) -> List[Document]:
-    """The subject's creation event with its parents' in front of it, oldest first: at most ``depth`` look-ups."""
+async def _ancestry(find: Find, subject: Document, depth: int, since: datetime) -> Tuple[List[Document], bool]:
+    """The subject's creation event with its parents' in front of it, oldest first: at most ``depth`` look-ups.
+
+    Also whether the walk was cut: it used every look-up and the oldest process found still names a parent.
+    """
     chain = [subject]
     for _ in range(depth):
         above = mappers.parent_guid(chain[0])
         parents = await find(dsl.PROCESS_GUID, [above], since) if above else []
         if not parents:
-            break
+            return chain, False
         chain.insert(0, parents[0])
-    return chain
+    return chain, mappers.parent_guid(chain[0]) is not None
 
 
 async def _process_lineage(reader: _Reader, params: ProcessLineageParams) -> Evidence:
-    """One fact: the first matching process's ancestry, and what every matching process started.
+    """One fact per process that matches: its ancestry, and what it started.
+
+    A GUID names one process: use it whenever the alert carries one. An image names every process of that
+    image that started around the alert, and an attacker can start a decoy seconds before: each match (at
+    most ``MAX_LINEAGE_SUBJECTS``) gets its own fact, and when there is more than one, none is complete,
+    because the tool cannot tell which is the alert's.
 
     The process above the oldest event found is named from that event's parent fields. A process given by a
-    GUID whose own creation event is not in the index is named the same way, by its first child. The fact is
-    complete only when the subject's own event was found: only then is the host known to report it.
+    GUID whose own creation event is not in the index is named the same way, by its first child. A fact is
+    complete only when the subject's own event was found (only then is the host known to report it), the
+    walk up was not cut at ``depth`` and no search returned as many events as it may.
     What a process started is read from five seconds before ``at`` for an image, and over the day before
     ``at`` for a GUID (one process, which may have started well before the alert).
     """
     end = params.at + minutes(params.after_min)
     origin, cut = params.at - templates.LINEAGE_LOOKBACK, False
-    # An image names the processes that started around the alert; a GUID names one process, whenever it started.
     start = params.at - templates.LINEAGE_SLACK if params.image is not None else origin
 
     async def find(field: str, values: List[str], since: datetime) -> List[Document]:
@@ -228,15 +244,19 @@ async def _process_lineage(reader: _Reader, params: ProcessLineageParams) -> Evi
         subjects = await find(dsl.IMAGE, templates.stored(params.image), start)
     else:
         subjects = await find(dsl.PROCESS_GUID, [str(params.process_guid)], start)
-    roots = [g for g in map(mappers.guid, subjects) if g] or [g for g in [params.process_guid] if g]
-    children = await _descendants(find, roots, params.child_depth, start)
-    ancestry = await _ancestry(find, subjects[0], params.depth, origin) if subjects else []
-    named_parent = ancestry[0] if ancestry else (children[0] if children else None)
-    mapped = mappers.process_lineage(ancestry, named_parent, children)
-    if mapped is not None and (cut or not subjects):
-        mapped = replace(mapped, whole=False)
-    subject: Tuple[SubjectType, str] = ("process", params.image or str(params.process_guid))
-    return await _evidence(reader, PROCESS_LINEAGE, "process_lineage", subject, mapped, start, end)
+    found: List[Mapped[Any]] = []
+    for subject in subjects[: templates.MAX_LINEAGE_SUBJECTS]:
+        own = mappers.guid(subject)
+        children = await _descendants(find, [own] if own else [], params.child_depth, start)
+        ancestry, deeper = await _ancestry(find, subject, params.depth, origin)
+        found += _found(mappers.process_lineage(ancestry, ancestry[0], children, cut=deeper))
+    if not subjects and params.process_guid is not None:  # its own event is not there: its children name it
+        children = await _descendants(find, [params.process_guid], params.child_depth, start)
+        found += _found(mappers.process_lineage([], children[0] if children else None, children))
+    if cut or len(subjects) != 1:
+        found = [replace(one, whole=False) for one in found]
+    subject_of: Tuple[SubjectType, str] = ("process", params.image or str(params.process_guid))
+    return await _evidence(reader, PROCESS_LINEAGE, "process_lineage", subject_of, found, start, end)
 
 
 async def _prevalence(reader: _Reader, params: PrevalenceParams) -> Evidence:
@@ -247,7 +267,7 @@ async def _prevalence(reader: _Reader, params: PrevalenceParams) -> Evidence:
     oldest = await reader.oldest()
     mapped = mappers.prevalence(answer, max(start, oldest) if oldest is not None else start, end)
     value = params.value.lower() if params.kind == "sha256" else params.value
-    return await _evidence(reader, PREVALENCE, "prevalence", (_SUBJECTS[params.kind], value), mapped, start, end)
+    return await _evidence(reader, PREVALENCE, "prevalence", (_SUBJECTS[params.kind], value), _found(mapped), start, end)
 
 
 def _failed(evidence: Evidence) -> bool:
@@ -280,6 +300,7 @@ def _tool(
     window: Callable[[Any], timedelta],
     window_cap: timedelta,
     backends: Backends,
+    row_cap: int = 1,
 ) -> Tool[Any, Evidence]:
     async def run(ctx: ToolContext, valid: Any) -> Evidence:
         try:
@@ -295,7 +316,7 @@ def _tool(
         risk="read_internal",
         params=params,
         produces=frozenset({kind}),
-        row_cap=1,  # one fact a call; what a fact lists is capped by the templates and the fact schema
+        row_cap=row_cap,  # facts a call; what a fact lists is capped by the templates and the fact schema
         time_cap_s=TIME_CAP_S,
         window_cap=window_cap,
         egress="tenant_source",
@@ -317,7 +338,8 @@ def wazuh_tools(backends: Backends) -> List[Tool[Any, Evidence]]:
         _tool(LOGON_FANOUT, "logon_fanout", LogonFanoutParams, _logon_fanout,
               lambda p: minutes(p.before_min + p.after_min), logon, backends),
         _tool(PROCESS_LINEAGE, "process_lineage", ProcessLineageParams, _process_lineage,
-              lambda p: templates.LINEAGE_LOOKBACK + minutes(p.after_min), lineage, backends),
+              lambda p: templates.LINEAGE_LOOKBACK + minutes(p.after_min), lineage, backends,
+              row_cap=templates.MAX_LINEAGE_SUBJECTS),
         _tool(PREVALENCE, "prevalence", PrevalenceParams, _prevalence,
               lambda p: timedelta(days=p.days), timedelta(days=templates.MAX_PREVALENCE_DAYS), backends),
     ]

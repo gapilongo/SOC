@@ -42,7 +42,7 @@ pytestmark = pytest.mark.unit
 T0 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 GUID = "{86837a3d-6435-49ac-8e3e-c7c5171c4dce}"
 BODY_KEYS = {"size", "timeout", "terminate_after", "track_total_hits", "_source", "sort", "query", "aggs"}
-QUERY_KEYS = {"bool", "filter", "term", "terms", "range"}
+QUERY_KEYS = {"bool", "filter", "term", "terms", "range", "value", "case_insensitive"}
 AGG_KINDS = {"terms", "cardinality", "min", "max", "value_count", "filters"}
 NEVER = {
     "script", "script_fields", "runtime_mappings", "query_string", "simple_query_string", "regexp", "wildcard", "fuzzy",
@@ -91,11 +91,8 @@ def generated(seed: int = 34, count: int = 400) -> Iterator[Any]:
         pivot = rng.choice(pivots[family])
         value = {"source_ip": rng.choice(["10.20.1.83", "203.0.113.9", "2001:db8::1", "::ffff:10.0.0.5"]),
                  "target_user": _word(rng, string.ascii_letters + string.digits + "._$@-", 1, 64)}.get(pivot) or _host(rng)
-        outcomes = rng.choice([[], ["failure"], ["success"], ["failure", "success"]]
-                              + ([["failure", "lockout"], ["success", "failure", "lockout"]] if family == "windows" else []))
         yield LogonFanoutParams(
-            pivot=pivot, value=value, at=_at(rng), before_min=rng.randint(1, 1_440), after_min=rng.randint(0, 60),
-            logon_types=rng.choice([[], ["3"], ["2", "10", "11"]]) if family == "windows" else [], outcomes=outcomes, family=family)
+            pivot=pivot, value=value, at=_at(rng), before_min=rng.randint(1, 1_440), after_min=rng.randint(0, 60), family=family)
         subject = {"image": _text(rng)} if rng.random() < 0.7 else {"process_guid": rng.choice([GUID, GUID.strip("{}"), GUID.upper()])}
         yield ProcessLineageParams(host=_host(rng), at=_at(rng), after_min=rng.randint(0, 30), depth=rng.randint(0, 8),
                                    child_depth=rng.randint(1, 4), **subject)
@@ -168,13 +165,17 @@ def test_templates_emit_only_allow_listed_dsl() -> None:
                 assert len(kinds) == 1 and kinds <= AGG_KINDS, name
                 assert all(set(inner) <= AGG_KINDS - {"filters"} for inner in agg.get("aggs", {}).values()), name
             assert set(_fields(body)) <= dsl.FIELDS
+            # The one option a clause may carry: a Windows user or host name matched without case, in a term.
+            options = [(path, leaf) for path, leaf in walk(body) if path[-1] == "case_insensitive"]
+            assert all(leaf is True and path[-3] == "term" and path[-2] in dsl.NAMES for path, leaf in options)
             assert (body["timeout"], body["terminate_after"], body["track_total_hits"]) == ("5s", 100_000, False)
             assert 0 <= body["size"] <= 50 and (body["size"] == 0) == (body["_source"] is False)
             sizes = [leaf for path, leaf in walk(body.get("aggs", {})) if path[-1] == "size"]
             assert all(1 <= size <= 50 for size in sizes)
             json.dumps(body)  # plain JSON: nothing but strings, numbers, booleans, lists and objects
             seen.update(keys(body))
-    assert count > 2_000 and {"term", "terms", "range", "filters", "cardinality", "min", "max", "value_count"} <= seen
+    assert count > 2_000
+    assert {"term", "terms", "range", "filters", "cardinality", "min", "max", "value_count", "case_insensitive"} <= seen
 
 
 def _twins(rng: random.Random) -> Iterator[Tuple[Any, Any]]:
@@ -183,12 +184,17 @@ def _twins(rng: random.Random) -> Iterator[Tuple[Any, Any]]:
         fixed = {"before_min": rng.randint(1, 60), "after_min": rng.randint(0, 30)}
         yield tuple(HostActivityParams(host=_host(rng), at=_at(rng), **fixed) for _ in range(2))  # type: ignore[misc]
         for pivot, make in (("source_host", _host), ("target_host", _host), ("target_user", lambda r: _word(r, string.ascii_letters))):
-            yield tuple(LogonFanoutParams(pivot=pivot, value=make(rng), at=_at(rng), logon_types=["3"], **fixed)  # type: ignore[misc]
+            yield tuple(LogonFanoutParams(pivot=pivot, value=make(rng), at=_at(rng), **fixed)  # type: ignore[misc]
                         for _ in range(2))
         yield tuple(ProcessLineageParams(host=_host(rng), image="C:\\" + _text(rng), at=_at(rng), after_min=5)  # type: ignore[misc]
                     for _ in range(2))
         for kind in ("process_image", "service_image_path", "service_name"):
             yield tuple(PrevalenceParams(kind=kind, value="\\" + _text(rng), days=7) for _ in range(2))  # type: ignore[misc]
+
+
+def _is_name(path: Tuple[str, ...]) -> bool:
+    """The value of a term on a name field: ``{"term": {field: {"value": ..., "case_insensitive": true}}}``."""
+    return path[-3] == "term" and path[-2] in dsl.NAMES and path[-1] == "value"
 
 
 def test_values_only_reach_term_terms_range() -> None:
@@ -205,7 +211,7 @@ def test_values_only_reach_term_terms_range() -> None:
             for (path, x), (_, y) in zip(a, b, strict=True):
                 if x != y:
                     compared += 1
-                    assert path[-2] in ("term", "terms") or path[-3:-1] == ("range", dsl.TIME), path
+                    assert path[-2] in ("term", "terms") or path[-3:-1] == ("range", dsl.TIME) or _is_name(path), path
                     assert isinstance(x, str) and isinstance(y, str)
     assert compared > 500
 
@@ -257,7 +263,7 @@ async def test_an_injected_value_cannot_change_the_query_shape(hostile: str) -> 
         assert [{path for path, _ in walk(body)} for body in attack] == [
             {path for path, _ in walk(body)} for body in plain[: len(attack)]]
         placed = [path for body in attack for path, leaf in walk(body) if isinstance(leaf, str) and hostile in leaf]
-        assert placed and all(path[-2] in ("term", "terms") and path[-1] in dsl.FIELDS for path in placed)
+        assert placed and all(path[-2] in ("term", "terms") and path[-1] in dsl.FIELDS or _is_name(path) for path in placed)
     assert refused >= 6, "the shaped parameters refuse it"
     assert (await tools.call(Ctx(), PREVALENCE, {"kind": "service_name", "value": "PSEXESVC", "days": 30}, agent="a")).outcome == "success"
 
@@ -336,6 +342,14 @@ REFUSED = {
     "a sort key on two fields": _with(_base(), "sort", [{dsl.TIME: {"order": "asc"}, dsl.DOC_ID: {"order": "asc"}}]),
     "a scripted sort order": _with(_base(), "sort", [{dsl.TIME: {"order": "asc", "missing": "_last", "script": "1"}}]),
     "aggregations that are not an object": _with(_base(), "aggs", []),
+    "case-insensitive on a field that is not a name": _with(
+        _base(), *FILTER, 0, {"term": {dsl.IMAGE: {"value": "c:\\x.exe", "case_insensitive": True}}}),
+    "another option beside case-insensitive": _with(
+        _base(), *FILTER, 0, {"term": {dsl.AGENT: {"value": "SRV-01", "case_insensitive": True, "boost": 2}}}),
+    "a term object without the option": _with(_base(), *FILTER, 0, {"term": {dsl.AGENT: {"value": "SRV-01"}}}),
+    "case-insensitive switched off": _with(_base(), *FILTER, 0, {"term": {dsl.AGENT: {"value": "SRV-01", "case_insensitive": False}}}),
+    "a name that is an object": _with(_base(), *FILTER, 0, {"term": {dsl.AGENT: {"value": {"x": 1}, "case_insensitive": True}}}),
+    "terms with an object": _with(_base(), *FILTER, 0, {"terms": {dsl.AGENT: {"value": "SRV-01", "case_insensitive": True}}}),
 }
 
 
@@ -373,12 +387,11 @@ def test_the_unchanged_bodies_pass_the_check() -> None:
         (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "after_min": 61}),
         (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.0/8", "at": T0, "before_min": 30}),
         (LogonFanoutParams, {"pivot": "field", "value": "10.0.0.1", "at": T0, "before_min": 30}),
-        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "outcomes": ["lockout"]}),
-        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "logon_types": ["3*"]}),
-        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "logon_types": ["3"] * 11}),
+        # A caller cannot narrow a fan-out to an outcome or a logon type: there is no such parameter.
+        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "outcomes": ["success"]}),
+        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "logon_types": ["10"]}),
+        (LogonFanoutParams, {"pivot": "target_user", "value": "ann\n", "at": T0, "before_min": 30}),
         (LogonFanoutParams, {"pivot": "source_host", "value": "ws", "at": T0, "before_min": 30, "family": "sshd"}),
-        (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "family": "sshd",
-                             "outcomes": ["failure", "lockout"]}),
         (LogonFanoutParams, {"pivot": "source_ip", "value": "10.0.0.1", "at": T0, "before_min": 30, "family": "pam"}),
         (ProcessLineageParams, {"host": "SRV-01", "at": T0, "after_min": 5}),
         (ProcessLineageParams, {"host": "SRV-01", "image": "C:\\x.exe", "process_guid": GUID, "at": T0, "after_min": 5}),

@@ -5,9 +5,10 @@ indexer (OpenSearch), and the evaluation harness's event store (``lg_sotf.eval.w
 answers the same bodies from a dataset's telemetry. Both refuse a body that fails
 :func:`lg_sotf.tools.wazuh.dsl.check_search`.
 
-:class:`IndexerClient` can do one thing: ``POST /<index>/_search``. The base URL, the index pattern and
-the credentials are the tenant's source configuration, given when the client is built; no parameter of a
-tool reaches the URL. Every request goes through the install's destination policy
+:class:`IndexerClient` can do one thing: ``POST /<index>/_search``. The host, the index pattern and the
+credentials are the tenant's source configuration, given when the client is built; no parameter of a
+tool reaches the URL, and the source's URL gives the scheme, the host and the port only (one with a path or
+a query is refused: it would choose the endpoint). Every request goes through the install's destination policy
 (:class:`lg_sotf.net.egress.PolicyTransport`: https outside development, every resolved address checked,
 the connection pinned to it), redirects are never followed, the response body is capped, and at most two
 searches run at once. A failed search is not retried: it is a missing fact, never a retry storm.
@@ -107,12 +108,17 @@ class IndexerClient:
         """``scope`` is added to every search (a tenant on a shared cluster; no source setting provides one
         yet, INT3.2). ``transport`` is a test hook: it still goes through ``policy``, only unpinned."""
         policy.check_url(base_url)
+        where = httpx.URL(base_url)
+        # Only the scheme, the host and the port come from the source: a path or a query in its URL would
+        # choose the endpoint (``/_all/_delete_by_query?q=`` in front of ``/<index>/_search``).
+        if where.path not in ("", "/") or where.query or where.fragment or "#" in base_url:
+            raise SourceConfigError("wazuh config.base_url must be a scheme, a host and a port, without a path or a query")
         if not INDEX.fullmatch(index):
             raise SourceConfigError("wazuh config.index must be an index name or pattern")
         if not username or not password:
             raise SourceConfigError("wazuh source requires the 'username' and 'password' credentials")
-        self._base_url = base_url
         self._path = f"/{index}/_search"
+        self._url = httpx.URL(scheme=where.scheme, host=where.host, port=where.port, path=self._path)
         self._authorization = "Basic " + base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
         self._policy = policy
         self._verify = verify
@@ -144,7 +150,6 @@ class IndexerClient:
             # The one client built outside guarded_client: it is behind this boundary and the same policy.
             inner = self._transport or httpx.AsyncHTTPTransport(verify=self._verify)  # noqa: TID251
             self._http = httpx.AsyncClient(
-                base_url=self._base_url,
                 transport=PolicyTransport(inner, self._policy, self._resolver, pin=self._transport is None),
                 follow_redirects=False,
                 timeout=httpx.Timeout(self._timeout_s, connect=min(5.0, self._timeout_s)),
@@ -152,8 +157,9 @@ class IndexerClient:
             )
         async with self._slots:
             status, raw = await self._post(self._http, scoped)
-        if status >= 400:
-            raise IndexerUnavailable(_STATUS_REASONS.get(status, "indexer_error" if status >= 500 else "request_refused"))
+        if status != 200:  # only a 200 is an answer: not a 204, a partial 206, a redirect or an error
+            other = "indexer_error" if status >= 500 else "request_refused" if status >= 400 else "bad_response"
+            raise IndexerUnavailable(_STATUS_REASONS.get(status, other))
         try:
             answer = json.loads(raw)
         except ValueError:
@@ -168,7 +174,7 @@ class IndexerClient:
     async def _post(self, http: httpx.AsyncClient, body: Dict[str, Any]) -> Tuple[int, bytes]:
         try:
             async with asyncio.timeout(self._timeout_s * 2):
-                async with http.stream("POST", self._path, json=body) as response:
+                async with http.stream("POST", self._url, json=body) as response:
                     return response.status_code, await read_capped(response, MAX_RESPONSE_BYTES)
         except SourceConfigError:  # the destination policy refused the address the host resolved to
             raise IndexerUnavailable("destination_refused") from None

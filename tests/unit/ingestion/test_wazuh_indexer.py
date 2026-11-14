@@ -20,12 +20,12 @@ from lg_sotf.tools.wazuh.indexer import IndexerUnavailable
 from lg_sotf.tools.wazuh.tools import HOST_ACTIVITY, wazuh_tools
 from tests.unit.ingestion._support import make_source, public_resolver
 from tests.unit.tools._support import Ctx, registry
+from tests.unit.tools.wazuh._support import nothing_found
 
 pytestmark = pytest.mark.unit
 
 T0 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
-EMPTY = {"timed_out": False, "_shards": {"failed": 0}, "hits": {"hits": []},
-         "aggregations": {"total": {"value": 0}, "oldest": {"value": 1.7e12}}}
+EMPTY = nothing_found()
 PARAMS = {"host": "SRV-01", "at": T0, "before_min": 5, "after_min": 5}
 
 
@@ -153,6 +153,7 @@ async def test_why_a_call_cannot_be_answered_is_a_bounded_reason(estate: Estate,
     assert await reason("t", "keyless", WazuhIndexers(production, None, deps=estate.deps())) == "credentials_missing"
     for n, config in enumerate((
         {"index": "wazuh-alerts-*/_delete_by_query"}, {"base_url": "ftp://indexer.example"}, {"base_url": None},
+        {"base_url": "https://indexer.t.example:9200/_all/_delete_by_query?q="}, {"base_url": "https://indexer.t.example:9200/proxy"},
         {"max_event_lag_s": -1}, {"max_event_lag_s": "soon"}, {"tls_verify": "no"},
     )):
         estate.add("t", f"bad{n}", f"bad{n}", **config)

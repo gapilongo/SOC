@@ -10,7 +10,9 @@ store alike, and refuses anything else, so a query that is not on this page is n
 * the query is ``bool`` / ``filter`` over ``term``, ``terms`` and ``range`` clauses. ``range`` is on the
   alert time only. There is no ``should``, ``must_not``, ``script``, ``query_string``, ``wildcard``,
   ``regexp``, ``prefix``, ``fuzzy`` or ``match``: a value is compared whole, so ``*`` or a quote in it is a
-  character like any other;
+  character like any other. A ``term`` on one of the :data:`NAMES` fields (a Windows user or host name,
+  which Windows compares without case and logs as the client typed it) may ask for ``case_insensitive``;
+  no other option exists;
 * an aggregation is ``terms`` (at most :data:`MAX_BUCKETS` buckets), ``cardinality``, ``min``, ``max``,
   ``value_count`` or ``filters`` over the same clauses;
 * every field is in :data:`FIELDS`, and every value is a string (the keys and the structure never come
@@ -67,6 +69,8 @@ FIELDS: FrozenSet[str] = frozenset({
     SERVICE_IMAGE_PATH, SERVICE_NAME,
 })
 """Every field a query may filter, sort, aggregate on or read back. Nothing else leaves the indexer."""
+NAMES: FrozenSet[str] = frozenset({TARGET_USER, WORKSTATION, CALLER, AGENT})
+"""Fields a ``term`` may match without case: ``Administrator`` and ``ADMINISTRATOR`` are one account."""
 
 MAX_HITS = 50
 MAX_BUCKETS = 50
@@ -97,6 +101,11 @@ def instant(when: datetime) -> str:
 
 def term(field: str, value: str) -> Clause:
     return {"term": {field: value}}
+
+
+def named(field: str, value: str) -> Clause:
+    """A user or host name, whatever case it was typed in (``field`` must be one of :data:`NAMES`)."""
+    return {"term": {field: {"value": value, "case_insensitive": True}}}
 
 
 def terms(field: str, values: Sequence[str]) -> Clause:
@@ -170,6 +179,10 @@ def _clause(clause: Any, depth: int = 0) -> None:
         return
     if not _field(field):
         raise _refuse("field")
+    if kind == "term" and type(value) is dict:  # the one option: a name matched without case
+        if field not in NAMES or set(value) != {"value", "case_insensitive"} or value["case_insensitive"] is not True:
+            raise _refuse("value")
+        value = value["value"]
     if kind == "terms" and type(value) is not list:
         raise _refuse("value")
     values: List[Any] = value if kind == "terms" else [value]

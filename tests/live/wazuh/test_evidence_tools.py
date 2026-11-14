@@ -110,9 +110,10 @@ def calls_for(item: Any, digest: str) -> List[Call]:
     asked: List[Call] = [
         ("wazuh.host_activity", {"host": host, "at": at, "before_min": 30, "after_min": 15}),
         ("wazuh.host_activity", {"host": "NO-SUCH-HOST", "at": at, "before_min": 30, "after_min": 15}),
-        ("wazuh.logon_fanout", {"pivot": "target_host", "value": host, "at": at, "before_min": 15, "after_min": 1,
-                                "logon_types": ["3"], "outcomes": ["success"]}),
+        ("wazuh.logon_fanout", {"pivot": "target_host", "value": host, "at": at, "before_min": 15, "after_min": 1}),
         ("wazuh.logon_fanout", {"pivot": "target_host", "value": host, "at": at, "before_min": 1_440, "after_min": 15}),
+        # A host or user name typed in another case is the same name (the term's case_insensitive option).
+        ("wazuh.logon_fanout", {"pivot": "target_host", "value": host.swapcase(), "at": at, "before_min": 1_440, "after_min": 15}),
         ("wazuh.process_lineage", {"host": host, "image": PSEXESVC, "at": at, "after_min": 15}),
         ("wazuh.prevalence", {"kind": "process_image", "value": PSEXESVC, "days": 30}),
         ("wazuh.prevalence", {"kind": "service_name", "value": "PSEXESVC", "days": 20}),
@@ -124,10 +125,11 @@ def calls_for(item: Any, digest: str) -> List[Call]:
         asked += [("wazuh.logon_fanout", {"pivot": "source_ip", "value": ip, "at": at, "before_min": before, "after_min": 10})
                   for before in (30, 1_440)]
     if user:
-        asked.append(("wazuh.logon_fanout", {"pivot": "target_user", "value": user, "at": at, "before_min": 1_440, "after_min": 10,
-                                             "outcomes": ["failure"]}))
+        asked += [("wazuh.logon_fanout", {"pivot": "target_user", "value": name, "at": at, "before_min": 1_440, "after_min": 10})
+                  for name in (user, user.upper())]
     if workstation:
-        asked.append(("wazuh.logon_fanout", {"pivot": "source_host", "value": workstation, "at": at, "before_min": 1_440, "after_min": 10}))
+        asked += [("wazuh.logon_fanout", {"pivot": "source_host", "value": name, "at": at, "before_min": 1_440, "after_min": 10})
+                  for name in (workstation, workstation.lower())]
     if eventdata(alert, "imagePath"):
         asked.append(("wazuh.prevalence", {"kind": "service_image_path", "value": eventdata(alert, "imagePath"), "days": 30}))
     if eventdata(alert, "parentProcessGuid"):

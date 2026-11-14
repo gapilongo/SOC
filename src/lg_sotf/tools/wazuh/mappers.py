@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Generic, List, Mapping, Optional, Sequence, Tuple, TypeVar
+from typing import Any, Dict, Generic, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from lg_sotf.models.evidence_fact import (
     MAX_COMMAND_LINE_CHARS,
@@ -37,7 +37,7 @@ from lg_sotf.models.evidence_fact import (
 )
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.wazuh import dsl
-from lg_sotf.tools.wazuh.templates import LogonFanoutParams
+from lg_sotf.tools.wazuh.templates import LOGONS, LogonFanoutParams, counted
 
 V = TypeVar("V")
 _TECHNIQUE = re.compile(r"^T\d{4}(\.\d{3})?$")
@@ -55,7 +55,7 @@ class Answer:
     hits: Tuple[Mapping[str, Any], ...]
     aggs: Mapping[str, Any]
     partial: bool
-    """It timed out, stopped at ``terminate_after`` or a shard failed: what it shows is a lower bound."""
+    """It timed out, stopped at ``terminate_after``, or not every shard answered: what it shows is a lower bound."""
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,10 @@ def read(response: Any) -> Answer:
         raise Malformed("not a search response")
     sources = tuple(hit["_source"] for hit in hits if isinstance(hit, Mapping) and isinstance(hit.get("_source"), Mapping))
     aggs = response.get("aggregations")
-    partial = bool(response.get("timed_out") or response.get("terminated_early") or shards.get("failed"))
+    # A shard that is not allocated is neither successful nor failed: only "every shard answered" is a whole search.
+    total, answered = shards.get("total"), shards.get("successful")
+    every_shard = type(total) is int and type(answered) is int and answered >= total and not shards.get("failed")
+    partial = bool(response.get("timed_out") or response.get("terminated_early")) or not every_shard
     return Answer(sources, aggs if isinstance(aggs, Mapping) else {}, partial or len(sources) != len(hits))
 
 
@@ -109,14 +112,20 @@ def when(text: Optional[str]) -> Optional[datetime]:
     return parsed if parsed is not None and parsed.tzinfo is not None else None
 
 
-def _number(aggs: Mapping[str, Any], name: str) -> Optional[float]:
+def asked(aggs: Mapping[str, Any], name: str, key: str = "value") -> Any:
+    """What an aggregation the template asked for answered. Its absence is not "nothing found": it is not the answer."""
     agg = aggs.get(name)
-    value = agg.get("value") if isinstance(agg, Mapping) else None
+    if not isinstance(agg, Mapping) or key not in agg:
+        raise Malformed("an aggregation is missing")
+    return agg[key]
+
+
+def _number(aggs: Mapping[str, Any], name: str) -> Optional[float]:
+    value = asked(aggs, name)
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else None
 
 
 def count(aggs: Mapping[str, Any], name: str) -> int:
-    """A count the search must carry; its absence means the answer is not the one asked for."""
     value = _number(aggs, name)
     if value is None or value < 0:
         raise Malformed("an aggregation is missing")
@@ -131,17 +140,26 @@ def instant(aggs: Mapping[str, Any], name: str) -> Optional[datetime]:
 
 def buckets(aggs: Mapping[str, Any], name: str) -> Tuple[List[Tuple[str, int]], bool]:
     """``(key, count)`` of a ``terms`` aggregation, and whether it lists every value (nothing under "other")."""
-    agg = aggs.get(name)
-    if not isinstance(agg, Mapping) or not isinstance(agg.get("buckets"), list):
-        return [], True
-    rows = agg["buckets"]
+    rows = asked(aggs, name, "buckets")
+    if not isinstance(rows, list):
+        raise Malformed("an aggregation is missing")
     found = [(str(row["key"]), int(row.get("doc_count", 0))) for row in rows if isinstance(row, Mapping) and "key" in row]
-    return found[:MAX_LIST_ITEMS], not agg.get("sum_other_doc_count") and len(found) <= MAX_LIST_ITEMS
+    return found[:MAX_LIST_ITEMS], not aggs[name].get("sum_other_doc_count") and len(found) <= MAX_LIST_ITEMS
 
 
-def _keys(aggs: Mapping[str, Any], name: str, limit: int = MAX_TEXT_CHARS) -> Tuple[List[str], bool]:
+def _keys(aggs: Mapping[str, Any], name: str, limit: int = MAX_TEXT_CHARS, *, fold: bool = False) -> Tuple[List[str], bool]:
+    """The values a ``terms`` aggregation lists, most frequent first.
+
+    ``fold``: a Windows user or host name, which is one name whatever its case. The spellings are counted
+    together and the name is given in lower case.
+    """
     rows, whole = buckets(aggs, name)
-    return [key[:limit] for key, _ in rows if key], whole
+    counts: Dict[str, int] = {}
+    for key, n in rows:
+        name_ = (key.casefold() if fold else key)[:limit]
+        if name_:
+            counts[name_] = counts.get(name_, 0) + n
+    return [key for key, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))], whole
 
 
 def image_name(path: Optional[str]) -> Optional[str]:
@@ -201,6 +219,9 @@ def _host_event(doc: Mapping[str, Any], path: str, notes: List[Redaction]) -> Op
 def host_activity(answer: Answer, start: datetime, end: datetime) -> Optional[Mapped[HostActivityValue]]:
     """``None`` when the host raised nothing in the window."""
     total = count(answer.aggs, "total")
+    groups, all_groups = buckets(answer.aggs, "groups")
+    techniques, all_techniques = _keys(answer.aggs, "techniques")
+    level = _number(answer.aggs, "max_level")
     if not total and not answer.hits:
         return None
     notes: List[Redaction] = []
@@ -209,9 +230,6 @@ def host_activity(answer: Answer, start: datetime, end: datetime) -> Optional[Ma
         event = _host_event(doc, f"/value/events/{len(events)}", notes)
         if event is not None:
             events.append(event)
-    groups, all_groups = buckets(answer.aggs, "groups")
-    techniques, all_techniques = _keys(answer.aggs, "techniques")
-    level = _number(answer.aggs, "max_level")
     value = HostActivityValue(
         window_start=start,
         window_end=end,
@@ -228,9 +246,18 @@ def host_activity(answer: Answer, start: datetime, end: datetime) -> Optional[Ma
 
 
 def _outcome(aggs: Mapping[str, Any], name: str) -> Mapping[str, Any]:
-    outcomes = aggs.get("outcomes")
-    found = outcomes.get("buckets", {}).get(name) if isinstance(outcomes, Mapping) else None
-    return found if isinstance(found, Mapping) else {}
+    found = asked(aggs, "outcomes", "buckets")
+    bucket = found.get(name) if isinstance(found, Mapping) else None
+    if not isinstance(bucket, Mapping):
+        raise Malformed("an aggregation is missing")
+    return bucket
+
+
+def _doc_count(bucket: Mapping[str, Any]) -> int:
+    value = bucket.get("doc_count")
+    if type(value) is not int or value < 0:
+        raise Malformed("an aggregation is missing")
+    return value
 
 
 def first_failure_and_success(answer: Answer) -> Tuple[Optional[datetime], Optional[datetime]]:
@@ -246,19 +273,23 @@ def logon_fanout(
     lockouts: Optional[int],
     success_after_failure: Optional[datetime],
 ) -> Optional[Mapped[LogonFanoutValue]]:
-    """``None`` when no logon matched. ``lockouts`` is the count read apart, when the pivot needed it."""
-    aggs = answer.aggs
-    doc_count = {name: int(_outcome(aggs, name).get("doc_count", 0)) for name in ("failure", "success", "lockout", "unknown_user")}
-    locked = doc_count["lockout"] if lockouts is None else lockouts
-    if not doc_count["failure"] + doc_count["success"] + locked:
-        return None
-    failed_users, all_failed = _keys(_outcome(aggs, "failure"), "users")
-    success_users, all_successes = _keys(_outcome(aggs, "success"), "users")
+    """``None`` when no logon matched. ``lockouts`` is the count read apart, when the pivot needed it.
+
+    Every count is over every outcome and every logon type of the pivot in the window. Windows user and
+    host names are one name whatever their case: their spellings are counted together.
+    """
+    aggs, spec, outcomes = answer.aggs, LOGONS[params.family], counted(params)
+    doc_count = {name: _doc_count(_outcome(aggs, name)) for name in [*outcomes, "unknown_user"]}
+    locked = doc_count.get("lockout", lockouts or 0)
+    users = {name: _keys(_outcome(aggs, name), "users", fold=spec.user in dsl.NAMES) for name in outcomes}
     sources, all_sources = _keys(aggs, "source_list")
-    source_hosts, all_source_hosts = _keys(aggs, "source_hosts")
-    logon_types, all_types = _keys(aggs, "logon_types", MAX_TOKEN_CHARS)
+    source_hosts, all_source_hosts = _keys(aggs, "source_hosts", fold=True) if spec.source_host else ([], True)
+    logon_types, all_types = _keys(aggs, "logon_types", MAX_TOKEN_CHARS) if spec.logon_type else ([], True)
     distinct = {name: count(aggs, name) for name in ("users", "sources", "hosts")}
     first_failure, _ = first_failure_and_success(answer)
+    if not doc_count["failure"] + doc_count["success"] + locked:
+        return None
+    all_users = all(whole for _, whole in users.values())
     after: Optional[int] = None
     if first_failure is not None and success_after_failure is not None and success_after_failure >= first_failure:
         after = int((success_after_failure - first_failure).total_seconds())
@@ -271,17 +302,18 @@ def logon_fanout(
         successes=doc_count["success"],
         lockouts=locked,
         unknown_user_failures=doc_count["unknown_user"],
-        distinct_target_users=distinct["users"],
+        # Every user is in one of the outcome lists: counted there, two spellings of a name are one user.
+        distinct_target_users=len({name for names, _ in users.values() for name in names}) if all_users else distinct["users"],
         distinct_sources=distinct["sources"],
         distinct_target_hosts=distinct["hosts"],
         first_success_after_failure_s=after,
-        success_users=success_users,
-        failed_users=failed_users,
+        success_users=users["success"][0],
+        failed_users=users["failure"][0],
         sources=sources,
         source_hosts=source_hosts,
         logon_types=logon_types,
     )
-    whole = all_failed and all_successes and all_sources and all_source_hosts and all_types
+    whole = all_users and all_sources and all_source_hosts and all_types
     return Mapped(value, whole and max(distinct.values()) <= dsl.PRECISION)
 
 
@@ -323,17 +355,22 @@ def _node(
 
 
 def process_lineage(
-    ancestry: Sequence[Mapping[str, Any]], named_parent: Optional[Mapping[str, Any]], children: Sequence[Mapping[str, Any]]
+    ancestry: Sequence[Mapping[str, Any]],
+    named_parent: Optional[Mapping[str, Any]],
+    children: Sequence[Mapping[str, Any]],
+    *,
+    cut: bool = False,
 ) -> Optional[Mapped[ProcessLineageValue]]:
     """The lineage fact's value from creation events.
 
     ``ancestry`` is oldest first, the subject process last. ``named_parent`` is the event whose *parent
-    fields* describe the process above the oldest one found (its own event was not in the index).
-    ``None`` when there is no process to name.
+    fields* describe the process above the oldest one found (its own event was not read).
+    ``cut``: the walk up stopped at the asked depth with a parent still above; the fact says so (a
+    ``truncated`` redaction on the chain) and is not whole. ``None`` when there is no process to name.
     """
-    notes: List[Redaction] = []
+    notes: List[Redaction] = [Redaction(path="/value/chain", reason="truncated")] if cut else []
     chain: List[ProcessNode] = []
-    whole = len(children) <= MAX_LIST_ITEMS
+    whole = len(children) <= MAX_LIST_ITEMS and not cut
     for doc, as_parent in [(named_parent, True), *((event, False) for event in ancestry)]:
         node = _node(doc, f"/value/chain/{len(chain)}", notes, parent=as_parent) if doc is not None else None
         if node is not None:

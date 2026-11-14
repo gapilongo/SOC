@@ -38,6 +38,8 @@ def _matches(doc: Doc, clause: Mapping[str, Any]) -> bool:
     if kind == "range":
         at = event_time(doc)
         return ("gte" not in value or at >= _instant(value["gte"])) and ("lte" not in value or at <= _instant(value["lte"]))
+    if isinstance(value, Mapping):  # a name matched without case
+        return value["value"].casefold() in {found.casefold() for found in field_values(doc, field)}
     wanted = set(value) if kind == "terms" else {value}
     return bool(wanted & set(field_values(doc, field)))
 

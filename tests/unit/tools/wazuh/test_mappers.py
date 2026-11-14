@@ -75,8 +75,9 @@ def _settled(**kwargs: Any) -> Indexer:
 
 @pytest.mark.parametrize(
     "flags",
-    [{"timed_out": True}, {"terminated_early": True}, {"failed_shards": 1}],
-    ids=["timeout", "stopped at terminate_after", "failed shards"],
+    [{"timed_out": True}, {"terminated_early": True}, {"failed_shards": 1},
+     {"_shards": {"total": 5, "successful": 3, "skipped": 0, "failed": 0}}, {"_shards": {"failed": 0}}],
+    ids=["timeout", "stopped at terminate_after", "failed shards", "unassigned shards", "a header that does not say"],
 )
 async def test_incomplete_results_are_marked(flags: Dict[str, Any]) -> None:
     whole = await _facts(_settled())
@@ -147,29 +148,64 @@ def test_a_list_cut_by_a_cap_is_not_whole() -> None:
     # An alert whose time cannot be read is not listed, and the fact says it is not whole.
     unread = mappers.host_activity(_answer([{**_event(), "timestamp": "yesterday"}], {**aggs, "total": {"value": 1}}), T0, T0)
     assert unread is not None and not unread.whole and unread.value.events == [] and unread.value.total == 1
-    assert mappers.host_activity(_answer([], {"total": {"value": 0}}), T0, T0) is None
+    quiet = {"total": {"value": 0}, "max_level": {"value": None}, "groups": _terms(), "techniques": _terms()}
+    assert mappers.host_activity(_answer([], quiet), T0, T0) is None
+    for name in quiet:  # an answer without an aggregation that was asked for is not "nothing found"
+        with pytest.raises(Malformed):
+            mappers.host_activity(_answer([], {key: value for key, value in quiet.items() if key != name}), T0, T0)
     # Logons: a user or source list beyond its 50 buckets, or a distinct count above the exact range.
     params = LogonFanoutParams(pivot="source_ip", value="10.20.1.83", at=T0, before_min=30)
     bucket = {"doc_count": 2, "users": _terms("ann", "bob"), "first": {"value": 1_793_610_000_000.0}}
+    none = {"doc_count": 0, "users": _terms(), "first": {"value": None}}
+    outcomes = {"failure": bucket, "success": none, "unknown_user": none}
     logons = {"users": {"value": 2}, "sources": {"value": 1}, "hosts": {"value": 1}, "source_list": _terms("10.20.1.83"),
-              "source_hosts": _terms("WS-1"), "logon_types": _terms("3"), "outcomes": {"buckets": {"failure": bucket}}}
+              "source_hosts": _terms("WS-1"), "logon_types": _terms("3"), "outcomes": {"buckets": outcomes}}
 
     def fanout(aggs: Mapping[str, Any]) -> Any:
         return mappers.logon_fanout(params, _answer([], aggs), start=T0, end=T0, lockouts=None, success_after_failure=None)
 
     assert fanout(logons).whole and fanout(logons).value.failed_users == ["ann", "bob"]
     listed = {**bucket, "users": _terms("ann", "bob", other=7)}
-    assert not fanout({**logons, "outcomes": {"buckets": {"failure": listed}}}).whole
+    assert not fanout({**logons, "outcomes": {"buckets": {**outcomes, "failure": listed}}}).whole
     assert not fanout({**logons, "source_list": _terms("10.20.1.83", other=1)}).whole
     assert not fanout({**logons, "users": {"value": dsl.PRECISION + 1}}).whole
-    assert fanout({**logons, "outcomes": {"buckets": {}}}) is None
-    with pytest.raises(Malformed):  # a count the search must carry is missing: not the answer that was asked for
-        fanout({key: value for key, value in logons.items() if key != "hosts"})
+    assert fanout({**logons, "outcomes": {"buckets": {**outcomes, "failure": none}}}) is None
+    # A count or a list the search must carry is missing: not the answer that was asked for, and never "no logon".
+    for name in logons:
+        with pytest.raises(Malformed):
+            fanout({key: value for key, value in logons.items() if key != name})
+    for name in outcomes:
+        with pytest.raises(Malformed):
+            fanout({**logons, "outcomes": {"buckets": {key: value for key, value in outcomes.items() if key != name}}})
+    for part in bucket:
+        with pytest.raises(Malformed):
+            fanout({**logons, "outcomes": {"buckets": {**outcomes, "failure": {k: v for k, v in bucket.items() if k != part}}}})
+    # A Windows user or host name is one name whatever its case: the spellings are counted together.
+    typed = {"doc_count": 21, "first": {"value": 1_793_610_000_000.0},
+             "users": {"sum_other_doc_count": 0, "buckets": [{"key": "ADMINISTRATOR", "doc_count": 10},
+                                                              {"key": "Administrator", "doc_count": 10}, {"key": "bob", "doc_count": 1}]}}
+    entered = {**none, "doc_count": 1, "users": _terms("administrator")}
+    folded = fanout({**logons, "users": {"value": 4}, "source_hosts": _terms("WS-1", "ws-1", "Ws-2"),
+                     "outcomes": {"buckets": {**outcomes, "failure": typed, "success": entered}}}).value
+    assert (folded.failed_users, folded.success_users, folded.distinct_target_users) == (["administrator", "bob"], ["administrator"], 2)
+    assert folded.source_hosts == ["ws-1", "ws-2"] and (folded.failures, folded.successes) == (21, 1)
+    # An sshd user name is exact.
+    ssh = LogonFanoutParams(pivot="source_ip", value="203.0.113.9", at=T0, before_min=30, family="sshd")
+    ssh_aggs = {key: value for key, value in logons.items() if key not in ("source_hosts", "logon_types")}
+    exact = mappers.logon_fanout(ssh, _answer([], {**ssh_aggs, "outcomes": {"buckets": {**outcomes, "failure": {**bucket, "users": _terms("Root", "root")}}}}),
+                                 start=T0, end=T0, lockouts=None, success_after_failure=None)
+    assert exact is not None and exact.value.failed_users == ["Root", "root"] and exact.value.distinct_target_users == 2
     # Prevalence: the agent count is exact only up to the precision threshold.
     seen = {"total": {"value": 9_000}, "hosts": {"value": dsl.PRECISION + 1}, "first": {"value": 1.79e12}, "last": {"value": 1.79e12}}
     assert not mappers.prevalence(_answer([], seen), T0, T0).whole  # type: ignore[union-attr]
     assert mappers.prevalence(_answer([], {**seen, "hosts": {"value": 12}}), T0, T0).whole  # type: ignore[union-attr]
     assert mappers.prevalence(_answer([], {**seen, "total": {"value": 0}}), T0, T0) is None
+    for name in seen:
+        with pytest.raises(Malformed):
+            mappers.prevalence(_answer([], {key: value for key, value in seen.items() if key != name}), T0, T0)
+    with pytest.raises(Malformed):  # the coverage search without its answer
+        mappers.instant({}, "oldest")
+    assert mappers.instant({"oldest": {"value": None}}, "oldest") is None
 
 
 def test_strings_from_the_indexer_are_bounded_and_secrets_are_masked() -> None:
@@ -205,6 +241,9 @@ def test_strings_from_the_indexer_are_bounded_and_secrets_are_masked() -> None:
     nameless = mappers.process_lineage([child], None, [_event(3, processGuid="{x}")])
     assert nameless is not None and not nameless.whole and nameless.value.children == []
     assert mappers.process_lineage([], None, []) is None
+    # A walk up that stopped at the asked depth with a parent still above: the fact says the chain was cut.
+    cut = mappers.process_lineage([child], child, [], cut=True)
+    assert cut is not None and not cut.whole and [(r.path, r.reason) for r in cut.redactions][0] == ("/value/chain", "truncated")
 
 
 def test_the_command_template_is_the_recipe_of_the_routine_command_lists() -> None:
@@ -227,10 +266,15 @@ def test_a_response_that_is_not_a_search_response_is_malformed(response: Any) ->
 
 
 def test_a_response_is_read_with_its_flags() -> None:
-    body = {"timed_out": False, "_shards": {"failed": 0}, "hits": {"hits": [{"_source": {"id": "1"}}]}, "aggregations": {"n": {"value": 1}}}
+    shards = {"total": 3, "successful": 3, "skipped": 0, "failed": 0}
+    body = {"timed_out": False, "_shards": shards, "hits": {"hits": [{"_source": {"id": "1"}}]}, "aggregations": {"n": {"value": 1}}}
     assert mappers.read(body) == Answer(({"id": "1"},), {"n": {"value": 1}}, partial=False)
     assert mappers.read({**body, "timed_out": True}).partial and mappers.read({**body, "terminated_early": True}).partial
-    assert mappers.read({**body, "_shards": {"failed": 2}}).partial
+    assert mappers.read({**body, "_shards": {**shards, "successful": 1, "failed": 2}}).partial
+    # A shard that is not allocated is neither successful nor failed: only "every shard answered" is a whole search.
+    assert mappers.read({**body, "_shards": {**shards, "successful": 2}}).partial
+    assert mappers.read({**body, "_shards": {"failed": 0}}).partial and mappers.read({**body, "_shards": {"total": 3}}).partial
+    assert mappers.read({**body, "_shards": {**shards, "successful": "3"}}).partial
     assert mappers.read({**body, "hits": {"hits": [{"_id": "no source"}]}}).partial, "a hit without its source is a hit not read"
     assert mappers.values({"a": {"b": [1, None, {"c": 1}, "x"]}}, "a.b") == ["1", "x"] and mappers.values({"a": 1}, "a.b") == []
     assert mappers.when("2026-10-19T07:28:01.928+0000") == datetime(2026, 10, 19, 7, 28, 1, 928000, tzinfo=UTC)

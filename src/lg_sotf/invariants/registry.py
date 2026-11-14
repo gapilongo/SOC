@@ -459,11 +459,15 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "are query templates: a caller gives typed, bounded values, never a query, a field or an index. Every "
             "search body is checked against an allow-list before it is run (term, terms and the time range in a "
             "filter, counting aggregations, allow-listed fields, fixed row, time and document caps), and a value "
-            "is only ever the right-hand side of a clause. The one request the indexer client can send is POST "
-            "_search on the index pattern of the Wazuh source the run's own alert came from, with that source's "
-            "credentials, through the destination policy; it reads in a shadow run too, as a reviewed read of "
-            "the tenant's own system. A result is complete only when the indexer finished every search, no cap "
-            "cut what the fact lists, the window had closed and the index reached back to its start."
+            "is only ever the right-hand side of a clause. A caller cannot narrow what a fact reports: a logon "
+            "fan-out always reads every outcome and every logon type of its pivot. The one request the indexer "
+            "client can send is POST _search on the index pattern of the Wazuh source the run's own alert came "
+            "from (the source's URL gives the scheme, the host and the port, never a path or a query), with "
+            "that source's credentials, through the destination policy; it reads in a shadow run too, as a "
+            "reviewed read of the tenant's own system. Only an HTTP 200 in which every shard answered is an "
+            "answer. A result is complete only when the indexer finished every search, no cap cut what the fact "
+            "lists or how far a process's ancestry was walked, one process (not several) matched a lineage, the "
+            "window had closed and the index reached back to its start."
         ),
         epic="AI-E2",
         threats=("TM-EVT-3", "TM-EVT-9", "TM-EVT-10", "TM-EVT-12"),
@@ -515,6 +519,25 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "tests/unit/ingestion/test_wazuh_indexer.py::"
             "test_a_call_reaches_the_source_of_its_own_alert_with_that_sources_credentials",
             "tests/unit/architecture/test_tool_registry.py::test_the_wazuh_indexer_is_searched_only_by_its_tools",
+            # From the security review of PR #433.
+            "tests/unit/tools/wazuh/test_indexer.py::test_the_base_url_cannot_choose_the_endpoint",
+            "tests/unit/tools/wazuh/test_indexer.py::test_the_request_is_built_from_the_host_and_the_index_only",
+            "tests/unit/tools/wazuh/test_indexer.py::test_an_unreachable_or_broken_indexer_is_failed_with_a_reason",
+            "tests/unit/tools/wazuh/test_indexer.py::test_a_refusing_indexer_is_a_bounded_reason_and_is_not_asked_again",
+            "tests/unit/ingestion/test_wazuh_indexer.py::test_why_a_call_cannot_be_answered_is_a_bounded_reason",
+            "tests/unit/tools/wazuh/test_mappers.py::test_a_list_cut_by_a_cap_is_not_whole",
+            "tests/unit/tools/wazuh/test_mappers.py::test_a_response_is_read_with_its_flags",
+            "tests/unit/tools/wazuh/test_tools.py::test_the_ancestry_is_walked_up_to_the_asked_depth",
+            "tests/unit/tools/wazuh/test_tools.py::"
+            "test_several_processes_of_one_image_are_each_described_and_none_is_complete",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p1_unassigned_shards_are_never_a_complete_answer",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p2_an_answer_without_the_asked_aggregation_is_failed",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p5_failures_typed_in_another_case_are_counted_for_the_user",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p6_a_logon_event_id_from_another_provider_is_not_a_logon",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p8_the_base_url_cannot_choose_the_endpoint",
+            "tests/unit/tools/wazuh/test_review_433.py::test_p9_only_a_200_is_an_answer",
+            "tests/unit/tools/wazuh/test_review_433.py::"
+            "test_p10_a_fact_read_with_a_filter_does_not_say_zero_for_what_it_did_not_read",
         ),
     ),
 )

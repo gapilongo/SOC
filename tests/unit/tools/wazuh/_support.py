@@ -48,6 +48,28 @@ def corpus(name: str) -> Corpus:
     )
 
 
+def _no_terms() -> Dict[str, Any]:
+    return {"doc_count_error_upper_bound": 0, "sum_other_doc_count": 0, "buckets": []}
+
+
+def _no_outcome() -> Dict[str, Any]:
+    return {"doc_count": 0, "users": _no_terms(), "first": {"value": None}}
+
+
+def nothing_found(**overrides: Any) -> Dict[str, Any]:
+    """A whole search response that matched nothing, with every aggregation any template asks for."""
+    aggs = {
+        **{name: {"value": 0} for name in ("total", "users", "sources", "hosts")},
+        **{name: {"value": None} for name in ("max_level", "first", "last")},
+        **{name: _no_terms() for name in ("groups", "techniques", "source_list", "source_hosts", "logon_types")},
+        "outcomes": {"buckets": {name: _no_outcome() for name in ("failure", "success", "lockout", "unknown_user")}},
+        "oldest": {"value": 1.7e12},
+    }
+    answer = {"timed_out": False, "_shards": {"total": 1, "successful": 1, "skipped": 0, "failed": 0},
+              "hits": {"hits": []}, "aggregations": aggs}
+    return {**answer, **overrides}
+
+
 def raw(alert: Mapping[str, Any], name: str) -> str:
     """A Windows ``eventdata`` value as Windows wrote it (the doubled backslashes undone); '' when absent."""
     found = field_values(alert, ED + name)
@@ -79,10 +101,16 @@ class Investigation:
         return await self.tools.call(self.ctx, f"wazuh.{tool}", params, agent="investigation")
 
     async def fact(self, tool: str, **params: Any) -> Optional[EvidenceFact]:
-        """The call's one fact; ``None`` when nothing matched. A failed call fails the test."""
+        """The call's first fact; ``None`` when nothing matched. A failed call fails the test."""
         result = await self.call(tool, **params)
         assert result.outcome != "failed", (tool, result.value.error)
         return result.value[0] if result.value else None
+
+    async def facts(self, tool: str, **params: Any) -> List[EvidenceFact]:
+        """Every fact of the call (a lineage by image gives one per matching process)."""
+        result = await self.call(tool, **params)
+        assert result.outcome != "failed", (tool, result.value.error)
+        return list(result.value)
 
 
 def investigate(corpus_: Corpus, item: EvalItem, settle_min: float = 15) -> Investigation:

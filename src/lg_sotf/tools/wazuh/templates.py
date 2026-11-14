@@ -7,8 +7,10 @@ or a bound of the time ``range``. The field, the index and the shape of the quer
 
 Windows event data reaches a Wazuh 4.x index with every backslash doubled. Parameters are plain Windows
 strings (``C:\\Windows\\PSEXESVC.exe``); :func:`stored` gives both spellings, so a path matches however
-the indexer holds it. Values are compared whole and case-sensitively: the indexer maps these fields as
-``keyword``.
+the indexer holds it. Values are compared whole and case-sensitively (the indexer maps these fields as
+``keyword``): addresses, GUIDs, hashes, paths, service names and sshd user names are exact. The one
+exception is a Windows user or host name in a logon (:data:`lg_sotf.tools.wazuh.dsl.NAMES`): Windows
+compares those without case and logs them as the client typed them, so they are matched without case.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from lg_sotf.models.evidence_fact import LogonFamily, LogonPivot
 from lg_sotf.tools.wazuh import dsl
-from lg_sotf.tools.wazuh.dsl import Clause, all_of, between, search, term, terms
+from lg_sotf.tools.wazuh.dsl import Clause, all_of, between, named, search, term, terms
 
 MAX_HOST_MINUTES = 60
 MAX_LOGON_LOOKBACK_MINUTES = 1_440
@@ -31,16 +33,18 @@ MAX_LOGON_AFTER_MINUTES = 60
 MAX_LINEAGE_AFTER_MINUTES = 30
 MAX_LINEAGE_DEPTH = 8
 MAX_CHILD_DEPTH = 4
+MAX_LINEAGE_SUBJECTS = 3
+"""Processes of one image a call describes; more than one is an ambiguous answer, and none of the facts is complete."""
 MAX_PREVALENCE_DAYS = 30
 LINEAGE_SLACK = timedelta(seconds=5)
 """A service's process can start a moment before the alert about the service is raised."""
 LINEAGE_LOOKBACK = timedelta(days=1)
 """How far back a process named by its GUID, or a parent, is looked for."""
 SYSMON = "Microsoft-Windows-Sysmon"
+WINDOWS_SECURITY = "Microsoft-Windows-Security-Auditing"
+"""The provider of the Windows logon events: an event with a logon's id from another provider is not a logon."""
 
 Host = Annotated[str, Field(min_length=1, max_length=255, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
-LogonType = Annotated[str, Field(min_length=1, max_length=2, pattern=r"^\d+$")]
-LogonOutcome = Literal["failure", "success", "lockout"]
 PrevalenceKind = Literal["sha256", "process_image", "service_image_path", "service_name"]
 _USER = re.compile(r"^[A-Za-z0-9._$@\\-]{1,128}$")
 _HOST = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
@@ -81,32 +85,24 @@ class HostActivityParams(_Params):
 
 
 class LogonFanoutParams(_Params):
+    """There is no filter on the outcome or the logon type: a call reads every logon of the pivot in the window,
+    so a caller cannot choose what a fact leaves out."""
+
     pivot: LogonPivot
     value: str = Field(min_length=1, max_length=255)
     at: datetime
     before_min: int = Field(ge=1, le=MAX_LOGON_LOOKBACK_MINUTES)
     after_min: int = Field(default=0, ge=0, le=MAX_LOGON_AFTER_MINUTES)
-    logon_types: List[LogonType] = Field(default_factory=list, max_length=10)
-    outcomes: List[LogonOutcome] = Field(default_factory=list, max_length=3)
-    """Which logons are read (default: all the family has). A lockout alone is not a logon: ask for it with one."""
     family: LogonFamily = "windows"
 
     @model_validator(mode="after")
     def _coherent(self) -> LogonFanoutParams:
-        logons = LOGONS[self.family]
         if self.pivot == "source_ip":
             ipaddress.ip_address(self.value)  # a ValueError: not an address
             shaped = True
         else:
             shaped = bool((_USER if self.pivot == "target_user" else _HOST).fullmatch(self.value))
-        asked = set(self.outcomes)
-        if (
-            not shaped
-            or self.pivot not in logons.pivots
-            or not asked <= set(logons.outcomes)
-            or asked == {"lockout"}
-            or (self.logon_types and logons.logon_type is None)
-        ):
+        if not shaped or self.pivot not in LOGONS[self.family].pivots:
             raise ValueError("not a logon this family records")
         return self
 
@@ -162,7 +158,7 @@ class LogonFields:
 _WINDOWS_FAILURES = ("4625", "4771", "4776")
 LOGONS: Mapping[str, LogonFields] = {
     "windows": LogonFields(
-        fixed=(),
+        fixed=(term(dsl.PROVIDER, WINDOWS_SECURITY),),
         outcome_field=dsl.EVENT_ID,
         outcomes={"failure": _WINDOWS_FAILURES, "success": ("4624",), "lockout": ("4740",)},
         unknown_user=all_of(terms(dsl.EVENT_ID, _WINDOWS_FAILURES), term(dsl.SUB_STATUS, "0xc0000064")),
@@ -231,29 +227,27 @@ def host_activity(params: HostActivityParams) -> Dict[str, Any]:
 def _logon_filters(params: LogonFanoutParams, outcomes: List[str], field: str, start: datetime) -> List[Clause]:
     logons = LOGONS[params.family]
     values = [value for outcome in outcomes for value in logons.outcomes[outcome]]
-    filters = [*logons.fixed, terms(logons.outcome_field, values), term(field, params.value)]
-    filters.append(between(start, params.at + minutes(params.after_min)))
-    if params.logon_types and logons.logon_type is not None and outcomes != ["lockout"]:
-        filters.append(terms(logons.logon_type, params.logon_types))
-    return filters
+    pivot = named(field, params.value) if field in dsl.NAMES else term(field, params.value)
+    return [*logons.fixed, terms(logons.outcome_field, values), pivot, between(start, params.at + minutes(params.after_min))]
 
 
-def _asked(params: LogonFanoutParams) -> List[str]:
-    return [outcome for outcome in LOGONS[params.family].outcomes if not params.outcomes or outcome in params.outcomes]
+def counted(params: LogonFanoutParams) -> List[str]:
+    """The outcomes :func:`logons` counts: all of them, a lockout only where it names the pivot as a logon does."""
+    spec = LOGONS[params.family]
+    field = spec.pivots[params.pivot]
+    return [o for o in spec.outcomes if o != "lockout" or spec.lockout_pivots.get(params.pivot) == field]
 
 
 def logons(params: LogonFanoutParams) -> Dict[str, Any]:
-    """The logons where the pivot is ``value``: counts by outcome, distinct users, sources and hosts, who and from where.
+    """Every logon where the pivot is ``value``: counts by outcome, distinct users, sources and hosts, who and from where.
 
-    A lockout is counted here when it names the pivot in the same field as a logon does (the user, the host
-    that raised it); :func:`lockouts` reads the others.
+    Always every outcome and every logon type. A lockout is counted here when it names the pivot in the same
+    field as a logon does (the user, the host that raised it); :func:`lockouts` reads the others.
     """
     spec = LOGONS[params.family]
-    field = spec.pivots[params.pivot]
-    outcomes = [o for o in _asked(params) if o != "lockout" or spec.lockout_pivots.get(params.pivot) == field]
+    field, outcomes = spec.pivots[params.pivot], counted(params)
     buckets = {outcome: terms(spec.outcome_field, spec.outcomes[outcome]) for outcome in outcomes}
-    if "failure" in outcomes:
-        buckets["unknown_user"] = spec.unknown_user
+    buckets["unknown_user"] = spec.unknown_user
     aggs: Dict[str, Any] = {
         "users": _distinct(spec.user),
         "sources": _distinct(spec.source),
@@ -272,7 +266,7 @@ def lockouts(params: LogonFanoutParams) -> Optional[Dict[str, Any]]:
     """The lockouts a source host caused: a lockout names it as the caller, not as a logon's workstation."""
     spec = LOGONS[params.family]
     field = spec.lockout_pivots.get(params.pivot)
-    if "lockout" not in _asked(params) or field is None or field == spec.pivots[params.pivot]:
+    if field is None or field == spec.pivots[params.pivot]:
         return None
     start = params.at - minutes(params.before_min)
     return search(_logon_filters(params, ["lockout"], field, start), aggs={"total": _count()})

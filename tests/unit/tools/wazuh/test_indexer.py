@@ -22,14 +22,13 @@ from lg_sotf.tools.wazuh.templates import HostActivityParams, PrevalenceParams
 from lg_sotf.tools.wazuh.tools import HOST_ACTIVITY, PREVALENCE
 from tests.unit.ingestion._support import MapResolver, public_resolver
 from tests.unit.tools._support import Ctx
-from tests.unit.tools.wazuh._support import over
+from tests.unit.tools.wazuh._support import nothing_found, over
 
 pytestmark = pytest.mark.unit
 
 T0 = datetime(2026, 11, 2, 9, 0, tzinfo=UTC)
 URL = "https://indexer.customer.example:9200"
-EMPTY = {"timed_out": False, "_shards": {"total": 1, "failed": 0}, "hits": {"hits": []},
-         "aggregations": {"total": {"value": 0}, "oldest": {"value": 1.7e12}}}
+EMPTY = nothing_found()
 BODY = templates.host_activity(HostActivityParams(host="SRV-01", at=T0, before_min=5, after_min=5))
 PASSWORD = "test-only-" + "p" * 12
 Server = Callable[[httpx.Request], Any]
@@ -90,12 +89,14 @@ def test_the_index_rule_is_the_pull_sources_rule_and_the_boundary_is_registered(
 @pytest.mark.parametrize(
     ("status", "reason"),
     [(401, "credentials_refused"), (403, "credentials_refused"), (404, "index_not_found"), (429, "rate_limited"),
-     (400, "request_refused"), (500, "indexer_error"), (503, "indexer_error")],
+     (400, "request_refused"), (500, "indexer_error"), (503, "indexer_error"),
+     # Only a 200 is an answer, even when the body is a search response that matched nothing.
+     (201, "bad_response"), (204, "bad_response"), (206, "bad_response"), (301, "bad_response"), (304, "bad_response")],
 )
 async def test_a_refusing_indexer_is_a_bounded_reason_and_is_not_asked_again(status: int, reason: str) -> None:
     seen: List[httpx.Request] = []
     secret_body = {"error": {"reason": "no permissions for [indices:data/read/search] and User [name=lgsotf-reader]"}}
-    refusing = client(answering(seen, status, json=secret_body, headers={"Retry-After": "1"}))
+    refusing = client(answering(seen, status, json=secret_body if status >= 400 else EMPTY, headers={"Retry-After": "1"}))
     with pytest.raises(IndexerUnavailable) as failed:
         await refusing.search(BODY)
     assert (failed.value.reason, str(failed.value), len(seen)) == (reason, reason, 1)
@@ -132,6 +133,37 @@ async def test_an_unreachable_or_broken_indexer_is_failed_with_a_reason(server: 
     result = await over(down).call(Ctx(), PREVALENCE, {"kind": "service_name", "value": "svc", "days": 7}, agent="a")
     assert (result.outcome, result.value.error, tuple(result.value)) == ("failed", reason, ())
     await down.aclose()
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        f"{URL}/_all/_delete_by_query?q=", f"{URL}/_msearch?x=", f"{URL}/other-index/_update_by_query#", f"{URL}/prefix",
+        f"{URL}/prefix/", f"{URL}?q=1", f"{URL}/?pretty", f"{URL}#", f"{URL}/#frag", f"{URL}//", f"{URL}/a/../b",
+    ],
+)
+def test_the_base_url_cannot_choose_the_endpoint(base_url: str) -> None:
+    """The source's URL gives the scheme, the host and the port: a path or a query in it would move the request."""
+    with pytest.raises(SourceConfigError, match="without a path"):
+        client(answering([]), base_url=base_url)
+
+
+@pytest.mark.parametrize(
+    ("base_url", "sent"),
+    [
+        (URL, f"{URL}/wazuh-alerts-*/_search"),
+        (f"{URL}/", f"{URL}/wazuh-alerts-*/_search"),
+        ("https://indexer.customer.example", "https://indexer.customer.example/wazuh-alerts-*/_search"),
+        ("https://INDEXER.customer.example:9200", f"{URL}/wazuh-alerts-*/_search"),
+        (f"{URL}/..", f"{URL}/wazuh-alerts-*/_search"),  # dot segments resolve to the root: nothing is left of them
+    ],
+)
+async def test_the_request_is_built_from_the_host_and_the_index_only(base_url: str, sent: str) -> None:
+    seen: List[httpx.Request] = []
+    plain = client(answering(seen), base_url=base_url)
+    await plain.search(BODY)
+    assert [(r.method, str(r.url)) for r in seen] == [("POST", sent)]
+    await plain.aclose()
 
 
 async def test_the_destination_policy_holds_for_the_indexer() -> None:
