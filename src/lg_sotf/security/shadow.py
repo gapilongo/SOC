@@ -21,6 +21,10 @@ The mode is one context flag, enforced at the egress boundaries, never in the ag
   (:class:`lg_sotf.db.pool.Database`), so a write no boundary caught fails
   instead of committing.
 
+The same boundaries hold a registered investigation tool to its declaration, live and in shadow
+mode: while a tool runs (:func:`tool_egress_scope`), crossing any boundary but the one it declared
+raises :class:`EgressNotDeclared`, and a third-party tool in a shadow run crosses none live.
+
 ``tests/unit/architecture/test_shadow_egress.py`` finds the egress call sites
 in the source and fails when one is not inside a registered boundary.
 """
@@ -57,6 +61,16 @@ class ShadowEgressRefused(RuntimeError):
 
     def __init__(self, boundary: str, operation: str) -> None:
         super().__init__(f"{operation} ({boundary}) is not allowed in a shadow run")
+        self.boundary = boundary
+        self.operation = operation
+
+
+class EgressNotDeclared(RuntimeError):
+    """A registered tool reached an egress boundary other than the one it declared."""
+
+    def __init__(self, tool: str, boundary: str, operation: str) -> None:
+        super().__init__(f"tool {tool} did not declare the egress boundary {boundary} ({operation})")
+        self.tool = tool
         self.boundary = boundary
         self.operation = operation
 
@@ -211,6 +225,42 @@ class EgressPoint:
     policy: ShadowPolicy
 
 
+@dataclass(frozen=True)
+class ToolEgress:
+    """What the registered tool running in this task may cross (``lg_sotf.tools.registry`` sets it per call).
+
+    ``boundary`` is the only egress boundary the tool may cross (``None``: none at all, a tool that stays
+    on the platform). ``live=False``: the tool crosses no boundary live (a third-party tool in a shadow run).
+    """
+
+    tool: str
+    boundary: Optional[str]
+    live: bool = True
+
+
+_TOOL: ContextVar[Optional[ToolEgress]] = ContextVar("lg_sotf_tool_egress", default=None)
+
+
+@contextmanager
+def tool_egress_scope(scope: ToolEgress) -> Iterator[None]:
+    """Hold the tool running in this task (and the tasks it starts) to ``scope`` at every egress boundary."""
+    token = _TOOL.set(scope)
+    try:
+        yield
+    finally:
+        _TOOL.reset(token)
+
+
+def _hold_tool(boundary: str, operation: str, policy: ShadowPolicy) -> None:
+    scope = _TOOL.get()
+    if scope is None:
+        return
+    if boundary != scope.boundary:
+        raise EgressNotDeclared(scope.tool, boundary, operation)
+    if not scope.live and (_RUN.get() is None or policy.action == "allow"):
+        raise ShadowEgressRefused(boundary, operation)
+
+
 EGRESS_POINTS: Dict[str, EgressPoint] = {}
 """Every registered boundary, by ``module:qualname``."""
 
@@ -249,6 +299,7 @@ def egress(boundary: str, policy: ShadowPolicy) -> Callable[[F], F]:
 
             @functools.wraps(fn)
             async def async_boundary(*args: Any, **kwargs: Any) -> Any:
+                _hold_tool(boundary, operation, policy)
                 run = _RUN.get()
                 if run is None or policy.action == "allow":
                     return await fn(*args, **kwargs)
@@ -258,6 +309,7 @@ def egress(boundary: str, policy: ShadowPolicy) -> Callable[[F], F]:
 
         @functools.wraps(fn)
         def sync_boundary(*args: Any, **kwargs: Any) -> Any:
+            _hold_tool(boundary, operation, policy)
             run = _RUN.get()
             if run is None or policy.action == "allow":
                 return fn(*args, **kwargs)
@@ -275,6 +327,7 @@ __all__ = [
     "REFUSE",
     "SHADOW_RUN_PREFIX",
     "EffectOutcome",
+    "EgressNotDeclared",
     "EgressPoint",
     "LLMShortfall",
     "RunMode",
@@ -283,6 +336,7 @@ __all__ = [
     "ShadowPolicy",
     "ShadowRun",
     "ShadowSink",
+    "ToolEgress",
     "active_shadow_run",
     "allow",
     "egress",
@@ -294,4 +348,5 @@ __all__ = [
     "shadow_run_id",
     "shadow_scope",
     "sink",
+    "tool_egress_scope",
 ]

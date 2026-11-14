@@ -247,6 +247,8 @@ class _TenantTools:
 
     tools: Mapping[str, Any]
     internal_domains: FrozenSet[str]
+    readable: bool = True
+    """False when the tenant's settings or their ``tools`` section are not a mapping (the tool switch fails closed)."""
 
 
 def _domain_suffixes(values: Any) -> List[str]:
@@ -299,18 +301,22 @@ class CredentialResolver:
         cached = self._cache.get(tenant_id, _TOOLS_CACHE_KEY)
         if isinstance(cached, _TenantTools):
             return cached
-        tools: Mapping[str, Any] = {}
         internal = list(self._install_internal)
-        if repos is not None:
-            tenant = await repos.tenants.get(tenant_id)
-            settings = tenant.settings if isinstance(tenant.settings, Mapping) else {}
-            raw_tools = settings.get(TENANT_TOOLS_KEY)
-            tools = raw_tools if isinstance(raw_tools, Mapping) else {}
-            internal += _domain_suffixes(tools.get("internal_domains"))
-            assets = settings.get("protected_assets")
-            if isinstance(assets, Mapping):
-                internal += _domain_suffixes(assets.get("domains"))
-        result = _TenantTools(tools, frozenset(internal))
+        if repos is None:
+            # Not the tenant's settings, so not cached: a later call with repositories must read them.
+            return _TenantTools({}, frozenset(internal))
+        tenant = await repos.tenants.get(tenant_id)
+        settings = tenant.settings if isinstance(tenant.settings, Mapping) else {}
+        raw_tools = settings.get(TENANT_TOOLS_KEY)
+        tools: Mapping[str, Any] = raw_tools if isinstance(raw_tools, Mapping) else {}
+        readable = (tenant.settings is None or isinstance(tenant.settings, Mapping)) and (
+            raw_tools is None or isinstance(raw_tools, Mapping)
+        )
+        internal += _domain_suffixes(tools.get("internal_domains"))
+        assets = settings.get("protected_assets")
+        if isinstance(assets, Mapping):
+            internal += _domain_suffixes(assets.get("domains"))
+        result = _TenantTools(tools, frozenset(internal), readable)
         self._cache.set(tenant_id, _TOOLS_CACHE_KEY, result, CREDENTIAL_TTL_S)
         return result
 
@@ -319,7 +325,8 @@ class CredentialResolver:
         if isinstance(cached, _Resolved):
             return cached
         resolved = await self._resolve_uncached(tenant_id, provider, repos)
-        self._cache.set(tenant_id, provider, resolved, CREDENTIAL_TTL_S)
+        if repos is not None:  # without repositories the tenant's own settings were not read
+            self._cache.set(tenant_id, provider, resolved, CREDENTIAL_TTL_S)
         return resolved
 
     async def _resolve_uncached(self, tenant_id: str, provider: str, repos: Optional[Repositories]) -> _Resolved:
@@ -486,6 +493,22 @@ class EnrichmentService:
                 *(self._lookup_one(p, tenant_id, kind, value, repos, exclude_alert_id) for p in chosen)
             )
         )
+
+    async def lookup_one(
+        self,
+        provider: str,
+        tenant_id: str,
+        kind: str,
+        value: str,
+        *,
+        repos: Optional[Repositories] = None,
+        exclude_alert_id: Optional[str] = None,
+    ) -> EnrichmentResult:
+        """One external provider's answer (the tool ``reputation.<provider>``; :mod:`lg_sotf.tools.enrichment.tools`)."""
+        found = self._providers.get(provider)
+        if found is None or not found.external:
+            return EnrichmentResult.failed(provider, kind, "not_configured")
+        return await self._lookup_one(found, tenant_id, kind, value, repos, exclude_alert_id)
 
     async def history(
         self,

@@ -104,6 +104,7 @@
   "lg_sotf.security.qr.QrTooLong": [400, "invalid_request"],
   "lg_sotf.security.safe_regex.InvalidPattern": [400, "invalid_request"],
   "lg_sotf.security.safe_regex.WorkBudgetExceeded": [500, "internal_error"],
+  "lg_sotf.security.shadow.EgressNotDeclared": [500, "internal_error"],
   "lg_sotf.security.shadow.ShadowEgressRefused": [500, "internal_error"],
   "lg_sotf.security.totp.InvalidSecret": [400, "invalid_request"],
   "lg_sotf.services.blind_audit.SamplingError": [400, "invalid_request"],
@@ -115,5 +116,14 @@
   "lg_sotf.services.review.ReviewError": [400, "invalid_request"],
   "lg_sotf.services.tenancy.QuotaExceeded": [500, "internal_error"],
   "lg_sotf.tools.enrichment.http.ProviderHTTPError": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolDisabled": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolError": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolFailed": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolNotFound": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolParamsInvalid": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolRowCapExceeded": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolSettingsUnavailable": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolTimedOut": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolWindowExceeded": [500, "internal_error"],
   "starlette.exceptions.HTTPException": ["<instance>", "<instance>"]
 }

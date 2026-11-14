@@ -72,7 +72,9 @@ async def test_every_llm_and_tool_step_of_an_analysis_run_is_stored_in_order(vt_
     # Every model call and every lookup made is in the trace, nothing else.
     assert sum(k == "llm" for k, _ in kinds) == len(model.calls) == result.llm_calls
     assert sum(t == "reputation" for _, t in kinds) == len(seen) == result.tool_steps
-    assert all(s.agent == "analysis" and s.outcome == "success" and s.started_at.tzinfo for s in steps)
+    assert all(s.agent == "analysis" and s.started_at.tzinfo for s in steps)
+    # A history lookup that finds no earlier alert is stored as ``empty``, never as a success.
+    assert {(s.tool or s.kind, s.outcome) for s in steps} == {("llm", "success"), ("reputation", "success"), ("history", "empty")}
     llm = [s for s in steps if s.kind == "llm"]
     assert all(s.prompt_hash == STEP_PROMPT.hash and s.model == "fake-scripted" for s in llm)
     assert all(s.input_tokens > 0 and s.output_tokens > 0 for s in llm)

@@ -22,6 +22,8 @@ Threat rows refer to [threat-model.md](threat-model.md).
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
+| INV-13 | Autonomy is earned per skill and tenant and lost on any miss | pending (AI-E3.10) | none | TM-WRK-13 |
+| INV-14 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3, TM-EVT-10, TM-EVT-12 |
 
 ## INV-01: Every tenant table has forced row-level security, and the runtime role cannot bypass it
 
@@ -270,3 +272,42 @@ A model steered by alert text must not be able to exfiltrate. Threat-intel looku
   * `tests/unit/agents/test_analysis.py::test_lookup_targets_are_restricted_to_extracted_candidates`
   * `tests/unit/llm/test_local.py::test_refused_base_urls`
   * `tests/unit/llm/test_local.py::test_base_url_is_checked_for_every_provider`
+
+## INV-13: Autonomy is earned per skill and tenant and lost on any miss
+
+An investigation skill closes alerts for a tenant only once it has earned a closing tier there: skill-blind and AI-blind labelled closures with no miss, and a four-eyes promotion. A miss demotes the skill to shadow in the same transaction as the label that revealed it (ADR-0014 section 6.3). Until AI-E3.10 merges nothing closes on a skill.
+
+* **Status:** pending, delivered by AI-E3.10
+* **Owner epic:** AI-E3
+* **Threats:** TM-WRK-13
+* **Enforced in:** none
+* **Runtime checks:** none
+* **Proved by:**
+  * `tests/invariants/test_earned_autonomy.py::test_autonomy_is_earned_per_skill_and_lost_on_a_miss`
+
+## INV-14: Evidence tools are read-only, templated and capped
+
+An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry and nowhere else. The registry loads only a tool with a read-only risk class (there is no write class), a strict parameter model whose strings and collections are bounded, a row cap, a time cap, a window cap when it reads a time window, and a declared egress. On every call it validates the parameters first. It does not run a tool the calling tenant switched off, whose setting is malformed or whose settings cannot be read, nor a call whose window is longer than the cap. While the tool runs it is held to its time cap and to the one egress boundary it declared: a tool that stays on the platform crosses none, and a third-party tool crosses none live in a shadow run. A result over the row cap is dropped. Every call that passed validation is a trace step with the result's outcome, so a call that failed in any way is never read as a query that found nothing. The Wazuh query templates add a DSL allow-list test (INT3.4).
+
+* **Status:** pending, delivered by INT3.4
+* **Owner epic:** AI-E2
+* **Threats:** TM-EVT-3, TM-EVT-10, TM-EVT-12
+* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`, `src/lg_sotf/security/shadow.py`
+* **Runtime checks:** none
+* **Proved by:**
+  * `tests/unit/tools/test_registry.py::test_a_tool_missing_caps_or_schema_fails_to_load`
+  * `tests/unit/tools/test_registry.py::test_a_params_model_that_is_not_strict_and_bounded_fails_to_load`
+  * `tests/unit/tools/test_registry.py::test_no_tool_can_register_a_write_risk_class`
+  * `tests/unit/tools/test_registry.py::test_egress_is_declared_and_coherent`
+  * `tests/unit/tools/test_registry.py::test_parameters_are_validated_before_the_call`
+  * `tests/unit/tools/test_registry.py::test_a_tool_disabled_for_the_tenant_is_not_called`
+  * `tests/unit/tools/test_registry.py::test_the_tenant_switch_fails_closed`
+  * `tests/unit/tools/test_registry.py::test_a_tenant_switch_applies_to_that_tenant_only`
+  * `tests/unit/tools/test_registry.py::test_the_window_cap_is_enforced_before_the_call`
+  * `tests/unit/tools/test_registry.py::test_time_and_row_caps_answer_with_the_refusal`
+  * `tests/unit/tools/test_registry.py::test_a_tool_crosses_only_the_egress_boundary_it_declared`
+  * `tests/unit/tools/test_registry.py::test_a_platform_tool_cannot_open_an_outside_connection`
+  * `tests/unit/tools/test_registry.py::test_a_shadow_run_makes_no_third_party_request`
+  * `tests/unit/tools/test_registry.py::test_an_empty_result_and_a_failed_call_are_distinguishable`
+  * `tests/unit/architecture/test_tool_registry.py::test_enrichment_lookups_are_called_only_through_the_registry`
+  * `tests/unit/agents/test_analysis.py::test_ti_lookups_run_through_the_registry`
