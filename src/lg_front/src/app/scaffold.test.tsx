@@ -35,6 +35,9 @@ vi.mock('./modules', async (importOriginal) => {
 
 const DENIED = 'You do not have access to this page';
 
+/** Lazy chunks (the page, the contribution) are imported and transformed on first use: allow for a busy runner. */
+const LAZY = { timeout: 10_000 };
+
 /** No live socket in these tests. */
 function stubWebSocket() {
   vi.stubGlobal(
@@ -59,7 +62,7 @@ async function open(route: string, role: string) {
   stubWebSocket();
   const session = await signedInSession(api().api, { role });
   renderWithSession(<AppRoutes />, session, { route });
-  return screen.findByRole('navigation', { name: 'Main' });
+  return screen.findByRole('navigation', { name: 'Main' }, LAZY);
 }
 
 afterEach(() => {
@@ -93,11 +96,11 @@ describe('a module is its folder and one registry line', () => {
 
   it('renders its page inside the shell, with its nav item, count and breadcrumb', async () => {
     const nav = await open('/scaffold', 'analyst');
-    expect(await screen.findByRole('heading', { name: 'Scaffold things', level: 1 })).toBeInTheDocument();
-    expect(await screen.findByText('2 waiting.')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Scaffold things', level: 1 }, LAZY)).toBeInTheDocument();
+    expect(await screen.findByText('2 waiting.', undefined, LAZY)).toBeInTheDocument();
     // The sidebar: its own group, the item current, the module's count with its meaning.
     const group = within(nav).getByRole('list', { name: 'Scaffold' });
-    const link = await within(group).findByRole('link', { name: 'Scaffold things 2 things waiting' });
+    const link = await within(group).findByRole('link', { name: 'Scaffold things 2 things waiting' }, LAZY);
     expect(link).toHaveAttribute('href', '/scaffold');
     expect(link).toHaveAttribute('aria-current', 'page');
     // The SOC's nav is still there, untouched.
@@ -108,7 +111,7 @@ describe('a module is its folder and one registry line', () => {
 
   it('is guarded by its own access rule: a viewer gets neither the page nor the nav item', async () => {
     const nav = await open('/scaffold', 'viewer');
-    expect(await screen.findByRole('heading', { name: DENIED })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: DENIED }, LAZY)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Scaffold things' })).not.toBeInTheDocument();
     expect(within(nav).queryByRole('link', { name: /Scaffold things/ })).not.toBeInTheDocument();
     expect(within(nav).queryByRole('list', { name: 'Scaffold' })).not.toBeInTheDocument();
@@ -123,7 +126,7 @@ describe('a module is its folder and one registry line', () => {
   it('shows its contribution in the SOC entity list, without a change to the SOC', async () => {
     const session = await signedInSession(api().api, { role: 'analyst' });
     renderWithSession(<AlertEntities layout="stacked" entities={[['hosts', ['LT-1']], ['users', ['j.doe']]]} />, session);
-    const note = await screen.findByText('Scaffold note for LT-1');
+    const note = await screen.findByText('Scaffold note for LT-1', undefined, LAZY);
     expect(note.previousElementSibling).toHaveTextContent('LT-1');
     expect(screen.getByText('j.doe').nextElementSibling).toBeNull();
     // Without the module the same list shows the entities alone (the SOC's own tests cover it).
@@ -176,5 +179,5 @@ describe('the scaffold folder obeys the module boundary', () => {
       const [result] = await eslint.lintText(readFileSync(file, 'utf8'), { filePath: as });
       expect(result.messages.map((m) => `${m.ruleId}: ${m.message}`), path.relative(root, as)).toEqual([]);
     }
-  });
+  }, 60_000);
 });

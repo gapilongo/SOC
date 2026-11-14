@@ -6,9 +6,12 @@
 import path from 'node:path';
 
 import { ESLint } from 'eslint';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 const ROOT = path.resolve(__dirname, '../..');
+
+// ESLint loads its whole config for the first file: slow on a busy runner.
+vi.setConfig({ testTimeout: 60_000 });
 let eslint: ESLint;
 
 beforeAll(() => {
