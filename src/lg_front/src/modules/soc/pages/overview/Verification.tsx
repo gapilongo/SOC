@@ -57,7 +57,7 @@ function BlindAudit({ report }: { report: BlindAuditReportOut }) {
         small={
           <>
             {window}{' '}
-            {can.admin(principal) ? (
+            {can.admin(principal) && can.decide(principal) ? (
               <>
                 Draw one on the{' '}
                 <Link to={BLIND_AUDIT_HREF} className={LINK}>

@@ -36,7 +36,7 @@ export const THEAD = 'max-lg:sr-only';
 export const TBODY = 'max-lg:block';
 export const TR = 'max-lg:block max-lg:border-b max-lg:border-strong max-lg:py-2.5';
 export const TH = cx(LABEL, 'whitespace-nowrap border-b border-strong px-2.5 py-[7px]');
-const TD = 'border-b border-subtle px-2.5 py-1.5 align-middle text-ctl max-lg:block max-lg:border-0 max-lg:px-0 max-lg:py-0.5';
+const TD = 'break-words border-b border-subtle px-2.5 py-1.5 align-middle text-ctl max-lg:block max-lg:border-0 max-lg:px-0 max-lg:py-0.5';
 /** A count column: right-aligned figures on a wide screen. */
 export const NUM = 'font-semibold tabular-nums text-fg lg:w-[70px] lg:text-right';
 

@@ -35,7 +35,7 @@ function Need({ n, title, action, children }: { n: ReactNode; title: string; act
       <span className="text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-fg md:text-[30px]">{n}</span>
       <div className="min-w-0">
         <p className="text-[15px] font-medium text-fg">{title}</p>
-        <div className="mt-px text-[12.5px] text-secondary">{children}</div>
+        <div className="mt-px break-words text-[12.5px] text-secondary">{children}</div>
       </div>
       {action}
     </li>
