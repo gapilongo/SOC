@@ -122,7 +122,7 @@ function Reveal({ out, onNext, hasNext }: { out: BlindAuditLabelOut; onNext: () 
       )}
       <Button variant="primary" onClick={onNext} aria-keyshortcuts="N">
         {hasNext ? 'Next sample' : 'Back to the queue'}
-        <kbd className="rounded border border-on-accent/40 px-1.5 font-mono text-xs">N</kbd>
+        <kbd className="border-on-accent/50 text-on-accent">N</kbd>
       </Button>
     </div>
   );

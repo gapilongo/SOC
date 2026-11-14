@@ -34,7 +34,7 @@
   }
   /* A key of the keyboard, as printed on it. */
   kbd {
-    @apply inline-flex items-center justify-center rounded border border-b-2 border-strong bg-canvas px-1 font-mono text-2xs font-medium leading-none text-secondary;
+    @apply inline-flex items-center justify-center rounded border border-b-2 border-strong px-1 font-mono text-2xs font-medium leading-none text-secondary;
     min-width: 18px;
     height: 18px;
   }
