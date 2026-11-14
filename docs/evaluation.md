@@ -1005,6 +1005,167 @@ LG_SOTF_LLM__PROVIDER=fake lg-sotf eval --dataset tests/fixtures/eval/corpus_v1.
     --thresholds tests/fixtures/eval/corpus_v1_thresholds.yaml --report ~/lg-sotf-eval/corpus-v1.json
 ```
 
+## Corpus telemetry, gold evidence and the skills corpus
+
+`corpus_v1` holds alerts only. An investigation skill
+([ADR 0014](adr/0014-investigation-skills.md)) decides from what surrounds an
+alert: who logged on to the host just before a service was installed, whether
+a failed logon was followed by a success, how many hosts run a binary. AI-E1.10
+adds that telemetry, the expected reading of it and a store that serves it
+offline. `corpus_v1.jsonl.gz` itself is unchanged, byte for byte.
+
+| File (`tests/fixtures/eval/`) | Content | sha256 of the text |
+|---|---|---|
+| `corpus_v1_events.jsonl.gz` | 291 context events around the `corpus_v1` alerts | `8e7f65e11578eb450f3e28ee1b3771b31cca4d7f3a5ae3c79724e198c143cc48` |
+| `corpus_v1_gold.json` | Gold evidence for its 52 skill-family items | `d58596bf299e87b9b01127aec8219e7b4a70af01ed262a871c8eba94acf04dff` |
+| `corpus_skills_v1.jsonl.gz` | 196 alerts of the two skill families (123 malicious, 73 benign) | `d4833621b875b1cf6fc638c0c4a017b30a1d73e6d540d4baab5665c7f4421679` |
+| `corpus_skills_v1_events.jsonl.gz` | 391 context events around them | `caefe42378c021bfa10ba0e34cff513b4694c2fb7142eb366656877fd9e874ce` |
+| `corpus_skills_v1_gold.json` | Gold evidence for all 196 items | `f21cec799900fc00bafa8517b8a6f4e0c4b39ea458b2dbfdc775a3e9e734d4e5` |
+
+All five are written by `python -m tests.fixtures.attack_corpus generate`
+(seeded; `check` and a unit test compare the committed bytes). Everything is
+synthetic.
+
+### Context events
+
+An events file is JSONL: a `_meta` line, then Wazuh documents in the
+`alerts.json` shape, in time order. They are not dataset items and carry no
+label, tag or note. The two skill families of ADR 0014 are covered:
+
+| Scenario | Context written |
+|---|---|
+| A mistyped password | The 4624 success of the same user from the same address within four minutes |
+| A device retrying an old password | The retry cadence over hours (a phone every 15 to 35 minutes, a mapped drive in bursts every 30 to 60) |
+| Desktop support's PsExec | The 4624 type 3 logon from `IT-WS-01` with an `adm.*` account before the 7045, the `PSEXESVC.exe` process, and the routine command it ran (Sysmon event 1, linked by `processGuid`) |
+| PsExec to ransomware | The same chain from `MKT-WS-11` or `ENG-WS-19` with the stolen account, and `whoami` and `ipconfig` under the shell |
+| A vendor updater's service | The fleet installs of every updater (10 to 14 hosts, 8 to 17 days before the window) |
+| A service in a user-writable folder | The `sc.exe create` that registered it and the service's own process |
+| The estate's history | IT's 12 PsExec sessions over the four weeks before the window |
+
+A password spray needs nothing extra: its failures, lockout and success are
+corpus alerts, and the store serves them next to the events. Plain Sysmon
+process creations are level 0 in the 4.14 ruleset and never reach
+`alerts.json`; the events file raises them with the local rule `100100`
+(listed in `_meta.local_rules`), which a lab must load to hold the same
+documents.
+
+### The event store
+
+`lg_sotf.eval.tool_fixtures.EventStore` holds a dataset's alerts and its
+context events in memory and answers what the Wazuh evidence templates
+(INT3.4) ask an indexer:
+
+```python
+from lg_sotf.eval.tool_fixtures import EventQuery, EventStore
+
+store = EventStore.load("tests/fixtures/eval/corpus_v1.jsonl.gz", "tests/fixtures/eval/corpus_v1_events.jsonl.gz")
+view = store.as_of(alert_time + timedelta(minutes=10))        # what the indexer held at that moment
+failures = EventQuery(start=alert_time - timedelta(minutes=30), event_ids=("4625",),
+                      where={"data.win.eventdata.ipAddress": "10.20.1.83"})
+view.count(failures), view.distinct(failures, "data.win.eventdata.targetUserName"), view.first_time(failures)
+```
+
+A query filters by agent, time range, Windows event id, rule id and field
+equality (one value or any of several; a list field matches on any element)
+and gives documents, counts, distinct values and first and last time. Every
+read goes through `as_of`: nothing later than that moment is ever returned,
+whatever the query's own range, so an investigation replayed on event time
+cannot see the future.
+
+### Gold evidence
+
+A gold file gives, per item of a skill family, what the telemetry says with
+every evidence window closed:
+
+```json
+"cv1-0113": {"skill": "windows.service_install", "disposition": "malicious", "benign_hypothesis": null,
+             "malicious_indicators": ["discovery_through_the_service", "hands_on_keyboard_nearby"],
+             "never_close": [], "evidence": ["1790264476.268437408", "..."]}
+```
+
+* `malicious_indicators` and `never_close` are computed from the store and
+  the declared tenant context, as ADR 0014 sections 1.4 and 1.5 word them
+  (`tests/fixtures/attack_corpus/gold.py` is the reference reading).
+* `benign_hypothesis` is the proof the scenario was built for. It is kept
+  only when the telemetry side of the proof holds and no indicator or
+  never-close condition is true. The parts a tenant supplies later (a
+  guidance note, analyst history) are not telemetry and are not checked.
+* `evidence` lists the ids of the documents the reading rests on.
+
+In `corpus_v1`, 32 of the 35 benign skill items are provable. The three that
+are not are honest: `cv1-0220` (the mapped drive's owner logged on from the
+same workstation that morning, and the ADR's proof wants no success from the
+source that day), `cv1-0326` and `cv1-0383` (the user had been a target of
+the password spray within the day, so failures for the account come from
+three sources).
+
+### corpus_skills_v1
+
+`corpus_v1` has 10 malicious alerts of the logon-failure family and 7 of the
+service-install family, too few to gate a skill. `corpus_skills_v1` holds
+only those two families, in the same estate a week later (2026-11-02 to
+11-13), with `family` set to the skill id:
+
+| Family | Malicious | Benign | Attack variants | Benign variants |
+|---|---|---|---|---|
+| `windows.logon_failure` | 63 | 40 | spray (burst, with lockouts, slow), invented user names, one account from many sources | typo then success, a phone or mapped drive retrying, a forgotten password that ends in a lockout |
+| `windows.service_install` | 60 | 33 | PsExec then discovery, PsExec from two sources, a binary in a user-writable folder or on a share, a new binary under `Program Files`, a service that runs an interpreter | desktop support's PsExec, fleet-wide vendor updaters, software installed for the first time |
+
+**Context abuse** (28 items, tags `context-abuse` and `abuse:<kind>`): attacks
+that sit inside what the tenant declared in `_meta.tenant_context`, so
+declared context alone must never close them.
+
+| `abuse:` | Items | What happens |
+|---|---|---|
+| `admin-workstation-spray` | 10 | A password spray from the declared admin workstation's address |
+| `admin-account-discovery` | 9 | PsExec from that workstation by a declared admin account, followed by `whoami`, `nltest`, `net group` |
+| `outside-maintenance-window` | 4 | A service named like a vendor updater, registered on a server outside its patch window, from a binary no other host has |
+| `service-account-interactive` | 5 | A declared service account tried over Remote Desktop, then a success |
+
+Six items carry `early-stage`: the first alerts of a slow spray and of
+guessing from many sources. When they fire, no evidence window holds the rest
+of the attack yet, so no indicator can be true for them; the retro-reopen
+exists for these. Two benign variants have no proof on purpose (a forgotten
+password, first-time software, which trips `new_binary`): benign alerts a
+person has to look at.
+
+### Loading the telemetry into a live indexer
+
+The harness is also measured on a live stack that receives corpus alerts with
+their time moved to the present. `scripts/load_corpus_telemetry.py` puts the
+telemetry around chosen items into that stack's Wazuh indexer (OpenSearch),
+shifted by the same amount:
+
+```sh
+LG_SOTF_CORPUS_INDEXER_URL=https://indexer.lab.example:9200 \
+LG_SOTF_CORPUS_INDEXER_USERNAME=... LG_SOTF_CORPUS_INDEXER_PASSWORD=... \
+python scripts/load_corpus_telemetry.py --host indexer.lab.example \
+    --items cv1-0003,cv1-0069,cv1-0113 --pace 6 --manifest build/telemetry-manifest.json
+```
+
+* **What is loaded.** Per item: the alert, its host's activity an hour either
+  side, the logons of its source address, user and workstation over the day
+  before, and every sighting of its service, image path or process image in
+  the 30 days before.
+* **Where in time.** The first item's alert sits at `--now` (default: the
+  current time), the next ones `--pace` seconds later each. The manifest
+  lists every item's anchor; send the alert with that timestamp.
+* **Idempotent.** A document's `_id` is `<item id>:<source document id>`:
+  loading the same items again replaces their copies.
+* **Safe.** The URL and credentials come from the environment and are never
+  printed. The URL's host must be passed with `--host`, or nothing is sent.
+  Only `POST /<index>/_bulk` is called, on one index (`--index`, default
+  `wazuh-alerts-4.x-corpus-telemetry`). A pull source that reads
+  `wazuh-alerts-*` would ingest these documents as alerts: narrow its index
+  pattern, or load into another index. `--dry-run` sends nothing.
+* **Limits.** Two chosen items whose context overlaps each bring their own
+  copy of it, and items on one host sent minutes apart see each other's
+  activity; space them with `--pace` when that matters.
+
+For the Wazuh lab, `python -m tests.fixtures.attack_corpus telemetry OUT.json
+--dataset corpus_v1` writes a dataset's alerts and context events as
+`alerts.json` lines for `python -m tests.fixtures.wazuh_lab load`.
+
 ## AIT-ADS
 
 The [AIT Alert Data Set](https://zenodo.org/records/8263181) (AIT-ADS,

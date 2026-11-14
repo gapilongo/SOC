@@ -149,8 +149,13 @@ def test_an_unchanged_schema_has_no_changes() -> None:
     assert CHECKER.check_file(REL, _v1(), _v1()) == []
 
 
+def _at_1_0_0() -> Json:
+    """The published schema as if at 1.0.0, so the bump cases do not depend on the version it is at now."""
+    return _set_version(_v1(), "1.0.0")
+
+
 def test_an_additive_change_needs_a_minor_bump() -> None:
-    old, new = _v1(), _v1()
+    old, new = _at_1_0_0(), _at_1_0_0()
     _add_optional_field(new)
     [problem] = CHECKER.check_file(REL, old, new)
     assert "needs a minor version bump" in problem and "added an optional field" in problem
@@ -159,7 +164,7 @@ def test_an_additive_change_needs_a_minor_bump() -> None:
 
 
 def test_a_breaking_change_is_refused_in_a_published_file_even_with_a_bump() -> None:
-    old, new = _v1(), _v1()
+    old, new = _at_1_0_0(), _at_1_0_0()
     _remove_enum_value(new)
     for version in ("1.0.0", "1.1.0"):
         [problem] = CHECKER.check_file(REL, old, _set_version(copy.deepcopy(new), version))

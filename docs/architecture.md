@@ -297,8 +297,8 @@ Rules:
     `decide` node reads the tier from the tenant's settings at every
     decision.
   * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
-    response plan or malicious close, an escalation a model judged
-    malicious or suspicious, an analyst true positive or a blind-audit
+    response plan or malicious close, an escalation a model judged a
+    threat (not a merely suspicious one), an analyst true positive or a blind-audit
     malicious label reopens every model-closed alert of the tenant that
     shares a host, user or IP with it and closed in the previous 24 hours:
     folded into the threat's open escalation (attached, `waiting_human`, no
