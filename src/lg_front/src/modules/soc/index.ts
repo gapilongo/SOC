@@ -28,8 +28,9 @@ import {
 import { lazy } from 'react';
 
 import { qk } from './api/queryKeys';
-import { can } from '../../auth/roles';
+import { can, isTenantOverride } from '../../auth/roles';
 import { defineModule, type Allowed } from '../../core/module';
+import { contribute, SHELL_BANNER, SHELL_HEADER_TENANT } from '../../core/slots';
 import { useNavCount } from './navCounts';
 
 // One chunk per route.
@@ -54,6 +55,10 @@ const AccountSecurityPage = lazy(() => import('./pages/AccountSecurityPage'));
 const SetupWizardPage = lazy(() => import('./pages/setup/SetupWizardPage'));
 const PovPage = lazy(() => import('./pages/PovPage'));
 const BlindAuditPage = lazy(() => import('./pages/blindAudit/BlindAuditPage'));
+
+// Widgets the SOC renders in the shell's extension points: loaded only for the principals they apply to.
+const TenantSwitcher = lazy(() => import('./pages/platform/TenantSwitcher').then((m) => ({ default: m.TenantSwitcher })));
+const ActingTenantBanner = lazy(() => import('./pages/platform/TenantSwitcher').then((m) => ({ default: m.ActingTenantBanner })));
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
@@ -139,4 +144,9 @@ export const soc = defineModule({
     'escalation.updated': [qk.escalations.all, qk.escalation.all, qk.dashboard.all],
     'action.updated': [qk.actions.all, qk.dashboard.all],
   },
+  extensions: [
+    // Platform admins change tenant from the header; while they act on one, every page says so.
+    contribute(SHELL_HEADER_TENANT, TenantSwitcher, { when: (p) => Boolean(p?.isPlatformAdmin) }),
+    contribute(SHELL_BANNER, ActingTenantBanner, { when: isTenantOverride }),
+  ],
 });

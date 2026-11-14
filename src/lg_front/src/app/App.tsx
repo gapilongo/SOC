@@ -8,6 +8,7 @@ import { CALLBACK_PATH } from '../auth/oidc';
 import type { Session } from '../auth/session';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { RequireAuth, RequireRole } from '../components/Guards';
+import { ExtensionsProvider } from '../components/Slot';
 import { ToastProvider } from '../components/Toast';
 import { LoadingState } from '../components/ui';
 import { LiveProvider } from '../live/LiveProvider';
@@ -92,10 +93,12 @@ export function App({ session, queryClient }: { session: Session; queryClient: Q
           <ThemeProvider>
             <DensityProvider>
               <ToastProvider>
-                <BrowserRouter>
-                  <SessionLifecycle />
-                  <AppRoutes />
-                </BrowserRouter>
+                <ExtensionsProvider contributions={REGISTRY.extensions}>
+                  <BrowserRouter>
+                    <SessionLifecycle />
+                    <AppRoutes />
+                  </BrowserRouter>
+                </ExtensionsProvider>
               </ToastProvider>
             </DensityProvider>
           </ThemeProvider>
