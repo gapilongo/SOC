@@ -194,7 +194,7 @@ disclosure, **D**enial of service, **E**levation of privilege.
 
 Today the evidence tools are threat-intelligence lookups (VirusTotal and
 AbuseIPDB) and the tenant's own alert history. Each one is declared in the
-tool registry and called through it (`src/lg_sotf/tools/registry.py:1-29`).
+tool registry and called through it (`src/lg_sotf/tools/registry.py:1-38`).
 A tool does not load without a read-only risk class, a strict parameter
 model, row, time and window caps and a declared egress. A call validates its
 parameters first, skips a tool the calling tenant switched off, and is
@@ -206,7 +206,7 @@ output.
 |---|---|---|---|---|
 | TM-EVT-1 | I | Injected text makes the agent send arbitrary values to a third party | Lookup targets restricted to candidate ids built from extracted indicators (`src/lg_sotf/agents/analysis/react.py:24-27`); indicators validated and reduced, private addresses and internal domains never sent (`src/lg_sotf/tools/enrichment/providers.py:1-20`) | In place |
 | TM-EVT-2 | T | Tool output carries instructions (indirect injection through evidence) | Results go in a separate `<tool_data>` block marked as untrusted (`src/lg_sotf/llm/prompting.py:421-427`); the model's reading of a result is never rule evidence | Partial. Quarantined reader producing typed facts planned (AI-E3.2); tool-output injection measured by the adversarial corpus v2 (AI-E6.1) |
-| TM-EVT-3 | E | A tool performs a write or an unbounded query | Every tool runs through the tool registry: there is no write risk class, and a tool without a strict parameter model, row and time caps, a declared egress and a per-tenant switch (third-party tools) does not load; parameters are validated before the call (`src/lg_sotf/tools/registry.py:1-29`, INV-13) | Partial: the registry is in place for today's lookups. Query templates with a DSL allow-list planned (INT3.4); free-form query guard (AI-E6.4) |
+| TM-EVT-3 | E | A tool performs a write or an unbounded query | Every tool runs through the tool registry: there is no write risk class, and a tool without a strict parameter model, row and time caps, a declared egress and a per-tenant switch (third-party tools) does not load; parameters are validated before the call (`src/lg_sotf/tools/registry.py:1-38`, INV-13) | Partial: the registry is in place for today's lookups. Query templates with a DSL allow-list planned (INT3.4); free-form query guard (AI-E6.4) |
 | TM-EVT-4 | I | One tenant's evidence returned to another | Enrichment caches keyed per tenant; history queries under `tenant_tx` | In place. Per-tenant tool credentials planned (AI-E2.1) |
 | TM-EVT-5 | D | Query cost or throttling exhausts a customer's API quota | ReAct step and wall-clock budgets (`src/lg_sotf/agents/analysis/react.py:8-19`) | Partial: per-investigation money budgets planned (AI-E3.3) |
 | TM-EVT-6 | R | An investigation cannot be replayed | Evidence pack with signed digest (`src/lg_sotf/compliance/evidence.py:22`) | Partial: evidence ledger and record/replay cassettes planned (AI-E1.3, AI-E1.4) |

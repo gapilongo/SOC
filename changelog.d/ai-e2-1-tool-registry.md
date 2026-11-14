@@ -10,5 +10,11 @@
   - The VirusTotal and AbuseIPDB lookups (`reputation.<provider>`) and the
     alert-history lookup (`platform.history`) run through it. Their results,
     trace steps and recorded cassettes are unchanged.
+  - Every tool result carries a typed outcome: `success`, `empty` (the query
+    ran and matched nothing) or `failed` (switched off, unreachable, refused,
+    timed out or over the row cap). A failed call can no longer be mistaken
+    for "no rows".
+  - Every tool result carries the SHA-256 of its input and of its output,
+    the same hashes the investigation trace stores for the call.
   - New pending invariant INV-13, "Evidence tools are read-only, templated
     and capped"; the Wazuh query templates (INT3.4) complete it.

@@ -586,7 +586,7 @@ class AnalysisAgent(BaseAgent):
         for ind in history_targets(alert, self.history_lookups):
             params = {"kind": ind.type, "value": ind.value}
             result = await self.tools.call(ctx, HISTORY_TOOL, params, agent=self.name)
-            out.append((ind, result))
+            out.append((ind, result.value))
         return out
 
     async def candidates(self, ctx: AgentContext, alert: Mapping[str, Any]) -> Dict[str, Candidate]:

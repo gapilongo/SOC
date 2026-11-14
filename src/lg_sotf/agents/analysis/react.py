@@ -286,5 +286,5 @@ class ReActReasoner:
             {"kind": candidate.kind, "value": candidate.value},
             agent=agent,
         )
-        run.observations.append(Observation(candidate, results))
+        run.observations.append(Observation(candidate, [r.value for r in results]))
         run.lookups += 1

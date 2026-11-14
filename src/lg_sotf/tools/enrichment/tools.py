@@ -81,6 +81,15 @@ def _restore(params: LookupParams, recorded: Mapping[str, Any]) -> EnrichmentRes
     return EnrichmentResult.from_dict(params.kind, recorded)
 
 
+def _failed(result: EnrichmentResult) -> bool:
+    """Anything but an answer: skipped, unsupported, not configured, rate limited or an error."""
+    return result.status not in ("ok", "not_found")
+
+
+def _reputation_rows(result: EnrichmentResult) -> int:
+    return 1 if result.status == "ok" else 0
+
+
 def _history_rows(result: EnrichmentResult) -> int:
     seen = result.data.get("prior_alerts", 0)
     return seen if isinstance(seen, int) else 0
@@ -106,7 +115,7 @@ def _reputation(service: EnrichmentService, provider: str, time_cap_s: float) ->
         tenant_setting=provider,
         egress_boundary=LOOKUP_EGRESS_BOUNDARY,
     )
-    return Tool(spec, run, lambda result: 1, EnrichmentResult.as_dict, _restore, _refused(provider))
+    return Tool(spec, run, _reputation_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(provider))
 
 
 def _history(service: EnrichmentService, time_cap_s: float) -> Tool[HistoryParams, EnrichmentResult]:
@@ -129,7 +138,7 @@ def _history(service: EnrichmentService, time_cap_s: float) -> Tool[HistoryParam
         tenant_setting=None,
         trace_name="history",
     )
-    return Tool(spec, run, _history_rows, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name))
+    return Tool(spec, run, _history_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name))
 
 
 def enrichment_tools(service: EnrichmentService) -> ToolRegistry:

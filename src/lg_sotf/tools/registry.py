@@ -11,12 +11,21 @@ call takes the same steps, in this order:
 3. the tool runs under its time cap, inside ``ctx.trace.tool(...)``, so the trace store, the cassettes and
    shadow runs see every call (a replaying cassette answers instead of the tool);
 4. a result with more rows than the tool's row cap (counted by the tool's ``rows``) is dropped for the
-   refusal answer.
+   refusal answer;
+5. the caller gets a :class:`ToolResult`: the tool's result with a typed outcome and the hashes of what
+   went in and what came out.
 
 A refusal, a timeout or an over-long result is an answer (the tool's ``refused``), never an exception
 that fails the workflow node, as the enrichment service already does for provider failures. What a tool
 returns is data: the registry hands it back as it is, and the caller shows it to a model only as untrusted
 tool data, never as instructions.
+
+The outcome is ``success`` (rows came back), ``empty`` (the query ran and matched nothing) or ``failed``
+(switched off, unreachable, refused, timed out or over the row cap). "No rows" must never read as
+"nothing happened" when the query did not run, so a caller can always tell ``empty`` from ``failed``.
+The hashes are the trace store's own (``investigation_steps.input_hash`` and ``output_hash``): SHA-256 of
+the canonical JSON of the input (the tool's name and its validated parameters) and of the recorded output,
+computed by the run's trace (``ctx.trace.tool_hashes``), never by a model.
 
 The tenant switch is read with the calling run's own tenant id (``ctx.tenant_id``, under that tenant's
 row-level security), so one tenant's settings never turn a tool on or off for another.
@@ -71,6 +80,7 @@ __all__ = [
     "ToolNotFound",
     "ToolParamsInvalid",
     "ToolRegistry",
+    "ToolResult",
     "ToolRowCapExceeded",
     "ToolSpec",
     "ToolTimedOut",
@@ -90,6 +100,7 @@ _SETTING = r"^[a-z][a-z0-9_]{0,63}$"
 Risk = Literal["read_internal", "read_external"]
 Egress = Literal["tenant_source", "third_party", "platform"]
 ShadowMode = Literal["live", "cache_only"]
+Outcome = Literal["success", "empty", "failed"]
 
 
 class ToolError(Exception):
@@ -189,6 +200,8 @@ class ToolTrace(Protocol):
         restore: Optional[Callable[[Any], T]] = None,
     ) -> T: ...
 
+    def tool_hashes(self, tool: str, request: Mapping[str, Any], recorded: Any) -> Tuple[str, str]: ...
+
 
 class ToolContext(Protocol):
     """What a call needs from the run (``lg_sotf.agents.base.AgentContext`` is one)."""
@@ -213,16 +226,33 @@ class Tool(Generic[P, R]):
     spec: ToolSpec
     run: Callable[[ToolContext, P], Awaitable[R]]
     rows: Callable[[R], int]
-    """How many rows a result holds, checked against ``spec.row_cap``."""
+    """How many rows a result holds, checked against ``spec.row_cap``; none is the ``empty`` outcome."""
+    failed: Callable[[R], bool]
+    """Whether a result says the query did not run to an answer (the ``failed`` outcome)."""
     record: Callable[[R], Any]
     """A result as the trace and cassettes store it."""
     restore: Callable[[P, Any], R]
     """``(params, recorded)``: the result a recorded output stands for."""
     refused: Callable[[P, ToolError], R]
-    """``(params, error)``: what a call answers when the tool is off, times out or returns too many rows."""
+    """``(params, error)``: what a call answers when the tool is off, times out or returns too many rows.
+
+    ``failed`` must be true of it."""
 
 
 AnyTool = Tool[Any, Any]
+
+
+@dataclass(frozen=True)
+class ToolResult(Generic[R]):
+    """What a call hands back: the tool's result, its typed outcome and the hashes of its input and output."""
+
+    outcome: Outcome
+    value: R
+    rows: int
+    input_hash: str
+    """SHA-256 of the canonical JSON of the tool's traced name and validated parameters."""
+    output_hash: str
+    """SHA-256 of the canonical JSON of the result as the trace records it."""
 
 
 TenantTools = Callable[[str, Optional["Repositories"]], Awaitable[Mapping[str, Any]]]
@@ -256,13 +286,13 @@ class ToolRegistry:
     def names(self) -> List[str]:
         return sorted(self._tools)
 
-    async def call(self, ctx: ToolContext, name: str, params: Mapping[str, Any], *, agent: str) -> Any:
+    async def call(self, ctx: ToolContext, name: str, params: Mapping[str, Any], *, agent: str) -> ToolResult[Any]:
         """Run one tool (see the module docs for the steps)."""
         tool = self.get(name)
         valid = _validated(tool, params)
         if not await self._enabled(ctx, tool):
-            return tool.refused(valid, ToolDisabled(name))
-        return await ctx.trace.tool(
+            return _result(ctx, tool, valid, _refuse(tool, valid, ToolDisabled(name)))
+        value = await ctx.trace.tool(
             agent,
             tool.spec.traced_as,
             valid.model_dump(mode="json"),
@@ -270,10 +300,11 @@ class ToolRegistry:
             tool.record,
             lambda recorded: tool.restore(valid, recorded),
         )
+        return _result(ctx, tool, valid, value)
 
     async def call_family(
         self, ctx: ToolContext, family: str, members: Sequence[str], params: Mapping[str, Any], *, agent: str
-    ) -> List[Any]:
+    ) -> List[ToolResult[Any]]:
         """Run the tools ``<family>.<member>`` concurrently with the same parameters, as one trace step.
 
         The step is named ``family`` and its request is the parameters plus the sorted ``providers``: the
@@ -290,14 +321,14 @@ class ToolRegistry:
             return list(
                 await asyncio.gather(
                     *(
-                        self._capped(ctx, tool, v) if on else _answer(tool.refused(v, ToolDisabled(tool.spec.name)))
+                        self._capped(ctx, tool, v) if on else _switched_off(tool, v)
                         for tool, v, on in zip(tools, valid, enabled, strict=True)
                     )
                 )
             )
 
         request = {**valid[0].model_dump(mode="json"), "providers": sorted(members)}
-        return await ctx.trace.tool(
+        values = await ctx.trace.tool(
             agent,
             family,
             request,
@@ -305,6 +336,7 @@ class ToolRegistry:
             lambda results: [tool.record(r) for tool, r in zip(tools, results, strict=True)],
             lambda rows: [tool.restore(v, row) for tool, v, row in zip(tools, valid, rows, strict=True)],
         )
+        return [_result(ctx, tool, v, value) for tool, v, value in zip(tools, valid, values, strict=True)]
 
     async def _enabled(self, ctx: ToolContext, tool: AnyTool) -> bool:
         setting = tool.spec.tenant_setting
@@ -323,16 +355,32 @@ class ToolRegistry:
                 result = await tool.run(ctx, params)
         except TimeoutError:
             log.warning("tool.refused", tool=spec.name, reason="time_cap", time_cap_s=spec.time_cap_s)
-            return tool.refused(params, ToolTimedOut(f"{spec.name} took longer than {spec.time_cap_s:g}s"))
+            return _refuse(tool, params, ToolTimedOut(f"{spec.name} took longer than {spec.time_cap_s:g}s"))
         rows = tool.rows(result)
         if rows > spec.row_cap:
             log.warning("tool.refused", tool=spec.name, reason="row_cap", rows=rows, row_cap=spec.row_cap)
-            return tool.refused(params, ToolRowCapExceeded(f"{spec.name} returned more than {spec.row_cap} rows"))
+            return _refuse(tool, params, ToolRowCapExceeded(f"{spec.name} returned more than {spec.row_cap} rows"))
         return result
 
 
-async def _answer(value: T) -> T:
-    return value
+def _refuse(tool: AnyTool, params: BaseModel, error: ToolError) -> Any:
+    """The tool's refusal answer; it must read as ``failed``, so a refusal is never taken for "no rows"."""
+    answer = tool.refused(params, error)
+    if not tool.failed(answer):
+        raise ToolError(f"{tool.spec.name}: its refusal answer does not read as failed")
+    return answer
+
+
+async def _switched_off(tool: AnyTool, params: BaseModel) -> Any:
+    return _refuse(tool, params, ToolDisabled(tool.spec.name))
+
+
+def _result(ctx: ToolContext, tool: AnyTool, params: BaseModel, value: Any) -> ToolResult[Any]:
+    failed = tool.failed(value)
+    rows = 0 if failed else tool.rows(value)
+    outcome: Outcome = "failed" if failed else "success" if rows > 0 else "empty"
+    hashes = ctx.trace.tool_hashes(tool.spec.traced_as, params.model_dump(mode="json"), tool.record(value))
+    return ToolResult(outcome, value, rows, *hashes)
 
 
 def _validated(tool: AnyTool, params: Mapping[str, Any]) -> BaseModel:
