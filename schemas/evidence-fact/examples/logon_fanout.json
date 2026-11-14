@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.1.0",
+  "id": "fact-by-source-10.20.1.83",
+  "kind": "logon_fanout",
+  "subject": {"type": "ip", "value": "10.20.1.83"},
+  "observed_at": "2026-11-07T09:40:00Z",
+  "source": {"name": "wazuh.logon_fanout", "version": "1"},
+  "complete": true,
+  "value": {
+    "pivot": "source_ip",
+    "family": "windows",
+    "window_start": "2026-11-07T09:00:00Z",
+    "window_end": "2026-11-07T09:40:00Z",
+    "failures": 9,
+    "successes": 1,
+    "lockouts": 0,
+    "unknown_user_failures": 2,
+    "distinct_target_users": 4,
+    "distinct_sources": 1,
+    "distinct_target_hosts": 1,
+    "first_success_after_failure_s": 412,
+    "success_users": ["sbrown"],
+    "failed_users": ["jdoe", "mgarcia", "sbrown", "tnguyen"],
+    "sources": ["10.20.1.83"],
+    "source_hosts": ["IT-WS-01"],
+    "logon_types": ["3"]
+  }
+}

@@ -35,8 +35,8 @@ Removed in v3: the install thresholds on the model tiers (likelihood 8,
 certainty 85), the campaign check and the ``unmapped`` block.
 
 The safety net (:mod:`lg_sotf.core.retro_reopen`): when an alert becomes a
-threat (a response plan, an escalation with a malicious or suspicious model
-verdict, an analyst true positive, a blind-audit malicious label), every
+threat (a response plan, an escalation a model judged a threat, an analyst
+true positive, a blind-audit malicious label), every
 model-closed alert of the tenant that shares a host, user or IP with it and
 closed in the previous 24 hours is reopened, attached to that escalation and
 audited ``alert.reopened``.
