@@ -99,7 +99,12 @@ tool returned is set in monospace on a recessed surface, apart from what the
 model wrote and from what a check, the policy or a person decided. A claim
 that names no lookup, or only one that returned nothing, is marked
 unsupported. **Hide the verdict** (`V`) withholds the verdict and the claims
-so you judge from the evidence first.
+so you judge from the evidence first. The page is the investigation read
+model (`GET /alerts/{id}/investigation`) on screen: beside the verdict it
+shows how often people confirmed that outcome for your tenant in the last
+90 days, as counts (no rate under 30), and it says "not yet available" for
+exactly the fields the read model lists in `pending_harness`. An entity chip
+opens the alert list searched for that value (a title search).
 
 Read the summary critically: the analysis states whether its evidence came
 from threat intelligence and alert history or only from the model, and
@@ -136,10 +141,11 @@ alerts where text in the alert tried to steer the model carry a
      that the case comes back to you.
 
    The investigation view records the same decision from its decision bar:
-   `T` (true positive), `B` (benign, expected here: `benign_positive`) or `F`
-   (false positive) chooses the verdict, the bar says what it sets in motion,
-   and `Ctrl+Enter` records it and opens the next escalation. The bar does
-   not offer `needs_more_info` yet.
+   `T` (true positive), `B` (benign, expected here: `benign_positive`), `F`
+   (false positive) or `N` (`needs_more_info`) chooses the verdict, the bar
+   says what it sets in motion, and `Ctrl+Enter` records it and opens the
+   next escalation. For `N` the bar asks for a note, because the note is what
+   the new analysis reads.
    Add `notes` and optional `feedback` (`confidence`, `triage_correct`,
    `correlation_helpful`, `analysis_accurate`). Feedback feeds the
    evaluation harness (docs/evaluation.md) and helps tune the platform.

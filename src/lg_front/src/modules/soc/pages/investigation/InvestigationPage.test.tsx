@@ -3,27 +3,27 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import type { AlertDetailOut, AlertEventOut, DecisionIn, EscalationOut, ResponsePreviewOut } from '../../api/types';
+import type { AlertDetailOut, AlertEventOut, DecisionIn, EscalationOut, InvestigationOut, ProposedActionOut, ResponsePreviewOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import {
   ALERT_ID,
   ESCALATION_ID,
-  event,
   inMinutes,
   investigationAlert,
   investigationEscalation,
   investigationEvents,
   investigationPreview,
-  plannedAction,
 } from '../../../../test/investigation';
+import { AI_CLOSED_INVESTIGATION, ESCALATED_INVESTIGATION, RESPONSE_PLAN_INVESTIGATION } from '../../../../test/investigationReadModels';
 import { AlertSidePanel } from '../alerts/AlertPanel';
-import { effectOf } from './DecisionDock';
+import { NEEDS_MORE_EFFECT, effectOf } from './DecisionDock';
 import InvestigationPage from './InvestigationPage';
-import { checkLine } from './InvestigationPage';
+import { checkLine, entityHref, pendingWhy } from './InvestigationPage';
 import { isTyping } from './keys';
 import { preapproval, preapprovedEntries } from './ResponseTable';
 
 const TITLE = 'Encoded PowerShell launched by Microsoft Word';
+const TERMINATE = /^Run on true positive ?: Terminate process on powershell.exe PID 7340$/;
 
 function LocationProbe() {
   const location = useLocation();
@@ -33,6 +33,8 @@ function LocationProbe() {
 type Handler = (method: string, path: string, body: unknown) => unknown;
 
 interface Setup {
+  /** The read model the API serves; null: the API predates it and answers 404. */
+  model?: InvestigationOut | null;
   alert?: AlertDetailOut;
   esc?: EscalationOut | null;
   events?: AlertEventOut[];
@@ -42,11 +44,24 @@ interface Setup {
   handler?: Handler;
 }
 
-async function renderPage({ alert = investigationAlert(), esc = investigationEscalation(), events = investigationEvents(), preview = investigationPreview(), role = 'analyst', id = 'u-1', handler }: Setup = {}) {
+async function renderPage({
+  model = ESCALATED_INVESTIGATION,
+  alert = investigationAlert(),
+  esc = investigationEscalation(),
+  events = investigationEvents(),
+  preview = investigationPreview(),
+  role = 'analyst',
+  id = 'u-1',
+  handler,
+}: Setup = {}) {
   let current = esc;
   const { api, calls } = fakeApi((method, path, body) => {
     const answer = handler?.(method, path, body);
     if (answer !== undefined) return answer;
+    if (method === 'GET' && path === `/alerts/${ALERT_ID}/investigation`) {
+      if (model) return model;
+      throw apiError(404, 'not_found', 'Not Found');
+    }
     if (method === 'GET' && path === `/alerts/${ALERT_ID}`) return alert;
     if (method === 'GET' && path === `/alerts/${ALERT_ID}/events`) return { items: events, next_cursor: null };
     if (method === 'GET' && path === `/escalations/${ESCALATION_ID}` && current) return current;
@@ -61,8 +76,8 @@ async function renderPage({ alert = investigationAlert(), esc = investigationEsc
     }
     if (method === 'GET' && path === '/escalations') return { items: [], next_cursor: null };
     if (method === 'GET' && path === '/actions') return { items: [], next_cursor: null };
-    if (method === 'GET' && path === '/alerts/next-alert') return investigationAlert({ id: 'next-alert', title: 'The next alert', summary: {}, findings: [] });
-    if (path.endsWith('/events')) return { items: [], next_cursor: null };
+    if (method === 'GET' && path === '/alerts/next-alert') return investigationAlert({ id: 'next-alert', title: 'The next alert', status: 'closed', summary: {}, findings: [] });
+    if (method === 'GET' && path === '/alerts/next-alert/investigation') return { ...AI_CLOSED_INVESTIGATION, alert_id: 'next-alert' };
     if (method === 'GET' && path === '/auth/me') return { kind: 'user', tenant_id: 'acme', home_tenant_id: 'acme', auth_method: 'password', tenant_name: 'Northwind Logistics' };
     throw apiError(404, 'not_found', 'Not found');
   });
@@ -82,6 +97,7 @@ async function renderPage({ alert = investigationAlert(), esc = investigationEsc
   return { ...view, calls };
 }
 
+const closedAlert = (overrides: Partial<AlertDetailOut> = {}) => investigationAlert({ status: 'closed', disposition: 'benign', summary: {}, findings: [], ...overrides });
 const dock = () => within(screen.getByRole('region', { name: 'Your decision' }));
 const effect = () => screen.getByTestId('decision-effect');
 const verdictButton = (name: RegExp) => dock().getByRole('button', { name });
@@ -90,184 +106,192 @@ const claimRow = (n: number) => claimButton(n).closest('[data-claim]') as HTMLEl
 const decisionBody = (calls: Array<{ method: string; path: string; body?: unknown }>) =>
   calls.find((c) => c.method === 'POST' && c.path.endsWith('/decision'))?.body as DecisionIn | undefined;
 const section = (name: string | RegExp) => within(screen.getByRole('region', { name }));
+const paths = (calls: Array<{ path: string }>) => calls.map((c) => c.path);
 
-describe('investigation view: needs your decision, likely malicious', () => {
-  it('opens with the outcome and the verdict as a sentence, then why it is with a person', async () => {
-    const { container } = await renderPage();
+describe('investigation view on the read model: an escalated alert', () => {
+  it('opens with the outcome and the verdict as a sentence, why it is with a person and what blocks an AI close', async () => {
+    const { container, calls } = await renderPage();
     expect(screen.getByRole('heading', { level: 1, name: TITLE })).toBeInTheDocument();
-    expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'needs_decision_malicious');
+    expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-source', 'api');
+    expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'needs_decision');
     expect(screen.getByText('Needs your decision: likely malicious')).toBeInTheDocument();
     expect(screen.getByText('Summary written by the model')).toBeInTheDocument();
-    expect(screen.getByText(/^Word ran a hidden, encoded PowerShell command/)).toHaveTextContent('Two minutes later the same host read LSASS memory.');
+    expect(screen.getByText(/^Word ran a hidden, encoded PowerShell command/)).toHaveTextContent("Isolate the host and reset the user's sessions.");
     expect(screen.getByText('Why it is with you.').parentElement).toHaveTextContent(
-      'Why it is with you. The AI did not close this alert: high severity alerts are closed only by an analyst. 1 of the 5 claims is backed by what the tools returned; 4 cite no fact.',
+      'Why it is with you. No automatic rule applies to this alert, so a person decides. 1 of the 5 claims is backed by what the tools returned; 4 cite no fact.',
     );
+    expect(within(screen.getByRole('list', { name: 'Why the AI may not close it on its own' })).getAllByRole('listitem')).toHaveLength(3);
     // The alert's own description comes next, marked as observed.
     expect(screen.getByText('The alert, as Wazuh manager sent it')).toBeInTheDocument();
     expect(screen.getByText(/^Rule 92213 \(level 12\)/)).toBeInTheDocument();
+    // One request gives the page its explanation: the timeline and the response preview are not fetched.
+    expect(paths(calls)).toContain(`/alerts/${ALERT_ID}/investigation`);
+    expect(paths(calls).some((p) => p.endsWith('/events') || p.endsWith('/response-preview') || p === '/actions')).toBe(false);
   });
 
-  it('names the tenant, the case, the severity in words, the deadline and the owner, and resolves the subject to chips', async () => {
+  it('draws the track record from the read model’s counts, and never a percentage', async () => {
+    const { container } = await renderPage();
+    const track = screen.getByRole('complementary', { name: 'Track record of this outcome' });
+    expect(track.querySelector('[data-track]')).toHaveAttribute('data-track', 'counted');
+    expect(track).toHaveTextContent('Analysts confirmed 31 of 34 alerts sent to a person as likely malicious.');
+    expect(within(track).getByRole('img', { name: '34 alerts: 31 confirmed, 3 not' }).querySelectorAll('[data-square]')).toHaveLength(34);
+    expect(await within(track).findByText(/^Northwind Logistics, last 90 days, analyst decisions\./)).toBeInTheDocument();
+    expect(container).not.toHaveTextContent(/\d\s?%/);
+    expect(container).not.toHaveTextContent('0.9118');
+  });
+
+  it('names the tenant, the case, the severity in words, the deadline and the owner; entity chips lead to the alert list searched for the entity', async () => {
     await renderPage();
     const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
     expect(crumb.getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
     expect(crumb.getByText('Case CASE-2291')).toBeInTheDocument();
     expect(await crumb.findByText('Northwind Logistics')).toBeInTheDocument();
-    const severity = screen.getByText('High', { selector: '[data-severity="high"]' });
-    expect(severity).not.toHaveClass('capitalize');
+    expect(screen.getByText('High', { selector: '[data-severity="high"]' })).not.toHaveClass('capitalize');
     expect(screen.getByText(/left$/)).toHaveAttribute('title', expect.stringMatching(/^Deadline /));
     expect(screen.getByText('Owner').parentElement).toHaveTextContent('Owneryou');
     const subject = within(screen.getByRole('list', { name: 'Subject of the alert' }));
-    expect(subject.getByText('WS-FIN-0142').parentElement).toHaveTextContent('HostWS-FIN-0142');
-    expect(subject.getByText('m.keller').parentElement).toHaveTextContent('Userm.keller');
+    const host = subject.getByRole('link', { name: /^Host ?WS-FIN-0142 ?: alerts whose title names it$/ });
+    expect(host).toHaveAttribute('href', '/alerts?view=all&q=WS-FIN-0142');
+    expect(host).toHaveAttribute('title', 'Alerts whose title names WS-FIN-0142');
+    expect(subject.getByRole('link', { name: /m\.keller/ })).toHaveAttribute('href', '/alerts?view=all&q=m.keller');
     expect(subject.getByText('+1 more').parentElement).toHaveTextContent('Process+1 more');
+    expect(subject.getByText('+1 more').closest('a')).toBeNull();
     expect(subject.getByText('T1059.001, T1204.002').parentElement).toHaveTextContent('ATT&CK');
     expect(subject.getByText('Office application starts a script host')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Evidence record' })).toHaveAttribute('href', '#evidence-record');
     expect(screen.getByRole('group', { name: 'Export evidence' })).toBeInTheDocument();
   });
 
-  it('puts each claim beside the observation it rests on, with the decisive token highlighted', async () => {
+  it('puts each claim beside the observation it rests on, with its typed outcome and its hash where the read model has one', async () => {
     await renderPage();
     const claims = section('Claims, each beside the fact it rests on');
-    expect(claims.getByText('Left: what the model says. Right: what a tool returned, unedited.')).toBeInTheDocument();
-    const first = claimRow(1);
-    expect(first).toHaveAttribute('data-check', 'supported');
-    expect(within(first).getByText('Backed by O-01')).toBeInTheDocument();
-    const observed = first.querySelector('[data-observation="O-01"]') as HTMLElement;
-    expect(observed).toHaveAttribute('data-outcome', 'success');
-    expect(within(observed).getByText('returned data')).toBeInTheDocument();
-    expect([...observed.querySelectorAll('mark')].map((m) => m.textContent)).toEqual(['malicious']);
-    expect(observed).toHaveTextContent('no hash yet');
-    // What a tool returned and no claim cites is still on the page.
-    const uncited = claims.getByRole('heading', { name: 'Returned by the tools, cited by no claim' }).parentElement as HTMLElement;
-    expect(uncited.querySelector('[data-observation="O-03"]')).toHaveTextContent('Earlier alerts of this tenant for host WS-FIN-0142');
-    expect(claims.getByText(/^Not yet available: the evidence checker\./)).toBeInTheDocument();
-  });
-
-  it('marks a claim unsupported beside a lookup that returned nothing, and shows a failed lookup as failed', async () => {
-    const base = investigationAlert();
-    const analysis = { ...(base.summary?.analysis as object), reasoning: ['The download address 203.0.113.50 has no reputation record.', 'The file 5d1e0c9a7b3f4e2d8c6a1b0f9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a29b07c is unknown.', 'It names nothing.'] };
-    await renderPage({ alert: investigationAlert({ summary: { ...base.summary, analysis, triage: {} } }) });
-    const empty = claimRow(1);
-    expect(empty).toHaveAttribute('data-check', 'unsupported');
-    expect(within(empty).getByText('Unsupported')).toBeInTheDocument();
-    expect(within(empty).getByText('The lookup it names returned nothing, and nothing found is never counted as proof.')).toBeInTheDocument();
-    const nothing = empty.querySelector('[data-observation="O-02"]') as HTMLElement;
-    expect(nothing).toHaveAttribute('data-outcome', 'empty');
-    expect(within(nothing).getByText('returned nothing')).toBeInTheDocument();
-    expect(nothing).toHaveTextContent('No record for this IP address.');
-    const failed = claimRow(2).querySelector('[data-observation="O-04"]') as HTMLElement;
-    expect(failed).toHaveAttribute('data-outcome', 'failed');
-    expect(within(failed).getByText('failed')).toBeInTheDocument();
-    expect(failed).toHaveTextContent('virustotal answered with an error.');
-    expect(failed).toHaveTextContent('time not recorded');
-    const bare = claimRow(3);
-    expect(within(bare).getByText('It names no lookup.')).toBeInTheDocument();
+    // The model's claims cite nothing yet: unsupported, with the read model's reason.
+    const bare = claimRow(1);
+    expect(bare).toHaveAttribute('data-check', 'unsupported');
+    expect(within(bare).getByText('Unsupported')).toBeInTheDocument();
+    expect(within(bare).getByText('The model named no observation for it.')).toBeInTheDocument();
     expect(within(bare).getByText('No observation is cited for this claim.')).toBeInTheDocument();
+    expect(within(claimRow(4)).getByText('Points to benign')).toBeInTheDocument();
+    // The rule claim is marked as the rules' and backed by the lookup that returned data.
+    const backed = claimRow(5);
+    expect(backed).toHaveAttribute('data-check', 'supported');
+    expect(within(backed).getByText('Stated by the rules')).toBeInTheDocument();
+    expect(within(backed).getByText('Backed by O-03')).toBeInTheDocument();
+    const observed = backed.querySelector('[data-observation="O-03"]') as HTMLElement;
+    expect(observed).toHaveAttribute('data-outcome', 'success');
+    expect(observed).toHaveTextContent('Threat-intelligence reputation: domain cdn-invoice-portal.example');
+    expect(within(observed).getByText('returned data')).toBeInTheDocument();
+    expect(within(observed).getByText('Verdict suspicious')).toBeInTheDocument();
+    expect(within(observed).getByText('sha256 9f2c…41e1')).toBeInTheDocument();
+    expect(observed.querySelector('details pre')).toHaveTextContent(/input sha256 41be7d0c.*output sha256 9f2c81d7/);
+    // The read model sets no highlight range yet: nothing is highlighted, and the page says why.
+    expect(observed.querySelector('mark')).toBeNull();
+    const pending = claims.getByText('Not yet available in this section (4)').closest('details') as HTMLElement;
+    expect(within(pending).getAllByRole('listitem').map((li) => li.textContent)).toEqual(
+      ESCALATED_INVESTIGATION.pending_harness.filter((p) => p.field.startsWith('claims') || p.field.startsWith('observations')).map((p) => p.why),
+    );
   });
 
-  it('lists what is not established in three kinds, and says the track record is not measured yet', async () => {
-    const { container } = await renderPage();
+  it('lists what is not established in three kinds, from the read model', async () => {
+    await renderPage();
     const ne = screen.getByRole('region', { name: 'What is not established' });
-    expect(ne.querySelector('[data-kind="empty"]')).toHaveTextContent('Reputation of IP address 203.0.113.50.');
-    expect(ne.querySelector('[data-kind="not"]')).toHaveTextContent('Reputation of domain unchecked.exampleNo lookup was recorded for it.');
-    expect(ne.querySelector('[data-kind="cannot"]')).toHaveTextContent('virustotal answered with an error.');
-    expect(within(ne).getByText(/^Not yet available: what the playbook leaves out\./)).toBeInTheDocument();
-    const track = screen.getByRole('complementary', { name: 'Track record of this outcome' });
-    expect(track.querySelector('[data-track]')).toHaveAttribute('data-track', 'none');
-    expect(track).toHaveTextContent('How often analysts confirmed the alerts sent to a person as likely malicious is not counted yet');
-    expect(container).not.toHaveTextContent(/\d\s?%/);
+    expect(within(ne.querySelector('[data-kind="empty"]') as HTMLElement).getByText('Show the 4 lookups')).toBeInTheDocument();
+    expect(ne.querySelector('[data-kind="empty"]')).toHaveTextContent('threat-intelligence reputation: IP address 203.0.113.50, file hash 5d1e');
+    expect(ne.querySelector('[data-kind="not"]')).toHaveTextContent('What else happened on the host and for the user around the alert');
+    expect(ne.querySelector('[data-kind="cannot"]')).toHaveTextContent('virustotal: The source did not answer.');
+    expect(within(ne).getByText("Not yet available: Without a playbook the list names only the lookups today's analysis could have made.")).toBeInTheDocument();
   });
 
-  it('writes the steps in plain words and the proposed response with exact targets', async () => {
+  it('shows the steps in the read model’s words and the response a true positive would propose, with exact targets', async () => {
     await renderPage();
     const steps = screen.getByRole('region', { name: 'What the investigation did' });
-    expect(steps.querySelectorAll('li[data-actor]')).toHaveLength(6);
-    expect(steps).toHaveTextContent('Decision policy: send it to an analyst. High severity alerts are closed only by an analyst.');
-    expect(steps).not.toHaveTextContent(/node|gate|plan_response/i);
+    expect(steps.querySelectorAll('li[data-actor]')).toHaveLength(ESCALATED_INVESTIGATION.steps.length);
+    expect(steps).toHaveTextContent('Deeper analysis: the model read the alert, chose reputation lookups and wrote its conclusion.');
+    expect(steps).toHaveTextContent('level L2 · priority 8');
+    expect(steps).not.toHaveTextContent(/node\.completed|await_analyst|plan_response/);
+    expect(within(steps).getByText(/^Not yet available: The steps come from the workflow's timeline\./)).toBeInTheDocument();
     const plan = section('Proposed response');
     expect(plan.getByRole('link', { name: 'Approvals' })).toHaveAttribute('href', '/approvals');
-    const rows = (await plan.findAllByRole('row')).slice(1);
-    expect(rows).toHaveLength(4);
-    expect(rows[0]).toHaveTextContent('Isolate host');
+    expect(plan.getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Action', 'Exact target', 'Can it be undone', 'Guardrail', 'Approval']);
+    const rows = plan.getAllByRole('row').slice(1);
+    expect(rows).toHaveLength(6);
+    expect(rows[0]).toHaveTextContent('Isolate hostIsolate the host from the network');
     expect(within(rows[0]).getByText('WS-FIN-0142').tagName).toBe('CODE');
     expect(rows[0]).toHaveTextContent('Needs an admin');
     expect(rows[0]).toHaveTextContent('High risk');
     expect(rows[0]).toHaveTextContent('YesRelease host');
     expect(within(rows[0]).queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(within(rows[1]).getByText('powershell.exe PID 7340')).toBeInTheDocument();
     expect(rows[1]).toHaveTextContent('NoA stopped process is not restarted');
-    expect(within(rows[1]).getByRole('checkbox', { name: /^Run on true positive ?: Kill process on powershell.exe PID 7340$/ })).not.toBeChecked();
-    expect(rows[3]).toHaveTextContent('BlockedThe autonomy policy switches off critical-risk actions');
-    expect(rows[3]).toHaveTextContent('Not available');
-    for (const row of rows) expect(row).toHaveTextContent('Not available yet');
+    expect(within(rows[1]).getByRole('checkbox', { name: TERMINATE })).not.toBeChecked();
+    expect(rows[5]).toHaveTextContent("BlockedThe tenant's autonomy policy switches off critical-risk actions");
+    expect(rows[5]).toHaveTextContent('Not available');
+  });
+
+  it('says "not yet available" only for what the read model lists as pending', async () => {
+    const complete: InvestigationOut = { ...ESCALATED_INVESTIGATION, pending_harness: [] };
+    const { container } = await renderPage({ model: complete });
+    expect(container).not.toHaveTextContent(/not yet available/i);
+    expect(container.querySelector('[data-pending]')).toBeNull();
+    expect(container).not.toHaveTextContent('no hash yet');
   });
 });
 
-describe('investigation view: other outcomes', () => {
-  it('needs your decision, unsure', async () => {
-    const base = investigationAlert();
-    const { container } = await renderPage({
-      alert: investigationAlert({ summary: { ...base.summary, analysis: { verdict: 'inconclusive', conclusion: 'A sign-in from a new country, by a user who travels.', llm_used: false } } }),
-      esc: investigationEscalation({ reason: 'assessment in the grey zone', summary: { verdict: 'inconclusive' } }),
-    });
-    expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'needs_decision_unsure');
+describe('investigation view on the read model: other outcomes', () => {
+  it('needs your decision, unsure, with no response to propose', async () => {
+    const outcome = { ...ESCALATED_INVESTIGATION.outcome, category: 'needs_review', reason: { code: 'grey_zone', sentence: 'The assessment is in the grey zone: not low enough to close, not high enough to respond.' }, blockers: [], evidence: [], closed_by: null };
+    const model: InvestigationOut = {
+      ...ESCALATED_INVESTIGATION,
+      outcome,
+      summary: { text: 'A sign-in from a new country, by a user who travels.', written_by: 'rules' },
+      track_record: { category: 'needs_review', basis: 'analyst_decisions', window_days: 90, total: 0, confirmed: 0, min_samples: 30, rate: null },
+      response: { source: 'none', actions: [] },
+    };
+    const { container } = await renderPage({ model });
+    expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'needs_review');
     expect(screen.getByText('Needs your decision: unsure')).toBeInTheDocument();
     expect(screen.getByText('Summary written by the rules')).toBeInTheDocument();
-    expect(screen.getByText('Why it is with you.').parentElement).toHaveTextContent('The AI did not close this alert: assessment in the grey zone.');
-    expect(screen.getByText('Left: what the analysis rules state. Right: what a tool returned, unedited.')).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('alerts sent to a person as unsure');
+    expect(screen.getByText('Why it is with you.').parentElement).toHaveTextContent('The assessment is in the grey zone');
+    expect(screen.queryByRole('list', { name: 'Why the AI may not close it on its own' })).not.toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('None of the alerts sent to a person as unsure has been decided yet.');
+    expect(section('Proposed response').getByText('A true positive would propose no response action for this alert.')).toBeInTheDocument();
+    expect(effect()).toHaveTextContent('Choose a verdict to see what it sets in motion.');
   });
 
-  it('closed by the AI and sampled for audit: why it was closed, what ran, and no decision bar', async () => {
-    const { container, calls } = await renderPage({
-      alert: investigationAlert({
-        status: 'closed',
-        disposition: 'benign',
-        summary: {
-          close_reason: 'ai_closed:audit_required',
-          analysis: { verdict: 'benign', llm_used: true, conclusion: 'A routine package install by the configuration management agent.' },
-          decision: { route: 'close', reason: 'AI-closed, audit required: the analysis judged it benign', code: 'model_closed' },
-        },
-        findings: [],
-      }),
-      esc: null,
-      events: [event('2026-11-14T09:44:36Z', 'node.completed', 'close', { disposition: 'benign', close_reason: 'ai_closed:audit_required' })],
-    });
+  it('closed by the AI and sampled for audit: why it was closed, a small-sample track record without a rate, and no decision bar', async () => {
+    const { container, calls } = await renderPage({ model: AI_CLOSED_INVESTIGATION, alert: closedAlert(), esc: null });
     expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'ai_closed_audit');
     expect(screen.getByText('Closed by AI, sampled for audit')).toBeInTheDocument();
-    expect(screen.getByText('A routine package install by the configuration management agent.')).toBeInTheDocument();
-    expect(screen.getByText('Why it was closed.').parentElement).toHaveTextContent('Why it was closed. AI-closed, audit required: the analysis judged it benign.');
-    expect(screen.getByText('The analysis recorded no claim for this alert.')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'What the investigation did' })).toHaveTextContent('Closed as benign on the analysis alone; it stays in the pool for the blind audit.');
-    expect(await section('Response').findByText('No response action was planned for this alert.')).toBeInTheDocument();
+    expect(screen.getByText('A routine package install by the configuration management agent, seen on 38 hosts this week.')).toBeInTheDocument();
+    expect(screen.getByText('Why it was closed.').parentElement).toHaveTextContent("The AI closed it on the model's word. No independent evidence backs the close, so it is sampled for audit.");
+    const track = screen.getByRole('complementary', { name: 'Track record of this outcome' });
+    expect(track.querySelector('[data-track]')).toHaveAttribute('data-track', 'few');
+    expect(track).toHaveTextContent('Blind-audit labels agreed with the AI on 11 of 12 alerts the AI closed and sampled for audit.');
+    expect(within(track).getByText('too few for a rate')).toBeInTheDocument();
+    expect(section('Response').getByText('No response is proposed for this alert.')).toBeInTheDocument();
     expect(section('Decision').getByText('No decision was asked of a person for this alert.')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Your decision' })).not.toBeInTheDocument();
     expect(screen.queryByText(/left$/)).not.toBeInTheDocument();
-    expect(calls.some((c) => c.path.endsWith('/response-preview'))).toBe(false);
-    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('alerts the AI closed and sampled for audit');
+    expect(paths(calls).some((p) => p.startsWith('/escalations'))).toBe(false);
   });
 
-  it('closed by a suppression rule without an investigation', async () => {
+  it('a response plan on the ledger: every action with its status, nothing to tick, and the decision on record', async () => {
     await renderPage({
-      alert: investigationAlert({ status: 'closed', summary: { close_reason: 'suppression_rule', suppressed_by: { type: 'suppression_rule', name: 'Patch window' } }, findings: [], normalized: {} }),
-      esc: null,
-      events: [],
-    });
-    expect(screen.getByText('Closed by a suppression rule')).toBeInTheDocument();
-    expect(screen.getByText('Suppression rule "Patch window" matched this alert.')).toBeInTheDocument();
-    expect(screen.getByText('No investigation ran for this alert: there are no claims and no observations.')).toBeInTheDocument();
-    expect(screen.getByText('No step is recorded for this alert yet.')).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('alerts with this outcome');
-  });
-
-  it('an escalation already decided: the decision on record instead of the bar', async () => {
-    await renderPage({
+      model: RESPONSE_PLAN_INVESTIGATION,
       alert: investigationAlert({ status: 'waiting_approval' }),
       esc: investigationEscalation({ status: 'decided', decision: 'true_positive', decision_notes: 'Confirmed with the user.', decided_by: 'u-9', decided_by_email: 'lead@acme.test', decided_at: '2026-11-14T10:20:00Z' }),
     });
-    expect(screen.getByText('Waiting for an approval')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('Analysts confirmed 96 of 120');
+    expect(screen.getByRole('img', { name: '96 of 120 alerts confirmed' })).toBeInTheDocument();
+    const plan = section('Response');
+    expect(plan.getByText(/^The actions the workflow recorded for this alert, each with its status\./)).toBeInTheDocument();
+    expect(plan.getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Action', 'Exact target', 'Can it be undone', 'Guardrail', 'Status']);
+    const rows = plan.getAllByRole('row').slice(1);
+    expect(rows.map((r) => r.querySelector('[data-status]')?.textContent)).toEqual(['Ran', 'Waits for an approval', 'Dry run: recorded, nothing changed', 'Blocked']);
+    expect(within(rows[0]).getByText('powershell.exe PID 7340').tagName).toBe('CODE');
+    expect(rows[0]).toHaveTextContent('Not checked again');
+    expect(rows[1]).toHaveTextContent('Passed');
+    expect(rows[3]).toHaveTextContent("BlockedThe tenant's autonomy policy switches off critical-risk actions");
+    expect(plan.queryByRole('checkbox')).not.toBeInTheDocument();
     const decision = section('Decision');
     expect(decision.getByText('Decided by a person')).toBeInTheDocument();
     expect(decision.getByText('True positive')).toBeInTheDocument();
@@ -278,15 +302,50 @@ describe('investigation view: other outcomes', () => {
     expect(screen.getByRole('link', { name: 'its panel on the alert list' })).toHaveAttribute('href', `/alerts?alert=${ALERT_ID}`);
   });
 
-  it('says when the alert does not exist, and offers a retry on another error', async () => {
-    const { unmount } = await renderPage({ handler: (m, p) => (m === 'GET' && p === `/alerts/${ALERT_ID}` ? Promise.reject(apiError(404, 'not_found', 'Alert not found')) : undefined) });
+  it('closed by a suppression rule before any analysis: who closed it, the rule, and no track record to show', async () => {
+    const reason = { code: 'suppression_rule', sentence: 'A suppression rule closed it before any analysis.' };
+    const model: InvestigationOut = {
+      ...AI_CLOSED_INVESTIGATION,
+      outcome: { category: null, reason, blockers: [], evidence: [], closed_by: { kind: 'suppression_rule', reason, at: '2026-11-14T09:44:27Z', decision: null, rule_id: 'r1', rule_name: 'Patch window', source_alert_id: null } },
+      summary: { text: null, written_by: null },
+      claims: [],
+      observations: [],
+      not_established: { empty: [], not_checked: [{ what: 'Everything an investigation would look up', why: 'No investigation ran: a rule closed the alert first.' }], unavailable: [] },
+      steps: [],
+      track_record: null,
+    };
+    await renderPage({ model, alert: closedAlert({ normalized: {} }), esc: null });
+    expect(screen.getByText('Closed by a suppression rule')).toBeInTheDocument();
+    expect(screen.getAllByText('A suppression rule closed it before any analysis.')).toHaveLength(1);
+    expect(screen.getByText('Patch window')).toBeInTheDocument();
+    expect(screen.getByText('No investigation ran for this alert: there are no claims and no observations.')).toBeInTheDocument();
+    expect(screen.getByText('No step is recorded for this alert yet.')).toBeInTheDocument();
+    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('The track record counts the four AI outcomes. This alert has none of them.');
+  });
+
+  it('still being investigated: no outcome yet, and the page says so', async () => {
+    const model: InvestigationOut = { ...AI_CLOSED_INVESTIGATION, outcome: null, summary: { text: null, written_by: null }, claims: [], observations: [], steps: [], track_record: null, not_established: { empty: [], not_checked: [], unavailable: [] } };
+    const { container } = await renderPage({ model, alert: investigationAlert({ status: 'processing', summary: {} }), esc: null });
+    expect(container.querySelector('[data-headline]')).toHaveAttribute('data-headline', 'investigating');
+    expect(screen.getByText('The investigation is still running.')).toBeInTheDocument();
+  });
+
+  it('says when the alert does not exist, and offers a retry when the alert or its investigation cannot be read', async () => {
+    const reject = (path: string, status: number, message: string): Handler => (m, p) => (m === 'GET' && p === path ? Promise.reject(apiError(status, status === 404 ? 'not_found' : 'internal', message)) : undefined);
+    const first = await renderPage({ model: null, handler: reject(`/alerts/${ALERT_ID}`, 404, 'Alert not found') });
     expect(screen.getByRole('heading', { level: 1, name: 'Alert not found' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Back to the alerts' })).toHaveAttribute('href', '/alerts');
-    unmount();
-    await renderPage({ handler: (m, p) => (m === 'GET' && p === `/alerts/${ALERT_ID}` ? Promise.reject(apiError(500, 'internal', 'Boom')) : undefined) });
+    first.unmount();
+    const second = await renderPage({ handler: reject(`/alerts/${ALERT_ID}`, 500, 'Boom') });
     expect(screen.getByRole('heading', { level: 1, name: 'Alert' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    second.unmount();
+    // The alert is there but its investigation fails with something other than 404: no silent fallback.
+    await renderPage({ handler: reject(`/alerts/${ALERT_ID}/investigation`, 403, 'Not allowed for this tenant') });
+    expect(await screen.findByText('Not allowed for this tenant')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: TITLE })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'What the investigation did' })).not.toBeInTheDocument();
   });
 
   it('says when the escalation cannot be read instead of claiming no decision was asked', async () => {
@@ -295,15 +354,46 @@ describe('investigation view: other outcomes', () => {
     expect(screen.queryByText('No decision was asked of a person for this alert.')).not.toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Your decision' })).not.toBeInTheDocument();
   });
+});
 
-  it('says when the response plan is empty, forced to a dry run, or cannot be computed', async () => {
-    const { unmount } = await renderPage({ preview: { ...investigationPreview([]), dry_run_forced: true } });
-    expect(await screen.findByText('The policy plans no response action for this alert.')).toBeInTheDocument();
-    expect(screen.getByText('Dry run')).toBeInTheDocument();
-    expect(effect()).toHaveTextContent('Choose a verdict to see what it sets in motion.');
-    unmount();
-    await renderPage({ handler: (_m, p) => (p.endsWith('/response-preview') ? Promise.reject(apiError(503, 'unavailable', 'The plan cannot be computed now')) : undefined) });
+describe('investigation view: an API without the read model (404) falls back to the adapter', () => {
+  it('builds the same page from the alert, its escalation, its timeline and the response preview, and says what that API cannot give', async () => {
+    const { container, calls } = await renderPage({ model: null });
+    expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-source', 'adapter');
+    expect(screen.getByText('Needs your decision: likely malicious')).toBeInTheDocument();
+    expect(screen.getByText('Why it is with you.').parentElement).toHaveTextContent('The AI did not close this alert: high severity alerts are closed only by an analyst.');
+    expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('Not yet available: This API version does not count how often analysts confirmed an outcome.');
+    const backed = claimRow(3);
+    expect(within(backed).getByText('Backed by O-01')).toBeInTheDocument();
+    expect(backed.querySelector('[data-observation="O-01"]')).toHaveTextContent('Threat-intelligence reputation: domain cdn-invoice-portal.example');
+    const steps = await screen.findByRole('region', { name: 'What the investigation did' });
+    await waitFor(() => expect(steps.querySelectorAll('li[data-actor]')).toHaveLength(6));
+    expect(steps).toHaveTextContent('Decision policy: send it to an analyst. High severity alerts are closed only by an analyst.');
+    const rows = (await section('Proposed response').findAllByRole('row')).slice(1);
+    expect(rows).toHaveLength(4);
+    expect(within(rows[1]).getByRole('checkbox', { name: /^Run on true positive ?: Kill process on powershell.exe PID 7340$/ })).toBeEnabled();
+    expect(paths(calls)).toEqual(expect.arrayContaining([`/alerts/${ALERT_ID}/events`, `/escalations/${ESCALATION_ID}/response-preview`]));
+    // A 404 is an answer: the read model is not asked for again.
+    expect(calls.filter((c) => c.path === `/alerts/${ALERT_ID}/investigation`)).toHaveLength(1);
+  });
+
+  it('shows the ledger’s own list for an alert that no longer waits, and the states of the fallback requests', async () => {
+    const closed = closedAlert({ summary: { close_reason: 'ai_closed:audit_required', analysis: { verdict: 'benign', llm_used: true, conclusion: 'A routine package install.' } } });
+    const first = await renderPage({ model: null, alert: closed, esc: null, events: [] });
+    expect(screen.getByText('Closed by AI, sampled for audit')).toBeInTheDocument();
+    expect(await section('Response').findByText('No response action was planned for this alert.')).toBeInTheDocument();
+    expect(await screen.findByText('No step is recorded for this alert yet.')).toBeInTheDocument();
+    first.unmount();
+    const second = await renderPage({ model: null, preview: investigationPreview([]) });
+    expect(await section('Proposed response').findByText('A true positive would propose no response action for this alert.')).toBeInTheDocument();
+    second.unmount();
+    await renderPage({
+      model: null,
+      handler: (_m, p) => (p.endsWith('/response-preview') || p.endsWith('/events') ? Promise.reject(apiError(503, 'unavailable', p.endsWith('/events') ? 'The timeline cannot be read now' : 'The plan cannot be computed now')) : undefined),
+    });
     expect(await section('Proposed response').findByText('The plan cannot be computed now')).toBeInTheDocument();
+    expect(await section('What the investigation did').findByText('The timeline cannot be read now')).toBeInTheDocument();
+    expect(screen.queryByText('No step is recorded for this alert yet.')).not.toBeInTheDocument();
   });
 });
 
@@ -313,19 +403,19 @@ describe('investigation view: verdict hidden', () => {
     const { container } = await renderPage();
     const toggle = screen.getByRole('button', { name: /^Hide the verdict/ });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText(/^assessed as malicious/)).toBeInTheDocument();
+    expect(screen.getByText('4 lookups · verdict malicious')).toBeInTheDocument();
     await user.click(toggle);
     expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-investigation', 'hidden');
     expect(screen.getByRole('button', { name: /^Show the verdict/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('note')).toHaveTextContent('The verdict and the claims are hidden.');
-    for (const withheld of [/^Word ran a hidden, encoded PowerShell command/, 'Needs your decision: likely malicious', 'Why it is with you.', 'Backed by O-01', 'Points to malicious', /^assessed as malicious/, /^Not yet available: the evidence checker/]) {
+    for (const withheld of [/^Word ran a hidden, encoded PowerShell command/, 'Needs your decision: likely malicious', 'Why it is with you.', 'Backed by O-03', 'Points to malicious', 'Stated by the rules', '4 lookups · verdict malicious', 'The deeper analysis did not judge it benign.', /^Not yet available in this section/]) {
       expect(screen.queryByText(withheld)).not.toBeInTheDocument();
     }
-    expect(screen.queryByText(/The script came from cdn-invoice-portal.example/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Word started PowerShell directly/)).not.toBeInTheDocument();
     expect(screen.getByRole('complementary', { name: 'Track record of this outcome' })).toHaveTextContent('Hidden with the verdict.');
     // The evidence, the subject, what is not established and the decision bar stay.
-    expect(claimRow(1).querySelector('[data-observation="O-01"]')).toBeInTheDocument();
-    expect(claimRow(1)).not.toHaveAttribute('data-check');
+    expect(claimRow(5).querySelector('[data-observation="O-03"]')).toBeInTheDocument();
+    expect(claimRow(5)).not.toHaveAttribute('data-check');
     expect(screen.getByRole('list', { name: 'Subject of the alert' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'What is not established' })).toBeInTheDocument();
     expect(verdictButton(/True positive/)).toBeEnabled();
@@ -337,12 +427,24 @@ describe('investigation view: verdict hidden', () => {
     expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-investigation', 'hidden');
   });
 
-  it('a blind-audit sample stays hidden: nothing to reveal', async () => {
+  it('a blind-audit sample stays hidden: the read model withholds the AI’s side and there is nothing to reveal', async () => {
     const user = userEvent.setup();
-    const { container } = await renderPage({ alert: investigationAlert({ hidden_for_blind_audit: true, summary: { escalation_id: ESCALATION_ID } }) });
+    const model: InvestigationOut = {
+      ...ESCALATED_INVESTIGATION,
+      hidden_for_blind_audit: true,
+      outcome: null,
+      summary: { text: null, written_by: null },
+      claims: [],
+      observations: [],
+      not_established: { empty: [], not_checked: [], unavailable: [] },
+      track_record: null,
+      response: { source: 'none', actions: [] },
+    };
+    const { container } = await renderPage({ model, alert: investigationAlert({ summary: { escalation_id: ESCALATION_ID } }) });
     expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-investigation', 'hidden');
     expect(screen.getByRole('note')).toHaveTextContent('withheld for everyone until an analyst labels it on the Blind audit page');
     expect(screen.getByRole('button', { name: /^Show the verdict/ })).toBeDisabled();
+    expect(screen.getByText('The claims and the observations are withheld with the verdict.')).toBeInTheDocument();
     await user.keyboard('v');
     expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-investigation', 'hidden');
   });
@@ -355,7 +457,6 @@ describe('investigation view: the decision bar', () => {
       handler: (m, p) =>
         m === 'GET' && p === '/escalations' ? { items: [investigationEscalation(), investigationEscalation({ id: 'esc-next', alert_id: 'next-alert', status: 'open', assigned_to: null })], next_cursor: null } : undefined,
     });
-    await section('Proposed response').findAllByRole('checkbox');
     expect(effect()).toHaveTextContent('Choose a verdict to see what it sets in motion.');
     expect(dock().getByText('analyst@acme.test')).toBeInTheDocument();
 
@@ -366,17 +467,13 @@ describe('investigation view: the decision bar', () => {
     expect(verdictButton(/False positive/)).toHaveAttribute('aria-pressed', 'true');
     expect(verdictButton(/Benign, expected here/)).toHaveAttribute('aria-pressed', 'false');
     expect(effect()).toHaveTextContent('Closes it as not malicious and feeds the verdict back to triage.');
-    await user.keyboard('n');
-    expect(effect()).toHaveTextContent('Needs more information is not offered here yet');
-    expect(verdictButton(/Needs more/)).toHaveAttribute('aria-disabled', 'true');
-    expect(verdictButton(/False positive/)).toHaveAttribute('aria-pressed', 'true');
     await user.keyboard('T');
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
-    expect(effect()).toHaveTextContent('Marks it malicious, runs no action now and sends 3 others to Approvals. A note is required.');
+    expect(effect()).toHaveTextContent('Marks it malicious, runs no action now and sends 5 others to Approvals. A note is required.');
 
     // Ticking an action changes what the verdict sets in motion; a key pressed on the checkbox is still a shortcut.
-    await user.click(screen.getByRole('checkbox', { name: /^Run on true positive ?: Kill process/ }));
-    expect(effect()).toHaveTextContent('Marks it malicious, runs 1 action now (1 ticked) and sends 2 others to Approvals. A note is required.');
+    await user.click(screen.getByRole('checkbox', { name: TERMINATE }));
+    expect(effect()).toHaveTextContent('Marks it malicious, runs 1 action now (1 ticked) and sends 4 others to Approvals. A note is required.');
     await user.keyboard('2');
     expect(claimButton(2)).toHaveAttribute('aria-pressed', 'true');
     expect(claimButton(1)).toHaveAttribute('aria-pressed', 'false');
@@ -390,8 +487,8 @@ describe('investigation view: the decision bar', () => {
     expect(decisionBody(calls)).toBeUndefined();
 
     // Typing in the note is typing: no shortcut fires.
-    await user.keyboard('fbv Checked the process tree');
-    expect(note).toHaveValue('fbv Checked the process tree');
+    await user.keyboard('fbvn Checked the process tree');
+    expect(note).toHaveValue('fbvn Checked the process tree');
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /^Hide the verdict/ })).toBeInTheDocument();
     expect(dock().queryByText('A true positive needs a note: what did you check?')).not.toBeInTheDocument();
@@ -401,8 +498,8 @@ describe('investigation view: the decision bar', () => {
     expect(decisionBody(calls)).toEqual({
       decision: 'true_positive',
       version: 3,
-      notes: 'fbv Checked the process tree',
-      approved_actions: ['kill_process:powershell.exe PID 7340'],
+      notes: 'fbvn Checked the process tree',
+      approved_actions: ['terminate_process:powershell.exe PID 7340'],
       feedback: null,
       suggest_suppression: null,
     });
@@ -411,20 +508,45 @@ describe('investigation view: the decision bar', () => {
     expect(await screen.findByRole('heading', { level: 1, name: 'The next alert' })).toBeInTheDocument();
   });
 
-  it('records with the buttons too; a false positive needs no note, pre-approves nothing, and stays when nothing else waits', async () => {
+  it('N asks for more information as the API does it today: says exactly what happens, needs a note, and records needs_more_info', async () => {
     const user = userEvent.setup();
     const { calls } = await renderPage();
-    await user.click(await screen.findByRole('checkbox', { name: /^Run on true positive ?: Block domain/ }));
+    const more = verdictButton(/Needs more/);
+    expect(more).toBeEnabled();
+    expect(more).not.toHaveAttribute('aria-disabled');
+    await user.click(screen.getByRole('checkbox', { name: TERMINATE }));
+    await user.keyboard('n');
+    expect(more).toHaveAttribute('aria-pressed', 'true');
+    expect(effect()).toHaveTextContent(
+      'Records no verdict. The analysis runs again and reads your note, once per alert by default; then the alert comes back to an analyst as a new escalation. No response action runs. A note is required.',
+    );
+    expect(effect()).toHaveTextContent(NEEDS_MORE_EFFECT);
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(dock().getByText('Say what is missing: the analysis reads your note.')).toBeInTheDocument();
+    expect(dock().getByLabelText('What did you check')).toHaveFocus();
+    expect(decisionBody(calls)).toBeUndefined();
+    await user.keyboard('Who else received this email?');
     await user.click(dock().getByRole('button', { name: /^Record and open next/ }));
-    expect(effect()).toHaveTextContent('Choose a verdict first: T, B or F.');
+    expect(await screen.findByText('No other escalation is waiting for you.')).toBeInTheDocument();
+    // No action is pre-approved by a request for more information, even when one was ticked.
+    expect(decisionBody(calls)).toEqual({ decision: 'needs_more_info', version: 3, notes: 'Who else received this email?', approved_actions: [], feedback: null, suggest_suppression: null });
+    expect(await section('Decision').findByText('Needs more information')).toBeInTheDocument();
+  });
+
+  it('records with the buttons too; a false positive needs no note, pre-approves nothing, and the page then shows the decision and reloads the read model', async () => {
+    const user = userEvent.setup();
+    const { calls } = await renderPage();
+    await user.click(screen.getByRole('checkbox', { name: /^Run on true positive ?: Block domain/ }));
+    await user.click(dock().getByRole('button', { name: /^Record and open next/ }));
+    expect(effect()).toHaveTextContent('Choose a verdict first: T, B, F or N.');
     await user.click(verdictButton(/False positive/));
     await user.click(dock().getByRole('button', { name: /^Record and open next/ }));
     expect(await screen.findByText('No other escalation is waiting for you.')).toBeInTheDocument();
     expect(decisionBody(calls)).toEqual({ decision: 'false_positive', version: 3, notes: null, approved_actions: [], feedback: null, suggest_suppression: false });
     expect(screen.getByTestId('location')).toHaveTextContent(`/alerts/${ALERT_ID}`);
-    // The page reloads the escalation: the decision is now on record.
     expect(await section('Decision').findByText('False positive')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Your decision' })).not.toBeInTheDocument();
+    await waitFor(() => expect(calls.filter((c) => c.path === `/alerts/${ALERT_ID}/investigation`).length).toBeGreaterThan(1));
   });
 
   it('records once when Ctrl+Enter is pressed again before the answer, and not from inside a dialog', async () => {
@@ -463,12 +585,13 @@ describe('investigation view: the decision bar', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     await user.click(toggle);
     expect(dock().getByRole('button', { name: 'Single-key shortcuts: off' })).toHaveAttribute('aria-pressed', 'false');
-    await user.keyboard('tv1');
+    await user.keyboard('tnv1');
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'false');
+    expect(verdictButton(/Needs more/)).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByRole('button', { name: /^Hide the verdict/ })).toBeInTheDocument();
     expect(claimButton(1)).toHaveAttribute('aria-pressed', 'false');
     await user.keyboard('{Control>}{Enter}{/Control}');
-    expect(effect()).toHaveTextContent('Choose a verdict first: T, B or F.');
+    expect(effect()).toHaveTextContent('Choose a verdict first: T, B, F or N.');
     expect(window.localStorage).toHaveLength(0);
     unmount();
     // The next alert opened in the tab keeps the switch.
@@ -483,7 +606,7 @@ describe('investigation view: the decision bar', () => {
     const user = userEvent.setup();
     const { calls } = await renderPage({ esc: investigationEscalation({ status: 'open', assigned_to: null, assigned_to_email: null, claimed_at: null }) });
     expect(screen.queryByText('Owner')?.parentElement).toHaveTextContent('OwnerUnassigned');
-    expect(await screen.findByRole('checkbox', { name: /^Run on true positive ?: Kill process/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: TERMINATE })).toBeDisabled();
     await user.keyboard('t');
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
     await user.keyboard('{Control>}{Enter}{/Control}');
@@ -493,7 +616,7 @@ describe('investigation view: the decision bar', () => {
     expect(await screen.findByText('Escalation claimed.')).toBeInTheDocument();
     expect(calls.find((c) => c.path.endsWith('/claim'))?.body).toEqual({ version: 3 });
     expect(await dock().findByRole('button', { name: /^Record and open next/ })).toBeEnabled();
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: /^Run on true positive ?: Kill process/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: TERMINATE })).toBeEnabled());
     // The verdict chosen before the claim is kept.
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
   });
@@ -523,12 +646,11 @@ describe('investigation view: the decision bar', () => {
     const user = userEvent.setup();
     const { unmount, calls } = await renderPage({ role: 'viewer' });
     expect(effect()).toHaveTextContent('Requires the analyst role.');
-    for (const name of [/True positive/, /Benign, expected here/, /False positive/]) expect(verdictButton(name)).toBeDisabled();
+    for (const name of [/True positive/, /Benign, expected here/, /False positive/, /Needs more/]) expect(verdictButton(name)).toBeDisabled();
     expect(dock().getByLabelText('What did you check')).toBeDisabled();
     expect(dock().getByRole('button', { name: /^Record and open next/ })).toBeDisabled();
-    expect(await screen.findByRole('checkbox', { name: /^Run on true positive ?: Kill process/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: TERMINATE })).toBeDisabled();
     await user.keyboard('tn');
-    await user.click(verdictButton(/Needs more/));
     await user.keyboard('{Control>}{Enter}{/Control}');
     expect(effect()).toHaveTextContent('Requires the analyst role.');
     expect(decisionBody(calls)).toBeUndefined();
@@ -569,43 +691,66 @@ describe('investigation view: the decision bar', () => {
 });
 
 describe('investigation view: rules and helpers', () => {
-  it('pre-approves only what the preview allows, and never an action without a target', () => {
-    const ok = plannedAction('block_ip', '203.0.113.50');
-    const noTarget = plannedAction('block_ip', ' ');
-    const admin = plannedAction('isolate_host', 'WS-1', { role_lock: 'admin', can_preapprove: false });
-    const off = plannedAction('reset_password', 'u', { role_lock: 'disabled', can_preapprove: false });
-    const blocked = plannedAction('block_domain', 'x.example', { without_preapproval: 'blocked', can_preapprove: false });
-    const automatic = plannedAction('create_ticket', 'SOC', { without_preapproval: 'automatic', can_preapprove: false });
-    const waits = plannedAction('disable_user', 'u', { can_preapprove: false });
+  const action = (overrides: Partial<ProposedActionOut> = {}): ProposedActionOut => ({ ...ESCALATED_INVESTIGATION.response.actions[1], ...overrides });
+
+  it('pre-approves only what the preview allows, and never an action without a target or an entry', () => {
+    const ok = action();
+    const noTarget = action({ target: ' ', approval_entry: 'terminate_process: ' });
+    const noEntry = action({ approval_entry: null });
+    const admin = action({ role_lock: 'admin', can_preapprove: false, approval_entry: 'isolate_host:WS-1' });
+    const off = action({ role_lock: 'disabled', can_preapprove: false });
+    const blocked = action({ without_preapproval: 'blocked', can_preapprove: false });
+    const automatic = action({ without_preapproval: 'automatic', can_preapprove: false, approval_entry: 'create_ticket:SOC' });
+    const waits = action({ can_preapprove: false });
+    const planned = RESPONSE_PLAN_INVESTIGATION.response.actions[1];
     expect(preapproval(ok)).toEqual({ allowed: true, instead: null });
     expect(preapproval(noTarget)).toEqual({ allowed: false, instead: 'No target sent: approve it on the Approvals page' });
+    expect(preapproval(noEntry).allowed).toBe(false);
     expect(preapproval(admin).instead).toBe('Needs an admin');
     expect(preapproval(off).instead).toBe('Not available');
     expect(preapproval(blocked).instead).toBe('Not available');
     expect(preapproval(automatic).instead).toBe('Runs automatically');
     expect(preapproval(waits).instead).toBe('Waits on the Approvals page');
-    const all = [ok, noTarget, admin, automatic];
-    expect(preapprovedEntries(all, new Set(all.map((a) => a.approval_entry)))).toEqual(['block_ip:203.0.113.50']);
+    expect(preapproval(planned).allowed).toBe(false);
+    const all = [ok, noTarget, noEntry, admin, automatic];
+    expect(preapprovedEntries(all, new Set(all.flatMap((a) => (a.approval_entry ? [a.approval_entry] : []))))).toEqual(['terminate_process:powershell.exe PID 7340']);
   });
 
   it('says what a verdict sets in motion from the plan', () => {
-    const plan = [plannedAction('block_ip', '203.0.113.50'), plannedAction('create_ticket', 'SOC', { without_preapproval: 'automatic', can_preapprove: false })];
+    const plan = [action(), action({ without_preapproval: 'automatic', can_preapprove: false, approval_entry: 'create_ticket:SOC' })];
+    const entry = 'terminate_process:powershell.exe PID 7340';
     expect(effectOf('true_positive', [], new Set())).toBe('Marks it malicious and plans the response. A note is required.');
-    expect(effectOf('true_positive', plan, new Set(['block_ip:203.0.113.50']))).toBe('Marks it malicious, runs 2 actions now (1 ticked). A note is required.');
+    expect(effectOf('true_positive', plan, new Set([entry]))).toBe('Marks it malicious, runs 2 actions now (1 ticked). A note is required.');
     expect(effectOf('true_positive', plan, new Set())).toBe('Marks it malicious, runs 1 action now (0 ticked) and sends 1 other to Approvals. A note is required.');
     expect(effectOf(null, plan, new Set())).toBe('Choose a verdict to see what it sets in motion.');
+    expect(effectOf('needs_more_info', plan, new Set([entry]))).toBe(NEEDS_MORE_EFFECT);
     // A ticked action is counted once, whatever it would do without the tick: the count of the others never goes negative.
-    const tickable = [plannedAction('block_ip', '203.0.113.50', { without_preapproval: 'automatic' }), plannedAction('disable_user', 'u-7')];
-    expect(effectOf('true_positive', tickable, new Set(['block_ip:203.0.113.50']))).toBe('Marks it malicious, runs 1 action now (1 ticked) and sends 1 other to Approvals. A note is required.');
-    expect(effectOf('true_positive', tickable, new Set(tickable.map((a) => a.approval_entry)))).toBe('Marks it malicious, runs 2 actions now (2 ticked). A note is required.');
+    const tickable = [action({ without_preapproval: 'automatic' }), action({ target: 'u-7', approval_entry: 'disable_user:u-7' })];
+    expect(effectOf('true_positive', tickable, new Set([entry]))).toBe('Marks it malicious, runs 1 action now (1 ticked) and sends 1 other to Approvals. A note is required.');
+    expect(effectOf('true_positive', tickable, new Set([entry, 'disable_user:u-7']))).toBe('Marks it malicious, runs 2 actions now (2 ticked). A note is required.');
   });
 
   it('counts the claims that are backed, rejected and bare', () => {
-    const c = (check: string) => ({ id: check, text: check, direction: null, observation_ids: [], check });
+    const c = (check: string) => ({ check });
     expect(checkLine([])).toBeUndefined();
     expect(checkLine([c('supported')])).toBe('1 of the 1 claim is backed by what the tools returned.');
     expect(checkLine([c('supported'), c('supported'), c('rejected'), c('unsupported')])).toBe('2 of the 4 claims are backed by what the tools returned; 1 was rejected; 1 cites no fact.');
     expect(checkLine([c('rejected'), c('rejected'), c('unsupported'), c('unsupported')])).toBe('0 of the 4 claims are backed by what the tools returned; 2 were rejected; 2 cite no fact.');
+  });
+
+  it('reads what is pending for a section from the read model, each reason once', () => {
+    const pending_harness = [
+      { field: 'claims[].check', why: 'No checker yet.', issue: 207 },
+      { field: 'claims[].observation_ids', why: 'No checker yet.', issue: 201 },
+      { field: 'observations', why: 'Only reputation lookups.', issue: 200 },
+      { field: 'not_established.not_checked', why: 'No playbook.', issue: 205 },
+      { field: 'stepsize', why: 'Not a step field.', issue: 1 },
+    ];
+    expect(pendingWhy({ pending_harness }, 'claims', 'observations')).toEqual(['No checker yet.', 'Only reputation lookups.']);
+    expect(pendingWhy({ pending_harness }, 'not_established')).toEqual(['No playbook.']);
+    expect(pendingWhy({ pending_harness }, 'steps')).toEqual([]);
+    expect(pendingWhy({ pending_harness: [] }, 'claims')).toEqual([]);
+    expect(entityHref('a b&c')).toBe('/alerts?view=all&q=a+b%26c');
   });
 
   it('treats text fields as typing and leaves checkboxes and buttons to the shortcuts', () => {
