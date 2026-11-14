@@ -6,3 +6,7 @@
 -- (soc_test_gw<N>). The password is for throwaway CI and local test containers only.
 CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB;
 CREATE DATABASE soc_test OWNER soc;
+-- The SELECT-only role shadow runs connect as (AI-E1.5c), like lgsotf_shadow in docker/postgres/init-roles.sh:
+-- read-only sessions; the tests grant it SELECT on each test database (tests/integration/db/_support.py).
+CREATE ROLE lgsotf_shadow LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS NOINHERIT;
+ALTER ROLE lgsotf_shadow SET default_transaction_read_only = on;

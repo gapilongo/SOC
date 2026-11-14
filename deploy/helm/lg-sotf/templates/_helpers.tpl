@@ -105,7 +105,7 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 {{- end -}}
 
-{{/* envFrom: (dict "root" $ "owner" bool "bootstrap" bool) */}}
+{{/* envFrom: (dict "root" $ "owner" bool "bootstrap" bool ["shadow" bool]) */}}
 {{- define "lg-sotf.envFrom" -}}
 - secretRef:
     name: {{ include "lg-sotf.runtimeSecretName" .root }}
@@ -116,6 +116,10 @@ app.kubernetes.io/component: {{ .component }}
 {{- if and .bootstrap .root.Values.secrets.bootstrapSecret }}
 - secretRef:
     name: {{ .root.Values.secrets.bootstrapSecret }}
+{{- end }}
+{{- if and .shadow .root.Values.secrets.shadowSecret }}
+- secretRef:
+    name: {{ .root.Values.secrets.shadowSecret }}
 {{- end }}
 {{- with .root.Values.extraEnvFrom }}
 {{ toYaml . }}

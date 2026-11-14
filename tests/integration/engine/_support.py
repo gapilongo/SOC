@@ -60,6 +60,19 @@ async def suspicious_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwa
     )
 
 
+async def threat_alert(repos: Repositories, tenant_id: str = TENANT_A, **kwargs: Any) -> str:
+    """An alert the fast tier judges ``likely_threat`` and the policy escalates to an analyst (an open case)."""
+    return await make_alert(
+        repos,
+        tenant_id,
+        title="Kerberoasting exploit",
+        severity="high",
+        normalized={"entities": SUSPICIOUS_ENTITIES},
+        raw={"vendor": "edr"},
+        **kwargs,
+    )
+
+
 async def analyst(repos: Repositories, tenant_id: str = TENANT_A) -> str:
     user = await repos.users.create(tenant_id, f"analyst-{uuid4().hex[:8]}@example.com", "analyst")
     return str(user.id)

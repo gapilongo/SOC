@@ -29,15 +29,16 @@ REPORT_ID = re.compile(REPORT_ID_PATTERN)
 MAX_REPORT_ALERTS = 2_000
 MAX_CANDIDATE_CHARS = 128
 MAX_ERROR_CHARS = 128
+MAX_HOST_CHARS = 253
 DECIDED_STATUSES = ("closed", "waiting_human", "waiting_approval")
 
 _INSERT_SQL = """
     INSERT INTO shadow_verdicts (
-        tenant_id, alert_id, report_id, run_id, candidate,
+        tenant_id, alert_id, report_id, run_id, candidate, candidate_host,
         prod_route, prod_disposition, prod_confidence, prod_actions, prod_tokens, prod_cost_usd, prod_latency_ms,
         cand_route, cand_disposition, cand_confidence, cand_actions, cand_tokens, cand_cost_usd, cand_latency_ms,
         cand_error, cand_degraded
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 """
 
 _LIST_SQL = """
@@ -83,6 +84,7 @@ class StoredVerdictRow(Record):
     report_id: str
     run_id: Optional[str]
     candidate: str
+    candidate_host: Optional[str] = None
     severity: str
     prod_route: Optional[str]
     prod_disposition: Optional[str]
@@ -165,16 +167,18 @@ def production_verdict(row: Dict[str, Any]) -> Verdict:
 class ShadowVerdictsRepo(Repository):
     async def append(
         self, tenant_id: str, report_id: str, candidate: str, comparison: Comparison, *,
-        run_id: Optional[str] = None, conn: Optional[Connection] = None,
+        run_id: Optional[str] = None, candidate_host: Optional[str] = None, conn: Optional[Connection] = None,
     ) -> None:
-        """Store one alert's comparison in ``report_id``."""
+        """Store one alert's comparison in ``report_id`` (``candidate_host``: where its LLM calls went, never a key)."""
         check_report_id(report_id)
         if not 1 <= len(candidate) <= MAX_CANDIDATE_CHARS:
             raise ValueError(f"the candidate label is 1 to {MAX_CANDIDATE_CHARS} characters")
+        if candidate_host is not None and len(candidate_host) > MAX_HOST_CHARS:
+            raise ValueError(f"the candidate host is at most {MAX_HOST_CHARS} characters")
         p, k = comparison.production, comparison.candidate
         async with self._tenant(tenant_id, conn) as c:
             await c.execute(
-                _INSERT_SQL, tenant_id, comparison.alert_id, report_id, run_id, candidate,
+                _INSERT_SQL, tenant_id, comparison.alert_id, report_id, run_id, candidate, candidate_host,
                 p.route, p.disposition, p.confidence, list(p.actions[:MAX_ACTIONS]), p.tokens, p.cost_usd,
                 p.latency_ms,
                 k.route, k.disposition, k.confidence, list(k.actions[:MAX_ACTIONS]), k.tokens, k.cost_usd,

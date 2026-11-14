@@ -5121,6 +5121,11 @@ export interface components {
             candidate_failed: number;
             candidate_failures: components["schemas"]["ShadowCaseList"];
             /**
+             * Candidate Host
+             * @description The host the candidate's LLM calls went to (empty: no network); never its key.
+             */
+            candidate_host?: string | null;
+            /**
              * Compared
              * @description Alerts with a production verdict and a usable candidate verdict.
              */

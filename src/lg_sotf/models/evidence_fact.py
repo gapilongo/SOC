@@ -4,6 +4,16 @@ A connector or tool produces facts; a verdict cites them by ``id``, and the
 critic checks that every claim cites one (AI E3). Each ``kind`` carries its own
 typed ``value``, so the planner reads typed data, never raw tool text.
 
+A typed field can still hold a string an attacker chose (a service name, a
+command line, a workstation name). Every string is therefore bounded and every
+list capped at ``MAX_LIST_ITEMS``; a fact field is data to compare or display,
+never an instruction.
+
+Schema 1.1 (INT9.3, ADR 0014 section 3.3) adds the kinds the Wazuh evidence
+tools return (``host_activity``, ``logon_fanout``, ``prevalence``), the
+children of a process lineage, and ``complete``. Every 1.0 fact is a valid 1.1
+fact.
+
 This model is the source of the public JSON Schema ``schemas/evidence-fact/v1.json``
 (``scripts/export_schemas.py`` writes it; ``tests/unit/models/test_evidence_fact.py``
 fails when the two differ). The schema is a published contract with SemVer
@@ -20,12 +30,12 @@ from datetime import datetime, timedelta
 from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union, get_args
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StrictBool, TypeAdapter
 
 from lg_sotf.models.vocabulary import Disposition, Severity
 
 SCHEMA_NAME = "evidence-fact"
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 SCHEMA_ID = f"urn:lg-sotf:schema:{SCHEMA_NAME}:{SCHEMA_VERSION}"
 JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
 
@@ -33,17 +43,48 @@ MAX_TEXT_CHARS = 1_024
 MAX_COMMAND_LINE_CHARS = 4_096
 MAX_LIST_ITEMS = 50
 MAX_LINEAGE_DEPTH = 32
+MAX_NAME_CHARS = 255
+MAX_TOKEN_CHARS = 128
+MAX_RULE_LEVEL = 16
 
-FactKind = Literal["reputation", "process_lineage", "sign_in_history", "related_alert"]
+FactKind = Literal[
+    "reputation", "process_lineage", "sign_in_history", "related_alert",
+    "host_activity", "logon_fanout", "prevalence",  # 1.1
+]
 FACT_KINDS: Tuple[FactKind, ...] = get_args(FactKind)
-SubjectType = Literal["ip", "domain", "url", "user", "host", "process", "file", "alert"]
+SubjectType = Literal[
+    "ip", "domain", "url", "user", "host", "process", "file", "alert",
+    "service", "command_template",  # 1.1
+]
 SUBJECT_TYPES: Tuple[SubjectType, ...] = get_args(SubjectType)
 ReputationVerdict = Literal["malicious", "suspicious", "benign", "unknown"]
 SignInResult = Literal["success", "failure", "interrupted"]
 SignInRisk = Literal["none", "low", "medium", "high"]
 RedactionReason = Literal["secret", "pii", "truncated"]
+LogonPivot = Literal["source_ip", "source_host", "target_user", "target_host"]
+LogonFamily = Literal["windows", "sshd"]
+PrevalenceScope = Literal["tenant_fleet", "tenant_alerts"]
 
 Text = Annotated[str, Field(min_length=1, max_length=MAX_TEXT_CHARS)]
+# A short identifier the source wrote: a rule id, a rule group, an event id, a logon type, a process GUID.
+Token = Annotated[str, Field(min_length=1, max_length=MAX_TOKEN_CHARS)]
+ImageName = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_NAME_CHARS, description="The executable's file name, without its directory."),
+]
+CommandTemplate = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=MAX_COMMAND_LINE_CHARS,
+        description="The command line with its variable parts (paths, ids, values) replaced by placeholders.",
+    ),
+]
+Technique = Annotated[
+    str, Field(pattern=r"^T\d{4}(\.\d{3})?$", description="A MITRE ATT&CK technique id.", examples=["T1110.003"])
+]
+Count = Annotated[int, Field(ge=0)]
+RuleLevel = Annotated[int, Field(ge=0, le=MAX_RULE_LEVEL)]
 Sha256 = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", description="Lowercase hex SHA-256.")]
 
 
@@ -102,12 +143,21 @@ class ProcessNode(_Strict):
     sha256: Optional[Sha256] = None
     user: Optional[Text] = None
     started_at: Optional[AwareDatetime] = None
+    # 1.1: what makes a node comparable across hosts.
+    command_template: Optional[CommandTemplate] = None
+    image_name: Optional[ImageName] = None
+    process_guid: Optional[Token] = Field(default=None, description="The source's id of the process instance.")
 
 
 class ProcessLineageValue(_Strict):
     """The subject process's ancestry, oldest ancestor first, the subject process last."""
 
     chain: List[ProcessNode] = Field(min_length=1, max_length=MAX_LINEAGE_DEPTH)
+    children: Optional[List[ProcessNode]] = Field(
+        default=None,
+        max_length=MAX_LIST_ITEMS,
+        description="1.1: up to 50 processes the subject process started. Absent: the source did not look.",
+    )
 
 
 class SignIn(_Strict):
@@ -141,6 +191,86 @@ class RelatedAlertValue(_Strict):
     disposition: Optional[Disposition] = None
 
 
+class GroupCount(_Strict):
+    group: Token
+    count: Count
+
+
+class HostEvent(_Strict):
+    at: AwareDatetime
+    rule_id: Optional[Token] = None
+    level: Optional[RuleLevel] = None
+    groups: List[Token] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    event_id: Optional[Token] = None
+    user: Optional[Text] = None
+    image_name: Optional[ImageName] = None
+    command_template: Optional[CommandTemplate] = None
+
+
+class HostActivityValue(_Strict):
+    """What a host's detections show over a window around an alert (1.1)."""
+
+    window_start: AwareDatetime
+    window_end: AwareDatetime
+    total: Count = Field(description="Events in the window.")
+    max_level: Optional[RuleLevel] = Field(
+        default=None, description="The highest rule level in the window, 0-16; absent when there was no event."
+    )
+    by_group: List[GroupCount] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS, description="Up to 50 rule groups, most frequent first."
+    )
+    techniques: List[Technique] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    events: List[HostEvent] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS, description="Up to 50 events, highest level first."
+    )
+
+
+class LogonFanoutValue(_Strict):
+    """Logons around one pivot (a source, a user or a target host) over a window (1.1)."""
+
+    pivot: LogonPivot = Field(description="What the subject is in these logons.")
+    family: LogonFamily
+    window_start: AwareDatetime
+    window_end: AwareDatetime
+    failures: Count
+    successes: Count
+    lockouts: Count
+    unknown_user_failures: Count = Field(description="Failures for a user name that does not exist.")
+    distinct_target_users: Count
+    distinct_sources: Count
+    distinct_target_hosts: Count
+    first_success_after_failure_s: Optional[Count] = Field(
+        default=None,
+        description="Seconds from the first failure to the first success after it; absent when there was none.",
+    )
+    success_users: List[Text] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    failed_users: List[Text] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    sources: List[Text] = Field(
+        default_factory=list, max_length=MAX_LIST_ITEMS, description="Up to 50 source addresses."
+    )
+    source_hosts: List[Text] = Field(
+        default_factory=list,
+        max_length=MAX_LIST_ITEMS,
+        description="Up to 50 source host names as the client supplied them: a lead, never proof.",
+    )
+    logon_types: List[Token] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+
+
+class PrevalenceValue(_Strict):
+    """How widely the subject (a file, an image, a service, a command template) is seen (1.1)."""
+
+    scope: PrevalenceScope = Field(
+        description="tenant_fleet: the tenant's hosts in its telemetry; tenant_alerts: the tenant's alerts."
+    )
+    window_start: AwareDatetime = Field(description="The window the source actually covered.")
+    window_end: AwareDatetime
+    first_seen_at: Optional[AwareDatetime] = None
+    last_seen_at: Optional[AwareDatetime] = None
+    host_count: Count
+    event_count: Count
+    fleet_size: Optional[Count] = Field(default=None, description="The tenant's hosts in scope, when known.")
+
+
 # ---------------------------------------------------------------- facts
 
 
@@ -162,6 +292,14 @@ class _Fact(_Strict):
     )
     provenance: Optional[Provenance] = None
     redactions: List[Redaction] = Field(default_factory=list, max_length=MAX_LIST_ITEMS)
+    complete: Optional[StrictBool] = Field(
+        default=None,
+        description=(
+            "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, "
+            "a window that had not closed). Only true lets a claim of absence rest on the fact; "
+            "absent means the source did not say."
+        ),
+    )
     # Internal: never serialized, never in the published schema.
     tenant_id: Optional[str] = Field(default=None, exclude=True)
 
@@ -186,8 +324,31 @@ class RelatedAlertFact(_Fact):
     value: RelatedAlertValue
 
 
+class HostActivityFact(_Fact):
+    kind: Literal["host_activity"]
+    value: HostActivityValue
+
+
+class LogonFanoutFact(_Fact):
+    kind: Literal["logon_fanout"]
+    value: LogonFanoutValue
+
+
+class PrevalenceFact(_Fact):
+    kind: Literal["prevalence"]
+    value: PrevalenceValue
+
+
 EvidenceFact = Annotated[
-    Union[ReputationFact, ProcessLineageFact, SignInHistoryFact, RelatedAlertFact],
+    Union[
+        ReputationFact,
+        ProcessLineageFact,
+        SignInHistoryFact,
+        RelatedAlertFact,
+        HostActivityFact,
+        LogonFanoutFact,
+        PrevalenceFact,
+    ],
     Field(discriminator="kind"),
 ]
 EVIDENCE_FACT: TypeAdapter[EvidenceFact] = TypeAdapter(EvidenceFact)
@@ -196,6 +357,11 @@ EVIDENCE_FACT: TypeAdapter[EvidenceFact] = TypeAdapter(EvidenceFact)
 def parse_fact(data: Any) -> EvidenceFact:
     """Validate a fact (a dict or parsed JSON) against schema v1."""
     return EVIDENCE_FACT.validate_python(data)
+
+
+def fact_is_complete(fact: EvidenceFact) -> bool:
+    """Whether a claim of absence may rest on the fact: only an explicit ``complete: true`` counts."""
+    return fact.complete is True
 
 
 def fact_expires_at(fact: EvidenceFact) -> Optional[datetime]:
@@ -226,6 +392,10 @@ __all__ = [
     "SUBJECT_TYPES",
     "EvidenceFact",
     "FactKind",
+    "HostActivityFact",
+    "LogonFanoutFact",
+    "MAX_LIST_ITEMS",
+    "PrevalenceFact",
     "ProcessLineageFact",
     "ReputationFact",
     "RelatedAlertFact",
@@ -233,5 +403,6 @@ __all__ = [
     "SubjectType",
     "evidence_fact_json_schema",
     "fact_expires_at",
+    "fact_is_complete",
     "parse_fact",
 ]

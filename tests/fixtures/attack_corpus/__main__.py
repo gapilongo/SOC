@@ -1,8 +1,11 @@
 """Generate, check and inspect the attack-emulation corpus (see ``tests/fixtures/attack_corpus/__init__.py``).
 
-    python -m tests.fixtures.attack_corpus generate [--out FILE]   # .jsonl or .jsonl.gz (default: the committed file)
-    python -m tests.fixtures.attack_corpus check                   # the committed file is what the generator writes
+    python -m tests.fixtures.attack_corpus generate [--out FILE]   # .jsonl or .jsonl.gz (default: the committed file),
+                                                                   # and the telemetry, gold and skills files next to it
+    python -m tests.fixtures.attack_corpus check                   # the committed files are what the generator writes
     python -m tests.fixtures.attack_corpus alerts OUT              # alerts.json lines for `python -m tests.fixtures.wazuh_lab load`
+    python -m tests.fixtures.attack_corpus telemetry OUT [--dataset corpus_v1|corpus_skills_v1]
+                                                                   # a dataset's alerts and context events, same form
     python -m tests.fixtures.attack_corpus verify-sources          # sources.json against the pinned upstream files
 """
 
@@ -22,6 +25,7 @@ import httpx
 
 from tests.fixtures.attack_corpus.catalog import ART_COMMIT, ATOMICS, ATTACK, ATTACK_VERSION, RULES, WAZUH_TAG
 from tests.fixtures.attack_corpus.corpus import alerts_json, build_corpus, gzip_bytes, sha256_text
+from tests.fixtures.attack_corpus.files import DATASETS, build_files, file_bytes, telemetry_json
 
 COMMITTED = Path(__file__).resolve().parents[1] / "eval" / "corpus_v1.jsonl.gz"
 WAZUH_RULES_URL = f"https://raw.githubusercontent.com/wazuh/wazuh/{WAZUH_TAG}/ruleset/rules/{{file}}"
@@ -103,13 +107,21 @@ def main(argv: Optional[List[str]] = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     gen = sub.add_parser("generate", help="write the dataset (.jsonl, or .jsonl.gz)")
     gen.add_argument("--out", type=Path, default=COMMITTED)
-    sub.add_parser("check", help="the committed dataset is byte-for-byte what the generator writes")
+    sub.add_parser("check", help="the committed files are byte-for-byte what the generator writes")
     alerts = sub.add_parser("alerts", help="write the alerts as alerts.json lines for the Wazuh lab")
     alerts.add_argument("out", type=Path)
+    telemetry = sub.add_parser("telemetry", help="write a dataset's alerts and context events as alerts.json lines")
+    telemetry.add_argument("out", type=Path)
+    telemetry.add_argument("--dataset", choices=DATASETS, default=DATASETS[0])
     sub.add_parser("verify-sources", help="compare sources.json with the pinned upstream files (network)")
     args = parser.parse_args(argv)
     if args.command == "verify-sources":
         return verify_sources()
+    if args.command == "telemetry":
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(telemetry_json(args.dataset), encoding="utf-8")
+        print(f"{args.out}: the alerts and context events of {args.dataset}")
+        return 0
     corpus = build_corpus()
     text = corpus.text()
     if args.command == "generate":
@@ -117,18 +129,24 @@ def main(argv: Optional[List[str]] = None) -> int:
         meta = json.loads(text.split("\n", 1)[0])["_meta"]["composition"]
         print(f"{args.out}: {meta['items']} items ({meta['malicious']} malicious, {meta['benign']} benign), "
               f"sha256 {sha256_text(text)}")
+        for name, derived in build_files(corpus).items():
+            (args.out.parent / name).write_bytes(file_bytes(name, derived))
+            print(f"{args.out.parent / name}: sha256 {sha256_text(derived)}")
         return 0
     if args.command == "alerts":
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(alerts_json(corpus.alerts), encoding="utf-8")
         print(f"{args.out}: {len(corpus.alerts)} alerts")
         return 0
-    committed = COMMITTED.read_bytes() if COMMITTED.exists() else b""
-    if committed != gzip_bytes(text):
-        print(f"{COMMITTED} differs from the generator output; run `python -m tests.fixtures.attack_corpus generate`",
+    expected = {COMMITTED: gzip_bytes(text), **{COMMITTED.parent / name: file_bytes(name, derived)
+                                                for name, derived in build_files(corpus).items()}}
+    stale = [path for path, content in expected.items() if not path.exists() or path.read_bytes() != content]
+    for path in stale:
+        print(f"{path} differs from the generator output; run `python -m tests.fixtures.attack_corpus generate`",
               file=sys.stderr)
+    if stale:
         return 1
-    print(f"{COMMITTED}: up to date, sha256 {sha256_text(text)}")
+    print(f"{COMMITTED}: up to date, sha256 {sha256_text(text)} ({len(expected) - 1} derived files up to date)")
     return 0
 
 

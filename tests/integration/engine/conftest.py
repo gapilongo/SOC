@@ -12,6 +12,7 @@ from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.settings import Settings
+from tests.integration.db._support import shadow_url
 from tests.integration.engine._support import RecordingEvents
 
 
@@ -20,7 +21,10 @@ def engine_settings(
     checkpointed_database_url: str, redis_url: str, make_settings: Callable[..., Settings], unique_prefix: str
 ) -> Settings:
     return make_settings(
-        database={"url": checkpointed_database_url, "pool_min": 1, "pool_max": 4},
+        database={
+            "url": checkpointed_database_url, "pool_min": 1, "pool_max": 4,
+            "shadow_url": shadow_url(checkpointed_database_url),  # the SELECT-only shadow role (AI-E1.5c)
+        },
         redis={"url": redis_url, "key_prefix": unique_prefix},
         worker={"node_timeout_s": 60.0, "analysis_timeout_s": 120.0, "concurrency": 2},
     )
