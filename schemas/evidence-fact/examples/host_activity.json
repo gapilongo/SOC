@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.1.0",
+  "id": "fact-around-fin-srv-02",
+  "kind": "host_activity",
+  "subject": {"type": "host", "value": "FIN-SRV-02"},
+  "observed_at": "2026-11-07T09:30:00Z",
+  "source": {"name": "wazuh.host_activity", "version": "1"},
+  "complete": true,
+  "provenance": {"source_step_id": "0b6f6a55-3a0e-4d0b-9d3c-3f1f4a6f2c11"},
+  "value": {
+    "window_start": "2026-11-07T08:45:00Z",
+    "window_end": "2026-11-07T09:30:00Z",
+    "total": 3,
+    "max_level": 12,
+    "by_group": [
+      {"group": "windows", "count": 2},
+      {"group": "authentication_success", "count": 1},
+      {"group": "sysmon", "count": 1}
+    ],
+    "techniques": ["T1021.002", "T1569.002", "T1033"],
+    "events": [
+      {
+        "at": "2026-11-07T09:15:42Z",
+        "rule_id": "92068",
+        "level": 12,
+        "groups": ["sysmon", "windows"],
+        "event_id": "1",
+        "user": "CONTOSO\\svc-deploy",
+        "image_name": "whoami.exe",
+        "command_template": "whoami.exe /all"
+      },
+      {
+        "at": "2026-11-07T09:15:40Z",
+        "rule_id": "61138",
+        "level": 5,
+        "groups": ["windows"],
+        "event_id": "7045"
+      },
+      {
+        "at": "2026-11-07T09:15:38Z",
+        "rule_id": "60106",
+        "level": 3,
+        "groups": ["authentication_success"],
+        "event_id": "4624",
+        "user": "CONTOSO\\svc-deploy"
+      }
+    ]
+  }
+}

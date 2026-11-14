@@ -16,5 +16,8 @@
     for "no rows".
   - Every tool result carries the SHA-256 of its input and of its output,
     the same hashes the investigation trace stores for the call.
-  - New pending invariant INV-13, "Evidence tools are read-only, templated
-    and capped"; the Wazuh query templates (INT3.4) complete it.
+  - New pending invariants, numbered as ADR-0014 numbers them: INV-14,
+    "Evidence tools are read-only, templated and capped", which the Wazuh
+    query templates (INT3.4) complete; and INV-13, "Autonomy is earned per
+    skill and tenant and lost on any miss", registered as a placeholder that
+    AI-E3.10 delivers.

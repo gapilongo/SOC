@@ -34,7 +34,7 @@ There is no write risk class: ``risk`` is ``read_internal`` or ``read_external``
 checked when the tool loads: a tool that leaves the platform names the ``@egress`` boundary
 (:mod:`lg_sotf.security.shadow`) its requests pass through, a third-party tool is ``cache_only`` in a
 shadow run and its boundary must divert there, and a third-party tool can always be switched off per
-tenant. INV-13 (pending) states the rule.
+tenant. INV-14 (pending) states the rule.
 """
 
 from __future__ import annotations

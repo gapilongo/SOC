@@ -11,6 +11,7 @@ from typing import Optional
 
 import pytest
 
+from lg_sotf.db.errors import ShadowRoleRequired
 from lg_sotf.domain.shadow_agreement import Comparison, Verdict, build_report
 from lg_sotf.errors import OperationError
 from lg_sotf.llm.client import clear_model_cache, get_chat_model
@@ -122,15 +123,17 @@ def test_cloud_candidate_on_another_endpoint_needs_its_own_key(
         load_candidate(production, path)
 
 
-# ---------------------------------------------------------------- F4 (deferred to AI-E1.5c, documented)
+# ---------------------------------------------------------------- F4 (closed by AI-E1.5c)
 
 
-def test_gate_is_open_when_no_environment_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in ("LG_SOTF_ENVIRONMENT", "LG_SOTF_ENV"):
+def test_gate_stays_closed_when_no_environment_is_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The gate no longer rests on ``environment``: only the shadow role opens it."""
+    for name in ("LG_SOTF_ENVIRONMENT", "LG_SOTF_ENV", "LG_SOTF_DATABASE__SHADOW_URL"):
         monkeypatch.delenv(name, raising=False)
     settings = Settings(_env_file=None)  # type: ignore[call-arg]
     assert settings.environment == "development"
-    check_shadow_gate(settings, acknowledged=True)  # passes: only the default says this is not production
+    with pytest.raises(ShadowRoleRequired):
+        check_shadow_gate(settings)
 
 
 # ---------------------------------------------------------------- F2: failures count against the candidate

@@ -3,7 +3,7 @@
 ``get_chat_model("fast" | "deep")`` returns a configured LangChain chat model
 for ``llm.provider``. Models are cached per (provider, tier) and rebuilt when
 the tier configuration changes. ``llm_slot(tier)`` bounds in-flight calls per
-tier and event loop.
+tier and event loop (shadow runs in slots of their own).
 
 Every model built here carries its provider and structured-output method in
 ``model.metadata`` (:data:`PROVIDER_KEY`, :data:`STRUCTURED_KEY`), so the
@@ -28,6 +28,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from lg_sotf.llm.endpoint import is_self_hosted, resolve_base_url
 from lg_sotf.llm.errors import LLMUnavailable
 from lg_sotf.observability.metrics import record_llm_slot_wait
+from lg_sotf.security.shadow import in_shadow
 from lg_sotf.settings import LLMTierSettings, Settings
 
 Tier = Literal["fast", "deep"]
@@ -350,17 +351,17 @@ _semaphores: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[str, Tupl
 )
 
 
-def _semaphore(tier: Tier, size: int) -> asyncio.Semaphore:
+def _semaphore(key: str, size: int) -> asyncio.Semaphore:
     loop = asyncio.get_running_loop()
     with _slot_lock:
         per_loop = _semaphores.get(loop)
         if per_loop is None:
             per_loop = {}
             _semaphores[loop] = per_loop
-        entry = per_loop.get(tier)
+        entry = per_loop.get(key)
         if entry is None or entry[0] != size:
             entry = (size, asyncio.Semaphore(size))
-            per_loop[tier] = entry
+            per_loop[key] = entry
         return entry[1]
 
 
@@ -372,15 +373,23 @@ async def llm_slot(tier: Tier, settings: Settings) -> AsyncIterator[None]:
     the slots never cap throughput below the worker's own concurrency. The wait
     is exported as ``lgsotf_llm_slot_wait_seconds{tier,mode}``: it counts against the
     node timeout, so a sustained wait means the slots are too few.
+
+    A shadow run's calls take ``llm.<tier>.shadow_max_concurrency`` slots of their
+    own (default 1), never production's: a live call never waits on a shadow call.
     """
     if tier not in TIERS:
         raise ValueError(f"unknown LLM tier {tier!r}")
-    configured = getattr(settings.llm, tier).max_concurrency
-    size = settings.worker.concurrency if configured is None else configured
+    tier_settings = getattr(settings.llm, tier)
+    if in_shadow():
+        key, setting, size = f"{tier}/shadow", "shadow_max_concurrency", tier_settings.shadow_max_concurrency
+    else:
+        configured = tier_settings.max_concurrency
+        key, setting = tier, "max_concurrency"
+        size = settings.worker.concurrency if configured is None else configured
     if size < 1:
-        raise LLMUnavailable(f"llm.{tier}.max_concurrency must be >= 1")
+        raise LLMUnavailable(f"llm.{tier}.{setting} must be >= 1")
     started = time.monotonic()
-    async with _semaphore(tier, size):
+    async with _semaphore(key, size):
         record_llm_slot_wait(tier, time.monotonic() - started)
         yield
 

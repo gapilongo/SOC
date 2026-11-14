@@ -22,7 +22,8 @@ Threat rows refer to [threat-model.md](threat-model.md).
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
-| INV-13 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3 |
+| INV-13 | Autonomy is earned per skill and tenant and lost on any miss | pending (AI-E3.10) | none | TM-WRK-13 |
+| INV-14 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3, TM-EVT-10, TM-EVT-12 |
 
 ## INV-01: Every tenant table has forced row-level security, and the runtime role cannot bypass it
 
@@ -62,7 +63,7 @@ Containment changes a customer's environment. An action executes only once it is
 
 ## INV-03: An AI verdict alone never closes a critical alert or a never-close class; an alert closes on the models' word only at the tenant's autonomy tier, and a related threat reopens it
 
-A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. A critical alert closes only by an analyst or a suppression rule. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence an info to high alert closes on the models' word only when the tenant's autonomy tier is auto_full_audit, the deep tier judges it benign and the fast tier does not call it a threat (decision policy v3), never for the never-close classes (credential access, including the vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), steering text, entities with a recent true positive, an alert normalised by a model or one reopened; such a close is marked model_closed for audit. When an alert becomes a threat (a response plan, an escalation a model judged malicious or suspicious, an analyst true positive, a blind-audit malicious label), every model-closed alert sharing a host, user or IP with it in the previous 24 hours is reopened: folded into its open case as a related alert, or queued for review without one, and audited. With the tier off, the default, a model never closes an alert alone. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) that two different analysts decided benign, with no threat on it since; alerts in a never-close class, normalised by a model or without a process, command line, service, scheduled task, registry key, target file or Sysmon WMI object get no key (a URL, user agent, O365 operation or other request-set context is in the key but never enough for one). A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never apply, and a confirmed threat disables the rules that match it.
+A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure policy. A critical alert closes only by an analyst or a suppression rule. A low or medium alert closes when approved benign evidence an attacker cannot write corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a test source or the tenant's declared context, such as a scanner as the source of the activity; never past steering text or a recent true positive, and a scanner or test source never for a never-close class. Without such evidence an info to high alert closes on the models' word only when the tenant's autonomy tier is auto_full_audit, the deep tier judges it benign and the fast tier does not call it a threat (decision policy v3), never for the never-close classes (credential access, including the vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), steering text, entities with a recent true positive, an alert normalised by a model or one reopened; such a close is marked model_closed for audit. When an alert becomes a threat (a response plan, an escalation a model judged a threat (deep verdict malicious, or fast tier likely_threat or confirmed_threat; a merely suspicious one reopens nothing until an analyst confirms it), an analyst true positive, a blind-audit malicious label), every model-closed alert sharing a host, user or IP with it in the previous 24 hours is reopened: folded into its open case as a related alert, or queued for review without one, and audited. With the tier off, the default, a model never closes an alert alone. A cached analyst verdict closes only a non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) that two different analysts decided benign, with no threat on it since; alerts in a never-close class, normalised by a model or without a process, command line, service, scheduled task, registry key, target file or Sysmon WMI object get no key (a URL, user agent, O365 operation or other request-set context is in the key but never enough for one). A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never apply, and a confirmed threat disables the rules that match it.
 
 * **Status:** enforced
 * **Owner epic:** AI-E6
@@ -83,6 +84,7 @@ A fooled or injected model must not be able to make a dangerous alert disappear.
   * `tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class`
   * `tests/unit/domain/test_closure.py::test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not`
   * `tests/integration/engine/test_retro_reopen.py::test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes`
+  * `tests/integration/engine/test_retro_reopen.py::test_an_escalation_the_models_only_found_suspicious_reopens_nothing`
   * `tests/integration/engine/test_retro_reopen.py::test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes`
   * `tests/integration/engine/test_retro_reopen.py::test_a_reopen_failure_is_counted_not_swallowed`
   * `tests/integration/api/test_retro_reopen_api.py::test_the_case_decision_settles_folded_alerts_in_its_own_transaction`
@@ -201,13 +203,17 @@ A candidate configuration run side by side with production must not act: no resp
 * **Status:** enforced
 * **Owner epic:** AI-E1
 * **Threats:** TM-RSP-4, TM-MCP-6
-* **Enforced in:** `src/lg_sotf/security/shadow.py`, `src/lg_sotf/core/shadow.py`, `src/lg_sotf/db/pool.py`, `src/lg_sotf/db/shadow_connection.py`, `src/lg_sotf/queue/redis.py`
+* **Enforced in:** `src/lg_sotf/security/shadow.py`, `src/lg_sotf/core/shadow.py`, `src/lg_sotf/db/pool.py`, `src/lg_sotf/db/shadow_connection.py`, `src/lg_sotf/db/shadow_role.py`, `src/lg_sotf/queue/redis.py`
 * **Runtime checks:** none
 * **Proved by:**
   * `tests/integration/engine/test_shadow.py::test_shadow_no_side_effects`
   * `tests/integration/engine/test_shadow.py::test_every_boundary_diverts_when_called_directly`
   * `tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_egress_site_is_a_registered_boundary`
   * `tests/unit/architecture/test_shadow_egress.py::test_shadow_no_side_effects_every_boundary_diverts_in_shadow_mode`
+  * `tests/integration/db/test_shadow_role.py::test_shadow_role_refuses_each_proven_guard_bypass_at_the_database`
+  * `tests/integration/db/test_shadow_role.py::test_without_the_shadow_role_a_shadow_transaction_is_refused_not_run_on_the_runtime_role`
+  * `tests/integration/engine/test_shadow.py::test_a_shadow_run_refuses_to_start_without_the_shadow_role`
+  * `tests/integration/engine/test_shadow_replay.py::test_shadow_run_replays_decided_alerts_and_agrees_with_itself`
 
 ## INV-10: Release images are signed, and their signature is checked before deploy
 
@@ -251,13 +257,25 @@ A model steered by alert text must not be able to exfiltrate. Threat-intel looku
   * `tests/unit/llm/test_local.py::test_refused_base_urls`
   * `tests/unit/llm/test_local.py::test_base_url_is_checked_for_every_provider`
 
-## INV-13: Evidence tools are read-only, templated and capped
+## INV-13: Autonomy is earned per skill and tenant and lost on any miss
+
+An investigation skill closes alerts for a tenant only once it has earned a closing tier there: skill-blind and AI-blind labelled closures with no miss, and a four-eyes promotion. A miss demotes the skill to shadow in the same transaction as the label that revealed it (ADR-0014 section 6.3). Until AI-E3.10 merges nothing closes on a skill.
+
+* **Status:** pending, delivered by AI-E3.10
+* **Owner epic:** AI-E3
+* **Threats:** TM-WRK-13
+* **Enforced in:** none
+* **Runtime checks:** none
+* **Proved by:**
+  * `tests/invariants/test_earned_autonomy.py::test_autonomy_is_earned_per_skill_and_lost_on_a_miss`
+
+## INV-14: Evidence tools are read-only, templated and capped
 
 An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry, which loads only a tool with a parameter model that refuses unknown keys, a row cap, a time cap and a read-only risk class (there is no write class). It validates the parameters before anything runs, does not call a tool the tenant switched off (the switch is read from that tenant's own settings), and records every call in the trace. A tool that sends data to a third party names its egress boundary and answers a shadow run from the cache only. Every result has a typed outcome, so a call that failed is never read as a query that found nothing. The Wazuh query templates add a DSL allow-list test (INT3.4).
 
 * **Status:** pending, delivered by INT3.4
 * **Owner epic:** AI-E2
-* **Threats:** TM-EVT-3
+* **Threats:** TM-EVT-3, TM-EVT-10, TM-EVT-12
 * **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`
 * **Runtime checks:** none
 * **Proved by:**

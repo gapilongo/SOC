@@ -55,7 +55,7 @@ spec:
           env:
             {{- include "lg-sotf.env" . | nindent 12 }}
           envFrom:
-            {{- include "lg-sotf.envFrom" (dict "root" . "owner" false "bootstrap" false) | nindent 12 }}
+            {{- include "lg-sotf.envFrom" (dict "root" . "owner" false "bootstrap" false "shadow" true) | nindent 12 }}
           {{- with .Values.worker.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}

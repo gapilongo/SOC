@@ -4,7 +4,8 @@
 built with the candidate, reads what production decided on the same alert,
 and stores the pair in ``shadow_verdicts`` under one report id, one row per
 alert. A candidate run that fails is stored with its error type and no
-verdict; the replay goes on with the next alert. Each row is written after
+verdict; the replay goes on with the next alert. An unusable shadow role or
+database is not such a failure: it ends the replay. Each row is written after
 its shadow run has left shadow mode, like the run's ``shadow_effects``.
 """
 
@@ -14,6 +15,7 @@ from typing import Any, Callable, Mapping, Optional, Sequence, Tuple
 from uuid import uuid4
 
 from lg_sotf.core.shadow import ShadowOutcome, ShadowRunner
+from lg_sotf.db.errors import DatabaseUnavailable, ShadowRoleRequired
 from lg_sotf.db.repos import Repositories
 from lg_sotf.domain.shadow_agreement import MAX_ACTIONS, Comparison, Verdict
 from lg_sotf.models.vocabulary import DISPOSITIONS, ROUTES
@@ -66,10 +68,13 @@ def candidate_verdict(outcome: ShadowOutcome) -> Verdict:
 class ShadowReplay:
     """Replays alerts through ``runner`` (the candidate ``candidate``) and stores each comparison."""
 
-    def __init__(self, runner: ShadowRunner, repos: Repositories, *, candidate: str) -> None:
+    def __init__(
+        self, runner: ShadowRunner, repos: Repositories, *, candidate: str, candidate_host: Optional[str] = None
+    ) -> None:
         self._runner = runner
         self._repos = repos
         self.candidate = candidate
+        self.candidate_host = candidate_host
 
     async def run(
         self, tenant_id: str, alert_ids: Sequence[str], *, report_id: Optional[str] = None,
@@ -81,7 +86,9 @@ class ShadowReplay:
         todo = [production[a] for a in alert_ids if a in production]
         for done, base in enumerate(todo, start=1):
             row, run_id = await self._compare(tenant_id, base)
-            await self._repos.shadow_verdicts.append(tenant_id, report_id, self.candidate, row, run_id=run_id)
+            await self._repos.shadow_verdicts.append(
+                tenant_id, report_id, self.candidate, row, run_id=run_id, candidate_host=self.candidate_host
+            )
             if progress is not None:
                 progress(done, len(todo), row)
         log.info("shadow.replay_completed", tenant_id=tenant_id, report_id=report_id, alerts=len(todo))
@@ -90,6 +97,8 @@ class ShadowReplay:
     async def _compare(self, tenant_id: str, base: Comparison) -> Tuple[Comparison, Optional[str]]:
         try:
             outcome = await self._runner.run(tenant_id, base.alert_id)
+        except (ShadowRoleRequired, DatabaseUnavailable):
+            raise  # the shadow role or the database, not this alert: every other alert would fail the same way
         except Exception as exc:  # noqa: BLE001 - one failed candidate run is a row of the report, not the end of it
             log_failure(log, "shadow.replay_alert_failed", exc, level="warning", alert_id=base.alert_id)
             return base.model_copy(update={"candidate": Verdict(error=type(exc).__name__)}), None

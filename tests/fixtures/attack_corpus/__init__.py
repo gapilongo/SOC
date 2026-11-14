@@ -17,11 +17,21 @@ Team test ids, and the decoder field names and value shapes of each source.
 Modules: :mod:`.fleet` (hosts, people, address space), :mod:`.catalog`
 (pinned upstream reference data in ``sources.json``), :mod:`.alerts` (alert
 bodies per decoder), :mod:`.scenarios` (what happened) and :mod:`.corpus`
-(alerts, labels and the dataset). Commands::
+(alerts, labels and the dataset).
+
+AI-E1.10 adds what an investigation reads next to an alert, for the Windows
+logon-failure and service-install families of ADR 0014: :mod:`.telemetry`
+(the context events around the ``corpus_v1`` alerts), :mod:`.skills` (the
+``corpus_skills_v1`` dataset: 50 or more attack variants per family, with
+context-abuse items, and its events), :mod:`.gold` (gold evidence: the benign
+hypothesis, malicious indicators and never-close conditions the telemetry
+supports) and :mod:`.files` (the derived files). ``corpus_v1.jsonl.gz`` itself
+does not change. Commands::
 
     python -m tests.fixtures.attack_corpus generate [--out tests/fixtures/eval/corpus_v1.jsonl.gz]
     python -m tests.fixtures.attack_corpus alerts OUT.json     # alerts.json lines for the Wazuh lab
-    python -m tests.fixtures.attack_corpus check               # the committed file matches the generator
+    python -m tests.fixtures.attack_corpus telemetry OUT.json  # alerts and context events, same form
+    python -m tests.fixtures.attack_corpus check               # the committed files match the generator
     python -m tests.fixtures.attack_corpus verify-sources      # sources.json against the pinned upstreams
 """
 

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db import Connection
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
-from lg_sotf.db.migrate import grant_runtime_privileges, setup_checkpointer, upgrade_head
+from lg_sotf.db.migrate import grant_runtime_privileges, grant_shadow_privileges, setup_checkpointer, upgrade_head
 from lg_sotf.db.partitions import ensure_partitions
 from lg_sotf.db.pool import owner_database, owner_dsn
 from lg_sotf.db.repos import BlindAuditRun, Repositories, User
@@ -96,6 +96,7 @@ async def audit_reprocess(
 @dataclass
 class MigrateReport:
     runtime_role_granted: Optional[str] = None
+    shadow_role_granted: Optional[str] = None
     tenant_id: str = ""
     tenant_created: bool = False
     admin_created: Optional[str] = None
@@ -112,6 +113,17 @@ async def migrate(settings: Settings) -> MigrateReport:
     if role:
         await asyncio.to_thread(grant_runtime_privileges, role, url, settings.database)
         report.runtime_role_granted = role
+    shadow_role = settings.database.shadow_role
+    if shadow_role:
+        try:
+            await asyncio.to_thread(grant_shadow_privileges, shadow_role, url, settings.database)
+        except ValueError as exc:
+            raise OperationError(
+                f"the schema is up to date, but database.shadow_role was not granted: {exc}. Create it as a "
+                "SELECT-only login (docs/deployment.md, section 4) or unset database.shadow_role, then run "
+                "`lg-sotf migrate` again"
+            ) from exc
+        report.shadow_role_granted = shadow_role
 
     db = owner_database(settings, "lg-sotf-migrate")
     await db.open()
