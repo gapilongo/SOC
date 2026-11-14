@@ -21,7 +21,11 @@ metrics:
   benign_auto_close_rate: {min: 0.2}
   # Every run must finish or stop at a human within the plumbing budget.
   latency_s.p95: {max: 10}
+# Checked against the committed baseline, baselines/synthetic_v1.json, by the CI evaluation gate
+# (scripts/ci/eval_gate.py pr). The fake model is deterministic, so the two gate metrics are exact:
+# one more missed attack or one fewer benign item closed fails. After an intended change, record
+# the baseline again with `make eval-baselines`.
 regressions:
   malicious_false_negative_rate: {max_increase: 0}
-  benign_auto_close_rate: {max_decrease: 0.05}
+  benign_auto_close_rate: {max_decrease: 0}
   escalation_rate: {max_increase: 0.05}

@@ -386,6 +386,111 @@ split standard: 48 items, malicious FNR 0.0%, escalation 85.4%
 gate PASSED (9 checks)
 ```
 
+## Evaluation gate in CI
+
+Two CI jobs run the synthetic and phishing sets through `lg-sotf eval`. Both
+use `scripts/ci/eval_gate.py`.
+
+### Every pull request: fake model, committed baselines
+
+The `eval-gate` job of `.github/workflows/ci.yml` runs
+`python scripts/ci/eval_gate.py pr`. For each set it runs
+
+```sh
+lg-sotf eval --dataset tests/fixtures/eval/<set>.jsonl \
+    --thresholds tests/fixtures/eval/<its thresholds>.yaml \
+    --baseline tests/fixtures/eval/baselines/<set>.json
+```
+
+with the fake model. The script forces `llm.provider=fake`, so the job calls
+no model and reads no secret. The build fails when:
+
+* a threshold fails, as in the smoke evaluation above; or
+* a gate metric is worse than the committed baseline. The fake model is
+  deterministic, so both checks are exact:
+  * **missed attacks**: `malicious_false_negative_rate` may not rise;
+  * **benign handling**: `benign_auto_close_rate` may not fall.
+
+  The escalation rate may rise by at most 5 points.
+
+On a failure the log names the metric and every item that ended differently
+than in the baseline:
+
+```text
+gate FAILED (12 checks)
+  - benign_auto_close_rate fell from 0.2727 to 0.1818 (allowed -0)
+phishing_v1: 1 item(s) ended differently than in the baseline:
+  phish-019: closed:benign -> waiting_human
+```
+
+The reports are kept for 14 days as the `eval-gate` artifact.
+
+A baseline (`tests/fixtures/eval/baselines/<set>.json`) is the part of a
+report that only changes when behaviour does: the dataset's sha256, the
+selection, the counts and rates, and each item's outcome. It holds no
+latency, cost, timestamp or alert ID.
+
+When a change moves the numbers on purpose, record the baselines again and
+commit them with the change, so the reviewer sees which items moved:
+
+```sh
+make test-services      # PostgreSQL and Redis for the tests
+make eval-baselines     # runs both sets, writes the two baselines
+make eval-gate          # the gate, as CI runs it
+```
+
+A baseline is only written from a run that passes its thresholds. An edited
+dataset also needs its baseline recorded again: its sha256 no longer matches,
+and the gate stops with exit code 2. An improvement (more benign alerts
+closed, no attack missed) passes; record the baselines again then too, or the
+gate will not notice when the improvement is lost.
+
+`tests/integration/eval/test_ci_gate.py` proves the gate: it runs the same
+command with a patched routing policy and expects exit code 1, once for one
+benign close fewer than the baseline and once for a missed attack.
+
+### Nightly: a pinned real model
+
+The `real-model-eval` job of `.github/workflows/nightly.yml` runs
+`python scripts/ci/eval_gate.py nightly`: both sets, once, through a real
+model, then `lg-sotf eval-scorecard`. The reports and the scorecard
+(`scorecard.md`, `scorecard.json`) are kept for 90 days as the
+`eval-scorecard` artifact, and the scorecard is shown on the run's summary
+page. The job records; it does not gate. It fails only when a set could not
+run.
+
+The model is configured in the repository's settings (Settings, Secrets and
+variables, Actions). Until `EVAL_LLM_PROVIDER` is set the job is skipped.
+
+| Name | Kind | Value |
+|---|---|---|
+| `EVAL_LLM_PROVIDER` | variable | `openai` (an OpenAI-compatible hosted API), `ollama` or `openai_compatible` |
+| `EVAL_LLM_BASE_URL` | variable | The API's base URL |
+| `EVAL_LLM_FAST_MODEL`, `EVAL_LLM_DEEP_MODEL` | variables | The exact model of each tier |
+| `EVAL_LLM_STRUCTURED_OUTPUT` | variable, optional | `llm.structured_output`, when the server needs another method |
+| `EVAL_LLM_API_KEY` | secret | The API key (not needed for a local model) |
+| `EVAL_LLM_RUNNER` | variable, optional | The label of a self-hosted runner (default: `ubuntu-latest`) |
+
+The script refuses to start, before anything is sent, unless the model is:
+
+* **hosted in the EU or local.** It uses the same classification as the
+  setup wizard (`lg_sotf.onboarding.llm_profiles`): `api.mistral.ai` is EU;
+  a self-hosted provider on a loopback or private address is local. Anything
+  else is refused, including a gateway whose region is not known and the
+  DeepSeek API, which is hosted in China.
+* **pinned.** Both model names are required, and a name ending in `latest`
+  is refused, so every night measures the same model.
+
+For example, Mistral in the EU: `EVAL_LLM_PROVIDER=openai`,
+`EVAL_LLM_BASE_URL=https://api.mistral.ai/v1`, a dated model name for each
+tier and the key as the secret. A local model needs a runner that can reach
+it: register a self-hosted runner next to the model server, name its label in
+`EVAL_LLM_RUNNER` and point `EVAL_LLM_BASE_URL` at the server
+(`http://127.0.0.1:11434/v1` for Ollama on the runner).
+
+Only the two synthetic sets are sent to the model. The key is never written
+to the log, the reports or the scorecard.
+
 ## Cassettes: record once, replay offline
 
 A cassette holds what one item's run observed: every tool answer
