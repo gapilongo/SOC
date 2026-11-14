@@ -25,6 +25,7 @@
 | [Architecture decisions](adr/README.md) | Engineers | The ADR log: layering and dependency rule (ADR-0001) and the decisions that follow |
 | [MCP architecture](design/mcp-architecture.md) | Engineers, security reviewers | The approved MCP design (remote endpoint, OAuth, QA runs, outbound MCP); only Phases 0 and 0.5 are implemented |
 | [Refactor roadmap](design/refactor-roadmap.md) | Engineers | Target layered architecture, CI guardrails and the ordered, PR-sized refactor plan; mark steps done as they merge |
+| [Investigation skills](adr/0014-investigation-skills.md) | Engineers, detection owners, security reviewers | Proposed design (ADR-0014): skill files per detection family, Wazuh evidence tools, tenant context, guidance notes and case memory, the citation checker, earned autonomy per skill and tenant; [stories and build order](design/investigation-skills-stories.md) |
 | [Engineering roadmap](roadmap/README.md) | Everyone | Engineering milestones and the scheduled stories by week, with the ones already done |
 | [Integrations](integrations.md) | Tenant admins, integrators | Slack, Teams, email and signed-webhook notifications, Jira and ServiceNow tickets, Slack approvals, the delivery outbox |
 | [SOAR playbooks](soar-playbooks.md) | Tenant admins, SOAR engineers | Running approved actions in your own SOAR: the signed webhook contract, idempotency, the reference receiver, the n8n workflow, Tines, Shuffle and Tracecat recipes, example vendor calls per action type |
