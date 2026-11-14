@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import type { AlertDetailOut, AlertEventOut, DecisionIn, EscalationOut, ResponsePreviewOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
@@ -90,8 +90,6 @@ const claimRow = (n: number) => claimButton(n).closest('[data-claim]') as HTMLEl
 const decisionBody = (calls: Array<{ method: string; path: string; body?: unknown }>) =>
   calls.find((c) => c.method === 'POST' && c.path.endsWith('/decision'))?.body as DecisionIn | undefined;
 const section = (name: string | RegExp) => within(screen.getByRole('region', { name }));
-
-beforeEach(() => window.localStorage.clear());
 
 describe('investigation view: needs your decision, likely malicious', () => {
   it('opens with the outcome and the verdict as a sentence, then why it is with a person', async () => {
@@ -429,7 +427,7 @@ describe('investigation view: the decision bar', () => {
     expect(screen.queryByRole('region', { name: 'Your decision' })).not.toBeInTheDocument();
   });
 
-  it('single-key shortcuts can be switched off, and the choice is kept; Ctrl+Enter still works', async () => {
+  it('single-key shortcuts can be switched off for the tab, without browser storage; Ctrl+Enter still works', async () => {
     const user = userEvent.setup();
     const { unmount } = await renderPage();
     const toggle = dock().getByRole('button', { name: 'Single-key shortcuts: on' });
@@ -442,10 +440,14 @@ describe('investigation view: the decision bar', () => {
     expect(claimButton(1)).toHaveAttribute('aria-pressed', 'false');
     await user.keyboard('{Control>}{Enter}{/Control}');
     expect(effect()).toHaveTextContent('Choose a verdict first: T, B or F.');
-    expect(window.localStorage.getItem('lg-sotf.single-keys')).toBe('off');
+    expect(window.localStorage).toHaveLength(0);
     unmount();
+    // The next alert opened in the tab keeps the switch.
     await renderPage();
-    expect(dock().getByRole('button', { name: 'Single-key shortcuts: off' })).toBeInTheDocument();
+    await user.click(dock().getByRole('button', { name: 'Single-key shortcuts: off' }));
+    expect(dock().getByRole('button', { name: 'Single-key shortcuts: on' })).toBeInTheDocument();
+    await user.keyboard('t');
+    expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('an unclaimed escalation is claimed first: "Claim to decide"', async () => {
