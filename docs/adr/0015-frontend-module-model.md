@@ -44,7 +44,9 @@ is the first and, today, the only module. Nothing changes for the user.
    the module's own query keys, and its contributions to extension points.
    The manifest is static data. It reaches page and widget code only through
    `lazy()`, so a module that is switched off is never downloaded. ESLint
-   refuses a static import of a page from a manifest.
+   refuses a static import of a page from a manifest. What a manifest does
+   import directly stays small: its query keys, the hook behind a navigation
+   count, and a route that only redirects.
 4. **One registry.** `src/app/modules.ts` holds `MODULES = [soc]`. Adding a
    service is its folder and one entry in that list. Routes, the sidebar,
    navigation counts, the live-event mapping, the extension points and the
@@ -96,8 +98,9 @@ is the first and, today, the only module. Nothing changes for the user.
    manifest never imports its pages statically. Tests may compose layers, as
    before.
 10. **Gates per module.** `coverage-floors.json` has a floor for
-    `src/modules/soc/`; a new module adds its own, so a thinly tested module
-    cannot hide inside the overall figure.
+    `src/modules/soc/` and a stricter one for its API slice; a new module
+    adds its own, so a thinly tested module cannot hide inside the overall
+    figure.
 
 Shared presentational primitives live in `components/ui`, where every module
 finds them: one `Tabs` (and `TabLinks` for views that are links), one
@@ -121,9 +124,12 @@ implementations and two copies each of the timeline and the entity list.
 
 * Adding a service touches its own folder and one line in
   `src/app/modules.ts`. `src/app/scaffold.test.tsx` proves it: it registers
-  a dummy module with one page and shows that the route, the sidebar item
-  and its count, the guard, the live-event mapping and an `alert.entity`
-  contribution all follow, with no other file changed.
+  an example module with one page (`src/test/scaffold-module`, also the
+  folder to copy when a service starts) and shows that the route, the
+  sidebar group, the item and its count, the guard, the breadcrumb, the
+  live-event mapping and an `alert.entity` contribution all follow, with no
+  other file changed. `src/app/boundary.test.ts` holds the lint rule in
+  place.
 * The SOC module still carries the pages every service will share (tenant
   configuration, users, the MSSP console, account security), and its
   permission functions stay in `auth/roles.ts`, where the shell also uses
@@ -132,12 +138,19 @@ implementations and two copies each of the timeline and the entity list.
 * Query keys changed shape (`['alerts', ...]` became `['soc', 'alerts', ...]`).
   The cache is in memory only, so nothing persisted is affected.
 * The tenant switcher and the acting-tenant banner are now lazy chunks,
-  loaded only for platform admins. The first load is smaller; a platform
-  admin sees the plain tenant name for a moment before the switcher appears.
+  loaded only for platform admins. The first load is smaller (initial
+  JavaScript 432.6 kB, 137.0 kB gzip, against 437.3 kB and 138.2 kB before);
+  a platform admin sees the plain tenant name for a moment before the
+  switcher appears.
+* Picking one look where the copies differed is visible in three places:
+  the Reports and MSSP console tabs look like the Alerts view tabs and answer
+  to Home and End; entity chips in the alert panel have the decision page's
+  radius; the decision page's Entities tab uses the alert panel's labels.
 * `LiveSocket` no longer holds a list of event types: the registry tells it
   which types the modules listen to.
 * Not done here, by decision: a data-table primitive on the virtual table
   (it did not fall out of this refactor and deserves its own story); the
   axe page list derived from the registry (the e2e suite keeps its literal
-  list until a second module exists); an `ee/` directory and build alias
+  list: deriving it would add pages that axe has never checked, which is
+  work for the accessibility-gates story); an `ee/` directory and build alias
   for licensed modules (ARCH-E10.2 and the packaging story decide it).
