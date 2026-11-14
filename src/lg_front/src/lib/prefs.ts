@@ -1,5 +1,5 @@
 /**
- * Display preferences kept in localStorage (theme, table density).
+ * Display preferences kept in localStorage (theme, table density, single-key shortcuts on or off).
  *
  * The one place the app touches localStorage (eslint bans it elsewhere:
  * credentials are never persisted). Only small, non-sensitive UI choices go
@@ -10,7 +10,7 @@
 
 const PREFIX = 'lg-sotf.';
 
-export type PrefKey = 'theme' | 'density';
+export type PrefKey = 'theme' | 'density' | 'single-keys';
 
 export function readPref(key: PrefKey): string | null {
   try {

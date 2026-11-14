@@ -1,21 +1,16 @@
 /** "Your decision": the verdict form of the decision page. */
 
-import { useQueryClient } from '@tanstack/react-query';
 import { Ban, Check, Clock, Lock } from 'lucide-react';
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 
-import { ApiError } from '../../api/client';
-import { endpoints } from '../../api/endpoints';
 import { useResponsePreview, useTenantLabel } from '../../api/hooks';
-import { afterEscalationChange, afterEscalationDecision } from '../../api/invalidate';
-import type { DecisionIn, DecisionOut, EscalationOut, PreviewActionOut } from '../../api/types';
-import { useApi } from '../../auth/AuthContext';
-import { useToast } from '../../components/Toast';
+import type { DecisionOut, EscalationOut, PreviewActionOut } from '../../api/types';
 import { Banner, Button, Checkbox, ErrorMessage, SelectField, Spinner, TextField, cx } from '../../components/ui';
 import { formatDateTime, humanize } from '../../lib/format';
 import { APPROVALS_HREF } from '../../lib/links';
 import { DECISION_LABELS, VERDICTS, type Verdict } from './labels';
+import { MAX_NOTES, notesRequired, useRecordDecision, type DecisionInput } from './useRecordDecision';
 
 const HINTS: Record<Verdict, string> = {
   true_positive: 'Malicious. The response plan below runs or waits for approval.',
@@ -28,14 +23,6 @@ const VERDICT_BAR: Record<Verdict, string> = {
   false_positive: 'shadow-[inset_3px_0_0_rgb(var(--c-state-ok))]',
   benign_positive: 'shadow-[inset_3px_0_0_rgb(var(--c-sev-info))]',
 };
-
-/** Notes the API stores at most. */
-const MAX_NOTES = 4000;
-
-/** Verdicts for which the record needs a note (the queue's bulk close always does). */
-export function notesRequired(verdict: Verdict | null): boolean {
-  return verdict === 'true_positive';
-}
 
 type Tri = '' | 'yes' | 'no';
 const tri = (v: Tri): boolean | null => (v === '' ? null : v === 'yes');
@@ -155,8 +142,8 @@ function ResponsePlan({ escalationId, selected, onChange, disabled }: { escalati
 }
 
 /**
- * Record a decision with optimistic concurrency: the body carries the version
- * the analyst looked at. On 409 the escalation is re-read, the form keeps
+ * Record a decision (useRecordDecision: optimistic concurrency on the version
+ * the analyst looked at). On 409 the escalation is re-read, the form keeps
  * what the analyst entered, and they confirm again against the new state.
  */
 export function DecisionForm({
@@ -170,10 +157,8 @@ export function DecisionForm({
   /** After a recorded decision; `openNext` when "Record and open next" was used. */
   onDecided: (out: DecisionOut, openNext: boolean) => Promise<void> | void;
 }) {
-  const api = useApi();
-  const client = useQueryClient();
-  const toast = useToast();
   const tenant = useTenantLabel();
+  const { record: send, error, conflict } = useRecordDecision(escalation);
   const notesRef = useRef<HTMLTextAreaElement>(null);
   const notesId = useId();
   const [verdict, setVerdict] = useState<Verdict | null>(null);
@@ -186,13 +171,11 @@ export function DecisionForm({
   const [correlationHelpful, setCorrelationHelpful] = useState<Tri>('');
   const [notesError, setNotesError] = useState<string | null>(null);
   const [busy, setBusy] = useState<'record' | 'next' | null>(null);
-  const [error, setError] = useState<unknown>(null);
-  const [conflict, setConflict] = useState<string | null>(null);
 
   const disabled = disabledReason !== null;
   const required = notesRequired(verdict);
 
-  const build = (v: Verdict): DecisionIn => {
+  const build = (v: Verdict): DecisionInput => {
     const feedback = {
       confidence: confidence === '' ? null : Math.max(0, Math.min(100, Number(confidence))),
       triage_correct: tri(triageCorrect),
@@ -201,7 +184,6 @@ export function DecisionForm({
     };
     return {
       decision: v,
-      version: escalation.version,
       notes: notes.trim() || null,
       approved_actions: v === 'true_positive' ? [...preapproved] : [],
       feedback: Object.values(feedback).some((x) => x !== null) ? feedback : null,
@@ -217,33 +199,9 @@ export function DecisionForm({
       return;
     }
     setNotesError(null);
-    setError(null);
     setBusy(openNext ? 'next' : 'record');
     try {
-      const out = await endpoints.decide(api, escalation.id, build(verdict));
-      setConflict(null);
-      const resumed = Array.isArray(out.resumed_alert_ids) ? out.resumed_alert_ids.length : 0;
-      toast.success(`Decision recorded; ${resumed} alert(s) resumed.`);
-      if (out.resumes_failed > 0) toast.info(`${out.resumes_failed} alert(s) could not be resumed yet; the platform retries them.`);
-      void afterEscalationDecision(client);
-      await onDecided(out, openNext);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        try {
-          const latest = await endpoints.escalation(api, escalation.id);
-          void afterEscalationChange(client);
-          const owner = latest.assigned_to_email ?? latest.assigned_to;
-          setConflict(
-            ['open', 'claimed', 'expired'].includes(latest.status)
-              ? `This escalation changed while you were reviewing it (now ${latest.status}${owner ? `, assigned to ${owner}` : ''}). Your verdict and notes are kept; check the change, then record again.`
-              : `This escalation is now ${latest.status}${latest.decision ? ` (${DECISION_LABELS[latest.decision] ?? humanize(latest.decision)})` : ''} and can no longer be decided.`,
-          );
-        } catch (reloadErr) {
-          setError(reloadErr);
-        }
-      } else {
-        setError(err);
-      }
+      await send(build(verdict), (out) => onDecided(out, openNext));
     } finally {
       setBusy(null);
     }

@@ -66,6 +66,10 @@ const TINTS: Record<string, string[]> = {
   'tint-info': ['fg', 'body', 'secondary', 'link'],
 };
 
+/** Text and marks used on the observation surface (components/investigation/Observation.tsx). */
+const OBSERVED_TEXT = ['fg', 'body', 'secondary', 'muted', 'link'];
+const OBSERVED_GRAPHICS = ['control', 'focus'];
+
 /** Every [foreground, background, minimum ratio] pair the design relies on. */
 function pairs(): Array<[string, string, number]> {
   const out: Array<[string, string, number]> = [];
@@ -75,6 +79,10 @@ function pairs(): Array<[string, string, number]> {
   }
   out.push(['on-accent', 'accent', 4.5], ['on-accent', 'accent-hover', 4.5]);
   for (const [tint, fgs] of Object.entries(TINTS)) for (const f of fgs) out.push([f, tint, 4.5]);
+  // The investigation view: what a tool returned sits on `observed`, with the decisive characters highlighted.
+  for (const t of OBSERVED_TEXT) out.push([t, 'observed', 4.5]);
+  for (const g of OBSERVED_GRAPHICS) out.push([g, 'observed', 3]);
+  out.push(['mark-fg', 'mark', 4.5]);
   return out;
 }
 
