@@ -1,8 +1,790 @@
 {
   "$defs": {
+    "GroupCount": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 0,
+          "title": "Count",
+          "type": "integer"
+        },
+        "group": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Group",
+          "type": "string"
+        }
+      },
+      "required": [
+        "group",
+        "count"
+      ],
+      "title": "GroupCount",
+      "type": "object"
+    },
+    "HostActivityFact": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "host_activity",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.1.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/HostActivityValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "HostActivityFact",
+      "type": "object"
+    },
+    "HostActivityValue": {
+      "additionalProperties": false,
+      "description": "What a host's detections show over a window around an alert (1.1).",
+      "properties": {
+        "by_group": {
+          "description": "Up to 50 rule groups, most frequent first.",
+          "items": {
+            "$ref": "#/$defs/GroupCount"
+          },
+          "maxItems": 50,
+          "title": "By Group",
+          "type": "array"
+        },
+        "events": {
+          "description": "Up to 50 events, highest level first.",
+          "items": {
+            "$ref": "#/$defs/HostEvent"
+          },
+          "maxItems": 50,
+          "title": "Events",
+          "type": "array"
+        },
+        "max_level": {
+          "anyOf": [
+            {
+              "maximum": 16,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The highest rule level in the window, 0-16; absent when there was no event.",
+          "title": "Max Level"
+        },
+        "techniques": {
+          "items": {
+            "description": "A MITRE ATT&CK technique id.",
+            "examples": [
+              "T1110.003"
+            ],
+            "pattern": "^T\\d{4}(\\.\\d{3})?$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Techniques",
+          "type": "array"
+        },
+        "total": {
+          "description": "Events in the window.",
+          "minimum": 0,
+          "title": "Total",
+          "type": "integer"
+        },
+        "window_end": {
+          "format": "date-time",
+          "title": "Window End",
+          "type": "string"
+        },
+        "window_start": {
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_start",
+        "window_end",
+        "total"
+      ],
+      "title": "HostActivityValue",
+      "type": "object"
+    },
+    "HostEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "format": "date-time",
+          "title": "At",
+          "type": "string"
+        },
+        "command_template": {
+          "anyOf": [
+            {
+              "description": "The command line with its variable parts (paths, ids, values) replaced by placeholders.",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Template"
+        },
+        "event_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Event Id"
+        },
+        "groups": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Groups",
+          "type": "array"
+        },
+        "image_name": {
+          "anyOf": [
+            {
+              "description": "The executable's file name, without its directory.",
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Name"
+        },
+        "level": {
+          "anyOf": [
+            {
+              "maximum": 16,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Level"
+        },
+        "rule_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rule Id"
+        },
+        "user": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User"
+        }
+      },
+      "required": [
+        "at"
+      ],
+      "title": "HostEvent",
+      "type": "object"
+    },
+    "LogonFanoutFact": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "logon_fanout",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.1.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/LogonFanoutValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "LogonFanoutFact",
+      "type": "object"
+    },
+    "LogonFanoutValue": {
+      "additionalProperties": false,
+      "description": "Logons around one pivot (a source, a user or a target host) over a window (1.1).",
+      "properties": {
+        "distinct_sources": {
+          "minimum": 0,
+          "title": "Distinct Sources",
+          "type": "integer"
+        },
+        "distinct_target_hosts": {
+          "minimum": 0,
+          "title": "Distinct Target Hosts",
+          "type": "integer"
+        },
+        "distinct_target_users": {
+          "minimum": 0,
+          "title": "Distinct Target Users",
+          "type": "integer"
+        },
+        "failed_users": {
+          "items": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Failed Users",
+          "type": "array"
+        },
+        "failures": {
+          "minimum": 0,
+          "title": "Failures",
+          "type": "integer"
+        },
+        "family": {
+          "enum": [
+            "windows",
+            "sshd"
+          ],
+          "title": "Family",
+          "type": "string"
+        },
+        "first_success_after_failure_s": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Seconds from the first failure to the first success after it; absent when there was none.",
+          "title": "First Success After Failure S"
+        },
+        "lockouts": {
+          "minimum": 0,
+          "title": "Lockouts",
+          "type": "integer"
+        },
+        "logon_types": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Logon Types",
+          "type": "array"
+        },
+        "pivot": {
+          "description": "What the subject is in these logons.",
+          "enum": [
+            "source_ip",
+            "source_host",
+            "target_user",
+            "target_host"
+          ],
+          "title": "Pivot",
+          "type": "string"
+        },
+        "source_hosts": {
+          "description": "Up to 50 source host names as the client supplied them: a lead, never proof.",
+          "items": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Source Hosts",
+          "type": "array"
+        },
+        "sources": {
+          "description": "Up to 50 source addresses.",
+          "items": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Sources",
+          "type": "array"
+        },
+        "success_users": {
+          "items": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Success Users",
+          "type": "array"
+        },
+        "successes": {
+          "minimum": 0,
+          "title": "Successes",
+          "type": "integer"
+        },
+        "unknown_user_failures": {
+          "description": "Failures for a user name that does not exist.",
+          "minimum": 0,
+          "title": "Unknown User Failures",
+          "type": "integer"
+        },
+        "window_end": {
+          "format": "date-time",
+          "title": "Window End",
+          "type": "string"
+        },
+        "window_start": {
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pivot",
+        "family",
+        "window_start",
+        "window_end",
+        "failures",
+        "successes",
+        "lockouts",
+        "unknown_user_failures",
+        "distinct_target_users",
+        "distinct_sources",
+        "distinct_target_hosts"
+      ],
+      "title": "LogonFanoutValue",
+      "type": "object"
+    },
+    "PrevalenceFact": {
+      "additionalProperties": false,
+      "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
+        "confidence": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's confidence in the observation, 0-1.",
+          "title": "Confidence"
+        },
+        "id": {
+          "description": "Stable within an investigation; verdicts cite it.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "prevalence",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Provenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "redactions": {
+          "items": {
+            "$ref": "#/$defs/Redaction"
+          },
+          "maxItems": 50,
+          "title": "Redactions",
+          "type": "array"
+        },
+        "schema_version": {
+          "default": "1.1.0",
+          "description": "SemVer of the schema the producer wrote; major 1.",
+          "pattern": "^1\\.\\d+\\.\\d+$",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        },
+        "subject": {
+          "$ref": "#/$defs/Subject"
+        },
+        "ttl_seconds": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "How long after observed_at the fact stays current; absent means no expiry.",
+          "title": "Ttl Seconds"
+        },
+        "value": {
+          "$ref": "#/$defs/PrevalenceValue"
+        }
+      },
+      "required": [
+        "id",
+        "subject",
+        "observed_at",
+        "source",
+        "kind",
+        "value"
+      ],
+      "title": "PrevalenceFact",
+      "type": "object"
+    },
+    "PrevalenceValue": {
+      "additionalProperties": false,
+      "description": "How widely the subject (a file, an image, a service, a command template) is seen (1.1).",
+      "properties": {
+        "event_count": {
+          "minimum": 0,
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "first_seen_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Seen At"
+        },
+        "fleet_size": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The tenant's hosts in scope, when known.",
+          "title": "Fleet Size"
+        },
+        "host_count": {
+          "minimum": 0,
+          "title": "Host Count",
+          "type": "integer"
+        },
+        "last_seen_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Seen At"
+        },
+        "scope": {
+          "description": "tenant_fleet: the tenant's hosts in its telemetry; tenant_alerts: the tenant's alerts.",
+          "enum": [
+            "tenant_fleet",
+            "tenant_alerts"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "window_end": {
+          "format": "date-time",
+          "title": "Window End",
+          "type": "string"
+        },
+        "window_start": {
+          "description": "The window the source actually covered.",
+          "format": "date-time",
+          "title": "Window Start",
+          "type": "string"
+        }
+      },
+      "required": [
+        "scope",
+        "window_start",
+        "window_end",
+        "host_count",
+        "event_count"
+      ],
+      "title": "PrevalenceValue",
+      "type": "object"
+    },
     "ProcessLineageFact": {
       "additionalProperties": false,
       "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
         "confidence": {
           "anyOf": [
             {
@@ -54,7 +836,7 @@
           "type": "array"
         },
         "schema_version": {
-          "default": "1.0.0",
+          "default": "1.1.0",
           "description": "SemVer of the schema the producer wrote; major 1.",
           "pattern": "^1\\.\\d+\\.\\d+$",
           "title": "Schema Version",
@@ -107,6 +889,23 @@
           "minItems": 1,
           "title": "Chain",
           "type": "array"
+        },
+        "children": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProcessNode"
+              },
+              "maxItems": 50,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: up to 50 processes the subject process started. Absent: the source did not look.",
+          "title": "Children"
         }
       },
       "required": [
@@ -131,6 +930,36 @@
           "default": null,
           "title": "Command Line"
         },
+        "command_template": {
+          "anyOf": [
+            {
+              "description": "The command line with its variable parts (paths, ids, values) replaced by placeholders.",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Template"
+        },
+        "image_name": {
+          "anyOf": [
+            {
+              "description": "The executable's file name, without its directory.",
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Image Name"
+        },
         "name": {
           "maxLength": 1024,
           "minLength": 1,
@@ -149,6 +978,21 @@
           ],
           "default": null,
           "title": "Pid"
+        },
+        "process_guid": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The source's id of the process instance.",
+          "title": "Process Guid"
         },
         "sha256": {
           "anyOf": [
@@ -281,6 +1125,19 @@
     "RelatedAlertFact": {
       "additionalProperties": false,
       "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
         "confidence": {
           "anyOf": [
             {
@@ -332,7 +1189,7 @@
           "type": "array"
         },
         "schema_version": {
-          "default": "1.0.0",
+          "default": "1.1.0",
           "description": "SemVer of the schema the producer wrote; major 1.",
           "pattern": "^1\\.\\d+\\.\\d+$",
           "title": "Schema Version",
@@ -435,6 +1292,19 @@
     "ReputationFact": {
       "additionalProperties": false,
       "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
         "confidence": {
           "anyOf": [
             {
@@ -486,7 +1356,7 @@
           "type": "array"
         },
         "schema_version": {
-          "default": "1.0.0",
+          "default": "1.1.0",
           "description": "SemVer of the schema the producer wrote; major 1.",
           "pattern": "^1\\.\\d+\\.\\d+$",
           "title": "Schema Version",
@@ -661,6 +1531,19 @@
     "SignInHistoryFact": {
       "additionalProperties": false,
       "properties": {
+        "complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "1.1: false when the source cut the result or could not finish it (a timeout, a row cap, a window that had not closed). Only true lets a claim of absence rest on the fact; absent means the source did not say.",
+          "title": "Complete"
+        },
         "confidence": {
           "anyOf": [
             {
@@ -712,7 +1595,7 @@
           "type": "array"
         },
         "schema_version": {
-          "default": "1.0.0",
+          "default": "1.1.0",
           "description": "SemVer of the schema the producer wrote; major 1.",
           "pattern": "^1\\.\\d+\\.\\d+$",
           "title": "Schema Version",
@@ -842,7 +1725,9 @@
             "host",
             "process",
             "file",
-            "alert"
+            "alert",
+            "service",
+            "command_template"
           ],
           "title": "Type",
           "type": "string"
@@ -862,11 +1747,14 @@
       "type": "object"
     }
   },
-  "$id": "urn:lg-sotf:schema:evidence-fact:1.0.0",
+  "$id": "urn:lg-sotf:schema:evidence-fact:1.1.0",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "One typed observation an investigation tool returned; verdicts cite facts by id. See docs/evidence-facts.md.",
   "discriminator": {
     "mapping": {
+      "host_activity": "#/$defs/HostActivityFact",
+      "logon_fanout": "#/$defs/LogonFanoutFact",
+      "prevalence": "#/$defs/PrevalenceFact",
       "process_lineage": "#/$defs/ProcessLineageFact",
       "related_alert": "#/$defs/RelatedAlertFact",
       "reputation": "#/$defs/ReputationFact",
@@ -886,6 +1774,15 @@
     },
     {
       "$ref": "#/$defs/RelatedAlertFact"
+    },
+    {
+      "$ref": "#/$defs/HostActivityFact"
+    },
+    {
+      "$ref": "#/$defs/LogonFanoutFact"
+    },
+    {
+      "$ref": "#/$defs/PrevalenceFact"
     }
   ],
   "title": "LG-SOTF evidence fact"
