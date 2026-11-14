@@ -297,14 +297,25 @@ Rules:
     recent true positive, was normalised by a model, or was reopened. The
     `decide` node reads the tier from the tenant's settings at every
     decision.
-  * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
-    response plan or malicious close, an escalation a model judged a
-    threat (not a merely suspicious one), an analyst true positive or a blind-audit
-    malicious label reopens every model-closed alert of the tenant that
-    shares a host, user or IP with it and closed in the previous 24 hours:
-    folded into the threat's open escalation (attached, `waiting_human`, no
-    new run or case; the decision on the case settles it), or, without an
-    open case, queued for its own review run; audited `alert.reopened`.
+  * The safety net (`core/retro_reopen.py`) replaces the forward gates.
+    It looks at every model-closed alert of the tenant that shares a host,
+    user or IP with a threat and closed in the previous 24 hours, and what
+    it does depends on who stands behind the threat (AI-E3.15):
+    * a model only (an escalation a model judged a threat, not a merely
+      suspicious one; a response plan or a malicious close with no analyst
+      true positive behind it): the alert is **linked**. It is attached to
+      the threat's open escalation as a related alert, so the analyst sees
+      it in the case, gets a `linked` entry in its summary and is audited
+      `alert.linked`. It stays closed with its close reason
+      `ai_closed:audit_required`, no run starts, and no decision on the
+      case settles it;
+    * a person (an analyst true positive, an analyst approving a response
+      action, a blind-audit malicious label): the alert is **reopened**, and
+      so is every alert linked to the threat or into its case earlier,
+      however long ago it closed. It is folded into the threat's open
+      escalation (attached, `waiting_human`, no new run or case; the
+      decision on the case settles it), or, without an open case, queued
+      for its own review run; audited `alert.reopened`.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,

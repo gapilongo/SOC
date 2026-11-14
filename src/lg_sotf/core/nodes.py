@@ -351,10 +351,10 @@ class WorkflowNodes:
         # Alerts folded into this threat's earlier case (decided needs_more_info) follow it to this one.
         await refold(self.deps.repos, tenant_id, alert_id, ticket.id)
         if judged_threat(state.get("triage") or {}, analysis):
-            # A model judged it a threat: the alerts the models closed alone on its entities reopen (policy v3).
+            # A model judged it a threat: the alerts the models closed alone on its entities are linked to this
+            # case and stay closed; only a person's confirmation reopens them (policy v3, AI-E3.15).
             stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
-            await self._reopen(stored, path="escalation",
-                                 escalation_id=ticket.id)
+            await self._safety_net(stored, path="escalation", escalation_id=ticket.id, confirmed=False)
         return {
             "escalation_id": ticket.id,
             EVENT_KEY: {
@@ -434,20 +434,23 @@ class WorkflowNodes:
         own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
-    async def _reopen(self, threat: Any, *, path: str, escalation_id: Optional[str]) -> None:
-        """Retro-reopen for a threat, then a run message for each alert it requeued (#350): it runs now, not after
-        the orphan sweep (which stays the backstop)."""
+    async def _safety_net(self, threat: Any, *, path: str, escalation_id: Optional[str], confirmed: bool) -> None:
+        """The safety net for a threat (``confirmed`` by a person: reopen; judged by a model: link), then a run
+        message for each alert it requeued (#350): it runs now, not after the orphan sweep (which stays the
+        backstop)."""
         reopened = await reopen_counted(self.deps.repos, threat.tenant_id, threat, actor=WORKFLOW_ACTOR, path=path,
-                                        escalation_id=escalation_id)
+                                        confirmed=confirmed, escalation_id=escalation_id)
         await enqueue_requeued(self.deps.repos, self.deps.queue, threat.tenant_id, reopened)
 
     async def _forget_benign_learning(self, state: WorkflowState) -> None:
-        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again, and the
-        alerts the models closed alone on its entities reopen (decision policy v3 safety net)."""
+        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again. The
+        alerts the models closed alone on its entities reopen when an analyst decided ``true_positive`` (on this
+        alert or on the case it is attached to); on the models' word alone they are only linked (decision policy
+        v3 safety net)."""
         alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
         await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
-        await self._reopen(alert, path="workflow",
-                             escalation_id=state.get("escalation_id"))
+        confirmed = (state.get("analyst") or {}).get("decision") == "true_positive"
+        await self._safety_net(alert, path="workflow", escalation_id=state.get("escalation_id"), confirmed=confirmed)
 
     def _evidence(self, state: WorkflowState) -> str:
         """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.

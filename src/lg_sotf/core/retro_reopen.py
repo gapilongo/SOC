@@ -1,23 +1,44 @@
-"""The safety net of decision policy v3 (FIX-3): a related threat reopens the alerts the models closed alone.
+"""The safety net of decision policy v3 (FIX-3, AI-E3.15): a related threat a model judged links the alerts the
+models closed alone to its case, and one a person confirmed reopens them.
 
 At the autonomy tier ``auto_full_audit`` the models close every alert the
 deep tier judged benign (:mod:`lg_sotf.domain.closure`); the forward gates of
 FIX-1 and FIX-2 (thresholds, campaign check) are gone. Instead, when an alert
-becomes a threat:
+becomes a threat, the safety net looks up the alerts of the same tenant that
+the models closed alone (close reason ``ai_closed:*``) in the previous
+:data:`REOPEN_WINDOW` and that share a host, user or IP with it.
 
-* the workflow plans a response for it, or closes it malicious;
+**A model judged the threat** (:func:`link_related_model_closes`):
+
+* the workflow plans a response for it, or closes it malicious, with no
+  analyst ``true_positive`` behind it;
 * it is escalated and a model judged it a threat (the deep tier's
   ``malicious``, the fast tier's ``likely_threat`` or ``confirmed_threat``).
   The fast tier's ``suspicious`` is a doubt, not a threat: it does not block
-  a model close, so it does not undo one either (#352); that alert goes to an
-  analyst, whose ``true_positive`` reopens the related closes;
-* an analyst decides ``true_positive`` on it;
-* a blind audit labels it ``malicious``;
+  a model close, so it does not touch one either (#352).
 
-:func:`reopen_related_model_closes` reopens every alert of the same tenant
-that the models closed alone (close reason ``ai_closed:*``) in the previous
-:data:`REOPEN_WINDOW`, and that shares a host, user or IP with it. Each one
-is **folded** into the threat's open escalation: attached to it as a
+A model's judgement is not a confirmation (AI-E3.15: on dev, one benign alert
+a model misjudged undid thirteen correct closes). Each related alert is
+**linked** and stays closed: it is attached to the threat's open escalation
+as a related alert when there is one, so the analyst sees it in the case; it
+gets an entry in its summary's ``linked`` list (threat alert, case, time) and
+is audited ``alert.linked`` (reason ``related_threat``), with an
+``alert.linked`` event on its timeline. Its status, disposition and close
+reason do not change, no run starts, and a decision on the case never
+settles it (:func:`lg_sotf.services.folded.settle_folded`): it stays closed
+by the models, marked for audit. The threat keeps the ids it linked
+(``linked_alert_ids`` in its summary).
+
+**A person confirmed the threat** (:func:`reopen_related_model_closes`):
+
+* an analyst decides ``true_positive`` on it (the API, then the response
+  plan and the malicious close of the run that decision resumes);
+* an analyst approves a response action for it;
+* a blind audit labels it ``malicious``.
+
+Each related alert is reopened, and so is every alert linked earlier to the
+threat or attached to its case, however long ago it closed. Each one is
+**folded** into the threat's open escalation: attached to it as a
 related alert and set to ``waiting_human`` under that case, with no new run
 and no new escalation, so the analyst sees one case holding the related
 alerts; the analyst's decision on the case settles it
@@ -28,38 +49,43 @@ without an escalation, or a case already decided) is it queued for a new
 run instead, marked ``reopened`` so the policy never closes it on the
 models' word again. Either way it is audited ``alert.reopened`` (reason
 ``related_threat``), with an ``alert.reopened`` event on its timeline. A single attack step the model
-misjudged therefore resurfaces as soon as the attack shows itself anywhere.
+misjudged therefore resurfaces as soon as a person confirms the attack anywhere.
 
-It is idempotent (an alert already reopened is no longer closed, so it is
-not selected again) and tenant-scoped (every query runs in the tenant's
-transaction). The callers count a failure in
+Both are idempotent (an alert already reopened is no longer closed, so it is
+not selected again; an alert already linked to the threat is linked again
+only to show it in a new case) and tenant-scoped (every query runs in the
+tenant's transaction). The callers count a failure in
 ``lgsotf_retro_reopen_failures_total`` and log it as an error; it never
-fails the threat's own decision. A shadow run does not run it: the call is
-recorded in the run's sink (:func:`reopen_counted` is an egress boundary).
+fails the threat's own decision. A shadow run runs neither: the call is
+recorded in the run's sink (:func:`reopen_counted`, the one entry point of
+both, is an egress boundary).
 
 IPs are matched whatever their role in the alert (source or destination):
-the canonical alert does not keep the role, and a wider match only reopens
-more.
+the canonical alert does not keep the role, and a wider match only links or
+reopens more.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Any, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.observability.logging import get_logger, log_failure
-from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES, RETRO_REOPENED
+from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
 from lg_sotf.security.shadow import egress, sink
-from lg_sotf.services.folded import FOLDED, REQUEUED, folded_into
+from lg_sotf.services.folded import FOLDED, REQUEUED, closed_by_models, folded_into
 
 log = get_logger(__name__)
 
 REOPEN_WINDOW = timedelta(hours=24)
 REOPEN_REASON = "related_threat"
 REOPEN_ACTION = "alert.reopened"
+LINK_ACTION = "alert.linked"
+#: The newest links one alert's summary keeps (one per threat).
+MAX_LINKS = 20
 #: The close reason a reopened alert carries until it closes again (it no longer reads ``ai_closed:*``).
 REOPENED_CLOSE_REASON = "reopened:related_threat"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
@@ -82,10 +108,92 @@ def _values(entities: Any, kind: str) -> List[str]:
     return [v for v in values[:MAX_ENTITY_VALUES] if isinstance(v, str) and v]
 
 
-def _closed_by_models(alert: Any) -> bool:
-    summary = alert.summary if isinstance(alert.summary, Mapping) else {}
-    reason = summary.get("close_reason")
-    return alert.status == "closed" and isinstance(reason, str) and reason.startswith("ai_closed:")
+def _listed(summary: Any, key: str) -> List[Any]:
+    value = summary.get(key) if isinstance(summary, Mapping) else None
+    return list(value) if isinstance(value, list) else []
+
+
+def _linked_ids(threat: Any) -> List[str]:
+    """The alerts ``threat`` (a stored alert) linked so far."""
+    return [a for a in _listed(threat.summary, "linked_alert_ids") if isinstance(a, str)]
+
+
+async def _related(repos: Repositories, tenant_id: str, threat: Any, now: datetime) -> List[str]:
+    """Ids of the alerts the models closed alone in the window that share a host, user or IP with ``threat``."""
+    entities = threat.entities if isinstance(threat.entities, Mapping) else {}
+    return await repos.alerts.model_closed_sharing_entities(
+        tenant_id,
+        hosts=_values(entities, "hosts"),
+        users=_values(entities, "users"),
+        ips=_values(entities, "ips"),
+        since=now - REOPEN_WINDOW,
+        exclude_alert_id=threat.id,
+        limit=MAX_REOPEN,
+    )
+
+
+async def link_related_model_closes(
+    repos: Repositories,
+    tenant_id: str,
+    threat: Any,
+    *,
+    actor: Actor,
+    escalation_id: Optional[str] = None,
+    now: Optional[datetime] = None,
+) -> List[str]:
+    """Link the model-closed alerts related to ``threat`` (a stored alert) to its open case: they stay closed. The
+    ids linked now (see the module docs).
+
+    Raises on a database error: the caller counts it (:func:`reopen_counted`).
+    """
+    now = now or datetime.now(UTC)
+    related = await _related(repos, tenant_id, threat, now)
+    # Kept on the threat first: a person's confirmation reopens them whenever it comes, even if a link below fails.
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        known = _linked_ids(await repos.alerts.get(tenant_id, threat.id, conn=conn))
+        ids = list(dict.fromkeys([*known, *related]))[-MAX_REOPEN:]
+        if ids != known:
+            await repos.alerts.update(tenant_id, threat.id, summary={"linked_alert_ids": ids}, conn=conn)
+    linked: List[str] = []
+    for alert_id in ids:  # the ones linked earlier too: a new case of the threat shows them as well
+        try:
+            if await _link_one(repos, tenant_id, alert_id, threat_id=threat.id, actor=actor,
+                               escalation_id=escalation_id, now=now):
+                linked.append(alert_id)
+        except NotFound:
+            continue  # the retention purge removed it since
+    return linked
+
+
+async def _link_one(
+    repos: Repositories, tenant_id: str, alert_id: str, *, threat_id: str, actor: Actor,
+    escalation_id: Optional[str], now: datetime,
+) -> bool:
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
+        if not closed_by_models(alert):
+            return False  # reopened, or closed again by a person, meanwhile
+        # Shown in the threat's case when it is open; nothing else about the alert changes.
+        case = escalation_id if await _attach(repos, tenant_id, escalation_id, alert_id, conn) else None
+        links: List[Dict[str, Optional[str]]] = [
+            dict(m) for m in _listed(alert.summary, "linked") if isinstance(m, Mapping)
+        ]
+        prior = next((m for m in links if m.get("threat_alert_id") == threat_id), None)
+        if prior is not None and case in (None, prior.get("escalation_id")):
+            return False  # linked to this threat already, and no new case to show it in
+        marker = {"threat_alert_id": threat_id, "escalation_id": case, "at": now.isoformat()}
+        links = [*(m for m in links if m is not prior), marker][-MAX_LINKS:]
+        await repos.alerts.update(tenant_id, alert_id, summary={"linked": links}, conn=conn)
+        details = {"reason": REOPEN_REASON, **marker}
+        await repos.alert_events.append(
+            tenant_id, alert_id, LINK_ACTION, node="retro_reopen", actor_type=actor.type, actor_id=actor.id,
+            data=dict(details), conn=conn,
+        )
+        await AuditLogger(repos).record(
+            tenant_id, LINK_ACTION, "alert", alert_id, actor_type=actor.type, actor_id=actor.id,
+            details=dict(details), conn=conn,
+        )
+    return True
 
 
 async def reopen_related_model_closes(
@@ -97,26 +205,35 @@ async def reopen_related_model_closes(
     escalation_id: Optional[str] = None,
     now: Optional[datetime] = None,
 ) -> List[str]:
-    """Reopen the model-closed alerts related to ``threat`` (a stored alert); the ids reopened (see the module docs).
+    """Reopen the model-closed alerts related to ``threat`` (a stored alert), those linked to it or into its case
+    earlier included; the ids reopened (see the module docs).
 
     Raises on a database error: the caller counts it (:func:`reopen_counted`).
     """
     now = now or datetime.now(UTC)
-    entities = threat.entities if isinstance(threat.entities, Mapping) else {}
-    candidates = await repos.alerts.model_closed_sharing_entities(
-        tenant_id,
-        hosts=_values(entities, "hosts"),
-        users=_values(entities, "users"),
-        ips=_values(entities, "ips"),
-        since=now - REOPEN_WINDOW,
-        exclude_alert_id=threat.id,
-        limit=MAX_REOPEN,
-    )
+    related = await _related(repos, tenant_id, threat, now)
+    # Linked earlier, by this threat or into its case: they reopen too, however long ago they closed.
+    linked = _linked_ids(threat) + await _case_alerts(repos, tenant_id, escalation_id)
     reopened: List[str] = []
-    for alert_id in candidates:
-        if await _reopen_one(repos, tenant_id, alert_id, threat_id=threat.id, actor=actor, escalation_id=escalation_id):
-            reopened.append(alert_id)
+    for alert_id in dict.fromkeys([*related, *linked]):
+        try:
+            if alert_id != threat.id and await _reopen_one(
+                repos, tenant_id, alert_id, threat_id=threat.id, actor=actor, escalation_id=escalation_id
+            ):
+                reopened.append(alert_id)
+        except NotFound:
+            continue  # a linked alert the retention purge removed since
     return reopened
+
+
+async def _case_alerts(repos: Repositories, tenant_id: str, escalation_id: Optional[str]) -> List[str]:
+    """The alerts attached to the case, whatever its status: the ones linked into it are among them."""
+    if escalation_id is None:
+        return []
+    try:
+        return list((await repos.escalations.get(tenant_id, escalation_id)).related_alert_ids)
+    except NotFound:
+        return []
 
 
 async def _active_escalation(repos: Repositories, tenant_id: str, escalation_id: Optional[str], conn: Any) -> Any:
@@ -134,7 +251,7 @@ async def _reopen_one(
 ) -> bool:
     async with repos.db.tenant_tx(tenant_id) as conn:
         alert = await repos.alerts.get(tenant_id, alert_id, conn=conn)
-        if not _closed_by_models(alert):
+        if not closed_by_models(alert):
             return False  # reopened already, or closed again by a person: nothing to do
         # Folded into the threat's case when it is still open: one escalation holds the related alerts, no new run.
         folded = await _attach(repos, tenant_id, escalation_id, alert_id, conn)
@@ -186,10 +303,12 @@ async def refold(repos: Repositories, tenant_id: str, threat_id: str, escalation
 
 async def _attach(repos: Repositories, tenant_id: str, escalation_id: Optional[str], alert_id: str, conn: Any) -> bool:
     """Attach ``alert_id`` to the escalation if it is still open (the attach is guarded in SQL against a case
-    decided meanwhile); whether it is attached now."""
+    decided meanwhile); whether it is attached now (an alert linked into that case earlier already is)."""
     escalation = await _active_escalation(repos, tenant_id, escalation_id, conn)
     if escalation is None:
         return False
+    if alert_id in escalation.related_alert_ids:
+        return True
     deadline = escalation.sla_deadline or datetime.now(UTC) + REOPEN_WINDOW
     attached = await repos.escalations.attach(
         tenant_id, escalation.id, alert_id, priority=escalation.priority, level=escalation.level,
@@ -198,7 +317,7 @@ async def _attach(repos: Repositories, tenant_id: str, escalation_id: Optional[s
     return attached is not None
 
 
-# A shadow run records that the safety net would have run: it reopens nothing and counts no failure.
+# A shadow run records that the safety net would have run: it links and reopens nothing and counts no failure.
 @egress("retro_reopen", sink(lambda a: [], detail=lambda a: {"path": a["path"]}))
 async def reopen_counted(
     repos: Repositories,
@@ -207,23 +326,26 @@ async def reopen_counted(
     *,
     actor: Actor,
     path: str,
+    confirmed: bool,
     escalation_id: Optional[str] = None,
 ) -> Sequence[str]:
-    """:func:`reopen_related_model_closes` for a threat path: a failure is counted and logged as an error, never
-    raised (the threat's own decision stands); returns the ids reopened."""
+    """The safety net for a threat path. ``confirmed`` says who stands behind the threat: a person (the related
+    model closes reopen, :func:`reopen_related_model_closes`) or only a model (they are linked and stay closed,
+    :func:`link_related_model_closes`). A failure is counted and logged as an error, never raised (the threat's
+    own decision stands); returns the ids reopened (none when linking)."""
+    act = reopen_related_model_closes if confirmed else link_related_model_closes
     try:
-        reopened = await reopen_related_model_closes(
-            repos, tenant_id, threat, actor=actor, escalation_id=escalation_id
-        )
+        ids = await act(repos, tenant_id, threat, actor=actor, escalation_id=escalation_id)
     except Exception as exc:  # noqa: BLE001 - counted and logged as an error: an alerting rule can page on it
         RETRO_REOPEN_FAILURES.labels(path=path).inc()
         log_failure(log, "retro_reopen.failed", exc, level="error", alert_id=getattr(threat, "id", None),
                     path=path, error_type=type(exc).__name__)
         return []
-    if reopened:
-        RETRO_REOPENED.labels(path=path).inc(len(reopened))
-        log.info("retro_reopen.reopened", alert_id=threat.id, path=path, count=len(reopened))
-    return reopened
+    if ids:
+        (RETRO_REOPENED if confirmed else RETRO_LINKED).labels(path=path).inc(len(ids))
+        log.info("retro_reopen.reopened" if confirmed else "retro_reopen.linked", alert_id=threat.id, path=path,
+                 count=len(ids))
+    return ids if confirmed else []
 
 
 async def enqueue_requeued(repos: Repositories, queue: Any, tenant_id: str, alert_ids: Sequence[str]) -> int:

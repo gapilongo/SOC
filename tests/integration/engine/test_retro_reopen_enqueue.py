@@ -3,11 +3,12 @@ claims it without waiting for the orphan sweep (2 x visibility timeout), which s
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import pytest
 import redis.asyncio as aioredis
 
+from lg_sotf.core.workflow import WorkflowEngine
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.domain import closure
@@ -15,7 +16,7 @@ from lg_sotf.queue.consumer import StreamConsumer
 from lg_sotf.runtime.worker import Worker
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, make_alert
-from tests.integration.engine._support import RecordingEvents
+from tests.integration.engine._support import RecordingEvents, analyst, decide, suspicious_alert
 
 pytestmark = pytest.mark.integration
 
@@ -35,16 +36,15 @@ async def model_closed_with_run(repos: Repositories, entities: Dict[str, List[st
 
 
 async def test_a_requeued_alert_is_claimed_by_a_worker_without_the_orphan_sweep(
-    engine_factory: Any, engine_settings: Settings, repos: Repositories, db: Database, redis_client: aioredis.Redis,
+    engine: WorkflowEngine, engine_settings: Settings, repos: Repositories, db: Database, redis_client: aioredis.Redis,
 ) -> None:
-    # A response the policy plans, with no escalation: the related model-closed alert has no case to fold into.
-    settings = engine_settings.model_copy(update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}})
-    engine = await engine_factory(settings=settings)
-    await repos.tenants.update_settings(TENANT_A, {"autonomy": {"low": "auto"}})
-    closed = await model_closed_with_run(repos, {"hosts": ["ws-777"]})
-    threat = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
-                              normalized={"entities": {"hosts": ["ws-777"]}})
-    await engine.run(TENANT_A, threat)
+    # The response plan after an analyst's true positive (AI-E3.15: a plan on the models' word only links): the
+    # case is decided, so the related model-closed alert has no case to fold into.
+    settings = engine_settings
+    closed = await model_closed_with_run(repos, {"hosts": ["ws-042"]})
+    threat = await suspicious_alert(repos)
+    first = await engine.run(TENANT_A, threat)
+    await decide(engine, repos, threat, first.interrupt["escalation_id"], "true_positive", await analyst(repos))
     reopened = await repos.alerts.get(TENANT_A, closed)
     assert (reopened.status, reopened.summary["reopened"]["mode"]) == ("queued", "requeued")
 

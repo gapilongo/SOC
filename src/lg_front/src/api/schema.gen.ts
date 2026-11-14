@@ -2130,6 +2130,10 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
+                linked?: {
+                    [key: string]: string | null;
+                }[];
+                linked_alert_ids?: string[];
                 llm_budget_exceeded?: boolean;
                 llm_models?: {
                     [key: string]: {
@@ -2381,6 +2385,10 @@ export interface components {
                 dry_run?: boolean;
                 escalation_attached?: boolean;
                 escalation_id?: string | null;
+                linked?: {
+                    [key: string]: string | null;
+                }[];
+                linked_alert_ids?: string[];
                 llm_budget_exceeded?: boolean;
                 llm_models?: {
                     [key: string]: {
