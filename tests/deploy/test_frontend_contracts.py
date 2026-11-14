@@ -58,7 +58,7 @@ def test_every_guardrail_reason_has_a_description() -> None:
     keys = _ts_object_keys(GUARDRAILS_TS, "GUARDRAIL_REASONS")
     assert len(keys) == len(set(keys)), f"duplicate keys in guardrails.ts: {keys}"
     missing = sorted(set(GUARDRAIL_REASONS) - set(keys))
-    assert not missing, f"modules/soc/lib/guardrails.ts has no description for {missing} (analysts would see the raw code)"
+    assert not missing, f"lib/guardrails.ts has no description for {missing} (analysts would see the raw code)"
 
 
 def test_reviewer_reasons_have_a_description() -> None:
@@ -66,7 +66,7 @@ def test_reviewer_reasons_have_a_description() -> None:
     keys = set(_ts_object_keys(GUARDRAILS_TS, "GUARDRAIL_REASONS"))
     for reason in REVIEWER_REASONS:
         assert f'"{reason}"' in backend, f"the backend no longer writes {reason}; update REVIEWER_REASONS"
-        assert reason in keys, f"modules/soc/lib/guardrails.ts has no description for {reason}"
+        assert reason in keys, f"lib/guardrails.ts has no description for {reason}"
 
 
 def test_source_types_match_the_api_schema() -> None:
