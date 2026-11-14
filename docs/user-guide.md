@@ -102,7 +102,10 @@ alerts where text in the alert tried to steer the model carry a
      planning. You may pre-approve low and medium risk actions in
      `approved_actions` (for example `"block_ip"` or
      `"block_ip:203.0.113.7"`); high and critical risk actions still need an
-     admin's approval.
+     admin's approval. The web app's decision page lists the expected plan
+     under the investigation and sends one `action_type:target` entry per
+     action you tick: each action names its exact target, and an action
+     without one cannot be pre-approved there.
    * `false_positive` (the detection was wrong) or `benign_positive` (the
      detection was right but the activity is legitimate): the alert closes
      as benign, and the verdict is cached. Once two different analysts have
