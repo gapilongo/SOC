@@ -14,11 +14,13 @@ secrets:
   existingSecret: lg-sotf-runtime
   ownerSecret: lg-sotf-owner
   bootstrapSecret: lg-sotf-bootstrap
+  shadowSecret: lg-sotf-shadow
 
 settings:
   environment: production
   database:
     runtime_role: lgsotf_app
+    shadow_role: lgsotf_shadow
     ssl_mode: verify-full
   api:
     public_url: https://soc.example.com

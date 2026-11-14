@@ -34,13 +34,13 @@ def _prepare() -> Settings:
 
 
 def _run(coro: Coroutine[Any, Any, T]) -> T:
-    from lg_sotf.db.errors import DatabaseUnavailable
+    from lg_sotf.db.errors import DatabaseUnavailable, ShadowRoleRequired
     from lg_sotf.runtime.ops import OperationError
     from lg_sotf.security.hashing import SecurityConfigError
 
     try:
         return asyncio.run(coro)
-    except (OperationError, SecurityConfigError) as exc:
+    except (OperationError, SecurityConfigError, ShadowRoleRequired) as exc:
         raise click.ClickException(str(exc)) from exc
     except DatabaseUnavailable as exc:
         raise click.ClickException(f"database unavailable: {exc}") from exc
@@ -125,6 +125,8 @@ def migrate() -> None:
     click.echo(f"schema: up to date; tenant: {report.tenant_id} ({'created' if report.tenant_created else 'exists'})")
     if report.runtime_role_granted:
         click.echo(f"runtime role: privileges granted to {report.runtime_role_granted}")
+    if report.shadow_role_granted:
+        click.echo(f"shadow role: SELECT granted to {report.shadow_role_granted}")
     if report.admin_created:
         click.echo(f"bootstrap admin created: {report.admin_created}")
 
@@ -642,15 +644,8 @@ def verify_invariants(as_json: bool) -> None:
 @click.option("--limit", type=click.IntRange(1, 2_000), default=200, show_default=True, help="Alerts replayed at most.")
 @click.option("--report", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write the JSON here.")
 @click.option("--markdown", default=None, type=click.Path(dir_okay=False, path_type=Path), help="Also write Markdown.")
-@click.option(
-    "--i-understand-no-shadow-role", "no_shadow_role", is_flag=True,
-    help="Development only: run without the shadow database role (AI-E1.5c). Refused when the environment "
-    "setting is staging or production; it defaults to development, so this prevents accidents, it is not "
-    "access control.",
-)
 def shadow_run(
     tenant_id: str, candidate: Path, window: str, limit: int, report: Optional[Path], markdown: Optional[Path],
-    no_shadow_role: bool,
 ) -> None:
     """Replay a tenant's recent decided alerts through a candidate model profile in shadow mode, then report.
 
@@ -659,7 +654,14 @@ def shadow_run(
     id, readable later at GET /platform/shadow/reports/{id}. Prints the
     agreement report (Markdown). Failed runs, and runs whose model answer was
     unusable so the rules decided, count as disagreement. The candidate's
-    model calls are real and billed to its provider, never to the tenant.
+    model calls are real and billed to its provider, never to the tenant; a
+    candidate that changes only the model uses production's provider account
+    and quota.
+
+    Needs database.shadow_url (the SELECT-only shadow role); refused without
+    it. The candidate's LLM host must be production's or listed in
+    security.shadow_candidate_llm_hosts. Each run is audited in the tenant
+    and in the platform tenant.
 
     Production's verdict is read from its first decide event: keep the window
     within retention.events_days (alert events can expire before the alerts),
@@ -667,6 +669,7 @@ def shadow_run(
     In the profile, ${VAR} works in llm.api_key only, from a CANDIDATE_
     variable. See docs/evaluation.md ("Shadow agreement").
     """
+    from lg_sotf.db.errors import ShadowRoleRequired
     from lg_sotf.domain.shadow_agreement import render_markdown
     from lg_sotf.errors import OperationError
     from lg_sotf.runtime.shadow_replay import ShadowRunOptions, check_shadow_gate, parse_window, run_shadow_replay
@@ -675,14 +678,11 @@ def shadow_run(
 
     settings = _prepare()
     try:
-        check_shadow_gate(settings, no_shadow_role)
-        options = ShadowRunOptions(
-            tenant_id=tenant_id, candidate=candidate, window=parse_window(window), limit=limit,
-            no_shadow_role_acknowledged=no_shadow_role,
-        )
+        check_shadow_gate(settings)
+        options = ShadowRunOptions(tenant_id=tenant_id, candidate=candidate, window=parse_window(window), limit=limit)
         # Enrichment reads tenant-encrypted tool keys with the process's box, as in a worker (ADR-0006).
         box = load_secret_box(settings)
-    except (OperationError, SecurityConfigError) as exc:
+    except (OperationError, SecurityConfigError, ShadowRoleRequired) as exc:
         raise click.ClickException(str(exc)) from exc
     _quiet_eval_logging(settings)
     if options.window.days > settings.retention.events_days:

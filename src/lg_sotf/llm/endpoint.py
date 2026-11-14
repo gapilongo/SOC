@@ -122,6 +122,27 @@ def resolve_base_url(settings: Settings) -> Optional[str]:
     return url
 
 
+def llm_endpoint_host(settings: Settings) -> str:
+    """The host the configured LLM calls go to, checked like :func:`resolve_base_url` (``""``: no network, ``fake``)."""
+    url = resolve_base_url(settings)
+    return httpx.URL(url).host if url is not None else PROVIDER_DEFAULT_HOSTS.get(settings.llm.provider, "")
+
+
+def candidate_llm_host(production: Settings, candidate: Settings) -> str:
+    """The host a shadow candidate's LLM calls go to, for its report; refused unless allowed.
+
+    Allowed: no network (the fake model), production's own LLM host, or a host
+    in ``security.shadow_candidate_llm_hosts`` of the *production* settings (a
+    candidate profile cannot extend the list). Raises :class:`LLMUnavailable`.
+    """
+    host = llm_endpoint_host(candidate)
+    if not host or host == llm_endpoint_host(production):
+        return host
+    if host_on_list(host, frozenset(production.security.shadow_candidate_llm_hosts)):
+        return host
+    raise LLMUnavailable("the candidate's LLM host is not production's and not in security.shadow_candidate_llm_hosts")
+
+
 def _check_allowed(settings: Settings, host: str) -> None:
     """The install's egress allow-list (``ingestion.allowed_destination_hosts``) covers the LLM endpoint too."""
     hosts = allowed_hosts(settings)

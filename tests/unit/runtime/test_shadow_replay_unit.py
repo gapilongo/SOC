@@ -12,11 +12,13 @@ from click.testing import CliRunner
 
 from lg_sotf.cli import cli
 from lg_sotf.core.shadow import ShadowOutcome
-from lg_sotf.core.shadow_replay import candidate_verdict, new_report_id
+from lg_sotf.core.shadow_replay import ShadowReplay, candidate_verdict, new_report_id
+from lg_sotf.db.errors import DatabaseUnavailable, ShadowRoleRequired
 from lg_sotf.db.repos.shadow_verdicts import REPORT_ID, check_report_id, production_verdict
+from lg_sotf.domain.shadow_agreement import Comparison, Verdict
 from lg_sotf.errors import OperationError
 from lg_sotf.models.trace import NewTraceStep
-from lg_sotf.runtime.shadow_replay import NO_SHADOW_ROLE_FLAG, check_shadow_gate, load_candidate, parse_window
+from lg_sotf.runtime.shadow_replay import check_candidate_host, check_shadow_gate, load_candidate, parse_window
 from lg_sotf.security.shadow import ShadowEffect, ShadowRun, note_llm_shortfall, shadow_scope
 from lg_sotf.settings import Settings
 
@@ -35,17 +37,38 @@ def env(settings_env: Any) -> Any:
 # ------------------------------------------------------------------ gate
 
 
-def test_the_gate_refuses_without_the_shadow_role_or_the_dev_flag() -> None:
-    with pytest.raises(OperationError, match="AI-E1.5c") as refused:
-        check_shadow_gate(Settings(environment="development"), acknowledged=False)
-    assert NO_SHADOW_ROLE_FLAG in str(refused.value)
-    check_shadow_gate(Settings(environment="test"), acknowledged=True)
+@pytest.mark.parametrize("environment", ["development", "test", "staging", "production"])
+def test_the_gate_needs_the_shadow_role_in_every_environment(environment: str) -> None:
+    """AI-E1.5c replaced the development flag: no shadow role, no shadow run, with no override."""
+    with pytest.raises(ShadowRoleRequired, match="database.shadow_url"):
+        check_shadow_gate(Settings(environment=environment))  # type: ignore[arg-type]
+    with pytest.raises(ShadowRoleRequired):
+        check_shadow_gate(Settings(environment=environment, database={"shadow_url": " "}))  # type: ignore[arg-type]
+    check_shadow_gate(
+        Settings(environment=environment, database={"shadow_url": "postgresql://lgsotf_shadow:x@db/x"})  # type: ignore[arg-type]
+    )
 
 
-@pytest.mark.parametrize("environment", ["staging", "production"])
-def test_the_dev_flag_is_refused_in_production_config(environment: str) -> None:
-    with pytest.raises(OperationError, match="not available in staging or production"):
-        check_shadow_gate(Settings(environment=environment), acknowledged=True)  # type: ignore[arg-type]
+def test_the_cli_has_no_flag_to_skip_the_shadow_role(env: Any, tmp_path: Path) -> None:
+    profile = tmp_path / "cand.yaml"
+    profile.write_text("name: cand\n")
+    result = CliRunner().invoke(
+        cli, ["shadow-run", "--tenant", "tenant-a", "--candidate", str(profile), "--i-understand-no-shadow-role"]
+    )
+    assert result.exit_code != 0 and "No such option" in result.output
+
+
+def test_the_candidate_llm_host_is_production_s_or_allow_listed() -> None:
+    production = Settings(llm={"provider": "anthropic", "api_key": "k"})  # type: ignore[arg-type]
+    model_only = Settings(llm={"provider": "anthropic", "api_key": "k", "deep": {"model": "claude-haiku-4-5"}})  # type: ignore[arg-type]
+    assert check_candidate_host(production, model_only) == "api.anthropic.com"
+    gateway = Settings(llm={"provider": "openai_compatible", "base_url": "https://gw.example.com/v1"})  # type: ignore[arg-type]
+    with pytest.raises(OperationError, match="shadow_candidate_llm_hosts"):
+        check_candidate_host(production, gateway)
+    listed = production.model_copy(
+        update={"security": production.security.model_copy(update={"shadow_candidate_llm_hosts": ["gw.example.com"]})}
+    )
+    assert check_candidate_host(listed, gateway) == "gw.example.com"
 
 
 def test_cli_refuses_before_touching_anything(env: Any, tmp_path: Path) -> None:
@@ -53,14 +76,15 @@ def test_cli_refuses_before_touching_anything(env: Any, tmp_path: Path) -> None:
     profile.write_text("name: cand\n")
     result = CliRunner().invoke(cli, ["shadow-run", "--tenant", "tenant-a", "--candidate", str(profile)])
     assert result.exit_code != 0
-    assert "shadow database role" in result.output and "database unavailable" not in result.output
+    assert "database.shadow_url" in result.output and "database unavailable" not in result.output
 
 
-def test_cli_validates_the_window_before_touching_anything(env: Any, tmp_path: Path) -> None:
+def test_cli_validates_the_window_before_touching_anything(env: Any, settings_env: Any, tmp_path: Path) -> None:
+    settings_env(LG_SOTF_DATABASE__SHADOW_URL="postgresql://lgsotf_shadow:x@127.0.0.1:1/none_test")
     profile = tmp_path / "cand.yaml"
     profile.write_text("name: cand\n")
     result = CliRunner().invoke(
-        cli, ["shadow-run", "--tenant", "tenant-a", "--candidate", str(profile), "--window", "3w", NO_SHADOW_ROLE_FLAG]
+        cli, ["shadow-run", "--tenant", "tenant-a", "--candidate", str(profile), "--window", "3w"]
     )
     assert result.exit_code != 0 and "--window" in result.output
 
@@ -87,6 +111,51 @@ def test_candidate_profile_overrides_only_llm_and_agents(tmp_path: Path, monkeyp
     assert candidate.llm.provider == "fake" and candidate.llm.deep.model == base.llm.deep.model
     assert candidate.agents["triage"] == {"llm_enabled": False}
     assert candidate.routing == base.routing and candidate.database == base.database
+
+
+def test_a_candidate_profile_cannot_raise_its_own_shadow_slots(tmp_path: Path) -> None:
+    """Review of #323: ``shadow_max_concurrency`` is production's setting, whatever the profile says."""
+    path = tmp_path / "greedy.yaml"
+    path.write_text("llm:\n  fast:\n    shadow_max_concurrency: 64\n  deep:\n    model: m\n    shadow_max_concurrency: 64\n")
+    base = Settings(environment="test", llm={"provider": "fake", "deep": {"shadow_max_concurrency": 2}})
+    _, candidate = load_candidate(base, path)
+    assert (candidate.llm.fast.shadow_max_concurrency, candidate.llm.deep.shadow_max_concurrency) == (1, 2)
+    assert candidate.llm.deep.model == "m"
+
+
+async def test_an_unusable_shadow_role_or_database_ends_the_replay() -> None:
+    """Review of #323: such a failure is not a row per alert (and a failed login per alert); it stops the replay."""
+    base = Comparison(alert_id="a1", severity="low", production=Verdict(route="close"), candidate=Verdict())
+
+    class Verdicts:
+        rows: list[Comparison] = []
+
+        async def production_verdicts(self, tenant_id: str, alert_ids: Any) -> dict[str, Comparison]:
+            return {a: base.model_copy(update={"alert_id": a}) for a in alert_ids}
+
+        async def append(self, tenant_id: str, report_id: str, candidate: str, row: Comparison, **kwargs: Any) -> None:
+            self.rows.append(row)
+
+    class Repos:
+        shadow_verdicts = Verdicts()
+
+    class Runner:
+        def __init__(self, exc: Exception) -> None:
+            self.exc, self.runs = exc, 0
+
+        async def run(self, tenant_id: str, alert_id: str) -> ShadowOutcome:
+            self.runs += 1
+            raise self.exc
+
+    for exc in (ShadowRoleRequired("no shadow role"), DatabaseUnavailable("cannot connect as the shadow role")):
+        runner = Runner(exc)
+        with pytest.raises(type(exc)):
+            await ShadowReplay(runner, Repos(), candidate="c").run("tenant-a", ["a1", "a2"])  # type: ignore[arg-type]
+        assert runner.runs == 1 and Verdicts.rows == []
+    # Any other failure is the candidate's on that alert: a row with the error type, and the replay goes on.
+    runner = Runner(RuntimeError("the candidate broke"))
+    await ShadowReplay(runner, Repos(), candidate="c").run("tenant-a", ["a1", "a2"])  # type: ignore[arg-type]
+    assert runner.runs == 2 and [r.candidate.error for r in Verdicts.rows] == ["RuntimeError", "RuntimeError"]
 
 
 @pytest.mark.parametrize(

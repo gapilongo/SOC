@@ -6,17 +6,28 @@ the command replays the tenant's alerts that production decided in that
 window through :class:`~lg_sotf.core.shadow_replay.ShadowReplay`, in
 shadow mode, and returns the agreement report built from the stored rows.
 
-**Gate.** Shadow runs read the database on the runtime role, behind the
-statement guard and read-only transactions of AI-E1.5a. A separate
-SELECT-only database role for them (AI-E1.5c, issue #309) is not built yet,
-and no shadow entry point may ship before it. Until it is, the command
-refuses to run unless the operator passes ``--i-understand-no-shadow-role``,
-and refuses that flag outright in staging and production
-(:func:`check_shadow_gate`). AI-E1.5c replaces the flag with its setting.
-The gate prevents accidents; it is not access control. It trusts the
-``environment`` setting, which defaults to ``development`` when nothing sets
-it, and anyone who can run the CLI with the database credentials can pass
-the flag.
+**Gate.** Every read of a shadow run goes through the SELECT-only shadow
+database role (AI-E1.5c, :mod:`lg_sotf.db.shadow_role`). Without
+``database.shadow_url`` the command refuses to run (:func:`check_shadow_gate`,
+:class:`~lg_sotf.db.errors.ShadowRoleRequired`), in every environment and
+with no override. It also refuses, before the audit and the first alert,
+when that login cannot connect or its role may write
+(:meth:`~lg_sotf.db.pool.Database.open_shadow`). With it, the shadow runs read as that role, and the
+verdict rows, the would-be effects and the audit entries are written by the
+runtime role after each run has left shadow mode.
+
+**Candidate endpoint.** The candidate's LLM host must be production's own,
+or listed in ``security.shadow_candidate_llm_hosts`` of the production
+settings (:func:`~lg_sotf.llm.endpoint.candidate_llm_host`); it is checked
+before any alert is read, stored on every verdict row and shown in the
+report (the host only, never a key). A candidate that changes only the model
+keeps production's provider, endpoint and API key: its calls use
+production's provider account, rate limits and quota.
+
+**Audit.** Each replay is audited before the first shadow run, in the
+target tenant (``tenant.shadow_replayed``) and in the platform tenant
+(``platform.tenant_shadow_replayed``, ``auth.bootstrap_tenant_id``): report
+id, candidate label and host, window and number of alerts.
 
 **Candidate profile.** A YAML file: ``name`` (the report's label; default:
 the file name) and the ``llm`` and ``agents`` sections to use instead of
@@ -41,20 +52,26 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 import yaml
 from pydantic import SecretStr, ValidationError
 
+from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.shadow import ShadowRunner
-from lg_sotf.core.shadow_replay import Progress, ShadowReplay
+from lg_sotf.core.shadow_replay import Progress, ShadowReplay, new_report_id
 from lg_sotf.core.workflow import build_node_deps
+from lg_sotf.db.errors import NotFound, ShadowRoleRequired
 from lg_sotf.db.pool import Database
+from lg_sotf.db.repos import Repositories
 from lg_sotf.db.repos.shadow_verdicts import MAX_REPORT_ALERTS
+from lg_sotf.db.shadow_role import shadow_role_configured
 from lg_sotf.db.tenancy import is_valid_tenant_id
 from lg_sotf.domain.shadow_agreement import ShadowAgreementReport
 from lg_sotf.errors import OperationError
+from lg_sotf.llm.endpoint import candidate_llm_host
+from lg_sotf.llm.errors import LLMUnavailable
 from lg_sotf.queue.redis import create_redis
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.shadow_reports import stored_report
 from lg_sotf.settings import SELF_HOSTED_PROVIDERS, LLMSettings, Settings, _expand_env
 
-NO_SHADOW_ROLE_FLAG = "--i-understand-no-shadow-role"
+CLI_ACTOR = "cli"
 MAX_WINDOW = timedelta(days=90)
 PROFILE_KEYS = frozenset({"name", "llm", "agents"})
 MAX_PROFILE_BYTES = 64 * 1024
@@ -69,21 +86,43 @@ class ShadowRunOptions:
     candidate: Path
     window: timedelta
     limit: int = 200
-    no_shadow_role_acknowledged: bool = False
 
 
-def check_shadow_gate(settings: Settings, acknowledged: bool) -> None:
-    """Refuse to run shadow replays until the shadow database role exists (AI-E1.5c), except on request in dev."""
-    if settings.is_production:
-        raise OperationError(
-            "shadow-run is not available in staging or production yet: it needs the SELECT-only shadow "
-            "database role (AI-E1.5c, issue #309)"
+def check_shadow_gate(settings: Settings) -> None:
+    """Refuse a shadow replay unless the SELECT-only shadow database role is configured (AI-E1.5c); no override."""
+    if not shadow_role_configured(settings):
+        raise ShadowRoleRequired(
+            "shadow-run needs database.shadow_url, the login of the SELECT-only shadow database role "
+            "(lgsotf_shadow; docs/deployment.md, section 4); refusing to run"
         )
-    if not acknowledged:
-        raise OperationError(
-            "shadow-run needs the SELECT-only shadow database role (AI-E1.5c, issue #309), which is not built "
-            f"yet. On a development or test database, pass {NO_SHADOW_ROLE_FLAG} to run it on the runtime role."
-        )
+
+
+def check_candidate_host(settings: Settings, candidate: Settings) -> str:
+    """The candidate's LLM host, refused (``OperationError``) unless production's own or allow-listed."""
+    try:
+        return candidate_llm_host(settings, candidate)
+    except LLMUnavailable as exc:
+        raise OperationError(f"the candidate profile's LLM endpoint is refused: {exc}") from exc
+
+
+async def _audit_replay(settings: Settings, repos: Repositories, tenant_id: str, details: Mapping[str, Any]) -> None:
+    """Audit one replay in the target tenant and in the platform tenant (when it exists and differs)."""
+    audit = AuditLogger(repos)
+    await audit.record_event(
+        tenant_id, "tenant.shadow_replayed", "tenant", tenant_id, actor_type="system", actor_id=CLI_ACTOR,
+        details=details,
+    )
+    home = settings.auth.bootstrap_tenant_id
+    if not home or home == tenant_id:
+        return
+    try:
+        await repos.tenants.get(home)
+    except NotFound:
+        return
+    await audit.record_event(
+        home, "platform.tenant_shadow_replayed", "tenant", tenant_id, actor_type="system", actor_id=CLI_ACTOR,
+        details=details,
+    )
 
 
 def parse_window(text: str) -> timedelta:
@@ -167,6 +206,9 @@ def _candidate_api_key(value: Any) -> Any:
 def _candidate_llm(settings: Settings, override: Mapping[str, Any]) -> LLMSettings:
     """Production's ``llm`` with the profile's on top; production's API key never goes to another endpoint."""
     merged = _merge(settings.llm.model_dump(), override)
+    for tier in ("fast", "deep"):  # the shadow slots are production's: a candidate cannot raise its own limit
+        if isinstance(merged.get(tier), dict):
+            merged[tier]["shadow_max_concurrency"] = getattr(settings.llm, tier).shadow_max_concurrency
     moved = any(key in override and override[key] != getattr(settings.llm, key) for key in ("provider", "base_url"))
     if moved and "api_key" not in override:
         merged["api_key"] = None
@@ -198,16 +240,19 @@ async def run_shadow_replay(
     progress: Optional[Progress] = None, now: Optional[datetime] = None,
 ) -> ShadowAgreementReport:
     """Replay the window's decided alerts through the candidate and return the report (the gate must pass)."""
-    check_shadow_gate(settings, options.no_shadow_role_acknowledged)
+    check_shadow_gate(settings)
     if not is_valid_tenant_id(options.tenant_id):
         raise OperationError(f"invalid tenant id {options.tenant_id!r}")
     if not 1 <= options.limit <= MAX_REPORT_ALERTS:
         raise OperationError(f"--limit is between 1 and {MAX_REPORT_ALERTS}")
     label, candidate_settings = load_candidate(settings, options.candidate)
+    host = check_candidate_host(settings, candidate_settings)  # before any alert is read
     db = Database(settings.database, application_name="lg-sotf-shadow-run", min_size=1, max_size=2)
     redis = create_redis(settings)
     await db.open()
     try:
+        # A shadow login that may write or cannot connect is refused here: nothing is read, audited or stored.
+        await db.open_shadow()
         deps = await build_node_deps(
             settings=candidate_settings, db=db, redis=redis, events=None, secret_box=secret_box
         )
@@ -218,8 +263,13 @@ async def run_shadow_replay(
             )
             if not alert_ids:
                 raise OperationError(f"tenant {options.tenant_id!r} has no decided alerts in that window")
-            replay = ShadowReplay(ShadowRunner(deps), deps.repos, candidate=label)
-            report_id = await replay.run(options.tenant_id, alert_ids, progress=progress)
+            report_id = new_report_id()
+            await _audit_replay(settings, deps.repos, options.tenant_id, {
+                "report_id": report_id, "candidate": label, "candidate_host": host,
+                "window_hours": int(options.window.total_seconds() // 3600), "alerts": len(alert_ids),
+            })
+            replay = ShadowReplay(ShadowRunner(deps), deps.repos, candidate=label, candidate_host=host)
+            report_id = await replay.run(options.tenant_id, alert_ids, report_id=report_id, progress=progress)
             report = await stored_report(deps.repos, options.tenant_id, report_id)
         finally:
             await deps.agents.cleanup()

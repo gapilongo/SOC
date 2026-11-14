@@ -9,7 +9,10 @@
 #     lgsotf_owner  migrate + scheduler (database.migration_url)
 #     lgsotf_app    api + worker      (database.url, database.runtime_role)
 #   `lg-sotf migrate` grants lgsotf_app its least-privilege table grants, and
-#   row-level security cannot be bypassed from it.
+#   row-level security cannot be bypassed from it. With LGSOTF_SHADOW_PASSWORD
+#   set, a third, SELECT-only login is created for shadow runs:
+#     lgsotf_shadow worker shadow runs (database.shadow_url, database.shadow_role)
+#   Without it shadow runs refuse to start.
 # * environment=staging, so every process runs settings.assert_safe(): the
 #   secrets below are mandatory, placeholder values are refused, and the dev
 #   YAML with its published keys is not loaded.
@@ -20,6 +23,7 @@
 #     migrate    runtime + owner DSNs, app secrets, bootstrap admin
 #     scheduler  runtime + owner DSNs, app secrets
 #     api/worker runtime DSN (lgsotf_app), app secrets
+#     worker     also the shadow DSN (lgsotf_shadow), when LGSOTF_SHADOW_PASSWORD is set
 #   Optional settings listed under x-passthrough are forwarded from .env or the
 #   shell only when set; add further keys there rather than re-enabling
 #   env_file.
@@ -93,6 +97,8 @@ services:
       POSTGRES_DB: postgres
       LGSOTF_OWNER_PASSWORD: ${LGSOTF_OWNER_PASSWORD:?set LGSOTF_OWNER_PASSWORD}
       LGSOTF_APP_PASSWORD: ${LGSOTF_APP_PASSWORD:?set LGSOTF_APP_PASSWORD}
+      # Optional: creates lgsotf_shadow, the SELECT-only login of shadow runs (first start only).
+      LGSOTF_SHADOW_PASSWORD: ${LGSOTF_SHADOW_PASSWORD:-}
       LGSOTF_DB: lgsotf
     volumes:
       - pgdata-prod:/var/lib/postgresql/data
@@ -109,6 +115,8 @@ services:
     environment:
       <<: [*prod-environment, *passthrough]
       LG_SOTF_DATABASE__MIGRATION_URL: *owner-url
+      # Grants lgsotf_shadow SELECT only; empty (no shadow role) when LGSOTF_SHADOW_PASSWORD is unset.
+      LG_SOTF_DATABASE__SHADOW_ROLE: ${LGSOTF_SHADOW_PASSWORD:+lgsotf_shadow}
       # First admin, created once when the bootstrap tenant has no users.
       LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL:
       LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD:
@@ -131,6 +139,8 @@ services:
     env_file: !reset []
     environment:
       <<: [*prod-environment, *passthrough]
+      # Shadow runs connect only as lgsotf_shadow; empty (shadow runs refuse to start) without its password.
+      LG_SOTF_DATABASE__SHADOW_URL: ${LGSOTF_SHADOW_PASSWORD:+postgresql://lgsotf_shadow:${LGSOTF_SHADOW_PASSWORD}@postgres:5432/lgsotf}
 
 volumes:
   pgdata-prod:

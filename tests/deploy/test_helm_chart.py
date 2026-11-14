@@ -96,6 +96,7 @@ def test_chart_never_renders_secrets(values: str, request: pytest.FixtureRequest
         "settings.auth.jwt_secret=x",
         "settings.database.url=postgresql://u:p@h/db",
         "settings.database.migration_url=postgresql://u:p@h/db",
+        "settings.database.shadow_url=postgresql://u:p@h/db",
         "settings.redis.url=redis://:p@h:6379/0",
         "settings.llm.api_key=x",
         "settings.security.encryption_keys=x",
@@ -256,7 +257,8 @@ def test_owner_and_bootstrap_secrets_reach_only_the_components_that_need_them(
 ) -> None:
     runtime, owner, bootstrap = "lg-sotf-runtime", "lg-sotf-owner", "lg-sotf-bootstrap"
     assert env_from_secrets(one(full_manifests, "Deployment", "-api")) == [runtime]
-    assert env_from_secrets(one(full_manifests, "Deployment", "-worker")) == [runtime]
+    # The shadow-run login (AI-E1.5c) reaches the worker only.
+    assert env_from_secrets(one(full_manifests, "Deployment", "-worker")) == [runtime, "lg-sotf-shadow"]
     assert env_from_secrets(one(full_manifests, "Deployment", "-scheduler")) == [runtime, owner]
     assert env_from_secrets(one(full_manifests, "Job", "-migrate")) == [runtime, owner, bootstrap]
 

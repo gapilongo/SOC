@@ -185,7 +185,8 @@ async def test_checkpointer_survives_a_database_restart(stack_factory: Any, repo
         try:
             await conn.fetchval(
                 "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
-                "WHERE datname = current_database() AND pid <> pg_backend_pid()"
+                # The test role's own sessions: it may not signal the shadow role's (AI-E1.5c).
+                "WHERE datname = current_database() AND pid <> pg_backend_pid() AND usename = current_user"
             )
         finally:
             await conn.close()
