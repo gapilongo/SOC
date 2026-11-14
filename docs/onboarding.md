@@ -73,7 +73,7 @@ step is done; the page stays available.
 
 | Step | Done when | Link |
 |---|---|---|
-| `source_connected` | A source is registered, or an alert from a real source (not the samples) has arrived | `/sources` |
+| `source_connected` | A source is registered, or an alert from a real source (not the samples) has arrived | `/sources`, `/sources/wazuh` (guided) |
 | `notifications_configured` | The tenant has an enabled Slack, Teams, email or webhook integration (ticketing integrations do not count) | `/integrations` |
 | `teammate_invited` | The tenant has more than one user account | `/users` |
 | `autonomy_reviewed` | An admin saved the autonomy or response settings, or chose **Mark reviewed** | `/settings` |
@@ -85,6 +85,48 @@ The state is computed by the API from the tenant's own data on every request
 step depends on the optional integrations feature: when the `integrations`
 table does not exist, or the runtime role cannot read it, the step is
 reported as `available: false`, hidden in the UI and not counted.
+
+## Guided Wazuh setup
+
+**Sources > Connect Wazuh step by step** (`/sources/wazuh`, also linked from
+the checklist and from the last step of the setup wizard) checks a Wazuh
+connection before anything is saved. The admin enters the indexer URL, the
+index pattern, a read-only indexer user and, for a private CA, its
+certificate, then chooses **Run checks**. The platform builds the connector
+the poller uses, applies the install's destination policy and sends one
+read-only search (the newest alert and the indexer's clock). The answer is
+shown as seven checks, in the order a connection is made. The first failure
+says what to change; the checks after it are skipped until it is fixed:
+
+| Check | Fails when | The message names |
+|---|---|---|
+| Connection settings | The URL, index pattern, time field or CA text is malformed; plain `http` in production | The setting |
+| Indexer reachable | The host is not on the install's allow-list or has a refused address; the name does not resolve; nothing answers; the server is not an indexer (the dashboard on 443, the manager API on 55000) | The host and port, `ingestion.allowed_destination_hosts` and `scripts/pov.sh --allow-host` |
+| TLS certificate | The certificate is signed by a CA the server does not trust, names another host or has expired | The CA certificate field, the host name |
+| Sign-in | The indexer answers `401` | Which kind of account is needed (an indexer user, not a dashboard or manager API account) |
+| Permission to read the alerts index | The indexer answers `403` | The index pattern and the missing permission (`indices:data/read/search`; the fix is the index permission `read` on the pattern) |
+| Alerts index | The pattern matches no index, the index does not exist, shards fail, or the time field is not a date there | The index pattern, the time field |
+| Clocks agree | The indexer's clock is more than 120 seconds from the server's, or the newest alert is dated in the future (the Wazuh manager's clock runs ahead) | The size and direction of the difference; the fix is NTP |
+
+One attempt is made, without retries, so an unreachable host answers within
+the connect timeout. Once every check passes, **Save source** creates the
+`wazuh` source with the values that were checked; editing a value discards
+the result.
+
+**Push from the manager** covers the other way in: the Wazuh manager posts
+alerts to `POST /api/v1/ingest/webhook/<source id>` with an API key. The
+page creates the push source (a `webhook` source with `config.format:
+wazuh`, id `wazuh-push` by default) and checks two things: that the source
+exists, is enabled and takes the Wazuh format, and that the key the manager
+sends is an active key of this tenant with the `ingest` scope. A missing
+scope is named with the scopes the key has. A mistyped key, a deleted one
+and another tenant's key get the same answer.
+
+Messages never contain the password, the user name, the API key, a response
+body or an exception text. The entered credentials are used for the check
+only; they are stored (encrypted) when the source is saved, as for any
+source. Each run is audited as `source.setup_checked` with the ids of the
+failed checks, without the URL.
 
 ## API (tenant admins)
 
@@ -103,6 +145,13 @@ else, an `X-Tenant-ID` override and API keys get `403`):
 | GET | `/api/v1/onboarding/setup` | `completed`, `completed_at`, `tenant_id`, `tenant_name`, `organisation`, `llm_profile`, `default_llm_profile`, `configured_llm` (`provider`, `enabled`, `fast_model`, `deep_model`, `residency`, `profile`) and `llm_profiles` (`id`, `label`, `residency`, `description`, `provider`, models, `env`). |
 | PUT | `/api/v1/onboarding/setup` | `{"organisation", "tenant_name", "llm_profile"}` (names 1-200 characters on one line; `llm_profile` one of the profile ids or `null`). |
 | POST | `/api/v1/onboarding/setup/complete` | `{"skipped": false}`; the first completion time is kept. |
+
+Guided source setup (the tenant's own admins; refused under a grant, like
+creating a source; 20 runs per tenant per minute):
+
+| Method | Path | What |
+|---|---|---|
+| POST | `/api/v1/onboarding/connectors/wazuh/check` | `{"pull": {"config": {"base_url", "index", "time_field", "ca_cert_pem"}, "secret": {"username", "password"}}}` and/or `{"push": {"source_id", "api_key"}}`. Returns `ok` (no check failed and at least one passed) and `checks`: `id`, `title`, `status` (`passed`, `failed`, `skipped`), `message` and, on a failed check, `fix`. Nothing is stored. |
 
 Analysts, viewers and API keys get `403` on the checklist endpoints. The three `POST`s are audited
 (`onboarding.sample_alerts_sent`, `onboarding.autonomy_reviewed`,

@@ -137,6 +137,15 @@ with read access to `wazuh-alerts-*` only, and a user with no role), with
 passwords generated at run time. Alerts loaded into the lab therefore never
 change what a test sees.
 
+`tests/live/wazuh/test_guided_setup.py` runs the guided setup checks
+([onboarding.md](onboarding.md#guided-wazuh-setup)) against the lab: a wrong
+password, a user without a role, a pattern that matches nothing, a time field
+that is not mapped, a handshake without the CA and under another host name,
+a closed port, and clocks that disagree. `tests/fixtures/wazuh_lab/fake.py`
+(`FakeWazuhIndexer`) answers those cases the way the lab does, for the tests
+that cannot start it: `tests/integration/e2e/test_guided_wazuh.py` walks the
+guided flow over HTTP against it.
+
 ### Loading more alerts
 
 ```bash

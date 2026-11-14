@@ -113,6 +113,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/onboarding/setup", "platform_admin", None),
     ("PUT", "/api/v1/onboarding/setup", "platform_admin", {"organisation": "Org", "tenant_name": "Tenant A"}),
     ("POST", "/api/v1/onboarding/setup/complete", "platform_admin", {}),
+    ("POST", "/api/v1/onboarding/connectors/wazuh/check", "admin", {"push": {"source_id": X}}),
     ("GET", f"/api/v1/alerts/{X}/evidence", "viewer", None),
     ("POST", f"/api/v1/alerts/{X}/incident-report", "analyst", {"stage": "final"}),
     ("GET", "/api/v1/platform/tenants/no-such-tenant/erasure", "platform_admin", None),

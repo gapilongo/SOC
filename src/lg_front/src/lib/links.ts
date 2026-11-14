@@ -35,6 +35,9 @@ export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
 /** The proof-of-value page, where the first-run setup ends. */
 export const POV_HREF = '/pov';
 
+/** The guided Wazuh setup (checks first, then the source is saved). */
+export const WAZUH_SETUP_HREF = '/sources/wazuh';
+
 export function alertsHref(filters: Record<string, string | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value) params.append(key, value);

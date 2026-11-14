@@ -52,6 +52,10 @@ Ports default to 3000 (UI) and 8000 (API); set `POV_UI_PORT`, `POV_API_PORT`,
    read-only credentials (a Wazuh indexer user with read on `wazuh-alerts-*`, a
    Splunk role that can only search, a Sentinel reader). Its host must be on the
    allow-list. See [integrations.md](integrations.md) and the user guide.
+   For Wazuh, **Connect Wazuh step by step** on the Sources page checks the
+   connection first and names what is missing: the host on the allow-list,
+   the CA certificate, the `read` permission on `wazuh-alerts-*`
+   ([onboarding.md](onboarding.md#guided-wazuh-setup)).
 2. **Run the backtest** once analysts' decisions are in the history:
 
    ```bash
