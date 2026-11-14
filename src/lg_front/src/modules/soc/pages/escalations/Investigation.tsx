@@ -8,17 +8,17 @@ import { Link } from 'react-router-dom';
 import { endpoints } from '../../api/endpoints';
 import { formatEntities, readAiReason, readFindings } from '../../api/fields';
 import { qk } from '../../api/queryKeys';
-import type { AlertDetailOut, AlertEventOut, EscalationOut, FindingOut } from '../../api/types';
+import type { AlertDetailOut, EscalationOut, FindingOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
+import { AlertEntities } from '../../components/AlertEntities';
+import { AlertTimeline } from '../../components/AlertTimeline';
 import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../../../components/Toast';
-import { Banner, Button, EmptyState, ErrorMessage, JsonBlock, LoadingState, cx } from '../../../../components/ui';
+import { Banner, Button, ErrorMessage, JsonBlock, LoadingState, Tabs, cx, type TabDef } from '../../../../components/ui';
 import { downloadBlob } from '../../../../lib/download';
 import { formatDateTime, humanize, shortId } from '../../../../lib/format';
 import { alertsHref } from '../../lib/links';
-import { useKeysetList } from '../../../../lib/pagination';
 import { readEntities, readEvidence, type EvidenceDigest, type Indicator } from './evidence';
-import { Tabs, type TabDef } from './Tabs';
 
 export type InvestigationTab = 'summary' | 'evidence' | 'entities' | 'timeline' | 'raw';
 
@@ -290,20 +290,7 @@ function Entities({ alert, escalation }: { alert: AlertDetailOut | undefined; es
   return (
     <Panel title="Entities">
       {entities.length ? (
-        <dl className="grid grid-cols-1 gap-x-3 gap-y-2 text-ctl sm:grid-cols-[140px_1fr]">
-          {entities.map(([kind, values]) => (
-            <div key={kind} className="contents">
-              <dt className="text-secondary">{humanize(kind)}</dt>
-              <dd className="flex min-w-0 flex-wrap gap-1.5">
-                {values.map((v, i) => (
-                  <code key={`${v}-${i}`} className="max-w-full break-all rounded-tag bg-raised-2 px-1.5 py-0.5 font-mono text-xs text-fg">
-                    {v}
-                  </code>
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <AlertEntities layout="columns" entities={entities} />
       ) : preview ? (
         <p className="break-words font-mono text-xs text-fg">{preview}</p>
       ) : (
@@ -313,58 +300,10 @@ function Entities({ alert, escalation }: { alert: AlertDetailOut | undefined; es
   );
 }
 
-function eventSummary(e: AlertEventOut): string {
-  const d = e.data ?? {};
-  if (e.event_type === 'note' && typeof d.text === 'string') return d.text;
-  if (e.event_type.startsWith('ticket.') && typeof d.note === 'string') return d.note;
-  const parts: string[] = [];
-  for (const key of ['status', 'from', 'to', 'decision', 'reason', 'disposition', 'action_type', 'error']) {
-    const v = d[key];
-    if (typeof v === 'string' || typeof v === 'number') parts.push(`${humanize(key)}: ${v}`);
-  }
-  return parts.join(', ');
-}
-
 function Timeline({ alertId }: { alertId: string }) {
-  const api = useApi();
-  const q = useKeysetList({
-    queryKey: qk.alert.events(alertId),
-    fetchPage: (cursor, signal) => endpoints.alertEvents(api, alertId, cursor, signal),
-    itemKey: (e: AlertEventOut) => e.id,
-  });
   return (
     <Panel title="Timeline">
-      {q.isPending && <LoadingState label="Loading timeline" />}
-      {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />}
-      {q.isSuccess && q.items.length === 0 && <EmptyState title="No events yet" />}
-      {q.items.length > 0 && (
-        <ol className="flex flex-col gap-2 text-ctl">
-          {q.items.map((e) => {
-            const detail = eventSummary(e);
-            return (
-              <li key={e.id} className="flex flex-wrap justify-between gap-x-3 border-b border-subtle pb-2 last:border-b-0">
-                <span className="min-w-0">
-                  <span className="font-medium text-fg">{humanize(e.event_type)}</span>
-                  <span className="text-secondary">
-                    {' '}
-                    by {e.actor_type}
-                    {e.node ? ` · ${e.node}` : ''}
-                  </span>
-                  {detail && <span className="block whitespace-pre-wrap break-words text-body">{detail}</span>}
-                </span>
-                <time dateTime={e.ts} className="whitespace-nowrap text-xs text-secondary">
-                  {formatDateTime(e.ts)}
-                </time>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      {q.hasNextPage && (
-        <Button size="sm" className="self-start" onClick={() => void q.fetchNextPage()} busy={q.isFetchingNextPage}>
-          Load older events
-        </Button>
-      )}
+      <AlertTimeline alertId={alertId} variant="rows" />
     </Panel>
   );
 }

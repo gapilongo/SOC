@@ -17,19 +17,20 @@ import { decidedByLabel, escalationConflictNotice, escalationOwner, readFindings
 import { useEscalation } from '../../api/hooks';
 import { afterAlertChange, afterAlertTimelineChange, afterEscalationChange } from '../../api/invalidate';
 import { qk } from '../../api/queryKeys';
-import type { ActionOut, AlertDetailOut, AlertEventOut, EscalationOut, FindingOut, JsonObject } from '../../api/types';
+import type { ActionOut, AlertDetailOut, EscalationOut, FindingOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { ActionControls, ActionDetails } from '../actions/ActionDetails';
 import { VerificationBadge } from '../actions/VerificationBadge';
+import { AlertEntities } from '../../components/AlertEntities';
+import { AlertTimeline } from '../../components/AlertTimeline';
 import { RiskBadge, StatusBadge } from '../../components/Badge';
 import { ConfirmDialog } from '../../../../components/Dialog';
 import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../../../components/Toast';
-import { Banner, Button, DefinitionList, EmptyState, ErrorMessage, JsonBlock, LoadingState, TextAreaField, buttonClass, cx } from '../../../../components/ui';
+import { Banner, Button, DefinitionList, ErrorMessage, JsonBlock, LoadingState, TextAreaField, buttonClass, cx } from '../../../../components/ui';
 import { formatDateTime, formatRelative, humanize } from '../../../../lib/format';
 import { escalationHref } from '../../lib/links';
-import { useKeysetList } from '../../../../lib/pagination';
 import { slaLabel, slaStatus } from '../../lib/sla';
 import { useNow } from '../../../../lib/useNow';
 import { aiVerdict, escalationIdOf, evidenceFlags, isSimulatedFinding, kindWords, originWords } from './alertSummary';
@@ -359,18 +360,6 @@ export function AutomatedTriage({ alert }: { alert: AlertDetailOut }) {
 
 // Entities ------------------------------------------------------------------------
 
-const ENTITY_LABELS: Record<string, string> = {
-  hosts: 'Hosts',
-  users: 'Users',
-  ips: 'IP addresses',
-  domains: 'Domains',
-  urls: 'URLs',
-  hashes: 'File hashes',
-  processes: 'Processes',
-  command_lines: 'Command lines',
-  emails: 'Email addresses',
-};
-
 function Entities({ normalized }: { normalized: JsonObject | null }) {
   const entities = asObjectOrNull(normalized?.entities);
   const kinds = entities ? Object.keys(entities).filter((k) => list(entities[k]).length > 0) : [];
@@ -381,20 +370,7 @@ function Entities({ normalized }: { normalized: JsonObject | null }) {
       {!entities || kinds.length === 0 ? (
         <p className="text-sm text-muted">No entities were extracted.</p>
       ) : (
-        <dl className="space-y-3">
-          {kinds.map((k) => (
-            <div key={k}>
-              <dt className="mb-1 text-xs font-medium text-muted">{ENTITY_LABELS[k] ?? humanize(k)}</dt>
-              <dd className="flex flex-wrap gap-1.5">
-                {list(entities[k]).map((v, i) => (
-                  <code key={`${v}-${i}`} className="max-w-full break-all rounded bg-raised-2 px-1.5 py-0.5 text-xs text-fg">
-                    {v}
-                  </code>
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
+        <AlertEntities layout="stacked" entities={kinds.map((k) => [k, list(entities[k])] as const)} />
       )}
       {techniques.length > 0 && (
         <p className="mt-3 text-sm text-body">
@@ -406,60 +382,7 @@ function Entities({ normalized }: { normalized: JsonObject | null }) {
   );
 }
 
-// Timeline, notes, actions, tickets -----------------------------------------------
-
-function eventSummary(e: AlertEventOut): string {
-  const d = e.data ?? {};
-  if (e.event_type === 'note' && typeof d.text === 'string') return d.text;
-  // Integration events (ticket opened, resolved outside LG-SOTF) carry a readable note.
-  if (e.event_type.startsWith('ticket.') && typeof d.note === 'string') return d.note;
-  const parts: string[] = [];
-  for (const key of ['status', 'from', 'to', 'decision', 'reason', 'disposition', 'action_type', 'error']) {
-    const v = d[key];
-    if (typeof v === 'string' || typeof v === 'number') parts.push(`${humanize(key)}: ${v}`);
-  }
-  return parts.join(', ');
-}
-
-function Timeline({ alertId }: { alertId: string }) {
-  const api = useApi();
-  const q = useKeysetList({
-    queryKey: qk.alert.events(alertId),
-    fetchPage: (cursor, signal) => endpoints.alertEvents(api, alertId, cursor, signal),
-    itemKey: (e: AlertEventOut) => e.id,
-  });
-  if (q.isPending) return <LoadingState label="Loading timeline" />;
-  if (q.isError) return <ErrorMessage error={q.error} onRetry={() => void q.refetch()} compact />;
-  if (q.items.length === 0) return <EmptyState title="No events yet" />;
-  return (
-    <div>
-      <ol className="relative space-y-3 border-l border-strong pl-4">
-        {q.items.map((e) => (
-          <li key={e.id} className="text-sm">
-            <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full bg-muted" aria-hidden="true" />
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-medium text-fg">{humanize(e.event_type)}</span>
-              {e.node && <span className="text-xs text-muted">node {e.node}</span>}
-              <time dateTime={e.ts} className="text-xs text-muted">
-                {formatDateTime(e.ts)}
-              </time>
-            </div>
-            <div className="text-xs text-muted">
-              by {e.actor_type}
-              {e.actor_id ? ` ${e.actor_id}` : ''}
-            </div>
-            {eventSummary(e) && <p className="mt-0.5 whitespace-pre-wrap break-words text-body">{eventSummary(e)}</p>}
-          </li>
-        ))}
-      </ol>
-      {q.hasNextPage && (
-        <Button size="sm" className="mt-3" onClick={() => void q.fetchNextPage()} busy={q.isFetchingNextPage}>
-          Load older events
-        </Button>
-      )}
-    </div>
-  );
-}
+// Notes, actions, tickets (the timeline is components/AlertTimeline) ----------------
 
 function NoteForm({ alertId }: { alertId: string }) {
   const api = useApi();
@@ -614,7 +537,9 @@ export function AlertSections({ alert }: { alert: AlertDetailOut }) {
         </Section>
       )}
       <Section title="Timeline">
-        <Timeline alertId={alert.id} />
+        <div>
+          <AlertTimeline alertId={alert.id} variant="rail" />
+        </div>
       </Section>
       <Section title="Response actions">
         <ResponseActions alertId={alert.id} />

@@ -1,6 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download, FileText } from 'lucide-react';
-import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
@@ -10,7 +10,7 @@ import { useApi, useAuth } from '../../../auth/AuthContext';
 import { can } from '../../../auth/roles';
 import { Badge } from '../components/Badge';
 import { useToast } from '../../../components/Toast';
-import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, Truncated, cx } from '../../../components/ui';
+import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, Tabs, TextField, Truncated, cx } from '../../../components/ui';
 import { downloadText } from '../../../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../../../lib/format';
 import { BlindAuditTab } from './blindAudit/BlindAuditReport';
@@ -503,7 +503,6 @@ export default function ReportsPage() {
   const [to, setTo] = useState(initial.to);
   const [tab, setTab] = useState<Tab>('value');
   const [exporting, setExporting] = useState(false);
-  const baseId = useId();
   const invalid = rangeError(from, to);
   const exportKind = tab === 'value' || tab === 'detections' ? tab : null;
 
@@ -518,19 +517,6 @@ export default function ReportsPage() {
     } finally {
       setExporting(false);
     }
-  };
-
-  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
-    const i = TABS.findIndex((t) => t.id === tab);
-    let next = i;
-    if (e.key === 'ArrowRight') next = (i + 1) % TABS.length;
-    else if (e.key === 'ArrowLeft') next = (i - 1 + TABS.length) % TABS.length;
-    else if (e.key === 'Home') next = 0;
-    else if (e.key === 'End') next = TABS.length - 1;
-    else return;
-    e.preventDefault();
-    setTab(TABS[next].id);
-    document.getElementById(`${baseId}-tab-${TABS[next].id}`)?.focus();
   };
 
   return (
@@ -568,28 +554,7 @@ export default function ReportsPage() {
           </p>
         )}
       </div>
-      <div role="tablist" aria-label="Report" className="mb-4 flex gap-1 border-b border-subtle">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            id={`${baseId}-tab-${t.id}`}
-            role="tab"
-            type="button"
-            aria-selected={tab === t.id}
-            aria-controls={`${baseId}-panel`}
-            tabIndex={tab === t.id ? 0 : -1}
-            onClick={() => setTab(t.id)}
-            onKeyDown={onTabKey}
-            className={cx(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
-              tab === t.id ? 'border-link text-fg' : 'border-transparent text-secondary hover:text-fg',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div id={`${baseId}-panel`} role="tabpanel" aria-labelledby={`${baseId}-tab-${tab}`}>
+      <Tabs variant="underline" label="Report" tabs={TABS} value={tab} onChange={setTab}>
         {invalid ? null : tab === 'value' ? (
           <ValueTab from={from} to={to} />
         ) : tab === 'accuracy' ? (
@@ -599,7 +564,7 @@ export default function ReportsPage() {
         ) : (
           <DetectionsTab from={from} to={to} />
         )}
-      </div>
+      </Tabs>
     </>
   );
 }

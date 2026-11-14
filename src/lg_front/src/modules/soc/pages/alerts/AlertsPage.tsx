@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Download, Search } from 'lucide-react';
 import { useCallback, useMemo, useState, type FormEvent } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import { endpoints, type AlertFilters } from '../../api/endpoints';
 import { formatEntities } from '../../api/fields';
@@ -24,6 +24,7 @@ import {
   SEVERITIES,
   SeverityTag,
   StatePill,
+  TabLinks,
   cx,
   type FilterOption,
 } from '../../../../components/ui';
@@ -164,31 +165,16 @@ const STATUS_OPTIONS: FilterOption[] = ALERT_STATUSES.map((s) => ({ value: s, la
 /** The view tabs, each with its count (one cached `GET /alerts/counts` for all of them). */
 function ViewTabs({ view, params, byStatus }: { view: AlertView; params: URLSearchParams; byStatus: Record<string, number> | undefined }) {
   const today = isTodayWindow(params);
-  return (
-    <nav aria-label="Alert views" className="relative overflow-x-auto border-b border-subtle">
-      <ul className="flex gap-1">
-        {ALERT_VIEWS.map((v) => {
-          const current = v === view;
-          const n = viewCount(v, byStatus);
-          return (
-            <li key={v}>
-              <Link
-                to={viewHref(v, params)}
-                aria-current={current ? 'page' : undefined}
-                className={cx(
-                  '-mb-px inline-flex h-[38px] items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ctl font-medium touch:min-h-11',
-                  current ? 'border-accent text-fg' : 'border-transparent text-secondary hover:text-fg',
-                )}
-              >
-                {viewLabel(v, today)}
-                {n !== null && <CountChip count={n} meaning={n === 1 ? 'alert' : 'alerts'} />}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-    </nav>
-  );
+  const tabs = ALERT_VIEWS.map((v) => {
+    const n = viewCount(v, byStatus);
+    return {
+      id: v,
+      to: viewHref(v, params),
+      label: viewLabel(v, today),
+      trailing: n !== null && <CountChip count={n} meaning={n === 1 ? 'alert' : 'alerts'} />,
+    };
+  });
+  return <TabLinks label="Alert views" tabs={tabs} current={view} />;
 }
 
 function DateField({ label, value, onChange }: { label: string; value: string | undefined; onChange: (iso: string | undefined) => void }) {
