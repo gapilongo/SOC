@@ -1,18 +1,25 @@
 /**
- * Where the Overview sends work. One place, so the day the work queue of
- * console v2 (`/queue`) is on the route table these three links move there
- * together; until then they open the same lists on the Escalations page.
+ * Where the Overview sends work: the work queue of console v2, opened on one
+ * of its views. The view's URL parameters are the queue's own (`viewSearch`),
+ * so a change to how the queue spells a view is followed here.
  */
 
-import { escalationQueueHref } from '../../lib/links';
+import { viewSearch, type ViewId } from '../queue/model';
 
-export type QueueView = 'all' | 'mine' | 'unassigned';
+/**
+ * The queue's path, as the module manifest registers it. The queue exports no
+ * route or link constant, so the path is named once here rather than typed
+ * into each link.
+ */
+const QUEUE_PATH = '/queue';
 
-/** The items that need a person, soonest deadline first: all of them, the caller's, or the ones nobody holds. */
+/** The queue views the Overview links to: everything that needs a person, the caller's, the ones nobody holds. */
+export type QueueView = Extract<ViewId, 'all' | 'mine' | 'unassigned'>;
+
+/** The work queue on `view` (soonest deadline first, as the queue sorts by default). */
 export function workQueueHref(view: QueueView): string {
-  if (view === 'mine') return escalationQueueHref({ assigned_to: 'me', order: 'sla_deadline' });
-  if (view === 'unassigned') return escalationQueueHref({ assigned_to: 'none', order: 'sla_deadline' });
-  return escalationQueueHref({ order: 'sla_deadline' });
+  const query = viewSearch(view).toString();
+  return query ? `${QUEUE_PATH}?${query}` : QUEUE_PATH;
 }
 
 /** Where sampled AI closes are labelled. */

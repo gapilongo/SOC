@@ -155,7 +155,7 @@ describe('OverviewPage: needs you now', () => {
     expect(await within(mine).findByText(/The first deadline is in 30 minutes/)).toHaveTextContent('The first deadline is in 30 minutes: Phishing link clicked.');
     // The item opens its investigation view; the action opens the caller's queue.
     expect(within(mine).getByRole('link', { name: 'Phishing link clicked' })).toHaveAttribute('href', '/alerts/a-e-2');
-    expect(within(mine).getByRole('link', { name: 'Open my queue' })).toHaveAttribute('href', workQueueHref('mine'));
+    expect(within(mine).getByRole('link', { name: 'Open my queue' })).toHaveAttribute('href', '/queue?view=mine');
 
     const approvals = row(now, /response actions you can approve/);
     expect(approvals).toHaveTextContent(/^9response actions you can approve/);
@@ -167,7 +167,7 @@ describe('OverviewPage: needs you now', () => {
     expect(await within(unclaimed).findByText(/Most overdue/)).toHaveTextContent('Most overdue: Unusual sign-in pattern, 2h 14m past its deadline.');
     expect(unclaimed).toHaveTextContent('2 of them are past their deadline.');
     expect(within(unclaimed).getByRole('link', { name: 'Unusual sign-in pattern' })).toHaveAttribute('href', '/alerts/a-e-1');
-    expect(within(unclaimed).getByRole('link', { name: 'Open the queue' })).toHaveAttribute('href', workQueueHref('unassigned'));
+    expect(within(unclaimed).getByRole('link', { name: 'Open the queue' })).toHaveAttribute('href', '/queue?view=unassigned');
 
     const audit = row(now, /wait for a blind-audit label/);
     await waitFor(() => expect(audit).toHaveTextContent(/^2sampled AI closes wait for a blind-audit label/));
@@ -451,7 +451,7 @@ describe('OverviewPage: deadlines, platform health and the page', () => {
     await open(w, 'analyst');
     const block = await screen.findByRole('region', { name: 'Next deadlines' });
     expect(block).toHaveTextContent('Items that need a person, soonest deadline first, right now · the next deadline still ahead is in 4 hours · 3 are past their deadline');
-    expect(within(block).getByRole('link', { name: 'Open the whole queue' })).toHaveAttribute('href', workQueueHref('all'));
+    expect(within(block).getByRole('link', { name: 'Open the whole queue' })).toHaveAttribute('href', '/queue');
     const rows = within(await within(block).findByRole('table', { name: 'Next deadlines' })).getAllByRole('row');
     expect(rows[1]).toHaveTextContent('2h 14m over · breaching');
     expect(rows[1]).toHaveTextContent('Unusual sign-in pattern · j.moreau@acme.example');
@@ -543,9 +543,9 @@ describe('figures', () => {
   it('names the window and where the work queue is', () => {
     expect(windowPhrase(168)).toBe('the last 7 days');
     expect(windowPhrase(5)).toBe('the last 5 hours');
-    expect(workQueueHref('mine')).toBe('/escalations?assigned_to=me&order=sla_deadline');
-    expect(workQueueHref('unassigned')).toBe('/escalations?assigned_to=none&order=sla_deadline');
-    expect(workQueueHref('all')).toBe('/escalations?order=sla_deadline');
+    expect(workQueueHref('mine')).toBe('/queue?view=mine');
+    expect(workQueueHref('unassigned')).toBe('/queue?view=unassigned');
+    expect(workQueueHref('all')).toBe('/queue');
     expect(dayRange('2026-10-16', '2026-11-14')).toMatch(/16.*14/);
     expect(dayRange('soon', '2026-11-14')).toMatch(/^soon to /);
   });
