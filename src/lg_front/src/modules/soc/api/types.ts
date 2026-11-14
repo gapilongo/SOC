@@ -1750,3 +1750,212 @@ export interface InvestigationOut {
   response: ProposedResponseOut;
   pending_harness: PendingHarnessFieldOut[];
 }
+
+// The case read model (`GET /cases/{id}`) --------------------------------------------------------
+
+/** How an alert is in a case. */
+export const CASE_ALERT_ROLES = ['primary', 'attached', 'linked', 'reopened', 'withheld'] as const;
+export type CaseAlertRole = (typeof CASE_ALERT_ROLES)[number];
+export const CASE_ALERT_STATES = ['open', 'processing', 'closed'] as const;
+export type CaseAlertState = (typeof CASE_ALERT_STATES)[number];
+export const AUTONOMY_TIERS = ['off', 'auto_full_audit'] as const;
+export type AutonomyTier = (typeof AUTONOMY_TIERS)[number];
+
+/** A user of the tenant; `email` is null for an account that no longer exists. */
+export interface CasePersonOut {
+  user_id: string;
+  email: string | null;
+}
+
+export interface CaseOwnerOut {
+  user_id: string;
+  email: string | null;
+  /** When the owner claimed the case. */
+  since: string | null;
+}
+
+/** The decision an analyst recorded on the case. */
+export interface CaseDecisionOut {
+  decision: Open<Decision>;
+  /** What the analyst wrote: data. */
+  notes: string | null;
+  /** Null when an MSSP analyst decided under a grant. */
+  decided_by: CasePersonOut | null;
+  decided_at: string | null;
+}
+
+/** Who or what closed an alert of a case, and why. */
+export interface CaseClosedByOut {
+  kind: Open<ClosedByKind>;
+  reason: InvestigationReasonOut;
+  at: string | null;
+  /** analyst or cached_verdict: the analyst's decision. */
+  decision: string | null;
+  /** analyst: who decided. */
+  analyst: CasePersonOut | null;
+  /** analyst: what they wrote, when the decision was recorded on this case (data). */
+  notes: string | null;
+  /** analyst: the case the decision was recorded on. */
+  decided_in_case_id: string | null;
+  /** ai: the rule of the decision policy that closed it. */
+  policy: InvestigationReasonOut | null;
+  /** ai: the tenant's model-led closure tier as the decide step recorded it. */
+  tier: Open<AutonomyTier> | null;
+  rule_id: string | null;
+  /** suppression_rule: its name, as data. */
+  rule_name: string | null;
+  /** cached_verdict: the alert the analyst decided. */
+  source_alert_id: string | null;
+}
+
+/** The blind audit of an alert the AI closed. */
+export interface CaseBlindAuditOut {
+  state: Open<'not_sampled' | 'pending' | 'labelled'>;
+  label: Open<AuditLabel> | null;
+  /** labelled: whether the label agrees with the AI; null for unsure. */
+  agrees: boolean | null;
+  labelled_at: string | null;
+}
+
+/** The safety net linked the alert to the case: it stays closed. */
+export interface CaseLinkOut {
+  reason: InvestigationReasonOut;
+  /** The alert a model judged a threat. */
+  threat_alert_id: string | null;
+  at: string | null;
+}
+
+/** The safety net reopened the alert, which the AI had closed on the model's word. */
+export interface CaseReopenedOut {
+  reason: InvestigationReasonOut;
+  threat_alert_id: string | null;
+  /** folded: it joined the open case. requeued: a new run reviews it. */
+  mode: Open<'folded' | 'requeued'> | null;
+  /** person: a person's confirmation was recorded directly. workflow: the run reopened it. */
+  confirmed_by: Open<'person' | 'workflow'> | null;
+  by: CasePersonOut | null;
+  at: string | null;
+}
+
+export interface CaseEntityRefOut {
+  kind: string;
+  value: string;
+}
+
+export interface CaseAlertOut {
+  id: string;
+  /** As the source sent it: data. */
+  title: string;
+  severity: Open<Severity>;
+  status: Open<AlertStatus>;
+  /** open: with a person. processing: the workflow has not decided yet. closed: closed. */
+  state: Open<CaseAlertState>;
+  role: Open<CaseAlertRole>;
+  occurred_at: string;
+  closed_at: string | null;
+  disposition: Open<Disposition> | null;
+  /** The first value of each entity kind. */
+  entities: CaseEntityRefOut[];
+  /** The alert waits for its blind-audit label: nothing of the AI's side is given. */
+  hidden_for_blind_audit: boolean;
+  category: Open<OutcomeCategory> | null;
+  /** Why the alert is with a person; null when it is closed or still processed. */
+  why: InvestigationReasonOut | null;
+  /** Null while the alert is open. */
+  closed_by: CaseClosedByOut | null;
+  blind_audit: CaseBlindAuditOut;
+  /** role linked: why it was linked, and when. */
+  link: CaseLinkOut | null;
+  /** role reopened: what reopened it. */
+  reopened: CaseReopenedOut | null;
+}
+
+/** A response action on the ledger for one of the case's alerts. */
+export interface CaseActionOut extends ProposedActionOut {
+  alert_id: string;
+  created_at: string;
+}
+
+/** One thing that happened in the case, in plain words. */
+export interface CaseTimelineEntryOut extends PlainStepOut {
+  /** What the entry is about (case.opened, alert.linked, step.close, ...). */
+  kind: string;
+  /** The alert it happened to; null for the case itself. */
+  alert_id: string | null;
+  /** The person, when a person acted. */
+  by: CasePersonOut | null;
+}
+
+/** A value the case's alerts name, and how many of them name it. */
+export interface CaseEntityOut {
+  kind: string;
+  value: string;
+  alerts: number;
+}
+
+export interface CaseClosedByCountsOut {
+  ai_evidence: number;
+  ai_audit: number;
+  suppression_rule: number;
+  cached_verdict: number;
+  analyst: number;
+}
+
+export interface CaseCountsOut {
+  /** Every alert of the case, also those a truncated list leaves out. */
+  alerts: number;
+  open: number;
+  processing: number;
+  closed: number;
+  linked: number;
+  reopened: number;
+  /** Alerts that wait for their blind-audit label. */
+  withheld: number;
+  closed_by: CaseClosedByCountsOut;
+  actions_awaiting_approval: number;
+}
+
+/** Something the design of the case page shows that the stored data cannot say yet. */
+export interface NotAvailableOut {
+  field: string;
+  reason: string;
+  /** The GitHub issue of the story that fills it, when there is one. */
+  issue: number | null;
+}
+
+/** `GET /cases/{id}`: one case (the escalation), its alerts, and who or what closed each one and why. */
+export interface CaseOut {
+  schema_version: number;
+  /** The case key: the id of the escalation. */
+  id: string;
+  tenant_id: string;
+  generated_at: string;
+  /** The alert the case was opened for. */
+  alert_id: string;
+  title: string;
+  status: Open<EscalationStatus>;
+  /** The case still waits for its decision (open, claimed or expired). */
+  active: boolean;
+  /** The highest severity among the case's alerts. */
+  severity: Open<Severity>;
+  category: Open<OutcomeCategory> | null;
+  /** Why the case is with a person. */
+  reason: InvestigationReasonOut | null;
+  opened_at: string;
+  sla_deadline: string | null;
+  owner: CaseOwnerOut | null;
+  version: number;
+  decision: CaseDecisionOut | null;
+  counts: CaseCountsOut;
+  /** Oldest first. */
+  alerts: CaseAlertOut[];
+  alerts_truncated: boolean;
+  /** What the case touches: most shared first. */
+  entities: CaseEntityOut[];
+  /** The response actions of the case's alerts, oldest first. */
+  actions: CaseActionOut[];
+  /** Oldest first. */
+  timeline: CaseTimelineEntryOut[];
+  timeline_truncated: boolean;
+  not_available: NotAvailableOut[];
+}

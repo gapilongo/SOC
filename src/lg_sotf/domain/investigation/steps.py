@@ -103,7 +103,8 @@ def _node_step(node: str, data: Mapping[str, Any]) -> Optional[words.Step]:
     return base
 
 
-def _step(event: EventFacts) -> Optional[PlainStep]:
+def plain_step(event: EventFacts) -> Optional[PlainStep]:
+    """One timeline event as a plain step; ``None`` for an event this release has no sentence for."""
     if event.event_type == "node.completed":
         key = event.node or ""
         step = _node_step(key, event.data)
@@ -125,7 +126,7 @@ def steps(alert: AlertFacts, events: Sequence[EventFacts], *, hidden: bool = Fal
         received = words.EVENT_STEPS[INGESTED]
         out.append(PlainStep(ts=alert.ingested_at, actor=received.actor, text=received.text))
     for event in shown:
-        step = _step(event)
+        step = plain_step(event)
         if step is not None:
             out.append(step)
     return out[:MAX_STEPS]

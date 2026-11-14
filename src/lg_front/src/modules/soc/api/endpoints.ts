@@ -39,6 +39,7 @@ import type {
   IntegrationTestOut,
   GuidedCheckOut,
   IntegrationUpdateIn,
+  CaseOut,
   InvestigationOut,
   JsonObject,
   LlmTestOut,
@@ -181,6 +182,8 @@ export const endpoints = {
     api.get<Page<EscalationOut>>('/escalations', { query: { ...filters, cursor, limit }, signal }),
   escalation: (api: ApiClient, id: string, signal?: AbortSignal) =>
     api.get<EscalationOut>(`/escalations/${enc(id)}`, { signal }),
+  /** The case read model: the escalation with its alerts, and who or what closed each one and why. */
+  caseView: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<CaseOut>(`/cases/${enc(id)}`, { signal }),
   /** Active escalations grouped by source and rule, largest group first. */
   escalationGroups: (api: ApiClient, filters: EscalationGroupFilters = {}, signal?: AbortSignal) =>
     api.get<EscalationGroupsOut>('/escalations/groups', { query: { ...filters }, signal }),

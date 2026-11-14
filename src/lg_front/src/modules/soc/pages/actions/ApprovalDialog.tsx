@@ -15,8 +15,11 @@ import { describeBlockedReason } from '../../lib/guardrails';
 
 export type ApprovalVerb = 'approve' | 'reject';
 
+/** What the dialog reads of an action: the ledger's row, or the same fields from a read model that lists it. */
+export type DecidableAction = Pick<ActionOut, 'id' | 'alert_id' | 'action_type' | 'target' | 'risk_level' | 'guardrail' | 'reversible' | 'irreversible_note'>;
+
 export interface PendingDecision {
-  action: ActionOut;
+  action: DecidableAction;
   verb: ApprovalVerb;
   /** Start with "Reject the alert's other pending actions" ticked. */
   rejectRemaining?: boolean;

@@ -60,6 +60,7 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
     return {
         "alert_id": alert_id,
         "escalation_id": escalation.id,
+        "case_id": escalation.id,  # a case is the escalation with its alerts
         "action_id": str(action.id),
         "source_id": source.id,
         "rule_id": rule.id,

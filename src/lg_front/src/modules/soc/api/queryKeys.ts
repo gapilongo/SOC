@@ -49,6 +49,8 @@ export const qk = {
     all: [NS, 'escalation'] as const,
     detail: (id: string) => [NS, 'escalation', id] as const,
     responsePreview: (id: string) => [NS, 'escalation', id, 'response-preview'] as const,
+    /** The case read model of the escalation (GET /cases/{id}): stale whenever the escalation changes. */
+    caseView: (id: string) => [NS, 'escalation', id, 'case'] as const,
   },
   actions: {
     all: [NS, 'actions'] as const,

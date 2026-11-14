@@ -32,6 +32,22 @@ export function escalationIdOf(alert: Pick<AlertOut, 'summary'>): string | null 
   return text(asObjectOrNull(alert.summary)?.escalation_id);
 }
 
+/**
+ * The case this alert belongs to: its escalation (its own, or the one it is attached to), else the case the
+ * safety net linked it to last (it stays closed there); null when it is in none.
+ */
+export function caseIdOf(alert: Pick<AlertOut, 'summary'>): string | null {
+  const own = escalationIdOf(alert);
+  if (own) return own;
+  const linked = asObjectOrNull(alert.summary)?.linked;
+  if (!Array.isArray(linked)) return null;
+  for (let i = linked.length - 1; i >= 0; i -= 1) {
+    const id = text(asObjectOrNull(linked[i])?.escalation_id);
+    if (id) return id;
+  }
+  return null;
+}
+
 export interface EvidenceFlags {
   /** Some evidence came from a simulated provider (a test fixture), not a live lookup. */
   simulated: boolean;

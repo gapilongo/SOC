@@ -25,6 +25,7 @@ from lg_sotf.api.routers import (
     audit,
     auth,
     blind_audit,
+    cases,
     compliance,
     dashboard,
     grants,
@@ -140,6 +141,8 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
         (triage.router, "beta"),
         (review.escalations, "stable"),
         (review.actions, "stable"),
+        # The case view: one read model over an escalation and its alerts.
+        (cases.router, "beta"),
         (sources.router, "stable"),
         (suppressions.router, "stable"),
         (identity.users, "stable"),

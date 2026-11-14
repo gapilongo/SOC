@@ -58,6 +58,7 @@ async def test_reads_and_writes_across_tenants_are_not_found(api: ApiHarness) ->
             f"/api/v1/escalations/{b['escalation'].id}/decision",
             {"decision": "false_positive", "version": b["escalation"].version},
         ),
+        ("GET", f"/api/v1/cases/{b['escalation'].id}", None),
         ("GET", f"/api/v1/actions/{b['action'].id}", None),
         ("POST", f"/api/v1/actions/{b['action'].id}/approve", None),
         ("POST", f"/api/v1/actions/{b['action'].id}/reject", None),
