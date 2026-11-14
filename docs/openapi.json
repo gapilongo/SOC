@@ -4331,6 +4331,1335 @@
         "title": "CapabilityCheck",
         "type": "object"
       },
+      "Case": {
+        "properties": {
+          "actions": {
+            "description": "The response actions of the case's alerts, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/CaseAction"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "active": {
+            "description": "The case still waits for its decision (open, claimed or expired).",
+            "title": "Active",
+            "type": "boolean"
+          },
+          "alert_id": {
+            "description": "The alert the case was opened for.",
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "alerts": {
+            "description": "Oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/CaseAlert"
+            },
+            "title": "Alerts",
+            "type": "array"
+          },
+          "alerts_truncated": {
+            "default": false,
+            "description": "The case has more alerts than one response lists.",
+            "title": "Alerts Truncated",
+            "type": "boolean"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai_closed_evidence",
+                  "ai_closed_audit",
+                  "needs_decision",
+                  "needs_review"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "needs_decision (likely malicious) or needs_review (not proven either way), from the primary alert.",
+            "title": "Category"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/CaseCounts"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "entities": {
+            "description": "What the case touches: most shared first.",
+            "items": {
+              "$ref": "#/components/schemas/CaseEntity"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "id": {
+            "description": "The case key: the id of the escalation.",
+            "title": "Id",
+            "type": "string"
+          },
+          "not_available": {
+            "items": {
+              "$ref": "#/components/schemas/NotAvailable"
+            },
+            "title": "Not Available",
+            "type": "array"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseOwner"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the case is with a person."
+          },
+          "schema_version": {
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "severity": {
+            "description": "The highest severity among the case's alerts.",
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "sla_deadline": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Deadline"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "claimed",
+              "decided",
+              "expired",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "timeline": {
+            "description": "Oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/CaseTimelineEntry"
+            },
+            "title": "Timeline",
+            "type": "array"
+          },
+          "timeline_truncated": {
+            "default": false,
+            "description": "Older entries were left out.",
+            "title": "Timeline Truncated",
+            "type": "boolean"
+          },
+          "title": {
+            "description": "That alert's title: data, at most 300 characters.",
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "description": "The version a claim or a decision is recorded against.",
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "schema_version",
+          "id",
+          "tenant_id",
+          "generated_at",
+          "alert_id",
+          "title",
+          "status",
+          "active",
+          "severity",
+          "category",
+          "reason",
+          "opened_at",
+          "sla_deadline",
+          "owner",
+          "version",
+          "decision",
+          "counts",
+          "alerts",
+          "alerts_truncated",
+          "entities",
+          "actions",
+          "timeline",
+          "timeline_truncated",
+          "not_available"
+        ],
+        "title": "Case",
+        "type": "object"
+      },
+      "CaseAction": {
+        "description": "A response action on the ledger for one of the case's alerts.",
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "plan: the action on the ledger.",
+            "title": "Action Id"
+          },
+          "action_type": {
+            "enum": [
+              "block_ip",
+              "block_domain",
+              "block_url",
+              "isolate_host",
+              "terminate_process",
+              "quarantine_file",
+              "disable_user",
+              "reset_password",
+              "revoke_sessions",
+              "collect_forensics",
+              "create_ticket",
+              "send_alert",
+              "block_sender",
+              "purge_message",
+              "notify_reporter",
+              "confirm_compromised",
+              "release_host",
+              "unblock_ip",
+              "unblock_domain",
+              "unblock_url",
+              "unblock_file",
+              "unblock_sender",
+              "enable_user",
+              "restore_message",
+              "dismiss_user_risk"
+            ],
+            "title": "Action Type",
+            "type": "string"
+          },
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "approval_entry": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: its approved_actions entry.",
+            "title": "Approval Entry"
+          },
+          "can_preapprove": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: your role may pre-approve it.",
+            "title": "Can Preapprove"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "guardrail": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProposedActionGuardrail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inverse_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inverse Action"
+          },
+          "irreversible_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Irreversible Note"
+          },
+          "reversible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reversible"
+          },
+          "risk": {
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Risk",
+            "type": "string"
+          },
+          "role_lock": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admin",
+                  "disabled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role Lock"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "proposed",
+                  "awaiting_approval",
+                  "approved",
+                  "rejected",
+                  "executing",
+                  "succeeded",
+                  "failed",
+                  "dry_run",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "plan: the action's status; null in a preview.",
+            "title": "Status"
+          },
+          "target": {
+            "description": "The exact target: data, at most 512 characters.",
+            "title": "Target",
+            "type": "string"
+          },
+          "without_preapproval": {
+            "anyOf": [
+              {
+                "enum": [
+                  "automatic",
+                  "awaiting_approval",
+                  "blocked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "preview: what happens to it when nothing is pre-approved.",
+            "title": "Without Preapproval"
+          }
+        },
+        "required": [
+          "action_id",
+          "action_type",
+          "target",
+          "description",
+          "risk",
+          "reversible",
+          "inverse_action",
+          "irreversible_note",
+          "status",
+          "guardrail",
+          "without_preapproval",
+          "can_preapprove",
+          "role_lock",
+          "approval_entry",
+          "alert_id",
+          "created_at"
+        ],
+        "title": "CaseAction",
+        "type": "object"
+      },
+      "CaseAlert": {
+        "properties": {
+          "blind_audit": {
+            "$ref": "#/components/schemas/CaseBlindAudit"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ai_closed_evidence",
+                  "ai_closed_audit",
+                  "needs_decision",
+                  "needs_review"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The alert's outcome category, as on the investigation view.",
+            "title": "Category"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "closed_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseClosedBy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null while the alert is open."
+          },
+          "disposition": {
+            "anyOf": [
+              {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "inconclusive"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disposition"
+          },
+          "entities": {
+            "description": "The first value of each entity kind.",
+            "items": {
+              "$ref": "#/components/schemas/CaseEntityRef"
+            },
+            "title": "Entities",
+            "type": "array"
+          },
+          "hidden_for_blind_audit": {
+            "default": false,
+            "description": "The alert waits for its blind-audit label: nothing of the AI's side is given.",
+            "title": "Hidden For Blind Audit",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseLink"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "role linked: why it was linked, and when."
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "reopened": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaseReopened"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "role reopened: what reopened it."
+          },
+          "role": {
+            "description": "primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened by the safety net. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.",
+            "enum": [
+              "primary",
+              "attached",
+              "linked",
+              "reopened",
+              "withheld"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "state": {
+            "description": "open: with a person. processing: the workflow has not decided yet. closed: closed.",
+            "enum": [
+              "open",
+              "processing",
+              "closed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "new",
+              "queued",
+              "processing",
+              "waiting_human",
+              "waiting_approval",
+              "closed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "description": "As the source sent it: data, at most 300 characters.",
+            "title": "Title",
+            "type": "string"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Why the alert is with a person. Null when it is closed (see closed_by) or processed."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "severity",
+          "status",
+          "state",
+          "role",
+          "occurred_at",
+          "closed_at",
+          "disposition",
+          "entities",
+          "hidden_for_blind_audit",
+          "category",
+          "why",
+          "closed_by",
+          "blind_audit",
+          "link",
+          "reopened"
+        ],
+        "title": "CaseAlert",
+        "type": "object"
+      },
+      "CaseBlindAudit": {
+        "description": "The blind audit of an alert the AI closed.",
+        "properties": {
+          "agrees": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "labelled: whether the label agrees with the AI. Null for unsure.",
+            "title": "Agrees"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "enum": [
+                  "malicious",
+                  "benign",
+                  "unsure"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "labelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labelled At"
+          },
+          "state": {
+            "description": "not_sampled: no blind audit drew this alert. pending: it waits for its label, so the AI's side is withheld. labelled: an analyst labelled it without seeing the AI's verdict.",
+            "enum": [
+              "not_sampled",
+              "pending",
+              "labelled"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "label",
+          "agrees",
+          "labelled_at"
+        ],
+        "title": "CaseBlindAudit",
+        "type": "object"
+      },
+      "CaseClosedBy": {
+        "description": "Who or what closed an alert, and why.",
+        "properties": {
+          "analyst": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CasePerson"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst: who decided."
+          },
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "decided_in_case_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst: the case the decision was recorded on (this one, or another).",
+            "title": "Decided In Case Id"
+          },
+          "decision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst or cached_verdict: the analyst's decision.",
+            "title": "Decision"
+          },
+          "kind": {
+            "enum": [
+              "ai",
+              "suppression_rule",
+              "cached_verdict",
+              "analyst"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "analyst: what they wrote, when the decision was recorded on this case (data). Null otherwise.",
+            "title": "Notes"
+          },
+          "policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvestigationReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ai: the rule of the decision policy that closed it (the decide code and its sentence)."
+          },
+          "reason": {
+            "$ref": "#/components/schemas/InvestigationReason",
+            "description": "The close reason: its code and the same in plain words."
+          },
+          "rule_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "suppression_rule: the rule.",
+            "title": "Rule Id"
+          },
+          "rule_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "suppression_rule: its name, as data.",
+            "title": "Rule Name"
+          },
+          "source_alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cached_verdict: the alert the analyst decided.",
+            "title": "Source Alert Id"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "auto_full_audit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "ai: the tenant's model-led closure tier as the decide step recorded it. Null when it did not.",
+            "title": "Tier"
+          }
+        },
+        "required": [
+          "kind",
+          "reason",
+          "at",
+          "decision",
+          "analyst",
+          "notes",
+          "decided_in_case_id",
+          "policy",
+          "tier",
+          "rule_id",
+          "rule_name",
+          "source_alert_id"
+        ],
+        "title": "CaseClosedBy",
+        "type": "object"
+      },
+      "CaseClosedByCounts": {
+        "description": "The case's closed alerts by who or what closed them.",
+        "properties": {
+          "ai_audit": {
+            "default": 0,
+            "title": "Ai Audit",
+            "type": "integer"
+          },
+          "ai_evidence": {
+            "default": 0,
+            "title": "Ai Evidence",
+            "type": "integer"
+          },
+          "analyst": {
+            "default": 0,
+            "title": "Analyst",
+            "type": "integer"
+          },
+          "cached_verdict": {
+            "default": 0,
+            "title": "Cached Verdict",
+            "type": "integer"
+          },
+          "suppression_rule": {
+            "default": 0,
+            "title": "Suppression Rule",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ai_evidence",
+          "ai_audit",
+          "suppression_rule",
+          "cached_verdict",
+          "analyst"
+        ],
+        "title": "CaseClosedByCounts",
+        "type": "object"
+      },
+      "CaseCounts": {
+        "properties": {
+          "actions_awaiting_approval": {
+            "default": 0,
+            "title": "Actions Awaiting Approval",
+            "type": "integer"
+          },
+          "alerts": {
+            "description": "Every alert of the case, also those a truncated list leaves out.",
+            "title": "Alerts",
+            "type": "integer"
+          },
+          "closed": {
+            "default": 0,
+            "title": "Closed",
+            "type": "integer"
+          },
+          "closed_by": {
+            "$ref": "#/components/schemas/CaseClosedByCounts",
+            "default": {
+              "ai_audit": 0,
+              "ai_evidence": 0,
+              "analyst": 0,
+              "cached_verdict": 0,
+              "suppression_rule": 0
+            }
+          },
+          "linked": {
+            "default": 0,
+            "title": "Linked",
+            "type": "integer"
+          },
+          "open": {
+            "default": 0,
+            "title": "Open",
+            "type": "integer"
+          },
+          "processing": {
+            "default": 0,
+            "title": "Processing",
+            "type": "integer"
+          },
+          "reopened": {
+            "default": 0,
+            "title": "Reopened",
+            "type": "integer"
+          },
+          "withheld": {
+            "default": 0,
+            "description": "Alerts that wait for their blind-audit label.",
+            "title": "Withheld",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "alerts",
+          "open",
+          "processing",
+          "closed",
+          "linked",
+          "reopened",
+          "withheld",
+          "closed_by",
+          "actions_awaiting_approval"
+        ],
+        "title": "CaseCounts",
+        "type": "object"
+      },
+      "CaseDecision": {
+        "description": "The decision an analyst recorded on the case.",
+        "properties": {
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CasePerson"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null when an MSSP analyst decided under a grant (the audit log names them)."
+          },
+          "decision": {
+            "enum": [
+              "true_positive",
+              "false_positive",
+              "benign_positive",
+              "needs_more_info"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the analyst wrote: data, at most 4000 characters.",
+            "title": "Notes"
+          }
+        },
+        "required": [
+          "decision",
+          "notes",
+          "decided_by",
+          "decided_at"
+        ],
+        "title": "CaseDecision",
+        "type": "object"
+      },
+      "CaseEntity": {
+        "description": "A value the case's alerts name.",
+        "properties": {
+          "alerts": {
+            "description": "How many of the case's alerts name it.",
+            "title": "Alerts",
+            "type": "integer"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "description": "Data, at most 128 characters.",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value",
+          "alerts"
+        ],
+        "title": "CaseEntity",
+        "type": "object"
+      },
+      "CaseEntityRef": {
+        "properties": {
+          "kind": {
+            "description": "host, user, ip, domain, url, hash, process, command_line or email.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "value": {
+            "description": "Data, at most 128 characters.",
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "value"
+        ],
+        "title": "CaseEntityRef",
+        "type": "object"
+      },
+      "CaseLink": {
+        "description": "The safety net linked this alert to the case: it stays closed.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/InvestigationReason"
+          },
+          "threat_alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The alert a model judged a threat.",
+            "title": "Threat Alert Id"
+          }
+        },
+        "required": [
+          "reason",
+          "threat_alert_id",
+          "at"
+        ],
+        "title": "CaseLink",
+        "type": "object"
+      },
+      "CaseOwner": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the owner claimed the case.",
+            "title": "Since"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "since"
+        ],
+        "title": "CaseOwner",
+        "type": "object"
+      },
+      "CasePerson": {
+        "description": "A user of the tenant. ``email`` is null for an account that no longer exists.",
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "CasePerson",
+        "type": "object"
+      },
+      "CaseReopened": {
+        "description": "The safety net reopened this alert, which the AI had closed on the model's word.",
+        "properties": {
+          "at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CasePerson"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "person: who confirmed."
+          },
+          "confirmed_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "person",
+                  "workflow"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "person: a person's confirmation was recorded directly (a true positive, an approved response action or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.",
+            "title": "Confirmed By"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "folded",
+                  "requeued"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "folded: it joined the open case and that case's decision settles it. requeued: a new run reviews it.",
+            "title": "Mode"
+          },
+          "reason": {
+            "$ref": "#/components/schemas/InvestigationReason"
+          },
+          "threat_alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The alert whose threat was confirmed.",
+            "title": "Threat Alert Id"
+          }
+        },
+        "required": [
+          "reason",
+          "threat_alert_id",
+          "mode",
+          "confirmed_by",
+          "by",
+          "at"
+        ],
+        "title": "CaseReopened",
+        "type": "object"
+      },
+      "CaseTimelineEntry": {
+        "description": "One thing that happened in the case, in plain words.",
+        "properties": {
+          "actor": {
+            "enum": [
+              "code",
+              "model",
+              "check",
+              "policy",
+              "person"
+            ],
+            "title": "Actor",
+            "type": "string"
+          },
+          "alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The alert it happened to; null for the case itself.",
+            "title": "Alert Id"
+          },
+          "by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CasePerson"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The person, when a person acted."
+          },
+          "kind": {
+            "description": "What the entry is about, for filters and tests (case.opened, alert.closed, ...).",
+            "title": "Kind",
+            "type": "string"
+          },
+          "produced": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Counts and vocabulary values only, never alert text.",
+            "title": "Produced"
+          },
+          "text": {
+            "description": "Fixed text.",
+            "title": "Text",
+            "type": "string"
+          },
+          "ts": {
+            "format": "date-time",
+            "title": "Ts",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "kind",
+          "actor",
+          "text",
+          "produced",
+          "alert_id",
+          "by"
+        ],
+        "title": "CaseTimelineEntry",
+        "type": "object"
+      },
       "CertificateInfo": {
         "properties": {
           "days_left": {
@@ -8553,6 +9882,39 @@
           "detections"
         ],
         "title": "MonthlyReport",
+        "type": "object"
+      },
+      "NotAvailable": {
+        "description": "Something the case page shows in the design that the stored data cannot say yet.",
+        "properties": {
+          "field": {
+            "description": "The path of the field that is null or absent.",
+            "title": "Field",
+            "type": "string"
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The GitHub issue of the story that fills it, when there is one.",
+            "title": "Issue"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "reason",
+          "issue"
+        ],
+        "title": "NotAvailable",
         "type": "object"
       },
       "NotCheckedItem": {
@@ -15825,6 +17187,50 @@
         "summary": "Sample auto-closed alerts now (or draw without recording: dry_run)",
         "tags": [
           "blind-audit"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/cases/{case_id}": {
+      "get": {
+        "description": "One read model for the case page: the case (the escalation ``case_id``), every alert in it with its state\nand who or what closed it and why, the alerts the safety net linked or reopened, the response actions with\ntheir status and guardrail result, what the alerts share, and one merged timeline. Built from stored data:\nno model is called, nothing is written.\n\n``not_available`` names what the stored data cannot say yet. An alert that waits for its blind-audit label\nshows what its source sent and nothing of the AI's side (``hidden_for_blind_audit``).",
+        "operationId": "get_case_api_v1_cases__case_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "case_id",
+            "required": true,
+            "schema": {
+              "title": "Case Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Case"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One case: its alerts, who or what closed each and why (the case view)",
+        "tags": [
+          "cases"
         ],
         "x-stability": "beta"
       }

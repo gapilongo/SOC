@@ -266,7 +266,7 @@ Rules:
   `tools/enrichment/tools.py`. A tool is a `ToolSpec` (read-only risk class,
   strict parameter model, row, time and window caps, egress, shadow mode,
   tenant switch) plus six functions: `run`, `rows`, `failed`, `record`,
-  `restore` and `refused` (and, when needed, `window` and `evidence`). A
+  `restore` and `refused` (and, when needed, `window`, `evidence` and `whole`). A
   declaration that misses a cap, or whose parameter model is not strict and
   bounded, does not load (INV-14). The registry never hands a tool's code
   out: `ToolRegistry.call` is the only way to run one, and an architecture
@@ -285,7 +285,9 @@ Rules:
     (refused, timed out, raised, over the row cap, or no answer from the
     source). "No rows" cannot be read as "nothing happened" when the query
     did not run. `complete` is false when the result holds as many rows as
-    the row cap, so more may exist.
+    the row cap, so more may exist, or when the tool says its answer was cut
+    (`Tool.whole`: a cap inside the source, a time window that has not
+    closed, a source that does not reach back far enough).
   * Every call that passed validation, refused or not, is one step of the
     investigation trace with the same outcome (`investigation_steps.outcome`
     gained `empty` and `failed` in migration 0018). The result carries that
@@ -294,6 +296,18 @@ Rules:
     `cached`. The run's trace computes them, never a model. The lookups of
     one `reputation` step share its hashes, and the step stores the worst of
     their outcomes.
+  * The Wazuh evidence tools (`tools/wazuh/`, INT3.4) are four query
+    templates on the tenant's own Wazuh indexer: `wazuh.host_activity`,
+    `wazuh.logon_fanout`, `wazuh.process_lineage` and `wazuh.prevalence`.
+    They are registered tools that the analysis does not call yet. A caller
+    gives typed values, never a query; `tools/wazuh/dsl.py` is the allow-list
+    every search body is checked against before it is run. Each call answers
+    with typed evidence facts and is one trace step of its own. The backend
+    is resolved from the calling run (`ingestion/wazuh_indexer.py`: the
+    Wazuh source of the run's alert, its index pattern and credentials) or,
+    for evaluation and tests, is a dataset's telemetry
+    (`eval/wazuh_events.py`). See
+    [evidence-facts.md](evidence-facts.md#the-wazuh-evidence-tools).
 * LLM output alone can never auto-close a high/critical alert or authorise a
   containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.
@@ -393,7 +407,10 @@ Rules:
   It is enforced at the egress boundaries, never in the agents: every
   function decorated with `@egress` refuses in shadow mode, or records the
   call in the run's sink and returns a stand-in ("would have done X"), or,
-  for the local health listener only, runs. Every database transaction of
+  for two reviewed reads only, runs: the local health listener, and the
+  Wazuh evidence tools' `POST _search` on the tenant's own indexer (no third
+  party is told anything and nothing is changed; a candidate investigated
+  without evidence could not be compared with production). Every database transaction of
   a shadow run comes from a pool of its own, logged in as the SELECT-only
   shadow role (`database.shadow_url`, `db/shadow_role.py`; no role, no
   shadow run, and never the runtime pool), and is read only; its connection

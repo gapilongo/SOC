@@ -430,6 +430,22 @@ async def test_the_row_cap_is_counted_on_the_value_and_a_full_result_is_not_comp
     ]
 
 
+async def test_a_tool_can_say_its_answer_was_cut_but_never_that_a_full_one_is_whole() -> None:
+    """``Tool.whole`` (INT3.4): a cap inside the source, an open time window or its retention cut the answer."""
+
+    async def complete(answer: Any, whole: bool, **overrides: Any) -> Tuple[str, bool]:
+        declared = replace(tool(Handler(answer=answer), **overrides), whole=lambda value: whole)
+        result = await registry(declared).call(Ctx(), "reputation.example", P, agent="a")
+        return result.outcome, result.complete
+
+    assert await complete(["a"], True) == ("success", True) and await complete(["a"], False) == ("success", False)
+    assert await complete([], True) == ("empty", True)
+    assert await complete([], False) == ("empty", False), "nothing found in a window still open is not the whole answer"
+    assert await complete("record", False, row_cap=1) == ("success", False)
+    assert await complete(list(range(5)), True) == ("success", False), "at the row cap, whatever the tool says"
+    assert await complete({"refused": "down"}, True) == ("failed", False)
+
+
 async def test_an_exception_in_a_tool_is_a_failed_result_named_by_its_type() -> None:
     ctx = Ctx()
     result = await registry(tool(Boom())).call(ctx, "reputation.example", P, agent="a")

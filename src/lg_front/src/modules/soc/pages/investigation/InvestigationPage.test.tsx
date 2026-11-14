@@ -147,7 +147,8 @@ describe('investigation view on the read model: an escalated alert', () => {
     await renderPage();
     const crumb = within(screen.getByRole('navigation', { name: 'Breadcrumb' }));
     expect(crumb.getByRole('link', { name: 'Alerts' })).toHaveAttribute('href', '/alerts');
-    expect(crumb.getByText('Case CASE-2291')).toBeInTheDocument();
+    // The case reference leads to the case page: the escalation is the case.
+    expect(crumb.getByRole('link', { name: 'Case CASE-2291' })).toHaveAttribute('href', `/cases/${ESCALATION_ID}`);
     expect(await crumb.findByText('Northwind Logistics')).toBeInTheDocument();
     expect(screen.getByText('High', { selector: '[data-severity="high"]' })).not.toHaveClass('capitalize');
     expect(screen.getByText(/left$/)).toHaveAttribute('title', expect.stringMatching(/^Deadline /));

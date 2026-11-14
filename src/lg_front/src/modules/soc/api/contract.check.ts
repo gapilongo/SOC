@@ -45,6 +45,7 @@ import type {
   BulkItemOut,
   BulkOut,
   BulkProposeSuppressionIn,
+  CaseOut,
   DashboardOut,
   DecisionIn,
   DecisionOut,
@@ -210,6 +211,8 @@ export interface ResponseContract {
   ResponsePreviewOut: Response<Wire<Schemas['ResponsePreviewOut']>, ResponsePreviewOut>;
   // The investigation read model with everything nested in it (claims, observations, steps, the proposed response).
   InvestigationOut: Response<Wire<Schemas['Investigation']>, InvestigationOut>;
+  // The case read model with everything nested in it (alerts with who closed them, actions, the timeline).
+  CaseOut: Response<Wire<Schemas['Case']>, CaseOut>;
   ResponseRoutesOut: Response<Wire<Schemas['ResponseRoutesOut']>, ResponseRoutesOut>;
   RetentionLimits: Response<Wire<Schemas['RetentionLimitsOut']>, RetentionLimits>;
   ReviewBandOut: Response<Wire<Schemas['ReviewBandOut']>, ReviewBandOut>;

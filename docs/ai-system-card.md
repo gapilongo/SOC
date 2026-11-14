@@ -213,7 +213,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
 | INV-13 | Autonomy is earned per skill and tenant and lost on any miss | pending (AI-E3.10) | none | TM-WRK-13 |
-| INV-14 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3, TM-EVT-10, TM-EVT-12 |
+| INV-14 | Evidence tools are read-only, templated and capped | enforced | none | TM-EVT-3, TM-EVT-9, TM-EVT-10, TM-EVT-12 |
 <!-- invariants:end -->
 
 ## 7. Evaluation evidence

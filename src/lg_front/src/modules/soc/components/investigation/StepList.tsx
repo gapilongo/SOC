@@ -4,7 +4,7 @@
  * not the model's reasoning, and it never shows an engine node name.
  */
 
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 
 import type { PlainStepOut } from '../../api/types';
 import { formatDateTime } from '../../../../lib/format';
@@ -22,10 +22,13 @@ const ACTOR: Record<string, { voice: Voice; label: string }> = {
 export function StepList({
   steps,
   hideModelOutput = false,
+  detail,
 }: {
   steps: PlainStepOut[];
   /** The verdict is hidden: what a model step produced (its assessment) is withheld with it. */
   hideModelOutput?: boolean;
+  /** What a step is about, under its sentence (the case timeline names the alert and the person). */
+  detail?: (index: number) => ReactNode;
 }) {
   return (
     <ol>
@@ -49,7 +52,10 @@ export function StepList({
                 <VoiceMark voice={actor.voice} className="h-2 w-2" />
                 <span className="sr-only">{actor.label}: </span>
               </span>
-              <span className="min-w-0 break-words text-body">{step.text}</span>
+              <span className="min-w-0 break-words text-body">
+                {step.text}
+                {detail?.(i)}
+              </span>
               {produced && (
                 <span className="col-start-3 break-words font-mono text-2xs leading-normal text-secondary min-[900px]:col-start-auto min-[900px]:max-w-[26rem] min-[900px]:text-right">
                   {produced}

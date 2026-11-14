@@ -22,9 +22,8 @@ import type { AlertEventOut, InvestigationOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { useKeysetList } from '../../../../lib/pagination';
 import { escalationIdOf } from '../alerts/alertSummary';
+import { ACTIVE_ESCALATION } from './claim';
 
-/** The statuses in which an escalation still waits for its decision. */
-export const ACTIVE_ESCALATION: ReadonlySet<string> = new Set(['open', 'claimed', 'expired']);
 
 const isMissing = (error: unknown) => error instanceof ApiError && error.status === 404;
 

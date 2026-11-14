@@ -1178,6 +1178,29 @@ read goes through `as_of`: nothing later than that moment is ever returned,
 whatever the query's own range, so an investigation replayed on event time
 cannot see the future.
 
+The Wazuh evidence tools (INT3.4,
+[evidence-facts.md](evidence-facts.md#the-wazuh-evidence-tools)) run on the
+store unchanged: `lg_sotf.eval.wazuh_events.EventStoreBackend(store.as_of(when))`
+answers the tools' search bodies in the shape a Wazuh indexer answers them,
+so the same templates and mappers produce the facts offline.
+
+```python
+from lg_sotf.eval.wazuh_events import EventStoreBackend
+from lg_sotf.tools.wazuh.tools import wazuh_tools
+
+async def backends(ctx):                      # the backend of the calling run
+    return EventStoreBackend(store.as_of(alert_time + timedelta(minutes=10)))
+
+tools = wazuh_tools(backends)                 # register them on a ToolRegistry
+```
+
+`tests/unit/tools/wazuh/test_tools.py` reads the malicious indicators and the
+benign proofs of every skill-family item of `corpus_v1` and
+`corpus_skills_v1` from the tools' facts alone and compares them with the
+gold evidence; `tests/live/wazuh/test_evidence_tools.py` loads the same
+documents into a Wazuh 4.14 indexer and checks that it gives the same facts
+as the store.
+
 ### Gold evidence
 
 A gold file gives, per item of a skill family, what the telemetry says with
