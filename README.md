@@ -39,26 +39,29 @@ verifiable evidence pack.
 ```mermaid
 flowchart LR
     subgraph Sources
-      PULL[Splunk, QRadar, Sentinel,<br/>Wazuh, CrowdStrike]
+      PULL[Splunk, QRadar, Sentinel,<br/>Wazuh, CrowdStrike,<br/>reporting mailboxes]
       PUSH[Webhooks, GuardDuty,<br/>canonical API]
     end
     subgraph LG-SOTF
       SCH[Scheduler<br/>leader-elected] -->|poll with cursor| PULL
       API[API<br/>REST + WebSocket]
+      UI[Console<br/>web app]
       Q[(Redis Streams<br/>work queue)]
-      PG[(PostgreSQL<br/>RLS per tenant,<br/>checkpoints, audit)]
-      W[Workers<br/>LangGraph engine]
+      PG[(PostgreSQL<br/>RLS per tenant, checkpoints,<br/>audit log, investigation trace)]
+      W[Workers<br/>LangGraph engine,<br/>tool registry]
       PUSH -->|API key| API
+      UI --> API
       SCH -->|ingest + enqueue| Q
       API -->|ingest + enqueue| Q
       Q --> W
       W --> PG
       API --> PG
     end
-    W -->|redacted alert data| LLM[LLM provider<br/>Claude by default]
+    W -->|redacted alert data| LLM[Language model<br/>hosted, EU-hosted or your own]
     W -->|indicators, opt-in| TI[Threat intel<br/>VirusTotal, AbuseIPDB]
-    W -->|HMAC-signed actions| SOAR[Your SOAR<br/>Tracecat, Shuffle, Tines ...]
-    AN[Analysts and admins<br/>web app or API] --> API
+    W -->|approved actions| RESP[Response<br/>Microsoft 365, Entra ID, Defender<br/>or your SOAR by signed webhook]
+    AN[Analysts and admins] --> UI
+    MCP[MCP clients<br/>Claude and others] --> API
 ```
 
 Each alert runs through one workflow, checkpointed in PostgreSQL so a crashed
@@ -67,28 +70,36 @@ worker resumes where it stopped:
 ```mermaid
 flowchart LR
     G[gate<br/>suppression rules,<br/>verdict cache] --> T[triage<br/>rules + fast model]
-    T -->|obvious noise, low/medium only| C[close]
+    G -->|suppressed, or an analyst<br/>already decided the same| C[close]
+    T -->|obvious false positive with a rule signal,<br/>below high severity| C
     T --> CO[correlation<br/>shared indicators, bursts]
     CO --> A[analysis<br/>rules, history, threat intel,<br/>deep model]
-    CO --> D
-    A --> D[decide<br/>routing policy]
-    D -->|uncertain, high severity,<br/>model refused| E[escalate<br/>analyst decision]
+    CO -->|high or critical and<br/>strongly correlated| D
+    A --> D[decide<br/>closing and routing policy]
+    D -->|benign with approved evidence, or<br/>AI closure on and the deep model says benign,<br/>never critical, never a person-only class| C
+    D -->|uncertain, dangerous<br/>or the model refused| E[escalate<br/>an analyst decides]
     D -->|high threat score| P[plan response<br/>autonomy + guardrails]
-    D -->|low threat, rules agree,<br/>low/medium only| C
-    E --> P
-    E --> C
-    P -->|approval needed, incl. containment<br/>on model-only evidence| AP[await approval]
-    AP --> X[execute via connector]
-    P -->|autonomy auto| X
-    X -->|actions completed:<br/>closed as malicious| C
-    G --> C
+    E -->|true positive| P
+    E -->|false or benign positive| C
+    E -->|needs more information| A
+    P -->|approval needed, always for containment<br/>on model-only evidence| AP[await approval]
+    P -->|autonomy auto| X[execute<br/>via connector]
+    AP --> X
+    X -->|actions completed| C
+    X -->|an action failed<br/>or none completed| E
+    C -.->|a related threat appears<br/>within 24 hours| SN[safety net<br/>link the AI-closed alert to the case,<br/>reopen it when a person confirms]
+    SN -.-> E
 ```
+
+An alert the AI closed is not forgotten. It is counted on the Overview,
+can be drawn into a blind audit, and the safety net above brings it back to
+an analyst when a related threat is confirmed.
 
 ## What's new in 1.3
 
 On `main` now. It ships first as 1.3.0 release candidates on the weekly
 partner train, then as the stable 1.3.0 ([releases](docs/releases.md)).
-Full list in the [changelog](CHANGELOG.md).
+Full list, and every earlier release, in the [changelog](CHANGELOG.md).
 
 * **AI closure a tenant can switch on, and check**: with the tenant setting
   `ai_closure.tier = auto_full_audit` (default `off`), the models close an
@@ -179,61 +190,6 @@ Full list in the [changelog](CHANGELOG.md).
   the code that enforces it ([threat model](docs/threat-model.md)); numbered
   L1/L2 deployment controls with checks for Compose, Helm, PostgreSQL, Redis
   and the reverse proxy ([hardening guide](docs/hardening.md)).
-## What's new in 1.2
-
-* **MCP for testers and analysts**: from Claude Code, send test alerts, wait
-  for triage, read verdicts, reasoning and proposed actions, and score a run;
-  decisions stay in the web app or Slack ([docs](docs/mcp.md),
-  [design](docs/design/mcp-architecture.md)).
-
-## What's new in 1.1
-
-* **Actions that really happen, and are proven**: approved actions run
-  directly in Microsoft 365 (purge and restore phishing emails, notify the
-  reporter), Entra ID (disable, revoke sessions, reset password, confirm
-  compromised) and Defender for Endpoint (isolate, block IP/domain/URL/file,
-  collect forensics). Each action is re-checked against Microsoft, can be
-  rolled back under the same approvals, and is routed per action type, so the
-  rest can still go to your SOAR ([docs](docs/microsoft.md)).
-* **SOAR templates**: a reference receiver and an n8n workflow for the
-  signed webhook ([docs](docs/soar-playbooks.md)).
-
-## What's new in 1.0
-
-* **Phishing triage**: user-reported emails from a Microsoft 365 reporting
-  mailbox, any IMAP mailbox (Google Workspace included) or
-  `POST /api/v1/ingest/email`; authentication results, lookalike domains,
-  display-name impersonation, deceptive links and risky attachments; purge
-  message, block sender and notify reporter actions ([docs](docs/phishing.md)).
-* **Integrations**: Slack, Microsoft Teams, email and signed-webhook
-  notifications; approve or reject actions from Slack; one Jira or
-  ServiceNow ticket per escalation, kept in sync ([docs](docs/integrations.md)).
-* **Self-hosted models and air-gapped installs**: Ollama/vLLM providers with
-  schema-constrained output and repair, zero-cost metering, a "Test model"
-  button, an Ollama compose overlay and verified offline bundles
-  ([local LLMs](docs/local-llm.md), [air-gapped](docs/air-gapped.md)).
-* **Proof of value**: reports for alerts handled without a human, analyst
-  hours saved, time to verdict, AI-versus-analyst accuracy (false-negative
-  rate first), noisy detection rules, a printable monthly report, and
-  `lg-sotf eval --from-history` to try a model on your own decided alerts
-  ([docs](docs/reporting.md)).
-* **MSSP console**: every tenant's activity, SLA risk and quota usage;
-  suspend and reactivate; daily alert, source and user quotas; monthly usage
-  export for invoicing; tenant profiles; a tenant switcher
-  ([docs](docs/mssp.md)).
-* **Identity**: TOTP MFA with recovery codes (required for platform admins
-  in staging and production, optional per tenant), OIDC group-to-role
-  mapping and just-in-time provisioning ([docs](docs/identity.md)).
-* **Compliance**: signed case evidence packs with the human-oversight trail
-  and audit-chain proof, NIS2 incident report drafts, GDPR tenant export and
-  erasure ([docs](docs/compliance.md)).
-* **MCP server**: `lg-sotf mcp` lets analysts work with LG-SOTF from Claude
-  or any MCP client ([docs](docs/mcp.md)).
-* **Quick start**: `make quickstart` goes from clone to triaged demo alerts
-  and prints the measured time to first verdict ([docs](docs/quickstart.md));
-  new tenants get a getting-started checklist and one-click sample alerts
-  ([docs](docs/onboarding.md)).
-
 ## Features
 
 **Ingestion**
@@ -247,6 +203,11 @@ Full list in the [changelog](CHANGELOG.md).
 * Deterministic normalisation to one canonical alert model (a subset of OCSF
   Detection Finding) with entities and MITRE ATT&CK; secret redaction before
   anything is stored or sent to a model; deduplication by source alert id.
+* Phishing triage: user-reported emails from a Microsoft 365 reporting
+  mailbox, any IMAP mailbox (Google Workspace included) or
+  `POST /api/v1/ingest/email`; authentication results, lookalike domains,
+  display-name impersonation, deceptive links and risky attachments
+  ([docs](docs/phishing.md)).
 
 **Triage and investigation**
 * Triage, correlation and analysis agents combining deterministic rules with
@@ -285,17 +246,43 @@ Full list in the [changelog](CHANGELOG.md).
   planned into an idempotent action ledger.
 * Per-tenant autonomy per risk level, protected assets, allowed actions,
   hourly caps and blast-radius limits, re-checked right before execution.
-* Dry-run by default; HMAC-signed webhooks to your SOAR for real execution.
-  Direct Microsoft 365, Entra ID and Defender for Endpoint execution with
-  verification and rollback; other vendors through your SOAR.
+* Dry-run by default. Approved actions run directly in Microsoft 365
+  (purge and restore phishing emails, notify the reporter), Entra ID
+  (disable, revoke sessions, reset password, confirm compromised) and
+  Defender for Endpoint (isolate, block IP, domain, URL or file, collect
+  forensics). Each is re-checked against Microsoft and can be rolled back
+  under the same approvals ([docs](docs/microsoft.md)). Other vendors go
+  through your SOAR by HMAC-signed webhook, with a reference receiver and
+  an n8n workflow ([docs](docs/soar-playbooks.md)).
+* Notifications and tickets: Slack, Microsoft Teams, email and signed
+  webhooks; approve or reject actions from Slack; one Jira or ServiceNow
+  ticket per escalation, kept in sync ([docs](docs/integrations.md)).
 
 **Platform**
 * Multi-tenant: PostgreSQL row-level security with a separate non-owner
   runtime role, tenant-scoped Redis keys and checkpoints, platform-admin
   cross-tenant access that is audited.
 * Authentication: local accounts (argon2id, lockout, rotating refresh
-  tokens), OIDC single sign-on, scoped API keys; roles viewer, analyst,
-  admin.
+  tokens), OIDC single sign-on with group-to-role mapping and just-in-time
+  provisioning, TOTP MFA with recovery codes, scoped API keys; roles
+  viewer, analyst, admin ([docs](docs/identity.md)).
+* MSSP console: every tenant's activity, SLA risk and quota usage; suspend
+  and reactivate; daily alert, source and user quotas; monthly usage export
+  for invoicing; tenant profiles and a tenant switcher
+  ([docs](docs/mssp.md)).
+* Self-hosted models and air-gapped installs: Ollama and vLLM providers
+  with schema-constrained output and repair, a "Test model" button, an
+  Ollama compose overlay and verified offline bundles
+  ([local models](docs/local-llm.md), [air-gapped](docs/air-gapped.md)).
+* Compliance: signed case evidence packs with the human-oversight trail and
+  audit-chain proof, NIS2 incident report drafts, GDPR tenant export and
+  erasure ([docs](docs/compliance.md)).
+* Reports: alerts handled without a person, analyst hours saved, time to
+  verdict, AI-versus-analyst accuracy (false-negative rate first), noisy
+  detection rules and a printable monthly report ([docs](docs/reporting.md)).
+* MCP server: `lg-sotf mcp` lets testers and analysts send test alerts,
+  read verdicts and proposed actions and score a run from Claude or any MCP
+  client; decisions stay in the console or Slack ([docs](docs/mcp.md)).
 * Append-only, hash-chained audit log per tenant with an API to verify it.
 * LLM usage and cost metering per tenant, model and agent; per-tenant daily
   token budgets with rule-only fallback.
@@ -338,11 +325,25 @@ accuracy report and `lg-sotf eval --from-history` measure it on yours.
 
 ## The console
 
-These pictures show console v2 on the demo alert set
+An 85-second walkthrough of console v2. Captions explain each step: sign-in,
+the Overview (your work first, then what was closed without a person and how
+that is checked), the work queue and a decision page, the Alerts list with
+one alert in its side panel and then on its full investigation page,
+Approvals, the command palette, tenant settings and the audit log. It ends
+on the Overview in the light theme.
+
+![Product tour: console v2 from sign-in to the light theme](docs/media/tour.gif)
+
+[Download the full-quality video (MP4, 2.3 MB)](docs/media/tour.mp4?raw=true). GitHub
+plays the GIF above inline but only offers the MP4 as a download.
+
+The tour and the pictures below show the demo alert set
 (`scripts/demo/alerts.json`, 16 synthetic alerts) in a local compose stack,
 with the tenant's AI closure tier on. The alerts were analysed by DeepSeek
 V4 (open weights) through its hosted API, so the texts are a real model's
-words about synthetic data, not customer data.
+words about synthetic data, not customer data. To record the tour again
+after a UI change, run `scripts/record_tour.mjs`, then
+`scripts/make_tour_media.sh`. Both scripts explain their usage at the top.
 
 | | |
 |---|---|
@@ -352,12 +353,6 @@ words about synthetic data, not customer data.
 | Alerts list with one alert open in the side panel: the verdict, the proposed response and what the verdict is based on | Approvals: response actions waiting for a person, each with its target, blast radius, reversibility and guardrail result |
 | ![Search and command palette](docs/screenshots/console-v2-palette.png) | |
 | Search and command palette (`Ctrl+K`): pages, alerts by title with their tenant, and commands | |
-
-The narrated product tour and the page-by-page pictures in
-[docs/screenshots](docs/screenshots) (numbered files) were recorded on the
-previous console and are being re-recorded for console v2; until then they
-show the earlier layout. To record the tour again, run
-`scripts/record_tour.mjs`, then `scripts/make_tour_media.sh`.
 
 ## Quickstart (Docker Compose)
 
