@@ -115,6 +115,15 @@ numbers as detection accuracy. How to evaluate on real labelled data (the
 `analyst_feedback` export) and public benchmarks without committing them is
 described in `docs/evaluation.md`.
 
+## Baselines
+
+`baselines/synthetic_v1.json` and `baselines/phishing_v1.json` are what the
+CI evaluation gate (`scripts/ci/eval_gate.py pr`) compares a fake-model run
+with: the counts, the rates and each item's outcome. Do not edit them. After
+an intended behaviour change or a dataset edit, record them again with
+`make eval-baselines` and commit them with the change
+(`docs/evaluation.md`, "Evaluation gate in CI").
+
 ## Cassettes
 
 `cassettes/synthetic_v1/` and `cassettes/phishing_v1/` hold one cassette per

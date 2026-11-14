@@ -42,7 +42,7 @@ def test_the_role_is_plain_and_may_create_the_per_worker_databases() -> None:
 
 def test_ci_and_the_compose_file_run_the_same_sql_file() -> None:
     steps = _role_steps("ci.yml") + _role_steps("nightly.yml")
-    assert {s["job"] for s in steps} == {"test", "test-parallel", "random-order"}
+    assert {s["job"] for s in steps} == {"test", "test-parallel", "eval-gate", "random-order", "real-model-eval"}
     for step in steps:
         assert step["run"].strip() == f"psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f {ROLE_SQL}", step["job"]
     mounts = _compose()["services"]["postgres"]["volumes"]

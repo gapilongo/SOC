@@ -263,6 +263,7 @@ def test_only_useful_scripts_remain() -> None:
         "ci/compare_junit.py",
         "ci/coverage_floors.py",
         "ci/create_test_role.sql",
+        "ci/eval_gate.py",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
         "ci/oasdiff.sh",
