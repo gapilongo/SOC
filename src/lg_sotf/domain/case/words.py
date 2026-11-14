@@ -31,8 +31,8 @@ LINK_CODE: Final = "related_threat"
 #: Why the safety net linked an alert to the case.
 LINKED: Final = (
     "A model judged a related alert a threat: same host, user or address, within 24 hours. A model's judgement "
-    "is not a confirmation, so this alert was linked to the case and stays closed. It reopens when a person "
-    "confirms the threat."
+    "is not a confirmation, so the safety net links what the AI closed to the case and leaves it closed. A "
+    "person's confirmation of the threat reopens it."
 )
 
 #: What reopened an alert, by who recorded the reopening (``person``, ``workflow``, or unknown).

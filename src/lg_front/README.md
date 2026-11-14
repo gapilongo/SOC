@@ -195,7 +195,10 @@ src/modules/<id>/ one folder per service. index.ts is its manifest (routes with 
                   an investigation (observed, claimed, decided), the outcome headline
                   and the other parts that render the investigation read model
                   (InvestigationOut in api/types.ts; api/investigation.ts builds the same
-                  shape for an API that answers 404 for it)
+                  shape for an API that answers 404 for it); components/case/ holds who
+                  or what closed an alert, for the case read model (CaseOut, whose test
+                  fixture src/test/caseReadModels.ts is the backend's own assembly:
+                  `python -m tests.fixtures.case` writes it again)
 src/components/   presentational building blocks: ui/ primitives (buttons, fields, tabs,
                   timeline, entity list), dialogs (focus trap), virtualized table, error
                   boundary, route guards, the extension-point outlet (Slot)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import pytest
@@ -24,10 +25,12 @@ from lg_sotf.domain.case.model import SCHEMA_VERSION, CaseAction, CaseAlert
 from lg_sotf.domain.case.timeline import INNER_NODES
 from lg_sotf.domain.investigation import AlertFacts
 from lg_sotf.domain.investigation import words as investigation_words
+from tests.fixtures import case as scenario
 from tests.fixtures import investigation as prototype
 
 pytestmark = pytest.mark.unit
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
 NOW = datetime(2026, 11, 14, 10, 4, tzinfo=UTC)
 OPENED = prototype.INGESTED_AT + timedelta(seconds=9)
 ANALYST = "5b0c7a52-6f0e-4c58-9d0e-1f2a3b4c5d6e"
@@ -388,6 +391,20 @@ def test_the_decision_on_the_case_is_said_once_and_a_decision_elsewhere_stays() 
     assert all(e.by is not None and e.by.email == EMAILS[ANALYST] for e in case.timeline if e.kind == "case.decided")
 
 
+def test_a_decision_elsewhere_and_the_close_it_caused_are_one_line() -> None:
+    summary = {"close_reason": "analyst:benign_positive", "analyst_decision": "benign_positive"}
+    close = node(905, "close", {"disposition": "benign", "close_reason": "analyst:benign_positive"})
+    decided = event(900, "analyst.decision", {"decision": "benign_positive", "escalation_id": "esc-other"}, user=ANALYST)
+    case = assemble(facts(member("elsewhere", "closed", summary, events=[decided, close])))
+    assert [e.kind for e in case.timeline if e.alert_id == "elsewhere"] == ["alert.received", "analyst.decision"]
+    # Without the decision on the timeline (it was recorded on this case), the close is the line that stays.
+    here = assemble(facts(member("here", "closed", summary, events=[close]),
+                          escalation=escalation(status="decided", decision="benign_positive", decided_at=NOW)))
+    assert [e.kind for e in here.timeline if e.alert_id == "here"] == ["alert.received", "step.close"]
+    bare = replace(member("bare", "closed", summary, events=[close]), alert=replace(member("bare", "closed", summary).alert, ingested_at=None))
+    assert [e.kind for e in assemble(facts(bare)).timeline if e.alert_id == "bare"] == ["step.close"]
+
+
 def test_a_long_timeline_keeps_its_newest_entries() -> None:
     notes = [event(2_000 + i, "note", {"text": "n"}, user=ANALYST) for i in range(MAX_TIMELINE + 5)]
     case = assemble(facts(member("noisy", "waiting_human", {}, events=notes)))
@@ -434,3 +451,39 @@ def test_what_the_backend_cannot_give_is_named_with_a_reason_and_never_filled() 
     assert all(n.reason for n in case.not_available)
     dumped = case.model_dump()
     assert "summary" not in dumped and "key" not in dumped and "flagged" not in dumped["alerts"][0]
+
+
+# ------------------------------------------------------------------ the prototype's case
+
+
+def test_the_prototype_case_answers_what_the_ai_closed_and_why() -> None:
+    """The console v2 prototype's case: nine alerts, three with a person, one running, five closed, two of
+    them AI closes the safety net linked and left closed."""
+    case = assemble(scenario.open_case())
+    counts = case.counts
+    assert (counts.alerts, counts.open, counts.processing, counts.closed, counts.linked) == (9, 3, 1, 5, 2)
+    assert counts.closed_by.model_dump() == {
+        "ai_evidence": 0, "ai_audit": 2, "suppression_rule": 1, "cached_verdict": 1, "analyst": 1,
+    }
+    assert (case.severity, case.category, counts.actions_awaiting_approval) == ("critical", "needs_decision", 3)
+    ai_closed = [a for a in case.alerts if a.closed_by is not None and a.closed_by.kind == "ai"]
+    assert [a.role for a in ai_closed] == ["linked", "linked"]
+    assert all(a.closed_by is not None and a.closed_by.tier == "auto_full_audit" and a.link is not None for a in ai_closed)
+    assert [a.blind_audit.state for a in ai_closed] == ["labelled", "not_sampled"]
+    assert [a.status for a in case.actions] == [
+        "awaiting_approval", "awaiting_approval", "awaiting_approval", "blocked", "dry_run", "succeeded", "failed",
+    ]
+
+    decided = assemble(scenario.decided_case())
+    assert (decided.active, decided.counts.linked, decided.counts.reopened) == (False, 0, 2)
+    back = [a for a in decided.alerts if a.role == "reopened"]
+    assert all(a.reopened is not None and a.reopened.confirmed_by == "person" and a.reopened.mode == "requeued" for a in back)
+    threat = by_id(decided)[scenario.THREAT]
+    assert threat.closed_by is not None and threat.closed_by.notes == "The dump is visible in the process tree. Isolating the host."
+
+
+def test_the_frontend_fixture_is_the_backends_assembly() -> None:
+    """``src/lg_front/src/test/caseReadModels.ts`` is what the API serialises for the prototype's case. After a
+    change of the read model, write it again: ``python -m tests.fixtures.case > src/lg_front/src/test/caseReadModels.ts``."""
+    committed = (REPO_ROOT / "src" / "lg_front" / "src" / "test" / "caseReadModels.ts").read_text(encoding="utf-8")
+    assert committed == scenario.frontend_fixture()

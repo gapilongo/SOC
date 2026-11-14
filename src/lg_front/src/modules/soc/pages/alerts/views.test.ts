@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AlertDetailOut, FindingOut } from '../../api/types';
-import { aiVerdict, escalationIdOf, evidenceFlags, kindWords, originWords, statusShort, statusWords } from './alertSummary';
+import { aiVerdict, caseIdOf, escalationIdOf, evidenceFlags, kindWords, originWords, statusShort, statusWords } from './alertSummary';
 import { formatAge } from './AlertsPage';
 import { closedWindow, isTodayWindow, startOfToday, viewCount, viewFilters, viewFromParams, viewHref, viewLabel } from './views';
 
@@ -77,6 +77,15 @@ describe('alert summary readers', () => {
     expect(escalationIdOf({ summary: { escalation_id: 'e-1' } })).toBe('e-1');
     expect(escalationIdOf({ summary: { escalation_id: 3 } })).toBeNull();
     expect(escalationIdOf({})).toBeNull();
+  });
+
+  it('finds the case of an alert: its escalation, else the case the safety net linked it to last', () => {
+    expect(caseIdOf({ summary: { escalation_id: 'e-1', linked: [{ escalation_id: 'e-9' }] } })).toBe('e-1');
+    expect(caseIdOf({ summary: { linked: [{ escalation_id: 'e-1' }, 'junk', { escalation_id: 'e-2' }, { escalation_id: null }] } })).toBe('e-2');
+    // Linked to a threat that had no open case, or not linked at all.
+    expect(caseIdOf({ summary: { linked: [{ threat_alert_id: 'a-1', escalation_id: null }] } })).toBeNull();
+    expect(caseIdOf({ summary: { linked: 'junk' } })).toBeNull();
+    expect(caseIdOf({})).toBeNull();
   });
 
   it('flags simulated evidence wherever the workflow recorded it, and dry runs', () => {

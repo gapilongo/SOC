@@ -45,6 +45,7 @@ const InvestigationPage = lazy(() => import('./pages/investigation/Investigation
 const QueuePage = lazy(() => import('./pages/queue/QueuePage'));
 const EscalationsPage = lazy(() => import('./pages/escalations/EscalationsPage'));
 const DecisionPage = lazy(() => import('./pages/escalations/DecisionPage'));
+const CasePage = lazy(() => import('./pages/case/CasePage'));
 const ApprovalsPage = lazy(() => import('./pages/approvals/ApprovalsPage'));
 const SuppressionsPage = lazy(() => import('./pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('./pages/SourcesPage'));
@@ -112,6 +113,8 @@ export const soc = defineModule({
     // works, for existing links and for the decision page of someone who came from it.
     { path: '/escalations', Page: EscalationsPage, allowed: can.view, label: 'Escalations' },
     { path: '/escalations/:id', Page: DecisionPage, allowed: can.view },
+    // One case: the escalation with its alerts, and who or what closed each one. The queue's rows open it.
+    { path: '/cases/:key', Page: CasePage, allowed: can.view },
     {
       path: '/approvals',
       Page: ApprovalsPage,

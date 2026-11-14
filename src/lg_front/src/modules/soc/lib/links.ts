@@ -32,9 +32,14 @@ export function escalationQueueHref(filters: EscalationFilters = {}): string {
   return withQuery('/escalations', params);
 }
 
-/** Where one escalation opens: its decision page. */
+/** The older decision page of one escalation (the queue opens the case page; old links still land here). */
 export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
   return `/escalations/${encodeURIComponent(e.id)}`;
+}
+
+/** Where one case opens: the escalation with its alerts, and who or what closed each one. The key is the escalation's id. */
+export function caseHref(caseId: string): string {
+  return `/cases/${encodeURIComponent(caseId)}`;
 }
 
 /** Where one alert opens in full: its investigation view. */

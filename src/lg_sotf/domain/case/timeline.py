@@ -44,6 +44,12 @@ def _left_out(case: CaseEscalation, event: CaseEvent) -> bool:
     return event.event_type == DECISION_EVENT and case.decision is not None and event.data.get("escalation_id") == case.id
 
 
+def _closes_after_decision(event: CaseEvent) -> bool:
+    """The ``close`` step that carries out an analyst's decision."""
+    reason = event.data.get("close_reason")
+    return event.event_type == "node.completed" and event.node == "close" and isinstance(reason, str) and reason.startswith("analyst:")
+
+
 def _entry(event: CaseEvent, alert_id: str, emails: Mapping[str, str]) -> Optional[CaseTimelineEntry]:
     step = plain_step(event)
     # The case's own sentence for the event, else the investigation's.
@@ -74,6 +80,8 @@ def _of_alert(case: CaseEscalation, member: MemberFacts, emails: Mapping[str, st
     for event in member.events:
         if _left_out(case, event) or (member.hidden and not shown_while_hidden(event.event_type)):
             continue
+        if _closes_after_decision(event) and out and out[-1].kind == DECISION_EVENT:
+            continue  # the decision is the line before: it names the analyst and what they decided
         entry = _entry(event, alert.id, emails)
         if entry is not None:
             out.append(entry)
