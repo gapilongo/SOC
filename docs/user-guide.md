@@ -89,6 +89,30 @@ The frame is the same on every page.
 
 ### 1. Watch the queue
 
+In the web app the **Overview** is the first page. It reads in this order:
+
+1. **Needs you now.** What you hold and its first deadline, the response
+   actions your role may approve, what nobody has claimed (and how many of
+   those are past their deadline), and the sampled AI closes that wait for a
+   blind-audit label. Each line has one action. These counts are "right
+   now", whatever the window.
+2. **Closed without a person.** Of the alerts received in the window (24
+   hours, 7 days or 30 days) that are finished, how many no person touched
+   and how many reached one, as a sentence, a bar and the table the bar is
+   drawn from. A share is shown from 5 finished alerts on, a mean time from
+   5 observations on; below that the page says "too few" and gives the
+   count.
+3. **How the AI's closes are verified.** The blind audit of the last 30
+   days: how many closes were eligible, sampled and labelled, and how many
+   an analyst who could not see the AI's verdict labelled malicious. The
+   missed-threat rate appears with its 95% interval once the report carries
+   one (30 labels by default). A check the product does not report yet reads
+   "Not measured yet" and shows no figure.
+4. **Next deadlines**, then, for admins, **Platform health** (queue depth,
+   LLM cost, the estimate of analyst hours saved, alerts by status).
+
+The same data over the API:
+
 * `GET /dashboard/summary?window_hours=24`: counts by status, severity and
   disposition, open escalations, mean time to acknowledge and to resolve,
   queue depth, LLM tokens and cost.

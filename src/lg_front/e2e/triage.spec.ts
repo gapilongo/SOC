@@ -21,6 +21,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 
 import {
   API,
+  alertsReceived,
   assertAccessible,
   assertNoSideScroll,
   assertNoTokenInStorage,
@@ -38,7 +39,6 @@ import {
   setTheme,
   signIn,
   signOut,
-  statValue,
   waitForAlert,
   type AlertState,
   type Credentials,
@@ -239,7 +239,7 @@ test('the Overview updates live when alerts arrive through the ingest API', asyn
   const { context, page, watch } = await newSession(browser);
   await signIn(page, admin);
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible();
-  const before = await statValue(page, 'Alerts ingested');
+  const before = await alertsReceived(page);
 
   const items = await ingest(request, apiKey, [beacon(), ...Array.from({ length: BURST }, (_, n) => burst(n))]);
   expect(items.filter((i) => i.status === 'inserted')).toHaveLength(BURST + 1);
@@ -247,7 +247,7 @@ test('the Overview updates live when alerts arrive through the ingest API', asyn
   escalatedId = items[1].alert_id as string;
 
   // No navigation, no Refresh click: the WebSocket events refresh the page.
-  await expect.poll(() => statValue(page, 'Alerts ingested'), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
+  await expect.poll(() => alertsReceived(page), { timeout: 90_000, intervals: [1_000] }).toBe(before + BURST + 1);
   await screenshot(page, '02-overview');
   await watch.assertClean();
   await context.close();
@@ -704,10 +704,30 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     await screenshot(page, shot);
     await assertAccessible(page, path);
   }
+  // The Overview of console v2, in its order: the admin's own work, each line with one action; what
+  // was closed without a person; how those closes are verified; the deadlines; platform health.
+  const needs = page.getByRole('region', { name: 'Needs you now' });
+  for (const action of ['Open my queue', 'Open approvals', 'Open the queue', 'Label them']) await expect(needs.getByRole('link', { name: action })).toBeVisible();
+  const closed = page.getByRole('region', { name: 'Closed without a person' });
+  await expect(closed.getByTestId('overview-alerts-received')).not.toHaveText('0');
+  // The beacon was decided by a person, so the window has a finished alert and the table is drawn;
+  // the split of the closes by who or what closed them is not in the API and says so.
+  await expect(closed.getByRole('row').filter({ hasText: 'Reached a person' })).toBeVisible();
+  await expect(closed.getByText('not measured yet')).toBeVisible();
+  const verified = page.getByRole('region', { name: "How the AI's closes are verified" });
+  await expect(verified.getByRole('heading', { name: 'Blind audit, last 30 days' })).toBeVisible();
+  await expect(verified.getByText('Not measured yet')).toHaveCount(2);
+  await expect(page.getByRole('region', { name: 'Next deadlines' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Platform health' })).toBeVisible();
   // The theme switch in the header: the Overview in the light theme passes axe as well.
   await setTheme(page, 'light');
   await screenshot(page, '02-overview-light');
   await assertAccessible(page, '/ (light theme)');
+  // On a phone the tables become stacked records: nothing scrolls sideways, and axe still passes.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await assertNoSideScroll(page, 'the Overview at 390 px');
+  await assertAccessible(page, '/ at 390 px (light theme)');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await setTheme(page, 'dark');
   // The audit log recorded the analyst's claim and decision and the admin's approval.
   await page.goto('/audit');

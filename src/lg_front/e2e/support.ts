@@ -100,15 +100,6 @@ export async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<voi
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 
-/** The page does not scroll sideways (checked at 390 px). */
-export async function assertNoSideScroll(page: Page, label: string): Promise<void> {
-  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
-    scrollWidth: document.documentElement.scrollWidth,
-    clientWidth: document.documentElement.clientWidth,
-  }));
-  expect(scrollWidth, `${label} scrolls sideways`).toBeLessThanOrEqual(clientWidth);
-}
-
 /** Every value in localStorage and sessionStorage, as `area:key=value`. */
 export async function browserStorage(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -139,17 +130,18 @@ export async function assertNoTokenInStorage(page: Page): Promise<void> {
   expect(cookies, 'a script-readable token cookie').not.toMatch(JWT_PATTERN);
 }
 
-/** The number shown on a dashboard stat tile (e.g. "Alerts"). */
-export async function statValue(page: Page, label: string): Promise<number> {
-  // An Overview KPI: <div><dt>label</dt><dd>value</dd><dd>sub</dd></div> inside a <dl>.
-  const tile = page
-    .locator('main dl > div')
-    .filter({ has: page.locator('dt').getByText(label, { exact: true }) })
-    .first();
-  const text = (await tile.locator('dd').first().textContent()) ?? '';
+/** The Overview's count of alerts received in its window ("1,284 alerts received in the last 24 hours"). */
+export async function alertsReceived(page: Page): Promise<number> {
+  const text = (await page.getByTestId('overview-alerts-received').textContent()) ?? '';
   const n = Number(text.replace(/[^0-9]/g, ''));
-  if (!Number.isFinite(n) || text.trim() === '') throw new Error(`stat ${label} has no number: ${JSON.stringify(text)}`);
+  if (!Number.isFinite(n) || text.trim() === '') throw new Error(`the Overview shows no count of alerts received: ${JSON.stringify(text)}`);
   return n;
+}
+
+/** Fail when the page scrolls sideways (a phone must never have to). */
+export async function assertNoSideScroll(page: Page, label: string): Promise<void> {
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow, `horizontal scroll on ${label}`).toBeLessThanOrEqual(0);
 }
 
 // ----------------------------------------------------------------------------- escalations
