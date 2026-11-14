@@ -5,8 +5,8 @@ import { useLocation } from 'react-router-dom';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { createApiClient } from '../../../../api/client';
-import { endpoints } from '../../../../api/endpoints';
-import type { AlertDetailOut, AlertOut, LiveEvent } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import type { AlertDetailOut, AlertOut, LiveEvent } from '../../api/types';
 import { writePref } from '../../../../lib/prefs';
 import { LiveContext, type LiveListener } from '../../../../live/LiveProvider';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';

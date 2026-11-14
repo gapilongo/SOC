@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import type { JsonObject, TenantSettingsOut } from '../../../../api/types';
+import type { JsonObject, TenantSettingsOut } from '../../api/types';
 import { TextAreaField } from '../../../../components/ui';
 import { asObject } from '../../../../lib/json';
 import { Section, strings, useSave } from './shared';

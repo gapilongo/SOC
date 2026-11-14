@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import type { AlertDetailOut, DecisionIn, EscalationOut, PreviewActionOut, ResponsePreviewOut } from '../../../../api/types';
+import type { AlertDetailOut, DecisionIn, EscalationOut, PreviewActionOut, ResponsePreviewOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import DecisionPage from './DecisionPage';
 

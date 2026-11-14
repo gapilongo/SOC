@@ -3,9 +3,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterTenantChange } from '../../../../api/invalidate';
-import { TENANT_PROFILES, type TenantCreatedOut, type TenantCreateIn } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterTenantChange } from '../../api/invalidate';
+import { TENANT_PROFILES, type TenantCreatedOut, type TenantCreateIn } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Button, Card, ErrorMessage, SelectField, TextField } from '../../../../components/ui';
 import { usePlatformTenants } from './TenantSwitcher';

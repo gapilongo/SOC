@@ -5,7 +5,7 @@
 
 import { Link } from 'react-router-dom';
 
-import { readCounts, totalOf } from '../../../../api/fields';
+import { readCounts, totalOf } from '../../api/fields';
 import { SEVERITIES, SeverityTag, cx, type StateTone } from '../../../../components/ui';
 import { formatInt } from '../../../../lib/format';
 import { STATUS_STEPS } from './figures';

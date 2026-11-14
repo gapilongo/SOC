@@ -1,10 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { readGuardrail } from '../../../../api/fields';
-import { afterActionChange, afterActionDecision } from '../../../../api/invalidate';
-import type { ActionOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { readGuardrail } from '../../api/fields';
+import { afterActionChange, afterActionDecision } from '../../api/invalidate';
+import type { ActionOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { RiskBadge } from '../../components/Badge';
 import { Modal } from '../../../../components/Dialog';

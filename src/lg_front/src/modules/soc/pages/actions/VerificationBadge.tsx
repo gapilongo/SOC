@@ -1,4 +1,4 @@
-import type { JsonObject, VerificationState } from '../../../../api/types';
+import type { JsonObject, VerificationState } from '../../api/types';
 import { Badge, type Tone } from '../../components/Badge';
 import { humanize } from '../../../../lib/format';
 

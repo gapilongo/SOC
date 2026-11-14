@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import type { TenantSettingsOut } from '../../../../api/types';
+import type { TenantSettingsOut } from '../../api/types';
 import { Checkbox } from '../../../../components/ui';
 import { asObject } from '../../../../lib/json';
 import { Section, useSave } from './shared';

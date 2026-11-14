@@ -2,8 +2,8 @@ import { useMutation } from '@tanstack/react-query';
 import { Download, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import type { TenantErasedOut, TenantErasureStatusOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import type { TenantErasedOut, TenantErasureStatusOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Modal } from '../../../../components/Dialog';
 import { useToast } from '../../../../components/Toast';

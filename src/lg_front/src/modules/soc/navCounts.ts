@@ -1,6 +1,6 @@
 /** The SOC's sidebar counts: escalations breaching SLA and approvals waiting on the signed-in person. */
 
-import { useDashboardSummary } from '../../api/hooks';
+import { useDashboardSummary } from './api/hooks';
 import { usePollInterval } from '../../lib/visibility';
 
 /** Dashboard summary fields that feed a nav count (absent on older APIs). */

@@ -1,7 +1,7 @@
 import { Check, Lock, X } from 'lucide-react';
 import { useId, type ReactNode } from 'react';
 
-import type { ActionOut } from '../../../../api/types';
+import type { ActionOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { RiskBadge } from '../../components/Badge';
 import type { PendingDecision } from '../actions/ApprovalDialog';

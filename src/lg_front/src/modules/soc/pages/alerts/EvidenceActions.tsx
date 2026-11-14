@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { Download, ExternalLink } from 'lucide-react';
 
-import { endpoints } from '../../../../api/endpoints';
+import { endpoints } from '../../api/endpoints';
 import { useApi } from '../../../../auth/AuthContext';
 import { useToast } from '../../../../components/Toast';
 import { Button } from '../../../../components/ui';

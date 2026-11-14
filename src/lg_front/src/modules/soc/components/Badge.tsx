@@ -6,7 +6,7 @@
 
 import type { ReactNode } from 'react';
 
-import type { ActionStatus, AlertStatus, Disposition, EscalationStatus } from '../../../api/types';
+import type { ActionStatus, AlertStatus, Disposition, EscalationStatus } from '../api/types';
 import { SeverityTag, StatePill, type StateTone } from '../../../components/ui';
 
 export type Tone = 'neutral' | 'info' | 'good' | 'warn' | 'bad' | 'critical';

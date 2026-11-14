@@ -2,7 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { ActionOut } from '../../../../api/types';
+import type { ActionOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { ResponseActions } from '../alerts/AlertDrawer';
 import { ActionControls, ActionDetails, canRecheck, canRetry } from './ActionDetails';

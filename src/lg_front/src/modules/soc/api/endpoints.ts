@@ -1,6 +1,6 @@
 /** Typed wrappers for the API endpoints used by the web app. */
 
-import type { ApiClient } from './client';
+import type { ApiClient } from '../../../api/client';
 import type {
   AccuracyReportOut,
   ActionOut,

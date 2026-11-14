@@ -1,7 +1,7 @@
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
-import type { LiveEvent } from '../../../../api/types';
+import type { LiveEvent } from '../../api/types';
 import { useLiveEvents } from '../../../../live/LiveProvider';
 
 /**

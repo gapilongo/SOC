@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../api/endpoints';
-import { afterSuppressionChange } from '../../../api/invalidate';
-import { qk } from '../../../api/queryKeys';
-import type { JsonObject, SuppressionOut } from '../../../api/types';
+import { endpoints } from '../api/endpoints';
+import { afterSuppressionChange } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
+import type { JsonObject, SuppressionOut } from '../api/types';
 import { useApi, useAuth } from '../../../auth/AuthContext';
 import { can } from '../../../auth/roles';
 import { Badge } from '../components/Badge';

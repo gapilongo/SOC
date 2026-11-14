@@ -1,6 +1,6 @@
 /** Words and keyboard shortcuts of the blind audit (labelling an auto-closed alert without the AI verdict). */
 
-import type { AuditLabel, BlindAuditRevealOut } from '../../../../api/types';
+import type { AuditLabel, BlindAuditRevealOut } from '../../api/types';
 import { humanize } from '../../../../lib/format';
 
 export interface LabelChoice {

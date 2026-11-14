@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { DashboardOut, EscalationOut } from '../../../../api/types';
+import type { DashboardOut, EscalationOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { handledFigure, mttaFigure, mttrFigure, windowPhrase } from './figures';
 import OverviewPage from './OverviewPage';

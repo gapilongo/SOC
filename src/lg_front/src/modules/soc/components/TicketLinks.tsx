@@ -1,6 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 
-import type { TicketOut } from '../../../api/types';
+import type { TicketOut } from '../api/types';
 import { formatDateTime } from '../../../lib/format';
 import { Badge } from './Badge';
 

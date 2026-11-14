@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, KeyRound, Pencil, Plus, ShieldOff, Trash2, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../api/endpoints';
-import { afterApiKeyChange, afterUserChange } from '../../../api/invalidate';
-import { qk } from '../../../api/queryKeys';
-import { API_KEY_SCOPES, type ApiKeyCreatedOut, type ApiKeyOut, type ApiKeyScope, type Role, type UserOut, type UserUpdateIn } from '../../../api/types';
+import { endpoints } from '../api/endpoints';
+import { afterApiKeyChange, afterUserChange } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
+import { API_KEY_SCOPES, type ApiKeyCreatedOut, type ApiKeyOut, type ApiKeyScope, type Role, type UserOut, type UserUpdateIn } from '../api/types';
 import { useApi, useAuth } from '../../../auth/AuthContext';
 import { can } from '../../../auth/roles';
 import { AiClientHelp } from '../../../components/AiClientHelp';

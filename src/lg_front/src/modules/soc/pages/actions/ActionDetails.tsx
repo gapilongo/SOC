@@ -2,9 +2,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCcw, RotateCcw, Undo2 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterActionChange } from '../../../../api/invalidate';
-import type { ActionOut, JsonObject } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterActionChange } from '../../api/invalidate';
+import type { ActionOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { useToast } from '../../../../components/Toast';

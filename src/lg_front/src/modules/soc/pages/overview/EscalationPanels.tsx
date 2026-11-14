@@ -2,10 +2,10 @@
 
 import { Link } from 'react-router-dom';
 
-import type { EscalationFilters } from '../../../../api/endpoints';
-import { escalationOwner, escalationSeverity, escalationTitle, formatEntities, type QueueFigures } from '../../../../api/fields';
-import { useEscalationsTop } from '../../../../api/hooks';
-import type { EscalationOut } from '../../../../api/types';
+import type { EscalationFilters } from '../../api/endpoints';
+import { escalationOwner, escalationSeverity, escalationTitle, formatEntities, type QueueFigures } from '../../api/fields';
+import { useEscalationsTop } from '../../api/hooks';
+import type { EscalationOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { ErrorMessage, SeverityTag, Spinner, cx } from '../../../../components/ui';
 import { formatDateTime, formatDuration, formatRelative } from '../../../../lib/format';

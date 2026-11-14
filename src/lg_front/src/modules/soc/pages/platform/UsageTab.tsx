@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Download } from 'lucide-react';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { TenantUsageOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { TenantUsageOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Button, Card, ErrorMessage, LoadingState, TextField } from '../../../../components/ui';
 import { downloadCsv, toCsv, type CsvColumn } from '../../../../lib/csv';

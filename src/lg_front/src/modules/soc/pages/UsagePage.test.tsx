@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { UsageOut } from '../../../api/types';
+import type { UsageOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../test/helpers';
 import UsagePage, { dailyTotals } from './UsagePage';
 

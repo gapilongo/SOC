@@ -1,8 +1,8 @@
 import { Check, ChevronDown, ChevronRight, Download, X } from 'lucide-react';
 import { Fragment, useState, type ReactNode } from 'react';
 
-import type { ActionFilters } from '../../../../api/endpoints';
-import { ACTION_STATUSES, RISK_LEVELS, VERIFICATION_STATES, type ActionOut } from '../../../../api/types';
+import type { ActionFilters } from '../../api/endpoints';
+import { ACTION_STATUSES, RISK_LEVELS, VERIFICATION_STATES, type ActionOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { RiskBadge, StatusBadge } from '../../components/Badge';
 import { ListNotice } from '../../../../components/ListNotice';

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import { AUTONOMY_MODES, RISK_LEVELS, type JsonObject, type TenantSettingsOut } from '../../../../api/types';
+import { AUTONOMY_MODES, RISK_LEVELS, type JsonObject, type TenantSettingsOut } from '../../api/types';
 import { Checkbox, SelectField, TextAreaField, TextField } from '../../../../components/ui';
 import { asObject } from '../../../../lib/json';
 import { lines, Section, strings, useSave } from './shared';

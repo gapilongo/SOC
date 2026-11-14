@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 
-import type { JsonObject, TenantSettingsOut } from '../../../../api/types';
+import type { JsonObject, TenantSettingsOut } from '../../api/types';
 import { Checkbox, TextField } from '../../../../components/ui';
 import { asObject } from '../../../../lib/json';
 import { Section, useSave } from './shared';

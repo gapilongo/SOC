@@ -8,9 +8,9 @@ import { CheckCircle2, CircleDashed } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import { isOneOf, type LlmProfileId, type LlmProfileOut, type SetupOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import { isOneOf, type LlmProfileId, type LlmProfileOut, type SetupOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Banner, Button, DefinitionList, ErrorMessage, StatePill, TextField } from '../../../../components/ui';

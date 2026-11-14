@@ -5,8 +5,8 @@
  * gives an empty list or null, and the page says so.
  */
 
-import { text } from '../../../../api/fields';
-import type { AlertDetailOut, EscalationOut } from '../../../../api/types';
+import { text } from '../../api/fields';
+import type { AlertDetailOut, EscalationOut } from '../../api/types';
 import { asObjectOrNull } from '../../../../lib/json';
 
 export function strings(value: unknown): string[] {

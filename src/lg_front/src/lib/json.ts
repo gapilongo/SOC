@@ -4,7 +4,7 @@
  * The API returns open `JsonObject` documents; these helpers read nested objects without a cast at
  * every call site. A "JSON object" is a non-null, non-array object.
  */
-import type { JsonObject } from '../api/types';
+import type { JsonObject } from '../modules/soc/api/types';
 
 export function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

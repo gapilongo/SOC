@@ -13,9 +13,9 @@ import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Building2, Check, ChevronDown, LogOut } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { TenantSummaryOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { TenantSummaryOut } from '../../api/types';
 import { useApi, useAuth, useAuthStore } from '../../../../auth/AuthContext';
 import { isTenantOverride } from '../../../../auth/roles';
 import { Badge } from '../../components/Badge';

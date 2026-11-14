@@ -1,6 +1,6 @@
-import { endpoints } from '../../../../api/endpoints';
+import { endpoints } from '../../api/endpoints';
 import type { ApiClient } from '../../../../api/client';
-import type { EscalationOut } from '../../../../api/types';
+import type { EscalationOut } from '../../api/types';
 import { can } from '../../../../auth/roles';
 import type { Principal } from '../../../../auth/store';
 import { DEFAULT_STATUS } from './queueParams';

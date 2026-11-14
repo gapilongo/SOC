@@ -1,4 +1,4 @@
-import type { JsonObject } from '../../../../api/types';
+import type { JsonObject } from '../../api/types';
 import { Badge, type Tone } from '../../components/Badge';
 import { DefinitionList } from '../../../../components/ui';
 import { asObjectOrNull } from '../../../../lib/json';

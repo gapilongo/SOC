@@ -10,9 +10,9 @@ import { ArrowRight, CircleCheck, Clock, RefreshCw, UserCheck } from 'lucide-rea
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { readQueueFigures, totalOf, type QueueFigures } from '../../../../api/fields';
-import { useDashboardSummary, useLivePollInterval } from '../../../../api/hooks';
-import type { DashboardOut } from '../../../../api/types';
+import { readQueueFigures, totalOf, type QueueFigures } from '../../api/fields';
+import { useDashboardSummary, useLivePollInterval } from '../../api/hooks';
+import type { DashboardOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { approvalRoleFor, can, roleAtLeast } from '../../../../auth/roles';
 import { OnboardingBanner } from '../onboarding/Onboarding';

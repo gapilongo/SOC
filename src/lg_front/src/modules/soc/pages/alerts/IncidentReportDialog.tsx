@@ -2,9 +2,9 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterAlertTimelineChange } from '../../../../api/invalidate';
-import type { IncidentReportField, IncidentReportOut, IncidentReportStage } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterAlertTimelineChange } from '../../api/invalidate';
+import type { IncidentReportField, IncidentReportOut, IncidentReportStage } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Modal } from '../../../../components/Dialog';

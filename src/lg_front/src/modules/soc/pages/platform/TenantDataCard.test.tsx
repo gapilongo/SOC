@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { TenantErasureStatusOut } from '../../../../api/types';
+import type { TenantErasureStatusOut } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { TenantDataCard } from './TenantDataCard';
 

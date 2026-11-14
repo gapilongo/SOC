@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { lazy } from 'react';
 
-import { qk } from '../../api/queryKeys';
+import { qk } from './api/queryKeys';
 import { can } from '../../auth/roles';
 import { defineModule, type Allowed } from '../../core/module';
 import { useNavCount } from './navCounts';

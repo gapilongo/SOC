@@ -1,4 +1,4 @@
-import type { MicrosoftCapabilityCheck, MicrosoftPermissionCheck, MicrosoftTestReport as Report } from '../../../../api/types';
+import type { MicrosoftCapabilityCheck, MicrosoftPermissionCheck, MicrosoftTestReport as Report } from '../../api/types';
 import { Badge, type Tone } from '../../components/Badge';
 import { formatDateTime, humanize } from '../../../../lib/format';
 

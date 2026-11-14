@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import type { OnboardingStatusOut, SetupOut } from '../../../../api/types';
+import type { OnboardingStatusOut, SetupOut } from '../../api/types';
 import { can } from '../../../../auth/roles';
 import type { Principal } from '../../../../auth/store';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';

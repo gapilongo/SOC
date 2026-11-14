@@ -1,6 +1,6 @@
-import { endpoints, type ActionFilters } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { ActionOut } from '../../../../api/types';
+import { endpoints, type ActionFilters } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { ActionOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { useKeysetList } from '../../../../lib/pagination';
 

@@ -8,9 +8,9 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { BlindAuditEstimate, BlindAuditReportOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { BlindAuditEstimate, BlindAuditReportOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Card, EmptyState, ErrorMessage, LoadingState } from '../../../../components/ui';
 import { formatDateTime, formatInt } from '../../../../lib/format';

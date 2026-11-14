@@ -3,9 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import { ROUTE_NAMES, type JsonObject, type RouteOut, type TenantSettingsOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import { ROUTE_NAMES, type JsonObject, type RouteOut, type TenantSettingsOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { ErrorMessage, LoadingState, SelectField } from '../../../../components/ui';
 import { humanize } from '../../../../lib/format';

@@ -1,9 +1,9 @@
 import { CheckCircle2, Download, ShieldCheck, XCircle } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints, type AuditFilters } from '../../../api/endpoints';
-import { qk } from '../../../api/queryKeys';
-import type { AuditEntryOut, AuditVerifyOut } from '../../../api/types';
+import { endpoints, type AuditFilters } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
+import type { AuditEntryOut, AuditVerifyOut } from '../api/types';
 import { useApi } from '../../../auth/AuthContext';
 import { Button, EmptyState, ErrorMessage, JsonBlock, LoadingState, PageHeader, TextField, Truncated } from '../../../components/ui';
 import { csvFilename, downloadCsv, toCsv, type CsvColumn } from '../../../lib/csv';

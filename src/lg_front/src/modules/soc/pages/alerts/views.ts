@@ -10,7 +10,7 @@
  * it always did; a bare `/alerts` (or `/alerts?alert=<id>`) opens Needs analyst.
  */
 
-import type { AlertCountsWindow, AlertFilters } from '../../../../api/endpoints';
+import type { AlertCountsWindow, AlertFilters } from '../../api/endpoints';
 
 export const ALERT_VIEWS = ['needs_analyst', 'awaiting_approval', 'processing', 'failed', 'closed', 'all'] as const;
 export type AlertView = (typeof ALERT_VIEWS)[number];

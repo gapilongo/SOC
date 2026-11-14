@@ -11,10 +11,10 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { useApi, useAuth } from '../auth/AuthContext';
-import { useKeysetList } from '../lib/pagination';
-import { usePollInterval } from '../lib/visibility';
-import { useLive } from '../live/LiveProvider';
+import { useApi, useAuth } from '../../../auth/AuthContext';
+import { useKeysetList } from '../../../lib/pagination';
+import { usePollInterval } from '../../../lib/visibility';
+import { useLive } from '../../../live/LiveProvider';
 import {
   endpoints,
   type AlertCountsWindow,

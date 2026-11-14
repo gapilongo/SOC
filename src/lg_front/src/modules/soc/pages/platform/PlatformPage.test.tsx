@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { Page, PlatformEscalationOut, TenantSummaryOut } from '../../../../api/types';
+import type { Page, PlatformEscalationOut, TenantSummaryOut } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { tenant } from '../../../../test/tenants';
 import { templateFields } from './CreateTenantTab';

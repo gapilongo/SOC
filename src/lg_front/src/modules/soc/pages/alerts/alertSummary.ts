@@ -8,8 +8,8 @@
  * `dry_run` / `simulated_evidence` written at close, and `escalation_id`.
  */
 
-import { finite, text } from '../../../../api/fields';
-import type { AlertDetailOut, AlertOut, FindingOut, JsonObject } from '../../../../api/types';
+import { finite, text } from '../../api/fields';
+import type { AlertDetailOut, AlertOut, FindingOut, JsonObject } from '../../api/types';
 import { asObjectOrNull } from '../../../../lib/json';
 
 type Rec = Record<string, unknown>;

@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterActionChange } from '../../../../api/invalidate';
-import type { ActionOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterActionChange } from '../../api/invalidate';
+import type { ActionOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { RiskBadge } from '../../components/Badge';

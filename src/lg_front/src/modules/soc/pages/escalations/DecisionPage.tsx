@@ -12,12 +12,12 @@ import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../../../../api/client';
-import { endpoints } from '../../../../api/endpoints';
-import { decidedByLabel, escalationConflictNotice, escalationOwner, escalationSeverity, escalationTitle, readRouting } from '../../../../api/fields';
-import { useEscalation, useLivePollInterval } from '../../../../api/hooks';
-import { afterEscalationChange } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
-import type { DecisionOut, EscalationOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { decidedByLabel, escalationConflictNotice, escalationOwner, escalationSeverity, escalationTitle, readRouting } from '../../api/fields';
+import { useEscalation, useLivePollInterval } from '../../api/hooks';
+import { afterEscalationChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import type { DecisionOut, EscalationOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can, decisionBlockedReason } from '../../../../auth/roles';
 import { useToast } from '../../../../components/Toast';

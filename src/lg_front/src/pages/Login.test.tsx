@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { LoginOut, MfaChallengeOut } from '../api/types';
+import type { LoginOut, MfaChallengeOut } from '../modules/soc/api/types';
 import { AuthStore, type AuthTransport } from '../auth/store';
 import { apiError, fakeApi, fakeTransport, renderWithSession, token } from '../test/helpers';
 import LoginPage from './Login';

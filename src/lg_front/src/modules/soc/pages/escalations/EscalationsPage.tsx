@@ -9,9 +9,9 @@ import { Download, ListTree, X } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
-import { readQueueFigures } from '../../../../api/fields';
-import { useDashboardSummary, useEscalationGroups, useEscalationList, useLivePollInterval } from '../../../../api/hooks';
-import { BULK_MAX_ITEMS, ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut } from '../../../../api/types';
+import { readQueueFigures } from '../../api/fields';
+import { useDashboardSummary, useEscalationGroups, useEscalationList, useLivePollInterval } from '../../api/hooks';
+import { BULK_MAX_ITEMS, ESCALATION_LEVELS, ESCALATION_STATUSES, type EscalationOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { ListNotice } from '../../../../components/ListNotice';

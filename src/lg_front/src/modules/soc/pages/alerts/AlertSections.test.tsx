@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { AlertDetailOut, EscalationOut } from '../../../../api/types';
+import type { AlertDetailOut, EscalationOut } from '../../api/types';
 import { escalationHref } from '../../lib/links';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { AlertDrawer } from './AlertDrawer';

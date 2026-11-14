@@ -2,9 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { DeliveryOut, IntegrationOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { DeliveryOut, IntegrationOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge, type Tone } from '../../components/Badge';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState } from '../../../../components/ui';

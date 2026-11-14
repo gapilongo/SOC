@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import type { BulkCloseIn, BulkItemIn, EscalationGroupsOut, EscalationOut } from '../../../../api/types';
+import type { BulkCloseIn, BulkItemIn, EscalationGroupsOut, EscalationOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import EscalationsPage from './EscalationsPage';
 

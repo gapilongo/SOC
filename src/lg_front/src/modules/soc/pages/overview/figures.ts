@@ -1,6 +1,6 @@
 /** Pure helpers of the Overview: windows, sample-size guards and labels. */
 
-import type { DashboardOut } from '../../../../api/types';
+import type { DashboardOut } from '../../api/types';
 import { formatDuration, formatInt } from '../../../../lib/format';
 import { formatPct, notEnoughData } from '../../lib/reports';
 

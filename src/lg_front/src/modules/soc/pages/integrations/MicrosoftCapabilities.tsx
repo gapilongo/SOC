@@ -1,7 +1,7 @@
 import { AlertTriangle } from 'lucide-react';
 import { useState } from 'react';
 
-import type { JsonObject, MicrosoftCapabilityOut } from '../../../../api/types';
+import type { JsonObject, MicrosoftCapabilityOut } from '../../api/types';
 import { Badge } from '../../components/Badge';
 import { ConfirmDialog } from '../../../../components/Dialog';
 import { Checkbox, SelectField, TextAreaField, TextField } from '../../../../components/ui';

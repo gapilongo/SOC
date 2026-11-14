@@ -1,6 +1,6 @@
 /** Helpers for the Reports page and the printable monthly report. */
 
-import type { FeedbackRate, RateInterval } from '../../../api/types';
+import type { FeedbackRate, RateInterval } from '../api/types';
 import { formatInt } from '../../../lib/format';
 
 /** `YYYY-MM-DD` of a date in UTC (report windows are whole UTC days). */

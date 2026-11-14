@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import type { QueueFigures } from '../../../../api/fields';
-import type { ActionOut } from '../../../../api/types';
+import type { QueueFigures } from '../../api/fields';
+import type { ActionOut } from '../../api/types';
 import type { Principal } from '../../../../auth/store';
 import {
   approvalAccess,

@@ -7,9 +7,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterBlindAuditSample } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
+import { endpoints } from '../../api/endpoints';
+import { afterBlindAuditSample } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
 import { useApi } from '../../../../auth/AuthContext';
 import { useToast } from '../../../../components/Toast';
 import { Button, Card, ErrorMessage, TextField } from '../../../../components/ui';

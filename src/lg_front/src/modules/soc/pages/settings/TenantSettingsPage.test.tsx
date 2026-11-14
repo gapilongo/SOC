@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { TenantSettingsOut } from '../../../../api/types';
+import type { TenantSettingsOut } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { phishingPatch } from './PhishingSection';
 import { routesPatch } from './RoutingSection';

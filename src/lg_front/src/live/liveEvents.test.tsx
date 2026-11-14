@@ -2,7 +2,7 @@ import { act, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { LiveEvent } from '../api/types';
+import type { LiveEvent } from '../modules/soc/api/types';
 import { LiveContext, createLiveBus, useLive, useLiveEvents } from './LiveProvider';
 
 const event = (type: LiveEvent['type'] = 'alert.created'): LiveEvent => ({ type, tenant_id: 'acme', alert_id: 'a-1', data: {}, ts: '2026-11-07T10:00:00Z' });

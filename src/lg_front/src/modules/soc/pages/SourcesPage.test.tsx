@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { SourceOut } from '../../../api/types';
+import type { SourceOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../test/helpers';
 import SourcesPage, { buildConfig, splitConfig } from './SourcesPage';
 

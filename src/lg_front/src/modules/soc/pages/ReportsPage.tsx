@@ -3,9 +3,9 @@ import { Download, FileText } from 'lucide-react';
 import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { endpoints } from '../../../api/endpoints';
-import { qk } from '../../../api/queryKeys';
-import type { AccuracyBlock, AccuracyReportOut, DetectionOut, FeedbackRate, RateInterval, ValueDay, ValueReportOut } from '../../../api/types';
+import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
+import type { AccuracyBlock, AccuracyReportOut, DetectionOut, FeedbackRate, RateInterval, ValueDay, ValueReportOut } from '../api/types';
 import { useApi, useAuth } from '../../../auth/AuthContext';
 import { can } from '../../../auth/roles';
 import { Badge } from '../components/Badge';

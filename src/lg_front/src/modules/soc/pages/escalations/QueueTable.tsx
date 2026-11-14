@@ -5,11 +5,11 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
-import { endpoints, type EscalationFilters } from '../../../../api/endpoints';
-import { decidedByLabel, escalationConflictNotice, escalationOwner, escalationSeverity, escalationTitle, formatEntities, readAiReason, readRouting } from '../../../../api/fields';
-import { useEscalationList } from '../../../../api/hooks';
-import { afterEscalationChange } from '../../../../api/invalidate';
-import type { EscalationGroupOut, EscalationOut } from '../../../../api/types';
+import { endpoints, type EscalationFilters } from '../../api/endpoints';
+import { decidedByLabel, escalationConflictNotice, escalationOwner, escalationSeverity, escalationTitle, formatEntities, readAiReason, readRouting } from '../../api/fields';
+import { useEscalationList } from '../../api/hooks';
+import { afterEscalationChange } from '../../api/invalidate';
+import type { EscalationGroupOut, EscalationOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { useToast } from '../../../../components/Toast';

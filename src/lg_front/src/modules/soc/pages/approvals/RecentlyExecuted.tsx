@@ -1,4 +1,4 @@
-import type { ActionOut } from '../../../../api/types';
+import type { ActionOut } from '../../api/types';
 import { useAuth } from '../../../../auth/AuthContext';
 import { StatusBadge } from '../../components/Badge';
 import { ActionControls, ROLLBACK_REASONS } from '../actions/ActionDetails';

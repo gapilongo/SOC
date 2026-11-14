@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { SuppressionOut } from '../../../api/types';
+import type { SuppressionOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../test/helpers';
 import SuppressionsPage, { buildMatch } from './SuppressionsPage';
 

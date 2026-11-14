@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { IncidentReportOut } from '../../../../api/types';
+import type { IncidentReportOut } from '../../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { AI_LABEL, IncidentReportDialog } from './IncidentReportDialog';
 

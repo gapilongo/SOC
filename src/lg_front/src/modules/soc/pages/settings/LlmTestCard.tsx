@@ -1,7 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 
-import { endpoints } from '../../../../api/endpoints';
-import type { LlmTierCheckOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import type { LlmTierCheckOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Button, Card, ErrorMessage } from '../../../../components/ui';

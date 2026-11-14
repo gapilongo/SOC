@@ -3,10 +3,10 @@ import { KeyRound, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { ApiError } from '../../../api/client';
-import { afterMfaChange, afterRecoveryCodesChange } from '../../../api/invalidate';
-import { qk } from '../../../api/queryKeys';
-import { endpoints } from '../../../api/endpoints';
-import type { MfaEnrollOut, MfaStatusOut } from '../../../api/types';
+import { afterMfaChange, afterRecoveryCodesChange } from '../api/invalidate';
+import { qk } from '../api/queryKeys';
+import { endpoints } from '../api/endpoints';
+import type { MfaEnrollOut, MfaStatusOut } from '../api/types';
 import { useApi, useAuth } from '../../../auth/AuthContext';
 import { Badge } from '../components/Badge';
 import { Modal } from '../../../components/Dialog';

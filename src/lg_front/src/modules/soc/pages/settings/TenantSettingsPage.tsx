@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { ErrorMessage, LoadingState, PageHeader } from '../../../../components/ui';

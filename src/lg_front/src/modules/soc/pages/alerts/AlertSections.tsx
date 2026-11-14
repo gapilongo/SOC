@@ -12,12 +12,12 @@ import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ApiError } from '../../../../api/client';
-import { endpoints } from '../../../../api/endpoints';
-import { decidedByLabel, escalationConflictNotice, escalationOwner, readFindings } from '../../../../api/fields';
-import { useEscalation } from '../../../../api/hooks';
-import { afterAlertChange, afterAlertTimelineChange, afterEscalationChange } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
-import type { ActionOut, AlertDetailOut, AlertEventOut, EscalationOut, FindingOut, JsonObject } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { decidedByLabel, escalationConflictNotice, escalationOwner, readFindings } from '../../api/fields';
+import { useEscalation } from '../../api/hooks';
+import { afterAlertChange, afterAlertTimelineChange, afterEscalationChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import type { ActionOut, AlertDetailOut, AlertEventOut, EscalationOut, FindingOut, JsonObject } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { ActionControls, ActionDetails } from '../actions/ActionDetails';

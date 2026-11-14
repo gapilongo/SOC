@@ -5,7 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 
 import { ApiError, type ApiClient } from '../api/client';
-import type { TokenOut, UserOut } from '../api/types';
+import type { TokenOut, UserOut } from '../modules/soc/api/types';
 import { SessionProvider } from '../auth/AuthContext';
 import type { Session } from '../auth/session';
 import { AuthStore, type AuthTransport } from '../auth/store';

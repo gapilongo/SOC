@@ -7,8 +7,8 @@
  * than show a wrong one.
  */
 
-import { shortId } from '../lib/format';
-import { ApiError } from './client';
+import { shortId } from '../../../lib/format';
+import { ApiError } from '../../../api/client';
 import {
   BULK_MAX_ITEMS,
   ENTITY_KINDS,
@@ -25,7 +25,7 @@ import {
   type GuardrailOut,
   type RoutingOut,
 } from './types';
-import { isJsonObject } from '../lib/json';
+import { isJsonObject } from '../../../lib/json';
 
 /** A non-blank string, else null. */
 export function text(value: unknown): string | null {

@@ -1,9 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterActionChange } from '../../../../api/invalidate';
-import type { ActionOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterActionChange } from '../../api/invalidate';
+import type { ActionOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Modal } from '../../../../components/Dialog';
 import { useToast } from '../../../../components/Toast';

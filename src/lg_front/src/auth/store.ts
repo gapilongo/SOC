@@ -27,7 +27,7 @@
  */
 
 import { ApiError } from '../api/client';
-import { isMfaChallenge, type LoginOut, type MeOut, type MfaConfirmOut, type MfaEnrollOut, type TokenOut, type UserOut } from '../api/types';
+import { isMfaChallenge, type LoginOut, type MeOut, type MfaConfirmOut, type MfaEnrollOut, type TokenOut, type UserOut } from '../modules/soc/api/types';
 
 export type AuthStatus = 'initializing' | 'anonymous' | 'authenticated' | 'expired';
 export type AuthMethod = 'password' | 'oidc';

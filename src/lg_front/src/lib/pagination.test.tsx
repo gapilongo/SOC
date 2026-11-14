@@ -3,7 +3,7 @@ import { act, render, renderHook, screen, waitFor } from '@testing-library/react
 import { memo, useState, type ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { Page } from '../api/types';
+import type { Page } from '../modules/soc/api/types';
 import { flattenPages, invalidateBounded, MAX_PAGES, nextCursor, useKeysetList } from './pagination';
 
 describe('keyset pagination', () => {

@@ -7,8 +7,8 @@
  * and `level`).
  */
 
-import type { EscalationFilters } from '../../../api/endpoints';
-import type { EscalationOut } from '../../../api/types';
+import type { EscalationFilters } from '../api/endpoints';
+import type { EscalationOut } from '../api/types';
 
 function withQuery(path: string, params: URLSearchParams): string {
   const query = params.toString();

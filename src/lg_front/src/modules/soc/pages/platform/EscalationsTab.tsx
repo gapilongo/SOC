@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
-import type { PlatformEscalationOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
+import type { PlatformEscalationOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge, SeverityBadge, StatusBadge } from '../../components/Badge';
 import { ListNotice } from '../../../../components/ListNotice';

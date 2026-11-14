@@ -1,7 +1,7 @@
 /** Words for escalation fields, shared by the queue and the decision page. */
 
-import { readRouting } from '../../../../api/fields';
-import type { Decision, RoutingOut } from '../../../../api/types';
+import { readRouting } from '../../api/fields';
+import type { Decision, RoutingOut } from '../../api/types';
 import { humanize } from '../../../../lib/format';
 
 /** The verdicts an analyst records here ("needs more information" is not offered: a pending product decision). */

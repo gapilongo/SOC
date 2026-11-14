@@ -9,8 +9,8 @@
  * the page omits that figure rather than show a wrong one.
  */
 
-import { finite, readCounts, readGuardrail, text, totalOf, type QueueFigures } from '../../../../api/fields';
-import type { ActionOut } from '../../../../api/types';
+import { finite, readCounts, readGuardrail, text, totalOf, type QueueFigures } from '../../api/fields';
+import type { ActionOut } from '../../api/types';
 import { approvalRoleFor, can, decisionBlockedReason } from '../../../../auth/roles';
 import type { Principal } from '../../../../auth/store';
 import { humanize, shortId } from '../../../../lib/format';

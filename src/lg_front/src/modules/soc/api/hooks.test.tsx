@@ -3,9 +3,9 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SessionProvider } from '../auth/AuthContext';
-import type { Session } from '../auth/session';
-import { fakeApi, signedInSession } from '../test/helpers';
+import { SessionProvider } from '../../../auth/AuthContext';
+import type { Session } from '../../../auth/session';
+import { fakeApi, signedInSession } from '../../../test/helpers';
 import {
   useAlertCounts,
   useBulkClaim,

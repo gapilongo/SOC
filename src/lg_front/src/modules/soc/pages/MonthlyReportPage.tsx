@@ -3,9 +3,9 @@ import { ArrowLeft, Download, Printer } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { endpoints } from '../../../api/endpoints';
-import { qk } from '../../../api/queryKeys';
-import type { MonthlyReportOut } from '../../../api/types';
+import { endpoints } from '../api/endpoints';
+import { qk } from '../api/queryKeys';
+import type { MonthlyReportOut } from '../api/types';
 import { useApi } from '../../../auth/AuthContext';
 import { useToast } from '../../../components/Toast';
 import { Button, ErrorMessage, LoadingState } from '../../../components/ui';

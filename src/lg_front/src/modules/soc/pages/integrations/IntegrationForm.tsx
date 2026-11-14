@@ -3,9 +3,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterIntegrationChange } from '../../../../api/invalidate';
-import { INTEGRATION_KINDS, SEVERITIES, TICKETING_EVENTS, isOneOf, type IntegrationCreateIn, type IntegrationKind, type IntegrationOut, type IntegrationUpdateIn, type Severity } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterIntegrationChange } from '../../api/invalidate';
+import { INTEGRATION_KINDS, SEVERITIES, TICKETING_EVENTS, isOneOf, type IntegrationCreateIn, type IntegrationKind, type IntegrationOut, type IntegrationUpdateIn, type Severity } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Modal } from '../../../../components/Dialog';

@@ -2,10 +2,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { History, Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterIntegrationChange, afterIntegrationTest } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
-import type { IntegrationOut, MicrosoftTestReport as MicrosoftReport } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterIntegrationChange, afterIntegrationTest } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import type { IntegrationOut, MicrosoftTestReport as MicrosoftReport } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../../../components/Dialog';

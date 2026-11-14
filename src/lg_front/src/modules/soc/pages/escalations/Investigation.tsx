@@ -5,10 +5,10 @@ import { Download } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { endpoints } from '../../../../api/endpoints';
-import { formatEntities, readAiReason, readFindings } from '../../../../api/fields';
-import { qk } from '../../../../api/queryKeys';
-import type { AlertDetailOut, AlertEventOut, EscalationOut, FindingOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { formatEntities, readAiReason, readFindings } from '../../api/fields';
+import { qk } from '../../api/queryKeys';
+import type { AlertDetailOut, AlertEventOut, EscalationOut, FindingOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { TicketLinks } from '../../components/TicketLinks';
 import { useToast } from '../../../../components/Toast';

@@ -3,10 +3,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { FormEvent, ReactNode } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterTenantSettingsChange } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
-import type { JsonObject } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterTenantSettingsChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import type { JsonObject } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { useToast } from '../../../../components/Toast';
 import { Button, Card, ErrorMessage } from '../../../../components/ui';

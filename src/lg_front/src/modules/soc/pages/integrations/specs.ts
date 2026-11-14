@@ -1,6 +1,6 @@
 /** Integration kinds: their form fields, events and the config conversions between the form and the API. */
 
-import { INTEGRATION_EVENTS, INTEGRATION_KINDS, isOneOf, TICKETING_EVENTS, TICKETING_KINDS, type IntegrationKind, type IntegrationOut, type JsonObject } from '../../../../api/types';
+import { INTEGRATION_EVENTS, INTEGRATION_KINDS, isOneOf, TICKETING_EVENTS, TICKETING_KINDS, type IntegrationKind, type IntegrationOut, type JsonObject } from '../../api/types';
 import { getConfig } from '../../../../config';
 import { parseJsonObject } from '../../../../lib/json';
 import { secretField } from './MicrosoftIntegrationForm';

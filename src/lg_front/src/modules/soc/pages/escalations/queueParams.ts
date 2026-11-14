@@ -6,8 +6,8 @@
  * an API filter).
  */
 
-import type { EscalationFilters } from '../../../../api/endpoints';
-import { ESCALATION_ORDERS, type EscalationOrder } from '../../../../api/types';
+import type { EscalationFilters } from '../../api/endpoints';
+import { ESCALATION_ORDERS, type EscalationOrder } from '../../api/types';
 
 /** Without a `status` parameter the queue lists escalations still waiting for a decision. */
 export const DEFAULT_STATUS = ['open', 'claimed', 'expired'];

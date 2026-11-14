@@ -7,7 +7,7 @@
 import { Copy, Download } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 
-import type { MfaEnrollOut } from '../api/types';
+import type { MfaEnrollOut } from '../modules/soc/api/types';
 import { downloadText } from '../lib/download';
 import { useToast } from './Toast';
 import { Button, TextField } from './ui';

@@ -11,7 +11,7 @@
  * When a type is added on either side, give it a line here (README "API types").
  */
 
-import type { components } from './schema.gen';
+import type { components } from '../../../api/schema.gen';
 import type {
   AccuracyBlock,
   AccuracyReportOut,

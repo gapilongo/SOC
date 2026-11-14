@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { Modal } from '../../../../components/Dialog';

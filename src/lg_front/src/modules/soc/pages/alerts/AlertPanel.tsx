@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
 
-import { endpoints } from '../../../../api/endpoints';
-import { qk } from '../../../../api/queryKeys';
+import { endpoints } from '../../api/endpoints';
+import { qk } from '../../api/queryKeys';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { can } from '../../../../auth/roles';
 import { statusTone } from '../../components/Badge';

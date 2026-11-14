@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { DeliveryOut, IntegrationCreateIn, IntegrationOut } from '../../../../api/types';
+import type { DeliveryOut, IntegrationCreateIn, IntegrationOut } from '../../api/types';
 import { safeHref } from '../../components/TicketLinks';
 import { fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
 import { describeResult } from './DeliveryLog';

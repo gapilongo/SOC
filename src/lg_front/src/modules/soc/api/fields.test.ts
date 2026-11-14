@@ -21,7 +21,7 @@ import {
   toBulkItems,
   totalOf,
 } from './fields';
-import { apiError } from '../test/helpers';
+import { apiError } from '../../../test/helpers';
 import type { ActionOut, AlertDetailOut, DashboardOut, EscalationOut } from './types';
 
 const preview = {

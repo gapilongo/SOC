@@ -10,9 +10,9 @@ import { CircleCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import type { ActionFilters } from '../../../../api/endpoints';
-import { readQueueFigures } from '../../../../api/fields';
-import { useDashboardSummary } from '../../../../api/hooks';
+import type { ActionFilters } from '../../api/endpoints';
+import { readQueueFigures } from '../../api/fields';
+import { useDashboardSummary } from '../../api/hooks';
 import { useAuth } from '../../../../auth/AuthContext';
 import { can, roleAtLeast } from '../../../../auth/roles';
 import type { Principal } from '../../../../auth/store';

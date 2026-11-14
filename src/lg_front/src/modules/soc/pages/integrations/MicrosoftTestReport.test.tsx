@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import type { MicrosoftTestReport as Report } from '../../../../api/types';
+import type { MicrosoftTestReport as Report } from '../../api/types';
 import { MicrosoftTestReport } from './MicrosoftTestReport';
 
 const REPORT: Report = {

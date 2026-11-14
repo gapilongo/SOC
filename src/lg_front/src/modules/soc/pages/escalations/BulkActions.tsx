@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ApiError } from '../../../../api/client';
-import { bulkFailures, escalationTitle, toBulkItems } from '../../../../api/fields';
-import { useBulkClaim, useBulkClose, useBulkProposeSuppression } from '../../../../api/hooks';
-import { BULK_MAX_ITEMS, type BulkCloseDecision, type BulkOut, type EscalationOut, type SuppressionProposalOut } from '../../../../api/types';
+import { bulkFailures, escalationTitle, toBulkItems } from '../../api/fields';
+import { useBulkClaim, useBulkClose, useBulkProposeSuppression } from '../../api/hooks';
+import { BULK_MAX_ITEMS, type BulkCloseDecision, type BulkOut, type EscalationOut, type SuppressionProposalOut } from '../../api/types';
 import { Modal } from '../../../../components/Dialog';
 import { Banner, Button, Checkbox, ErrorMessage, TextAreaField, TextField, cx } from '../../../../components/ui';
 import { shortId } from '../../../../lib/format';

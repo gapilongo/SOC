@@ -2,7 +2,7 @@ import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { AccuracyBlock, AccuracyReportOut, DetectionOut, DetectionsReportOut, ValueMetrics, ValueReportOut } from '../../../api/types';
+import type { AccuracyBlock, AccuracyReportOut, DetectionOut, DetectionsReportOut, ValueMetrics, ValueReportOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession } from '../../../test/helpers';
 import ReportsPage from './ReportsPage';
 

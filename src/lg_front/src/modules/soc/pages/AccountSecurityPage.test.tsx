@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
-import type { MfaStatusOut } from '../../../api/types';
+import type { MfaStatusOut } from '../api/types';
 import { fakeApi, renderWithSession, signedInSession, user } from '../../../test/helpers';
 import AccountSecurityPage from './AccountSecurityPage';
 import UsersPage from './UsersPage';

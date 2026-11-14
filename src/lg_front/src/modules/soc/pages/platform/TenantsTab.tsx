@@ -5,10 +5,10 @@ import { LogIn, RefreshCw } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { endpoints } from '../../../../api/endpoints';
-import { afterTenantChange } from '../../../../api/invalidate';
-import { qk } from '../../../../api/queryKeys';
-import { QUOTA_KEYS, type QuotaKey, type Quotas, type TenantSummaryOut } from '../../../../api/types';
+import { endpoints } from '../../api/endpoints';
+import { afterTenantChange } from '../../api/invalidate';
+import { qk } from '../../api/queryKeys';
+import { QUOTA_KEYS, type QuotaKey, type Quotas, type TenantSummaryOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../../../components/Dialog';

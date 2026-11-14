@@ -18,7 +18,7 @@
  *   API and a proxy without WebSocket support all look like close 1006).
  */
 
-import type { LiveEvent } from '../api/types';
+import type { LiveEvent } from '../modules/soc/api/types';
 
 export type LiveStatus = 'idle' | 'connecting' | 'open' | 'reconnecting' | 'unavailable' | 'closed';
 

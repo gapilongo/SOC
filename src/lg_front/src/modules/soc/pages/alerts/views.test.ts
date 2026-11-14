@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { AlertDetailOut, FindingOut } from '../../../../api/types';
+import type { AlertDetailOut, FindingOut } from '../../api/types';
 import { aiVerdict, escalationIdOf, evidenceFlags, kindWords, originWords, statusShort, statusWords } from './alertSummary';
 import { formatAge } from './AlertsPage';
 import { closedWindow, isTodayWindow, startOfToday, viewCount, viewFilters, viewFromParams, viewHref, viewLabel } from './views';
