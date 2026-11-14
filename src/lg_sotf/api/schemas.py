@@ -108,6 +108,15 @@ class LoginIn(In):
     tenant: Optional[str] = Field(default=None, max_length=63)
 
 
+class BreakGlassIn(In):
+    """The sealed credential, the platform-admin account to act as (``tenant`` when the email is ambiguous) and why."""
+
+    email: str = Field(min_length=3, max_length=320)
+    tenant: Optional[str] = Field(default=None, max_length=63)
+    credential: str = Field(min_length=1, max_length=1024)
+    reason: str = Field(min_length=10, max_length=300)
+
+
 class UserOut(Out):
     id: UUID
     tenant_id: str

@@ -92,9 +92,11 @@ class TokenService:
     def refresh_ttl_s(self) -> int:
         return int(self._auth.refresh_token_ttl_s)
 
-    def issue_access(self, user: User, *, now: Optional[datetime] = None) -> IssuedToken:
+    def issue_access(self, user: User, *, now: Optional[datetime] = None, ttl_s: Optional[int] = None) -> IssuedToken:
+        """An access token for ``user``; ``ttl_s`` shortens it (a break-glass session, which has no refresh token)."""
+        ttl_s = self.access_ttl_s if ttl_s is None else min(ttl_s, self.access_ttl_s)
         now = now or datetime.now(UTC)
-        expires = now + timedelta(seconds=self.access_ttl_s)
+        expires = now + timedelta(seconds=ttl_s)
         jti = uuid.uuid4().hex
         claims: Dict[str, Any] = {
             "iss": self._auth.jwt_issuer,
@@ -110,7 +112,7 @@ class TokenService:
             "jti": jti,
         }
         token = jwt.encode(claims, self._secret, algorithm=ACCESS_ALGORITHM, headers={"typ": "JWT"})
-        return IssuedToken(token=token, jti=jti, expires_at=expires, expires_in=self.access_ttl_s)
+        return IssuedToken(token=token, jti=jti, expires_at=expires, expires_in=ttl_s)
 
     def verify_access(self, token: str) -> Dict[str, Any]:
         """Claims of a valid access token; :class:`InvalidToken` otherwise."""

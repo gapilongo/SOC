@@ -192,6 +192,8 @@ Local accounts, sessions, OIDC single sign-on and the bootstrap tenant/admin.
 | `auth.require_mfa_for_platform_admins` | `LG_SOTF_AUTH__REQUIRE_MFA_FOR_PLATFORM_ADMINS` | boolean (optional) | unset | Platform admins must use TOTP MFA (forced enrollment at sign-in). Unset: on in staging and production, off in development and test. |
 | `auth.mfa_issuer` | `LG_SOTF_AUTH__MFA_ISSUER` | string | `LG-SOTF` | Issuer name shown in authenticator apps (`otpauth://` URI). |
 | `auth.mfa_challenge_ttl_s` | `LG_SOTF_AUTH__MFA_CHALLENGE_TTL_S` | integer | `300` | Lifetime of the MFA challenge token between password and code (30-900). |
+| `auth.break_glass_credential_hash` | `LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH` | secret (optional) | unset | argon2id hash of the sealed break-glass credential (`lg-sotf break-glass-credential`). Unset: break-glass sign-in is off. Needs `integrations.smtp_host` and `smtp_from`, because every use is mailed to all platform admins. See [runbooks/break-glass.md](runbooks/break-glass.md). |
+| `auth.break_glass_ttl_s` | `LG_SOTF_AUTH__BREAK_GLASS_TTL_S` | integer | `600` | Lifetime of a break-glass session (60-900). It has no refresh token and cannot be extended. |
 | `auth.bootstrap_admin_email` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_EMAIL` | string (optional) | unset | `lg-sotf migrate` creates this admin in the bootstrap tenant if it does not exist. |
 | `auth.bootstrap_admin_password` | `LG_SOTF_AUTH__BOOTSTRAP_ADMIN_PASSWORD` | secret (optional) | unset | Password of the bootstrap admin. Give it to the migrate job only, then remove it. |
 | `auth.bootstrap_tenant_id` | `LG_SOTF_AUTH__BOOTSTRAP_TENANT_ID` | string | `default` | Tenant created by `lg-sotf migrate`. |

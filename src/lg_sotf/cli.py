@@ -175,6 +175,16 @@ def reset_mfa(tenant_id: str, email: str, yes: bool) -> None:
     click.echo(f"MFA {state} for {report.email} (id {report.user_id}); {report.revoked_sessions} session(s) revoked")
 
 
+@cli.command("break-glass-credential")
+def break_glass_credential() -> None:
+    """Print a new break-glass credential and its hash; nothing is stored (docs/runbooks/break-glass.md)."""
+    from lg_sotf.security.hashing import generate_token, hash_password
+
+    credential = generate_token(32)
+    click.echo(f"credential (shown once; seal it): {credential}")
+    click.echo(f"LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH='{hash_password(credential)}'")
+
+
 @cli.command("create-tenant")
 @click.option("--id", "tenant_id", required=True, help="Tenant id: 2-63 of a-z, 0-9, '-', '_'.")
 @click.option("--name", required=True, help="Display name.")

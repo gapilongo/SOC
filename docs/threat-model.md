@@ -242,8 +242,9 @@ organisations and grants.
 | TM-MSP-4 | E | WebSocket, MCP or API key outlives a revoked grant | WebSocket re-check every 15 s (TM-RD-1) | Planned: WS, MCP and API keys under grants (ARCH-E4.1d) |
 | TM-MSP-5 | R | Customer cannot see or revoke MSSP access | Audit entries `platform_admin.tenant_access` in the customer's chain | Planned: customer grant register and revoke, expiry, JIT reason, co-approval (SEC6.2) |
 | TM-MSP-6 | S | Customer identities mixed under one install-wide IdP | One OIDC issuer per install (`src/lg_sotf/settings.py:173`) | Planned: one IdP per tenant bound to its issuer (SEC6.1) |
-| TM-MSP-7 | E | Break-glass access is silent | `lg-sotf reset-mfa` exists | Planned: break-glass procedure, alert on use, drill (SEC6.5) |
+| TM-MSP-7 | E | Break-glass access is silent | The audit entry `auth.break_glass_used` and one email per active platform admin are written in one transaction before the session is issued; if either fails, so does the sign-in (`src/lg_sotf/services/break_glass.py:29-69`). The alert rows belong to no integration, so no tenant admin can disable them. `lg-sotf reset-mfa` is audited as `auth.mfa_reset` | In place (SEC6.5). Procedure and drill: [runbooks/break-glass.md](runbooks/break-glass.md) |
 | TM-MSP-8 | I | Erased customer data recoverable from backups | Erasure deletes rows and Redis keys and keeps the audit log (`src/lg_sotf/compliance/tenant_data.py:433`) | Partial: crypto-shredding with per-tenant KEKs planned (ARCH-E4.4, SEC5.1) |
+| TM-MSP-9 | S/E | The sealed break-glass credential is stolen or guessed: a platform-admin session without a password or MFA | Off unless the operator configures the credential's argon2id hash and SMTP; no API or tenant setting enables it (`src/lg_sotf/api/auth/break_glass.py:60-77`, `src/lg_sotf/settings.py:535-539`). The session is one access token of at most 15 minutes with no refresh token. Every use alerts all platform admins (TM-MSP-7). Failed attempts are audited (`auth.break_glass_failed`) and rate-limited per address like a login (`src/lg_sotf/api/routers/auth.py:163`). The credential is 256 bits of randomness and only its hash is deployed | In place (SEC6.5). Residual: until the alert is acted on, the holder has platform-admin API access for the session's lifetime; rotate after every use (runbook) |
 
 ### 2.11 Web UI and reverse proxy
 
@@ -362,7 +363,7 @@ covers it. The gate has three steps:
 | INT5 MCP ecosystem | Remote MCP-out | TM-MCP-9 | Rows present (planned) |
 | SEC1 Supply chain and release integrity | CI, images, bundles | TM-CI-1 to TM-CI-6 | Rows present |
 | SEC5 Keys and tokens | KEKs, JWT signing | TM-API-1, TM-DB-4, TM-KEY-* | Rows present (planned) |
-| SEC6 MSSP identity hardening | IdP per tenant, grants UX, break-glass | TM-MSP-5 to TM-MSP-7 | Rows present (planned) |
+| SEC6 MSSP identity hardening | IdP per tenant, grants UX, break-glass | TM-MSP-5 to TM-MSP-7, TM-MSP-9 | Rows present (break-glass in place, the rest planned) |
 | SEC9 AI safety evidence | Invariants ([invariants.md](invariants.md)), kill switches | ASI10 | Rows present; invariant registry in place (SEC9.1) |
 | INT1–INT4 connectors | New sources and response targets | TM-ING-*, TM-RSP-* | Add a row per new connector that holds credentials |
 

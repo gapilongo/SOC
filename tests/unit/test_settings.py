@@ -192,6 +192,26 @@ def test_fake_llm_refused_in_production_unless_allowed() -> None:
     assert allowed == []
 
 
+def test_break_glass_is_off_by_default_and_needs_smtp_for_its_alert() -> None:
+    base = {
+        "environment": "production",
+        "auth": {"jwt_secret": "x" * 40},
+        "security": {"encryption_keys": "k", "indicator_hmac_key": "h" * 32},
+        "database": {"url": "postgresql://u:strong@db/x"},
+        "llm": {"provider": "fake", "allow_fake": True},
+    }
+    assert Settings(_env_file=None, **base).break_glass_enabled is False
+    sealed = {**base, "auth": {**base["auth"], "break_glass_credential_hash": "$argon2id$test-only"}}
+    silent = Settings(_env_file=None, **sealed)
+    assert silent.break_glass_enabled is False
+    assert any("break_glass_credential_hash needs integrations.smtp_host" in p for p in silent.production_problems())
+    mail = {"smtp_host": "smtp.example.com", "smtp_from": "soc@example.com"}
+    alerting = Settings(_env_file=None, integrations=mail, **sealed)
+    assert alerting.break_glass_enabled is True and alerting.production_problems() == []
+    with pytest.raises(ValueError):
+        Settings(_env_file=None, **{**sealed, "auth": {**sealed["auth"], "break_glass_ttl_s": 3_600}})
+
+
 @pytest.mark.parametrize("name", ["development", "testing", "staging", "production"])
 def test_shipped_configs_load(name: str) -> None:
     s = Settings(_env_file=None, config_file=str(CONFIG_DIR / f"{name}.yaml"))

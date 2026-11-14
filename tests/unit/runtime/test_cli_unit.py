@@ -31,6 +31,18 @@ def test_help_lists_roles_and_ops_commands() -> None:
         assert name in result.output
 
 
+def test_break_glass_credential_prints_a_credential_and_the_hash_that_verifies_it() -> None:
+    from lg_sotf.security.hashing import verify_password
+
+    result = CliRunner().invoke(cli, ["break-glass-credential"])
+    assert result.exit_code == 0
+    first, second = result.output.strip().splitlines()
+    credential = first.rpartition(": ")[2]
+    name, _, stored = second.partition("=")
+    assert name == "LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH" and len(credential) >= 43
+    assert verify_password(stored.strip("'"), credential)
+
+
 def test_create_admin_rejects_short_password_before_touching_db(env: Any) -> None:
     result = CliRunner().invoke(
         cli, ["create-admin", "--tenant", "default", "--email", "a@example.com", "--password-stdin"], input="short\n"

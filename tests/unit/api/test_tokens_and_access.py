@@ -58,6 +58,14 @@ def test_access_token_round_trip_carries_contract_claims(tokens: TokenService) -
     assert is_local_token(issued.token)
 
 
+def test_a_shorter_ttl_is_honoured_and_a_longer_one_is_capped(tokens: TokenService) -> None:
+    """``ttl_s`` (the break-glass session) can only shorten an access token."""
+    short = tokens.issue_access(_user(), ttl_s=120)
+    claims = tokens.verify_access(short.token)
+    assert short.expires_in == claims["exp"] - claims["iat"] == 120
+    assert tokens.issue_access(_user(), ttl_s=3_600).expires_in == 600
+
+
 def test_expired_tokens_are_rejected(tokens: TokenService) -> None:
     issued = tokens.issue_access(_user(), now=datetime.now(UTC) - timedelta(hours=1))
     with pytest.raises(InvalidToken):

@@ -211,6 +211,21 @@ async def test_email_without_smtp_settings_or_refused_recipients(settings: Setti
     assert outcome.status == "dead"
 
 
+async def test_a_row_without_an_integration_is_mailed_whatever_the_tenant_state(
+    settings: Settings, box: SecretBox, make_settings: Callable[..., Settings]
+) -> None:
+    """Operation ``email`` (a break-glass alert): no integration to disable, and suspension does not hold it back."""
+    FakeSMTP.sent = []
+    configured = make_settings(integrations={"smtp_host": "smtp.example.com", "smtp_from": "soc@example.com"})
+    entry = outbox_entry(None, {**event(), "recipients": ["root@example.com"]}, operation="email")
+    outcome = await _delivery(configured, Recorder(), box, smtp_factory=FakeSMTP).deliver(entry, None, suspended=True)
+    assert outcome.status == "sent" and outcome.result == {"recipients": 1}
+    message = FakeSMTP.sent[0][1]
+    assert message["To"] == "root@example.com" and message["Subject"].startswith("[LG-SOTF security]")
+    # Without SMTP the row is retried, never dropped.
+    assert (await _delivery(settings, Recorder(), box).deliver(entry, None)).status == "failed"
+
+
 async def test_destination_policy_refuses_internal_addresses(settings: Settings) -> None:
     async def loopback(host: str, port: int) -> List[str]:
         return ["127.0.0.1"]

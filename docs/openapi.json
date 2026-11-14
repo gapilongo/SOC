@@ -3964,6 +3964,49 @@
         "title": "BlindAuditStratum",
         "type": "object"
       },
+      "BreakGlassIn": {
+        "additionalProperties": false,
+        "description": "The sealed credential, the platform-admin account to act as (``tenant`` when the email is ambiguous) and why.",
+        "properties": {
+          "credential": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Credential",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 300,
+            "minLength": 10,
+            "title": "Reason",
+            "type": "string"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tenant"
+          }
+        },
+        "required": [
+          "email",
+          "credential",
+          "reason"
+        ],
+        "title": "BreakGlassIn",
+        "type": "object"
+      },
       "BulkClaimIn": {
         "additionalProperties": false,
         "properties": {
@@ -4764,7 +4807,8 @@
               "notify",
               "ticket_create",
               "ticket_update",
-              "test"
+              "test",
+              "email"
             ],
             "title": "Operation",
             "type": "string"
@@ -13566,6 +13610,48 @@
           "audit"
         ],
         "x-stability": "stable"
+      }
+    },
+    "/api/v1/auth/break-glass": {
+      "post": {
+        "operationId": "break_glass_api_v1_auth_break_glass_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakGlassIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Emergency sign-in with the install's sealed credential (off by default; every use alerts all platform admins)",
+        "tags": [
+          "auth"
+        ],
+        "x-stability": "beta"
       }
     },
     "/api/v1/auth/login": {

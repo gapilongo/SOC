@@ -193,6 +193,10 @@ class AuthSettings(BaseModel):
     require_mfa_for_platform_admins: Optional[bool] = None
     mfa_issuer: str = Field(default="LG-SOTF", min_length=1, max_length=64)
     mfa_challenge_ttl_s: int = Field(default=300, ge=30, le=900)
+    # Break-glass sign-in (docs/runbooks/break-glass.md). Off unless the operator sets the argon2id
+    # hash of the sealed credential here; no API call and no tenant setting can turn it on.
+    break_glass_credential_hash: Optional[SecretStr] = None
+    break_glass_ttl_s: int = Field(default=600, ge=60, le=900)
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[SecretStr] = None
     bootstrap_tenant_id: str = "default"
@@ -528,6 +532,12 @@ class Settings(BaseSettings):
         value = self.auth.require_mfa_for_platform_admins
         return self.is_production if value is None else value
 
+    @property
+    def break_glass_enabled(self) -> bool:
+        """The sealed credential is configured, and its use can be mailed to the platform admins."""
+        mail = self.integrations
+        return self.auth.break_glass_credential_hash is not None and bool(mail.smtp_host and mail.smtp_from)
+
     def production_problems(self) -> List[str]:
         """Return reasons this configuration is unsafe to run in production."""
         problems: List[str] = []
@@ -561,6 +571,11 @@ class Settings(BaseSettings):
             problems.append("database.url uses the development password")
         if self.integrations.smtp_host and self.integrations.smtp_security == "none":
             problems.append("integrations.smtp_security=none sends mail and SMTP credentials in clear text")
+        if self.auth.break_glass_credential_hash is not None and not self.break_glass_enabled:
+            problems.append(
+                "auth.break_glass_credential_hash needs integrations.smtp_host and integrations.smtp_from: "
+                "every break-glass sign-in is mailed to the platform admins"
+            )
         from lg_sotf.security.insecure import insecure_secret_problems
 
         problems.extend(insecure_secret_problems(self))
