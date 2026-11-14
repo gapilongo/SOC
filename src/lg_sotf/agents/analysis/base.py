@@ -46,7 +46,6 @@ closing it; the threat score is kept (it orders the analyst queue).
 
 from __future__ import annotations
 
-import functools
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -87,6 +86,7 @@ from lg_sotf.tools.enrichment import (
     public_ip,
     public_url,
 )
+from lg_sotf.tools.enrichment.tools import HISTORY_TOOL, enrichment_tools
 
 if TYPE_CHECKING:
     from lg_sotf.core.state import AnalysisDigest, AnalysisSummary, LlmRefusal, ToolObservation
@@ -557,8 +557,9 @@ class AnalysisAgent(BaseAgent):
         self.enrichment = enrichment or EnrichmentService.from_settings(self.settings)
         # Leave the rest of the node budget for the final writes and a margin for one slow call.
         budget_share = float(self.get_config("time_budget_share", 0.6))
+        self.tools = enrichment_tools(self.enrichment)
         self.reasoner = ReActReasoner(
-            self.enrichment,
+            self.tools,
             max_steps=int(self.get_config("max_iterations", 5)),
             stable_delta=int(self.get_config("stable_delta", 5)),
             time_budget_s=max(self.settings.worker.analysis_timeout_s * budget_share, 1.0),
@@ -583,12 +584,8 @@ class AnalysisAgent(BaseAgent):
             return []
         out: List[Tuple[Indicator, EnrichmentResult]] = []
         for ind in history_targets(alert, self.history_lookups):
-            lookup = self.enrichment.history(
-                ctx.tenant_id, ind.type, ind.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
-            )
-            request = {"kind": ind.type, "value": ind.value}
-            restore = functools.partial(EnrichmentResult.from_dict, ind.type)
-            result = await ctx.trace.tool(self.name, "history", request, lookup, EnrichmentResult.as_dict, restore)
+            params = {"kind": ind.type, "value": ind.value}
+            result = await self.tools.call(ctx, HISTORY_TOOL, params, agent=self.name)
             out.append((ind, result))
         return out
 

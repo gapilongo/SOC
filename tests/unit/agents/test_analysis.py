@@ -21,8 +21,10 @@ from lg_sotf.agents.analysis.react import InvestigationStep, stabilised
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.llm.errors import LLMBudgetExceeded
 from lg_sotf.llm.fake import Refuse
+from lg_sotf.llm.trace import tool_input_hash
 from lg_sotf.settings import Settings
 from lg_sotf.tools.enrichment import EnrichmentService
+from lg_sotf.tools.registry import ToolRegistry
 from tests.unit.agents._support import Related, StoredAlert, factory, fake_repos, scripted, texts
 
 ALERT = {
@@ -175,6 +177,31 @@ async def test_react_looks_up_candidates_then_finishes(vt_settings: Settings) ->
     assert obs["results"][0]["data"]["malicious"] == 12
     assert "threat_intel_malicious" in result.threat_indicators
     assert result.recommended_actions[0] == "Block the relay address"
+
+
+async def test_ti_lookups_run_through_the_registry(vt_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AI-E2.1: threat-intelligence and history lookups are registry calls; the trace keeps its pre-registry shape."""
+    ran: List[str] = []
+    capped = ToolRegistry._capped
+
+    async def spy(self: ToolRegistry, ctx: Any, tool: Any, params: Any) -> Any:
+        ran.append(tool.spec.name)
+        return await capped(self, ctx, tool, params)
+
+    monkeypatch.setattr(ToolRegistry, "_capped", spy)
+    model = scripted(InvestigationStep=[step("lookup", "i1"), step("finish", "", threat=90, certainty=85, verdict="malicious")])
+    seen: List[httpx.Request] = []
+    agent = agent_with(vt_settings, model, seen)
+    assert {"reputation.virustotal", "reputation.abuseipdb", "platform.history"} <= set(agent.tools.names)
+    repos = fake_repos()
+    result = await agent.run(AgentContext("t1", "a1", vt_settings, repos=repos), ALERT, triage={}, correlation={})
+
+    assert ran == ["platform.history"] * 4 + ["reputation.virustotal"]
+    assert len(seen) == 1 and result.observations[0]["results"][0]["provider"] == "virustotal"
+    tools = [s for s in repos.investigation_steps.steps if s.kind == "tool"]
+    assert [s.tool for s in tools] == ["history"] * 4 + ["reputation"]
+    lookup = {"kind": "hash", "value": "44d88612fea8a8f36de82e1278abb02f", "providers": ["virustotal"]}
+    assert tools[-1].input_hash == tool_input_hash("reputation", lookup)
 
 
 async def test_alert_block_is_identical_on_every_step_and_only_tool_data_grows(vt_settings: Settings) -> None:
@@ -343,7 +370,7 @@ async def test_time_budget_ends_the_loop_with_the_last_assessment(vt_settings: S
     ticks = iter([0.0, 1.0, 2.0, 99.0])
     model = scripted(InvestigationStep=[step("lookup", "i1", threat=20), step("lookup", "i2", threat=70)])
     agent = agent_with(vt_settings, model, [])
-    agent.reasoner = ReActReasoner(agent.enrichment, max_steps=5, time_budget_s=30.0, clock=lambda: next(ticks))
+    agent.reasoner = ReActReasoner(agent.tools, max_steps=5, time_budget_s=30.0, clock=lambda: next(ticks))
     result = await agent.run(AgentContext("t1", "a1", vt_settings, repos=fake_repos()), ALERT, triage={}, correlation={})
     assert result.stop_reason == "time_budget" and len(model.calls) == 2 and result.threat_score == 70
     assert result.llm_used and result.tool_steps == 2
