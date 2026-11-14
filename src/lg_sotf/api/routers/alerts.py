@@ -1,5 +1,5 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/alerts``: listing, view counts, detail, timeline, notes and reprocessing.
+"""``/alerts``: listing, view counts, detail, timeline, the investigation view, notes and reprocessing.
 
 ``GET /alerts/counts`` is cached for :data:`COUNTS_CACHE_TTL_S` seconds per
 tenant and window in Redis (Redis being down only disables the cache).
@@ -19,15 +19,18 @@ from lg_sotf.api.common import alert_detail_out, alert_out, aware, blind_view, h
 from lg_sotf.api.context import ApiContext, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.schemas import AlertCountsOut, AlertDetailOut, AlertEventOut, AlertOut, NoteIn, PageOut, ReprocessOut
+from lg_sotf.api.stability import route_contract
 from lg_sotf.audit.logger import Actor, AuditLogger
 from lg_sotf.db.errors import InvalidTransition
 from lg_sotf.db.pagination import API_MAX_LIMIT
 from lg_sotf.db.repos.alerts import DEFAULT_SEARCH_WINDOW, MAX_SEARCH_WINDOW
 from lg_sotf.domain.blind_audit import shown_while_hidden
 from lg_sotf.domain.events import publish_event
+from lg_sotf.domain.investigation import Investigation
 from lg_sotf.models.vocabulary import AlertStatus, Disposition, Severity
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.services import alerts as alert_changes
+from lg_sotf.services.investigation import investigation
 
 log = get_logger(__name__)
 
@@ -147,6 +150,28 @@ async def alert_events(
         # Only ingestion and notes: the workflow's events would reveal its path (gate straight to close).
         items = [e for e in items if shown_while_hidden(e.event_type)]
     return PageOut[AlertEventOut](items=items, next_cursor=page.next_cursor)
+
+
+@router.get(
+    "/{alert_id}/investigation",
+    response_model=Investigation,
+    summary="What the AI concluded about the alert and why (the investigation view)",
+    **route_contract(stability="beta"),
+)
+async def get_investigation(
+    alert_id: str, request: Request, principal: Principal = Depends(require(VIEWER))
+) -> Investigation:
+    """One read model for the investigation view: the outcome and its reason in plain words, the summary, the
+    claims and the observations they rest on, what is not established, the steps, the track record of the
+    outcome category and the proposed response. Built from stored data: no model is called, nothing is written.
+
+    ``pending_harness`` names the fields that stay empty until the investigation harness fills them. While the
+    alert waits for its blind-audit label, the AI's side is withheld (``hidden_for_blind_audit``).
+    """
+    ctx = get_ctx(request)
+    return await investigation(
+        ctx.repos, ctx.review.responses, ctx.settings, principal.tenant_id, alert_id, role=principal.role
+    )
 
 
 @router.post("/{alert_id}/notes", status_code=201, response_model=AlertEventOut, summary="Add an analyst note")

@@ -21,6 +21,8 @@ export default {
       sidebar: token('sidebar'),
       raised: { DEFAULT: token('raised'), 2: token('raised-2') },
       selected: token('selected'),
+      observed: token('observed'),
+      mark: { DEFAULT: token('mark'), fg: token('mark-fg') },
       subtle: token('subtle'),
       strong: token('strong'),
       control: token('control'),

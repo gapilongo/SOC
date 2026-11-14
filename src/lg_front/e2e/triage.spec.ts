@@ -2,7 +2,9 @@
  * The analyst workflow through the real UI, against a running stack:
  * security headers and sign-in, provisioning (API key, analyst, viewer),
  * the Overview updating live after alerts arrive through the ingest API,
- * alert filters and pagination, the alert timeline, claiming and deciding
+ * alert filters and pagination, the alert timeline, the investigation view
+ * (/alerts/:id, opened from the list: axe in both themes, no sideways
+ * overflow at 390 px), claiming and deciding
  * the escalation as an analyst (the expected response plan names every
  * target before anything is pre-approved, and the decision page passes axe
  * with the plan open), approving its response as an admin until
@@ -11,7 +13,7 @@
  * wire and in the browser (no violations on any page), and the main pages
  * pass axe (no serious or critical WCAG 2.2 A or AA violation).
  */
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 import {
   API,
@@ -101,6 +103,50 @@ async function openAlertFromList(page: Page, title: string) {
   const panel = page.getByRole('complementary', { name: title });
   await expect(panel).toBeVisible();
   return panel;
+}
+
+/**
+ * From the alert's side panel, "Open full page" leads to the investigation
+ * view (/alerts/:id): the outcome first, then the same numbered sections for
+ * every alert. It passes axe in both themes and does not scroll sideways on
+ * a 390 px screen.
+ */
+async function reviewInvestigationView(page: Page, panel: Locator, title: string, alertId: string) {
+  await panel.getByRole('link', { name: 'Open full page' }).click();
+  await expect(page).toHaveURL(new RegExp(`/alerts/${alertId}$`));
+  await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+  await expect(page.locator('[data-headline]')).toBeVisible();
+  for (const heading of ['Claims, each beside the fact it rests on', 'What is not established', 'What the investigation did']) {
+    await expect(page.getByRole('heading', { name: heading, level: 2 })).toBeVisible();
+  }
+  // The steps are in plain words: the timeline has loaded, and no engine node name is printed.
+  const steps = page.getByRole('region', { name: 'What the investigation did' }).locator('li[data-actor]');
+  await expect.poll(() => steps.count()).toBeGreaterThanOrEqual(3);
+  await expect(page.getByRole('region', { name: 'What the investigation did' })).not.toContainText(/node\.completed|await_analyst|plan_response|execute_actions/);
+  await expect(page.getByRole('complementary', { name: 'Track record of this outcome' })).toBeVisible();
+  await screenshot(page, '04b-investigation');
+
+  await assertAccessible(page, 'investigation view');
+  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await assertAccessible(page, 'investigation view (light theme)');
+  // Evidence first: the verdict and the claims can be hidden, and the page still passes.
+  await page.getByRole('button', { name: /^Hide the verdict/ }).click();
+  await expect(page.getByRole('note')).toContainText('The verdict and the claims are hidden.');
+  await assertAccessible(page, 'investigation view with the verdict hidden (light theme)');
+  await page.getByRole('button', { name: /^Show the verdict/ }).click();
+  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(scrollWidth, 'the investigation view scrolls sideways at 390 px').toBeLessThanOrEqual(clientWidth);
+  await assertAccessible(page, 'investigation view at 390 px');
+  await page.setViewportSize({ width: 1440, height: 900 });
 }
 
 /** Rows of the All actions ledger (/approvals?view=all) for this alert. */
@@ -282,6 +328,7 @@ test('alerts: filters, pagination and the alert timeline', async ({ browser, req
   await expect(panel.getByLabel('Add a note')).toBeVisible();
   await panel.getByRole('heading', { name: 'Timeline' }).scrollIntoViewIfNeeded();
   await screenshot(page, '04-alert-timeline');
+  await reviewInvestigationView(page, panel, BEACON_TITLE, beaconId);
   await watch.assertClean();
   await context.close();
 });

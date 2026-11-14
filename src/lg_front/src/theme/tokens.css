@@ -11,7 +11,9 @@
  * Contrast rules (checked by src/theme/tokens.test.ts against this file):
  *   - text tokens reach 4.5:1 on every surface,
  *   - controls, focus, severity squares and state dots reach 3:1,
- *   - text on the tinted backgrounds reaches 4.5:1.
+ *   - text on the tinted backgrounds reaches 4.5:1,
+ *   - text on the observation surface reaches 4.5:1, its double rule 3:1,
+ *     and highlighted text reaches 4.5:1 on the highlighter.
  */
 
 :root,
@@ -24,6 +26,8 @@
   --c-raised: 16 21 28; /* #10151C cards */
   --c-raised-2: 22 29 39; /* #161D27 hover, banners, chips */
   --c-selected: 26 36 51; /* #1A2433 */
+  /* What a tool returned (the investigation view): monospace on this surface, never on a card. */
+  --c-observed: 14 17 22; /* #0E1116 */
 
   /* Lines */
   --c-subtle: 28 35 45; /* #1C232D */
@@ -70,6 +74,9 @@
   --c-tint-ok: 15 36 25; /* #0F2419 */
   --c-tint-info: 20 33 58; /* #14213A */
 
+  /* The highlighter: the decisive characters inside an observation, and nothing else. */
+  --c-mark: 90 71 0; /* #5A4700 */
+  --c-mark-fg: 255 235 176; /* #FFEBB0 */
 
   --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.45);
 }
@@ -82,6 +89,7 @@
   --c-raised: 255 255 255; /* #FFFFFF */
   --c-raised-2: 240 242 246; /* #F0F2F6 */
   --c-selected: 225 234 248; /* #E1EAF8 */
+  --c-observed: 242 244 248; /* #F2F4F8 */
 
   --c-subtle: 226 230 236; /* #E2E6EC */
   --c-strong: 203 210 219; /* #CBD2DB */
@@ -122,6 +130,9 @@
   --c-tint-warn: 253 243 223; /* #FDF3DF */
   --c-tint-ok: 230 245 236; /* #E6F5EC */
   --c-tint-info: 230 238 251; /* #E6EEFB */
+
+  --c-mark: 255 229 138; /* #FFE58A */
+  --c-mark-fg: 14 20 27; /* #0E141B */
 
   --shadow-popover: 0 12px 32px rgb(15 23 42 / 0.16);
 }

@@ -155,7 +155,9 @@ src/pages/        one folder or file per feature; each route is one lazily loade
                   Data-fetching widgets live with their feature (pages/platform/TenantSwitcher,
                   pages/onboarding/, pages/settings/LlmTestCard, pages/actions/)
 src/components/   presentational building blocks: ui/ primitives, dialogs (focus trap),
-                  badges, virtualized table, error boundary, route guards
+                  badges, virtualized table, error boundary, route guards, and
+                  investigation/ (the three voices of an investigation: observed, claimed,
+                  decided; the outcome headline; the read model of api/investigation.ts)
 src/api/          shared kernel: HTTP client (error envelope, request ids, refresh on 401),
 src/auth/         types, endpoints, query keys and hooks; auth store, OIDC (PKCE), role
 src/live/         checks; WebSocket client (backoff with jitter, resync); CSV, JSON and
