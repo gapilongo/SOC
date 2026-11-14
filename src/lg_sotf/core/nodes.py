@@ -16,13 +16,15 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, cast
+from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, cast
 
 from langgraph.types import interrupt
 
 from lg_sotf.agents.base import AgentContext
 from lg_sotf.agents.registry import AgentSet
+from lg_sotf.core.benign_learning import forget_benign_learning
 from lg_sotf.core.graph import WorkflowState
+from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat, refold, reopen_counted
 from lg_sotf.core.state import (
     AlertSummary,
     AnalystInput,
@@ -33,19 +35,20 @@ from lg_sotf.core.state import (
     RoutingDigest,
     SuppressedBy,
 )
-from lg_sotf.core.verdict_cache import VerdictCache, cache_applies
+from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.tenancy import thread_id_for
-from lg_sotf.domain import routing
+from lg_sotf.domain import closure, routing
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
-from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
+from lg_sotf.domain.suppression import alert_match_view, fingerprint_suggestion, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
+from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.shadow import shadow_run_id
-from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.escalation import WORKFLOW_ACTOR, EscalationService
 from lg_sotf.services.plan_context import plan_context
 from lg_sotf.services.response import ResponseService
 from lg_sotf.settings import Settings
@@ -69,6 +72,8 @@ class NodeDeps:
     thresholds: RoutingThresholds
     events: Optional[EventPublisher] = None
     budget: Optional[TokenBudget] = None
+    # Run messages for alerts retro-reopen requeued (lg_sotf.core.retro_reopen.enqueue_requeued).
+    queue: Optional[WorkQueue] = None
 
 
 def _small(data: Mapping[str, Any]) -> Dict[str, Any]:
@@ -186,6 +191,11 @@ class WorkflowNodes:
 
     async def gate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert = state["tenant_id"], state["alert"]
+        raw_flags = alert.get("flags")
+        # An LLM-normalised alert's fields were chosen by a model from attacker-shaped text: no suppression
+        # rule and no cached verdict closes it.
+        if "llm_normalized" in (raw_flags if isinstance(raw_flags, list) else []):
+            return {"gate": {"suppressed": False}, EVENT_KEY: {"suppressed": False}}
         view = alert_match_view(
             title=str(alert.get("title", "")),
             severity=state["severity"],
@@ -194,20 +204,20 @@ class WorkflowNodes:
             source_alert_id=str(alert.get("source_alert_id", "")),
             fingerprint=state.get("fingerprint", ""),
             normalized=alert,
+            verdict_key=state.get("verdict_key"),
         )
-        rules = await self.deps.repos.suppressions.list_active(tenant_id)
+        # Suggestions written before verdict keys matched a fingerprint alone; migration 0016 disabled them.
+        rules = [r for r in await self.deps.repos.suppressions.list_active(tenant_id) if not fingerprint_suggestion(r)]
         match = first_matching_rule(rules, view)
         if match is not None:
             await self.deps.repos.suppressions.record_hit(tenant_id, match.rule_id)
             by: SuppressedBy = {"type": "suppression_rule", "rule_id": match.rule_id, "name": match.name[:200]}
             return {"gate": {"suppressed": True, "suppressed_by": by}, EVENT_KEY: {"suppressed": True, "rule_id": match.rule_id}}
-        raw_flags = alert.get("flags")
-        flags: List[Any] = raw_flags if isinstance(raw_flags, list) else []
-        # An LLM-normalised alert's title (and so its fingerprint) was chosen by a model from
-        # attacker-shaped text: it never inherits a cached verdict.
-        if state["severity"] != "critical" and "llm_normalized" not in flags:
-            cached = await self.deps.verdicts.get(tenant_id, state.get("fingerprint", ""))
-            if cached is not None and cache_applies(cached, state["severity"]):
+        if state["severity"] != "critical":
+            cached = await self.deps.verdicts.closing_decision(
+                tenant_id, state.get("verdict_key"), state["severity"], fingerprint=state.get("fingerprint")
+            )
+            if cached is not None:
                 cache_hit: SuppressedBy = {
                     "type": "verdict_cache",
                     "decision": cached.get("decision"),
@@ -302,8 +312,11 @@ class WorkflowNodes:
         }
 
     async def decide(self, state: WorkflowState) -> Dict[str, Any]:
-        decision = routing.decide(state, self.deps.thresholds).as_dict()
-        return {"decision": decision, EVENT_KEY: decision}
+        """Route on the analysed alert, with the tenant's model-led closure tier as it is now (``off`` if unset)."""
+        tenant = await self.deps.repos.tenants.get(state["tenant_id"])
+        tier = closure.autonomy_tier(tenant.settings)
+        decision = routing.decide(state, self.deps.thresholds, tier).as_dict()
+        return {"decision": decision, EVENT_KEY: {**decision, "autonomy_tier": tier}}
 
     async def escalate(self, state: WorkflowState) -> Dict[str, Any]:
         tenant_id, alert_id = state["tenant_id"], state["alert_id"]
@@ -326,13 +339,22 @@ class WorkflowNodes:
             threat_score=float(analysis.get("threat_score", confidence)),
             reason=str(decision.get("reason") or "analyst review required"),
             reason_code=code,
-            summary=_escalation_summary(state, routing.routing_digest(code, confidence, self.deps.thresholds)),
+            summary=_escalation_summary(
+                state, routing.routing_digest(code, routing.assessed_threat(state), self.deps.thresholds)
+            ),
             correlated_alert_ids=list(correlation.get("related_alert_ids") or []),
             fingerprint=state.get("fingerprint") or None,
         )
         await self.deps.repos.alerts.update(
             tenant_id, alert_id, summary={"escalation_id": ticket.id, "escalation_attached": ticket.attached}
         )
+        # Alerts folded into this threat's earlier case (decided needs_more_info) follow it to this one.
+        await refold(self.deps.repos, tenant_id, alert_id, ticket.id)
+        if judged_threat(state.get("triage") or {}, analysis):
+            # A model judged it a threat: the alerts the models closed alone on its entities reopen (policy v3).
+            stored = await self.deps.repos.alerts.get(tenant_id, alert_id)
+            await self._reopen(stored, path="escalation",
+                                 escalation_id=ticket.id)
         return {
             "escalation_id": ticket.id,
             EVENT_KEY: {
@@ -367,7 +389,7 @@ class WorkflowNodes:
             alert_id,
             str(waiting_on),
             decision=str(decision.get("decision")),
-            fingerprint=state.get("fingerprint") or None,
+            verdict_key=state.get("verdict_key"),
             severity=state["severity"],
         )
         if not scope.inherited:
@@ -412,6 +434,21 @@ class WorkflowNodes:
         own = interrupt({"type": "analyst_decision", "escalation_id": ticket.id})
         return {"analyst": dict(own), "escalation_id": ticket.id}
 
+    async def _reopen(self, threat: Any, *, path: str, escalation_id: Optional[str]) -> None:
+        """Retro-reopen for a threat, then a run message for each alert it requeued (#350): it runs now, not after
+        the orphan sweep (which stays the backstop)."""
+        reopened = await reopen_counted(self.deps.repos, threat.tenant_id, threat, actor=WORKFLOW_ACTOR, path=path,
+                                        escalation_id=escalation_id)
+        await enqueue_requeued(self.deps.repos, self.deps.queue, threat.tenant_id, reopened)
+
+    async def _forget_benign_learning(self, state: WorkflowState) -> None:
+        """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again, and the
+        alerts the models closed alone on its entities reopen (decision policy v3 safety net)."""
+        alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
+        await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
+        await self._reopen(alert, path="workflow",
+                             escalation_id=state.get("escalation_id"))
+
     def _evidence(self, state: WorkflowState) -> str:
         """What authorises containment for this plan: ``analyst``, ``rules`` or ``llm_only``.
 
@@ -453,7 +490,7 @@ class WorkflowNodes:
             approver_role=analyst.get("approver_role") if is_tp else None,
         )
         # A response for this detection contradicts any cached "benign" verdict for it.
-        await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+        await self._forget_benign_learning(state)
         plan = await self.deps.responses.plan(tenant_id, alert_id, ctx)
         response: ResponseSummary = {
             "threat_type": plan.threat_type,
@@ -559,7 +596,8 @@ class WorkflowNodes:
         decided = cast(DecisionDigest, state.get("decision") or {})
         route = decided.get("route")
         if route == "close":
-            return str(decided.get("disposition") or "benign"), "policy:close"
+            model_led = decided.get("code") == closure.MODEL_CLOSED
+            return str(decided.get("disposition") or "benign"), closure.MODEL_CLOSE_REASON if model_led else "policy:close"
         if route == "plan_response":
             return "malicious", "policy:response"
         return "benign", "triage:false_positive"
@@ -604,14 +642,15 @@ class WorkflowNodes:
         if analyst.get("decision") in BENIGN_DECISIONS:
             await self.deps.verdicts.put_analyst_benign(
                 tenant_id,
-                state.get("fingerprint", ""),
+                state.get("verdict_key"),
                 decision=str(analyst["decision"]),
                 alert_id=alert_id,
                 escalation_id=state.get("escalation_id"),
+                decided_by=str(analyst.get("decided_by") or "") or None,
                 severity=state["severity"],
             )
         elif disposition == "malicious":
-            await self.deps.verdicts.invalidate(tenant_id, state.get("fingerprint", ""))
+            await self._forget_benign_learning(state)
         return {
             "disposition": disposition,
             "close_reason": reason,

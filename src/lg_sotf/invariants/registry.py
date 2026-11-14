@@ -101,24 +101,110 @@ INVARIANTS: Tuple[Invariant, ...] = (
     ),
     Invariant(
         id="INV-03",
-        title="The model's verdict alone never closes a high or critical alert; the routing policy decides",
+        title=(
+            "An AI verdict alone never closes a critical alert or a never-close class; an alert closes on the "
+            "models' word only at the tenant's autonomy tier, and a related threat reopens it"
+        ),
         rationale=(
             "A fooled or injected model must not be able to make a dangerous alert disappear. Routing is a pure "
-            "policy over scores and rule evidence: high and critical alerts are closed only by an analyst, and "
-            "lower severities close only when rules corroborate the model."
+            "policy. A critical alert closes only by an analyst or a suppression rule. A low or medium alert "
+            "closes when approved benign evidence an attacker cannot write "
+            "corroborates a benign verdict: a cached analyst verdict, the detection rule's name, the EICAR hash, a "
+            "test source or the tenant's declared context, such as a scanner as the source of the activity; never "
+            "past steering text or a recent true positive, and a scanner or test source never for a never-close "
+            "class. Without such evidence an info to high alert closes on the models' word only when the tenant's "
+            "autonomy tier is auto_full_audit, the deep tier judges it benign and the fast tier does not call it a "
+            "threat (decision policy v3), never for the never-close classes (credential access, including the "
+            "vendor's authentication-failure rules and T1531, a Wazuh alert whose rule cannot be read, log "
+            "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
+            "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
+            "such a close is marked model_closed for audit. When an alert becomes a threat (a response plan, an "
+            "escalation a model judged malicious or suspicious, an analyst true positive, a blind-audit malicious "
+            "label), every model-closed alert sharing a host, user or IP with it in the previous 24 hours is "
+            "reopened: folded into its open case as a related alert, or queued for review without one, and "
+            "audited. With the tier off, the default, a model never "
+            "closes an alert alone. A cached "
+            "analyst verdict closes only a "
+            "non-critical repeat of the same detection and behaviour (verdict key: what ran, compared in full) "
+            "that two different analysts decided benign, with no threat on it since; alerts in a never-close "
+            "class, normalised by a model or without a process, command line, service, scheduled task, registry "
+            "key, target file or Sysmon WMI object get no key (a URL, user agent, O365 operation or other "
+            "request-set context is in the key but never enough for one). "
+            "A suggested suppression rule matches the verdict key, older fingerprint-only suggestions never "
+            "apply, and a confirmed threat disables the rules that match it."
         ),
         epic="AI-E6",
-        threats=("TM-WRK-1", "TM-WRK-2"),
-        code=("src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/benign_evidence.py"),
+        threats=("TM-WRK-1", "TM-WRK-2", "TM-WRK-10"),
+        code=(
+            "src/lg_sotf/domain/routing.py", "src/lg_sotf/domain/closure.py", "src/lg_sotf/domain/benign_evidence.py",
+            "src/lg_sotf/domain/noise_families.py", "src/lg_sotf/domain/verdict_key.py",
+            "src/lg_sotf/core/verdict_cache.py", "src/lg_sotf/core/benign_learning.py",
+            "src/lg_sotf/core/retro_reopen.py",
+        ),
         proofs=(
             "tests/unit/domain/test_routing.py::test_llm_only_evidence_never_closes_high_or_critical_at_triage",
             "tests/unit/domain/test_routing.py::test_decide_never_closes_high_severity",
-            "tests/unit/domain/test_routing.py::test_decide_closes_only_with_rule_corroboration",
+            "tests/unit/domain/test_routing.py::test_decide_closes_only_with_approved_benign_evidence",
             "tests/unit/domain/test_routing.py::test_attacker_controlled_fp_words_never_close_high_severity",
+            "tests/unit/domain/test_closure.py::test_with_the_tier_off_a_model_never_closes_alone",
+            "tests/unit/domain/test_closure.py::"
+            "test_critical_never_closes_at_any_tier_and_high_only_on_the_models_word_at_the_tier",
+            "tests/unit/domain/test_closure.py::test_never_close_classes_never_close_on_the_models_word",
+            "tests/unit/domain/test_closure.py::test_each_condition_alone_blocks_a_model_led_close",
+            "tests/unit/domain/test_closure.py::test_approved_benign_evidence_never_closes_past_a_hard_flag",
+            "tests/unit/domain/test_closure.py::test_a_scanner_or_test_source_never_closes_a_never_close_class",
+            "tests/unit/domain/test_closure.py::"
+            "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes",
+            "tests/integration/engine/test_retro_reopen.py::test_a_reopen_failure_is_counted_not_swallowed",
+            "tests/integration/api/test_retro_reopen_api.py::"
+            "test_the_case_decision_settles_folded_alerts_in_its_own_transaction",
+            "tests/integration/engine/test_review_349.py::test_worker_delivers_the_case_decision_to_a_folded_alert",
+            "tests/integration/engine/test_review_349.py::test_needs_more_info_strands_a_folded_alert",
+            "tests/integration/api/test_retro_reopen_api.py::test_an_analyst_true_positive_reopens_related_model_closes",
+            "tests/integration/api/test_retro_reopen_api.py::"
+            "test_a_malicious_blind_audit_label_reopens_related_model_closes",
+            "tests/unit/domain/test_closure.py::test_review_f2_sentinel_credential_access_is_a_never_close_class",
+            "tests/unit/domain/test_noise_families.py::test_a_forged_or_borrowed_title_on_an_uncatalogued_rule_stays_unmapped",
+            "tests/unit/domain/test_noise_families.py::test_the_catalogue_lifts_only_unmapped_never_a_mapped_never_close_class",
+            "tests/unit/domain/test_noise_families.py::test_every_other_condition_still_blocks_a_catalogued_rule",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_a_malicious_or_suspicious_model_verdict_on_a_catalogued_rule_still_escalates",
+            "tests/unit/domain/test_noise_families.py::test_recheck_a_wazuh_alert_without_a_readable_rule_never_closes",
+            "tests/unit/domain/test_noise_families.py::"
+            "test_review_h1_authentication_failures_are_credential_access_whatever_their_mapping",
+            "tests/integration/engine/test_model_closure.py::test_the_tenant_tier_decides_whether_the_models_close",
+            "tests/integration/engine/test_model_closure.py::"
+            "test_catalogued_noise_is_named_and_an_unreadable_wazuh_rule_does_not_close",
+            "tests/integration/eval/test_adversarial_v2_eval.py::test_model_led_closure_on_closes_only_what_policy_v3_allows",
             "tests/integration/e2e/test_llm_safety.py::test_injected_benign_instructions_never_close_an_alert",
             "tests/unit/agents/test_title_camouflage.py::"
             "test_the_title_camouflage_items_get_no_benign_evidence_and_never_close_on_rules",
             "tests/unit/agents/test_title_camouflage.py::test_attacker_named_text_is_never_benign_evidence",
+            "tests/unit/core/test_verdict_cache_replay.py::test_analyst_oracle_replay_closes_no_malicious_alert",
+            "tests/unit/core/test_verdict_cache_replay.py::test_each_collision_no_longer_closes",
+            "tests/unit/core/test_verdict_cache.py::test_one_analyst_is_not_enough_two_different_ones_are",
+            "tests/unit/domain/test_verdict_key.py::test_never_close_classes_get_no_key",
+            "tests/unit/domain/test_verdict_key.py::test_context_alone_never_makes_a_key",
+            "tests/unit/domain/test_verdict_key_review.py::test_a_real_sql_injection_does_not_inherit_a_false_positives_verdict",
+            "tests/unit/core/test_gate.py::test_a_fingerprint_suggestion_never_closes_even_enabled_again_by_an_admin",
+            "tests/unit/domain/test_verdict_key.py::test_attacker_writable_differences_never_share_a_key",
+            "tests/unit/domain/test_verdict_key_review.py::"
+            "test_a_malicious_scheduled_task_does_not_inherit_a_benign_tasks_verdict",
+            "tests/unit/domain/test_verdict_key_review.py::test_a_payload_appended_past_512_characters_changes_the_key",
+            "tests/integration/api/test_revocation.py::"
+            "test_a_true_positive_decision_disables_matching_rules_and_tombstones_the_cache",
+            "tests/integration/engine/test_engine.py::test_plan_response_and_the_malicious_close_revoke_the_benign_learning",
+            "tests/integration/db/test_migrations.py::"
+            "test_0016_disables_fingerprint_suggestions_and_audits_each_in_its_chain",
+            "tests/unit/core/test_verdict_cache.py::test_a_threat_blocks_the_key_and_its_fingerprint_for_the_window",
+            "tests/unit/core/test_verdict_cache.py::test_entries_of_the_fingerprint_keyed_cache_are_never_read",
+            "tests/integration/eval/test_oracle_corpus_v1.py::test_the_oracle_closes_no_attack_on_corpus_v1",
+            "tests/integration/services/test_review.py::"
+            "test_a_confirmed_threat_disables_the_suppression_rules_that_would_close_it",
         ),
         checks=("routing_policy",),
         metric="high_severity_auto_closed_benign",

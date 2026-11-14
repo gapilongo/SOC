@@ -14,7 +14,8 @@ from uuid import UUID, uuid4
 import pytest
 
 from lg_sotf.core.verdict_cache import VerdictCache
-from lg_sotf.db.repos import Repositories
+from lg_sotf.db.repos import Alert, Repositories
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.services.review import ReviewService
 from tests.integration.db._support import TENANT_A
 from tests.integration.e2e._support import Stack, eventually, running
@@ -38,6 +39,11 @@ async def _status_is(stack: Stack, alert_id: str, *statuses: str) -> bool:
     return await stack.run_status(TENANT_A, alert_id) in statuses
 
 
+async def _learned(verdicts: VerdictCache, alert: Alert) -> List[Dict[str, Any]]:
+    """The analyst-benign decisions the verdict cache holds for the alert's verdict key."""
+    return list((await verdicts.get(TENANT_A, verdict_key_of(alert)) or {}).get("decisions", []))
+
+
 async def _user(repos: Repositories, role: str) -> UUID:
     return (await repos.users.create(TENANT_A, f"{role}-{uuid4().hex[:8]}@example.com", role)).id
 
@@ -51,7 +57,8 @@ async def test_benign_group_decision_does_not_close_or_learn_a_different_attache
     review = ReviewService(repos, stack.settings, stack.events)
     verdicts = VerdictCache(stack.redis, stack.settings.redis.key_prefix)
 
-    noisy = event("n1", "Possible C2 beacon from workstation", "medium", hosts=["ws-042"], ips=["185.220.101.44"])
+    noisy = event("n1", "Possible C2 beacon from workstation", "medium", hosts=["ws-042"], ips=["185.220.101.44"],
+                  processes=["c:\\program files\\agent\\agent.exe"])
     threat = event("m1", "Possible C2 beacon to rare domain", "high", hosts=["ws-042"], ips=["45.9.148.3"])
     r1 = await stack.ingest(TENANT_A, "api", [noisy])
     r2 = await stack.ingest(TENANT_A, "api", [threat])
@@ -90,9 +97,9 @@ async def test_benign_group_decision_does_not_close_or_learn_a_different_attache
         closed1 = await repos.alerts.get(TENANT_A, a1)
         assert (closed1.status, closed1.disposition) == ("closed", "benign")
 
-        # Only the reviewed alert's fingerprint is learned as benign.
-        assert await verdicts.get(TENANT_A, alert1.fingerprint) is not None
-        assert await verdicts.get(TENANT_A, alert2.fingerprint) is None
+        # Only the reviewed alert's verdict key is learned as benign.
+        assert len(await _learned(verdicts, alert1)) == 1
+        assert await _learned(verdicts, alert2) == []
 
         # A recurrence of the attached alert's detection is investigated, not closed at the gate.
         r3 = await stack.ingest(TENANT_A, "api", [{**threat, "source_alert_id": "m2"}])
@@ -118,7 +125,7 @@ async def test_benign_group_decision_does_not_close_or_learn_a_different_attache
                                     "group_decision": "false_positive", "reason": "different_fingerprint"}) in timeline
     decisions = [d for kind, d in timeline if kind == "analyst.decision"]
     assert {"decision": "true_positive", "escalation_id": own.id} in decisions
-    assert await verdicts.get(TENANT_A, alert2.fingerprint) is None
+    assert await _learned(verdicts, alert2) == []
     assert (await repos.audit.verify_chain(TENANT_A)).ok
 
 

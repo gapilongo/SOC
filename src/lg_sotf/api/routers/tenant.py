@@ -2,8 +2,9 @@
 """``/tenant/settings`` (admin): the tenant's policy sections.
 
 Autonomy, protected assets, LLM budget, review policy, tool keys, retention,
-sign-in security, reporting assumptions, blind audit sampling, phishing context
-and the triage context (the tenant's known vulnerability scanners).
+sign-in security, reporting assumptions, blind audit sampling, phishing context,
+the triage context (the tenant's known vulnerability scanners) and the
+model-led closure tier.
 
 ``POST /tenant/llm/test`` (admin) sends a tiny structured probe to the fast
 and deep model tiers and reports provider, model, latency and a sanitized
@@ -38,6 +39,11 @@ and the ``triage`` section (``known_scanners``: host names, IP addresses or
 CIDR ranges) with :class:`~lg_sotf.domain.benign_evidence.TriageSettings`;
 problems come back as 422 with ``details``.
 
+``ai_closure.tier`` (``off``, the default, or ``auto_full_audit``) lets the
+models close a low or medium alert on their own under the conditions of
+:mod:`lg_sotf.domain.closure`. Like every key here it is changed only by a
+tenant admin outside an MSSP grant, and the audit event records the tier set.
+
 ``retention`` (``alerts_days``, ``indicators_days``) merges key by key and
 must stay within the install's ``retention.tenant_min_days`` ..
 ``retention.tenant_max_days``; responses carry those bounds as
@@ -69,6 +75,7 @@ from lg_sotf.api.schemas import (
 from lg_sotf.audit.logger import AuditLogger
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.db.repos import LLMUsageDelta, Tenant
+from lg_sotf.domain import closure
 from lg_sotf.domain.benign_evidence import validate_triage_settings
 from lg_sotf.domain.connectors import ConnectorConfigError
 from lg_sotf.domain.phishing import validate_phishing_settings
@@ -113,6 +120,7 @@ POLICY_SECTIONS: Dict[str, Type[BaseModel]] = {"reporting": ReportingPolicy, "bl
 REPLACED_SECTIONS: Dict[str, Callable[[Any], Dict[str, Any]]] = {
     "phishing": validate_phishing_settings,
     "triage": validate_triage_settings,
+    closure.SETTING: closure.validate_ai_closure_settings,
 }
 CIPHERTEXT_SUFFIX = "_ciphertext"
 MAX_TOOL_PROVIDERS = 32

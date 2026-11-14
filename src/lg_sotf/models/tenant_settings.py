@@ -48,6 +48,8 @@ class TenantSettingsDoc(TypedDict, total=False):
     phishing: Dict[str, Any]
     #: Triage context (``known_scanners``; lg_sotf.domain.benign_evidence).
     triage: Dict[str, Any]
+    #: Model-led closure autonomy tier (``{"tier": "off" | "auto_full_audit"}``; lg_sotf.domain.closure).
+    ai_closure: Dict[str, Any]
     #: Set when the tenant's data was erased (compliance.tenant_data); never editable.
     erased_at: str
 
@@ -71,11 +73,13 @@ EDITABLE_KEYS: FrozenSet[str] = frozenset(
         "blind_audit",
         "phishing",
         "triage",
+        "ai_closure",
     }
 )
 
 #: The policy keys a new tenant copies whole from another tenant (``copy_settings_from``).
-#: Never "phishing": its brands, executives and mail servers identify the customer.
+#: Never "phishing": its brands, executives and mail servers identify the customer. Never "ai_closure":
+#: each tenant opts in to model-led closure itself.
 COPIED_KEYS: Tuple[str, ...] = (
     "autonomy", "review", LLM_BUDGET_SETTING, "retention", "reporting", "blind_audit",
 )

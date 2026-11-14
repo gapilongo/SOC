@@ -1,4 +1,4 @@
-"""Audited suppression-rule changes: create, update and delete.
+"""Audited suppression-rule changes: create, update, delete, and disabling the rules a threat matches.
 
 Each function runs the change and its audit entry in one ``db.tenant_tx``,
 so an audit failure rolls the change back. Rule validation and the
@@ -9,11 +9,13 @@ so an audit failure rolls the change back. Rule validation and the
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Iterable, List, Mapping, Optional
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor, AuditLogger, acting_under_grant, written_under_grant
 from lg_sotf.db.repos import Repositories, SuppressionRule
+from lg_sotf.domain.suppression import matching_rules
+from lg_sotf.security.shadow import egress, sink
 
 RESOURCE = "suppression_rule"
 MAX_AUDITED_FIELDS = 20
@@ -100,3 +102,35 @@ async def delete_rule(repos: Repositories, audit: AuditLogger, tenant_id: str, a
             conn=conn,
         )
     return True
+
+
+
+@egress("suppression_rule", sink(lambda a: []))
+async def disable_rules_matching(
+    repos: Repositories, audit: AuditLogger, tenant_id: str, view: Mapping[str, Any], *, actor: Actor, alert_id: str
+) -> List[str]:
+    """A threat was confirmed on the alert ``view`` shows: disable every active rule that would close it.
+
+    A rule counts when it matches the alert at its own severity or at the
+    lowest one (a suggestion bounded to low severities still closes the
+    attack's quieter repeats). Each rule is disabled and audited
+    ``suppression.revoked`` (with the alert id, never the alert's values) in
+    one transaction; returns the rule ids.
+    """
+    rules = matching_rules(await repos.suppressions.list_active(tenant_id), [view, {**view, "severity": "info"}])
+    if not rules:
+        return []
+    async with repos.db.tenant_tx(tenant_id) as conn:
+        for rule in rules:
+            await repos.suppressions.update(tenant_id, rule.id, enabled=False, conn=conn)
+            await audit.record(
+                tenant_id,
+                "suppression.revoked",
+                RESOURCE,
+                rule.id,
+                actor_type=actor.type,
+                actor_id=actor.id,
+                details={"alert_id": alert_id, "reason": "threat_confirmed"},
+                conn=conn,
+            )
+    return [rule.id for rule in rules]

@@ -37,7 +37,9 @@ async def test_an_escalation_records_its_routing_code_band_and_author(
     assert routing["code"] in ESCALATION_CODES
     band = review_band(routing["code"], routing["confidence"], RoutingThresholds.from_settings(engine.settings.routing))
     assert routing["band"] == ({"min": band[0], "max": band[1]} if band else None)
-    assert routing["confidence"] == escalation.summary["confidence"]
+    # FIX-1: the routing records the score the grey zone was tested on, the analysis threat score (every medium
+    # alert is analysed); the summary's confidence stays the triage confidence.
+    assert routing["confidence"] == escalation.summary["threat_score"] is not None
     assert escalation.summary["llm_used"] in (True, False, None)
 
     analysis = (await repos.alerts.get(TENANT_A, alert_id)).summary.get("analysis") or {}

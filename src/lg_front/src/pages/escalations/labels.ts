@@ -54,9 +54,9 @@ export function routingSentence(value: unknown): string | null {
   switch (routing.code) {
     case 'grey_zone':
       if (conf && routing.band) {
-        return `Escalated because triage confidence ${conf} is inside the review band (${Math.round(routing.band.min)}–${Math.round(routing.band.max)}%).`;
+        return `Escalated because the assessed threat ${conf} is inside the review band (${Math.round(routing.band.min)}–${Math.round(routing.band.max)}%).`;
       }
-      return conf ? `Escalated because triage confidence ${conf} is in the grey zone.` : 'Escalated because triage confidence is in the grey zone.';
+      return conf ? `Escalated because the assessed threat ${conf} is in the grey zone.` : 'Escalated because the assessed threat is in the grey zone.';
     case 'false_positive_review':
       return 'Escalated to confirm a likely false positive before it is closed.';
     case 'inconclusive':

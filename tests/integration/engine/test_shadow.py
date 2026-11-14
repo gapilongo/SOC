@@ -28,6 +28,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry, enqueue_on
 from lg_sotf.domain.events import publish_event
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.ticketing import JiraClient, TicketDraft
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.net.egress import egress_policy
@@ -137,7 +138,7 @@ async def test_shadow_no_side_effects(
     alert = await repos.alerts.get(TENANT_A, alert_id)
     verdicts = engine.node_deps.verdicts
     await verdicts.put_analyst_benign(
-        TENANT_A, alert.fingerprint, decision="false_positive", alert_id="earlier", escalation_id=None
+        TENANT_A, verdict_key_of(alert), decision="false_positive", alert_id="earlier", escalation_id=None
     )
     network = forbid_network(monkeypatch)
     connector_calls = record_connector_calls(monkeypatch)
@@ -157,7 +158,7 @@ async def test_shadow_no_side_effects(
     assert connector_calls == [] and network == [] and events.events == []
     assert await pubsub.get_message(ignore_subscribe_messages=True, timeout=0.2) is None
     assert await redis_state(redis_client) == redis_before
-    assert await verdicts.get(TENANT_A, alert.fingerprint) is not None
+    assert await verdicts.get(TENANT_A, verdict_key_of(alert)) is not None
     # ...and no database row changed: alert, events, escalation, actions, outbox, audit, trace.
     after = await snapshot(db, alert_id)
     assert after["alert"] == before["alert"]
@@ -277,7 +278,7 @@ async def test_every_boundary_diverts_when_called_directly(
             await jira.create(TicketDraft(summary="probe", lines=[], severity="high", correlation="lgsotf-probe"))
         assert await engine.node_deps.responses.execute(TENANT_A, alert_id, [str(uuid4())]) == {}
         safe = ShadowSafeRedis(connection_pool=redis_client.connection_pool)
-        assert await safe.get(f"{prefix}:t:{TENANT_A}:verdict:fp-old") is not None
+        assert await safe.hgetall(verdicts.key(TENANT_A, "fp-old"))
         with pytest.raises(ShadowEgressRefused):
             await safe.set(f"{prefix}:probe", b"x")
         with pytest.raises(ShadowEgressRefused):

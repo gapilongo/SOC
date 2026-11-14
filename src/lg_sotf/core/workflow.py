@@ -61,10 +61,12 @@ from lg_sotf.llm import TokenBudget
 from lg_sotf.models.tenant_settings import token_budget
 from lg_sotf.models.vocabulary import Decision
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
+from lg_sotf.queue.producer import WorkQueue
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.hashing import indicator_hmac_key
 from lg_sotf.security.shadow import REFUSE, egress
 from lg_sotf.services.escalation import EscalationService
+from lg_sotf.services.folded import settle_folded
 from lg_sotf.services.response import Connector, ResponseService
 from lg_sotf.settings import Settings
 
@@ -189,6 +191,7 @@ async def build_node_deps(
         thresholds=RoutingThresholds.from_settings(settings.routing),
         events=events,
         budget=TokenBudget(redis, settings, usage_seed=repos.llm_usage.day_tokens),
+        queue=WorkQueue(redis, settings),
     )
 
 
@@ -377,7 +380,12 @@ class WorkflowEngine:
             if pending is None:
                 if self._unfinished(snapshot):
                     return await self._continue(graph, tenant_id, alert_id, snapshot, config)
-                if snapshot.values:
+                # An alert retro-reopen folded into this case has no run waiting: the decision settles it.
+                folded = data["type"] == "analyst_decision" and await settle_folded(
+                    self.repos, tenant_id, alert_id, escalation_id=data["escalation_id"],
+                    decision=data["decision"], decided_by=data["decided_by"],
+                )
+                if snapshot.values or folded:
                     alert = await self.repos.alerts.get(tenant_id, alert_id)
                     return RunOutcome("completed", alert.status, None)
                 raise InvalidResumePayload("there is no workflow run to resume for this alert")

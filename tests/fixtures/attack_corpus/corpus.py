@@ -25,10 +25,46 @@ from tests.fixtures.attack_corpus.catalog import (
     rule_block,
     technique_name,
 )
-from tests.fixtures.attack_corpus.fleet import MANAGER
+from tests.fixtures.attack_corpus.fleet import (
+    BASTION_IP,
+    DCS,
+    HELPDESK,
+    HOSTS,
+    LINUX_ADMINS,
+    LINUX_SERVERS,
+    MANAGER,
+    SCANNER_IP,
+    SCCM_SERVER,
+    SERVICE_ACCOUNTS,
+    WIN_ADMINS,
+    WIN_SERVERS,
+)
 from tests.fixtures.attack_corpus.scenarios import DAYS, START, Draft, Truth, generate
 
 NAME = "corpus_v1"
+TENANT_SETTINGS: Dict[str, Any] = {"triage": {"known_scanners": [SCANNER_IP]}}
+# What the estate's customer would tell its MSSP (fatigue step 1, docs/evaluation.md#declared-tenant-context):
+# people and accounts by role, the hosts automation and IT administration run from, the server patch window and
+# the scanner. Nothing per alert, nothing an attacker's activity would be excluded by: a fact, not a verdict.
+TENANT_CONTEXT: Dict[str, Any] = {
+    "description": "IT administration, helpdesk, automation, the server patch window and the authorised scanner, "
+                   "as the customer declares them.",
+    "admin_accounts": [*LINUX_ADMINS, *WIN_ADMINS],
+    "admin_groups": ["Domain Admins", "Administrators"],
+    "helpdesk_accounts": list(HELPDESK),
+    "automation_accounts": ["ansible", "deploy", "backup", "svc_idm", SERVICE_ACCOUNTS["sccm"],
+                            SERVICE_ACCOUNTS["backup"], SERVICE_ACCOUNTS["monitor"]],
+    "automation_hosts": ["build-01", "backup-01", "mon-01", SCCM_SERVER, "SRV-BKP-01"],
+    "jump_hosts": [
+        {"host": "IT-WS-01", "ips": [HOSTS["IT-WS-01"].ip], "tools": ["psexec", "rdp", "powershell"]},
+        {"host": "bastion-01", "ips": [BASTION_IP], "tools": ["ssh"]},
+    ],
+    "patch_windows": [
+        {"name": "servers-nightly", "start": "01:00", "end": "05:00",
+         "hosts": sorted(h.name for h in (*LINUX_SERVERS, HOSTS["bastion-01"], *WIN_SERVERS, *DCS))},
+    ],
+    "scanners": [SCANNER_IP],
+}
 VERSION = 1
 SEED = 20261108
 MALICIOUS = 208
@@ -174,6 +210,10 @@ def meta(alerts: Sequence[Mapping[str, Any]], labels: Mapping[str, Truth]) -> Di
                       "window": [START.date().isoformat(), f"{DAYS} days"]},
         "sources": {"wazuh_ruleset": WAZUH_TAG, "attack": ATTACK_VERSION, "atomic_red_team": ART_COMMIT},
         "composition": composition(alerts, labels),
+        # What the estate's tenant would configure (AI-E1.9): its authorised vulnerability scanner.
+        "tenant_settings": TENANT_SETTINGS,
+        # What the customer declares about its estate; measured by the evaluation, not applied (fatigue step 1).
+        "tenant_context": TENANT_CONTEXT,
     }
 
 

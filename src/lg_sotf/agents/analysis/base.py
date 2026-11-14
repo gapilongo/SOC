@@ -77,6 +77,7 @@ from lg_sotf.domain.routing import RoutingThresholds
 from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.llm.trace import observe
+from lg_sotf.models.alert import model_view
 from lg_sotf.security.redaction import redact_text
 from lg_sotf.tools.enrichment import (
     EnrichmentResult,
@@ -474,7 +475,7 @@ def _prompt_block(
         "rule_threat_score": rule_score,
     }
     block: Dict[str, Any] = {
-        "alert": dict(alert),
+        "alert": model_view(alert),
         "background": background,
         "history": history,
         "candidates": {cid: c.prompt_view() for cid, c in candidates.items()},
