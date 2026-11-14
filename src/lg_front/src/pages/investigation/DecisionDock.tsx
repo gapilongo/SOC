@@ -34,11 +34,13 @@ export function effectOf(verdict: Verdict | null, planned: readonly PreviewActio
   if (verdict === null) return 'Choose a verdict to see what it sets in motion.';
   if (verdict === 'benign_positive') return 'Closes it as real activity that is expected for this customer.';
   if (verdict === 'false_positive') return 'Closes it as not malicious and feeds the verdict back to triage.';
-  const ticked = preapprovedEntries(planned, preapproved).length;
-  const automatic = planned.filter((a) => a.without_preapproval === 'automatic').length;
-  const waiting = planned.filter((a) => a.without_preapproval === 'awaiting_approval').length - ticked;
   if (planned.length === 0) return 'Marks it malicious and plans the response. A note is required.';
-  const now = ticked + automatic;
+  // Each action is counted once: ticked (whatever it would do otherwise), else by what happens without a pre-approval.
+  const tickedEntries = new Set(preapprovedEntries(planned, preapproved));
+  const isTicked = (a: PreviewActionOut) => tickedEntries.has(a.approval_entry);
+  const ticked = planned.filter(isTicked).length;
+  const now = planned.filter((a) => isTicked(a) || a.without_preapproval === 'automatic').length;
+  const waiting = planned.filter((a) => !isTicked(a) && a.without_preapproval === 'awaiting_approval').length;
   const parts = [now > 0 ? `runs ${plural(now, 'action', 'actions')} now (${ticked} ticked)` : 'runs no action now'];
   if (waiting > 0) parts.push(`sends ${plural(waiting, 'other', 'others')} to Approvals`);
   return `Marks it malicious, ${parts.join(' and ')}. A note is required.`;
@@ -83,6 +85,8 @@ export function DecisionDock({
   const [noteError, setNoteError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set at once, before React re-renders: a second Ctrl+Enter must not send the decision twice.
+  const sending = useRef(false);
 
   const locked = blockedReason !== null;
 
@@ -93,7 +97,7 @@ export function DecisionDock({
   };
 
   const record = async () => {
-    if (locked || busy) return;
+    if (locked || sending.current) return;
     if (claim) {
       setNotice(`${claim.label} first: a decision is recorded under the name of the analyst who holds the escalation.`);
       return;
@@ -109,6 +113,7 @@ export function DecisionDock({
     }
     setNoteError(null);
     setNotice(null);
+    sending.current = true;
     setBusy(true);
     try {
       await send(
@@ -122,12 +127,15 @@ export function DecisionDock({
         onDecided,
       );
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
 
   useKeydown((e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      // Not while the key is held, not when something else handled it, and not from inside a dialog.
+      if (e.repeat || e.defaultPrevented || (e.target instanceof Element && e.target.closest('[role="dialog"]'))) return;
       e.preventDefault();
       void record();
       return;

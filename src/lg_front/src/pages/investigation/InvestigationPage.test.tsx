@@ -427,6 +427,35 @@ describe('investigation view: the decision bar', () => {
     expect(screen.queryByRole('region', { name: 'Your decision' })).not.toBeInTheDocument();
   });
 
+  it('records once when Ctrl+Enter is pressed again before the answer, and not from inside a dialog', async () => {
+    const user = userEvent.setup();
+    let release: (() => void) | undefined;
+    const { calls, container } = await renderPage({
+      handler: (m, p) =>
+        m === 'POST' && p.endsWith('/decision')
+          ? new Promise<void>((resolve) => (release = resolve)).then(() => ({ escalation: investigationEscalation({ status: 'decided' }), approved_actions: [], resumed_alert_ids: [ALERT_ID], own_review_alert_ids: [], resumes_enqueued: 1, resumes_failed: 0 }))
+          : undefined,
+    });
+    const sent = () => calls.filter((c) => c.method === 'POST' && c.path.endsWith('/decision'));
+    await user.keyboard('f');
+    // A shortcut pressed inside a dialog belongs to the dialog.
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.innerHTML = '<button type="button">inside</button>';
+    container.appendChild(dialog);
+    (dialog.firstElementChild as HTMLElement).focus();
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    expect(sent()).toHaveLength(0);
+    dialog.remove();
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+    await waitFor(() => expect(sent()).toHaveLength(1));
+    release?.();
+    await screen.findByText('Decision recorded; 1 alert(s) resumed.');
+    expect(sent()).toHaveLength(1);
+    expect(dock().queryByText('This escalation changed')).not.toBeInTheDocument();
+  });
+
   it('single-key shortcuts can be switched off for the tab, without browser storage; Ctrl+Enter still works', async () => {
     const user = userEvent.setup();
     const { unmount } = await renderPage();
@@ -565,6 +594,10 @@ describe('investigation view: rules and helpers', () => {
     expect(effectOf('true_positive', plan, new Set(['block_ip:203.0.113.50']))).toBe('Marks it malicious, runs 2 actions now (1 ticked). A note is required.');
     expect(effectOf('true_positive', plan, new Set())).toBe('Marks it malicious, runs 1 action now (0 ticked) and sends 1 other to Approvals. A note is required.');
     expect(effectOf(null, plan, new Set())).toBe('Choose a verdict to see what it sets in motion.');
+    // A ticked action is counted once, whatever it would do without the tick: the count of the others never goes negative.
+    const tickable = [plannedAction('block_ip', '203.0.113.50', { without_preapproval: 'automatic' }), plannedAction('disable_user', 'u-7')];
+    expect(effectOf('true_positive', tickable, new Set(['block_ip:203.0.113.50']))).toBe('Marks it malicious, runs 1 action now (1 ticked) and sends 1 other to Approvals. A note is required.');
+    expect(effectOf('true_positive', tickable, new Set(tickable.map((a) => a.approval_entry)))).toBe('Marks it malicious, runs 2 actions now (2 ticked). A note is required.');
   });
 
   it('counts the claims that are backed, rejected and bare', () => {
