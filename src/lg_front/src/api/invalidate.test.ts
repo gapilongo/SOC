@@ -27,6 +27,7 @@ const EXPECTED: Array<[string, (client: QueryClient) => Promise<void>, unknown[]
     [['blind-audit'], ['report-blind-audit'], ['escalations'], ['dashboard']],
   ],
   ['afterBlindAuditSample', policies.afterBlindAuditSample, [['blind-audit'], ['report-blind-audit']]],
+  ['afterPovRunChange', policies.afterPovRunChange, [['pov']]],
   ['afterSourceChange', policies.afterSourceChange, [['sources']]],
   ['afterSuppressionChange', policies.afterSuppressionChange, [['suppressions']]],
   ['afterIntegrationChange', policies.afterIntegrationChange, [['integrations']]],

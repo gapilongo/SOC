@@ -89,6 +89,10 @@ import type {
   OnboardingStepOut,
   Page,
   PlatformEscalationOut,
+  PovBacktestOut,
+  PovRunIn,
+  PovRunOut,
+  PovShadowOut,
   PreviewActionOut,
   PreviewConnectorOut,
   PreviewGuardrailOut,
@@ -216,6 +220,9 @@ export interface ResponseContract {
   OnboardingStatusOut: Response<Wire<Schemas['OnboardingStatusOut']>, OnboardingStatusOut>;
   OnboardingStepOut: Response<Wire<Schemas['OnboardingStepOut']>, OnboardingStepOut>;
   PlatformEscalationOut: Response<Wire<Schemas['PlatformEscalationOut']>, PlatformEscalationOut>;
+  PovBacktestOut: Response<Wire<Schemas['PovBacktestOut']>, PovBacktestOut>;
+  PovRunOut: Response<Wire<Schemas['PovRunOut']>, PovRunOut>;
+  PovShadowOut: Response<Wire<Schemas['PovShadowOut']>, PovShadowOut>;
   PreviewActionOut: Response<Wire<Schemas['PreviewActionOut']>, PreviewActionOut>;
   PreviewConnectorOut: Response<Wire<Schemas['PreviewConnectorOut']>, PreviewConnectorOut>;
   PreviewGuardrailOut: Response<Wire<Schemas['PreviewGuardrailOut']>, PreviewGuardrailOut>;
@@ -264,6 +271,7 @@ export interface ResponseContract {
   Page_BlindAuditItemOut: Response<Wire<Schemas['PageOut_BlindAuditItemOut_']>, Page<BlindAuditItemOut>>;
   Page_BlindAuditRunSummary: Response<Wire<Schemas['PageOut_BlindAuditRunSummary_']>, Page<BlindAuditRunSummary>>;
   Page_EscalationOut: Response<Wire<Schemas['PageOut_EscalationOut_']>, Page<EscalationOut>>;
+  Page_PovRunOut: Response<Wire<Schemas['PageOut_PovRunOut_']>, Page<PovRunOut>>;
   Page_PlatformEscalationOut: Response<Wire<Schemas['PageOut_PlatformEscalationOut_']>, Page<PlatformEscalationOut>>;
 }
 
@@ -278,6 +286,7 @@ export interface RequestContract {
   FeedbackIn: Request<FeedbackIn, Schemas['FeedbackIn']>;
   IntegrationCreateIn: Request<IntegrationCreateIn, Schemas['IntegrationCreateIn']>;
   IntegrationUpdateIn: Request<IntegrationUpdateIn, Schemas['IntegrationUpdateIn']>;
+  PovRunIn: Request<PovRunIn, Schemas['PovRunIn']>;
   ProposeSuppressionIn: Request<ProposeSuppressionIn, Schemas['ProposeSuppressionIn']>;
   SetupIn: Request<SetupIn, Schemas['SetupIn']>;
   WazuhCheckIn: Request<WazuhCheckIn, Schemas['WazuhCheckIn']>;

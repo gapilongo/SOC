@@ -230,7 +230,7 @@ async def test_minimal_bodies_reach_the_handlers_of_authorised_routes(api: ApiHa
         "source_id": "s1", "rule_id": "r1", "integration_id": "00000000-0000-0000-0000-000000000001",
         "user_id": "00000000-0000-0000-0000-000000000001", "key_id": "00000000-0000-0000-0000-000000000001",
         "grant_id": "00000000-0000-0000-0000-000000000001", "tenant_id": TENANT_A, "run_id": "shr_" + "0" * 32,
-        "item_id": "00000000-0000-0000-0000-000000000001",
+        "item_id": "00000000-0000-0000-0000-000000000001", "pov_run_id": "00000000-0000-0000-0000-000000000001",
     }
     spec = api.app.openapi()
     masked: List[str] = []

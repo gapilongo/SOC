@@ -1574,3 +1574,52 @@ export interface BlindAuditReportOut {
   labels_by_organisation: OrganisationLabels[];
   notes: string[];
 }
+
+// --------------------------------------------------------------- proof of value
+
+/** `no_data`: no analyst-decided alert in the history window, so nothing was replayed. */
+export type PovBacktestStatus = 'pending' | 'running' | 'completed' | 'no_data' | 'failed';
+export type PovShadowStatus = 'scheduled' | 'running' | 'completed';
+/** The phase a run is in. */
+export type PovStatus = 'backtest' | 'shadow' | 'completed' | 'cancelled';
+
+export interface PovRunIn {
+  name: string;
+  /** History to replay: the alerts analysts decided in this many days before now (1 to 366, default 90). */
+  backtest_days?: number;
+  /** The shadow period: this many days of live alerts from now (1 to 90, default 14). */
+  shadow_days?: number;
+}
+
+/** The backtest: analyst-decided alerts of the history window replayed read-only. */
+export interface PovBacktestOut {
+  window_start: string;
+  window_end: string;
+  status: Open<PovBacktestStatus>;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string | null;
+  /** A completed backtest's evaluation report without its per-alert items; on the run's own read only. */
+  result?: JsonObject | null;
+}
+
+/** The shadow period: the run observes the live alerts of this window and changes none of them. */
+export interface PovShadowOut {
+  window_start: string;
+  window_end: string;
+  status: Open<PovShadowStatus>;
+  /** The tenant's reports over the period: API paths relative to the API prefix. */
+  reports: Record<string, string>;
+}
+
+export interface PovRunOut {
+  id: string;
+  name: string;
+  status: Open<PovStatus>;
+  backtest: PovBacktestOut;
+  shadow: PovShadowOut;
+  created_at: string;
+  created_by?: string | null;
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+}

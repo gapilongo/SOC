@@ -262,7 +262,7 @@ _HISTORY_SQL = """
 WITH final AS (
     SELECT DISTINCT ON (f.alert_id) f.alert_id, f.decision, f.created_at, f.id
     FROM analyst_feedback f
-    WHERE f.tenant_id = $1 AND f.created_at >= $2
+    WHERE f.tenant_id = $1 AND f.created_at >= $2 AND ($5::timestamptz IS NULL OR f.created_at < $5)
     ORDER BY f.alert_id, (f.decision = 'needs_more_info'), f.created_at DESC, f.id DESC
 )
 SELECT a.*, fin.decision AS analyst_decision, fin.created_at AS decided_at
@@ -457,14 +457,19 @@ class ReportsRepo(Repository):
         return None if row is None else DetectionRow.model_validate(dict(row))
 
     async def decided_alerts(
-        self, tenant_id: str, since: datetime, *, limit: int = 1_000, conn: Optional[Connection] = None
+        self, tenant_id: str, since: datetime, *, until: Optional[datetime] = None, limit: int = 1_000,
+        conn: Optional[Connection] = None,
     ) -> List[DecidedAlert]:
-        """Alerts analysts decided since ``since`` (final decision other than needs_more_info), oldest first."""
+        """Alerts analysts decided since ``since`` (final decision other than needs_more_info), oldest first.
+
+        With ``until``, only the feedback recorded before it counts (a proof-of-value run's history window).
+        """
         require_aware(since, "since")
+        require_aware(until, "until")
         if not 1 <= limit <= MAX_HISTORY_ALERTS:
             raise ValueError(f"limit must be between 1 and {MAX_HISTORY_ALERTS}")
         async with self._tenant(tenant_id, conn) as c:
-            rows = await c.fetch(_HISTORY_SQL, tenant_id, since, limit, SAMPLE_SOURCE_ID)
+            rows = await c.fetch(_HISTORY_SQL, tenant_id, since, limit, SAMPLE_SOURCE_ID, until)
         out: List[DecidedAlert] = []
         for r in rows:
             data = dict(r)

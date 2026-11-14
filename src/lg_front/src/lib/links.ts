@@ -31,13 +31,21 @@ export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
   return `/escalations/${encodeURIComponent(e.id)}`;
 }
 
-/** Alerts with these filters (`severity`, `status`, `from` ...). */
-/** The proof-of-value page, where the first-run setup ends. */
+/** The proof-of-value page: the runs and their status. */
 export const POV_HREF = '/pov';
+
+/** The proof-of-value wizard, where the first-run setup ends. */
+export const POV_WIZARD_HREF = '/pov/new';
 
 /** The guided Wazuh setup (checks first, then the source is saved). */
 export const WAZUH_SETUP_HREF = '/sources/wazuh';
 
+/** The Reports page over a window of whole UTC days (`YYYY-MM-DD`, both included). */
+export function reportsHref(range: { from: string; to: string }): string {
+  return withQuery('/reports', new URLSearchParams(range));
+}
+
+/** Alerts with these filters (`severity`, `status`, `from` ...). */
 export function alertsHref(filters: Record<string, string | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value) params.append(key, value);

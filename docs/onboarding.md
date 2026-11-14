@@ -41,8 +41,9 @@ Overview shows **Finish setting up LG-SOTF** with a **Start setup** link to
 4. **Sample alerts**: sends the sample set (below) and waits until the first
    one has a verdict: it is closed, or waits for an analyst or an approval.
 5. **Finish**: a summary; **Finish setup** lands on the Overview with a
-   **Start a proof of value** link (`/pov`, a placeholder until the
-   proof-of-value run ships).
+   **Start a proof of value** link, which opens the proof-of-value wizard
+   (`/pov/new`: the history to replay, the shadow period, review and start;
+   see [pov.md](pov.md)).
 
 **Skip setup** marks setup done without the remaining steps. Every step can be
 run again later from `/setup`.
