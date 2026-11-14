@@ -31,6 +31,11 @@ export function escalationHref(e: Pick<EscalationOut, 'id'>): string {
   return `/escalations/${encodeURIComponent(e.id)}`;
 }
 
+/** Where one alert opens in full: its investigation view. */
+export function alertHref(alertId: string): string {
+  return `/alerts/${encodeURIComponent(alertId)}`;
+}
+
 /** The proof-of-value page: the runs and their status. */
 export const POV_HREF = '/pov';
 

@@ -37,6 +37,7 @@ import type { NavCount, NavGroup, NavItem } from './shell/nav';
 // One chunk per route.
 const OverviewPage = lazy(() => import('../pages/overview/OverviewPage'));
 const AlertsPage = lazy(() => import('../pages/alerts/AlertsPage'));
+const InvestigationPage = lazy(() => import('../pages/investigation/InvestigationPage'));
 const EscalationsPage = lazy(() => import('../pages/escalations/EscalationsPage'));
 const DecisionPage = lazy(() => import('../pages/escalations/DecisionPage'));
 const ApprovalsPage = lazy(() => import('../pages/approvals/ApprovalsPage'));
@@ -114,6 +115,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
   // The page's name before it became Approvals: old links and bookmarks redirect.
   { path: '/actions', Page: LegacyActionsRedirect, allowed: can.view },
   { path: '/alerts', Page: AlertsPage, allowed: can.view, nav: { group: 'operate', label: 'Alerts', icon: Bell } },
+  // One alert in full: the investigation view (the list's side panel links to it).
+  { path: '/alerts/:id', Page: InvestigationPage, allowed: can.view },
   { path: '/suppressions', Page: SuppressionsPage, allowed: can.view, nav: { group: 'operate', label: 'Suppressions', icon: Filter } },
   // Labelling is a person's decision, like deciding an escalation.
   { path: '/blind-audit', Page: BlindAuditPage, allowed: can.decide, nav: { group: 'operate', label: 'Blind audit', icon: ClipboardCheck } },

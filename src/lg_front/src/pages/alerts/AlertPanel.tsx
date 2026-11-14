@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useEffect, useId, useRef, type KeyboardEvent } from 'react';
+import { Link } from 'react-router-dom';
 
 import { endpoints } from '../../api/endpoints';
 import { qk } from '../../api/queryKeys';
@@ -9,6 +10,7 @@ import { can } from '../../auth/roles';
 import { statusTone } from '../../components/Badge';
 import { Banner, Button, ErrorMessage, LoadingState, SeverityTag, StatePill } from '../../components/ui';
 import { formatDateTime, formatRelative } from '../../lib/format';
+import { alertHref } from '../../lib/links';
 import { statusWords } from './alertSummary';
 import { AlertSections, ReprocessButton } from './AlertSections';
 
@@ -84,6 +86,10 @@ export function AlertSidePanel({ alertId, onClose }: { alertId: string; onClose:
               </time>
             </p>
           )}
+          {/* The investigation view: the same alert on a full page. */}
+          <Link to={alertHref(alertId)} className="inline-block text-xs text-link underline hover:text-link-hover">
+            Open full page
+          </Link>
         </div>
         <Button size="sm" aria-label="Close alert details" onClick={onClose} icon={<X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />} />
       </div>
