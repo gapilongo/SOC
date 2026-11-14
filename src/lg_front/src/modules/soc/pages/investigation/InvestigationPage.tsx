@@ -358,7 +358,7 @@ function Investigation({ alertId }: { alertId: string }) {
   const [blind, setBlind] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [preapproved, setPreapproved] = useState<Set<string>>(new Set());
-  const [singleKeys, setSingleKeys] = useSingleKeys();
+  const [singleKeys, setSingleKeys] = useSingleKeys(principal?.userId);
   const e = escalation.data;
   const claim = useClaim(e);
   const a = alert.data;

@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes, useLocation } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 
 import type { AlertDetailOut, AlertEventOut, DecisionIn, EscalationOut, InvestigationOut, ProposedActionOut, ResponsePreviewOut } from '../../api/types';
 import { apiError, fakeApi, renderWithSession, signedInSession } from '../../../../test/helpers';
@@ -107,6 +107,9 @@ const decisionBody = (calls: Array<{ method: string; path: string; body?: unknow
   calls.find((c) => c.method === 'POST' && c.path.endsWith('/decision'))?.body as DecisionIn | undefined;
 const section = (name: string | RegExp) => within(screen.getByRole('region', { name }));
 const paths = (calls: Array<{ path: string }>) => calls.map((c) => c.path);
+
+// The single-key switch is a stored preference: each test starts without one.
+beforeEach(() => window.localStorage.clear());
 
 describe('investigation view on the read model: an escalated alert', () => {
   it('opens with the outcome and the verdict as a sentence, why it is with a person and what blocks an AI close', async () => {
@@ -578,7 +581,7 @@ describe('investigation view: the decision bar', () => {
     expect(dock().queryByText('This escalation changed')).not.toBeInTheDocument();
   });
 
-  it('single-key shortcuts can be switched off for the tab, without browser storage; Ctrl+Enter still works', async () => {
+  it('single-key shortcuts can be switched off, a choice each user keeps; Ctrl+Enter still works', async () => {
     const user = userEvent.setup();
     const { unmount } = await renderPage();
     const toggle = dock().getByRole('button', { name: 'Single-key shortcuts: on' });
@@ -592,12 +595,19 @@ describe('investigation view: the decision bar', () => {
     expect(claimButton(1)).toHaveAttribute('aria-pressed', 'false');
     await user.keyboard('{Control>}{Enter}{/Control}');
     expect(effect()).toHaveTextContent('Choose a verdict first: T, B, F or N.');
-    expect(window.localStorage).toHaveLength(0);
+    // Stored for this user only, as a display preference.
+    expect(window.localStorage.getItem('lg-sotf.single-keys.u-1')).toBe('off');
+    expect(window.localStorage).toHaveLength(1);
     unmount();
-    // The next alert opened in the tab keeps the switch.
+    // Another user on the same browser has their own switch.
+    const other = await renderPage({ id: 'u-2', esc: investigationEscalation({ assigned_to: 'u-2' }) });
+    expect(dock().getByRole('button', { name: 'Single-key shortcuts: on' })).toBeInTheDocument();
+    other.unmount();
+    // The same user finds it off on the next alert, and can switch it back on.
     await renderPage();
     await user.click(dock().getByRole('button', { name: 'Single-key shortcuts: off' }));
     expect(dock().getByRole('button', { name: 'Single-key shortcuts: on' })).toBeInTheDocument();
+    expect(window.localStorage.getItem('lg-sotf.single-keys.u-1')).toBe('on');
     await user.keyboard('t');
     expect(verdictButton(/True positive/)).toHaveAttribute('aria-pressed', 'true');
   });

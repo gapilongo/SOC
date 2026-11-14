@@ -32,6 +32,9 @@
   analysis runs again and reads your note (once per alert by default), then
   the alert comes back to an analyst as a new escalation, and no response
   action runs. The bar asks for the note.
+- Decision bar: switching single-key shortcuts off (or on) is now kept for
+  you on this browser, with your other display preferences, instead of
+  lasting for the tab.
 - Investigation view: an entity chip (host, user, address, domain, hash)
   opens the alert list searched for that value. The search is the list's
   title search over the last 30 days; the API has no entity filter yet.
