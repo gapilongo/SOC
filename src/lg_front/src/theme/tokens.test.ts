@@ -94,7 +94,7 @@ const TINTS: Record<string, string[]> = {
   'tint-info': ['fg', 'body', 'secondary', 'link'],
 };
 
-/** Text and marks used on the observation surface (components/investigation/Observation.tsx). */
+/** Text and marks used on the observation surface (the investigation's Observation component). */
 const OBSERVED_TEXT = ['fg', 'body', 'secondary', 'muted', 'link'];
 const OBSERVED_GRAPHICS = ['control', 'focus'];
 

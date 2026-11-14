@@ -4764,7 +4764,8 @@
               "notify",
               "ticket_create",
               "ticket_update",
-              "test"
+              "test",
+              "email"
             ],
             "title": "Operation",
             "type": "string"

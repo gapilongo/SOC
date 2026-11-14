@@ -4,9 +4,9 @@ import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AlertOut, Page } from '../api/types';
+import type { AlertOut, Page } from '../modules/soc/api/types';
 import { RequireAuth } from '../components/Guards';
-import AlertsPage from '../pages/alerts/AlertsPage';
+import AlertsPage from '../modules/soc/pages/alerts/AlertsPage';
 import LoginPage from '../pages/Login';
 import { apiError, fakeApi, fakeTransport, renderWithSession, token } from '../test/helpers';
 import { bindQueryCacheToSession, identityKey } from './cacheBinding';

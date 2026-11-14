@@ -31,6 +31,7 @@ CONTRACT_METRICS = {
     # Integrations outbox and ticket sync (docs/integrations.md).
     "lgsotf_integration_deliveries_total": ("kind", "outcome"),
     "lgsotf_ticket_syncs_total": ("system", "outcome"),
+    "lgsotf_security_alerts_undelivered_total": ("event_type",),
 }
 FORBIDDEN_LABELS = {"tenant_id", "alert_id", "user_id", "request_id", "thread_id"}
 

@@ -20,7 +20,7 @@ beforeAll(() => {
 });
 
 /** The messages ESLint reports for a component whose root element has these attributes. */
-async function lint(attributes: string, file = 'src/pages/Probe.tsx'): Promise<string[]> {
+async function lint(attributes: string, file = 'src/modules/soc/pages/Probe.tsx'): Promise<string[]> {
   const code = `export function Probe() {\n  return <div ${attributes} />;\n}\n`;
   const [result] = await eslint.lintText(code, { filePath: join(ROOT, file) });
   return result.messages.map((m) => m.message);

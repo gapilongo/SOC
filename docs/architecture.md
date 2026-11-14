@@ -157,7 +157,7 @@ next two partitions ahead and drops expired ones.
 | `indicator_sightings` | `tenant_id`, `indicator_type`, `value_hash` (HMAC-SHA256 with per-install key), `value_display` (truncated, redacted), `alert_id`, `seen_at`. Index (`tenant_id`, `indicator_type`, `value_hash`, `seen_at DESC`). Correlation reads this instead of scanning JSONB |
 | `llm_usage_daily` | PK (`tenant_id`, `day`, `model`, `agent`); `calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_usd NUMERIC(12,6)`, `refusals`, `errors` (UPSERT) |
 | `integrations` | `id UUID` PK, `tenant_id`, `kind` (slack/teams/email/webhook/jira/servicenow), `name`, `enabled`, `config JSONB` (non-secret), `secret_ciphertext` (Fernet), `events TEXT[]`, `min_severity` (docs/integrations.md) |
-| `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
+| `notification_outbox` | `id UUID` PK, `tenant_id`, `integration_id`, `event_id`, `event_type`, `operation` (notify/ticket_create/ticket_update/test, or email: a break-glass alert mailed to one platform admin, the only rows without an `integration_id`), `dedupe_key` (UNIQUE per integration), `payload JSONB` (lg-sotf.event.v1 summary), `status` (pending/sent/failed/dead), `attempts`, `next_attempt_at`, `last_error`, `result`. Written in the transaction of the change it announces; delivered by the scheduler |
 | `external_tickets` | `id UUID` PK, `tenant_id`, `integration_id`, `alert_id`, `escalation_id` (UNIQUE per integration), `action_id`, `system`, `external_key`, `external_url`, `external_status`, `resolved`, `resolved_by`, `last_synced_at` |
 | `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
 | `shadow_effects` | Shadow-mode sink, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id` (`shadow/...`), `seq` (UNIQUE per run), `boundary`, `operation`, `outcome` (sunk/refused), `detail JSONB` (event and action types, action targets; size-capped). What a shadow run would have done (§8); no API reads it |
@@ -515,6 +515,7 @@ Everything else is per stack, on purpose:
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier,mode}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
+  `lgsotf_security_alerts_undelivered_total{event_type}`,
   `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed
   ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing
