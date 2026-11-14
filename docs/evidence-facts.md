@@ -18,8 +18,9 @@ JSON Schema 2020-12 with a SemVer version:
 | Examples | [`schemas/evidence-fact/examples/`](../schemas/evidence-fact/examples/), one or more per kind |
 | Python model | `lg_sotf.models.evidence_fact` (`parse_fact`, `EvidenceFact`) |
 
-Status: published, not yet produced. The investigation agents start emitting
-facts in a later release.
+Status: published. The [Wazuh evidence tools](#the-wazuh-evidence-tools)
+produce facts of the four kinds they cover; the investigation agents start
+calling them, and citing facts, in a later release.
 
 ## Shape
 
@@ -89,6 +90,115 @@ unknown, not "none". What an incomplete fact does show still counts: four
 accounts tried from one address is four accounts tried, whether or not the
 window had closed. In Python, `fact_is_complete(fact)` is true only for an
 explicit `true`.
+
+## The Wazuh evidence tools
+
+Four registered tools read what surrounds an alert on the tenant's own Wazuh
+indexer and answer with facts (`lg_sotf.tools.wazuh`). They are query
+templates: a caller gives typed, bounded values and never a query, a field
+or an index. They are not called by the analysis yet.
+
+| Tool | Parameters | Fact |
+|---|---|---|
+| `wazuh.host_activity` | `host`, `at`, `before_min` and `after_min` (0 to 60 each) | `host_activity`: the host's alerts in the window, counted by rule group and technique, and the 50 with the highest rule level |
+| `wazuh.logon_fanout` | `pivot` (`source_ip`, `source_host`, `target_user`, `target_host`), `value`, `at`, `before_min` (1 to 1440), `after_min` (0 to 60), `family` (`windows`, `sshd`) | `logon_fanout`: failures, successes, lockouts, distinct users, sources and hosts, who failed and who got in, and the seconds from the first failure to the first success after it. Always every outcome and every logon type of the pivot: a caller cannot narrow it |
+| `wazuh.process_lineage` | `host`, `process_guid` or `image`, `at`, `after_min` (0 to 30), `depth` (parents, 0 to 8), `child_depth` (1 to 4, default 2) | `process_lineage`: the process's parents, and what it started, down to what its children started. One fact per process that matches (at most 3) |
+| `wazuh.prevalence` | `kind` (`sha256`, `process_image`, `service_image_path`, `service_name`), `value`, `days` (1 to 30) | `prevalence`: on how many of the tenant's agents the value was seen, how often, first and last |
+
+A call returns the facts it observed and a typed outcome: `success`, `empty`
+(the search ran and matched nothing: there is no fact) or `failed`, with a
+fixed reason code. An indexer that is down, refuses the credentials, answers
+half a search that matched nothing, or holds no index for the source's
+pattern is `failed`, never `empty`. So is any answer but an HTTP 200, and a
+response that lacks an aggregation the search asked for. An empty or failed
+call is never evidence that something is benign.
+
+A fact is `complete` only when all of this holds; otherwise it is `false`,
+and so is the call's result:
+
+- the indexer finished every search: no timeout, not stopped at the
+  per-shard document limit, and every shard answered (a shard that is not
+  allocated is neither failed nor successful, and counts as not answered);
+- nothing the fact lists was cut: at most 50 alerts, 50 rule groups, 50
+  techniques, 50 users or sources, 50 started processes, and distinct counts
+  up to 1000;
+- the window had closed when it was read: its end is older than the source's
+  ingest lag (`max_event_lag_s` of the Wazuh source, 15 minutes by default).
+  An investigation that runs the moment an alert is raised therefore gets
+  incomplete facts for a window that reaches past the alert;
+- the index still held alerts as old as the window's start. A prevalence
+  fact's `window_start` is where the index's coverage actually starts;
+- for a process lineage: the process's own creation event was found, exactly
+  one process matched, and the walk up the parents was not cut. A walk that
+  used all `depth` look-ups while the oldest process found still names a
+  parent is cut: the fact carries a `truncated` redaction on `/value/chain`.
+
+**Name a process by its GUID whenever the alert carries one.** An image names
+every process of that image that started around the alert, and an attacker
+can start a decoy seconds before. Each match gets its own fact, and when
+there is more than one, none of them is complete: the tool cannot tell which
+is the alert's.
+
+What the tools read and how:
+
+- **The tenant's own source.** The indexer, the index pattern and the
+  credentials are those of the Wazuh source the alert came from; the tools
+  need the permission the pull source needs (`indices:data/read/search` on
+  the alert indices) and send only `POST /<index>/_search`. Only the scheme,
+  the host and the port of the source's `base_url` are used: for the tools,
+  a `base_url` with a path, a query or a fragment is refused
+  (`source_misconfigured`), because it would choose the endpoint. Switch the
+  tools off for a tenant with `PATCH /tenant/settings`:
+  `{"tools": {"wazuh_indexer": {"enabled": false}}}`.
+- **Windows logons** are the events of the
+  `Microsoft-Windows-Security-Auditing` provider: an event with a logon's id
+  from another provider is not counted.
+- **Names without case.** In a Windows logon, a user name and a host name
+  (the `target_user`, `source_host` and `target_host` pivots, and the agent
+  name for sshd) are matched whatever their case: Windows compares them
+  that way and logs them as the client typed them. The spellings of one name
+  are counted together, and the fact gives the name in lower case.
+- **Everything else is exact.** Addresses, process GUIDs, hashes, paths,
+  service names, sshd user names, and the `host` of host activity and
+  process lineage (the agent's name as the alert carries it) are compared
+  whole and case-sensitively
+  (the 4.x index template maps these fields as `keyword`):
+  `C:\Windows\PSEXESVC.exe` does not match `c:\windows\psexesvc.exe`.
+  Windows paths are sent in both spellings Wazuh may hold (plain, and with
+  doubled backslashes as 4.x writes event data).
+- **Command lines.** Secrets are masked before a command line enters a fact,
+  and `redactions` says where. `command_template` is the line in lower case
+  with single spaces and bare numbers as `<n>`.
+
+Limits measured on a Wazuh 4.14 indexer:
+
+- **Process events are not there by default.** `wazuh-alerts-*` holds only
+  events that matched a rule at or above the manager's alert level. Plain
+  Sysmon process creations (event 1) are below it, so a process lineage is
+  whole only when the manager raises them (a local rule on event 1, as the
+  corpus and the lab do with rule `100100`). Without it the tool sees only
+  the processes some rule alerted on. The fact is marked incomplete when the
+  subject's own creation event is not in the index, but it cannot tell that
+  some children were never indexed.
+- **A file hash is searched in file-integrity events only**
+  (`syscheck.sha256_after`). Sysmon's `hashes` field holds several
+  algorithms in one `keyword` value, which cannot be searched for one hash
+  without a wildcard, and the templates never send one.
+- **Lockouts name a host, not an address.** Use the `source_host` pivot to
+  count the lockouts a workstation caused; under `source_ip` they are 0.
+- **A fan-out counts every logon of its pivot**, successes and failures of
+  every logon type together. To know which of an account's sources failed,
+  ask about each source in turn (the `source_ip` pivot lists `failed_users`).
+- **sshd** logons are read by rule group (`authentication_failed`,
+  `authentication_success`); users are the `dstuser` of the event, so failed
+  logons for user names that do not exist are counted
+  (`unknown_user_failures`) but not listed.
+- **A busy host** with more than 50 alerts in the window always gives an
+  incomplete `host_activity` fact: its counts are exact, its event list is
+  the 50 highest.
+- **Shared clusters.** A tenant is separated by its source's index pattern
+  and indexer user. No setting scopes a tenant by agent group or label yet
+  (INT3.2).
 
 ## Versioning
 

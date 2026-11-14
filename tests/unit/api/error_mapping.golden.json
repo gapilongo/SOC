@@ -125,5 +125,8 @@
   "lg_sotf.tools.registry.ToolSettingsUnavailable": [500, "internal_error"],
   "lg_sotf.tools.registry.ToolTimedOut": [500, "internal_error"],
   "lg_sotf.tools.registry.ToolWindowExceeded": [500, "internal_error"],
+  "lg_sotf.tools.wazuh.dsl.QueryNotAllowed": [500, "internal_error"],
+  "lg_sotf.tools.wazuh.indexer.IndexerUnavailable": [500, "internal_error"],
+  "lg_sotf.tools.wazuh.mappers.Malformed": [500, "internal_error"],
   "starlette.exceptions.HTTPException": ["<instance>", "<instance>"]
 }
