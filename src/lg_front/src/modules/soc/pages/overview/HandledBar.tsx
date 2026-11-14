@@ -1,0 +1,158 @@
+/**
+ * "Closed without a person": of the window's finished alerts, how many no
+ * person touched and how many reached one, as a sentence, a stacked bar and
+ * the table the bar is drawn from (the bar never carries a figure alone).
+ *
+ * States: both kinds; one kind only (a single segment); nothing finished
+ * yet; no alert in the window; a sample too small for a share. The split of
+ * the closes by who or what closed them (the prototype's five kinds) is not
+ * in the API yet and is shown as "not measured yet", never worked out here.
+ */
+
+import type { ReactNode } from 'react';
+
+import type { DashboardOut } from '../../api/types';
+import { cx } from '../../../../components/ui';
+import { formatInt } from '../../../../lib/format';
+import { formatPct } from '../../lib/reports';
+import { MIN_SAMPLE, claimMean, closeMean, handledSplit, handledStatement, plural, sampleNote, type HandledSplit } from './figures';
+import { Cell, NUM, SectionHead, TABLE, TBODY, TH, THEAD, TR, Withheld } from './parts';
+
+// The data colours of console v2 (`--c-data-1` closed by the AI, `--c-data-4` a person); until the
+// token file carries them, the accent and the neutral severity stand in.
+const FILL = {
+  handled: 'bg-[rgb(var(--c-data-1,var(--c-accent)))]',
+  needed: 'bg-[rgb(var(--c-data-4,var(--c-sev-info)))]',
+} as const;
+
+const HOW = 'text-[12.5px] text-body';
+
+function Swatch({ kind }: { kind: keyof typeof FILL }) {
+  return <span aria-hidden="true" className={cx('mr-[7px] inline-block h-2.5 w-2.5 rounded-[1px]', FILL[kind])} />;
+}
+
+function Share({ value }: { value: number | null }) {
+  return value === null ? <Withheld>too few for a share</Withheld> : <>{formatPct(value, 0)}</>;
+}
+
+function Bar({ split }: { split: HandledSplit }) {
+  const label = `${plural(split.finished, 'finished alert', 'finished alerts')}: ${formatInt(split.handled)} closed without a person, ${formatInt(split.needed)} reached a person`;
+  return (
+    <div role="img" aria-label={label} className="flex h-[18px] gap-0.5 forced-color-adjust-none">
+      {(['handled', 'needed'] as const)
+        .filter((kind) => split[kind] > 0)
+        .map((kind) => (
+          <span key={kind} data-segment={kind} className={cx('min-w-[3px] rounded-[1px]', FILL[kind])} style={{ flexGrow: split[kind] }} />
+        ))}
+    </div>
+  );
+}
+
+function Row({ kind, name, count, share, children }: { kind: keyof typeof FILL; name: string; count: number; share: number | null; children: ReactNode }) {
+  return (
+    <tr className={TR} data-row={kind}>
+      <Cell>
+        <Swatch kind={kind} />
+        <span className="text-fg">{name}</span>
+      </Cell>
+      <Cell label="Alerts" className={NUM}>
+        {formatInt(count)}
+      </Cell>
+      <Cell label="Share" className={NUM}>
+        <Share value={share} />
+      </Cell>
+      <Cell label="Checked by" className={HOW}>
+        {children}
+      </Cell>
+    </tr>
+  );
+}
+
+export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: string; isAdmin: boolean }) {
+  const split = handledSplit(d);
+  const claim = claimMean(d);
+  const close = closeMean(d);
+  const counted = split !== null && split.finished > 0;
+  return (
+    <section aria-labelledby="ov-handled">
+      <SectionHead
+        id="ov-handled"
+        title="Closed without a person"
+        note={
+          <>
+            <span data-testid="overview-alerts-received">{formatInt(d.alerts_total)}</span> {d.alerts_total === 1 ? 'alert' : 'alerts'} received in {phrase}
+          </>
+        }
+      />
+      <p className="mb-3.5 mt-1.5 max-w-[36em] text-balance text-lg font-semibold leading-[1.28] tracking-[-0.014em] text-fg md:text-[21px]">
+        {handledStatement(d, split, phrase)}
+      </p>
+      {d.alerts_total === 0 && (
+        <p className="text-ctl text-secondary">{isAdmin ? 'Connect a source under Sources or send alerts to the ingest API.' : 'Figures appear as alerts arrive.'}</p>
+      )}
+      {counted && (
+        <figure>
+          <Bar split={split} />
+          <table className={cx(TABLE, 'mt-2')} aria-labelledby="ov-handled">
+            <thead className={THEAD}>
+              <tr>
+                <th scope="col" className={cx(TH, 'lg:w-[30%]')}>
+                  Who or what closed it
+                </th>
+                <th scope="col" className={cx(TH, 'lg:text-right')}>
+                  Alerts
+                </th>
+                <th scope="col" className={cx(TH, 'lg:text-right')}>
+                  Share
+                </th>
+                <th scope="col" className={TH}>
+                  How it is checked
+                </th>
+              </tr>
+            </thead>
+            <tbody className={TBODY}>
+              <Row kind="handled" name="Closed without a person" count={split.handled} share={split.handledShare}>
+                No analyst decided it and no person approved or rejected a response action. The blind audit below is drawn from these closes.
+              </Row>
+              <tr className={TR} data-row="split">
+                <Cell className="text-secondary lg:pl-[27px]">By AI on evidence, AI on the model&apos;s word, a suppression rule, an earlier analyst verdict</Cell>
+                <Cell colSpan={2} label="Alerts" className="lg:text-right">
+                  <Withheld>not measured yet</Withheld>
+                </Cell>
+                <Cell label="Checked by" className={HOW}>
+                  Who or what closed each alert is not counted for this window yet, so the closes above are not split further.
+                </Cell>
+              </tr>
+              <Row kind="needed" name="Reached a person" count={split.needed} share={split.neededShare}>
+                An analyst decided it, a person approved or rejected an action, or it waits for one. {plural(d.open_escalations, 'item waits', 'items wait')}{' '}
+                right now.{' '}
+                {claim.value ? (
+                  <>
+                    Claimed in a mean of {claim.value}, over {formatInt(claim.n)} claimed in {phrase}.
+                  </>
+                ) : (
+                  <>
+                    Mean time to claim: <Withheld>too few for a mean</Withheld> ({sampleNote(claim.n, MIN_SAMPLE)}).
+                  </>
+                )}
+              </Row>
+            </tbody>
+          </table>
+          <figcaption className="mt-2 text-xs text-muted">
+            Alerts still being processed and the built-in sample alerts are in neither row.
+            {split.handledShare === null && <> Shares need at least {formatInt(MIN_SAMPLE)} finished alerts.</>}{' '}
+            {close.value ? (
+              <>
+                Mean time from arrival to close: {close.value}, over {plural(close.n, 'alert', 'alerts')} closed in {phrase}.
+              </>
+            ) : (
+              <>
+                Mean time from arrival to close: <Withheld>too few for a mean</Withheld> ({sampleNote(close.n, MIN_SAMPLE)}).
+              </>
+            )}
+          </figcaption>
+        </figure>
+      )}
+    </section>
+  );
+}
