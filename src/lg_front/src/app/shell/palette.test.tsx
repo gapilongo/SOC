@@ -99,8 +99,9 @@ describe('search and commands', () => {
 
   it('lists the pages the person may open, from the registry, then the commands', async () => {
     const { lines, calls } = await openPalette({ role: 'analyst' });
-    expect(lines().slice(0, 7)).toEqual([
+    expect(lines().slice(0, 8)).toEqual([
       'PageOverviewWork',
+      'PageQueueWork',
       'PageEscalationsWork',
       'PageApprovalsWork',
       'PageAlertsDetect and respond',

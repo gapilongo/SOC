@@ -128,7 +128,8 @@ export function Layout() {
           onSearch={() => setSearchOpen(true)}
         />
         <SlotOutlet slot={SHELL_BANNER} props={{}} />
-        <main id="main" ref={mainRef} tabIndex={-1} className="w-full min-w-0 max-w-[1640px] flex-1 px-4 pb-10 pt-3.5 focus:outline-none min-[861px]:px-7 min-[861px]:pb-12 min-[861px]:pt-5">
+        {/* The 24 px under a page is what a page that fills the window (the work queue) leaves free. */}
+        <main id="main" ref={mainRef} tabIndex={-1} className="w-full min-w-0 max-w-[1640px] flex-1 px-4 pb-6 pt-3.5 focus:outline-none min-[861px]:px-7 min-[861px]:pt-5">
           <ErrorBoundary resetKey={location.pathname} fallback={PageFallback}>
             <Suspense fallback={<LoadingState />}>
               <Outlet />

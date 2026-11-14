@@ -259,6 +259,10 @@ def test_no_token_persistence_in_browser_storage() -> None:
     assert re.search(
         r"export type PrefKey = 'theme' \| 'density' \| 'keys';", prefs.read_text()
     ), "prefs.ts keys changed"
+    # The per-user display preferences (the work queue's density and saved views) are closed the same way.
+    assert re.search(
+        r"export type UserPrefKey = 'queue-density' \| 'queue-views';", prefs.read_text()
+    ), "prefs.ts per-user keys changed"
     session_users = [p for p in files if "sessionStorage" in _code(p)]
     # Only the OIDC redirect keeps its transient PKCE material there.
     assert [p.name for p in session_users] == ["oidc.ts"]

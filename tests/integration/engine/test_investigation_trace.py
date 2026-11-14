@@ -88,7 +88,9 @@ async def test_every_llm_and_tool_step_of_a_run_is_in_the_trace_store_and_the_ev
     analysis = alert.summary["analysis"]
     assert [s.tool for s in tools].count("reputation") == len(seen) == analysis["tool_steps"] == 2
     assert [s.tool for s in tools].count("history") == len(analysis["history"]) > 0
-    assert all(s.outcome == "success" and s.output_hash and s.latency_ms >= 0 for s in stored)
+    assert all(s.output_hash and s.latency_ms >= 0 for s in stored)
+    # A lookup is stored with what it found: both reputation lookups answered, no earlier alert shares an indicator.
+    assert {(s.tool or s.kind, s.outcome) for s in stored} == {("llm", "success"), ("reputation", "success"), ("history", "empty")}
     assert all(s.input_tokens > 0 and s.model == "fake-trace" for s in llm)
 
     pack = await build_evidence_pack(repos, settings, TENANT_A, alert_id, generated_by={"actor_type": "test"})

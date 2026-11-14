@@ -102,12 +102,19 @@ A step records:
   (`reputation`, `history`);
 * the SHA-256 of its input (`input_hash`: the messages as sent, or the tool
   name with the indicator kind, value and providers) and of its output
-  (`output_hash`); the input itself is not stored;
+  (`output_hash`; for a tool, the answer without transport flags such as
+  `cached`, so the same answer hashes the same live or from the cache); the
+  input itself is not stored;
 * `result_digest`: the output redacted for credentials and cut to a few
   kilobytes (a refused or unusable model reply has none, only its hash);
-* the outcome (`success`, `refusal`, `invalid_output`, `error`) and, for a
-  failed step, the error type; tokens in, out and cached; latency and start
-  time.
+* the outcome and, for a failed step, the error type; tokens in, out and
+  cached; latency and start time. A model step is `success`, `refusal`,
+  `invalid_output` or `error`. A tool step is `success` (rows came back),
+  `empty` (the lookup ran and matched nothing) or `failed` (it was refused,
+  timed out, went over a cap or got no answer), so a lookup that failed is
+  never recorded as one that found nothing. A `reputation` step holds one
+  answer per provider and stores the worst of their outcomes. Steps stored
+  before migration 0018 recorded every tool call that returned as `success`.
 
 Each attempt is a step: a provider error that was retried, and the repair
 attempt of a model answering in JSON text, appear as their own rows. A call

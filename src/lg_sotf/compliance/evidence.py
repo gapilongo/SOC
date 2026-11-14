@@ -39,6 +39,7 @@ from lg_sotf.compliance.evidence_html import AGENT_STEPS, render_evidence_html
 from lg_sotf.db import Connection
 from lg_sotf.db.repos import Alert, AlertEvent, Escalation, Feedback, Repositories, ResponseAction, TraceStep
 from lg_sotf.domain.blind_audit import hidden_evidence_pack, related_alert_ids, without_pending_related
+from lg_sotf.domain.closure import linked_only_cases
 from lg_sotf.models.vocabulary import BENIGN_DECISIONS, POLICY_APPROVER
 from lg_sotf.security.redaction import redact
 from lg_sotf.settings import Settings
@@ -438,13 +439,18 @@ def human_oversight(
 
     Rollback requests and retries (from the ``audit`` entries of the
     actions) are human steps; a rollback also counts as an override of the
-    action it undoes.
+    action it undoes. A case the alert was only linked into (it stayed closed by the models,
+    :func:`lg_sotf.domain.closure.linked_only_cases`) gives it no step: that case's claim and decision were about
+    another alert. The pack still lists the case under ``escalations``.
     """
     # The sorts are stable: equal keys keep this append order (audit, events, escalations, actions, feedback),
     # and bundle_sha256 depends on it.
     audit_steps, audit_overrides = _audit_steps(audit, actions)
     ai_verdict = _obj(summary.get("analysis")).get("verdict")
-    escalation_steps, escalation_overrides = _escalation_steps(escalations, ai_verdict)
+    linked_only = linked_only_cases(summary)
+    escalation_steps, escalation_overrides = _escalation_steps(
+        [e for e in escalations if e.id not in linked_only], ai_verdict
+    )
     action_steps, action_overrides = _action_steps(actions)
     steps = [*audit_steps, *_event_steps(events), *escalation_steps, *action_steps]
     overrides = [*audit_overrides, *escalation_overrides, *action_overrides, *_feedback_overrides(feedback)]

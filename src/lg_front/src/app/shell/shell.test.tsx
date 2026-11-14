@@ -70,10 +70,10 @@ afterEach(() => {
 
 describe('navigation model', () => {
   it('puts the pages in the capability groups of console v2, by role', () => {
-    expect(titles(principal({ role: 'viewer' }))).toEqual(['Work: Overview, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions', 'Assure: Reports']);
-    expect(titles(principal())).toEqual(['Work: Overview, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions, Blind audit', 'Assure: Reports']);
+    expect(titles(principal({ role: 'viewer' }))).toEqual(['Work: Overview, Queue, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions', 'Assure: Reports']);
+    expect(titles(principal())).toEqual(['Work: Overview, Queue, Escalations, Approvals', 'Detect and respond: Alerts, Suppressions, Blind audit', 'Assure: Reports']);
     expect(titles(principal({ role: 'admin' }))).toEqual([
-      'Work: Overview, Escalations, Approvals',
+      'Work: Overview, Queue, Escalations, Approvals',
       'Detect and respond: Alerts, Suppressions, Blind audit',
       'Assure: Reports, Audit log, LLM usage, Proof of value',
       'Configure: Getting started, Sources, Integrations, Users and API keys, Tenant settings',

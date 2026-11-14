@@ -165,6 +165,17 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
     )
 
 
+def api_router(settings: Settings) -> APIRouter:
+    """The ``/api/v1`` router: the routers of :func:`api_routers`, and break-glass sign-in while it is enabled."""
+    api = APIRouter(prefix=API_PREFIX)
+    for router, stability in api_routers():
+        api.include_router(classify(router, stability))
+    if settings.break_glass_enabled:
+        # Off (the default), the route is not mounted: any method and body answers like an unknown path.
+        api.include_router(classify(auth.break_glass_router, "beta"))
+    return api
+
+
 def create_app(
     settings: Optional[Settings] = None,
     *,
@@ -205,14 +216,11 @@ def create_app(
     app.state.ctx = None
     install_error_handlers(app)
 
-    api = APIRouter(prefix=API_PREFIX)
-    for router, stability in api_routers():
-        api.include_router(classify(router, stability))
     app.include_router(classify(health.router, "stable"))
     app.include_router(classify(health.metrics_router, "beta"))
     # Probes only: /metrics stays off /api/v1, which the public ingress routes here.
     app.include_router(health.router, prefix=API_PREFIX, include_in_schema=False)
-    app.include_router(api)
+    app.include_router(api_router(s))
     app.include_router(ws.router)
     app.include_router(ws.router, prefix=API_PREFIX, include_in_schema=False)
 
