@@ -113,6 +113,49 @@ does not know rather than reject the fact.
 | 1.1.0 | New kinds `host_activity`, `logon_fanout` and `prevalence`. `complete` on every fact. `children` on a process lineage, and `command_template`, `image_name` and `process_guid` on its nodes. Subject types `service` and `command_template`. Every 1.0.0 fact is still valid. |
 | 1.0.0 | First version: `reputation`, `process_lineage`, `sign_in_history`, `related_alert`. |
 
+## The fact ledger
+
+Every investigation run has a ledger: the list of what its tool calls
+returned, in order. It is the only place a fact gets the `id` a verdict
+cites. The ledger is in place; the investigation that writes to it and lets
+the model cite facts comes in a later release.
+
+- **Code mints the id.** When a tool call returns, the ledger names each
+  typed fact in the answer `<evidence id>:<n>` (`host:0`, `host:1`), numbered
+  within the run. The id a tool wrote is overwritten, and a model never
+  supplies one. A verdict that cites an id the run's ledger does not hold
+  (made up, or another run's, or another tenant's) is told apart by a pure
+  check.
+- **Every entry is bound to its call:** the tool and its version, the
+  SHA-256 of the call's input and output (the same hashes as the call's step
+  in the investigation trace), the outcome (`success`, `empty`, `failed`),
+  `complete`, and when it was recorded. A SHA-256 over the call and the
+  fact's body (`content_hash`) is the same whenever the same tool result is
+  recorded, in any run.
+- **An empty or failed call is recorded too,** as an entry without a fact.
+  It can be cited to say what could not be checked. It is never evidence
+  that something is benign: `citable_as_benign_evidence` is true only for a
+  `success` entry that holds a typed fact a tool observed. That is computed
+  from the entry, not stored and not set by a model. A fact that a reader
+  model extracted from free text (`source.name` starting with `reader.`) is
+  a lead and never benign evidence either.
+- **Only typed facts enter.** A tool's raw answer (text, provider rows) is
+  not a fact and is not kept. What a prompt may show of the ledger is ids,
+  outcomes and the typed fields, in the untrusted data block.
+- **Append-only, per tenant.** The entries are rows of the tenant's
+  `evidence_facts` table under row-level security. Nothing updates or
+  deletes them: the application has no such code, its database role has no
+  such privilege, and a trigger refuses both. They are removed with their
+  alert by retention and by tenant erasure, and are part of the tenant
+  export (`evidence_facts.jsonl`).
+
+`GET /api/v1/alerts/{id}/investigation` lists the entries of the alert's
+newest run as observations (see [api.md](api.md)).
+
+For engineers: the rules are `lg_sotf.domain.ledger` (pure), the store is
+`lg_sotf.db.repos.evidence_facts`, and the investigation's interface is
+`lg_sotf.agents.investigation.ledger.FactLedger` (`record`, `facts`).
+
 ## For contributors
 
 The Pydantic model is the source; the JSON file is generated from it.

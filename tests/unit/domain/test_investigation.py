@@ -24,6 +24,8 @@ from lg_sotf.domain.investigation import (
 from lg_sotf.domain.investigation.evidence import lookup_outcome, lookups_of
 from lg_sotf.domain.investigation.facts import MAX_CLAIM_CHARS, MAX_EXCERPT_LINES, MAX_LINE_CHARS, MAX_TARGET_CHARS
 from lg_sotf.domain.investigation.model import SCHEMA_VERSION
+from lg_sotf.domain.ledger import LedgerEntry, ToolStep, build_entries
+from lg_sotf.models.evidence_fact import parse_fact
 from tests.fixtures import investigation as prototype
 
 pytestmark = pytest.mark.unit
@@ -400,3 +402,67 @@ def test_hidden_for_blind_audit_withholds_the_ai_side() -> None:
     assert (view.claims, view.observations, view.response.source) == ([], [], "none")
     assert view.not_established.not_checked == [] and view.not_established.empty == []
     assert [s.text for s in view.steps] == ["Alert received.", words.EVENT_STEPS["note"].text]
+
+
+def run_ledger(host: str = "FIN-SRV-02") -> List[LedgerEntry]:
+    """A run's fact ledger: host activity that came back, a logon query that matched nothing, a lineage call that failed."""
+    seen = parse_fact({
+        "id": "x", "kind": "host_activity", "subject": {"type": "host", "value": host}, "observed_at": NOW,
+        "source": {"name": "wazuh.host_activity", "version": "1"}, "complete": False,
+        "value": {"window_start": NOW - timedelta(minutes=45), "window_end": NOW, "total": 3, "max_level": 12,
+                  "techniques": ["T1021.002", "T1569.002"]},
+    })
+    calls = [
+        ToolStep("host", "wazuh.host_activity", 1, "a" * 64, "b" * 64, "success", False, facts=(seen,)),
+        ToolStep("fanout", "wazuh.logon_fanout", 1, "c" * 64, "d" * 64, "empty", True),
+        ToolStep("lineage", "wazuh.process_lineage", 1, "e" * 64, "f" * 64, "failed", False, reason="time_cap"),
+    ]
+    entries: List[LedgerEntry] = []
+    for call in calls:
+        entries += build_entries(call, [e.fact_id for e in entries], NOW)
+    return entries
+
+
+def test_the_fact_ledger_is_listed_as_observations_with_what_a_benign_claim_may_cite() -> None:
+    view = assemble(prototype_facts(ledger=run_ledger()))
+    lookups = assemble(prototype_facts()).observations
+    host, fanout, lineage = view.observations[len(lookups):]
+
+    # The recorded lookups stay as they were; the ledger's entries follow under the ids the ledger minted.
+    assert view.observations[: len(lookups)] == lookups
+    assert all((o.complete, o.fact_kind, o.citable_as_benign_evidence) == (None, None, False) for o in lookups)
+    assert [(o.id, o.tool, o.outcome) for o in (host, fanout, lineage)] == [
+        ("host:0", "wazuh.host_activity", "success"), ("fanout:0", "wazuh.logon_fanout", "empty"),
+        ("lineage:0", "wazuh.process_lineage", "failed"),
+    ]
+    assert (host.title, host.kind, host.target, host.sources, host.at) == (
+        words.FACT_TITLES["host_activity"], "host", "FIN-SRV-02", ["wazuh.host_activity"], NOW
+    )
+    assert (host.input_sha256, host.output_sha256, host.fact_kind, host.complete) == ("a" * 64, "b" * 64, "host_activity", False)
+    assert "total: 3" in [line.text for line in host.excerpt] and "techniques: 2 listed" in [line.text for line in host.excerpt]
+    # Only a typed fact a tool returned may back a benign claim: never the empty or the failed call.
+    assert [o.citable_as_benign_evidence for o in (host, fanout, lineage)] == [True, False, False]
+    assert (fanout.fact_kind, fanout.excerpt, fanout.complete, lineage.complete) == (None, [], True, False)
+    assert (fanout.title, lineage.title) == (words.UNKNOWN_LOOKUP_TITLE, words.UNKNOWN_LOOKUP_TITLE)
+
+    assert "fanout:0" in view.not_established.empty and "host:0" not in view.not_established.empty
+    assert [(u.kind, u.observation_id, u.why) for u in view.not_established.unavailable][-1] == (
+        "tool_failed", "lineage:0", words.TOOL_ERROR_SENTENCE
+    )
+    # With a ledger the investigation did read the source's event data.
+    assert words.NO_TELEMETRY[0] not in [i.what for i in view.not_established.not_checked]
+    assert words.NO_TELEMETRY[0] in [i.what for i in assemble(prototype_facts()).not_established.not_checked]
+
+
+def test_ledger_observations_are_bounded_data_and_hidden_with_the_ai_side() -> None:
+    hostile = assemble(prototype_facts(ledger=run_ledger(HOSTILE[:1_000]), lookups=[]))
+    host = hostile.observations[0]
+    assert host.target is not None and len(host.target) == MAX_TARGET_CHARS and host.target.startswith("IGNORE")
+    assert all("IGNORE" not in sentence for sentence in sentences(hostile))
+    assert len(assemble(prototype_facts(ledger=run_ledger() * 40)).observations) == 50
+    # A credential that reached a fact field is not shown (the secret is built here, never written down).
+    secret = "Zq7" * 6
+    leaked = assemble(prototype_facts(ledger=run_ledger("srv01 " + "pass" + f"word={secret}"), lookups=[]))
+    assert secret not in leaked.model_dump_json() and (leaked.observations[0].target or "").startswith("srv01 ")
+
+    assert assemble(prototype_facts(ledger=run_ledger(), hidden=True)).observations == []

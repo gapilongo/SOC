@@ -140,6 +140,23 @@ class InvestigationObservation(_Model):
     excerpt_truncated: bool = False
     input_sha256: Optional[str] = Field(default=None, description="From the trace store, when it has the call.")
     output_sha256: Optional[str] = None
+    complete: Optional[bool] = Field(
+        default=None,
+        description=(
+            "From the fact ledger: false when the source cut the result or could not finish it, so nothing "
+            "can be concluded from what it does not show. Null for a lookup the ledger did not record."
+        ),
+    )
+    fact_kind: Optional[str] = Field(
+        default=None, description="From the fact ledger: the kind of the typed evidence fact; null without one."
+    )
+    citable_as_benign_evidence: bool = Field(
+        default=False,
+        description=(
+            "A benign claim may rest on this observation: the fact ledger holds it as a typed fact a tool "
+            "returned. Decided by code, never by a model, and never true for an empty or failed observation."
+        ),
+    )
 
 
 class NotCheckedItem(_Model):

@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any, List, Mapping, Optional, Sequence
 
 from lg_sotf.domain.investigation.model import ProposedResponse
+from lg_sotf.domain.ledger import LedgerEntry
 
 MAX_TEXT = 2_000
 MAX_CLAIM_CHARS = 300
@@ -135,3 +136,5 @@ class InvestigationFacts:
     track: Optional[TrackCounts] = None
     #: The alert waits for its blind-audit label: nobody sees the AI's side.
     hidden: bool = False
+    #: The fact ledger of the alert's newest investigation run (``evidence_facts``), in the order it was recorded.
+    ledger: Sequence[LedgerEntry] = ()

@@ -4324,6 +4324,17 @@ export interface components {
              * @default false
              */
             cached: boolean;
+            /**
+             * Citable As Benign Evidence
+             * @description A benign claim may rest on this observation: the fact ledger holds it as a typed fact a tool returned. Decided by code, never by a model, and never true for an empty or failed observation.
+             * @default false
+             */
+            citable_as_benign_evidence: boolean;
+            /**
+             * Complete
+             * @description From the fact ledger: false when the source cut the result or could not finish it, so nothing can be concluded from what it does not show. Null for a lookup the ledger did not record.
+             */
+            complete: boolean | null;
             /** Excerpt */
             excerpt: components["schemas"]["ObservationExcerptLine"][];
             /**
@@ -4331,6 +4342,11 @@ export interface components {
              * @default false
              */
             excerpt_truncated: boolean;
+            /**
+             * Fact Kind
+             * @description From the fact ledger: the kind of the typed evidence fact; null without one.
+             */
+            fact_kind: string | null;
             /** Id */
             id: string;
             /**

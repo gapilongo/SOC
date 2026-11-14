@@ -13,13 +13,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
+from lg_sotf.agents.investigation.ledger import FactLedger, tool_step
 from lg_sotf.db.repos import Escalation
 from lg_sotf.domain.investigation import words
+from lg_sotf.domain.ledger import LedgerEntry
 from lg_sotf.llm.trace import content_hash, tool_input_hash
 from lg_sotf.models.trace import NewTraceStep
 from tests.fixtures import investigation as prototype
 from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
+from tests.unit.agents.investigation._support import TOOL, fact_tools, host_fact
+from tests.unit.tools._support import Boom, Ctx, Handler, P
 
 pytestmark = pytest.mark.integration
 
@@ -420,3 +424,65 @@ async def test_pending_blind_audit_sample_shows_nothing_of_the_ai_side(api: ApiH
     shown = await investigation(api, alert_id, headers)
     assert shown["hidden_for_blind_audit"] is False and shown["outcome"]["category"] == "ai_closed_audit"
     assert (shown["track_record"]["total"], shown["track_record"]["confirmed"]) == (1, 1)
+
+
+async def record_ledger(api: ApiHarness, tenant_id: str, alert_id: str, host: str) -> List[LedgerEntry]:
+    """A run's fact ledger, written as the executor will: registry calls recorded by the ledger."""
+    run = FactLedger(tenant_id, alert_id, f"{tenant_id}:{alert_id}", api.repos.evidence_facts)
+    entries: List[LedgerEntry] = []
+    for evidence_id, handler in (("host", Handler(answer=(host_fact(host),))), ("fanout", Handler(answer=())), ("lineage", Boom())):
+        tools = fact_tools(handler)
+        result = await tools.call(Ctx(tenant_id=tenant_id, alert_id=alert_id), TOOL, P, agent="investigation")
+        entries += await run.record(tool_step(evidence_id, tools.get(TOOL), result))
+    return entries
+
+
+async def test_the_fact_ledger_of_the_run_is_listed_as_observations(api: ApiHarness) -> None:
+    alert_id, _ = await seed_prototype(api)
+    before = (await investigation(api, alert_id, await api.login_headers(TENANT_A, "analyst")))["observations"]
+    host, fanout, lineage = await record_ledger(api, TENANT_A, alert_id, "FIN-SRV-02")
+
+    body = await investigation(api, alert_id, await api.login_headers(TENANT_A, "analyst"))
+    observations = body["observations"]
+    # The recorded lookups are unchanged; the ledger's entries follow, under the ids the ledger minted.
+    assert observations[: len(before)] == before
+    assert all((o["complete"], o["fact_kind"], o["citable_as_benign_evidence"]) == (None, None, False) for o in before)
+    recorded = observations[len(before):]
+    assert [(o["id"], o["tool"], o["outcome"], o["complete"], o["fact_kind"], o["citable_as_benign_evidence"]) for o in recorded] == [
+        ("host:0", TOOL, "success", True, "host_activity", True),
+        ("fanout:0", TOOL, "empty", True, None, False),
+        ("lineage:0", TOOL, "failed", False, None, False),
+    ]
+    assert (recorded[0]["kind"], recorded[0]["target"], recorded[0]["title"]) == (
+        "host", "FIN-SRV-02", words.FACT_TITLES["host_activity"]
+    )
+    assert [(o["input_sha256"], o["output_sha256"]) for o in recorded] == [
+        (e.input_hash, e.output_hash) for e in (host, fanout, lineage)
+    ]
+    assert {"text": "total: 3", "marks": []} in recorded[0]["excerpt"]
+    assert "fanout:0" in body["not_established"]["empty"] and "host:0" not in body["not_established"]["empty"]
+    assert ("tool_failed", "lineage:0") in [(u["kind"], u["observation_id"]) for u in body["not_established"]["unavailable"]]
+    assert words.NO_TELEMETRY[0] not in [i["what"] for i in body["not_established"]["not_checked"]]
+
+
+async def test_a_ledger_is_never_shown_to_another_tenant_or_before_the_blind_label(api: ApiHarness) -> None:
+    mine, _ = await seed_prototype(api, TENANT_A)
+    theirs, _ = await seed_prototype(api, TENANT_B)
+    await record_ledger(api, TENANT_B, theirs, "TENANT-B-HOST")
+
+    # Tenant A's alert shows nothing of tenant B's ledger, and tenant B's alert is not found for tenant A.
+    own = await api.client.get(f"{API}/alerts/{mine}/investigation", headers=await api.login_headers(TENANT_A, "admin"))
+    assert own.status_code == 200 and "TENANT-B-HOST" not in own.text and '"host:0"' not in own.text
+    foreign = await api.client.get(f"{API}/alerts/{theirs}/investigation", headers=await api.login_headers(TENANT_A, "admin"))
+    assert foreign.status_code == 404 and "TENANT-B-HOST" not in foreign.text
+    shown = await investigation(api, theirs, await api.login_headers(TENANT_B, "viewer"))
+    assert "host:0" in [o["id"] for o in shown["observations"]]
+
+    # While the alert waits for its blind-audit label, its ledger is withheld with the rest of the AI's side.
+    now = datetime.now(UTC)
+    await api.repos.blind_audit.create_run(
+        TENANT_B, since=now - timedelta(days=7), until=now, seed=1, sample_rate=0.02, min_sample=0, fixed_size=None,
+        frame_size=1, items=[(theirs, 1, "benign")], trigger="cli", created_by="seed",
+    )
+    hidden = await api.client.get(f"{API}/alerts/{theirs}/investigation", headers=await api.login_headers(TENANT_B, "admin"))
+    assert hidden.status_code == 200 and hidden.json()["observations"] == [] and "TENANT-B-HOST" not in hidden.text

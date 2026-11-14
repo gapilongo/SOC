@@ -31,6 +31,7 @@ from lg_sotf.db.repos.api_keys import ApiKey, ApiKeysRepo
 from lg_sotf.db.repos.audit import AuditEntry, AuditRepo, ChainVerification
 from lg_sotf.db.repos.blind_audit import BlindAuditItem, BlindAuditRepo, BlindAuditRun, BlindAuditRunSummary
 from lg_sotf.db.repos.escalations import Escalation, EscalationsRepo
+from lg_sotf.db.repos.evidence_facts import EvidenceFactsRepo, StoredFact
 from lg_sotf.db.repos.feedback import Feedback, FeedbackRepo, FeedbackStats
 from lg_sotf.db.repos.indicators import IndicatorSighting, IndicatorsRepo, RelatedAlert
 from lg_sotf.db.repos.integrations import Integration, IntegrationsRepo
@@ -88,6 +89,7 @@ class Repositories:
     outbox: OutboxRepo
     tickets: TicketsRepo
     investigation_steps: InvestigationStepsRepo
+    evidence_facts: EvidenceFactsRepo
     shadow_effects: ShadowEffectsRepo
     shadow_verdicts: ShadowVerdictsRepo
     reports: ReportsRepo
@@ -123,6 +125,7 @@ class Repositories:
             outbox=OutboxRepo(db),
             tickets=TicketsRepo(db),
             investigation_steps=InvestigationStepsRepo(db),
+            evidence_facts=EvidenceFactsRepo(db),
             shadow_effects=ShadowEffectsRepo(db),
             shadow_verdicts=ShadowVerdictsRepo(db),
             reports=ReportsRepo(db),
@@ -155,6 +158,7 @@ __all__ = [
     "EscalationQueue",
     "ExternalTicket",
     "EscalationsRepo",
+    "EvidenceFactsRepo",
     "Feedback",
     "FeedbackRepo",
     "FeedbackStats",
@@ -194,6 +198,7 @@ __all__ = [
     "Source",
     "SourcesRepo",
     "StaleRunSweep",
+    "StoredFact",
     "StoredShadowEffect",
     "StoredVerdictRow",
     "SuppressionRule",
