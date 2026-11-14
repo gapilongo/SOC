@@ -6,7 +6,7 @@
 
 import { Fragment } from 'react';
 
-import type { StepOut } from '../../api/investigation';
+import type { PlainStepOut } from '../../api/types';
 import { formatDateTime } from '../../../../lib/format';
 import { clockOf } from './clock';
 import { VoiceMark, type Voice } from './voices';
@@ -23,7 +23,7 @@ export function StepList({
   steps,
   hideModelOutput = false,
 }: {
-  steps: StepOut[];
+  steps: PlainStepOut[];
   /** The verdict is hidden: what a model step produced (its assessment) is withheld with it. */
   hideModelOutput?: boolean;
 }) {

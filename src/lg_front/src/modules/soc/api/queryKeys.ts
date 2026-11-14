@@ -34,6 +34,8 @@ export const qk = {
     all: [NS, 'alert'] as const,
     detail: (id: string | null) => [NS, 'alert', id] as const,
     events: (id: string) => [NS, 'alert', id, 'events'] as const,
+    /** The investigation read model of the alert (GET /alerts/{id}/investigation). */
+    investigation: (id: string) => [NS, 'alert', id, 'investigation'] as const,
   },
   escalations: {
     all: [NS, 'escalations'] as const,

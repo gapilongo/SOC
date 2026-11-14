@@ -257,9 +257,10 @@ def test_no_token_persistence_in_browser_storage() -> None:
     assert offenders == [], f"localStorage must not be used outside src/lib/prefs.ts: {offenders}"
     # Its keys are a closed type, so nothing else (a token, a session) can be stored through it.
     assert re.search(r"export type PrefKey = 'theme' \| 'density';", prefs.read_text()), "prefs.ts keys changed"
-    # The per-user display preferences (the work queue's density and saved views) are closed the same way.
+    # The per-user display preferences (the work queue's density and saved views, single-key shortcuts
+    # on or off) are closed the same way.
     assert re.search(
-        r"export type UserPrefKey = 'queue-density' \| 'queue-views';", prefs.read_text()
+        r"export type UserPrefKey = 'queue-density' \| 'queue-views' \| 'single-keys';", prefs.read_text()
     ), "prefs.ts per-user keys changed"
     session_users = [p for p in files if "sessionStorage" in _code(p)]
     # Only the OIDC redirect keeps its transient PKCE material there.
