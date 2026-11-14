@@ -6,107 +6,6 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- Wazuh evidence tools (`lg_sotf.tools.wazuh`, INT3.4): four registered
-  tools that read what surrounds an alert on the tenant's own Wazuh indexer
-  and answer with typed evidence facts (schema 1.1). The analysis does not
-  call them yet; the investigation executor uses them in a later release.
-  - `wazuh.host_activity`: what a host's alerts show around a moment (up to
-    60 minutes before and after): counts by rule group and technique, the
-    highest rule level, and the 50 highest alerts.
-  - `wazuh.logon_fanout`: every logon of one source address, source host,
-    user or target host over up to 24 hours: failures, successes, lockouts,
-    distinct users, sources and hosts, and the time from the first failure
-    to the first success after it. Windows and sshd. A caller cannot narrow
-    it to an outcome or a logon type, so a fact never reports zero for what
-    it did not read. Windows user and host names are matched and counted
-    whatever case they were typed in.
-  - `wazuh.process_lineage`: a process's parents (up to 8) and what it
-    started, down to what its children started. Name the process by its
-    GUID when the alert has one; an image gives one fact per process that
-    matches, and none is complete when there are several.
-  - `wazuh.prevalence`: on how many of the tenant's agents a file hash, a
-    process image, a service's image path or a service name was seen over up
-    to 30 days.
-  - The tools are query templates. A caller gives typed, bounded values and
-    never a query, a field or an index; every search is checked against an
-    allow-list before it is sent, and the only request the client can make
-    is `POST /<index>/_search` on the index pattern of the Wazuh source the
-    alert came from, with that source's credentials, through the install's
-    destination rules. Only the scheme, the host and the port of the
-    source's `base_url` are used: for the tools, a `base_url` with a path or
-    a query is refused. They need the permission the pull source needs and
-    nothing more. Switch them off for a tenant with
-    `tools.wazuh_indexer.enabled: false`.
-  - A call that finds nothing is `empty`. An indexer that is down, refuses
-    the credentials, answers only part of a search that matched nothing, or
-    holds no index for the pattern is `failed` with a fixed reason; so is
-    any answer but an HTTP 200, and a response without an aggregation that
-    was asked for. A fact is `complete` only when every shard answered
-    every search, no cap cut what the fact lists or how far a process's
-    parents were followed, its time window had closed and the index reached
-    back to the window's start.
-  - Limits found on a Wazuh 4.14 indexer are in docs/evidence-facts.md:
-    process lineage needs the manager to raise Sysmon process creations, a
-    file hash is searched in file-integrity events only, and values are
-    compared whole and case-sensitively.
-- The offline event store answers the same tools
-  (`lg_sotf.eval.wazuh_events.EventStoreBackend`), so evaluation and tests
-  get the facts from the corpus telemetry. A live test checks that a Wazuh
-  4.14 indexer gives the same facts.
-
-- **The case page** (`/cases/<id>`): one case, its alerts, and who or what
-  closed each one and why. A case is the escalation with its alerts, and its
-  id is the escalation's id. The page answers "what did the AI close on this
-  host while this case was open, and why" in one place.
-  - **Alerts, oldest first,** each with its state and who closed it: the AI
-    on approved evidence, the AI on the model's word, a suppression rule, an
-    earlier analyst verdict, or an analyst. Beside it is the recorded
-    reason: the rule of the decision policy and the closure tier for an AI
-    close, the blind-audit result, the analyst's decision and note.
-  - **Linked by the safety net:** alerts the AI closed that were linked to
-    the case and left closed, with why; and alerts that were reopened, with
-    who or what confirmed the threat.
-  - **Response:** the actions on the ledger with their status (waiting for
-    an approval, blocked by a guardrail with its reason, ran, failed, dry
-    run). An action that waits is approved or rejected here, by the rules of
-    the Approvals page.
-  - **Timeline and entities:** the case's and its alerts' events in one
-    list, in plain words, and what the alerts share (hosts, users, addresses).
-  - **Decision:** the decision bar of the investigation view records the
-    decision on the case (T, B, F, N, a note, Ctrl+Enter). J and K move
-    through the alerts and Enter opens one; they follow the single-key
-    switch.
-- `GET /api/v1/cases/{id}` (beta): the read model behind the page. It only
-  reads stored data. `not_available` names what the stored data cannot say
-  yet (a readable case reference, a case summary, flagging an alert for
-  audit, a reason on an approval), and those fields are absent, never
-  estimated. An alert that waits for its blind-audit label shows what its
-  source sent and nothing of the AI's side.
-
-### Changed
-
-- A tool can now say that its answer was cut (`Tool.whole` in the tool
-  registry): a result is `complete` only when it is below its row cap and
-  the tool does not say a cap inside the source, an open time window or the
-  source's retention cut it.
-- INV-14, "Evidence tools are read-only, templated and capped", is now
-  enforced: it was pending until the Wazuh templates and their allow-list
-  tests existed.
-- A shadow run may read the tenant's own Wazuh indexer through the evidence
-  tools. It is the second reviewed read a shadow run is allowed (after the
-  local health listener): it tells no third party anything and changes
-  nothing. Every other outbound request of a shadow run is still refused.
-
-- A row of the **Queue** opens the case page. The older decision page
-  (`/escalations/<id>`) still opens from the Escalations list and from
-  existing links.
-- The investigation view names the alert's case in its breadcrumb, as a
-  link to the case page, also for an alert the safety net linked to a case.
-
-- The README describes the product as it ships in 1.3: only the latest release is listed as new, the capabilities of earlier releases are under Features, and both diagrams follow the workflow graph and the 1.3 closing rule. The product tour is re-recorded on console v2 and the pictures of the previous console are replaced.
-
 ## [1.3.0] - 2026-11-14
 
 Three things change for an operator in this release.
@@ -119,17 +18,20 @@ Three things change for an operator in this release.
   threat is confirmed.
 - **The console is rebuilt on the console v2 design**: a new shell (menu,
   tenant in the address, search and commands), a new look on every page, a
-  new Overview, a work queue, and an investigation view that explains the
-  AI's decision.
+  new Overview, a work queue, an investigation view that explains the AI's
+  decision, and a case page that shows who or what closed each alert of a
+  case and why.
 - **The investigation has its foundations**: a stored trace of every model
   and tool step, a tool registry with typed outcomes, the evidence-fact
-  schema 1.1 and telemetry for the evaluation corpus.
+  schema 1.1, Wazuh evidence tools and telemetry for the evaluation corpus.
+  The agents do not use the Wazuh evidence tools in investigations yet.
 
 Also new: the MSSP organisation model with grants the customer holds, a
 first-run setup wizard and proof-of-value runs, shadow mode to compare a
 candidate model with production, signed images, release trains, and upgrades
 that CI rehearses on every change. Read
-[Upgrade notes for 1.3](#upgrade-notes-for-13) before you upgrade.
+[Upgrade notes for 1.3](#upgrade-notes-for-13) before you upgrade; they end
+with the known limits of this release.
 
 ### Added
 
@@ -337,7 +239,7 @@ The console follows the console v2 design (`docs/design/console-v2/`).
   - *Preview:* the highlighted row opens beside the list, which stays in
     view.
   - *Keyboard:* `J` and `K` move, `Enter` opens the item, `Space` shows or
-    hides the preview, `X` selects, `C` claims.
+    hides the preview, `X` selects, `C` claims. A row opens the case page.
   - *Bulk:* selected rows can be claimed together. Deciding several at once
     is offered only for look-alike alerts, which the API does not group yet,
     so the Look-alikes view stays hidden until it does.
@@ -391,9 +293,43 @@ The console follows the console v2 design (`docs/design/console-v2/`).
   - An API that does not serve the read model yet (it answers 404) still
     gets the page: it is built from the alert, its escalation, its timeline
     and the response preview.
-- **The decision page** shows the expected response plan under the
-  investigation, so "Record decision" stays in view, and the form says how
-  many actions are pre-approved. Every action in the plan names its exact
+  - The breadcrumb names the alert's case, as a link to the case page, also
+    for an alert the safety net linked to a case.
+- **The case page** (`/cases/<id>`): one case, its alerts, and who or what
+  closed each one and why. A case is the escalation with its alerts, and its
+  id is the escalation's id. The page answers "what did the AI close on this
+  host while this case was open, and why" in one place.
+  - *Alerts, oldest first,* each with its state and who closed it: the AI on
+    approved evidence, the AI on the model's word, a suppression rule, an
+    earlier analyst verdict, or an analyst. Beside it is the recorded
+    reason: the rule of the decision policy and the closure tier for an AI
+    close, the blind-audit result, the analyst's decision and note.
+  - *Linked by the safety net:* alerts the AI closed that were linked to the
+    case and left closed, with why; and alerts that were reopened, with who
+    or what confirmed the threat.
+  - *Response:* the actions on the ledger with their status (waiting for an
+    approval, blocked by a guardrail with its reason, ran, failed, dry run).
+    An action that waits is approved or rejected here, by the rules of the
+    Approvals page.
+  - *Timeline and entities:* the case's and its alerts' events in one list,
+    in plain words, and what the alerts share (hosts, users, addresses).
+  - *Decision:* the decision bar of the investigation view records the
+    decision on the case (T, B, F, N, a note, Ctrl+Enter). J and K move
+    through the alerts and Enter opens one; they follow the single-key
+    switch.
+  - `GET /api/v1/cases/{id}` (beta) is the read model behind the page. It
+    only reads stored data. `not_available` names what the stored data
+    cannot say yet (a readable case reference, a case summary, flagging an
+    alert for audit, a reason on an approval), and those fields are absent,
+    never estimated. An alert that waits for its blind-audit label shows
+    what its source sent and nothing of the AI's side.
+  - Reopening an alert and flagging an AI close as wrong, each with a
+    reason, are not on the page yet.
+- **The decision page** (`/escalations/<id>`), the older page, still opens
+  from the Escalations list and from existing links. It shows the expected
+  response plan under the investigation, so "Record decision" stays in view,
+  and the form says how many actions are pre-approved. Every action in the
+  plan names its exact
   target (the process, host, user or address), next to its risk and whether
   it can be undone. An action the plan sends without a target cannot be
   pre-approved there: it says why and is left for the Approvals page.
@@ -426,8 +362,9 @@ The console follows the console v2 design (`docs/design/console-v2/`).
 #### Investigation: trace, tools and evidence
 
 These are the foundations of the investigation harness. In this release the
-analysis agent's own lookups run through them; the Wazuh evidence tools are
-not part of 1.3.0.
+analysis agent's own lookups (reputation and alert history) run through the
+tool registry. The Wazuh evidence tools are registered and tested, but the
+agents do not use them in investigations yet.
 
 - **An investigation trace.** Every model call and every
   threat-intelligence or history lookup of an alert's investigation is
@@ -455,8 +392,9 @@ not part of 1.3.0.
   - Every tool result carries a typed outcome: `success`, `empty` (the query
     ran and matched nothing) or `failed` (refused, timed out, raised, over
     the row cap, or no answer from the source). A failed call can no longer
-    be mistaken for "no rows". `complete` is false when a result holds as
-    many rows as its cap.
+    be mistaken for "no rows". A result is `complete` only when it is below
+    its row cap and the tool does not say that a cap inside the source, an
+    open time window or the source's retention cut it.
   - The trace stores the same outcome for the step (migration `0018`). A
     history lookup that finds no earlier alert is now stored as `empty`, not
     `success`.
@@ -475,9 +413,52 @@ not part of 1.3.0.
   (how widely a file, an image, a service or a command is seen). `complete`
   is false when the source cut a result or its time window had not closed,
   so that "nothing was found" is never read from a partial answer. Every
-  list holds at most 50 items and every text field has a maximum length. The
-  tools that produce the host, logon and prevalence facts come in a later
-  release. See docs/evidence-facts.md.
+  list holds at most 50 items and every text field has a maximum length. See
+  docs/evidence-facts.md.
+- **Wazuh evidence tools** (`lg_sotf.tools.wazuh`): four registered tools
+  that read what surrounds an alert on the tenant's own Wazuh indexer and
+  answer with typed evidence facts (schema 1.1). **The analysis does not
+  call them yet**: the investigation executor uses them in a later release,
+  so they change no verdict in 1.3.0.
+  - `wazuh.host_activity`: what a host's alerts show around a moment (up to
+    60 minutes before and after): counts by rule group and technique, the
+    highest rule level, and the 50 highest alerts.
+  - `wazuh.logon_fanout`: every logon of one source address, source host,
+    user or target host over up to 24 hours: failures, successes, lockouts,
+    distinct users, sources and hosts, and the time from the first failure
+    to the first success after it. Windows and sshd. A caller cannot narrow
+    it to an outcome or a logon type, so a fact never reports zero for what
+    it did not read.
+  - `wazuh.process_lineage`: a process's parents (up to 8) and what it
+    started, down to what its children started. Name the process by its
+    GUID when the alert has one; an image gives one fact per process that
+    matches, and none is complete when there are several.
+  - `wazuh.prevalence`: on how many of the tenant's agents a file hash, a
+    process image, a service's image path or a service name was seen over up
+    to 30 days.
+  - The tools are query templates. A caller gives typed, bounded values and
+    never a query, a field or an index; every search is checked against an
+    allow-list before it is sent, and the only request the client can make
+    is `POST /<index>/_search` on the index pattern of the Wazuh source the
+    alert came from, with that source's credentials, through the install's
+    destination rules. For the tools, a source `base_url` with a path or a
+    query is refused. They need the permission the pull source needs and
+    nothing more. Switch them off for a tenant with
+    `tools.wazuh_indexer.enabled: false`.
+  - A call that finds nothing is `empty`. An indexer that is down, refuses
+    the credentials, answers only part of a search that matched nothing, or
+    holds no index for the pattern is `failed` with a fixed reason. A fact
+    is `complete` only when every shard answered every search, no cap cut
+    what the fact lists, its time window had closed and the index reached
+    back to the window's start.
+  - Limits found on a Wazuh 4.14 indexer are in docs/evidence-facts.md:
+    process lineage needs the manager to raise Sysmon process creations, a
+    file hash is searched in file-integrity events only, and values are
+    compared whole and case-sensitively.
+  - The offline event store answers the same tools
+    (`lg_sotf.eval.wazuh_events.EventStoreBackend`), so evaluation and tests
+    get the facts from the corpus telemetry. A live test checks that a Wazuh
+    4.14 indexer gives the same facts.
 - **Telemetry for the evaluation corpus.** An investigation needs what
   surrounds an alert, and `corpus_v1` held alerts only.
   - `corpus_v1_events.jsonl.gz`: 291 context events around the corpus alerts
@@ -505,11 +486,11 @@ not part of 1.3.0.
   policy for high-severity alerts, log redaction and evidence-pack sealing.
   It exits 1 when a check fails; `--json` prints the results as JSON.
   `docs/invariants.md` lists the invariants, each with its rationale, owner,
-  threat-model rows and the tests that prove it: twelve are enforced, and
-  two are registered as pending until their stories merge (INV-13,
-  "Autonomy is earned per skill and tenant and lost on any miss", and
-  INV-14, "Evidence tools are read-only, templated and capped"). CI fails
-  when a named test is missing or an enforced invariant's test is skipped.
+  threat-model rows and the tests that prove it. Thirteen are enforced,
+  INV-14 ("Evidence tools are read-only, templated and capped") among them.
+  One is registered as pending until its story merges: INV-13, "Autonomy is
+  earned per skill and tenant and lost on any miss". CI fails when a named
+  test is missing or an enforced invariant's test is skipped.
 
 #### MSSP organisations and delegated access
 
@@ -979,6 +960,14 @@ These record decisions; they add no feature in this release.
   answer to Home and End; on the decision page the Entities tab says "IP
   addresses" where it said "Ips".
 
+#### Documentation
+
+- The README describes the product as it ships in 1.3: only the latest
+  release is listed as new, the capabilities of earlier releases are under
+  Features, and both diagrams follow the workflow graph and the 1.3 closing
+  rule. The product tour is re-recorded on console v2 and the pictures of
+  the previous console are replaced.
+
 #### For contributors
 
 - Pull requests add a changelog fragment in `changelog.d/` instead of
@@ -1231,6 +1220,10 @@ These record decisions; they add no feature in this release.
     events; the work queue) refuses or records the call in shadow mode. An
     architecture test finds the egress call sites in the source and fails on
     any that is not covered.
+  - Two reviewed reads are allowed: the local health listener, and the
+    tenant's own Wazuh indexer through the evidence tools, which tells no
+    third party anything and changes nothing. Every other outbound request
+    of a shadow run is refused.
   - A shadow run reads the database only as the SELECT-only role
     `lgsotf_shadow`, from a connection pool of its own, in read-only
     transactions; its Redis client sends reads only. A statement that slips
@@ -1295,7 +1288,8 @@ Upgrading from 1.2.3:
   read the new `email` outbox rows.
 - **No new setting is required.** New settings are optional and off or unset
   by default: `ai_closure.tier` (tenant), `blind_audit` (tenant),
-  `triage.known_scanners` (tenant), `database.shadow_url` and
+  `triage.known_scanners` (tenant), `tools.wazuh_indexer.enabled` (tenant,
+  to switch the Wazuh evidence tools off), `database.shadow_url` and
   `database.shadow_role`, `security.shadow_candidate_llm_hosts`,
   `ingestion.allowed_destination_hosts`, `ingestion.read_only_sources` and
   `LG_SOTF_AUTH__BREAK_GLASS_CREDENTIAL_HASH`.
@@ -1312,7 +1306,9 @@ Upgrading from 1.2.3:
   The verdict cache starts empty in effect, and closes a repeat only after
   two different analysts decided it benign.
 - **The console.** The "Escalations" entry left the menu: the Queue replaces
-  it, and `/escalations` still opens the older list. A platform admin who
+  it, and `/escalations` still opens the older list. A row of the Queue
+  opens the new case page; the older decision page still opens from the
+  Escalations list and from existing links. A platform admin who
   works in another tenant now has that tenant in the address,
   `/s/<tenant>/...`; addresses without it open the home tenant as before.
   The theme follows the system setting unless a user already chose one, and
@@ -1330,6 +1326,23 @@ Upgrading from 1.2.3:
   VM (docs/cicd.md, section 11).
 - **Building from source** needs Node.js 22.12 or later, and Python
   dependencies install with `--require-hashes` (`make dev`).
+
+Known limits of 1.3.0:
+
+- **An attack step can be closed as benign at the AI closure tier.** With
+  `ai_closure.tier` set to `auto_full_audit` and a real model, one step of
+  an attack chain can be closed as benign when the alert's data looks like
+  test data and related threats are open on the same host. The safety net
+  links such a close to the threat's case, and it stays closed until a
+  person confirms the threat. A fix is in progress (issue #435). The tier
+  is off by default.
+- **Wazuh evidence is not used by the AI's investigation yet.** The Wazuh
+  evidence tools are registered and tested, but the analysis does not call
+  them.
+- **Reopen and flag with a reason are not on the case page yet** (issue
+  #440). Today only an admin's reprocess puts an alert back through triage.
+- **Microsoft connectors are validated only against API fakes**, not a real
+  tenant. Validate in a lab tenant first (docs/microsoft.md).
 
 ## [1.2.3] - 2026-11-05
 
