@@ -116,7 +116,8 @@ RETRO_REOPEN_FAILURES = Counter(
 )
 RETRO_REOPENED = Counter(
     "lgsotf_retro_reopened_total",
-    "Model-closed alerts reopened because a related threat was confirmed (a person, or an executed response), by path.",
+    "Model-closed alerts reopened because a related threat was confirmed (a person, or a response action that "
+    "really ran), by path.",
     ["path"],
     registry=REGISTRY,
 )

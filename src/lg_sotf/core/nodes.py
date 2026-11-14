@@ -44,7 +44,6 @@ from lg_sotf.domain.routing import BENIGN_DECISIONS, RoutingThresholds
 from lg_sotf.domain.suppression import alert_match_view, fingerprint_suggestion, first_matching_rule
 from lg_sotf.errors import NodeTimeout
 from lg_sotf.llm import USE_DEFAULT, TokenBudget
-from lg_sotf.models.vocabulary import COMPLETED_ACTION_STATUSES
 from lg_sotf.observability.logging import bound_context, get_logger, log_failure
 from lg_sotf.observability.metrics import observe_node
 from lg_sotf.queue.producer import WorkQueue
@@ -446,13 +445,13 @@ class WorkflowNodes:
     async def _forget_benign_learning(self, state: WorkflowState) -> None:
         """A threat on this alert: no cached verdict or suppression rule may close it, or its repeats, again. The
         alerts the models closed alone on its entities reopen when an analyst decided ``true_positive`` (on this
-        alert or on the case it is attached to) or a response action for it was carried out; on the models' word
-        alone they are only linked (decision policy v3 safety net)."""
+        alert or on the case it is attached to) or a response action for it really ran (``succeeded``, never a
+        dry run); on the models' word alone they are only linked (decision policy v3 safety net)."""
         alert = await self.deps.repos.alerts.get(state["tenant_id"], state["alert_id"])
         await forget_benign_learning(self.deps.repos, self.deps.verdicts, state["tenant_id"], alert, actor=WORKFLOW_ACTOR)
-        confirmed = (state.get("analyst") or {}).get("decision") == "true_positive" or bool(
-            COMPLETED_ACTION_STATUSES & set((state.get("executed") or {}).values())
-        )
+        confirmed = (state.get("analyst") or {}).get("decision") == "true_positive" or "succeeded" in (
+            state.get("executed") or {}
+        ).values()
         await self._safety_net(alert, path="workflow", escalation_id=state.get("escalation_id"), confirmed=confirmed)
 
     def _evidence(self, state: WorkflowState) -> str:
@@ -573,9 +572,10 @@ class WorkflowNodes:
                 break
             still_waiting = await self.deps.responses.awaiting(tenant_id, alert_id, candidates)
         executed = {**(state.get("executed") or {}), **approvals, **results}
-        if COMPLETED_ACTION_STATUSES & set(results.values()):
+        if "succeeded" in results.values():
             # The platform acted on the threat, alone under the autonomy policy or on a person's approval: that
-            # confirms it, so the alerts the models closed alone on its entities reopen (AI-E3.15).
+            # confirms it, so the alerts the models closed alone on its entities reopen (AI-E3.15). A dry run is
+            # a simulation: nothing ran, nothing is confirmed.
             await self._safety_net(await self.deps.repos.alerts.get(tenant_id, alert_id), path="response",
                                    escalation_id=state.get("escalation_id"), confirmed=True)
         statuses: Dict[str, int] = {}

@@ -11,7 +11,9 @@ the models closed alone (close reason ``ai_closed:*``) in the previous
 **A model judged the threat** (:func:`link_related_model_closes`):
 
 * the workflow plans a response for it, or closes it malicious, with no
-  analyst ``true_positive`` and no executed response action behind it;
+  analyst ``true_positive`` and no response action that really ran behind
+  it (a response it only proposes, or only simulates in the tenant's
+  dry-run mode);
 * it is escalated and a model judged it a threat (the deep tier's
   ``malicious``, the fast tier's ``likely_threat`` or ``confirmed_threat``).
   The fast tier's ``suspicious`` is a doubt, not a threat: it does not block
@@ -38,10 +40,11 @@ person or by the platform acting on it:
   plan and the malicious close of the run that decision resumes);
 * an analyst approves a response action for it;
 * a blind audit labels it ``malicious``;
-* the workflow carries out a response action for it (``succeeded``, or
-  ``dry_run`` in the tenant's dry-run mode), alone under the tenant's
-  autonomy policy: once the platform has acted on a threat, the related
-  alerts do not stay closed. A response it only proposes confirms nothing.
+* the workflow carries out a response action for it (``succeeded``), alone
+  under the tenant's autonomy policy: once the platform has acted on a
+  threat, the related alerts do not stay closed. A response it only
+  proposes confirms nothing, and neither does a ``dry_run``: a simulation
+  is not an act.
 
 Each related alert is reopened, and so is every alert linked earlier to the
 threat or attached to its case, however long ago it closed. Each one is

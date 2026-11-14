@@ -122,13 +122,14 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "at every model-closed alert sharing a host, user or IP with it in the previous 24 hours. A model's "
             "judgement is not a confirmation: a threat only a model stands behind (an escalation a model judged a "
             "threat: deep verdict malicious, or fast tier likely_threat or confirmed_threat, never a merely "
-            "suspicious one; a response the workflow only proposes) links "
+            "suspicious one; a response the workflow only proposes, or only simulates in dry-run mode) links "
             "those alerts to its open case as related alerts, audited, and they stay closed and marked for audit; "
             "no decision on the case settles them, so a benign one never makes them analyst-confirmed benign, and "
             "the compliance evidence shows no human decision for them. A "
             "confirmed threat (an analyst true positive, an analyst's own approval of a response action, a "
-            "blind-audit malicious label, or a response action the workflow carried out alone under the tenant's "
-            "autonomy policy: once the platform has acted, the related alerts do not stay closed) reopens them, "
+            "blind-audit malicious label, or a response action that really ran, succeeded, when the workflow "
+            "carried it out alone under the tenant's autonomy policy: once the platform has acted, the related "
+            "alerts do not stay closed) reopens them, "
             "with every alert linked to the threat or into its case "
             "earlier, however long ago it closed: folded into its open case as a related alert, or queued for "
             "review without one, and audited. With the tier off, the default, a model never "
@@ -172,6 +173,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "test_a_response_plan_the_workflow_only_proposes_links_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_a_response_the_workflow_only_simulates_in_dry_run_links_and_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_analysts_true_positive_reopens_at_the_response_plan_and_at_the_malicious_close",
             "tests/integration/engine/test_retro_reopen.py::"

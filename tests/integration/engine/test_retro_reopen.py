@@ -155,12 +155,22 @@ async def test_an_escalation_a_model_judged_a_threat_links_related_model_closes_
 
 
 async def policy_response(
-    engine_factory: Any, engine_settings: Settings, repos: Repositories, autonomy: Dict[str, str]
+    engine_factory: Any, engine_settings: Settings, repos: Repositories, autonomy: Dict[str, str], *,
+    live: Optional[pytest.MonkeyPatch] = None,
 ) -> tuple[Any, str, str]:
     """A response the policy plans on the models' word (no analyst, no case) for an alert sharing an address with
-    a model close; ``autonomy`` decides whether its low-risk action runs alone or waits for a person."""
+    a model close; ``autonomy`` decides whether its low-risk action runs alone or waits for a person. The test
+    tenant is in dry-run mode; with ``live`` the workflow is told what a connector reports when the action really
+    ran (``succeeded``)."""
     settings = engine_settings.model_copy(update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}})
     engine = await engine_factory(settings=settings)
+    if live is not None:
+        execute = engine.node_deps.responses.execute
+
+        async def really_ran(*args: Any, **kwargs: Any) -> Dict[str, str]:
+            return {i: "succeeded" if s == "dry_run" else s for i, s in (await execute(*args, **kwargs)).items()}
+
+        live.setattr(engine.node_deps.responses, "execute", really_ran)
     await repos.tenants.update_settings(TENANT_A, {"autonomy": autonomy})
     closed_alert = await model_closed(repos, {"ips": ["185.220.101.44"]})
     threat = await make_alert(repos, TENANT_A, title="Unusual outbound traffic volume", severity="medium",
@@ -183,21 +193,40 @@ async def test_a_response_plan_the_workflow_only_proposes_links_and_reopens_noth
 
 
 async def test_a_response_the_workflow_carries_out_alone_reopens_related_model_closes(
-    engine_factory: Any, engine_settings: Settings, repos: Repositories
+    engine_factory: Any, engine_settings: Settings, repos: Repositories, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """AI-E3.15 (lead decision): once the platform has acted on a threat under the tenant's autonomy policy, the
-    related alerts do not stay closed. The plan links the model close; the executed action reopens it."""
+    related alerts do not stay closed. The plan links the model close; the action that really ran reopens it."""
+    before = RETRO_REOPENED.labels(path="response")._value.get()
+    outcome, threat, closed_alert = await policy_response(
+        engine_factory, engine_settings, repos, {"low": "auto"}, live=monkeypatch
+    )
+
+    stored = await repos.alerts.get(TENANT_A, threat)
+    assert outcome.status == "completed" and stored.summary["close_reason"] == "policy:response"
+    assert stored.summary.get("analyst_decision") is None and stored.summary["actions"].get("succeeded")
+    assert await reopened(repos, closed_alert, "requeued")
+    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == [closed_alert]
+    assert RETRO_REOPENED.labels(path="response")._value.get() == before + 1
+
+
+async def test_a_response_the_workflow_only_simulates_in_dry_run_links_and_reopens_nothing(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories
+) -> None:
+    """AI-E3.15 (lead decision): a dry run is a simulation, the platform has not acted. The same automatic
+    response on a tenant in dry-run mode completes and closes the alert malicious, and the related model close is
+    linked and stays closed, at the response plan, at the execution and at the malicious close."""
     before = RETRO_REOPENED.labels(path="response")._value.get()
     outcome, threat, closed_alert = await policy_response(engine_factory, engine_settings, repos, {"low": "auto"})
 
     stored = await repos.alerts.get(TENANT_A, threat)
     actions = (await repos.actions.list(TENANT_A, alert_id=threat, limit=50)).items
-    assert actions and {a.status for a in actions} == {"dry_run"}  # the tenant's dry-run mode: carried out all the same
+    assert actions and {a.status for a in actions} == {"dry_run"}
     assert outcome.status == "completed" and stored.summary["close_reason"] == "policy:response"
-    assert stored.summary.get("analyst_decision") is None
-    assert await reopened(repos, closed_alert, "requeued")
-    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == [closed_alert]
-    assert RETRO_REOPENED.labels(path="response")._value.get() == before + 1
+    assert stored.summary.get("analyst_decision") is None and stored.summary["linked_alert_ids"] == [closed_alert]
+    assert await linked(repos, closed_alert, threat, None)
+    assert await audited(repos, LINK_ACTION) == [closed_alert] and await audited(repos, REOPEN_ACTION) == []
+    assert RETRO_REOPENED.labels(path="response")._value.get() == before
 
 
 async def test_an_analysts_true_positive_reopens_at_the_response_plan_and_at_the_malicious_close(
