@@ -118,6 +118,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", "/api/v1/onboarding/setup", "platform_admin", None),
     ("PUT", "/api/v1/onboarding/setup", "platform_admin", {"organisation": "Org", "tenant_name": "Tenant A"}),
     ("POST", "/api/v1/onboarding/setup/complete", "platform_admin", {}),
+    ("POST", "/api/v1/onboarding/connectors/wazuh/check", "admin", {"push": {"source_id": X}}),
     ("GET", f"/api/v1/alerts/{X}/evidence", "viewer", None),
     ("POST", f"/api/v1/alerts/{X}/incident-report", "analyst", {"stage": "final"}),
     ("GET", "/api/v1/platform/tenants/no-such-tenant/erasure", "platform_admin", None),
@@ -148,8 +149,6 @@ PUBLIC_ENDPOINTS = {
     ("POST", "/api/v1/auth/refresh"),
     ("POST", "/api/v1/auth/logout"),
     ("POST", "/api/v1/auth/mfa/verify"),
-    # Authenticated by the install's sealed credential (body); covered by test_break_glass.
-    ("POST", "/api/v1/auth/break-glass"),
     # Authenticated by the Slack app's signing secret; covered by tests/integration/integrations/test_slack.py.
     ("POST", "/api/v1/integrations/slack/interactions"),
 }

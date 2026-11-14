@@ -40,15 +40,17 @@ from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
 from lg_sotf.api.schemas import BreakGlassIn, LoginIn, MeOut, MfaChallengeOut, TokenOut, UserOut
-from lg_sotf.api.stability import route_contract
 from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
 LOGIN_BUCKET = "login"
+BREAK_GLASS_BUCKET = "break-glass-fail"
 REFRESH_BUCKET = "refresh"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+# Mounted only while break-glass is enabled (lg_sotf.api.app.create_app): off, the route does not exist.
+break_glass_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _clear_refresh_cookie(ctx: ApiContext, response: Response) -> None:
@@ -150,24 +152,28 @@ async def login(body: LoginIn, request: Request, response: Response) -> Union[To
     )
 
 
-@router.post(
+@break_glass_router.post(
     "/break-glass",
     response_model=TokenOut,
-    summary="Emergency sign-in with the install's sealed credential (off by default; every use alerts all platform admins)",
-    **route_contract(stability="beta"),
+    summary="Emergency sign-in with the install's sealed credential (every use alerts all platform admins)",
 )
 async def break_glass(body: BreakGlassIn, request: Request) -> TokenOut:
     # A short platform-admin access token and no refresh cookie (lg_sotf.api.auth.break_glass).
     ctx = get_ctx(request)
-    # Limited like a login, but per address alone: the credential is the same whatever account is named.
-    await _limit_login(ctx, request, "break-glass")
+    # Only failures count, per address (the credential is the same whatever account is named): a
+    # successful use is never refused for earlier successes, and other addresses cannot hold the path.
+    ip = client_ip(request)
+    limit = ctx.settings.api.login_rate_limit_per_minute
+    blocked = await ctx.limiter.blocked(BREAK_GLASS_BUCKET, ip, limit)
+    if blocked is not None:
+        raise rate_limited(blocked)
     try:
         user, token = await break_glass_sign_in(
-            ctx, email=body.email, tenant_id=body.tenant, credential=body.credential, reason=body.reason,
-            client_ip=client_ip(request),
+            ctx, email=body.email, tenant_id=body.tenant, credential=body.credential, reason=body.reason, client_ip=ip
         )
     except ApiError as exc:
         if exc.status_code == 401:
+            await ctx.limiter.hit(BREAK_GLASS_BUCKET, ip, limit)
             await count_failed_login(ctx, request)
         raise
     return TokenOut(access_token=token.token, expires_in=token.expires_in, user=UserOut.model_validate(user))

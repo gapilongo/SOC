@@ -14,7 +14,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Final, Optional
 
 import jwt
 
@@ -27,6 +27,7 @@ log = get_logger(__name__)
 
 ACCESS_ALGORITHM = "HS256"
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105 - a claim value, not a secret
+BREAK_GLASS_METHOD: Final = "break_glass"  # the ``auth_method`` claim of a break-glass session
 MFA_TOKEN_TYPE = "mfa"  # noqa: S105 - a claim value, not a secret
 MFA_ENROLL_TOKEN_TYPE = "mfa_enroll"  # noqa: S105 - a claim value, not a secret
 MFA_TOKEN_TYPES = (MFA_TOKEN_TYPE, MFA_ENROLL_TOKEN_TYPE)
@@ -92,9 +93,13 @@ class TokenService:
     def refresh_ttl_s(self) -> int:
         return int(self._auth.refresh_token_ttl_s)
 
-    def issue_access(self, user: User, *, now: Optional[datetime] = None, ttl_s: Optional[int] = None) -> IssuedToken:
-        """An access token for ``user``; ``ttl_s`` shortens it (a break-glass session, which has no refresh token)."""
-        ttl_s = self.access_ttl_s if ttl_s is None else min(ttl_s, self.access_ttl_s)
+    def issue_access(self, user: User, *, now: Optional[datetime] = None, break_glass: bool = False) -> IssuedToken:
+        """An access token for ``user``.
+
+        ``break_glass``: the token of a break-glass session. It lives ``auth.break_glass_ttl_s`` (never
+        longer than a normal one) and carries ``auth_method: break_glass``.
+        """
+        ttl_s = min(self._auth.break_glass_ttl_s, self.access_ttl_s) if break_glass else self.access_ttl_s
         now = now or datetime.now(UTC)
         expires = now + timedelta(seconds=ttl_s)
         jti = uuid.uuid4().hex
@@ -111,6 +116,8 @@ class TokenService:
             "exp": int(expires.timestamp()),
             "jti": jti,
         }
+        if break_glass:
+            claims["auth_method"] = BREAK_GLASS_METHOD
         token = jwt.encode(claims, self._secret, algorithm=ACCESS_ALGORITHM, headers={"typ": "JWT"})
         return IssuedToken(token=token, jti=jti, expires_at=expires, expires_in=ttl_s)
 

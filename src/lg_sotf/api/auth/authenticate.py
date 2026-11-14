@@ -45,13 +45,13 @@ from starlette.requests import HTTPConnection
 
 from lg_sotf.api.auth.oidc import OIDCError, OIDCIdentity, OIDCUnavailable
 from lg_sotf.api.auth.principal import ROLE_RANK, ROLES, Principal
-from lg_sotf.api.auth.tokens import InvalidToken, is_local_token
+from lg_sotf.api.auth.tokens import BREAK_GLASS_METHOD, InvalidToken, is_local_token
 from lg_sotf.api.context import ApiContext
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.middleware import mark_principal
 from lg_sotf.api.quotas import quota_conflict
 from lg_sotf.api.ratelimit import RateDecision, rate_limited
-from lg_sotf.audit.logger import AuditLogger, Delegation, act_under_grant
+from lg_sotf.audit.logger import AuditLogger, Delegation, act_under_grant, tag_session
 from lg_sotf.db.errors import Conflict, NotFound
 from lg_sotf.db.repos import User
 from lg_sotf.db.tenancy import is_valid_tenant_id
@@ -159,6 +159,7 @@ async def record_failure(ctx: ApiContext, ip: str, credential: Optional[str]) ->
 async def authenticate(ctx: ApiContext, conn: HTTPConnection, *, allow_api_key: bool = True) -> Principal:
     """Authenticate the request and apply tenant checks and the ``X-Tenant-ID`` override."""
     act_under_grant(None)  # set below once the request is known to act under a grant
+    tag_session(None)  # set below for a break-glass session
     ip = client_ip(conn)
     api_key, bearer = _credentials(conn)
     credential = api_key if api_key is not None else bearer
@@ -176,6 +177,8 @@ async def authenticate(ctx: ApiContext, conn: HTTPConnection, *, allow_api_key: 
             assert bearer is not None
             principal = await bearer_principal(ctx, bearer)
         await _require_active_tenant(ctx, principal.home_tenant_id)
+        # Every audit entry of a break-glass session says so (found without knowing the session's times).
+        tag_session(BREAK_GLASS_METHOD if principal.auth_method == BREAK_GLASS_METHOD else None)
     except ApiError as exc:
         if exc.status_code == 401:
             decision = await record_failure(ctx, ip, credential)
@@ -226,7 +229,7 @@ async def _local_principal(ctx: ApiContext, token: str) -> Principal:
         kind="user",
         tenant_id=tenant_id,
         home_tenant_id=tenant_id,
-        auth_method="password",
+        auth_method=BREAK_GLASS_METHOD if claims.get("auth_method") == BREAK_GLASS_METHOD else "password",
         role=cast(Role, user.role),
         user_id=user.id,
         email=user.email,
@@ -438,6 +441,10 @@ async def _apply_tenant_override(ctx: ApiContext, conn: HTTPConnection, principa
 async def under_grant(ctx: ApiContext, principal: Principal, tenant_id: str) -> Optional[Principal]:
     """``principal`` acting in ``tenant_id`` under its organisation's strongest live grant, else ``None``."""
     creator: Optional[User] = None
+    if principal.auth_method == BREAK_GLASS_METHOD:
+        # An emergency session borrows no customer's grant: it acts as the platform admin it is, so it
+        # cannot decide or approve for a customer, and the access is audited as a platform admin's.
+        return None
     if principal.is_api_key and principal.api_key_id is not None:
         # A key acts only while the member who created it is still a member, and only where allowed.
         key = await ctx.repos.api_keys.get_by_id(principal.home_tenant_id, principal.api_key_id)

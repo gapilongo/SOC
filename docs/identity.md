@@ -140,8 +140,8 @@ policy). API keys are unaffected.
 | `auth.mfa_recovery_codes_regenerated` | new recovery codes |
 | `auth.mfa_disabled` | the user turned MFA off |
 | `auth.mfa_reset` | an admin, a platform admin or the CLI removed a user's MFA |
-| `auth.break_glass_used` | a break-glass sign-in (the account, source address, reason, session end, admins notified) |
-| `auth.break_glass_failed` | a refused break-glass attempt (`reason`: `bad_credential`, `unknown_account`), in the bootstrap tenant's log |
+| `auth.break_glass_used` | a break-glass sign-in (the account, source address, reason, session end, admins notified). Every later entry of that session carries `auth_method: break_glass` in its details |
+| `auth.break_glass_failed` | a refused break-glass attempt: `bad_credential` naming a real platform admin (that account's tenant), or `unknown_account` with the right credential (the bootstrap tenant's log, with a short hash of the name, never the name) |
 | `auth.login` | `details.method` is `password`, `password+totp`, `password+recovery_code` or `password+mfa_enrollment` |
 
 ## Recovery procedures

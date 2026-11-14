@@ -84,6 +84,12 @@ TICKET_SYNCS = Counter(
     ["system", "outcome"],
     registry=REGISTRY,
 )
+UNDELIVERED_SECURITY_ALERTS = Counter(
+    "lgsotf_security_alerts_undelivered_total",
+    "Security alerts mailed to people (a break-glass sign-in) that died undelivered. Page on any increase.",
+    ["event_type"],
+    registry=REGISTRY,
+)
 
 CLAIM_LEASE_S = 300.0
 SUSPENDED_RETRY_S = 300.0
@@ -228,6 +234,13 @@ class OutboxDelivery:
             DELIVERIES.labels(kind=kind, outcome=outcome.metric).inc()
             if not recorded:
                 log.warning("integrations.outcome_superseded", kind=kind)
+            elif outcome.status == "dead" and entry.integration_id is None:
+                # Nobody was told (a break-glass sign-in): an error an operator pages on, with its own metric.
+                UNDELIVERED_SECURITY_ALERTS.labels(event_type=entry.event_type).inc()
+                log.error(
+                    "integrations.security_alert_undelivered",
+                    event_type=entry.event_type, attempts=entry.attempts, error=outcome.error,
+                )
             elif outcome.status == "dead":
                 log.warning("integrations.delivery_dead", kind=kind, event_type=entry.event_type, attempts=entry.attempts)
             elif outcome.status == "failed":
@@ -277,6 +290,8 @@ class OutboxDelivery:
 
         Mailed to ``payload.recipients`` through the install's SMTP whatever the tenant's state: there is
         no integration to disable or delete, and a suspended tenant does not hold a security alert back.
+        Every failure is retried with the normal backoff until ``integrations.max_attempts``, a permanent
+        SMTP answer included: a relay that rejects today may be fixed before the alert is given up.
         """
         config = {"recipients": entry.payload.get("recipients"), "subject_prefix": "[LG-SOTF security]"}
         try:
@@ -284,7 +299,7 @@ class OutboxDelivery:
                 self._settings, entry.payload, self._base_url, config, smtp_factory=self._smtp_factory
             )
         except DeliveryError as exc:
-            return self._failure(entry, safe_error(exc), retryable=exc.retryable, retry_after=exc.retry_after)
+            return self._failure(entry, safe_error(exc), retryable=True, retry_after=exc.retry_after)
         return Outcome("sent", result=result)
 
     async def _send(self, entry: OutboxEntry, integration: Integration) -> Dict[str, Any]:

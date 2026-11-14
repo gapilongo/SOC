@@ -57,6 +57,7 @@ async def record_use(
             actor_type="user",
             actor_id=str(user.id),
             details={
+                "auth_method": "break_glass",  # the mark every later entry of this session carries
                 "reason": reason,
                 "client_ip": client_ip,
                 "token_id": token_id,

@@ -58,12 +58,14 @@ def test_access_token_round_trip_carries_contract_claims(tokens: TokenService) -
     assert is_local_token(issued.token)
 
 
-def test_a_shorter_ttl_is_honoured_and_a_longer_one_is_capped(tokens: TokenService) -> None:
-    """``ttl_s`` (the break-glass session) can only shorten an access token."""
-    short = tokens.issue_access(_user(), ttl_s=120)
-    claims = tokens.verify_access(short.token)
-    assert short.expires_in == claims["exp"] - claims["iat"] == 120
-    assert tokens.issue_access(_user(), ttl_s=3_600).expires_in == 600
+def test_a_break_glass_token_is_marked_and_never_outlives_a_normal_one(make_settings: Callable[..., Settings]) -> None:
+    short = TokenService(make_settings(auth={"break_glass_ttl_s": 120}), secret=SECRET)
+    issued = short.issue_access(_user(), break_glass=True)
+    claims = short.verify_access(issued.token)
+    assert issued.expires_in == claims["exp"] - claims["iat"] == 120 and claims["auth_method"] == "break_glass"
+    assert "auth_method" not in short.verify_access(short.issue_access(_user()).token)
+    capped = TokenService(make_settings(auth={"access_token_ttl_s": 300, "break_glass_ttl_s": 900}), secret=SECRET)
+    assert capped.issue_access(_user(), break_glass=True).expires_in == 300
 
 
 def test_expired_tokens_are_rejected(tokens: TokenService) -> None:

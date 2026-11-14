@@ -200,16 +200,29 @@ def test_break_glass_is_off_by_default_and_needs_smtp_for_its_alert() -> None:
         "database": {"url": "postgresql://u:strong@db/x"},
         "llm": {"provider": "fake", "allow_fake": True},
     }
-    assert Settings(_env_file=None, **base).break_glass_enabled is False
-    sealed = {**base, "auth": {**base["auth"], "break_glass_credential_hash": "$argon2id$test-only"}}
-    silent = Settings(_env_file=None, **sealed)
-    assert silent.break_glass_enabled is False
-    assert any("break_glass_credential_hash needs integrations.smtp_host" in p for p in silent.production_problems())
     mail = {"smtp_host": "smtp.example.com", "smtp_from": "soc@example.com"}
-    alerting = Settings(_env_file=None, integrations=mail, **sealed)
+
+    def build(stored: str, **integrations: object) -> Settings:
+        auth = {**base["auth"], "break_glass_credential_hash": stored}
+        return Settings(_env_file=None, **{**base, "auth": auth}, integrations=integrations)
+
+    # Unset, or a variable left empty in an env file: off, and nothing to complain about.
+    for off in (Settings(_env_file=None, **base), build("", **mail), build("  ", **mail)):
+        assert off.auth.break_glass_credential_hash is None and off.break_glass_enabled is False
+        assert off.production_problems() == []
+    stored = "$argon2id$v=19$m=65536,t=3,p=4$" + "c2FsdHNhbHRzYWx0c2FsdA" + "$" + "aGFzaA" * 7 + "a"
+    alerting = build(stored, **mail)
     assert alerting.break_glass_enabled is True and alerting.production_problems() == []
+    # Nothing would mail the alert: no SMTP, or the scheduler's delivery job switched off.
+    for silent in (build(stored), build(stored, **mail, enabled=False)):
+        assert silent.break_glass_enabled is False
+        assert any("break_glass_credential_hash needs integrations.enabled" in p for p in silent.production_problems())
+    # A hash mangled on the way in (Compose expanded its `$...` parts) is a start-up problem, not a dead emergency path.
+    mangled = build("=19=65536,t=3,p=4", **mail)
+    assert mangled.break_glass_enabled is False
+    assert any("break_glass_credential_hash is not an argon2id hash" in p for p in mangled.production_problems())
     with pytest.raises(ValueError):
-        Settings(_env_file=None, **{**sealed, "auth": {**sealed["auth"], "break_glass_ttl_s": 3_600}})
+        Settings(_env_file=None, **{**base, "auth": {**base["auth"], "break_glass_ttl_s": 3_600}})
 
 
 @pytest.mark.parametrize("name", ["development", "testing", "staging", "production"])

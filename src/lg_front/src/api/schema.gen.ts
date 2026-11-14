@@ -348,23 +348,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/auth/break-glass": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Emergency sign-in with the install's sealed credential (off by default; every use alerts all platform admins) */
-        post: operations["break_glass_api_v1_auth_break_glass_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/auth/login": {
         parameters: {
             query?: never;
@@ -3005,20 +2988,6 @@ export interface components {
              * Format: date-time
              */
             window_start: string;
-        };
-        /**
-         * BreakGlassIn
-         * @description The sealed credential, the platform-admin account to act as (``tenant`` when the email is ambiguous) and why.
-         */
-        BreakGlassIn: {
-            /** Credential */
-            credential: string;
-            /** Email */
-            email: string;
-            /** Reason */
-            reason: string;
-            /** Tenant */
-            tenant?: string | null;
         };
         /** BulkClaimIn */
         BulkClaimIn: {
@@ -6908,39 +6877,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AuditVerifyOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    break_glass_api_v1_auth_break_glass_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["BreakGlassIn"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TokenOut"];
                 };
             };
             /** @description Validation Error */

@@ -225,6 +225,17 @@ async def test_a_row_without_an_integration_is_mailed_whatever_the_tenant_state(
     # Without SMTP the row is retried, never dropped.
     assert (await _delivery(settings, Recorder(), box).deliver(entry, None)).status == "failed"
 
+    # A relay that answers 5xx is retried too (an integration's mail would be dead at once)...
+    class Rejecting(FakeSMTP):
+        def send_message(self, message: Any) -> None:
+            raise smtplib.SMTPSenderRefused(550, b"relay access denied", "soc@example.com")
+
+    rejecting = _delivery(configured, Recorder(), box, smtp_factory=Rejecting)
+    assert (await rejecting.deliver(entry, None)).status == "failed"
+    # ...and given up only after the last attempt.
+    last = outbox_entry(None, entry.payload, operation="email", attempts=configured.integrations.max_attempts)
+    assert (await rejecting.deliver(last, None)).status == "dead"
+
 
 async def test_destination_policy_refuses_internal_addresses(settings: Settings) -> None:
     async def loopback(host: str, port: int) -> List[str]:

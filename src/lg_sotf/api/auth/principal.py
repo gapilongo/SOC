@@ -14,7 +14,7 @@ from lg_sotf.models.vocabulary import ROLES as ROLES
 from lg_sotf.models.vocabulary import SCOPES as SCOPES
 
 PrincipalKind = Literal["user", "api_key"]
-AuthMethod = Literal["password", "oidc", "api_key"]
+AuthMethod = Literal["password", "oidc", "api_key", "break_glass"]
 
 
 def role_at_least(role: Optional[str], minimum: Role) -> bool:
