@@ -62,6 +62,16 @@ def test_a_lookup_is_matched_by_the_input_hash_of_its_call() -> None:
     assert [(m.tool, m.kind, m.target) for m in matched] == [(x.tool, x.kind, x.target) for x in lookups]
 
 
+def test_a_cached_answer_is_matched_by_the_output_hash_the_registry_stored() -> None:
+    """AI-E2.1: the trace hashes an answer without its transport flags, so a cached answer hashes like a live one."""
+    answer = {"provider": "virustotal", "status": "ok", "verdict": "malicious", "data": {"votes": 9}}
+    cached = {**answer, "cached": True}
+    lookups = lookups_of(summary(prototype.reputation("url", "https://x.example/?token=[REDACTED]", cached)))
+    stored = step(0, "reputation", output=[answer])  # what the registry hashed: no ``cached``
+    matched, failed = match_traces(lookups, [stored])
+    assert failed == [] and matched[0].trace is not None and matched[0].trace.output_hash == stored.output_hash
+
+
 def test_a_redacted_target_is_matched_by_the_output_hash_in_the_order_the_lookups_ran() -> None:
     """The summary stores targets redacted and cut, so their input hash can differ from the one recorded."""
     answer = [{"provider": "virustotal", "status": "ok", "verdict": "malicious", "data": {"votes": 9}}]

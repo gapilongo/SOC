@@ -52,6 +52,7 @@ from lg_sotf.services.plan_context import canonical_alert
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.response_preview import PreviewAction, response_preview
 from lg_sotf.settings import Settings
+from lg_sotf.tools.enrichment.tools import hashed_output
 
 #: The track record counts people's verdicts of the last 90 days and gives a rate from 30 of them on.
 TRACK_WINDOW_DAYS = 90
@@ -139,7 +140,8 @@ def match_traces(lookups: Sequence[Lookup], steps: Sequence[TraceStep]) -> Tuple
             continue
         after = max((step for at, step in hits.items() if at < index), default=-1)
         before = min((step for at, step in hits.items() if at > index), default=None)
-        hit = _newest(free, lookups[index].tool, "output_hash", content_hash(lookups[index].output), after, before)
+        stored = content_hash(hashed_output(lookups[index].output))  # as the tool registry hashed it
+        hit = _newest(free, lookups[index].tool, "output_hash", stored, after, before)
         if hit is not None:
             hits[index] = hit
             del free[hit]

@@ -37,7 +37,7 @@ from lg_sotf.tools.registry import (
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Repositories
 
-__all__ = ["HISTORY_TOOL", "REPUTATION_FAMILY", "HistoryParams", "ReputationParams", "enrichment_tools"]
+__all__ = ["HISTORY_TOOL", "REPUTATION_FAMILY", "HistoryParams", "ReputationParams", "enrichment_tools", "hashed_output"]
 
 REPUTATION_FAMILY = "reputation"
 HISTORY_TOOL = "platform.history"
@@ -92,6 +92,15 @@ def _failed(result: EnrichmentResult) -> bool:
 
 def _evidence(recorded: Mapping[str, Any]) -> Dict[str, Any]:
     return {key: value for key, value in recorded.items() if key not in TRANSPORT_FLAGS}
+
+
+def hashed_output(recorded: Any) -> Any:
+    """What the trace store hashes for a lookup's recorded output: one result, or a ``reputation`` step's list."""
+    if isinstance(recorded, Mapping):
+        return _evidence(recorded)
+    if isinstance(recorded, (list, tuple)):
+        return [hashed_output(item) for item in recorded]
+    return recorded
 
 
 def _reputation_rows(result: EnrichmentResult) -> int:
