@@ -48,6 +48,8 @@ ACTION_FAILED = "action.failed"
 ACTION_VERIFICATION_FAILED = "action.verification_failed"
 ALERT_CRITICAL_RECEIVED = "alert.critical_received"
 TEST_EVENT = "integration.test"
+# Mailed to every platform admin (lg_sotf.services.break_glass); no integration can subscribe to it or opt out.
+BREAK_GLASS_USED = "auth.break_glass_used"
 
 EVENT_TYPES: Tuple[str, ...] = (
     ESCALATION_CREATED,
@@ -71,6 +73,7 @@ EVENT_LABELS: Dict[str, str] = {
     ACTION_VERIFICATION_FAILED: "Action not verified",
     ALERT_CRITICAL_RECEIVED: "Critical alert received",
     TEST_EVENT: "Test message",
+    BREAK_GLASS_USED: "Break-glass access used",
 }
 
 

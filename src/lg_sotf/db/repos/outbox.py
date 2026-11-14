@@ -31,7 +31,8 @@ from lg_sotf.db.repos._base import (
 from lg_sotf.security.shadow import REFUSE, Arguments, egress, sink
 
 OUTBOX_STATUSES = ("pending", "sent", "failed", "dead")
-OUTBOX_OPERATIONS = ("notify", "ticket_create", "ticket_update", "test")
+# ``email``: mailed to ``payload.recipients`` (break-glass alerts); the one operation without an integration.
+OUTBOX_OPERATIONS = ("notify", "ticket_create", "ticket_update", "test", "email")
 MAX_ERROR_CHARS = 1_000
 MAX_DELIVERY_LIST = 200
 # Rows as ``NewOutboxEntry.model_dump(mode="json")`` in $2; an already queued (integration, dedupe_key) is skipped.
@@ -56,7 +57,7 @@ _INTEGRATIONS_SQL = """
 class OutboxEntry(Record):
     id: UUID
     tenant_id: str
-    integration_id: UUID
+    integration_id: Optional[UUID]
     event_id: UUID
     event_type: str
     operation: str
@@ -75,7 +76,7 @@ class OutboxEntry(Record):
 
 
 class NewOutboxEntry(Record):
-    integration_id: UUID
+    integration_id: Optional[UUID]
     event_id: UUID
     event_type: str
     operation: str

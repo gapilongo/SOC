@@ -123,6 +123,7 @@ AUTH_LOOKUP_FUNCTIONS: Tuple[str, ...] = (
     "lgsotf_auth_refresh_token(text)",
     "lgsotf_auth_api_key(uuid)",
     "lgsotf_auth_users_by_email(text)",
+    "lgsotf_auth_platform_admins()",
 )
 PROVISIONING_FUNCTIONS: Tuple[str, ...] = ("lgsotf_create_tenant(text, text)",)
 # Cross-tenant aggregates behind the platform-admin endpoints (migration 0004).

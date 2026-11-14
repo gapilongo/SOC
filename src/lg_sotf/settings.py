@@ -169,6 +169,8 @@ class LLMSettings(BaseModel):
 
 MAX_OIDC_ROLE_MAP_ENTRIES = 500
 MAX_OIDC_CLAIM_VALUE_CHARS = 256
+# An argon2id hash in PHC format, whole: a value cut or emptied by `$` expansion in an env file does not match.
+ARGON2ID_HASH_RE = re.compile(r"\$argon2id\$v=\d+\$m=\d+,t=\d+,p=\d+\$[A-Za-z0-9+/]{16,}\$[A-Za-z0-9+/]{32,}")
 
 
 class AuthSettings(BaseModel):
@@ -202,6 +204,10 @@ class AuthSettings(BaseModel):
     require_mfa_for_platform_admins: Optional[bool] = None
     mfa_issuer: str = Field(default="LG-SOTF", min_length=1, max_length=64)
     mfa_challenge_ttl_s: int = Field(default=300, ge=30, le=900)
+    # Break-glass sign-in (docs/runbooks/break-glass.md). Off unless the operator sets the argon2id
+    # hash of the sealed credential here; no API call and no tenant setting can turn it on.
+    break_glass_credential_hash: Optional[SecretStr] = None
+    break_glass_ttl_s: int = Field(default=600, ge=60, le=900)
     bootstrap_admin_email: Optional[str] = None
     bootstrap_admin_password: Optional[SecretStr] = None
     bootstrap_tenant_id: str = "default"
@@ -216,6 +222,12 @@ class AuthSettings(BaseModel):
         if any(not key or len(key) > MAX_OIDC_CLAIM_VALUE_CHARS for key in value):
             raise ValueError(f"claim values must be 1-{MAX_OIDC_CLAIM_VALUE_CHARS} characters")
         return value
+
+    @field_validator("break_glass_credential_hash", mode="before")
+    @classmethod
+    def _blank_hash_is_off(cls, value: object) -> object:
+        """A variable left empty in an env file means off, not an unusable credential."""
+        return None if isinstance(value, str) and not value.strip() else value
 
 
 class APISettings(BaseModel):
@@ -545,6 +557,29 @@ class Settings(BaseSettings):
         value = self.auth.require_mfa_for_platform_admins
         return self.is_production if value is None else value
 
+    def break_glass_problem(self) -> Optional[str]:
+        """Why the configured break-glass credential cannot be used; ``None`` when it can, or when none is set."""
+        stored = self.auth.break_glass_credential_hash
+        if stored is None:
+            return None
+        if not ARGON2ID_HASH_RE.fullmatch(stored.get_secret_value()):
+            return (
+                "auth.break_glass_credential_hash is not an argon2id hash: use the value printed by "
+                "`lg-sotf break-glass-credential`, in single quotes in env files (it contains '$')"
+            )
+        mail = self.integrations
+        if not (mail.enabled and mail.smtp_host and mail.smtp_from):
+            return (
+                "auth.break_glass_credential_hash needs integrations.enabled, integrations.smtp_host and "
+                "integrations.smtp_from: every break-glass sign-in is mailed to the platform admins"
+            )
+        return None
+
+    @property
+    def break_glass_enabled(self) -> bool:
+        """The sealed credential is configured and well formed, and the scheduler will mail the alert of its use."""
+        return self.auth.break_glass_credential_hash is not None and self.break_glass_problem() is None
+
     def production_problems(self) -> List[str]:
         """Return reasons this configuration is unsafe to run in production."""
         problems: List[str] = []
@@ -578,6 +613,9 @@ class Settings(BaseSettings):
             problems.append("database.url uses the development password")
         if self.integrations.smtp_host and self.integrations.smtp_security == "none":
             problems.append("integrations.smtp_security=none sends mail and SMTP credentials in clear text")
+        break_glass = self.break_glass_problem()
+        if break_glass is not None:
+            problems.append(break_glass)
         from lg_sotf.security.insecure import insecure_secret_problems
 
         problems.extend(insecure_secret_problems(self))

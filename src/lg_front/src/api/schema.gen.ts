@@ -3373,7 +3373,7 @@ export interface components {
              * Operation
              * @enum {string}
              */
-            operation: "notify" | "ticket_create" | "ticket_update" | "test";
+            operation: "notify" | "ticket_create" | "ticket_update" | "test" | "email";
             /** Result */
             result?: {
                 [key: string]: unknown;

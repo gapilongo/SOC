@@ -91,7 +91,7 @@ def integration(kind: str, *, config: Optional[Dict[str, Any]] = None, ciphertex
     )
 
 
-def outbox_entry(integration_id: uuid.UUID, payload: Dict[str, Any], *, operation: str = "notify", attempts: int = 1,
+def outbox_entry(integration_id: Optional[uuid.UUID], payload: Dict[str, Any], *, operation: str = "notify", attempts: int = 1,
                  created_at: Optional[datetime] = None, escalation_id: Optional[str] = None) -> OutboxEntry:
     now = datetime.now(UTC)
     return OutboxEntry.model_validate(

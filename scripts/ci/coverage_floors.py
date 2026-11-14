@@ -17,11 +17,11 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 # package path under src/lg_sotf/ -> floor (combined line+branch %, one point below the measured
-# baseline of 2026-11-05: runtime 82.49, security 98.02, api/auth 88.94).
+# baseline of 2026-11-05: runtime 82.49, security 98.02; api/auth 90.34 on 2026-11-14, SEC6.5).
 FLOORS: Dict[str, float] = {
     "runtime/": 81.4,
     "security/": 97.0,
-    "api/auth/": 87.9,
+    "api/auth/": 89.3,
 }
 RAISE_HINT_MARGIN = 2.0
 

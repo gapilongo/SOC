@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from typing import FrozenSet, Literal, Optional
+from typing import FrozenSet, Literal, Optional, Union
 from uuid import UUID
 
 from lg_sotf.audit.logger import Actor
@@ -15,6 +15,8 @@ from lg_sotf.models.vocabulary import SCOPES as SCOPES
 
 PrincipalKind = Literal["user", "api_key"]
 AuthMethod = Literal["password", "oidc", "api_key"]
+# The session of a break-glass sign-in (lg_sotf.api.auth.break_glass): the account's own, told apart everywhere.
+BreakGlass = Literal["break_glass"]
 
 
 def role_at_least(role: Optional[str], minimum: Role) -> bool:
@@ -37,7 +39,7 @@ class Principal:
     kind: PrincipalKind
     tenant_id: str
     home_tenant_id: str
-    auth_method: AuthMethod
+    auth_method: Union[AuthMethod, BreakGlass]
     role: Optional[Role] = None
     scopes: FrozenSet[Scope] = field(default_factory=frozenset)
     user_id: Optional[UUID] = None

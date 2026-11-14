@@ -61,6 +61,17 @@ class Delegation:
 _delegation: ContextVar[Optional[Delegation]] = ContextVar("lg_sotf_audit_delegation", default=None)
 
 
+_session_tag: ContextVar[Optional[str]] = ContextVar("lg_sotf_audit_session_tag", default=None)
+
+
+def tag_session(auth_method: Optional[str]) -> None:
+    """Write ``auth_method`` into the details of every audit entry of the current request (``None``: no tag).
+
+    Authentication calls it on every request; it tags break-glass sessions.
+    """
+    _session_tag.set(auth_method)
+
+
 def act_under_grant(delegation: Optional[Delegation]) -> None:
     """Set the grant the current request acts under (``None``: none). Authentication calls it on every request."""
     _delegation.set(delegation)
@@ -145,6 +156,8 @@ class AuditLogger:
         conn: Optional[Connection],
     ) -> Optional[AuditEntry]:
         safe_details, _ = redact(dict(details or {}))
+        if _session_tag.get() is not None:
+            safe_details["auth_method"] = _session_tag.get()
         delegation = _delegation.get()
         if delegation is not None and delegation.tenant_id != tenant_id:
             delegation = None  # an entry in another chain (the organisation's own, for one)

@@ -11,6 +11,7 @@
 | [CI/CD](cicd.md) | Operators | Multi-arch images on GHCR, dev and uat on an Oracle Cloud Always Free VM (Caddy HTTPS), promotion, rollback, backups |
 | [Operations](operations.md) | Operators | Health, scaling, dead letters, stuck runs, retention, key rotation, incidents, dashboards and alerts |
 | [Identity](identity.md) | Tenant admins, operators, security reviewers | TOTP MFA, OIDC role mapping and just-in-time provisioning, SAML via a broker, recovery |
+| [Break-glass runbook](runbooks/break-glass.md) | Operators, platform admins | Emergency platform-admin access with a sealed credential: when to use it, the procedure, the alert, rotation after use, the drill checklist |
 | [Security](security.md) | Security reviewers, customers | Threat model, tenant isolation, authentication, secrets, prompt-injection defences, guardrails, data handling, audit |
 | [Dependency policy](dependency-policy.md) | Engineers, security reviewers | Admission checklist for a new dependency, patch SLAs, Dependabot and advisory triage |
 | [Threat model](threat-model.md) | Security reviewers, pen testers, engineers | STRIDE per component (API, worker, MCP, MSSP delegation, evidence tools, CI/CD), OWASP Top 10 for Agentic Applications, MITRE ATLAS, the threat-model gate per epic |
