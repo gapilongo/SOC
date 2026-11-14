@@ -2,7 +2,7 @@
 /// <reference types="node" />
 /**
  * The token lint (eslint.config.js): a raw hex colour or an arbitrary size
- * utility fails `npm run lint`, in a page, a component or the shell; layout
+ * utility fails `npm run lint`, in a page, a component or the shell alike; layout
  * widths, grid templates, anchors and issue numbers do not. Run through
  * ESLint itself with the repository's configuration, so the test follows it.
  */
@@ -83,10 +83,13 @@ describe('token lint', () => {
     }
   }, 60_000);
 
-  it('exempts only the layout shell from the size rule, never from the colour rule', async () => {
-    expect(await lint(`className="md:pl-[232px]"`, 'src/app/Layout.tsx')).toEqual([]);
-    expect(await lint(`className="min-h-[34px]"`, 'src/app/shell/Sidebar.tsx')).toEqual([]);
-    expect(await lint(`style={{ color: '#3987e5' }}`, 'src/app/Layout.tsx')).toHaveLength(1);
-    expect(await lint(`className="min-h-[34px]"`, 'src/app/shell/Header.tsx')).toHaveLength(1);
+  it('exempts no file: the shell is held to both rules like every page', async () => {
+    for (const file of ['src/app/Layout.tsx', 'src/app/shell/Rail.tsx', 'src/app/shell/TopBar.tsx']) {
+      expect(await lint(`className="md:pl-[232px]"`, file), file).toHaveLength(1);
+      expect(await lint(`className="min-h-[34px]"`, file), file).toHaveLength(1);
+      expect(await lint(`style={{ color: '#3987e5' }}`, file), file).toHaveLength(1);
+      // The rail's width and the top bar's height are tokens.
+      expect(await lint(`className="w-rail pl-rail h-top min-h-ctl touch:min-h-ctl-touch"`, file), file).toEqual([]);
+    }
   }, 60_000);
 });

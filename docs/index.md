@@ -18,7 +18,7 @@
 | [Hardening guide](hardening.md) | Operators, security reviewers | Numbered L1/L2 controls with checks for Docker Compose, Helm, PostgreSQL, Redis, the reverse proxy and image verification |
 | [Safety invariants](invariants.md) | Security reviewers, buyers, engineers | The safety invariants with the tests that prove them, and `lg-sotf verify-invariants` for your own install |
 | [AI system card](ai-system-card.md) | Compliance officers, security reviewers, buyers | Intended use, the models and where they run, agents and tools, what the AI decides versus people, evaluation evidence and its limits, logging, data handling, EU AI Act and NIS2 mapping |
-| [MSSP operations](mssp.md) | Platform admins | MSSP console, tenant switcher, suspension, quotas, usage metering and invoicing, tenant templates |
+| [MSSP operations](mssp.md) | Platform admins | MSSP console, working in a tenant, suspension, quotas, usage metering and invoicing, tenant templates |
 | [Onboarding](onboarding.md) | Install admins, tenant admins | First-run setup wizard, getting-started checklist, sample alerts, per-tenant retention |
 | [Compliance](compliance.md) | Compliance officers, auditors, operators | Evidence packs and their verification, NIS2 report drafts, GDPR tenant export and erasure, audit retention, AI Act oversight mapping |
 | [MCP server](mcp.md) | Analysts, testers, operators | Using LG-SOTF from Claude Code, Claude Desktop or another MCP client; the tester workflow on a dry-run install; the QA-tenant runbook |

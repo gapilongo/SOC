@@ -32,11 +32,20 @@ In the web app, **MSSP console** (`/platform`) has four tabs:
 * **Create tenant**: id, name, optional first admin, and the initial
   settings (see [Templates](#templates)).
 
-The header's tenant switcher lists every tenant (search by name or id). While
-you act on another tenant, an amber banner says so, every request carries
-`X-Tenant-ID` and is written to that tenant's audit log
-(`platform_admin.tenant_access`), and live updates are off. **Return to ...**
-goes back to your home tenant.
+The scope control at the left of the top bar lists every tenant (search by
+name or id; the search field, Ctrl+K, finds a tenant too). While you work in
+another tenant, an amber banner says so, every request carries `X-Tenant-ID`
+and is written to that tenant's audit log (`platform_admin.tenant_access`),
+and live updates are off. **Return to ...** goes back to your home tenant.
+
+The tenant is part of the address: `https://soc.example.com/s/<tenant>/alerts`.
+A reload, a new tab and a link you send to a colleague open the same tenant.
+When you change tenant on a record's page (an alert, an escalation), the
+console opens the list instead, because a record belongs to one tenant. An
+address without `/s/<tenant>` means your home tenant. Someone who is not a
+platform admin and opens an address that names another tenant is told so and
+shown nothing. "All tenants" and tenant groups are not offered yet: the API
+answers for one tenant at a time.
 
 ## Delegated access (organisations and grants)
 

@@ -14,7 +14,7 @@ import { useApi, useAuth } from '../auth/AuthContext';
 import { usePollInterval } from '../lib/visibility';
 import { useLive } from '../live/LiveProvider';
 import { coreKeys } from './queryKeys';
-import type { MeOut } from './types';
+import type { MeOut, TenantRef } from './types';
 
 /** Poll every `liveMs` while the live stream is open, every `fallbackMs` otherwise; paused while the tab is hidden. */
 export function useLivePollInterval(liveMs = 60_000, fallbackMs = 20_000): number | false {
@@ -32,6 +32,22 @@ export function useMe() {
     queryFn: ({ signal }) => api.get<MeOut>('/auth/me', { signal }),
     enabled: Boolean(tenantId),
     staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * The tenants a platform admin may act on (`GET /platform/tenants`, never sent with the tenant
+ * override). Asked for only while `enabled` (the scope control or the search field is open) and
+ * refreshed each time, so a tenant created a moment ago is listed.
+ */
+export function useTenants(enabled: boolean) {
+  const api = useApi();
+  const { principal } = useAuth();
+  return useQuery({
+    queryKey: coreKeys.tenants.all,
+    queryFn: ({ signal }) => api.get<TenantRef[]>('/platform/tenants', { signal, homeTenant: true }),
+    enabled: enabled && Boolean(principal?.isPlatformAdmin),
+    staleTime: 0,
   });
 }
 

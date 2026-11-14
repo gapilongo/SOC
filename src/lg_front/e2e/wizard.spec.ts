@@ -16,7 +16,7 @@
  */
 import { expect, test, type Page } from '@playwright/test';
 
-import { BASE_URL, PageWatch, assertAccessible, requiredEnv, screenshot, signIn, type Credentials } from './support';
+import { BASE_URL, PageWatch, assertAccessible, requiredEnv, screenshot, setTheme, signIn, type Credentials } from './support';
 
 const BUDGET_MS = 30 * 60 * 1000;
 const admin: Credentials = { email: requiredEnv('E2E_ADMIN_EMAIL'), password: requiredEnv('E2E_ADMIN_PASSWORD') };
@@ -32,13 +32,6 @@ async function checkStep(page: Page, heading: string, shot: string): Promise<voi
   await screenshot(page, shot);
   await assertAccessible(page, `${heading} (390 px)`);
   await noSideScroll(page, heading);
-}
-
-async function pickTheme(page: Page, theme: 'Light' | 'Dark'): Promise<void> {
-  await page.getByRole('button', { name: /^Account: / }).click();
-  await page.getByRole('menuitemradio', { name: `${theme} theme` }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
-  await page.keyboard.press('Escape');
 }
 
 test('the setup wizard takes a fresh install to its first triaged alert and the proof of value', async ({ browser }) => {
@@ -79,10 +72,10 @@ test('the setup wizard takes a fresh install to its first triaged alert and the 
   await expect(page.getByRole('radio', { name: /Mistral AI \(EU\)/ })).toBeChecked();
   await page.getByRole('button', { name: 'Test model' }).click();
   await expect(page.getByText('both tiers answered')).toBeVisible();
-  await pickTheme(page, 'Light');
+  await setTheme(page, 'light');
   await screenshot(page, '23-setup-model-light');
   await assertAccessible(page, 'Step 3 of 5 (390 px, light theme)');
-  await pickTheme(page, 'Dark');
+  await setTheme(page, 'dark');
   await page.getByRole('button', { name: 'Save and continue' }).click();
 
   // 4. Sample alerts until the first verdict.

@@ -150,6 +150,19 @@ implementations and two copies each of the timeline and the entity list.
   radius; the decision page's Entities tab uses the alert panel's labels.
 * `LiveSocket` no longer holds a list of event types: the registry tells it
   which types the modules listen to.
+* **Amended by PRD-2.12 (#416), the console v2 shell.** The manifest gained
+  what a module adds to the shell: `search` (its records in the search
+  field), `commands` (links to the pages where an act is confirmed; a command
+  has no callback), `useNotices` (what needs an act, for the notifications)
+  and `offers` (what the service would add, for the page shown where it is
+  not licensed). A navigation group may be a service group (`service: true`):
+  where `moduleEnabled` says no, a platform admin sees it locked and a
+  customer tenant's users do not see it; the route then shows "not part of
+  this installation's licence" instead of "no access". The
+  `shell.header.tenant` slot is gone: choosing the tenant is the shell's own
+  scope control (the tenant list is a kernel read, `useTenants`), and the
+  tenant is part of the address (`/s/<tenant>`, `src/app/ScopedRouter.tsx`).
+  `shell.banner` stays.
 * Not done here, by decision: a data-table primitive on the virtual table
   (it did not fall out of this refactor and deserves its own story); the
   axe page list derived from the registry (the e2e suite keeps its literal

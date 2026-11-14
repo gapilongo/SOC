@@ -78,10 +78,6 @@ const SIZES = [
       'Use a size token (text-ctl, leading-snug, tracking-label, h-ctl, min-h-ctl-touch, h-row, rounded-control, border-1.5, the spacing scale), not an arbitrary value.',
   },
 ];
-// Files that still carry arbitrary sizes: the layout shell, which the new shell (rail, top bar) replaces.
-// The list only shrinks, and a new file never joins it.
-const LEGACY_SIZES = ['src/app/Layout.tsx', 'src/app/shell/Sidebar.tsx'];
-
 // Layer boundaries (README "Structure", roadmap FE9, ADR 0015): app (the shell) -> modules ->
 // components -> shared kernel (api, auth, live, lib, theme, core). Imports point down only. Tests are
 // exempt: they compose layers. What a module may import from another module, and the shell from a
@@ -149,12 +145,6 @@ export default tseslint.config(
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE, ...HEX, ...SIZES],
       'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
       'lg-sotf/module-boundary': 'error',
-    },
-  },
-  {
-    files: LEGACY_SIZES,
-    rules: {
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE, ...HEX],
     },
   },
   {

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './app/App';
 import { createSession } from './auth/session';
+import { PRODUCT_NAME } from './config';
 // Self-hosted fonts (the CSP allows font-src 'self' only): Latin subsets of Inter
 // 400/500/600/700 and JetBrains Mono 400/500, emitted as files by the build.
 import '@fontsource/inter/latin-400.css';
@@ -29,7 +30,7 @@ try {
   session = createSession();
 } catch (err) {
   // Invalid /config.js: show the problem instead of a blank page.
-  root.textContent = `LG-SOTF could not start: ${err instanceof Error ? err.message : String(err)}`;
+  root.textContent = `${PRODUCT_NAME} could not start: ${err instanceof Error ? err.message : String(err)}`;
   throw err;
 }
 

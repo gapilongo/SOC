@@ -24,7 +24,7 @@ import { can, decisionBlockedReason } from '../../../../auth/roles';
 import { useToast } from '../../../../components/Toast';
 import { Banner, Button, ErrorMessage, LoadingState, SeverityTag, cx } from '../../../../components/ui';
 import { formatDateTime, formatRelative, shortId } from '../../../../lib/format';
-import { alertsHref, escalationHref, escalationQueueHref } from '../../lib/links';
+import { alertsHref, escalationHref, QUEUE_HREF } from '../../lib/links';
 import { slaLabel, slaStatus } from '../../lib/sla';
 import { useNow } from '../../../../lib/useNow';
 import { DecisionForm } from './DecisionForm';
@@ -34,12 +34,18 @@ import { findNextEscalation } from './nextEscalation';
 
 const ACTIVE = new Set(['open', 'claimed', 'expired']);
 
-/** Where "Escalations" in the page header leads: the queue the analyst came from, else the SLA-ordered queue. */
+/**
+ * Where the page header leads back: the work queue, or the escalation list when the analyst came from it
+ * (with the filters they had there).
+ */
 function useQueueHref(): string {
   const location = useLocation();
   const from = (location.state as { from?: unknown } | null)?.from;
-  return typeof from === 'string' && from.startsWith('/escalations') ? from : escalationQueueHref({ order: 'sla_deadline' });
+  return typeof from === 'string' && from.startsWith('/escalations') ? from : QUEUE_HREF;
 }
+
+/** What the way back is called: the list it leads to. */
+const backName = (href: string) => (href.startsWith('/escalations') ? 'Escalations' : 'Queue');
 
 function SlaBadge({ e, now }: { e: EscalationOut; now: number }) {
   if (!ACTIVE.has(e.status)) return null;
@@ -69,7 +75,7 @@ function Header({ e, now, queueHref }: { e: EscalationOut; now: number; queueHre
         <nav aria-label="Back" className="text-ctl">
           <Link to={queueHref} className="inline-flex items-center gap-1 text-link hover:text-link-hover hover:underline">
             <ArrowLeft className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
-            Escalations
+            {backName(queueHref)}
           </Link>
         </nav>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-secondary">
@@ -230,7 +236,7 @@ export default function DecisionPage() {
         <h1 className="text-xl font-semibold text-fg">{missing ? 'Escalation not found' : 'Escalation'}</h1>
         <ErrorMessage error={q.error} onRetry={missing ? undefined : () => void q.refetch()} />
         <Link to={queueHref} className="text-ctl text-link hover:text-link-hover hover:underline">
-          Back to the escalation queue
+          Back to the {backName(queueHref) === 'Queue' ? 'queue' : 'escalation list'}
         </Link>
       </div>
     );

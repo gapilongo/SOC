@@ -61,6 +61,23 @@ which the container writes at start-up from environment variables:
 | `LG_SOTF_CSP_CONNECT_SRC` | Extra `connect-src` origins, space separated. |
 | `LG_SOTF_HSTS_MAX_AGE` | Send `Strict-Transport-Security` with this max-age. |
 
+`/config.js` may also carry a `brand` object, the one place the console's
+name, logo and accent colour come from (`getBrand()` in `src/config.ts`):
+
+```js
+window.__LG_SOTF_CONFIG__ = { /* ... */ brand: { name: 'Brightwater SOC', logoUrl: '/brand/logo.svg', accent: '#0F766E' } };
+```
+
+Each field is optional; without `brand` the console shows the product's own
+name, mark and colours. `logoUrl` is a path on the UI's own host (the
+Content-Security-Policy allows no other image origin). The accent is one
+colour: hover, link, focus and selection colours are derived from it
+(`src/theme/brand.ts`) and set through the design tokens, so severity, state
+and verdict colours never change. A derived colour that fails WCAG AA is
+refused: the product's colours stay and the browser console names the
+failing pair. The container entrypoint does not write `brand` yet (no
+environment variable for it); a brand per tenant needs the API.
+
 Every value is validated (URL shape, character set) before it is written into
 JavaScript or nginx configuration; an invalid value stops the container with
 exit code 64. The same values feed the Content-Security-Policy:
@@ -103,7 +120,7 @@ users open, for example:
   the public URL.
 
 Without it the rest of the UI works (pages poll), and after five failed
-attempts the header shows "Live updates unavailable" instead of
+attempts the top bar shows "Live updates unavailable" instead of
 "Reconnecting".
 
 ## Security model
@@ -115,7 +132,9 @@ attempts the header shows "Live updates unavailable" instead of
 * The browser keeps display preferences only, through `src/lib/prefs.ts`
   (the one file that touches `localStorage`): the theme and the table
   density, and per user the work queue's row density and saved views (a
-  name and filter names, nothing else). The keys are closed types, every
+  name and filter names, nothing else) and whether single-key shortcuts are
+  on (`src/lib/singleKeys.ts`: one switch for the shell's `/` and a page's
+  own keys). The keys are closed types, every
   access is guarded, and a stored value is parsed defensively.
 * One exception to "not in URLs": browsers cannot set headers on a
   WebSocket, and the API reads the token from the query string of
@@ -158,13 +177,18 @@ it):
 src/main.tsx      entry point: reads /config.js, builds the session and the query client
 src/app/          the shell: App (providers, public routes), modules.ts (the registry:
                   the list of modules), registry.ts and routes.tsx (the route table, the
-                  sidebar, the live-event mapping and the extension contributions, all
-                  derived from the registry), Layout and shell/ (sidebar, header, account
-                  menu), queryClient
+                  rail, the live-event mapping, the extension contributions and what
+                  the modules add to search and notifications, all derived from the
+                  registry), ScopedRouter (the tenant in the address), Layout and
+                  shell/ (the rail with the account menu, the top bar with the scope
+                  control, notifications and the theme control, the search field and
+                  command palette, the page of a service that is not licensed),
+                  queryClient
 src/pages/        the shell's own pages: sign-in, the OIDC callback, not found
 src/modules/<id>/ one folder per service. index.ts is its manifest (routes with lazy
                   pages and gates, nav groups and items, nav counts, live events,
-                  extension contributions); api/ is its API slice (types, endpoints,
+                  extension contributions, its search, commands and notices); api/ is
+                  its API slice (types, endpoints,
                   query keys, invalidation, hooks, contract check); pages/, components/
                   and lib/ are its own; public.ts is all another module may import.
                   In the SOC module, components/investigation/ holds the three voices of
@@ -213,10 +237,24 @@ A service is its folder and one registry line:
    smallest complete example: copy it.
 2. Add the manifest to `MODULES` in `src/app/modules.ts`.
 
-Routes, the sidebar group and items, navigation counts, the route guard, the
-breadcrumb, live events and extension contributions follow from the
-manifest; no other file changes. `src/app/scaffold.test.tsx` proves it by
-doing exactly that with the example module. Then:
+Routes, the rail's group and items, navigation counts, the route guard, the
+page's name on the browser tab, live events and extension contributions
+follow from the manifest; no other file changes. `src/app/scaffold.test.tsx`
+proves it by doing exactly that with the example module. The manifest also
+says what the service adds to the shell:
+
+* `navGroups`: a group with `service: true` holds the pages only this
+  service has. Where the licence does not include the module
+  (`moduleEnabled`), a platform admin sees the group locked and labelled
+  "Not licensed" and its pages show `offers` ("what it would add"); a
+  customer tenant's users do not see it (`src/app/entitlement.test.tsx`).
+* `search`: a function that finds the module's records for the search field
+  (the SOC: alert titles). Every hit is listed with its tenant.
+* `commands`: links to the pages where an act is confirmed. A command has no
+  callback, so nothing declared here can change data from the search field.
+* `useNotices`: a hook that returns what needs an act now, for the bell.
+
+Then:
 
 * query keys start with the module id (`['<id>', ...]`), and the module's
   invalidation policies name only its own keys;
@@ -256,8 +294,8 @@ Three checks hold this together:
   arbitrary size utility (`h-[34px]`, `text-[13.5px]`, `rounded-[3px]`,
   `p-[18px]`). Widths, grid templates and breakpoints in square brackets
   are layout and stay allowed. `src/theme/tokenLint.test.ts` runs ESLint on
-  examples of each. `LEGACY_SIZES` in `eslint.config.js` lists the two files
-  of the layout shell that still carry literal sizes; the list only shrinks.
+  examples of each. No file is exempt: the shell (`src/app/`) is built on
+  the same tokens (`w-rail`, `h-top`, `h-ctl`).
 * A table cell takes its height and vertical padding from the row density
   (`index.css`). A table that lays its rows out itself opts out with
   `data-rows="free"`.

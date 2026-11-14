@@ -9,13 +9,14 @@
  */
 
 import type { Response, Schemas, Wire } from './contract';
-import type { MeOut, MfaChallengeOut, MfaConfirmOut, MfaEnrollOut, TokenOut, UserOut } from './types';
+import type { MeOut, MfaChallengeOut, MfaConfirmOut, MfaEnrollOut, TenantRef, TokenOut, UserOut } from './types';
 
 export interface ResponseContract {
   MeOut: Response<Wire<Schemas['MeOut']>, MeOut>;
   MfaChallengeOut: Response<Wire<Schemas['MfaChallengeOut']>, MfaChallengeOut>;
   MfaConfirmOut: Response<Wire<Schemas['MfaConfirmOut']>, MfaConfirmOut>;
   MfaEnrollOut: Response<Wire<Schemas['MfaEnrollOut']>, MfaEnrollOut>;
+  TenantRef: Response<Wire<Schemas['TenantSummaryOut']>, TenantRef>;
   TokenOut: Response<Wire<Schemas['TokenOut']>, TokenOut>;
   UserOut: Response<Wire<Schemas['UserOut']>, UserOut>;
 }

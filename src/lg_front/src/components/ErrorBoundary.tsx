@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+import { getBrand } from '../config';
 import { Button } from './ui';
 
 /**
@@ -59,7 +60,7 @@ export function NewVersionMessage({ className = 'mx-auto max-w-lg px-4 py-16 tex
   return (
     <div role="alert" className={className}>
       <h1 className="text-lg font-semibold text-fg">A new version is available</h1>
-      <p className="mt-2 text-sm text-secondary">LG-SOTF was updated while this tab was open. Reload to continue; your session is restored automatically.</p>
+      <p className="mt-2 text-sm text-secondary">{getBrand().name} was updated while this tab was open. Reload to continue; your session is restored automatically.</p>
       <Button variant="primary" className="mt-4" onClick={reload}>
         Reload
       </Button>
