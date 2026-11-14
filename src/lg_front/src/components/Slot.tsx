@@ -20,12 +20,19 @@ export function ExtensionsProvider({ contributions, children }: { contributions:
   return <ExtensionsContext.Provider value={contributions}>{children}</ExtensionsContext.Provider>;
 }
 
-/** The contributions to `slot` that apply to the signed-in principal, in registration order. */
-export function useContributions<P extends object>(slot: Slot<P>): ReadonlyArray<Contribution<P>> {
+/**
+ * The contributions to `slot` that apply to the signed-in principal, in registration order. Each keeps
+ * its position in the whole list as `key`, so a contribution keeps its identity when another one
+ * starts or stops applying.
+ */
+export function useContributions<P extends object>(slot: Slot<P>): ReadonlyArray<Contribution<P> & { key: number }> {
   const all = useContext(ExtensionsContext);
   const { principal } = useAuth();
   return useMemo(
-    () => all.filter((c) => c.slot.id === slot.id && (c.when?.(principal) ?? true)) as unknown as Contribution<P>[],
+    () =>
+      all.flatMap((c, key) => (c.slot.id === slot.id && (c.when?.(principal) ?? true) ? [{ ...c, key }] : [])) as unknown as Array<
+        Contribution<P> & { key: number }
+      >,
     [all, slot.id, principal],
   );
 }
@@ -52,8 +59,9 @@ export function SlotOutlet<P extends object>({
   if (contributions.length === 0) return <>{empty}</>;
   return (
     <>
-      {contributions.map(({ Component }, i) => (
-        <ErrorBoundary key={i} fallback={renderNothing}>
+      {contributions.map(({ Component, key }) => (
+        // A crash is logged by the boundary (console.error) and the contribution renders nothing.
+        <ErrorBoundary key={key} fallback={renderNothing}>
           <Suspense fallback={pending}>
             <Component {...props} />
           </Suspense>

@@ -10,6 +10,10 @@
 //   module that is switched off is never downloaded.
 //
 // Tests are exempt (they compose layers); the config turns the rule off for them.
+//
+// Only relative imports are checked, because the app has no path alias (no `paths` or `baseUrl` in
+// tsconfig.app.json, no `resolve.alias` in vite.config.ts). src/app/boundary.test.ts fails if one is added
+// without teaching this rule to resolve it.
 
 import path from 'node:path';
 

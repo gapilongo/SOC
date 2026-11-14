@@ -49,6 +49,14 @@ export interface Registry {
   extensions: readonly Contribution[];
 }
 
+/**
+ * Whether `p` may open a module's page or see its nav item: the tenant has the module and the role allows
+ * the page. The route guard and the sidebar both ask here, so they cannot drift apart.
+ */
+export function mayOpen(item: { allowed: Allowed; enabled?: Allowed }, p: Parameters<Allowed>[0]): boolean {
+  return (item.enabled?.(p) ?? true) && item.allowed(p);
+}
+
 function fail(message: string): never {
   throw new Error(`module registry: ${message}`);
 }
@@ -69,6 +77,7 @@ export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
 
   for (const m of modules) {
     if (!/^[a-z][a-z0-9-]*$/.test(m.id)) fail(`"${m.id}" is not a module id (lower-case letters, digits and dashes)`);
+    if (m.id === 'core') fail('"core" is the kernel\'s query-key namespace and cannot be a module id');
     if (ids.has(m.id)) fail(`module "${m.id}" is registered twice`);
     ids.add(m.id);
     for (const g of m.navGroups ?? []) {
@@ -94,7 +103,8 @@ export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
       }
       live.set(type, [...(live.get(type) ?? []), ...keys]);
     }
-    extensions.push(...(m.extensions ?? []));
+    // A module's contributions follow its entitlement: switched off for a tenant, they render nowhere.
+    for (const c of m.extensions ?? []) extensions.push({ ...c, when: (p) => enabled(p) && (c.when?.(p) ?? true) });
   }
 
   const navGroups = [...groupDefs.values()]

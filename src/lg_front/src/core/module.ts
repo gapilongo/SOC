@@ -67,7 +67,10 @@ export interface ModuleManifest {
   routes: readonly ModuleRoute[];
   /**
    * The module's access rules, by name. Route gates are taken from here, so
-   * a page's gate and the buttons inside it name the same function.
+   * a page's gate and the buttons inside it name the same function. A rule
+   * takes the principal and may take more (the escalation, the risk level):
+   * `...rest: never[]` accepts any such signature without letting the shell
+   * call one with arguments it does not have.
    */
   permissions?: Readonly<Record<string, (p: Principal | null, ...rest: never[]) => boolean>>;
   /** Live event type -> the module's own query keys that the event makes stale. */

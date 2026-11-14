@@ -86,11 +86,13 @@ is the first and, today, the only module. Nothing changes for the user.
    through deep paths.
 8. **Entitlements come from the server.** A manifest names its entitlement
    key. `moduleEnabled(manifest, principal)` is the one place that answers
-   "does this tenant have the module"; the route guard and the sidebar both
-   ask it. It answers yes for every registered module until `GET /auth/me`
-   carries the tenant's entitlements (ARCH-E10.2), which also adds the
-   distinct "not enabled for this tenant" state. The API remains the
-   enforcement point; the UI only hides.
+   "does this tenant have the module"; the route guard, the sidebar and the
+   extension points all ask it, so a module that is off has no page, no
+   navigation item and no contribution (`src/app/entitlement.test.tsx` holds
+   this with a stub). It answers yes for every registered module until
+   `GET /auth/me` carries the tenant's entitlements (ARCH-E10.2), which also
+   adds the distinct "not enabled for this tenant" state. The API remains
+   the enforcement point; the UI only hides.
 9. **The boundary is enforced by lint, not by review.** `eslint.config.js`:
    a module imports another module only through its `public.ts`; the shell
    imports a module only through the registry, which imports only the

@@ -15,6 +15,7 @@ import { LiveProvider } from '../live/LiveProvider';
 import { DensityProvider } from '../theme/density';
 import { ThemeProvider } from '../theme/theme';
 import { Layout } from './Layout';
+import { mayOpen } from './registry';
 import { APP_ROUTES, BARE_ROUTES, REGISTRY, type AppRoute } from './routes';
 
 // One chunk per route; the signed-in pages come from the registered modules (routes.tsx).
@@ -23,9 +24,10 @@ const OidcCallbackPage = lazy(() => import('../pages/OidcCallback'));
 const NotFoundPage = lazy(() => import('../pages/NotFound'));
 
 /** A module's page behind its gate: the tenant has the module and the role allows the page. */
-function gated({ Page, allowed, enabled }: AppRoute) {
+function gated(route: AppRoute) {
+  const { Page } = route;
   return (
-    <RequireRole allowed={(p) => enabled(p) && allowed(p)}>
+    <RequireRole allowed={(p) => mayOpen(route, p)}>
       <Page />
     </RequireRole>
   );

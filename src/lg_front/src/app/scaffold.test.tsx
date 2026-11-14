@@ -144,6 +144,7 @@ describe('the registry refuses a manifest that cannot work', () => {
     ['a path that is not absolute', [{ ...scaffold, routes: [{ ...route, path: 'scaffold' }] }], /must start with "\/"/],
     ['a nav entry outside the shell', [{ ...scaffold, routes: [{ ...route, shell: false }] }], /outside the shell/],
     ['an id that is not a folder name', [{ ...scaffold, id: 'Scaffold Module' }], /is not a module id/],
+    ['the kernel namespace as an id', [{ ...scaffold, id: 'core' }], /kernel's query-key namespace/],
     ['a live event on another module\'s keys', [soc, { ...scaffold, liveEvents: { 'scaffold.updated': [qk.alerts.all] } }], /not the module's own/],
   ])('%s', (_name, modules, message) => {
     expect(() => buildRegistry(modules)).toThrow(message);

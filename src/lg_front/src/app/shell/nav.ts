@@ -7,7 +7,7 @@
 
 import { can } from '../../auth/roles';
 import type { Principal } from '../../auth/store';
-import type { NavGroup } from '../registry';
+import { mayOpen, type NavGroup } from '../registry';
 
 export type { NavCount } from '../../core/module';
 export type { NavGroup, NavItem } from '../registry';
@@ -15,7 +15,7 @@ export type { NavGroup, NavItem } from '../registry';
 /** The groups and items `p` may use (the tenant has the module and the role allows the page); empty groups are dropped. */
 export function navFor(groups: readonly NavGroup[], p: Principal | null): NavGroup[] {
   return groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => (i.enabled?.(p) ?? true) && i.allowed(p)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => mayOpen(i, p)) }))
     .filter((g) => g.items.length > 0);
 }
 

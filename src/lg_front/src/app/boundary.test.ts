@@ -3,6 +3,7 @@
  * The module boundary of ADR 0015, checked against the real ESLint config: each case is a file that
  * does not exist, linted as if it sat at that path.
  */
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ESLint } from 'eslint';
@@ -84,6 +85,14 @@ describe('module boundary (ESLint)', () => {
       "export const voc = { id: 'voc', routes: [{ Page: FindingsPage }], keys: vocKeys };",
     ].join('\n');
     expect(await boundaryErrors('src/modules/voc/index.ts', lazy)).toEqual([]);
+  });
+
+  it('rests on the app having no path alias: the rule resolves relative imports only', () => {
+    const tsconfig = readFileSync(path.join(ROOT, 'tsconfig.app.json'), 'utf8');
+    expect(tsconfig).not.toMatch(/"(paths|baseUrl)"/);
+    expect(readFileSync(path.join(ROOT, 'vite.config.ts'), 'utf8')).not.toMatch(/\balias\b/);
+    // A bare specifier is a package, never a module of the app.
+    expect(readFileSync(path.join(ROOT, 'eslint-rules/module-boundary.js'), 'utf8')).toContain("startsWith('.')");
   });
 
   it('exempts tests, which compose layers', async () => {

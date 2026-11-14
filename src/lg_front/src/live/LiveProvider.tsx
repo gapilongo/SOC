@@ -46,7 +46,9 @@ export function createLiveBus() {
 /**
  * The query keys (group prefixes) a live event type makes stale; empty for a
  * type no module listens to. The shell passes the registered modules' mapping
- * (each module's manifest lists its own keys per event type).
+ * (each module's manifest lists its own keys per event type). An event whose
+ * type maps to no key is dropped at the socket. Pass a stable function: the
+ * provider reconnects when it changes.
  */
 export type LiveKeys = (eventType: string) => readonly QueryKey[];
 

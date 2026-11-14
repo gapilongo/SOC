@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { lazy } from 'react';
+import { lazy, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { SessionProvider } from '../auth/AuthContext';
@@ -55,6 +55,38 @@ describe('SlotOutlet', () => {
     expect(screen.getByText('loading')).toBeInTheDocument();
     expect(await screen.findByText('Hello Ada')).toBeInTheDocument();
     expect(screen.queryByText('loading')).not.toBeInTheDocument();
+  });
+
+  it('refuses, at compile time, a contribution that does not take the slot props', () => {
+    const NeedsCount = ({ count }: { count: number }) => <p>{count}</p>;
+    // @ts-expect-error the greeting slot passes `name`, not `count`
+    const wrong = contribute(GREETING, NeedsCount);
+    expect(wrong.slot).toBe(GREETING);
+  });
+
+  it('keeps a contribution mounted when an earlier one stops applying', async () => {
+    const mounts = vi.fn();
+    const Counted = ({ name }: { name: string }) => {
+      useEffect(() => mounts(), []);
+      return <p>Counted {name}</p>;
+    };
+    let on = true;
+    const list = () => [contribute(GREETING, Hello, { when: () => on }), contribute(GREETING, Counted)];
+    const session = await signedInSession(fakeApi(() => ({})).api);
+    const tree = (contributions: ReturnType<typeof list>) => (
+      <SessionProvider session={session}>
+        <ExtensionsProvider contributions={contributions}>
+          <SlotOutlet slot={GREETING} props={{ name: 'Ada' }} />
+        </ExtensionsProvider>
+      </SessionProvider>
+    );
+    const { rerender } = render(tree(list()));
+    expect(screen.getByText('Hello Ada')).toBeInTheDocument();
+    on = false;
+    rerender(tree(list()));
+    expect(screen.queryByText('Hello Ada')).not.toBeInTheDocument();
+    expect(screen.getByText('Counted Ada')).toBeInTheDocument();
+    expect(mounts).toHaveBeenCalledTimes(1);
   });
 
   it('contains a contribution that crashes: the others still render', async () => {
