@@ -1,0 +1,14 @@
+### Added
+
+- Tool registry (`lg_sotf.tools.registry`, AI-E2.1): every lookup the
+  analysis agent makes is now a declared tool called through one registry.
+  A tool does not load without a read-only risk class (there is no write
+  class), a strict parameter model, row, time and window caps and a declared
+  egress. Every call validates its parameters first, skips a tool the calling
+  tenant switched off (`tools.<provider>.enabled: false` in that tenant's
+  settings), runs under the time cap and is recorded in the trace.
+  - The VirusTotal and AbuseIPDB lookups (`reputation.<provider>`) and the
+    alert-history lookup (`platform.history`) run through it. Their results,
+    trace steps and recorded cassettes are unchanged.
+  - New pending invariant INV-13, "Evidence tools are read-only, templated
+    and capped"; the Wazuh query templates (INT3.4) complete it.

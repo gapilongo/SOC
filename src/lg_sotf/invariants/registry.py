@@ -383,38 +383,24 @@ INVARIANTS: Tuple[Invariant, ...] = (
     ),
     Invariant(
         id="INV-13",
-        title="Autonomy is earned per skill and tenant and lost on any miss",
-        rationale=(
-            "An investigation skill closes alerts for a tenant only once it has earned a closing tier there: "
-            "300 skill-blind and AI-blind labelled closures with no miss, and a four-eyes promotion. A miss "
-            "demotes the skill to shadow in the same transaction as the label that revealed it "
-            "(ADR-0014 section 6.3). Until AI-E3.10 merges nothing closes on a skill."
-        ),
-        epic="AI-E3",
-        threats=("TM-WRK-12",),
-        code=(),
-        proofs=("tests/invariants/test_earned_autonomy.py::test_autonomy_is_earned_per_skill_and_lost_on_a_miss",),
-        status="pending",
-        pending_story="AI-E3.10",
-    ),
-    Invariant(
-        id="INV-14",
         title="Evidence tools are read-only, templated and capped",
         rationale=(
             "An investigation tool is how a model-steered run reaches data. Every tool runs through the tool "
             "registry, which loads only a tool with a parameter model that refuses unknown keys, a row cap, a "
             "time cap and a read-only risk class (there is no write class). It validates the parameters before "
-            "anything runs, does not call a tool the tenant switched off, and records every call in the trace. "
-            "A tool that sends data to a third party names its egress boundary and answers a shadow run from "
-            "the cache only. The Wazuh query templates add a DSL allow-list test (INT3.4)."
+            "anything runs, does not call a tool the tenant switched off (the switch is read from that tenant's "
+            "own settings), and records every call in the trace. A tool that sends data to a third party names "
+            "its egress boundary and answers a shadow run from the cache only. The Wazuh query templates add a "
+            "DSL allow-list test (INT3.4)."
         ),
         epic="AI-E2",
-        threats=("TM-EVT-3", "TM-EVT-10"),
+        threats=("TM-EVT-3",),
         code=("src/lg_sotf/tools/registry.py", "src/lg_sotf/tools/enrichment/tools.py"),
         proofs=(
             "tests/unit/tools/test_registry.py::test_a_tool_missing_caps_or_schema_fails_to_load",
             "tests/unit/tools/test_registry.py::test_parameters_are_validated_before_the_call",
             "tests/unit/tools/test_registry.py::test_a_tool_disabled_for_the_tenant_is_not_called",
+            "tests/unit/tools/test_registry.py::test_a_tenant_switch_applies_to_that_tenant_only",
             "tests/unit/tools/test_registry.py::test_no_tool_can_register_a_write_risk_class",
             "tests/unit/tools/test_registry.py::test_egress_is_declared_and_coherent",
             "tests/unit/agents/test_analysis.py::test_ti_lookups_run_through_the_registry",

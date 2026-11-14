@@ -259,6 +259,15 @@ Rules:
   errors. A node that still fails raises; the worker records `failed`, the
   message is retried by the queue and eventually dead-lettered. Failures are
   never converted into default scores that drive routing.
+* Evidence tools run through the tool registry (`tools/registry.py`). The
+  analysis agent's threat-intelligence lookups (`reputation.<provider>`) and
+  its history lookup (`platform.history`) are declared in
+  `tools/enrichment/tools.py`. A tool is a `ToolSpec` (read-only risk class,
+  strict parameter model, row, time and window caps, egress, shadow mode,
+  tenant switch) plus five functions: `run`, `rows`, `record`, `restore` and
+  `refused`. A declaration that misses a cap or the schema does not load
+  (INV-13). A tenant switches a third-party tool off for itself with
+  `tools.<provider>.enabled: false` in its settings.
 * LLM output alone can never auto-close a high/critical alert or authorise a
   containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.

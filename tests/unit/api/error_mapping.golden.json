@@ -112,5 +112,11 @@
   "lg_sotf.services.review.ReviewError": [400, "invalid_request"],
   "lg_sotf.services.tenancy.QuotaExceeded": [500, "internal_error"],
   "lg_sotf.tools.enrichment.http.ProviderHTTPError": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolDisabled": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolError": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolNotFound": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolParamsInvalid": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolRowCapExceeded": [500, "internal_error"],
+  "lg_sotf.tools.registry.ToolTimedOut": [500, "internal_error"],
   "starlette.exceptions.HTTPException": ["<instance>", "<instance>"]
 }

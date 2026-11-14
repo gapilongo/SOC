@@ -17,14 +17,26 @@ parameter validation, the per-tenant switch, the time and row caps, and the trac
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from lg_sotf.tools.enrichment.base import EnrichmentResult, IndicatorKind
 from lg_sotf.tools.enrichment.history import MAX_HISTORY_ALERTS, HistoryProvider
 from lg_sotf.tools.enrichment.service import EnrichmentService
-from lg_sotf.tools.registry import MAX_TIME_CAP_S, Tool, ToolContext, ToolDisabled, ToolError, ToolRegistry, ToolSpec
+from lg_sotf.tools.registry import (
+    MAX_TIME_CAP_S,
+    Tool,
+    ToolContext,
+    ToolDisabled,
+    ToolError,
+    ToolRegistry,
+    ToolRowCapExceeded,
+    ToolSpec,
+)
+
+if TYPE_CHECKING:
+    from lg_sotf.db.repos import Repositories
 
 __all__ = ["HISTORY_TOOL", "REPUTATION_FAMILY", "HistoryParams", "ReputationParams", "enrichment_tools"]
 
@@ -51,21 +63,31 @@ class HistoryParams(BaseModel):
     value: str = Field(min_length=1, max_length=MAX_VALUE_CHARS)
 
 
-def _refused(provider: str) -> Any:
-    def answer(params: Any, error: ToolError) -> EnrichmentResult:
+LookupParams = Union[ReputationParams, HistoryParams]
+
+
+def _refused(provider: str) -> Callable[[LookupParams, ToolError], EnrichmentResult]:
+    def answer(params: LookupParams, error: ToolError) -> EnrichmentResult:
         if isinstance(error, ToolDisabled):
             return EnrichmentResult.failed(provider, params.kind, "not_configured")
+        if isinstance(error, ToolRowCapExceeded):
+            return EnrichmentResult.failed(provider, params.kind, "error", "too many rows")
         return EnrichmentResult.failed(provider, params.kind, "error", "lookup timed out")
 
     return answer
 
 
-def _restore(params: Any, recorded: Any) -> EnrichmentResult:
+def _restore(params: LookupParams, recorded: Mapping[str, Any]) -> EnrichmentResult:
     return EnrichmentResult.from_dict(params.kind, recorded)
 
 
-def _reputation(service: EnrichmentService, provider: str, time_cap_s: float) -> Tool:
-    async def run(ctx: ToolContext, params: Any) -> EnrichmentResult:
+def _history_rows(result: EnrichmentResult) -> int:
+    seen = result.data.get("prior_alerts", 0)
+    return seen if isinstance(seen, int) else 0
+
+
+def _reputation(service: EnrichmentService, provider: str, time_cap_s: float) -> Tool[ReputationParams, EnrichmentResult]:
+    async def run(ctx: ToolContext, params: ReputationParams) -> EnrichmentResult:
         return await service.lookup_one(
             provider, ctx.tenant_id, params.kind, params.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
         )
@@ -84,11 +106,11 @@ def _reputation(service: EnrichmentService, provider: str, time_cap_s: float) ->
         tenant_setting=provider,
         egress_boundary=LOOKUP_EGRESS_BOUNDARY,
     )
-    return Tool(spec, run, EnrichmentResult.as_dict, _restore, _refused(provider))
+    return Tool(spec, run, lambda result: 1, EnrichmentResult.as_dict, _restore, _refused(provider))
 
 
-def _history(service: EnrichmentService, time_cap_s: float) -> Tool:
-    async def run(ctx: ToolContext, params: Any) -> EnrichmentResult:
+def _history(service: EnrichmentService, time_cap_s: float) -> Tool[HistoryParams, EnrichmentResult]:
+    async def run(ctx: ToolContext, params: HistoryParams) -> EnrichmentResult:
         return await service.history(
             ctx.tenant_id, params.kind, params.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
         )
@@ -107,13 +129,13 @@ def _history(service: EnrichmentService, time_cap_s: float) -> Tool:
         tenant_setting=None,
         trace_name="history",
     )
-    return Tool(spec, run, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name))
+    return Tool(spec, run, _history_rows, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name))
 
 
 def enrichment_tools(service: EnrichmentService) -> ToolRegistry:
     """A registry with the service's lookups; the tenant switch reads the service's cached tenant settings."""
 
-    async def tenant_tools(tenant_id: str, repos: Any) -> Any:
+    async def tenant_tools(tenant_id: str, repos: Optional[Repositories]) -> Mapping[str, Any]:
         return (await service.credentials.tenant_tools(tenant_id, repos)).tools
 
     registry = ToolRegistry(tenant_tools)

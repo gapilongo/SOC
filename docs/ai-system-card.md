@@ -212,6 +212,7 @@ with `lg-sotf verify-invariants` ([security.md](security.md#11-safety-invariants
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
+| INV-13 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3 |
 <!-- invariants:end -->
 
 ## 7. Evaluation evidence

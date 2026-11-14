@@ -22,6 +22,7 @@ Threat rows refer to [threat-model.md](threat-model.md).
 | INV-10 | Release images are signed, and their signature is checked before deploy | enforced | none | TM-CI-1 |
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
+| INV-13 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3 |
 
 ## INV-01: Every tenant table has forced row-level security, and the runtime role cannot bypass it
 
@@ -249,3 +250,21 @@ A model steered by alert text must not be able to exfiltrate. Threat-intel looku
   * `tests/unit/agents/test_analysis.py::test_lookup_targets_are_restricted_to_extracted_candidates`
   * `tests/unit/llm/test_local.py::test_refused_base_urls`
   * `tests/unit/llm/test_local.py::test_base_url_is_checked_for_every_provider`
+
+## INV-13: Evidence tools are read-only, templated and capped
+
+An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry, which loads only a tool with a parameter model that refuses unknown keys, a row cap, a time cap and a read-only risk class (there is no write class). It validates the parameters before anything runs, does not call a tool the tenant switched off (the switch is read from that tenant's own settings), and records every call in the trace. A tool that sends data to a third party names its egress boundary and answers a shadow run from the cache only. The Wazuh query templates add a DSL allow-list test (INT3.4).
+
+* **Status:** pending, delivered by INT3.4
+* **Owner epic:** AI-E2
+* **Threats:** TM-EVT-3
+* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`
+* **Runtime checks:** none
+* **Proved by:**
+  * `tests/unit/tools/test_registry.py::test_a_tool_missing_caps_or_schema_fails_to_load`
+  * `tests/unit/tools/test_registry.py::test_parameters_are_validated_before_the_call`
+  * `tests/unit/tools/test_registry.py::test_a_tool_disabled_for_the_tenant_is_not_called`
+  * `tests/unit/tools/test_registry.py::test_a_tenant_switch_applies_to_that_tenant_only`
+  * `tests/unit/tools/test_registry.py::test_no_tool_can_register_a_write_risk_class`
+  * `tests/unit/tools/test_registry.py::test_egress_is_declared_and_coherent`
+  * `tests/unit/agents/test_analysis.py::test_ti_lookups_run_through_the_registry`

@@ -1,4 +1,4 @@
-"""The tool registry: every investigation tool is declared here and called through here (AI-E2.1, ADR-0014).
+"""The tool registry: every investigation tool is declared here and called through here (AI-E2.1).
 
 A tool is a :class:`ToolSpec` (what it is, what it may touch and how much it may read) plus the code that
 runs it. :meth:`ToolRegistry.register` refuses a tool whose declaration is incomplete or unsafe, and every
@@ -10,22 +10,28 @@ call takes the same steps, in this order:
    called: the caller gets the tool's refusal answer;
 3. the tool runs under its time cap, inside ``ctx.trace.tool(...)``, so the trace store, the cassettes and
    shadow runs see every call (a replaying cassette answers instead of the tool);
-4. a sequence result longer than the tool's row cap is dropped for the refusal answer.
+4. a result with more rows than the tool's row cap (counted by the tool's ``rows``) is dropped for the
+   refusal answer.
 
 A refusal, a timeout or an over-long result is an answer (the tool's ``refused``), never an exception
-that fails the workflow node, as the enrichment service already does for provider failures.
+that fails the workflow node, as the enrichment service already does for provider failures. What a tool
+returns is data: the registry hands it back as it is, and the caller shows it to a model only as untrusted
+tool data, never as instructions.
+
+The tenant switch is read with the calling run's own tenant id (``ctx.tenant_id``, under that tenant's
+row-level security), so one tenant's settings never turn a tool on or off for another.
 
 There is no write risk class: ``risk`` is ``read_internal`` or ``read_external``. Egress is declared and
 checked when the tool loads: a tool that leaves the platform names the ``@egress`` boundary
 (:mod:`lg_sotf.security.shadow`) its requests pass through, a third-party tool is ``cache_only`` in a
 shadow run and its boundary must divert there, and a third-party tool can always be switched off per
-tenant. INV-14 (pending) states the rule.
+tenant. INV-13 (pending) states the rule.
 """
 
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 from typing import (
     TYPE_CHECKING,
@@ -34,6 +40,7 @@ from typing import (
     Callable,
     Dict,
     FrozenSet,
+    Generic,
     List,
     Literal,
     Mapping,
@@ -72,6 +79,8 @@ __all__ = [
 log = get_logger(__name__)
 
 T = TypeVar("T")
+P = TypeVar("P", bound=BaseModel)
+R = TypeVar("R")
 MAX_ROW_CAP = 500
 MAX_TIME_CAP_S = 60.0
 MAX_WINDOW_CAP = timedelta(days=366)
@@ -198,17 +207,22 @@ class ToolContext(Protocol):
 
 
 @dataclass(frozen=True)
-class Tool:
-    """A declared tool and the code behind it. ``params`` below is always the validated parameter model."""
+class Tool(Generic[P, R]):
+    """A declared tool and the code behind it: ``P`` is its validated parameter model, ``R`` its result."""
 
     spec: ToolSpec
-    run: Callable[[ToolContext, Any], Awaitable[Any]]
-    record: Callable[[Any], Any]
+    run: Callable[[ToolContext, P], Awaitable[R]]
+    rows: Callable[[R], int]
+    """How many rows a result holds, checked against ``spec.row_cap``."""
+    record: Callable[[R], Any]
     """A result as the trace and cassettes store it."""
-    restore: Callable[[Any, Any], Any]
+    restore: Callable[[P, Any], R]
     """``(params, recorded)``: the result a recorded output stands for."""
-    refused: Callable[[Any, ToolError], Any]
+    refused: Callable[[P, ToolError], R]
     """``(params, error)``: what a call answers when the tool is off, times out or returns too many rows."""
+
+
+AnyTool = Tool[Any, Any]
 
 
 TenantTools = Callable[[str, Optional["Repositories"]], Awaitable[Mapping[str, Any]]]
@@ -217,10 +231,10 @@ TenantTools = Callable[[str, Optional["Repositories"]], Awaitable[Mapping[str, A
 
 class ToolRegistry:
     def __init__(self, tenant_tools: TenantTools) -> None:
-        self._tools: Dict[str, Tool] = {}
+        self._tools: Dict[str, AnyTool] = {}
         self._tenant_tools = tenant_tools
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: AnyTool) -> None:
         """Load ``tool``; its declaration is validated again here, so a hand-built spec cannot skip a rule."""
         try:
             declared = {name: getattr(tool.spec, name) for name in ToolSpec.model_fields if hasattr(tool.spec, name)}
@@ -230,9 +244,9 @@ class ToolRegistry:
         _check_boundary(spec)
         if spec.name in self._tools:
             raise ValueError(f"tool {spec.name!r} registered twice")
-        self._tools[spec.name] = Tool(spec, tool.run, tool.record, tool.restore, tool.refused)
+        self._tools[spec.name] = replace(tool, spec=spec)
 
-    def get(self, name: str) -> Tool:
+    def get(self, name: str) -> AnyTool:
         tool = self._tools.get(name)
         if tool is None:
             raise ToolNotFound(f"no tool {name!r}")
@@ -292,7 +306,7 @@ class ToolRegistry:
             lambda rows: [tool.restore(v, row) for tool, v, row in zip(tools, valid, rows, strict=True)],
         )
 
-    async def _enabled(self, ctx: ToolContext, tool: Tool) -> bool:
+    async def _enabled(self, ctx: ToolContext, tool: AnyTool) -> bool:
         setting = tool.spec.tenant_setting
         if setting is None:
             return True
@@ -302,7 +316,7 @@ class ToolRegistry:
             return False
         return True
 
-    async def _capped(self, ctx: ToolContext, tool: Tool, params: BaseModel) -> Any:
+    async def _capped(self, ctx: ToolContext, tool: AnyTool, params: BaseModel) -> Any:
         spec = tool.spec
         try:
             async with asyncio.timeout(spec.time_cap_s):
@@ -310,8 +324,9 @@ class ToolRegistry:
         except TimeoutError:
             log.warning("tool.refused", tool=spec.name, reason="time_cap", time_cap_s=spec.time_cap_s)
             return tool.refused(params, ToolTimedOut(f"{spec.name} took longer than {spec.time_cap_s:g}s"))
-        if isinstance(result, (list, tuple)) and len(result) > spec.row_cap:
-            log.warning("tool.refused", tool=spec.name, reason="row_cap", rows=len(result), row_cap=spec.row_cap)
+        rows = tool.rows(result)
+        if rows > spec.row_cap:
+            log.warning("tool.refused", tool=spec.name, reason="row_cap", rows=rows, row_cap=spec.row_cap)
             return tool.refused(params, ToolRowCapExceeded(f"{spec.name} returned more than {spec.row_cap} rows"))
         return result
 
@@ -320,7 +335,7 @@ async def _answer(value: T) -> T:
     return value
 
 
-def _validated(tool: Tool, params: Mapping[str, Any]) -> BaseModel:
+def _validated(tool: AnyTool, params: Mapping[str, Any]) -> BaseModel:
     try:
         return tool.spec.params.model_validate(dict(params))
     except ValidationError as exc:

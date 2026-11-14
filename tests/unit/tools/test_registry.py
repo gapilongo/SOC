@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import timedelta
+from types import SimpleNamespace
 from typing import Any, Dict, List, Mapping, Optional
 
+import httpx
 import pytest
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -79,15 +81,19 @@ class Handler:
         return self.answer
 
 
-def tool(handler: Handler, **overrides: Any) -> Tool:
+def rows(result: Any) -> int:
+    return len(result) if isinstance(result, list) else 1
+
+
+def tool(handler: Handler, **overrides: Any) -> Tool[Any, Any]:
     def refused(params: Any, error: ToolError) -> Dict[str, Any]:
         return {"refused": type(error).__name__}
 
-    return Tool(ToolSpec(**spec(**overrides)), handler, lambda r: r, lambda params, rec: rec, refused)
+    return Tool(ToolSpec(**spec(**overrides)), handler, rows, lambda r: r, lambda params, rec: rec, refused)
 
 
-def bare(declared: ToolSpec) -> Tool:
-    return Tool(declared, Handler(), str, lambda params, rec: rec, lambda params, error: None)
+def bare(declared: ToolSpec) -> Tool[Any, Any]:
+    return Tool(declared, Handler(), rows, str, lambda params, rec: rec, lambda params, error: None)
 
 
 class Settings:
@@ -102,7 +108,7 @@ class Settings:
         return self.tools
 
 
-def registry(*tools: Tool, settings: Optional[Settings] = None) -> ToolRegistry:
+def registry(*tools: Tool[Any, Any], settings: Optional[Settings] = None) -> ToolRegistry:
     out = ToolRegistry(settings or Settings())
     for t in tools:
         out.register(t)
@@ -229,6 +235,37 @@ async def test_a_tool_disabled_for_the_tenant_is_not_called() -> None:
     assert isinstance(ToolDisabled("x"), ToolError)
 
 
+async def test_a_tenant_switch_applies_to_that_tenant_only(make_settings: Any) -> None:
+    """The switch is read from the calling tenant's own settings: t1 turning VirusTotal off stops t1 only."""
+    from lg_sotf.tools.enrichment import EnrichmentService
+    from lg_sotf.tools.enrichment.tools import enrichment_tools
+
+    seen: List[httpx.Request] = []
+
+    def server(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"data": {"attributes": {"last_analysis_stats": {"malicious": 3}}}})
+
+    key = "test-only-" + "k" * 12
+    settings = make_settings(tools={"virustotal": {"api_key": key, "share_with_tenants": True, "requests_per_minute": 100}})
+    tools = enrichment_tools(EnrichmentService.from_settings(settings, transport=httpx.MockTransport(server)))
+    stored = {"t1": {"tools": {"virustotal": {"enabled": False}}}, "t2": {"tools": {"virustotal": {"enabled": True}}}}
+
+    class Tenants:
+        async def get(self, tenant_id: str, *, conn: Any = None) -> Any:
+            return SimpleNamespace(id=tenant_id, settings=stored.get(tenant_id, {}))
+
+    repos = SimpleNamespace(tenants=Tenants())
+    t1, t2 = Ctx(tenant_id="t1", repos=repos), Ctx(tenant_id="t2", repos=repos)
+    params = {"kind": "hash", "value": "44d88612fea8a8f36de82e1278abb02f"}
+
+    assert (await tools.call(t1, "reputation.virustotal", params, agent="analysis")).status == "not_configured"
+    assert (await tools.call(t2, "reputation.virustotal", params, agent="analysis")).status == "ok"
+    # t2 having it on did not turn it on for t1: the registry refused t1 before the tool, the trace or the network.
+    assert (await tools.call(t1, "reputation.virustotal", params, agent="analysis")).status == "not_configured"
+    assert len(seen) == 1 and t1.trace.steps == [] and [s.tool for s in t2.trace.steps] == ["reputation.virustotal"]
+
+
 async def test_time_and_row_caps_answer_with_the_refusal() -> None:
     ctx = Ctx()
     slow = registry(tool(Handler(delay_s=5.0), time_cap_s=0.05))
@@ -243,7 +280,7 @@ async def test_time_and_row_caps_answer_with_the_refusal() -> None:
 
 
 def test_todays_lookups_are_registered_with_their_caps(make_settings: Any) -> None:
-    from lg_sotf.tools.enrichment import EnrichmentService, HistoryProvider
+    from lg_sotf.tools.enrichment import EnrichmentResult, EnrichmentService, HistoryProvider
     from lg_sotf.tools.enrichment.history import MAX_HISTORY_ALERTS
     from lg_sotf.tools.enrichment.tools import enrichment_tools
 
@@ -261,3 +298,6 @@ def test_todays_lookups_are_registered_with_their_caps(make_settings: Any) -> No
     provider = service.provider(HistoryProvider.name)
     assert isinstance(provider, HistoryProvider) and provider.max_alerts <= MAX_HISTORY_ALERTS == history.row_cap
     assert history.time_cap_s > service.lookup_timeout_s  # the service's own deadline answers first
+    # The row cap counts the earlier alerts a history answer read; a reputation answer is one row.
+    counted = tools.get("platform.history").rows(EnrichmentResult.ok("history", "ip", "unknown", {"prior_alerts": 7}))
+    assert counted == 7 and tools.get("reputation.virustotal").rows(EnrichmentResult.failed("virustotal", "ip", "error")) == 1
