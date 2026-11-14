@@ -1,10 +1,14 @@
 name: Nightly
 
-# Roadmap Q4: the whole suite in a random order, to catch tests that pass only after (or before)
-# another one. The seed is printed at the top of the log ("Using --randomly-seed=N"); reproduce a
-# failure locally with `pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt`
-# and `pytest -p randomly --randomly-seed=N` (docs/testing.md). pytest-randomly is hash-locked there
+# random-order (roadmap Q4): the whole suite in a random order, to catch tests that pass only after
+# (or before) another one. The seed is printed at the top of the log ("Using --randomly-seed=N");
+# reproduce a failure locally with
+# `pip install --require-hashes --no-deps -r scripts/ci/requirements-nightly.txt` and
+# `pytest -p randomly --randomly-seed=N` (docs/testing.md). pytest-randomly is hash-locked there
 # and deliberately not in requirements-dev.txt: installed, it shuffles every local run.
+#
+# real-model-eval (ARCH-E2.1): the synthetic and phishing sets through one pinned real model, with
+# the scorecard kept as an artifact (docs/evaluation.md, "Evaluation gate in CI").
 
 on:
   schedule:
@@ -74,3 +78,73 @@ jobs:
           name: test-reports-random
           path: junit-random.xml
           retention-days: 14
+
+  real-model-eval:
+    name: Evaluation with the pinned real model (EU or local)
+    # The model comes from repository variables and one secret. Without EVAL_LLM_PROVIDER the job
+    # is skipped. scripts/ci/eval_gate.py refuses a model that is not hosted in the EU or local
+    # (so never the DeepSeek API) and a model name that is not pinned. Synthetic sets only.
+    # A local model needs a runner that reaches it: name the runner's label in EVAL_LLM_RUNNER.
+    if: ${{ vars.EVAL_LLM_PROVIDER != '' }}
+    runs-on: ${{ vars.EVAL_LLM_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: postgres:16@sha256:1a6ab3f5345eb6dbe04a1349529caabdb0ab09293a09590fad07b2246bfa4b54
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only_superuser_password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      LG_SOTF_DATABASE__URL: postgresql://soc:ci_only_password@127.0.0.1:5432/soc_test
+      LG_SOTF_REDIS__URL: redis://127.0.0.1:6379/7
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Install
+        run: |
+          pip install --require-hashes -r requirements-dev.txt
+          pip install --no-deps -e .
+      - name: Create the non-superuser test role
+        env:
+          PGPASSWORD: ci_only_superuser_password
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 -f scripts/ci/create_test_role.sql
+      - name: Migrate the evaluation database
+        run: lg-sotf migrate
+      - name: Evaluate and write the scorecard
+        env:
+          EVAL_LLM_PROVIDER: ${{ vars.EVAL_LLM_PROVIDER }}
+          EVAL_LLM_BASE_URL: ${{ vars.EVAL_LLM_BASE_URL }}
+          EVAL_LLM_FAST_MODEL: ${{ vars.EVAL_LLM_FAST_MODEL }}
+          EVAL_LLM_DEEP_MODEL: ${{ vars.EVAL_LLM_DEEP_MODEL }}
+          EVAL_LLM_STRUCTURED_OUTPUT: ${{ vars.EVAL_LLM_STRUCTURED_OUTPUT }}
+          EVAL_LLM_API_KEY: ${{ secrets.EVAL_LLM_API_KEY }}
+        run: python scripts/ci/eval_gate.py nightly --out eval-nightly
+      - name: Upload the scorecard and the reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: eval-scorecard
+          path: eval-nightly/
+          retention-days: 90
+          if-no-files-found: ignore

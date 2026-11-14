@@ -174,6 +174,11 @@ export function decisionForm(page: Page): Locator {
   return page.getByRole('form', { name: 'Your decision' });
 }
 
+/** The expected response plan of a true positive: on the decision page, under the investigation, outside the form. */
+export function responsePlan(page: Page): Locator {
+  return page.getByRole('region', { name: 'Expected response plan' });
+}
+
 /** A verdict radio of the decision form; its accessible name starts with the verdict, then its hint. */
 export function verdictRadio(page: Page, label: 'True positive' | 'False positive' | 'Benign positive'): Locator {
   return decisionForm(page).getByRole('radio', { name: new RegExp(`^${escapeRegExp(label)}`) });
@@ -195,8 +200,16 @@ const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
  * Run axe on the page and fail on any serious or critical WCAG A/AA violation, listing each rule
  * with its first offending elements. Axe runs through the DevTools protocol, so the
  * Content-Security-Policy stays in force (and the CSP watch stays clean).
+ *
+ * Colours are measured once they have settled. Buttons fade between colours over 150 ms
+ * (`transition-colors`); right after a theme switch the text and the background of a secondary
+ * button cross the same grey (about 1.1:1), a frame nobody reads, and a fast machine's axe lands in it.
+ * Every element is still checked against every rule.
  */
 export async function assertAccessible(page: Page, label: string): Promise<void> {
+  await page.evaluate(() =>
+    Promise.all(document.getAnimations().filter((a) => a instanceof CSSTransition).map((a) => a.finished.catch(() => undefined))),
+  );
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   const blocking = results.violations
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
