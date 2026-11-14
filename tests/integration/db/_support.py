@@ -17,6 +17,7 @@ from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import LLMUsageDelta, NewAlert, Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry
 from lg_sotf.db.urls import database_name, to_libpq_url
+from lg_sotf.domain.pov import plan_windows
 from lg_sotf.domain.shadow_agreement import Comparison, Verdict
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.security.shadow import ShadowEffect
@@ -68,6 +69,7 @@ async def make_alert(repos: Repositories, tenant_id: str, **kwargs: object) -> s
 
 
 ALL_TABLES = (
+    "pov_runs",
     "shadow_verdicts",
     "blind_audit_items",
     "blind_audit_runs",
@@ -166,6 +168,7 @@ TENANT_TABLES = (
     "tenant_grants",
     "blind_audit_runs",
     "blind_audit_items",
+    "pov_runs",
 )
 
 
@@ -238,6 +241,9 @@ async def seed_everything(repos: Repositories, tenant_id: str) -> str:
         Comparison(alert_id=alert_id, severity="high", production=Verdict(route="escalate"),
                    candidate=Verdict(route="close", disposition="benign")),
         run_id="shadow/seed",
+    )
+    await repos.pov_runs.create(
+        tenant_id, f"PoV {tenant_id}", plan_windows(now, backtest_days=30, shadow_days=14), created_by="seed"
     )
     # The tenant is an MSSP organisation with one member, and it has opened itself to another organisation.
     await repos.organisations.upsert(tenant_id, f"MSSP {tenant_id}")

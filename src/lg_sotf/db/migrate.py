@@ -98,6 +98,12 @@ RUNTIME_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
         "INSERT (tenant_id, run_id, alert_id, sample_rank, ai_class)",
         "UPDATE (label, notes, agreement, labelled_by, labelled_by_actor, labelled_by_org, labelled_at, escalation_id)",
     ),
+    # Proof-of-value runs (migration 0019): the API creates and cancels; the scheduler (owner) writes the backtest.
+    "pov_runs": (
+        "SELECT",
+        "INSERT (tenant_id, name, backtest_start, backtest_end, shadow_start, shadow_end, created_by)",
+        "UPDATE (cancelled_at, cancelled_by)",
+    ),
 }
 CHECKPOINT_TABLE_PRIVILEGES: Dict[str, Tuple[str, ...]] = {
     "checkpoints": ("SELECT", "INSERT", "UPDATE", "DELETE"),

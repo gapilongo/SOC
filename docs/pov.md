@@ -52,7 +52,8 @@ Ports default to 3000 (UI) and 8000 (API); set `POV_UI_PORT`, `POV_API_PORT`,
    read-only credentials (a Wazuh indexer user with read on `wazuh-alerts-*`, a
    Splunk role that can only search, a Sentinel reader). Its host must be on the
    allow-list. See [integrations.md](integrations.md) and the user guide.
-2. **Run the backtest** once analysts' decisions are in the history:
+2. **Start a PoV run** from the web app once analysts' decisions are in the
+   history (see "The PoV run" below). Or run the backtest alone from the host:
 
    ```bash
    scripts/pov.sh --backtest 90
@@ -62,6 +63,55 @@ Ports default to 3000 (UI) and 8000 (API); set `POV_UI_PORT`, `POV_API_PORT`,
    stack (read-only, see [evaluation.md](evaluation.md)) and writes the JSON
    and Markdown reports to `.pov/reports/`.
 3. At the end of the PoV: `scripts/pov.sh --down`.
+
+## The PoV run: backtest, then shadow period, without the CLI
+
+A **PoV run** is the record of one proof of value on a tenant: a name, a
+window of history and a shadow period. An admin (the tenant's, or an MSSP's
+under a grant) starts it from the web app (**Proof of value** > *New proof of
+value*, a three-step wizard) or with one API call; no command is run on the
+host.
+
+```bash
+curl -X POST "$API/api/v1/pov/runs" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "Acme, November", "backtest_days": 90, "shadow_days": 14}'
+```
+
+| Phase | Window | What happens |
+|---|---|---|
+| Backtest | `backtest_days` (1 to 366, default 90) ending when the run is created | The scheduler's `pov_backtests` job replays the alerts analysts decided in the window (the 500 oldest at most) through the current pipeline and stores the evaluation report on the run, without its per-alert items: metrics with their sample sizes and intervals, notes, model provenance, and the ids of the threats the replay would have closed |
+| Shadow period | `shadow_days` (1 to 90, default 14) starting when the run is created | The run observes the alerts that arrive. Its results are the tenant's reports over the window: `shadow.reports` on the run lists `/reports/value`, `/reports/accuracy` and `/reports/detections` with the period's dates |
+
+`GET /api/v1/pov/runs` lists the runs and `GET /api/v1/pov/runs/{id}` returns
+one with its backtest result. `status` is the phase: `backtest` (the backtest
+is waiting or running), `shadow`, `completed` (the shadow period ended) or
+`cancelled`. The backtest's own status is `pending`, `running`, `completed`,
+`no_data` (no analyst decided an alert in the window: import history first)
+or `failed` with a short reason.
+
+**A run only reads.** Creating it writes the run and one audit entry
+(`pov_run.created`), nothing else. The backtest is the replay of
+[reporting.md](reporting.md) ("Backtest"): read-only transactions, no
+RLS-bypassing transaction, it stops at the routing decision, and it records
+no LLM accounting. No alert changes status, no escalation, response action,
+event or notification is created. The test
+`tests/integration/api/test_pov_runs.py::test_pov_created_through_the_api_only_and_its_backtest_cause_no_side_effects`
+creates a run through the API, lets the scheduler job run the backtest and
+compares a digest of every row of every other table, and the Redis keys,
+before and after.
+
+Limits: one run in progress per tenant (`409 pov_run_in_progress`); at most 3
+runs created per tenant in 24 hours (`429 too_many_pov_runs`), because each
+starts a backtest that calls the configured model for every alert it replays.
+`POST /api/v1/pov/runs/{id}/cancel` ends a run early: a backtest that has not
+started is not run, one already running finishes. The scheduler runs one
+backtest at a time; one cut short by a scheduler restart is taken again, up to
+3 times. The API role cannot write a run's backtest status or result: only
+the scheduler can.
+
+The command-line backtest below remains for operators who want the full
+report file with its per-alert rows.
 
 ## Adding a host to the allow-list
 

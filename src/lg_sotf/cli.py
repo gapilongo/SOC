@@ -109,10 +109,11 @@ def worker(metrics_host: str, metrics_port: int) -> None:
 @_metrics_port
 def scheduler(metrics_host: str, metrics_port: int) -> None:
     """Run periodic jobs (source polling, sweeps, maintenance) while holding the leader lock."""
+    from lg_sotf.eval.pov import pov_backtest_job
     from lg_sotf.runtime.scheduler import run_scheduler
 
     settings = _prepare()
-    _run(run_scheduler(settings, metrics_host=metrics_host, metrics_port=metrics_port))
+    _run(run_scheduler(settings, metrics_host=metrics_host, metrics_port=metrics_port, pov_backtests=pov_backtest_job))
 
 
 @cli.command()
