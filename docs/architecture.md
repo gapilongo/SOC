@@ -515,6 +515,7 @@ Everything else is per stack, on purpose:
   `lgsotf_escalations_open`, `lgsotf_actions_total{action_type,status}`,
   `lgsotf_llm_slot_wait_seconds{tier,mode}`,
   `lgsotf_integration_deliveries_total{kind,outcome}`, `lgsotf_ticket_syncs_total{system,outcome}`,
+  `lgsotf_security_alerts_undelivered_total{event_type}`,
   `lgsotf_db_stale_statement_retries_total`.
 * No OpenTelemetry tracing: the unused exporter was removed
   ([ADR-0008](adr/0008-remove-tracing.md), which also lists how to add tracing
