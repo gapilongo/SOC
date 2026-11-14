@@ -1,17 +1,19 @@
 /**
  * The decision bar of the investigation view: one key chooses the verdict
- * (T, B, F), a note says what was checked, Ctrl+Enter records it and opens
- * the next escalation. Before anything is recorded the bar says what the
- * chosen verdict sets in motion. It stays at the bottom of the page.
+ * (T, B, F, N), a note says what was checked, Ctrl+Enter records it and
+ * opens the next escalation. Before anything is recorded the bar says what
+ * the chosen verdict sets in motion. It stays at the bottom of the page.
  *
  * The request and its rules are those of the decision page
  * (useRecordDecision): the version the analyst looked at, a note for a true
- * positive, and on a conflict the verdict and the note are kept.
+ * positive, and on a conflict the verdict and the note are kept. "Needs
+ * more information" is the API's `needs_more_info` as it works today: the
+ * analysis runs again with the note, then the alert returns to an analyst.
  */
 
 import { useId, useRef, useState } from 'react';
 
-import type { DecisionOut, EscalationOut, PreviewActionOut } from '../../api/types';
+import type { DecisionOut, EscalationOut, ProposedActionOut } from '../../api/types';
 import { Keycap } from '../../components/investigation';
 import { Banner, Button, ErrorMessage, cx } from '../../../../components/ui';
 import type { Verdict } from '../escalations/labels';
@@ -19,25 +21,37 @@ import { MAX_NOTES, notesRequired, useRecordDecision } from '../escalations/useR
 import { isSingleKey, useKeydown } from './keys';
 import { preapprovedEntries } from './ResponseTable';
 
-const VERDICTS: ReadonlyArray<{ value: Verdict; key: string; label: string }> = [
+/** What the bar records: the three verdicts, or a request for more information. */
+export type DockVerdict = Verdict | 'needs_more_info';
+
+const VERDICTS: ReadonlyArray<{ value: DockVerdict; key: string; label: string }> = [
   { value: 'true_positive', key: 'T', label: 'True positive' },
   { value: 'benign_positive', key: 'B', label: 'Benign, expected here' },
   { value: 'false_positive', key: 'F', label: 'False positive' },
+  { value: 'needs_more_info', key: 'N', label: 'Needs more' },
 ];
 
-const NEEDS_MORE = 'Needs more information is not offered here yet: record a verdict, or leave the escalation open.';
+/** What `needs_more_info` does in the API today (docs/user-guide.md, `routing.max_more_info_loops`). */
+export const NEEDS_MORE_EFFECT =
+  'Records no verdict. The analysis runs again and reads your note, once per alert by default; then the alert comes back to an analyst as a new escalation. No response action runs. A note is required.';
+
+/** The bar asks for a note where the record needs one: a true positive, and a request the analysis must read. */
+function noteNeeded(verdict: DockVerdict | null): boolean {
+  return verdict === 'needs_more_info' || notesRequired(verdict);
+}
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** What recording `verdict` sets in motion, from the response plan and what is ticked in it. */
-export function effectOf(verdict: Verdict | null, planned: readonly PreviewActionOut[], preapproved: ReadonlySet<string>): string {
+export function effectOf(verdict: DockVerdict | null, planned: readonly ProposedActionOut[], preapproved: ReadonlySet<string>): string {
   if (verdict === null) return 'Choose a verdict to see what it sets in motion.';
+  if (verdict === 'needs_more_info') return NEEDS_MORE_EFFECT;
   if (verdict === 'benign_positive') return 'Closes it as real activity that is expected for this customer.';
   if (verdict === 'false_positive') return 'Closes it as not malicious and feeds the verdict back to triage.';
   if (planned.length === 0) return 'Marks it malicious and plans the response. A note is required.';
   // Each action is counted once: ticked (whatever it would do otherwise), else by what happens without a pre-approval.
   const tickedEntries = new Set(preapprovedEntries(planned, preapproved));
-  const isTicked = (a: PreviewActionOut) => tickedEntries.has(a.approval_entry);
+  const isTicked = (a: ProposedActionOut) => a.approval_entry !== null && tickedEntries.has(a.approval_entry);
   const ticked = planned.filter(isTicked).length;
   const now = planned.filter((a) => isTicked(a) || a.without_preapproval === 'automatic').length;
   const waiting = planned.filter((a) => !isTicked(a) && a.without_preapproval === 'awaiting_approval').length;
@@ -67,7 +81,7 @@ export function DecisionDock({
   /** The claim (or take-over) the decision needs first, or null when the escalation is the caller's. */
   claim: { label: string; busy: boolean; run: () => void } | null;
   /** The response plan a true positive would start. */
-  planned: readonly PreviewActionOut[];
+  planned: readonly ProposedActionOut[];
   /** The `approval_entry` of every action ticked in the plan. */
   preapproved: ReadonlySet<string>;
   recordingAs: string;
@@ -80,7 +94,7 @@ export function DecisionDock({
   const noteId = useId();
   const noteRef = useRef<HTMLInputElement>(null);
   const { record: send, error, conflict } = useRecordDecision(escalation);
-  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [verdict, setVerdict] = useState<DockVerdict | null>(null);
   const [note, setNote] = useState('');
   const [noteError, setNoteError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -90,7 +104,7 @@ export function DecisionDock({
 
   const locked = blockedReason !== null;
 
-  const choose = (v: Verdict) => {
+  const choose = (v: DockVerdict) => {
     if (locked) return;
     setVerdict(v);
     setNotice(null);
@@ -103,11 +117,11 @@ export function DecisionDock({
       return;
     }
     if (!verdict) {
-      setNotice('Choose a verdict first: T, B or F.');
+      setNotice('Choose a verdict first: T, B, F or N.');
       return;
     }
-    if (notesRequired(verdict) && !note.trim()) {
-      setNoteError('A true positive needs a note: what did you check?');
+    if (noteNeeded(verdict) && !note.trim()) {
+      setNoteError(verdict === 'needs_more_info' ? 'Say what is missing: the analysis reads your note.' : 'A true positive needs a note: what did you check?');
       noteRef.current?.focus();
       return;
     }
@@ -122,7 +136,7 @@ export function DecisionDock({
           notes: note.trim() || null,
           approved_actions: verdict === 'true_positive' ? preapprovedEntries(planned, preapproved) : [],
           feedback: null,
-          suggest_suppression: verdict === 'true_positive' ? null : false,
+          suggest_suppression: verdict === 'false_positive' || verdict === 'benign_positive' ? false : null,
         },
         onDecided,
       );
@@ -144,7 +158,6 @@ export function DecisionDock({
     const key = e.key.toLowerCase();
     const hit = VERDICTS.find((v) => v.key.toLowerCase() === key);
     if (hit) choose(hit.value);
-    else if (key === 'n' && !locked) setNotice(NEEDS_MORE);
   });
 
   const effect = locked ? blockedReason : (notice ?? effectOf(verdict, planned, preapproved));
@@ -190,16 +203,6 @@ export function DecisionDock({
             </button>
           );
         })}
-        <button
-          type="button"
-          aria-disabled="true"
-          title={NEEDS_MORE}
-          onClick={() => !locked && setNotice(NEEDS_MORE)}
-          className={cx(VERDICT_BUTTON, 'cursor-not-allowed border-strong bg-canvas text-muted')}
-        >
-          <Keycap className="hidden min-[900px]:inline-flex">N</Keycap>
-          Needs more
-        </button>
       </div>
       <div className="min-w-0">
         <label htmlFor={noteId} className="sr-only">
@@ -211,8 +214,8 @@ export function DecisionDock({
           value={note}
           maxLength={MAX_NOTES}
           disabled={locked}
-          placeholder="What did you check? Required for a true positive."
-          aria-required={notesRequired(verdict)}
+          placeholder="What did you check, or what is missing? Required for T and N."
+          aria-required={noteNeeded(verdict)}
           aria-invalid={noteError ? true : undefined}
           aria-describedby={noteError ? `${noteId}-error` : undefined}
           onChange={(e) => {

@@ -1,14 +1,24 @@
 /**
- * The track record of an outcome: how often analysts confirmed it, as counts
- * a reader can check. Never a percentage. Up to 60 alerts are drawn as
- * squares (one per alert); above that, the fraction and a bar. Under the
- * minimum sample the counts are shown and a rate is refused in words.
+ * The track record of an outcome: how often people confirmed it for this
+ * tenant, as counts a reader can check. Never a percentage. Up to 60 alerts
+ * are drawn as squares (one per alert); above that, the fraction and a bar.
+ * Under the minimum sample the counts are shown and a rate is refused in
+ * words.
  */
 
-import type { TrackRecordOut } from '../../api/investigation';
+import type { OutcomeTrackRecordOut } from '../../api/types';
 
 /** Above this many alerts the squares become a bar. */
 export const MAX_SQUARES = 60;
+
+/** Who confirmed what, per outcome category: the lead of the sentence and the alerts it counts. */
+const WORDS: Record<string, { lead: string; alerts: string }> = {
+  needs_decision: { lead: 'Analysts confirmed', alerts: 'alerts sent to a person as likely malicious' },
+  needs_review: { lead: 'Analysts decided true positive on', alerts: 'alerts sent to a person as unsure' },
+  ai_closed_evidence: { lead: 'Blind-audit labels agreed with the AI on', alerts: 'alerts the AI closed on approved evidence' },
+  ai_closed_audit: { lead: 'Blind-audit labels agreed with the AI on', alerts: 'alerts the AI closed and sampled for audit' },
+};
+const OTHER = { lead: 'People confirmed', alerts: 'alerts with this outcome' };
 
 function Squares({ confirmed, total }: { confirmed: number; total: number }) {
   return (
@@ -30,52 +40,46 @@ function Bar({ confirmed, total }: { confirmed: number; total: number }) {
 
 export function TrackRecord({
   record,
-  outcome,
   scope,
+  none = 'Not measured for this alert.',
 }: {
-  /** Null: not measured yet. */
-  record: TrackRecordOut | null;
-  /** The outcome in a sentence: "alerts sent to a person as likely malicious". */
-  outcome: string;
+  /** Null: the read model has no track record for this alert. */
+  record: OutcomeTrackRecordOut | null;
   /** Whose alerts were counted: the tenant's name. */
   scope: string;
+  /** Why there is no record, when there is none. */
+  none?: string;
 }) {
   if (!record) {
     return (
       <div data-track="none" className="text-ctl">
-        <p className="text-body">Not measured yet.</p>
-        <small className="mt-1.5 block text-xs text-muted">
-          How often analysts confirmed the {outcome} is not counted yet, so no figure is shown.
-        </small>
+        <p className="text-body">{none}</p>
       </div>
     );
   }
+  const words = WORDS[record.category] ?? OTHER;
   const total = Math.max(0, Math.round(record.total));
   const confirmed = Math.min(total, Math.max(0, Math.round(record.confirmed)));
-  const window = `${scope}, last ${record.window_days} days`;
+  const basis = record.basis === 'blind_audit_labels' ? 'blind-audit labels' : 'analyst decisions';
+  const window = `${scope}, last ${record.window_days} days, ${basis}`;
   if (total === 0) {
     return (
       <div data-track="empty" className="text-ctl">
-        <p className="text-body">Of the {outcome}, analysts have decided none yet.</p>
+        <p className="text-body">None of the {words.alerts} has been decided yet.</p>
         <small className="mt-1.5 block text-xs text-muted">{window}.</small>
       </div>
     );
   }
-  const few = total < record.min_samples;
+  // The API gives a rate only with enough samples; without one, the page refuses it in words.
+  const few = record.rate === null || total < record.min_samples;
   return (
     <div data-track={few ? 'few' : 'counted'} className="text-ctl">
-      {few ? (
-        <p className="text-body">
-          Of the {outcome}, analysts decided {total} so far and confirmed {confirmed}.
-        </p>
-      ) : (
-        <p className="text-body">
-          <b className="font-semibold text-fg">
-            Analysts confirmed {confirmed} of {total}
-          </b>{' '}
-          {outcome}.
-        </p>
-      )}
+      <p className="text-body">
+        <b className="font-semibold text-fg">
+          {words.lead} {confirmed} of {total}
+        </b>{' '}
+        {words.alerts}.
+      </p>
       {total <= MAX_SQUARES ? <Squares confirmed={confirmed} total={total} /> : <Bar confirmed={confirmed} total={total} />}
       <small className="mt-1.5 block text-xs text-muted">
         {window}.{' '}

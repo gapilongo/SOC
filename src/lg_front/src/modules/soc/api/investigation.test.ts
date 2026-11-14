@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { ALERT_ID, event, investigationAlert, investigationEscalation, investigationEvents, investigationPreview } from '../../../test/investigation';
+import { ESCALATED_INVESTIGATION } from '../../../test/investigationReadModels';
 import { ADAPTER_GAPS, INVESTIGATION_VERSION, adaptInvestigation } from './investigation';
 import type { AlertDetailOut, FindingOut } from './types';
 
 const closed = (summary: Record<string, unknown>, overrides: Partial<AlertDetailOut> = {}) =>
-  adaptInvestigation({ alert: investigationAlert({ status: 'closed', summary, findings: [], ...overrides }) });
+  adaptInvestigation({ alert: investigationAlert({ status: 'closed', closed_at: '2026-11-14T10:00:00Z', summary, findings: [], ...overrides }) });
 
 const finding = (overrides: Partial<FindingOut>): FindingOut => ({
   origin: 'threat_intel',
@@ -18,7 +19,7 @@ const finding = (overrides: Partial<FindingOut>): FindingOut => ({
   ...overrides,
 });
 
-describe('adaptInvestigation: an alert that waits for an analyst', () => {
+describe('adaptInvestigation: the read model, from an API that does not serve it', () => {
   const inv = adaptInvestigation({
     alert: investigationAlert(),
     escalation: investigationEscalation(),
@@ -26,76 +27,72 @@ describe('adaptInvestigation: an alert that waits for an analyst', () => {
     preview: investigationPreview(),
   });
 
-  it('declares the shape version, the alert and what today’s data cannot fill', () => {
-    expect(inv.version).toBe(INVESTIGATION_VERSION);
-    expect(inv.alert_id).toBe(ALERT_ID);
-    expect(inv.not_yet_available).toEqual([...ADAPTER_GAPS]);
-    expect(inv.track_record).toBeNull();
+  it('has every field of the read model, and names what that API cannot give', () => {
+    expect(Object.keys(inv).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION).sort());
+    expect(inv).toMatchObject({ schema_version: INVESTIGATION_VERSION, alert_id: ALERT_ID, tenant_id: 'acme', hidden_for_blind_audit: false, track_record: null });
+    expect(inv.pending_harness).toEqual([...ADAPTER_GAPS]);
+    expect(inv.pending_harness.map((p) => p.field)).toContain('track_record');
+    // Each nested object has the read model's fields too.
+    expect(Object.keys(inv.outcome ?? {}).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION.outcome ?? {}).sort());
+    expect(Object.keys(inv.claims[0]).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION.claims[0]).sort());
+    expect(Object.keys(inv.observations[0]).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION.observations[0]).sort());
+    expect(Object.keys(inv.response.actions[0]).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION.response.actions[0]).sort());
+    expect(Object.keys(inv.not_established.unavailable[0]).sort()).toEqual(Object.keys(ESCALATED_INVESTIGATION.not_established.unavailable[0]).sort());
   });
 
-  it('puts a malicious verdict that waits for a person in "needs your decision: likely malicious", with the decide reason in plain words', () => {
+  it('puts a malicious verdict that waits for a person in "needs_decision", with the decide reason in plain words', () => {
     expect(inv.outcome).toEqual({
-      category: 'needs_decision_malicious',
-      reason: { code: 'false_positive_review', text: 'The AI did not close this alert: high severity alerts are closed only by an analyst.' },
+      category: 'needs_decision',
+      reason: { code: 'false_positive_review', sentence: 'The AI did not close this alert: high severity alerts are closed only by an analyst.' },
+      blockers: [],
+      evidence: [],
       closed_by: null,
     });
-  });
-
-  it('marks the summary as written by the model', () => {
     expect(inv.summary).toEqual({
       text: 'Word ran a hidden, encoded PowerShell command that downloaded a script from a three-day-old domain. Two minutes later the same host read LSASS memory.',
-      source: 'model',
+      written_by: 'model',
     });
   });
 
-  it('turns every lookup into an observation with its outcome, and highlights only the provider’s own verdict', () => {
-    expect(inv.observations.map((o) => [o.id, o.outcome, o.tool])).toEqual([
-      ['O-01', 'success', 'virustotal'],
-      ['O-02', 'empty', 'abuseipdb'],
-      ['O-03', 'success', 'history'],
-      ['O-04', 'failed', 'virustotal'],
+  it('turns every lookup into an observation with its outcome, its source and no invented highlight or hash', () => {
+    expect(inv.observations.map((o) => [o.id, o.tool, o.outcome, o.sources, o.verdict])).toEqual([
+      ['O-01', 'reputation', 'success', ['virustotal'], 'malicious'],
+      ['O-02', 'reputation', 'empty', ['abuseipdb'], null],
+      ['O-03', 'history', 'success', ['history'], 'unknown'],
+      ['O-04', 'reputation', 'failed', ['virustotal'], null],
     ]);
     const [first, second, third, fourth] = inv.observations;
-    expect(first.title).toBe('Reputation of domain cdn-invoice-portal.example');
-    expect(first.excerpt[0].text).toMatch(/^verdict\s+malicious$/);
-    const [start, end] = first.excerpt[0].marks?.[0] ?? [0, 0];
-    expect(first.excerpt[0].text.slice(start, end)).toBe('malicious');
-    expect(first.excerpt.map((l) => l.text.replace(/\s+/g, ' '))).toEqual([
-      'verdict malicious',
-      'malicious engines 14',
-      'total engines 91',
-      'registered 2026-11-11',
-      'categories phishing, malware',
+    expect(first).toMatchObject({ title: 'Threat-intelligence reputation', kind: 'domain', target: 'cdn-invoice-portal.example', at: '2026-11-14T09:44:28Z', cached: false, excerpt_truncated: false });
+    expect(first.excerpt.map((l) => l.text)).toEqual([
+      'virustotal  ok  malicious',
+      '  malicious_engines: 14',
+      '  total_engines: 91',
+      '  registered: 2026-11-11',
+      '  categories: phishing, malware',
     ]);
-    expect(first.excerpt.slice(1).every((l) => l.marks === undefined)).toBe(true);
-    expect(first).toMatchObject({ at: '2026-11-14T09:44:28Z', rows: null, input_sha256: null, output_sha256: null, cached: false, simulated: false, detail: null });
-    expect(second.excerpt).toEqual([{ text: 'No record for this IP address.' }]);
-    expect(third).toMatchObject({ title: 'Earlier alerts of this tenant for host WS-FIN-0142', cached: true });
-    // An "unknown" verdict is not a threat signal: nothing is highlighted.
-    expect(third.excerpt[0].marks).toBeUndefined();
-    expect(fourth.excerpt).toEqual([{ text: 'virustotal answered with an error.' }]);
+    expect(inv.observations.every((o) => o.excerpt.every((l) => l.marks.length === 0) && o.input_sha256 === null && o.output_sha256 === null)).toBe(true);
+    expect(second.excerpt).toEqual([{ text: 'abuseipdb  not_found', marks: [] }]);
+    expect(third).toMatchObject({ title: 'Earlier alerts of this customer for the same entity', kind: 'host', target: 'WS-FIN-0142', cached: true });
+    expect(fourth.excerpt).toEqual([{ text: 'virustotal  error', marks: [] }]);
     expect(fourth.at).toBeNull();
   });
 
-  it('lists what the analysis stated as claims: backed only by a lookup that returned data', () => {
-    expect(inv.claims.map((c) => [c.id, c.direction, c.check, c.observation_ids])).toEqual([
-      ['1', null, 'supported', ['O-01']],
-      ['2', null, 'unsupported', ['O-02']],
-      ['3', null, 'unsupported', []],
-      ['4', 'malicious', 'unsupported', []],
-      ['5', 'benign', 'unsupported', []],
+  it('lists the fast model’s indicators as unsupported claims and one rule claim per lookup that reported a threat', () => {
+    expect(inv.claims.map((c) => [c.id, c.written_by, c.direction, c.check, c.observation_ids])).toEqual([
+      ['C-01', 'model', 'malicious', 'unsupported', []],
+      ['C-02', 'model', 'benign', 'unsupported', []],
+      ['C-03', 'rules', 'malicious', 'supported', ['O-01']],
     ]);
-    // What the rules flagged is decided by code: it is never listed as a claim.
-    expect(inv.claims.map((c) => c.text).join(' ')).not.toMatch(/file_hash_present|office_spawns_script_host/);
-    expect(inv.claims[0].check_reason).toBeNull();
-    expect(inv.claims[1].check_reason).toBe('The lookup it names returned nothing, and nothing found is never counted as proof.');
-    expect(inv.claims[2].check_reason).toBe('It names no lookup.');
+    expect(inv.claims[0]).toMatchObject({ text: 'The PowerShell command is hidden and encoded.', check_reason: 'The model named no observation for it.' });
+    expect(inv.claims[2]).toMatchObject({ text: 'A threat-intelligence source reports a value of this alert as malicious.', check_reason: null });
+    // The rules' signals and the model's step-by-step reasoning are not claims.
+    expect(inv.claims.map((c) => c.text).join(' ')).not.toMatch(/file_hash_present|office_spawns_script_host|The script came from/);
   });
 
   it('keeps the three kinds of "not established" apart', () => {
-    expect(inv.not_established.checked_empty).toEqual([{ what: 'Reputation of IP address 203.0.113.50', why: 'abuseipdb has no record.', observation_id: 'O-02' }]);
+    expect(inv.not_established.empty).toEqual(['O-02']);
     expect(inv.not_established.unavailable).toEqual([
-      { what: expect.stringMatching(/^Reputation of file hash 5d1e/), why: 'virustotal answered with an error.', observation_id: 'O-04' },
+      { what: 'Threat-intelligence reputation', why: 'The source did not answer.', kind: 'tool_failed', source: 'virustotal', observation_id: 'O-04' },
     ]);
     // An indicator of the alert that no lookup was recorded for.
     expect(inv.not_established.not_checked).toEqual([{ what: 'Reputation of domain unchecked.example', why: 'No lookup was recorded for it.' }]);
@@ -115,96 +112,97 @@ describe('adaptInvestigation: an alert that waits for an analyst', () => {
   });
 
   it('carries the response preview as the proposed response', () => {
-    expect(inv.response?.actions.map((a) => a.approval_entry)).toEqual([
-      'isolate_host:WS-FIN-0142',
-      'kill_process:powershell.exe PID 7340',
-      'block_domain:cdn-invoice-portal.example',
-      'reset_password:m.keller@acme.example',
+    expect(inv.response.source).toBe('preview');
+    expect(inv.response.actions.map((a) => [a.approval_entry, a.status, a.action_id, a.can_preapprove, a.role_lock])).toEqual([
+      ['isolate_host:WS-FIN-0142', null, null, false, 'admin'],
+      ['kill_process:powershell.exe PID 7340', null, null, true, null],
+      ['block_domain:cdn-invoice-portal.example', null, null, true, null],
+      ['reset_password:m.keller@acme.example', null, null, false, 'disabled'],
     ]);
-    expect(inv.response?.dry_run_forced).toBe(false);
+    expect(inv.response.actions[3].guardrail).toEqual({ verdict: 'blocked', code: 'autonomy_disabled', reason: 'The autonomy policy switches off critical-risk actions' });
+    expect(inv.response.actions[0]).toMatchObject({ description: null, inverse_action: 'release_host', irreversible_note: null });
+    expect(adaptInvestigation({ alert: investigationAlert() }).response).toEqual({ source: 'none', actions: [] });
+    expect(adaptInvestigation({ alert: investigationAlert(), preview: investigationPreview([]) }).response.source).toBe('none');
   });
 });
 
 describe('adaptInvestigation: outcome', () => {
-  it('is "unsure" when the analysis did not call it malicious, and takes the reason from the alert without an escalation', () => {
+  it('is "needs_review" when the analysis did not call it malicious, and takes the reason from the alert without an escalation', () => {
     const base = investigationAlert();
     const alert = investigationAlert({ summary: { ...base.summary, analysis: { verdict: 'inconclusive', conclusion: 'Unclear.' }, decision: { reason: 'assessment in the grey zone', code: 'grey_zone' } } });
     const inv = adaptInvestigation({ alert });
-    expect(inv.outcome.category).toBe('needs_decision_unsure');
-    expect(inv.outcome.reason).toEqual({ code: 'grey_zone', text: 'The AI did not close this alert: assessment in the grey zone.' });
-    expect(inv.summary).toEqual({ text: 'Unclear.', source: null });
-    expect(inv.response).toBeNull();
+    expect(inv.outcome).toMatchObject({ category: 'needs_review', reason: { code: 'grey_zone', sentence: 'The AI did not close this alert: assessment in the grey zone.' } });
+    expect(inv.summary).toEqual({ text: 'Unclear.', written_by: null });
     expect(inv.steps).toEqual([]);
   });
 
   it('reads the verdict and the summary from the escalation when the alert has no analysis, and gives no reason it was not sent', () => {
-    const alert = investigationAlert({ status: 'processing', summary: {}, findings: [] });
+    const alert = investigationAlert({ status: 'processing', summary: {}, findings: [], hidden_for_blind_audit: true });
     const escalation = investigationEscalation({ status: 'open', reason: '', routing: null, summary: { verdict: 'malicious', conclusion: 'Beaconing to a known C2 host.', llm_used: false } });
     const inv = adaptInvestigation({ alert, escalation });
-    expect(inv.outcome).toEqual({ category: 'needs_decision_malicious', reason: null, closed_by: null });
-    expect(inv.summary).toEqual({ text: 'Beaconing to a known C2 host.', source: 'rules' });
+    expect(inv.outcome).toMatchObject({ category: 'needs_decision', reason: null, closed_by: null });
+    expect(inv.summary).toEqual({ text: 'Beaconing to a known C2 host.', written_by: 'rules' });
+    expect(inv.hidden_for_blind_audit).toBe(true);
+    const coded = adaptInvestigation({ alert: investigationAlert({ summary: { decision: { reason: 'no automatic policy applies' } }, findings: [] }) });
+    expect(coded.outcome?.reason).toEqual({ code: 'unknown', sentence: 'The AI did not close this alert: no automatic policy applies.' });
   });
 
-  it('has no category while the alert is being investigated or waits for an approval', () => {
+  it('has no outcome while the alert is being investigated, waits for an approval or failed', () => {
     for (const status of ['processing', 'waiting_approval', 'failed']) {
       const inv = adaptInvestigation({ alert: investigationAlert({ status, summary: {}, findings: [] }), escalation: investigationEscalation({ status: 'decided' }) });
-      expect(inv.outcome).toEqual({ category: null, reason: null, closed_by: null });
-      expect(inv.summary).toBeNull();
+      expect(inv.outcome).toBeNull();
+      expect(inv.summary).toEqual({ text: null, written_by: null });
     }
   });
 
-  it('closed by the AI on the analysis alone: sampled for audit, with the policy’s reason', () => {
-    const inv = closed({ close_reason: 'ai_closed:audit_required', decision: { reason: 'AI-closed, audit required: the analysis judged it benign' } });
-    expect(inv.outcome).toEqual({
+  it('closed by the AI: sampled for audit, by the policy, after a response, or at triage', () => {
+    const audit = closed({ close_reason: 'ai_closed:audit_required', decision: { reason: 'AI-closed, audit required: the analysis judged it benign' } }).outcome;
+    expect(audit).toMatchObject({
       category: 'ai_closed_audit',
-      reason: { code: 'ai_closed:audit_required', text: 'AI-closed, audit required: the analysis judged it benign.' },
-      closed_by: { kind: 'ai', reason: 'AI-closed, audit required: the analysis judged it benign.' },
+      reason: { code: 'ai_closed:audit_required', sentence: 'AI-closed, audit required: the analysis judged it benign.' },
+      closed_by: { kind: 'ai', at: '2026-11-14T10:00:00Z', decision: null, rule_id: null, rule_name: null, source_alert_id: null },
     });
-    expect(closed({ close_reason: 'ai_closed:audit_required' }).outcome.closed_by?.reason).toBe('The analysis judged it benign. It stays in the pool for the blind audit.');
-  });
-
-  it('closed by the AI: by the policy, after a response, or at triage', () => {
+    expect(audit?.reason).toEqual(audit?.closed_by?.reason);
+    expect(closed({ close_reason: 'ai_closed:audit_required' }).outcome?.closed_by?.reason.sentence).toBe('The analysis judged it benign. It stays in the pool for the blind audit.');
     expect(closed({ close_reason: 'policy:close', decision: { reason: 'low threat corroborated by approved benign evidence' } }).outcome).toMatchObject({
-      category: 'ai_closed',
-      closed_by: { kind: 'ai', reason: 'Low threat corroborated by approved benign evidence.' },
+      category: 'ai_closed_evidence',
+      closed_by: { kind: 'ai', reason: { code: 'policy:close', sentence: 'Low threat corroborated by approved benign evidence.' } },
     });
-    expect(closed({ close_reason: 'policy:close' }).outcome.closed_by?.reason).toBe('The decision policy closed it.');
-    expect(closed({ close_reason: 'policy:response' }).outcome).toMatchObject({ category: 'ai_closed', closed_by: { kind: 'ai', reason: 'The decision policy judged it malicious and the response plan finished.' } });
-    expect(closed({ close_reason: 'triage:false_positive' }).outcome).toMatchObject({ category: 'ai_closed', closed_by: { kind: 'ai', reason: 'Triage judged it a false positive.' } });
+    expect(closed({ close_reason: 'policy:close' }).outcome?.closed_by?.reason.sentence).toBe('The decision policy closed it.');
+    expect(closed({ close_reason: 'policy:response' }).outcome).toMatchObject({ category: 'ai_closed_evidence', closed_by: { kind: 'ai' } });
+    expect(closed({ close_reason: 'triage:false_positive' }).outcome).toMatchObject({ category: 'ai_closed_evidence', closed_by: { reason: { sentence: 'Triage judged it a false positive.' } } });
   });
 
   it('closed by a person, a suppression rule or an earlier analyst verdict: no AI category, and who closed it', () => {
-    expect(closed({ close_reason: 'analyst:true_positive' }).outcome).toEqual({
+    expect(closed({ close_reason: 'analyst:true_positive' }).outcome).toMatchObject({
       category: null,
-      reason: { code: 'analyst:true_positive', text: 'An analyst decided: true positive.' },
-      closed_by: { kind: 'analyst', reason: 'An analyst decided: true positive.' },
+      closed_by: { kind: 'analyst', decision: 'true_positive', reason: { code: 'analyst:true_positive', sentence: 'An analyst decided it.' } },
     });
-    expect(closed({ close_reason: 'analyst:escalated_elsewhere' }).outcome.closed_by).toEqual({ kind: 'analyst', reason: 'An analyst decided: escalated elsewhere.' });
-    expect(closed({ close_reason: 'analyst:' }).outcome.closed_by).toEqual({ kind: 'analyst', reason: 'An analyst decided it.' });
-    expect(closed({ close_reason: 'suppression_rule', suppressed_by: { type: 'suppression_rule', name: 'Patch window' } }).outcome.closed_by).toEqual({
+    expect(closed({ close_reason: 'analyst:' }).outcome?.closed_by).toMatchObject({ kind: 'analyst', decision: null });
+    expect(closed({ close_reason: 'suppression_rule', suppressed_by: { type: 'suppression_rule', rule_id: 'r-1', name: 'Patch window' } }).outcome?.closed_by).toMatchObject({
       kind: 'suppression_rule',
-      reason: 'Suppression rule "Patch window" matched this alert.',
+      rule_id: 'r-1',
+      rule_name: 'Patch window',
+      reason: { code: 'suppression_rule', sentence: 'A suppression rule matched this alert.' },
     });
-    expect(closed({ close_reason: 'suppression_rule' }).outcome.closed_by).toEqual({ kind: 'suppression_rule', reason: 'A suppression rule matched this alert.' });
-    expect(closed({ suppressed_by: { type: 'verdict_cache', decision: 'benign_positive' } }).outcome.closed_by).toEqual({
+    expect(closed({ close_reason: 'suppression_rule' }).outcome?.closed_by).toMatchObject({ kind: 'suppression_rule', rule_name: null });
+    expect(closed({ suppressed_by: { type: 'verdict_cache', decision: 'benign_positive', source_alert_id: 'a-0' } }).outcome?.closed_by).toMatchObject({
       kind: 'cached_verdict',
-      reason: 'An analyst decided the same alert before (benign, expected here); that verdict was applied.',
+      decision: 'benign_positive',
+      source_alert_id: 'a-0',
     });
-    expect(closed({ close_reason: 'verdict_cache' }).outcome.closed_by).toEqual({
-      kind: 'cached_verdict',
-      reason: 'An analyst decided the same alert before; that verdict was applied.',
-    });
+    expect(closed({ close_reason: 'verdict_cache' }).outcome?.closed_by).toMatchObject({ kind: 'cached_verdict', decision: null });
   });
 
   it('says nothing about a close it cannot read', () => {
-    expect(closed({}).outcome).toEqual({ category: null, reason: null, closed_by: null });
-    expect(closed({ close_reason: 'reopened:related_threat' }).outcome).toEqual({ category: null, reason: null, closed_by: null });
-    expect(adaptInvestigation({ alert: investigationAlert({ status: 'closed', summary: undefined, findings: undefined }) }).outcome.category).toBeNull();
+    expect(closed({}).outcome).toMatchObject({ category: null, reason: null, closed_by: null });
+    expect(closed({ close_reason: 'reopened:related_threat' }).outcome).toMatchObject({ category: null, reason: null, closed_by: null });
+    expect(adaptInvestigation({ alert: investigationAlert({ status: 'closed', summary: undefined, findings: undefined }) }).outcome?.category).toBeNull();
   });
 });
 
 describe('adaptInvestigation: observations and what is not established', () => {
-  it('says why a lookup could not be made, and files a skipped one under "not checked"', () => {
+  it('says why a lookup could not be made: no source for this customer, or a source that failed', () => {
     const alert = investigationAlert({
       normalized: {},
       findings: [
@@ -217,63 +215,58 @@ describe('adaptInvestigation: observations and what is not established', () => {
     });
     const inv = adaptInvestigation({ alert });
     expect(inv.observations.map((o) => o.outcome)).toEqual(['failed', 'failed', 'failed', 'failed', 'failed']);
-    expect(inv.not_established.unavailable.map((i) => i.why)).toEqual([
-      'greynoise is not configured for this tenant.',
-      'urlhaus does not answer for this kind of indicator.',
-      'virustotal refused the lookup: its rate limit was reached.',
-      'shodan did not answer (timeout).',
+    expect(inv.not_established.unavailable.map((i) => [i.kind, i.source, i.why])).toEqual([
+      ['no_source', 'greynoise', 'The source is not configured for this tenant.'],
+      ['no_source', 'urlhaus', 'The source does not answer for this kind of indicator.'],
+      ['tool_failed', 'virustotal', 'The source refused the lookup: its rate limit was reached.'],
+      ['tool_failed', 'otx', 'The lookup was skipped.'],
+      ['tool_failed', 'shodan', 'The source did not answer.'],
     ]);
-    expect(inv.not_established.not_checked).toEqual([{ what: 'Reputation of IP address 198.51.100.7', why: 'The lookup at otx was skipped.', observation_id: 'O-04' }]);
-    expect(inv.not_established.checked_empty).toEqual([]);
+    expect(inv.not_established.empty).toEqual([]);
+    expect(inv.not_established.not_checked).toEqual([]);
   });
 
-  it('bounds a long result: six lines on the page, the rest on demand; a simulated result is flagged, not listed', () => {
+  it('bounds a long result to six lines and says it is cut; a simulated flag is not a line', () => {
     const data = { simulated: true, a: 1, b: true, c: 'x'.repeat(400), d: ['p', 2], e: 5, f: 6, nested: { skip: 1 }, none: null, blank: ' ', empty: [{}] };
     const inv = adaptInvestigation({ alert: investigationAlert({ findings: [finding({ verdict: 'suspicious', data })] }) });
     const [o] = inv.observations;
-    expect(o.simulated).toBe(true);
     expect(o.excerpt).toHaveLength(6);
-    expect(o.excerpt[0].text.slice(...(o.excerpt[0].marks?.[0] ?? [0, 0]))).toBe('suspicious');
+    expect(o.excerpt_truncated).toBe(true);
+    expect(o.excerpt[0].text).toBe('abuseipdb  ok  suspicious');
     expect(o.excerpt[3].text.length).toBeLessThanOrEqual(200);
     expect(o.excerpt[3].text.endsWith('…')).toBe(true);
-    expect(o.detail?.split('\n').map((l) => l.split(/\s+/)[0])).toEqual(['verdict', 'a', 'b', 'c', 'd', 'e', 'f']);
-    expect(o.detail).not.toContain('simulated');
+    expect(o.excerpt.map((l) => l.text).join('\n')).not.toContain('simulated');
+    expect(inv.claims.at(-1)).toMatchObject({ written_by: 'rules', text: 'A threat-intelligence source reports a value of this alert as suspicious.', observation_ids: ['O-01'] });
   });
 
-  it('shows a lookup without a verdict as unknown, and drops malformed findings', () => {
+  it('shows a lookup without a verdict as unknown, drops malformed findings, and words a history claim', () => {
     const alert = investigationAlert({
-      findings: [finding({ verdict: '', data: undefined }), { origin: 'other' } as unknown as FindingOut, finding({ source: '' })],
+      findings: [
+        finding({ verdict: '', data: undefined, target: ' ', kind: 'ip' }),
+        { origin: 'other' } as unknown as FindingOut,
+        finding({ source: '' }),
+        finding({ origin: 'history', kind: 'user', target: 'm.keller', source: 'history', verdict: 'malicious' }),
+      ],
+      summary: { triage: { llm_tp: ['Same.', 'same.'] } },
     });
     const inv = adaptInvestigation({ alert });
-    expect(inv.observations).toHaveLength(1);
-    expect(inv.observations[0].excerpt).toEqual([{ text: 'verdict  unknown' }]);
+    expect(inv.observations).toHaveLength(2);
+    expect(inv.observations[0]).toMatchObject({ verdict: 'unknown', target: null, excerpt: [{ text: 'abuseipdb  ok  unknown', marks: [] }] });
+    expect(inv.claims.map((c) => c.text)).toEqual(['Same.', 'Earlier alerts of this customer for the same entity were confirmed malicious.']);
   });
 
-  it('lists at most eight indicators without a lookup and counts the rest; none when no analysis ran', () => {
+  it('lists at most eight indicators without a lookup and counts the rest; none when no analysis ran; at most twelve claims', () => {
     const ips = Array.from({ length: 11 }, (_, i) => `198.51.100.${i + 1}`);
     const base = investigationAlert();
     const inv = adaptInvestigation({ alert: investigationAlert({ normalized: { entities: { ips, urls: 'not-a-list' } }, findings: [] }) });
     expect(inv.not_established.not_checked).toHaveLength(9);
+    expect(inv.not_established.not_checked[0]).toEqual({ what: 'Reputation of IP address 198.51.100.1', why: 'No lookup was recorded for it.' });
     expect(inv.not_established.not_checked[8]).toEqual({ what: '3 more indicators of this alert', why: 'No lookup was recorded for them.' });
     const noAnalysis = adaptInvestigation({ alert: investigationAlert({ summary: { ...base.summary, analysis: undefined }, normalized: { entities: { ips } }, findings: [] }) });
     expect(noAnalysis.not_established.not_checked).toEqual([]);
-    expect(noAnalysis.claims.map((c) => c.direction)).toEqual(['malicious', 'benign']);
-    // Without the names in the summary, the triage step falls back to the counts of its event.
-    const counted = adaptInvestigation({ alert: investigationAlert({ summary: {} }), events: [event('2026-11-14T10:00:00Z', 'node.completed', 'triage', { rule_tp: 2, rule_fp: 1 })] });
-    expect(counted.steps[0].produced).toBe('2 signs of an attack · 1 of a false positive');
-    const many = { triage: { rule_tp: Array.from({ length: 8 }, (_, i) => `sign_${i}`), rule_fp: ['known_scanner'] } };
-    const listed = adaptInvestigation({ alert: investigationAlert({ summary: many }), events: [event('2026-11-14T10:00:00Z', 'node.completed', 'triage', {})] });
-    expect(listed.steps[0].produced).toBe('rule signs of an attack: sign 0, sign 1, sign 2, sign 3, sign 4, sign 5 +2 more · of a false positive: known scanner');
-  });
-
-  it('cites the lookups that returned data when a claim names both kinds, states each claim once, and keeps at most twelve', () => {
-    const base = investigationAlert();
-    const reasoning = ['203.0.113.50 and cdn-invoice-portal.example are linked.', '203.0.113.50 AND CDN-INVOICE-PORTAL.EXAMPLE are linked.', ...Array.from({ length: 14 }, (_, i) => `Statement ${i}`), 7, ' '];
-    const inv = adaptInvestigation({ alert: investigationAlert({ summary: { ...base.summary, analysis: { reasoning } } }) });
-    expect(inv.claims).toHaveLength(12);
-    expect(inv.claims[0]).toMatchObject({ check: 'supported', observation_ids: ['O-01'] });
-    expect(inv.claims[1].text).toBe('Statement 0');
-    const long = adaptInvestigation({ alert: investigationAlert({ summary: { analysis: { reasoning: ['y'.repeat(900)] } } }) });
+    const many = adaptInvestigation({ alert: investigationAlert({ summary: { triage: { llm_tp: [...Array.from({ length: 14 }, (_, i) => `Statement ${i}`), 7, ' ', 'y'.repeat(900)] } } }) });
+    expect(many.claims).toHaveLength(12);
+    const long = adaptInvestigation({ alert: investigationAlert({ summary: { triage: { llm_fp: ['y'.repeat(900)] } }, findings: [] }) });
     expect(long.claims[0].text).toHaveLength(400);
   });
 });
@@ -291,6 +284,7 @@ describe('adaptInvestigation: steps', () => {
 
   it('says when no model was used, and leaves out what the event does not carry', () => {
     expect(steps(event(T, 'node.completed', 'triage', { llm_used: false }))[0]).toMatchObject({ actor: 'code', text: 'Triage: the rules scored the alert. No model was used.', produced: null });
+    expect(steps(event(T, 'node.completed', 'triage', { rule_tp: 2, rule_fp: 1 }))[0].produced).toBe('2 signs of an attack · 1 of a false positive');
     expect(steps(event(T, 'node.completed', 'correlation', { burst: true, llm_used: true, indicators: 1 }))[0]).toMatchObject({
       actor: 'model',
       text: 'Looked for related alerts of this tenant, arriving in a burst.',
@@ -299,6 +293,9 @@ describe('adaptInvestigation: steps', () => {
     expect(steps(event(T, 'node.completed', 'analysis', {}))[0]).toMatchObject({ actor: 'code', text: 'The rules wrote the analysis. No model was used.', produced: null });
     expect(steps(event(T, 'node.completed', 'analysis', { llm_used: true, tool_steps: 1 }))[0].text).toBe('The model wrote the analysis after 1 lookup.');
     expect(steps(event(T, 'node.completed', 'analysis', { llm_used: true }))[0].text).toBe('The model wrote the analysis.');
+    const many = { triage: { rule_tp: Array.from({ length: 8 }, (_, i) => `sign_${i}`), rule_fp: ['known_scanner'] } };
+    const listed = adaptInvestigation({ alert: investigationAlert({ summary: many }), events: [event(T, 'node.completed', 'triage', {})] });
+    expect(listed.steps[0].produced).toBe('rule signs of an attack: sign 0, sign 1, sign 2, sign 3, sign 4, sign 5 +2 more · of a false positive: known scanner');
   });
 
   it('words the decision policy, the escalation, the response and the close', () => {
@@ -339,7 +336,10 @@ describe('adaptInvestigation: steps', () => {
 
   it('words what people did', () => {
     expect(steps(event(T, 'analyst.decision', 'await_analyst', { decision: 'false_positive' }, 'user'))[0]).toMatchObject({ actor: 'person', text: 'An analyst decided: false positive.' });
-    expect(steps(event(T, 'analyst.decision', 'await_analyst', { folded: true }, 'user'))[0].text).toBe('An analyst decided (with the alerts grouped under one escalation).');
+    expect(steps(event(T, 'analyst.decision', 'await_analyst', { decision: 'escalated_elsewhere', folded: true }, 'user'))[0].text).toBe(
+      'An analyst decided: escalated elsewhere (with the alerts grouped under one escalation).',
+    );
+    expect(steps(event(T, 'analyst.decision', 'await_analyst', {}, 'user'))[0].text).toBe('An analyst decided.');
     expect(steps(event(T, 'actions.approval', 'await_approval', { approved: 2, rejected: 1 }, 'user'))[0]).toMatchObject({
       actor: 'person',
       text: 'A person decided on the response actions.',

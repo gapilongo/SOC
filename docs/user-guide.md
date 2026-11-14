@@ -61,6 +61,30 @@ sample alerts under Getting started (docs/onboarding.md).
 
 ### 1. Watch the queue
 
+In the web app the **Overview** is the first page. It reads in this order:
+
+1. **Needs you now.** What you hold and its first deadline, the response
+   actions your role may approve, what nobody has claimed (and how many of
+   those are past their deadline), and the sampled AI closes that wait for a
+   blind-audit label. Each line has one action. These counts are "right
+   now", whatever the window.
+2. **Closed without a person.** Of the alerts received in the window (24
+   hours, 7 days or 30 days) that are finished, how many no person touched
+   and how many reached one, as a sentence, a bar and the table the bar is
+   drawn from. A share is shown from 5 finished alerts on, a mean time from
+   5 observations on; below that the page says "too few" and gives the
+   count.
+3. **How the AI's closes are verified.** The blind audit of the last 30
+   days: how many closes were eligible, sampled and labelled, and how many
+   an analyst who could not see the AI's verdict labelled malicious. The
+   missed-threat rate appears with its 95% interval once the report carries
+   one (30 labels by default). A check the product does not report yet reads
+   "Not measured yet" and shows no figure.
+4. **Next deadlines**, then, for admins, **Platform health** (queue depth,
+   LLM cost, the estimate of analyst hours saved, alerts by status).
+
+The same data over the API:
+
 * `GET /dashboard/summary?window_hours=24`: counts by status, severity and
   disposition, open escalations, mean time to acknowledge and to resolve,
   queue depth, LLM tokens and cost.
@@ -99,7 +123,12 @@ tool returned is set in monospace on a recessed surface, apart from what the
 model wrote and from what a check, the policy or a person decided. A claim
 that names no lookup, or only one that returned nothing, is marked
 unsupported. **Hide the verdict** (`V`) withholds the verdict and the claims
-so you judge from the evidence first.
+so you judge from the evidence first. The page is the investigation read
+model (`GET /alerts/{id}/investigation`) on screen: beside the verdict it
+shows how often people confirmed that outcome for your tenant in the last
+90 days, as counts (no rate under 30), and it says "not yet available" for
+exactly the fields the read model lists in `pending_harness`. An entity chip
+opens the alert list searched for that value (a title search).
 
 Read the summary critically: the analysis states whether its evidence came
 from threat intelligence and alert history or only from the model, and
@@ -149,10 +178,11 @@ grouping by rule and bulk close.
      that the case comes back to you.
 
    The investigation view records the same decision from its decision bar:
-   `T` (true positive), `B` (benign, expected here: `benign_positive`) or `F`
-   (false positive) chooses the verdict, the bar says what it sets in motion,
-   and `Ctrl+Enter` records it and opens the next escalation. The bar does
-   not offer `needs_more_info` yet.
+   `T` (true positive), `B` (benign, expected here: `benign_positive`), `F`
+   (false positive) or `N` (`needs_more_info`) chooses the verdict, the bar
+   says what it sets in motion, and `Ctrl+Enter` records it and opens the
+   next escalation. For `N` the bar asks for a note, because the note is what
+   the new analysis reads.
    Add `notes` and optional `feedback` (`confidence`, `triage_correct`,
    `correlation_helpful`, `analysis_accurate`). Feedback feeds the
    evaluation harness (docs/evaluation.md) and helps tune the platform.

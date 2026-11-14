@@ -275,6 +275,21 @@ proposals in the New column, the API's names are the ones to build on:
 | Safety net | none | `reopened_after_confirmation`, `linked_left_closed` in the window (#369) |
 | By tenant | `GET /platform/tenants` (`TenantSummaryOut`, `TenantStatsOut`) | Per tenant: needs a person, due under 15 min, approvals, closed without a person, overturned of audited (90 d), autonomy summary, last event per source |
 
+**Built (PRD-2.14, #426):** the Overview is built from the Has column only (`build/` holds it before and after, in
+both themes at 1440 and 390 px, and the script that takes them). Where the design shows a figure the API does not
+give, the page says "not measured yet" and shows no number:
+
+| On the page | Shown as | The API field it waits for |
+|---|---|---|
+| Closed without a person, by who or what closed it (five kinds) | Two measured rows (`handled_without_human`, `needed_human`) and one row "not measured yet" | `closed_by` breakdown on `DashboardOut`, for the same window and cohort |
+| "125 were decided, in a median of 14 minutes" | The mean time to claim over `acknowledged`, withheld under 5 | Decided count and median for alerts that reached a person |
+| "2 of them have a deadline inside 15 minutes" | Unclaimed items past their deadline (`unassigned_breaching`) | A count of unclaimed items due inside 15 minutes |
+| "The oldest has waited 19 minutes" (approvals) | Left out | Age of the oldest pending approval |
+| Blind-audit items waiting | The first page of `GET /blind-audit/items?status=pending` (50 or more reads "50+") | A count on `DashboardOut` |
+| Planted attacks | "Not measured yet" | `seeded`: `planted`, `closed_by_ai`, `supports_below` (#334) |
+| Safety net | "Not measured yet" | `reopened_after_confirmation`, `linked_left_closed` (#369) |
+| By tenant | Not built: it follows the scope control of the shell (#416) | The per-tenant fields above |
+
 ### Shell
 
 | Element | Has | New |

@@ -608,3 +608,14 @@ def test_release_train_hands_new_tags_to_the_signed_release_path() -> None:
     assert "gh release create" in runs[tag] and "--prerelease" in runs[tag]
     uses = [s.get("uses", "") for s in steps_]
     assert not any(u.startswith(("docker/build-push-action@", "sigstore/", "actions/attest@")) for u in uses)
+
+
+def test_a_ci_run_on_main_is_never_cancelled_by_the_next_merge() -> None:
+    """Release images builds and deploys only a commit whose CI run on main passed, and the release train
+    tags only such a commit. A shared, cancelling group let a merge cancel the previous merge's run, so
+    dev fell behind whenever merges came close together. Pull-request runs still cancel superseded ones."""
+    wf = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text())
+    concurrency = wf["concurrency"]
+    assert "github.ref == 'refs/heads/main' && github.sha" in concurrency["group"]
+    assert "github.event.pull_request.number" in concurrency["group"]
+    assert concurrency["cancel-in-progress"] == "${{ github.ref != 'refs/heads/main' }}"
