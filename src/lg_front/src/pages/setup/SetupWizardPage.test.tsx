@@ -7,7 +7,7 @@ import type { OnboardingStatusOut, SetupOut } from '../../api/types';
 import { can } from '../../auth/roles';
 import type { Principal } from '../../auth/store';
 import { fakeApi, renderWithSession, signedInSession } from '../../test/helpers';
-import PovPage from '../PovPage';
+import PovWizardPage from '../pov/PovWizardPage';
 import { SetupCallout } from './SetupCallout';
 import SetupWizardPage from './SetupWizardPage';
 import { asProfileId, initialProfile } from './steps';
@@ -92,6 +92,7 @@ function wizardApi() {
       return { source_id: 'demo:samples', received: 5, inserted: 5, duplicates: 0, enqueued: 5, alert_ids: [] };
     }
     if (path === '/onboarding/status') return status;
+    if (path === '/pov/runs') return { items: [], next_cursor: null };
     throw new Error(`unexpected ${method} ${path}`);
   });
 }
@@ -100,7 +101,7 @@ function App() {
   return (
     <Routes>
       <Route path="/setup" element={<SetupWizardPage />} />
-      <Route path="/pov" element={<PovPage />} />
+      <Route path="/pov/new" element={<PovWizardPage />} />
       <Route path="/" element={<SetupCallout />} />
     </Routes>
   );
@@ -156,7 +157,9 @@ describe('first-run setup wizard', () => {
     const pov = await screen.findByRole('link', { name: 'Start a proof of value' });
     expect(screen.getByText('Setup complete')).toBeInTheDocument();
     await user.click(pov);
-    expect(await screen.findByRole('heading', { name: 'Proof of value', level: 1 })).toBeInTheDocument();
+    // The link opens the proof-of-value wizard on its first step.
+    expect(await screen.findByRole('heading', { name: 'New proof of value', level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Step 1 of 3: History window' })).toBeInTheDocument();
 
     const puts = calls.filter((c) => c.method === 'PUT');
     expect(puts.map((c) => c.body)).toEqual([

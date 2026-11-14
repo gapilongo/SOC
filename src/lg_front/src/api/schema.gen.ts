@@ -1240,6 +1240,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/pov/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Proof-of-value runs, newest first */
+        get: operations["list_runs_api_v1_pov_runs_get"];
+        put?: never;
+        /** Start a proof of value: a read-only backtest over history, then a shadow period */
+        post: operations["create_run_api_v1_pov_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pov/runs/{pov_run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One proof-of-value run with its backtest result */
+        get: operations["get_run_api_v1_pov_runs__pov_run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/pov/runs/{pov_run_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a proof-of-value run in progress */
+        post: operations["cancel_run_api_v1_pov_runs__pov_run_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/reports/accuracy": {
         parameters: {
             query?: never;
@@ -4599,6 +4651,13 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /** PageOut[PovRunOut] */
+        PageOut_PovRunOut_: {
+            /** Items */
+            items: components["schemas"]["PovRunOut"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** PermissionCheck */
         PermissionCheck: {
             /** Api */
@@ -4678,6 +4737,115 @@ export interface components {
              * @enum {string}
              */
             tenant_status: "active" | "suspended";
+        };
+        /**
+         * PovBacktestOut
+         * @description The backtest: analyst-decided alerts of the history window replayed read-only through the pipeline.
+         */
+        PovBacktestOut: {
+            /** Error */
+            error?: string | null;
+            /** Finished At */
+            finished_at?: string | null;
+            /**
+             * Result
+             * @description A completed backtest's evaluation report without its per-alert items (docs/evaluation.md). On the run's own read only.
+             */
+            result?: {
+                [key: string]: unknown;
+            } | null;
+            /** Started At */
+            started_at?: string | null;
+            /**
+             * Status
+             * @description no_data: no analyst-decided alert in the window, nothing was replayed.
+             * @enum {string}
+             */
+            status: "pending" | "running" | "completed" | "no_data" | "failed";
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
+        };
+        /** PovRunIn */
+        PovRunIn: {
+            /**
+             * Backtest Days
+             * @description History to replay: the alerts analysts decided in this many days before now.
+             * @default 90
+             */
+            backtest_days?: number;
+            /** Name */
+            name: string;
+            /**
+             * Shadow Days
+             * @description The shadow period: this many days of live alerts from now.
+             * @default 14
+             */
+            shadow_days?: number;
+        };
+        /** PovRunOut */
+        PovRunOut: {
+            backtest: components["schemas"]["PovBacktestOut"];
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Cancelled By */
+            cancelled_by?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by?: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            shadow: components["schemas"]["PovShadowOut"];
+            /**
+             * Status
+             * @description The phase the run is in.
+             * @enum {string}
+             */
+            status: "backtest" | "shadow" | "completed" | "cancelled";
+        };
+        /**
+         * PovShadowOut
+         * @description The shadow period: the run observes the live alerts of this window and changes none of them.
+         */
+        PovShadowOut: {
+            /**
+             * Reports
+             * @description The tenant's reports over the shadow period: API paths, relative to the API prefix.
+             */
+            reports: {
+                [key: string]: string;
+            };
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "scheduled" | "running" | "completed";
+            /**
+             * Window End
+             * Format: date-time
+             */
+            window_end: string;
+            /**
+             * Window Start
+             * Format: date-time
+             */
+            window_start: string;
         };
         /** PreviewActionOut */
         PreviewActionOut: {
@@ -8439,6 +8607,133 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UsageReportOut"];
                     "text/csv": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_runs_api_v1_pov_runs_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageOut_PovRunOut_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_run_api_v1_pov_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PovRunIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PovRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_api_v1_pov_runs__pov_run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pov_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PovRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_run_api_v1_pov_runs__pov_run_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pov_run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PovRunOut"];
                 };
             };
             /** @description Validation Error */

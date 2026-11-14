@@ -35,6 +35,7 @@ from lg_sotf.api.routers import (
     mfa,
     onboarding,
     platform,
+    pov,
     reports,
     review,
     sources,
@@ -158,6 +159,7 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
         (reports.router, "beta"),
         (blind_audit.router, "beta"),
         (blind_audit.report, "beta"),
+        (pov.router, "beta"),
     )
 
 

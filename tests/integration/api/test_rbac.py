@@ -98,6 +98,11 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("POST", f"/api/v1/blind-audit/items/{U}/label", "reviewer", {"label": "benign"}),
     ("GET", "/api/v1/blind-audit/runs", "viewer", None),
     ("POST", "/api/v1/blind-audit/runs", "admin", {"size": 1}),
+    # Proof-of-value runs: viewers read, admins start and stop them.
+    ("GET", "/api/v1/pov/runs", "viewer", None),
+    ("GET", f"/api/v1/pov/runs/{U}", "viewer", None),
+    ("POST", "/api/v1/pov/runs", "admin", {"name": "RBAC proof of value"}),
+    ("POST", f"/api/v1/pov/runs/{U}/cancel", "admin", None),
     ("GET", "/api/v1/audit", "admin", None),
     ("GET", "/api/v1/audit/verify", "admin", None),
     ("POST", "/api/v1/platform/tenants", "platform_admin", {"id": "rbac-new", "name": "RBAC new"}),
