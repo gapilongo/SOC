@@ -8,6 +8,7 @@ import { Copy, Download } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 
 import type { MfaEnrollOut } from '../api/types';
+import { getBrand } from '../config';
 import { downloadText } from '../lib/download';
 import { useToast } from './Toast';
 import { Button, TextField } from './ui';
@@ -113,7 +114,7 @@ export function RecoveryCodes({ codes, account }: { codes: string[]; account?: s
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const text = [
-    `LG-SOTF recovery codes${account ? ` for ${account}` : ''}`,
+    `${getBrand().name} recovery codes${account ? ` for ${account}` : ''}`,
     `Generated ${new Date().toISOString()}. Each code works once.`,
     '',
     ...codes,
