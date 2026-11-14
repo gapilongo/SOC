@@ -58,7 +58,7 @@ from lg_sotf.db.repos.tickets import ExternalTicket, TicketsRepo
 from lg_sotf.db.repos.usage import UsageDay, UsageRepo
 from lg_sotf.db.repos.user_mfa import UserMfa, UserMfaRepo
 from lg_sotf.db.repos.users import User, UsersRepo
-from lg_sotf.db.repos.views import AlertDigest, EscalationQueue, ViewsRepo
+from lg_sotf.db.repos.views import AlertDigest, AuditLabel, CaseAlertRow, EscalationQueue, ViewsRepo
 
 
 @dataclass(frozen=True)
@@ -145,10 +145,12 @@ __all__ = [
     "ApiKey",
     "ApiKeysRepo",
     "AuditEntry",
+    "AuditLabel",
     "AuditRepo",
     "BlindAuditItem",
     "BlindAuditRepo",
     "BlindAuditRun",
+    "CaseAlertRow",
     "ChainVerification",
     "DashboardCounts",
     "Escalation",

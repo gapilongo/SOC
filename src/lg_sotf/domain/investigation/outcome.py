@@ -156,7 +156,16 @@ def _closed_by(alert: AlertFacts, reason: str, entry: words.CloseReason) -> Inve
     )
 
 
-def _why(code: Optional[str]) -> InvestigationReason:
+def who_closed(alert: AlertFacts) -> Optional[InvestigationClosedBy]:
+    """Who or what closed the alert and why; ``None`` while it is open, or closed with a reason this release
+    does not know."""
+    close_reason = _close_reason(alert)
+    entry = words.CLOSE_REASONS.get(close_reason or "")
+    return _closed_by(alert, close_reason, entry) if close_reason is not None and entry is not None else None
+
+
+def why(code: Optional[str]) -> InvestigationReason:
+    """A decide code with its sentence (the code ``unknown`` when the alert records none)."""
     return _reason(code or UNKNOWN_CODE, words.decide_sentence(code))
 
 
@@ -173,7 +182,7 @@ def outcome(
             return None
         waiting = alert.status == "waiting_approval" and _own(alert, escalation) is None
         return InvestigationOutcome(
-            category=category, reason=_why("awaiting_approval" if waiting else code), blockers=held
+            category=category, reason=why("awaiting_approval" if waiting else code), blockers=held
         )
     close_reason = _close_reason(alert)
     entry = words.CLOSE_REASONS.get(close_reason or "")
@@ -186,7 +195,7 @@ def outcome(
     return InvestigationOutcome(
         category=category,
         # An analyst's close keeps the reason the alert was with a person; the close itself is in closed_by.
-        reason=_why(code) if with_person else closed_by.reason,
+        reason=why(code) if with_person else closed_by.reason,
         blockers=held,
         evidence=evidence,
         closed_by=closed_by,

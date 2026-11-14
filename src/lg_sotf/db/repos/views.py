@@ -2,16 +2,19 @@
 
 Small aggregates and lookups for the analyst console that do not belong to
 one aggregate's repository: escalations joined with their alert, the
-approval queue by risk, alert view counts, owner e-mail addresses. Every
-query runs in the tenant-scoped transaction (RLS) with an explicit
-``tenant_id`` filter, and every lookup is bounded by its input
-(:data:`MAX_LOOKUP_IDS`).
+approval queue by risk, alert view counts, owner e-mail addresses, and what
+the case page reads about a case's alerts (their rows, timelines, response
+actions and blind-audit labels). Every query runs in the tenant-scoped
+transaction (RLS) with an explicit ``tenant_id`` filter, and every lookup is
+bounded by its input (:data:`MAX_LOOKUP_IDS`).
 
 Indexes: active escalations through ``ux_escalations_active_per_alert`` /
 ``ix_escalations_status``; pending actions through
 ``ix_response_actions_status``; alert status counts through
 ``ix_alerts_status`` (closed alerts are counted only inside a ``closed_at``
-window, never all-time).
+window, never all-time); a case's events, actions and labels through
+``ix_alert_events_alert``, ``ix_response_actions_alert`` and
+``blind_audit_items_alert_key``.
 """
 
 from __future__ import annotations
@@ -21,13 +24,18 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from uuid import UUID
 
 from lg_sotf.db.pagination import check_limit
-from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_int, fetch_one, require_aware
+from lg_sotf.db.repos._base import Connection, Record, Repository, fetch_int, fetch_one, require_aware, to_models
+from lg_sotf.db.repos.actions import ResponseAction
+from lg_sotf.db.repos.alert_events import AlertEvent
 from lg_sotf.db.repos.alerts import ALERT_RULE_SQL
 from lg_sotf.models.vocabulary import ALERT_STATUSES, SEVERITIES
 
 MAX_LOOKUP_IDS = 500
 MAX_GROUPS = 100
 MAX_GROUP_SAMPLE = 10
+#: The most timeline events and response actions one case read returns.
+MAX_CASE_EVENTS_PER_ALERT = 200
+MAX_CASE_ACTIONS = 200
 # Alert statuses counted all-time by alert_view_counts: every one but ``closed``.
 OPEN_ALERT_STATUSES = tuple(s for s in ALERT_STATUSES if s != "closed")
 
@@ -72,6 +80,35 @@ FROM alerts a
 LEFT JOIN sources s ON s.tenant_id = a.tenant_id AND s.id = a.source_id
 WHERE a.tenant_id = $1 AND a.id = ANY($2::text[])
 """  # noqa: S608 (constants)
+# The alerts of a case: the row's own columns, never ``raw`` or the whole ``normalized``.
+_CASE_ALERTS_SQL = """
+SELECT a.id, a.tenant_id, a.title, a.severity, a.status, a.disposition, a.occurred_at, a.ingested_at, a.closed_at,
+       a.summary, COALESCE(a.normalized->'entities', '{}'::jsonb) AS entities
+FROM alerts a
+WHERE a.tenant_id = $1 AND a.id = ANY($2::text[])
+"""
+# The first $4 timeline events of each alert, oldest first, without the completed steps of the nodes in $3.
+_CASE_EVENTS_SQL = """
+SELECT e.id, e.tenant_id, e.alert_id, e.ts, e.node, e.event_type, e.actor_type, e.actor_id, e.data
+FROM (
+    SELECT ev.*, row_number() OVER (PARTITION BY ev.alert_id ORDER BY ev.ts, ev.id) AS position
+    FROM alert_events ev
+    WHERE ev.tenant_id = $1 AND ev.alert_id = ANY($2::text[])
+      AND NOT (ev.event_type = 'node.completed' AND ev.node = ANY($3::text[]))
+) e
+WHERE e.position <= $4
+ORDER BY e.ts, e.id
+"""
+_CASE_ACTIONS_SQL = """
+SELECT * FROM response_actions
+WHERE tenant_id = $1 AND alert_id = ANY($2::text[])
+ORDER BY created_at, id
+LIMIT $3
+"""
+_CASE_AUDIT_LABELS_SQL = """
+SELECT alert_id, label, agreement, labelled_at FROM blind_audit_items
+WHERE tenant_id = $1 AND alert_id = ANY($2::text[])
+"""
 _SEVERITY_COUNTS = ", ".join(f"count(*) FILTER (WHERE g.severity = '{s}')::int AS sev_{s}" for s in SEVERITIES)
 # Active escalations grouped by their alert's source and rule ($2 now, $3 unassigned only, $4 assignee,
 # $5 smallest group, $6 limit).
@@ -128,6 +165,31 @@ class AlertDigest(Record):
     source_name: Optional[str]
     rule: str
     entities: Dict[str, Any]
+
+
+class CaseAlertRow(Record):
+    """An alert as the case page reads it: its columns, summary and entities (no ``raw``, no ``normalized``)."""
+
+    id: str
+    tenant_id: str
+    title: str
+    severity: str
+    status: str
+    disposition: Optional[str]
+    occurred_at: datetime
+    ingested_at: datetime
+    closed_at: Optional[datetime]
+    summary: Dict[str, Any]
+    entities: Dict[str, Any]
+
+
+class AuditLabel(Record):
+    """The blind-audit sample of an alert: its label once an analyst gave one, and whether it agrees with the AI."""
+
+    alert_id: str
+    label: Optional[str]
+    agreement: Optional[bool]
+    labelled_at: Optional[datetime]
 
 
 class EscalationGroup(Record):
@@ -258,3 +320,62 @@ class ViewsRepo(Repository):
         async with self._tenant(tenant_id, conn) as c:
             rows = await c.fetch(_ALERT_DIGESTS_SQL, tenant_id, ids)
         return {str(r["id"]): AlertDigest.model_validate(dict(r)) for r in rows}
+
+    async def case_alerts(
+        self, tenant_id: str, alert_ids: Sequence[str], *, conn: Optional[Connection] = None
+    ) -> Dict[str, CaseAlertRow]:
+        """:class:`CaseAlertRow` of each of the tenant's alerts among ``alert_ids`` (unknown ids are absent)."""
+        ids = list(dict.fromkeys(alert_ids))
+        _check_ids(ids)
+        if not ids:
+            return {}
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_CASE_ALERTS_SQL, tenant_id, ids)
+        return {alert.id: alert for alert in to_models(CaseAlertRow, rows)}
+
+    async def case_events(
+        self,
+        tenant_id: str,
+        alert_ids: Sequence[str],
+        *,
+        skip_nodes: Sequence[str] = (),
+        per_alert: int = MAX_CASE_EVENTS_PER_ALERT,
+        conn: Optional[Connection] = None,
+    ) -> List[AlertEvent]:
+        """The timelines of ``alert_ids`` merged, oldest first: the first ``per_alert`` events of each alert,
+        leaving out the completed steps of ``skip_nodes`` (the workflow's inner steps, which a case does not show)."""
+        ids = list(dict.fromkeys(alert_ids))
+        _check_ids(ids)
+        check_limit(per_alert, MAX_CASE_EVENTS_PER_ALERT)
+        if not ids:
+            return []
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_CASE_EVENTS_SQL, tenant_id, ids, list(skip_nodes), per_alert)
+        return to_models(AlertEvent, rows)
+
+    async def case_actions(
+        self, tenant_id: str, alert_ids: Sequence[str], *, limit: int = MAX_CASE_ACTIONS,
+        conn: Optional[Connection] = None,
+    ) -> List[ResponseAction]:
+        """The response actions on the ledger for ``alert_ids``, oldest first, at most ``limit``."""
+        ids = list(dict.fromkeys(alert_ids))
+        _check_ids(ids)
+        check_limit(limit, MAX_CASE_ACTIONS)
+        if not ids:
+            return []
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_CASE_ACTIONS_SQL, tenant_id, ids, limit)
+        return to_models(ResponseAction, rows)
+
+    async def case_audit_labels(
+        self, tenant_id: str, alert_ids: Sequence[str], *, conn: Optional[Connection] = None
+    ) -> Dict[str, AuditLabel]:
+        """The blind-audit sample of each alert among ``alert_ids`` that was ever sampled (an alert is sampled
+        at most once)."""
+        ids = list(dict.fromkeys(alert_ids))
+        _check_ids(ids)
+        if not ids:
+            return {}
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(_CASE_AUDIT_LABELS_SQL, tenant_id, ids)
+        return {label.alert_id: label for label in to_models(AuditLabel, rows)}

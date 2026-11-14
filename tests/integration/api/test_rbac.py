@@ -48,6 +48,7 @@ ENDPOINTS: List[Tuple[str, str, str, Optional[Any]]] = [
     ("GET", f"/api/v1/escalations/{X}", "viewer", None),
     ("POST", f"/api/v1/escalations/{X}/claim", "reviewer", {"version": 1}),
     ("POST", f"/api/v1/escalations/{X}/decision", "reviewer", {"decision": "false_positive", "version": 1}),
+    ("GET", f"/api/v1/cases/{X}", "viewer", None),
     ("GET", "/api/v1/actions", "viewer", None),
     ("GET", f"/api/v1/actions/{U}", "viewer", None),
     ("POST", f"/api/v1/actions/{U}/approve", "reviewer", {}),
