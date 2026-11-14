@@ -14,13 +14,21 @@ import { LiveProvider } from '../live/LiveProvider';
 import { DensityProvider } from '../theme/density';
 import { ThemeProvider } from '../theme/theme';
 import { Layout } from './Layout';
-import { APP_ROUTES } from './routes';
+import { APP_ROUTES, BARE_ROUTES, REGISTRY, type AppRoute } from './routes';
 
-// One chunk per route; the signed-in pages are in the route table (routes.tsx).
+// One chunk per route; the signed-in pages come from the registered modules (routes.tsx).
 const LoginPage = lazy(() => import('../pages/Login'));
 const OidcCallbackPage = lazy(() => import('../pages/OidcCallback'));
-const MonthlyReportPage = lazy(() => import('../pages/MonthlyReportPage'));
 const NotFoundPage = lazy(() => import('../pages/NotFound'));
+
+/** A module's page behind its gate: the tenant has the module and the role allows the page. */
+function gated({ Page, allowed, enabled }: AppRoute) {
+  return (
+    <RequireRole allowed={(p) => enabled(p) && allowed(p)}>
+      <Page />
+    </RequireRole>
+  );
+}
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
 function SessionLifecycle() {
@@ -47,25 +55,26 @@ export function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path={CALLBACK_PATH} element={<OidcCallbackPage />} />
-        {/* Printable report: outside the app layout so only the report prints. */}
-        <Route path="reports/monthly/:month" element={<RequireAuth><MonthlyReportPage /></RequireAuth>} />
+        {/* Pages outside the app layout (the printable report, so only the report prints). */}
+        {BARE_ROUTES.map((route) => (
+          <Route key={route.path} path={route.path.slice(1)} element={<RequireAuth>{gated(route)}</RequireAuth>} />
+        ))}
         <Route
           element={
             <RequireAuth>
-              <LiveProvider>
+              <LiveProvider keysFor={REGISTRY.liveKeys}>
                 <Layout />
               </LiveProvider>
             </RequireAuth>
           }
         >
-          {APP_ROUTES.map(({ path, Page, allowed }) => {
-            const element = (
-              <RequireRole allowed={allowed}>
-                <Page />
-              </RequireRole>
-            );
-            return path === '/' ? <Route key={path} index element={element} /> : <Route key={path} path={path.slice(1)} element={element} />;
-          })}
+          {APP_ROUTES.map((route) =>
+            route.path === '/' ? (
+              <Route key={route.path} index element={gated(route)} />
+            ) : (
+              <Route key={route.path} path={route.path.slice(1)} element={gated(route)} />
+            ),
+          )}
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

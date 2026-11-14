@@ -1198,9 +1198,12 @@ export interface TicketOut {
   created_at: string;
 }
 
-/** Live event envelope pushed on /ws. */
+/**
+ * Live event envelope pushed on /ws. `type` is `<resource>.<change>`; each module's manifest lists the
+ * types it listens to (`liveEvents`), and the socket drops the others.
+ */
 export interface LiveEvent {
-  type: 'alert.created' | 'alert.updated' | 'escalation.created' | 'escalation.updated' | 'action.updated';
+  type: string;
   tenant_id: string;
   alert_id: string | null;
   data: JsonObject;
