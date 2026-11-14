@@ -110,8 +110,8 @@ backtest at a time; one cut short by a scheduler restart is taken again, up to
 3 times. The API role cannot write a run's backtest status or result: only
 the scheduler can.
 
-The command-line backtest below remains for operators who want the full
-report file with its per-alert rows.
+The command-line backtest (`scripts/pov.sh --backtest`, above) remains for
+operators who want the full report file with its per-alert rows.
 
 ## Adding a host to the allow-list
 
