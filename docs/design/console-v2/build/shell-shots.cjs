@@ -121,6 +121,67 @@ const source = (id, name, health, last_error) => ({
   updated_at: iso(-9e9),
 });
 
+const escalation = (n, title, severity, minutes, mine) => ({
+  id: `esc-${n}`,
+  tenant_id: 'brightwater',
+  alert_id: `a-4821${n}`,
+  level: 'L1',
+  status: mine ? 'claimed' : 'open',
+  reason: 'needs_decision',
+  priority: 1,
+  summary: { title },
+  version: 1,
+  created_at: iso(-55 * 6e4),
+  updated_at: iso(-5 * 6e4),
+  sla_deadline: iso(minutes * 6e4),
+  assigned_to: mine ? user.id : null,
+  assigned_to_email: mine ? user.email : null,
+  alert_severity: severity,
+  entities_preview: { items: [{ kind: 'host', value: 'WS-FIN-0142' }], counts: { host: 1 } },
+  routing: null,
+  ai_reason_source: null,
+});
+const ESCALATIONS = [
+  escalation(1, 'Password spray with one success against the VPN gateway', 'high', 9, false),
+  escalation(3, 'LSASS memory read on WS-FIN-0142', 'critical', 4, true),
+  escalation(4, 'Encoded PowerShell launched by Microsoft Word', 'high', 11, true),
+];
+const AUDIT = {
+  from: iso(-29 * 864e5).slice(0, 10),
+  to: iso(0).slice(0, 10),
+  generated_at: iso(0),
+  estimate: {
+    status: 'incomplete',
+    complete: false,
+    summary: '0.6% (stratified over 4 run(s); n=180; 95% CI 0.0% to 3.1%)',
+    method: 'stratified',
+    frame_size: 9870,
+    estimated_frame: 9870,
+    effective_n: 180,
+    sampled: 200,
+    labelled: 188,
+    pending: 12,
+    malicious: 1,
+    benign: 179,
+    unsure: 8,
+    min_samples: 30,
+    false_negative_rate: { rate: 0.0056, n: 180, ci_low: 0.0001, ci_high: 0.031 },
+    agreement_rate: { rate: 0.994, n: 180, ci_low: 0.969, ci_high: 0.999 },
+    estimated_missed: 55,
+    estimated_missed_low: 1,
+    estimated_missed_high: 306,
+    worst_case_rate: 0.105,
+    worst_case_rate_high: 0.155,
+    worst_case_missed: 1036,
+    worst_case_missed_high: 1530,
+  },
+  strata: [],
+  runs: [],
+  uncovered: [],
+  labels_by_organisation: [],
+  notes: [],
+};
+
 function answer(method, url, tenantHeader) {
   const p = url.pathname.replace(/^\/api\/v1/, '');
   const tenant = TENANTS.find((t) => t[0] === (tenantHeader || 'brightwater')) || [tenantHeader, tenantHeader, 0];
@@ -134,8 +195,16 @@ function answer(method, url, tenantHeader) {
     return { items: ALERTS.filter((a) => a.title.toLowerCase().includes(q)), next_cursor: null };
   }
   if (p === '/alerts/counts') return { by_status: {}, closed: 0 };
-  if (p === '/onboarding/status') return { complete: true, steps: [] };
-  if (/^\/(escalations|actions|audit|blind-audit\/items|pov\/runs)$/.test(p)) return { items: [], next_cursor: null };
+  if (p === '/onboarding/status') return { dismissed: label === 'after', complete: true, steps: [] };
+  // The first-run setup is done in the after pictures, as in the prototype's scenario.
+  if (p === '/onboarding/setup' && label === 'after') return { completed: true, tenant_id: 'brightwater', tenant_name: 'Brightwater SOC' };
+  if (p === '/escalations') {
+    const who = url.searchParams.get('assigned_to');
+    return { items: ESCALATIONS.filter((e) => (who === 'me' ? e.assigned_to : who === 'none' ? !e.assigned_to : true)), next_cursor: null };
+  }
+  if (p === '/blind-audit/items') return { items: Array.from({ length: 12 }, (_, i) => ({ id: `ba-${i}` })), next_cursor: null };
+  if (p === '/reports/blind-audit') return AUDIT;
+  if (/^\/(actions|audit|pov\/runs)$/.test(p)) return { items: [], next_cursor: null };
   if (p === '/escalations/groups') return { groups: [] };
   return method === 'GET' ? [] : {};
 }
