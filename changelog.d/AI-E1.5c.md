@@ -6,6 +6,12 @@
   behind a comment marker inside a string literal, now fails at the database
   for lack of privilege instead of writing. The guard stays as a second line
   of defence.
+- A shadow run of an alert a model judges a threat no longer tries to reopen
+  the related alerts the models closed. The attempt changed nothing (the
+  database refused it), but it was counted in
+  `lgsotf_retro_reopen_failures_total` and logged as an error, which could
+  page the operator. The shadow run now records that the reopen would have
+  run, and reopens and enqueues nothing.
 
 ### Added
 
