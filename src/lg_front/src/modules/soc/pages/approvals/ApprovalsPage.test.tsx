@@ -128,7 +128,7 @@ describe('ApprovalsPage: pending approvals', () => {
     expect(screen.getByRole('heading', { name: /Pending · 3/, level: 2 })).toBeInTheDocument();
 
     const isolate = card('Isolate host');
-    expect(within(isolate).getByText('high risk')).toBeInTheDocument();
+    expect(within(isolate).getByText('High risk')).toBeInTheDocument();
     expect(within(isolate).getByText('ws-042', { selector: 'code' })).toBeInTheDocument();
     expect(within(isolate).getByText('1 host: ws-042')).toBeInTheDocument();
     expect(within(isolate).getByText('5 of 5 in the last hour')).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe('ApprovalsPage: recently executed', () => {
     const row = within(table).getByText('alice@contoso.example').closest('tr') as HTMLElement;
     expect(within(row).getByText(/failed \(Synced user reenabled\)/i)).toBeInTheDocument();
     expect(within(row).getByText('Automatic (autonomy policy)', { exact: false })).toBeInTheDocument();
-    expect(within(row).getByText('succeeded')).toBeInTheDocument();
+    expect(within(row).getByText('Succeeded')).toBeInTheDocument();
 
     await userEvent.click(within(row).getByRole('button', { name: 'Roll back' }));
     const dialog = await screen.findByRole('dialog', { name: 'Roll back Disable user' });

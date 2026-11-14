@@ -79,7 +79,7 @@ export function Deadlines({ queue, now, interval }: { queue: QueueFigures; now: 
         )}
         {q.isSuccess && q.items.length === 0 && <p className="border-b border-subtle py-3 text-ctl text-secondary">Nothing waits for a person. The queue is clear.</p>}
         {q.items.length > 0 && (
-          <table className={TABLE} aria-labelledby="ov-deadlines">
+          <table data-rows="free" className={TABLE} aria-labelledby="ov-deadlines">
             <thead className={THEAD}>
               <tr>
                 {['Deadline', 'Severity', 'Item', 'Level', 'Owner'].map((h) => (

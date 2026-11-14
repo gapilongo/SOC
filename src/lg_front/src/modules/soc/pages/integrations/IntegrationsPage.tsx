@@ -11,6 +11,7 @@ import { Badge } from '../../components/Badge';
 import { ConfirmDialog, Modal } from '../../../../components/Dialog';
 import { useToast } from '../../../../components/Toast';
 import { Button, EmptyState, ErrorMessage, LoadingState, PageHeader } from '../../../../components/ui';
+import { humanize } from '../../../../lib/format';
 import { DeliveryLog } from './DeliveryLog';
 import { IntegrationForm } from './IntegrationForm';
 import { MicrosoftTestReport } from './MicrosoftTestReport';
@@ -98,7 +99,7 @@ export default function IntegrationsPage() {
                     <td className="min-w-[12rem] px-3 py-2 text-xs text-secondary">
                       {i.events.length ? i.events.map((e) => EVENT_LABELS[e] ?? e).join(', ') : <span className="text-muted">none</span>}
                     </td>
-                    <td className="px-3 py-2 capitalize text-body">{i.min_severity}</td>
+                    <td className="px-3 py-2 text-body">{humanize(i.min_severity)}</td>
                     <td className="px-3 py-2">
                       {missing.length ? <Badge tone="warn">missing {missing.map((m) => m.replace(/_/g, ' ')).join(', ')}</Badge> : <Badge tone="good">ok</Badge>}
                     </td>

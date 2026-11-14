@@ -36,7 +36,7 @@ export function BatchBar({
 
   return (
     <div role="region" aria-label="Bulk actions" className="flex flex-col gap-2 py-0.5">
-      <div className="flex min-h-[37px] flex-wrap items-center gap-2 rounded-[3px] border border-accent/50 bg-selected px-2.5 py-1 text-ctl text-fg">
+      <div className="flex min-h-9 flex-wrap items-center gap-2 rounded-control border border-accent/50 bg-selected px-2.5 py-1 text-ctl text-fg">
         <b className="font-semibold tabular-nums" aria-live="polite">
           {n} selected
         </b>

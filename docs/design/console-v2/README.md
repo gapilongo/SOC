@@ -8,6 +8,7 @@ the platform shell and the overview. Nothing here is product code; the engineers
 | [`console-v2.html`](console-v2.html) | The clickable prototype. One file, inline CSS and JavaScript, fonts embedded, no network request. Open it in a browser. |
 | [`screens/`](screens/) | Each screen in light and dark at 1440 and 390 px, plus five interaction states. |
 | [`screenshots.cjs`](screenshots.cjs) | Re-takes the screenshots and checks the prototype (see section 6). |
+| [`build/`](build/) | The built console, not the prototype: ten pages before and after the console-wide look (PRD-2.13, #425), light and dark at 1440 px. `<page>-<theme>-1440-before.webp` and `-after.webp`. |
 
 Screens switch by hash: `#queue`, `#investigation`, `#case`, `#approvals`, `#overview`, `#shell`. `?theme=light` or
 `?theme=dark` pins a theme; without it the file follows the system setting, and the button in the top bar cycles

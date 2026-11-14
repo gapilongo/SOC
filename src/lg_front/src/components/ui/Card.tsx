@@ -8,12 +8,16 @@ export type CardVariant = 'default' | 'attention' | 'approval';
 const CARD_BAR: Record<CardVariant, string> = {
   default: '',
   // Work waiting on a human: amber bar only.
-  attention: 'shadow-bar-attention pl-[3px]',
+  attention: 'shadow-bar-attention pl-3',
   // Containment waiting for approval: violet bar only.
-  approval: 'shadow-bar-approval pl-[3px]',
+  approval: 'shadow-bar-approval pl-3',
 };
 
-/** A raised panel (radius 12). Attention and approval cards carry a 3 px inset bar. */
+/**
+ * A section of the sheet: no box and no background. Its title sits over a
+ * rule; without a title the rule opens the section. Attention and approval
+ * sections carry a 2 px bar on the left.
+ */
 export function Card({
   title,
   actions,
@@ -27,26 +31,27 @@ export function Card({
   className?: string;
   variant?: CardVariant;
 }) {
+  const headed = Boolean(title || actions);
   return (
-    <section className={cx('rounded-card border border-subtle bg-raised', CARD_BAR[variant], className)} data-variant={variant === 'default' ? undefined : variant}>
-      {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-subtle px-4 py-3">
-          {title && <h2 className="text-sm font-semibold text-fg">{title}</h2>}
+    <section className={cx('min-w-0', !headed && 'border-t border-strong', CARD_BAR[variant], className)} data-variant={variant === 'default' ? undefined : variant}>
+      {headed && (
+        <header className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-strong pb-2">
+          {title && <h2 className="text-base font-semibold text-fg">{title}</h2>}
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </header>
       )}
-      <div className="p-4">{children}</div>
+      <div className="py-3">{children}</div>
     </section>
   );
 }
 
 export function PageHeader({ title, description, actions }: { title: string; description?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-4 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
       {/* The text takes the room the actions leave, so the actions stay on the right instead of dropping below a long description. */}
-      <div className="min-w-[min(20rem,100%)] flex-1">
+      <div className="flex min-w-[min(20rem,100%)] flex-1 flex-wrap items-baseline gap-x-4 gap-y-1">
         <h1 className="text-xl font-semibold text-fg">{title}</h1>
-        {description && <p className="mt-0.5 max-w-3xl text-ctl text-secondary">{description}</p>}
+        {description && <p className="max-w-3xl flex-1 basis-80 text-ctl text-secondary">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
@@ -55,16 +60,16 @@ export function PageHeader({ title, description, actions }: { title: string; des
 
 export type BannerTone = 'warning' | 'attention' | 'info';
 
-const BANNER_BAR: Record<BannerTone, string> = {
-  warning: 'shadow-bar-warning',
-  attention: 'shadow-bar-attention',
-  info: 'shadow-bar-info',
+const BANNER_TINT: Record<BannerTone, string> = {
+  warning: 'bg-tint-warn shadow-bar-warning',
+  attention: 'bg-tint-warn',
+  info: 'bg-tint-info',
 };
 
 /**
- * An inline notice on the raised-2 surface with a 3 px bar: simulated
- * evidence, conflicts, blocked guardrails (warning); work waiting (attention);
- * context (info). The icon and the title carry the meaning, not the bar colour.
+ * An inline notice on a tint: simulated evidence, conflicts, blocked
+ * guardrails (warning, with a bar); work waiting (attention); context (info).
+ * The icon and the title carry the meaning, not the colour.
  */
 export function Banner({
   tone = 'warning',
@@ -83,11 +88,11 @@ export function Banner({
 }) {
   const Icon = tone === 'info' ? Info : AlertTriangle;
   return (
-    <div role={role} data-tone={tone} className={cx('flex items-start gap-2.5 rounded-control bg-raised-2 py-3 pl-[15px] pr-3', BANNER_BAR[tone], className)}>
-      <Icon className="mt-px h-4 w-4 flex-none text-secondary" strokeWidth={1.75} aria-hidden="true" />
-      <div className="min-w-0 flex-1">
+    <div role={role} data-tone={tone} className={cx('flex flex-wrap items-start gap-x-2.5 gap-y-2 rounded-tag px-3 py-2', BANNER_TINT[tone], className)}>
+      <Icon className="mt-0.5 h-4 w-4 flex-none text-secondary" strokeWidth={1.5} aria-hidden="true" />
+      <div className="min-w-0 flex-1 basis-48">
         {title && <p className="text-ctl font-semibold text-fg">{title}</p>}
-        {children && <div className="text-xs text-body">{children}</div>}
+        {children && <div className="text-ctl text-body">{children}</div>}
       </div>
       {actions && <div className="flex flex-none flex-wrap items-center gap-2">{actions}</div>}
     </div>

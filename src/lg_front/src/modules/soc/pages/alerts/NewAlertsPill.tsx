@@ -50,7 +50,7 @@ export function NewAlertsPill({ count, onRefresh, busy = false }: { count: numbe
           onClick={onRefresh}
           aria-label={`${label}: reload the list`}
           disabled={busy}
-          className="inline-flex h-[30px] items-center gap-1.5 rounded-full bg-accent px-3 text-ctl font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60 touch:min-h-11"
+          className="inline-flex h-ctl items-center gap-1.5 rounded-control bg-accent px-3 text-ctl font-semibold text-on-accent hover:bg-accent-hover disabled:opacity-60 touch:min-h-11"
         >
           <RefreshCw className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
           {label}

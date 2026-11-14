@@ -35,7 +35,7 @@ export function Timeline({ entries, variant = 'rail', className }: { entries: re
               {(e.byline || e.note) && <span className="text-secondary"> {[e.byline, e.note].filter(Boolean).join(' · ')}</span>}
               {e.detail && <span className="block whitespace-pre-wrap break-words text-body">{e.detail}</span>}
             </span>
-            <time dateTime={e.ts} className="whitespace-nowrap text-xs text-secondary">
+            <time dateTime={e.ts} className="whitespace-nowrap font-mono text-2xs text-muted">
               {e.time}
             </time>
           </li>
@@ -51,7 +51,7 @@ export function Timeline({ entries, variant = 'rail', className }: { entries: re
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="font-medium text-fg">{e.title}</span>
             {e.note && <span className="text-xs text-muted">{e.note}</span>}
-            <time dateTime={e.ts} className="text-xs text-muted">
+            <time dateTime={e.ts} className="font-mono text-2xs text-muted">
               {e.time}
             </time>
           </div>

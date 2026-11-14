@@ -229,7 +229,8 @@ test('the admin creates an API key, an analyst and a viewer in the UI', async ({
     await form.getByLabel('Password (optional)').fill(who.password);
     await form.getByRole('button', { name: 'Create user' }).click();
     await expect(form).toBeHidden();
-    await expect(page.getByRole('row').filter({ hasText: who.email })).toContainText(role);
+    // The role reads as a label ("Analyst"), written by the app in sentence case.
+    await expect(page.getByRole('row').filter({ hasText: who.email })).toContainText(role, { ignoreCase: true });
   }
   await assertNoTokenInStorage(page);
   await watch.assertClean();

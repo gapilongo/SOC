@@ -459,7 +459,7 @@ describe('OverviewPage: deadlines, platform health and the page', () => {
     expect(rows[2]).toHaveTextContent('at risk');
     expect(rows[2]).toHaveTextContent('You');
     expect(rows[3]).toHaveTextContent('n.haddad@acme.example');
-    expect(rows[3]).toHaveTextContent('medium');
+    expect(rows[3]).toHaveTextContent('Medium');
     expect(within(rows[1]).getByRole('link', { name: 'Unusual sign-in pattern' })).toHaveAttribute('href', '/alerts/a-e-1');
     expect(w.calls.filter((c) => c.path === '/escalations').map((c) => c.query)).toContainEqual({ status: ['open', 'claimed'], order: 'sla_deadline', cursor: undefined, limit: 5 });
   });

@@ -210,6 +210,11 @@ describe('account menu', () => {
     await renderMenu();
     const button = screen.getByRole('button', { name: /^Account: / });
     await user.click(button);
+    // The default follows the system, which is light when it does not ask for dark.
+    expect(screen.getByRole('menuitemradio', { name: 'System theme' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('menuitemradio', { name: 'Dark theme' })).toHaveAttribute('aria-checked', 'false');
+    await user.click(screen.getByRole('menuitemradio', { name: 'Dark theme' }));
+    expect(document.documentElement.dataset.theme).toBe('dark');
     expect(screen.getByRole('menuitemradio', { name: 'Dark theme' })).toHaveAttribute('aria-checked', 'true');
     await user.click(screen.getByRole('menuitemradio', { name: 'Light theme' }));
     expect(document.documentElement.dataset.theme).toBe('light');
@@ -219,7 +224,7 @@ describe('account menu', () => {
     await user.click(rows);
     expect(rows).toHaveAttribute('aria-checked', 'true');
     expect(document.documentElement.dataset.density).toBe('comfortable');
-    await user.click(screen.getByRole('menuitemradio', { name: 'Dark theme' }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'System theme' }));
     // Clicking outside closes.
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();

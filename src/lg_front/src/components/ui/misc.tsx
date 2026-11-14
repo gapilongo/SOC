@@ -1,5 +1,6 @@
 import { useId, type ReactNode } from 'react';
 
+import { humanize } from '../../lib/format';
 import { cx } from './cx';
 
 export interface SegmentedOption<T extends string | number> {
@@ -11,7 +12,7 @@ export interface SegmentedOption<T extends string | number> {
 
 /**
  * A single choice among a few options (a time window): native radios, so the
- * arrow keys move between them; the chosen one is raised with an underline.
+ * arrow keys move between them; the chosen one is inverted.
  */
 export function Segmented<T extends string | number>({
   label,
@@ -28,10 +29,10 @@ export function Segmented<T extends string | number>({
 }) {
   const name = useId();
   return (
-    <fieldset className={cx('inline-flex items-center rounded-control border border-strong bg-raised p-[3px]', className)}>
+    <fieldset className={cx('inline-flex items-stretch overflow-hidden rounded-control border border-control bg-raised', className)}>
       <legend className="sr-only">{label}</legend>
       {options.map((opt) => (
-        <label key={String(opt.value)} title={opt.title} className="relative cursor-pointer">
+        <label key={String(opt.value)} title={opt.title} className="relative cursor-pointer border-l border-strong first-of-type:border-l-0">
           <input
             type="radio"
             name={name}
@@ -42,9 +43,9 @@ export function Segmented<T extends string | number>({
           />
           <span
             className={cx(
-              'flex h-[30px] items-center rounded-tag border-b-2 border-transparent px-3 text-ctl text-secondary touch:min-h-11',
-              'hover:text-fg peer-checked:rounded-b-none peer-checked:border-link peer-checked:bg-raised-2 peer-checked:font-semibold peer-checked:text-fg',
-              'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus',
+              'flex h-full min-h-ctl-sm items-center px-2.5 text-xs font-medium text-secondary touch:min-h-ctl-touch',
+              'hover:bg-raised-2 hover:text-fg peer-checked:bg-fg peer-checked:text-canvas',
+              'peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:-outline-offset-2 peer-focus-visible:outline-focus',
             )}
           >
             <span aria-hidden={opt.title ? true : undefined}>{opt.label}</span>
@@ -62,7 +63,7 @@ export function ToggleGroup({
   options,
   value,
   onChange,
-  format = (v) => v.replace(/_/g, ' '),
+  format = humanize,
 }: {
   label: string;
   options: readonly string[];
@@ -72,7 +73,7 @@ export function ToggleGroup({
 }) {
   return (
     <fieldset>
-      <legend className="mb-1.5 text-ctl font-semibold text-fg">{label}</legend>
+      <legend className="mb-1 text-ctl font-medium text-fg">{label}</legend>
       <div className="flex flex-wrap gap-1">
         {options.map((opt) => {
           const on = value.includes(opt);
@@ -83,8 +84,8 @@ export function ToggleGroup({
               aria-pressed={on}
               onClick={() => onChange(on ? value.filter((v) => v !== opt) : [...value, opt])}
               className={cx(
-                'rounded-full border px-2.5 py-0.5 text-xs capitalize touch:min-h-11',
-                on ? 'border-link bg-selected text-fg' : 'border-control text-secondary hover:bg-raised-2',
+                'min-h-ctl-sm rounded-control border px-2 text-xs font-medium touch:min-h-ctl-touch',
+                on ? 'border-fg bg-fg text-canvas' : 'border-control bg-raised text-secondary hover:bg-raised-2 hover:text-fg',
               )}
             >
               {format(opt)}
@@ -104,7 +105,7 @@ export function JsonBlock({ value, label }: { value: unknown; label: string }) {
       // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
       // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
       tabIndex={0}
-      className="max-h-80 overflow-auto rounded-control border border-subtle bg-canvas p-3 font-mono text-xs text-body"
+      className="max-h-80 overflow-auto border-l-3 border-double border-control bg-observed px-2.5 py-2 font-mono text-xs text-fg"
     >
       {JSON.stringify(value ?? null, null, 2)}
     </pre>
@@ -126,10 +127,10 @@ export function Truncated({ value, mono = false, className }: { value: string; m
 
 export function DefinitionList({ items }: { items: Array<[ReactNode, ReactNode]> }) {
   return (
-    <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-[max-content_1fr]">
+    <dl className="grid grid-cols-1 gap-x-3.5 gap-y-1.5 text-ctl sm:grid-cols-[max-content_1fr]">
       {items.map(([k, v], i) => (
         <div key={i} className="contents">
-          <dt className="text-secondary">{k}</dt>
+          <dt className="text-muted">{k}</dt>
           <dd className="min-w-0 break-words text-fg">{v ?? '-'}</dd>
         </div>
       ))}

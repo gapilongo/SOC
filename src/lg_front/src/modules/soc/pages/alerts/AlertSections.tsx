@@ -305,7 +305,7 @@ export function AutomatedTriage({ alert }: { alert: AlertDetailOut }) {
   if (budget) basis.push('LLM budget exhausted');
   return (
     <section aria-labelledby={id} className="space-y-3">
-      <h3 id={id} className="text-2xs font-semibold uppercase tracking-wider text-eyebrow">
+      <h3 id={id} className="eyebrow">
         Automated triage
       </h3>
       {!hasAny ? (

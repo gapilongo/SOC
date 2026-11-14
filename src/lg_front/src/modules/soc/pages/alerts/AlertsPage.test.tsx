@@ -187,7 +187,7 @@ describe('AlertsPage rows and filters', () => {
     writePref('density', 'comfortable');
     await renderPage();
     const [first] = await rows();
-    expect(first.style.height).toBe('56px');
+    expect(first.style.height).toBe('44px');
     const entities = within(first).getByText(/j\.moreau@acme\.example/);
     expect(entities.tagName).toBe('DIV');
   });

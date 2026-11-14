@@ -80,7 +80,7 @@ export default function OverviewPage() {
       {q.isPending && !d && <LoadingState label="Loading the overview" />}
       {q.isError && <ErrorMessage error={q.error} onRetry={() => void q.refetch()} />}
       {d && (
-        <div className="flex flex-col gap-[30px]">
+        <div className="flex flex-col gap-8">
           {queue && <NeedsYouNow queue={queue} now={now} interval={interval} />}
           <HandledBar d={d} phrase={phrase} isAdmin={isAdmin} />
           <Verification />

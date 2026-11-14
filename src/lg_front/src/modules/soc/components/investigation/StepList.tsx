@@ -37,12 +37,12 @@ export function StepList({
         const produced = hideModelOutput && step.actor === 'model' ? null : step.produced;
         return (
           <Fragment key={`${step.ts}-${i}`}>
-            {newDay && <li className="pb-0.5 pt-2 font-mono text-2xs uppercase tracking-[0.05em] text-muted first:pt-0">{date}</li>}
+            {newDay && <li className="pb-0.5 pt-2 font-mono text-2xs uppercase tracking-label text-muted first:pt-0">{date}</li>}
             <li
               data-actor={step.actor}
-              className="grid grid-cols-[58px_14px_minmax(0,1fr)] items-baseline gap-x-2 border-b border-subtle py-[5px] text-ctl min-[900px]:grid-cols-[62px_16px_minmax(0,1fr)_auto]"
+              className="grid grid-cols-[58px_14px_minmax(0,1fr)] items-baseline gap-x-2 border-b border-subtle py-1 text-ctl min-[900px]:grid-cols-[62px_16px_minmax(0,1fr)_auto]"
             >
-              <time dateTime={step.ts} title={formatDateTime(step.ts)} className="font-mono text-[11.5px] leading-normal text-muted">
+              <time dateTime={step.ts} title={formatDateTime(step.ts)} className="font-mono text-2xs leading-normal text-muted">
                 {at?.time ?? '-'}
               </time>
               <span className="flex h-2 items-center justify-center self-center">
@@ -51,7 +51,7 @@ export function StepList({
               </span>
               <span className="min-w-0 break-words text-body">{step.text}</span>
               {produced && (
-                <span className="col-start-3 break-words font-mono text-[11.5px] leading-normal text-secondary min-[900px]:col-start-auto min-[900px]:max-w-[26rem] min-[900px]:text-right">
+                <span className="col-start-3 break-words font-mono text-2xs leading-normal text-secondary min-[900px]:col-start-auto min-[900px]:max-w-[26rem] min-[900px]:text-right">
                   {produced}
                 </span>
               )}

@@ -57,6 +57,31 @@ const PALETTE = [
   },
 ];
 
+// Colours and sizes are design tokens too (src/theme/tokens.css): a hex colour in a class, a style or an
+// SVG attribute skips both themes and the contrast check; a size in square brackets (`h-[34px]`,
+// `text-[13.5px]`, `rounded-[3px]`) skips the type scale, the control heights, the radii and the row density.
+// Widths and grid templates are layout, not tokens, and stay free. A short hex colour needs a letter,
+// so an issue number in a sentence ("#411") is not taken for one.
+const HEX_RE = '/(^|[^&\\w])#((?=[0-9]*[a-fA-F])[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\\w-])/';
+const HEX = [
+  {
+    selector: `Literal[value=${HEX_RE}], TemplateElement[value.raw=${HEX_RE}]`,
+    message: 'Use a design token (src/theme/tokens.css: text-*, bg-*, fill-*, or rgb(var(--c-...))), not a raw hex colour.',
+  },
+];
+const SIZE_RE =
+  '/(^|[\\s:])-?(text|leading|tracking|h|min-h|rounded(-[a-z]{1,2})?|border(-[xytrbl])?|p[xytrbl]?|m[xytrbl]?|gap(-[xy])?)-\\[-?[0-9.]+(px|rem|em)?\\]/';
+const SIZES = [
+  {
+    selector: `Literal[value=${SIZE_RE}], TemplateElement[value.raw=${SIZE_RE}]`,
+    message:
+      'Use a size token (text-ctl, leading-snug, tracking-label, h-ctl, min-h-ctl-touch, h-row, rounded-control, border-1.5, the spacing scale), not an arbitrary value.',
+  },
+];
+// Files that still carry arbitrary sizes: the layout shell, which the new shell (rail, top bar) replaces.
+// The list only shrinks, and a new file never joins it.
+const LEGACY_SIZES = ['src/app/Layout.tsx', 'src/app/shell/Sidebar.tsx'];
+
 // Layer boundaries (README "Structure", roadmap FE9, ADR 0015): app (the shell) -> modules ->
 // components -> shared kernel (api, auth, live, lib, theme, core). Imports point down only. Tests are
 // exempt: they compose layers. What a module may import from another module, and the shell from a
@@ -121,9 +146,15 @@ export default tseslint.config(
       'no-restricted-properties': ['error', ...STORAGE_PROPS, ...OBJECT_URL],
       'no-console': ['error', { allow: ['warn', 'error'] }],
       eqeqeq: ['error', 'always'],
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE, ...HEX, ...SIZES],
       'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
       'lg-sotf/module-boundary': 'error',
+    },
+  },
+  {
+    files: LEGACY_SIZES,
+    rules: {
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE, ...HEX],
     },
   },
   {
@@ -148,14 +179,14 @@ export default tseslint.config(
     // The one owner of session cache clearing.
     files: ['src/auth/cacheBinding.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...QUERY_KEY_LITERAL, ...PALETTE],
+      'no-restricted-syntax': ['error', ...QUERY_KEY_LITERAL, ...PALETTE, ...HEX, ...SIZES],
     },
   },
   {
     // The owners of invalidation: each module's named policies, and bounded refetch for paged lists and live events.
     files: ['src/modules/*/api/invalidate.ts', 'src/lib/pagination.ts'],
     rules: {
-      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...PALETTE],
+      'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...PALETTE, ...HEX, ...SIZES],
     },
   },
   {

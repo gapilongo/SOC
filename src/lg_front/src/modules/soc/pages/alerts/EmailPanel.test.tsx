@@ -28,16 +28,16 @@ describe('EmailPanel', () => {
   it('shows sender, authentication, defanged links with mismatch flags, attachment hashes and the reporter', () => {
     render(<EmailPanel section={SECTION} phishing={{ lookalikes: ['examp1e.test spells example.com with look-alike characters'] }} />);
     expect(screen.getByText('it@examp1e.test')).toBeTruthy();
-    expect(screen.getByText('differs from sender')).toBeTruthy();
+    expect(screen.getByText('Differs from sender')).toBeTruthy();
     expect(screen.getByText('SPF fail')).toBeTruthy();
     expect(screen.getByText('DKIM pass')).toBeTruthy();
     expect(screen.getByText('DMARC fail')).toBeTruthy();
     expect(screen.getByText('hxxp://198[.]51[.]100[.]9/login')).toBeTruthy();
     expect(screen.getByText('text shows login.example.com')).toBeTruthy();
-    expect(screen.getByText('raw IP')).toBeTruthy();
+    expect(screen.getByText('Raw IP')).toBeTruthy();
     // The URL the deceiving link shows is listed, flagged as link text only.
     expect(screen.getByText('hxxps://login[.]example[.]com')).toBeTruthy();
-    expect(screen.getAllByText('link text only')).toHaveLength(1);
+    expect(screen.getAllByText('Link text only')).toHaveLength(1);
     expect(screen.getByText(`SHA-256 ${'a'.repeat(64)}`)).toBeTruthy();
     expect(screen.getByText('bob@example.com')).toBeTruthy();
     expect(screen.getByText(/Lookalike domain: examp1e.test/)).toBeTruthy();

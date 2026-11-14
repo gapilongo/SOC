@@ -67,7 +67,7 @@ describe('tabs', () => {
     );
     expect(screen.getByRole('tablist', { name: 'Report' })).toHaveClass('border-b');
     expect(screen.getByRole('tab', { name: 'Accuracy' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Accuracy' })).toHaveClass('border-accent');
+    expect(screen.getByRole('tab', { name: 'Accuracy' })).toHaveClass('border-fg');
     expect(screen.getByRole('tab', { name: 'Value' })).toHaveClass('border-transparent');
     expect(screen.getByRole('tabpanel', { name: 'Accuracy' })).toHaveTextContent('Panel');
   });

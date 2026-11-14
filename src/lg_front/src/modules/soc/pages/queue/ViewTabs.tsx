@@ -89,12 +89,12 @@ export function ViewTabs({
               onClick={() => onChange(t.id)}
               onKeyDown={onKeyDown}
               className={cx(
-                '-mb-px h-8 flex-none whitespace-nowrap border-b-2 px-[11px] text-ctl focus-visible:-outline-offset-2 touch:min-h-11',
+                '-mb-px h-8 flex-none whitespace-nowrap border-b-2 px-2.5 text-ctl focus-visible:-outline-offset-2 touch:min-h-11',
                 selected ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
               )}
             >
               {t.label}
-              {t.count && <b className={cx('ml-[5px] font-mono text-[11.5px] font-medium', selected ? 'text-fg' : 'text-muted')}>{countText(t.count)}</b>}
+              {t.count && <b className={cx('ml-1 font-mono text-2xs font-medium', selected ? 'text-fg' : 'text-muted')}>{countText(t.count)}</b>}
             </button>
           );
         })}
@@ -112,7 +112,7 @@ export function ViewTabs({
             onKeyDown={(e) => {
               if (e.key === 'Escape') setNaming(false);
             }}
-            className="h-7 w-44 rounded-[3px] border border-control bg-raised px-2 text-ctl text-fg"
+            className="h-7 w-44 rounded-control border border-control bg-raised px-2 text-ctl text-fg"
           />
           <QButton type="submit" disabled={!name.trim()}>
             Save
@@ -128,7 +128,7 @@ export function ViewTabs({
               type="button"
               onClick={() => setNaming(true)}
               title="Save the current view, chips and density as a view"
-              className="-mb-px h-8 flex-none whitespace-nowrap border-b-2 border-transparent px-[11px] text-ctl text-secondary hover:text-fg focus-visible:-outline-offset-2 touch:min-h-11"
+              className="-mb-px h-8 flex-none whitespace-nowrap border-b-2 border-transparent px-2.5 text-ctl text-secondary hover:text-fg focus-visible:-outline-offset-2 touch:min-h-11"
             >
               + Save view
             </button>
@@ -137,7 +137,7 @@ export function ViewTabs({
             <button
               type="button"
               onClick={() => onRemove(current.id)}
-              className="-mb-px h-8 flex-none whitespace-nowrap border-b-2 border-transparent px-[11px] text-ctl text-secondary hover:text-fg focus-visible:-outline-offset-2 touch:min-h-11"
+              className="-mb-px h-8 flex-none whitespace-nowrap border-b-2 border-transparent px-2.5 text-ctl text-secondary hover:text-fg focus-visible:-outline-offset-2 touch:min-h-11"
             >
               Remove view
             </button>

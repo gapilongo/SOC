@@ -120,7 +120,7 @@ describe('the queue: what needs a person', () => {
     const first = row('Item a');
     expect(within(first).getByRole('link', { name: 'Item a' })).toHaveAttribute('href', '/escalations/a');
     expect(first).toHaveTextContent('The planned response did not complete; a person decides what happens next. The dump was written from a PowerShell started by Word.');
-    expect(first.querySelector('[data-severity="critical"]')).toHaveTextContent('critical');
+    expect(first.querySelector('[data-severity="critical"]')).toHaveTextContent('Critical');
     expect(first.querySelector('[data-outcome="threat"]')).toHaveTextContent('Likely malicious');
     expect(row('Item b').querySelector('[data-outcome="review"]')).toHaveTextContent('Not proven either way');
     expect(row('Item b')).toHaveTextContent('FS-02');

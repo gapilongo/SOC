@@ -1,34 +1,11 @@
 /** The small marks of a queue row: severity as bars and a word, the outcome so far, the deadline. Shape and word first; colour repeats them. */
 
-import { cx } from '../../../../components/ui';
-import { OUTCOME_TEXT, severityBars, type Due, type Outcome } from './model';
+import { SeverityTag, cx } from '../../../../components/ui';
+import { OUTCOME_TEXT, type Due, type Outcome } from './model';
 
-const BAR_HEIGHT = ['h-[4px]', 'h-[6.5px]', 'h-[9px]', 'h-[12px]'];
-
-const BAR_ON: Record<string, string> = {
-  critical: 'bg-sev-critical',
-  high: 'bg-sev-high',
-  medium: 'bg-sev-medium',
-  low: 'bg-sev-low',
-};
-
-/** Severity: four bars (critical lights all, info none) and the word; critical and high in bold. */
+/** Severity: four bars (critical lights all, info none) and the word; critical and high in bold. The console-wide tag. */
 export function SeverityBars({ value, className }: { value: string | null | undefined; className?: string }) {
-  if (!value) return <span className="text-muted">-</span>;
-  const lit = severityBars(value);
-  return (
-    <span
-      data-severity={value}
-      className={cx('inline-flex items-center gap-1.5 whitespace-nowrap capitalize', lit >= 3 ? 'font-semibold text-fg' : 'text-body', className)}
-    >
-      <span className="flex h-3 flex-none items-end gap-px" aria-hidden="true">
-        {BAR_HEIGHT.map((h, i) => (
-          <span key={h} className={cx('w-[3px]', h, i < lit ? BAR_ON[value] : 'bg-strong')} />
-        ))}
-      </span>
-      {value}
-    </span>
-  );
+  return <SeverityTag value={value} className={className} />;
 }
 
 const OUTCOME_COLOR: Record<Outcome, string> = { threat: 'text-state-bad', review: 'text-state-waiting' };
