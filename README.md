@@ -4,18 +4,29 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-LG-SOTF is a multi-tenant AI triage platform for security alerts. It ingests
-alerts from your SIEM, EDR and cloud detectors, investigates each one with a
-LangGraph workflow of rule-based and LLM agents, closes obvious noise,
-escalates everything uncertain or dangerous to your analysts with a written
-assessment, and proposes response actions that run only under your policy,
-guardrails and approvals.
+LG-SOTF is a self-hosted, multi-tenant AI SOC for security teams and managed
+security providers. It ingests alerts from your SIEM, EDR and cloud
+detectors, investigates each one with a LangGraph workflow of rule-based and
+LLM agents, closes what is benign, sends everything uncertain or dangerous to
+an analyst with a written assessment, and proposes response actions that run
+only under your policy, guardrails and approvals.
 
-It is built to be operated: durable queue-based workers with checkpointed
+![Investigation view of one alert: the verdict, why the AI may not close it on its own, the entities, the alert as its source sent it, and what is not established](docs/screenshots/console-v2-investigation.png)
+
+*One alert in the console: what the AI concluded, why it is with a person,
+and what it could not establish. Synthetic demo alert, analysed by DeepSeek V4.*
+
+**Every decision shows its work.** The console puts the model's claims
+beside the facts they rest on, says what was checked and found nothing, and
+says what was not checked. An alert closed without a person is recorded as
+such, counted on the Overview, sampled for a blind audit, and linked to the
+case if a related threat appears later.
+
+**Built to be operated.** Durable queue-based workers with checkpointed
 workflows, PostgreSQL row-level security per tenant, an audited decision
-trail, metered LLM cost, Prometheus metrics, a Helm chart, and an evaluation
-harness that measures what the platform would miss before you change a model
-or a threshold.
+trail, metered LLM cost, Prometheus metrics, a Helm chart, signed releases,
+and an evaluation harness that measures what the platform would miss before
+you change a model or a threshold.
 
 **Your data, your model.** LG-SOTF runs entirely on your infrastructure,
 including air-gapped networks, with Anthropic, OpenAI, Gemini or a model you
@@ -79,6 +90,36 @@ On `main` now. It ships first as 1.3.0 release candidates on the weekly
 partner train, then as the stable 1.3.0 ([releases](docs/releases.md)).
 Full list in the [changelog](CHANGELOG.md).
 
+* **AI closure a tenant can switch on, and check**: with the tenant setting
+  `ai_closure.tier = auto_full_audit` (default `off`), the models close an
+  alert the deep model judges benign, up to high severity. A critical alert
+  never closes on a model's word, and neither do the classes only a person
+  may close: credential access, log clearing, security-tool tampering,
+  ransomware behaviour and attacker-named persistence. Steering text in the
+  alert or a recent confirmed threat on the same entities also blocks the
+  close. Each such close is marked for audit and can be drawn into a blind
+  audit, where an analyst labels it without seeing the AI's verdict
+  ([docs](docs/reporting.md#blind-audit-missed-threats-among-auto-closed-alerts)).
+* **A safety net behind every AI close**: when an alert later turns out to
+  be a threat, the alerts the AI closed in the previous 24 hours that share
+  a host, user or address with it are linked to that case. They reopen when
+  a person confirms the threat or a response action really ran, so a model's
+  suspicion alone cannot undo closed work
+  ([architecture](docs/architecture.md)).
+* **Console v2**: a new shell (menu grouped by the work, the tenant in the
+  address, search and a command palette on `Ctrl+K`), an Overview that says
+  what was closed without a person and how that is checked, a keyboard-first
+  work queue with a preview pane, and a full-page investigation view per
+  alert ([design](docs/design/console-v2/README.md),
+  [pictures below](#the-console)).
+* **Investigation harness, foundations**: every lookup an agent makes goes
+  through a tool registry with a typed outcome (`success`, `empty` or
+  `failed`), so a lookup that found nothing or did not run can never be read
+  as evidence that an alert is harmless. The typed facts that verdicts will
+  cite are published as evidence-fact schema 1.1. The agents start using
+  SIEM evidence in their investigations in a later release
+  ([design record](docs/adr/0014-investigation-skills.md),
+  [facts](docs/evidence-facts.md)).
 * **Proof-of-value install**: `scripts/pov.sh --siem-host HOST` starts a
   stack that can only read. Every response action is blocked or recorded as
   dry run whatever a tenant admin sets, mailbox sources that write back are
@@ -110,7 +151,8 @@ Full list in the [changelog](CHANGELOG.md).
   evaluation runs into a one-page scorecard, false-negative rate first. The
   current one is DeepSeek V4 (open weights) on 520 generated Wazuh alerts:
   0 of 208 malicious alerts closed without a human, and 0 of 312 benign
-  alerts closed by automation either
+  alerts closed by automation either. That run predates the AI closure
+  tier above; a scorecard with the tier on is the next one
   ([scorecard](docs/scorecards/v2/deepseek-v4/scorecard.md),
   [why](docs/scorecards/v2/deepseek-v4/RUN.md),
   [how to read it](docs/scorecards/README.md)).
@@ -137,11 +179,6 @@ Full list in the [changelog](CHANGELOG.md).
   the code that enforces it ([threat model](docs/threat-model.md)); numbered
   L1/L2 deployment controls with checks for Compose, Helm, PostgreSQL, Redis
   and the reverse proxy ([hardening guide](docs/hardening.md)).
-* **Evidence-fact schema v1**: the published JSON Schema for the typed
-  observations that verdicts will cite, with SemVer and a CI breaking-change
-  check. Published now; the investigation agents start producing facts in a
-  later release ([docs](docs/evidence-facts.md)).
-
 ## What's new in 1.2
 
 * **MCP for testers and analysts**: from Claude Code, send test alerts, wait
@@ -219,14 +256,19 @@ Full list in the [changelog](CHANGELOG.md).
 * Correlation across the tenant's alerts by HMAC-hashed indicators; tenant
   alert history and optional threat-intelligence lookups (VirusTotal,
   AbuseIPDB) as evidence.
-* Safety policy in code: automation never closes a high or critical alert
-  as benign (only an analyst decision, an admin-enabled suppression rule or
-  an analyst-confirmed verdict can); a low/medium benign close needs rule
-  corroboration, not just the model; containment on model-only evidence
-  always waits for approval; model refusals and suspected prompt injection
-  go to a human. A response the policy started closes the alert as
-  malicious once its actions complete (for example a ticket created under
-  autonomy `auto`), whatever the severity.
+* Safety policy in code. By default (`ai_closure.tier = off`) automation
+  never closes a high or critical alert as benign, and a low or medium
+  benign close needs approved benign evidence, not just the model. A tenant
+  admin can turn on audited AI closure (`auto_full_audit`): the models then
+  close what the deep model judges benign up to high severity, never a
+  critical alert, never the person-only classes (credential access, log
+  clearing, security-tool tampering, ransomware behaviour, attacker-named
+  persistence), and never past steering text or a recent confirmed threat
+  on the same entities. Containment on model-only evidence always waits for
+  approval; model refusals and suspected prompt injection go to a human. A
+  response the policy started closes the alert as malicious once its
+  actions complete (for example a ticket created under autonomy `auto`),
+  whatever the severity.
 
 **Human review**
 * Escalations with levels, SLAs, escalation of overdue cases, grouping of
@@ -273,11 +315,14 @@ Full list in the [changelog](CHANGELOG.md).
   public API is split into `stable`, `beta` and `internal` operations, with
   a CI gate on breaking changes and a deprecation window for stable ones.
 * Analyst web application (`src/lg_front`, React and TypeScript, a client
-  of the public API only): a live Overview that puts the analyst's own work
-  first, an alert queue with filters and a side panel per alert, an
-  escalation queue with a decision page per escalation, approvals,
-  suppressions, reports and tenant administration, in a light or dark
-  theme that follows the system setting unless the user picks one. Served by a non-root nginx container under a
+  of the public API only): an Overview that puts the analyst's own work
+  first and then accounts for what was closed without a person; a
+  keyboard-first work queue with a preview pane; a full-page investigation
+  view per alert with the verdict, the claims beside their facts and what
+  is not established; approvals with blast radius and guardrails; blind
+  audit, suppressions, reports and tenant administration; search and a
+  command palette; a light or dark theme that follows the system setting
+  unless the user picks one. Served by a non-root nginx container under a
   strict Content-Security-Policy. Access tokens are kept in memory only.
   Shipped in the compose stack (`PROFILES=frontend`) and the Helm chart
   (`frontend.enabled`).
@@ -291,42 +336,28 @@ billing or self-service sign-up, no model fine-tuning or automatic threshold
 learning, and no published accuracy figures on real customer data: the
 accuracy report and `lg-sotf eval --from-history` measure it on yours.
 
-## Product tour
+## The console
 
-A 75-second walkthrough. Captions explain each step: sign-in, the Overview
-(your work first, then the window's figures), sending sample alerts, the
-Alerts queue and one alert in its side panel, the Escalations queue and a
-decision page, Approvals, integrations, tenant settings and the audit log. It
-ends on the Overview in the light theme.
-
-![Product tour: LG-SOTF from sign-in to the light theme](docs/media/tour.gif)
-
-[Download the full-quality video (MP4, 1.6 MB)](docs/media/tour.mp4?raw=true). GitHub
-plays the GIF above inline but only offers the MP4 as a download. The tour runs against the
-same demo stack as the screenshots below: synthetic alerts and the offline
-stand-in model. To record it again after a UI change, run
-`scripts/record_tour.mjs`, then `scripts/make_tour_media.sh`. Both scripts
-explain their usage at the top.
-
-## Screenshots
-
-Taken by the browser end-to-end suite (`scripts/e2e_ui_stack.sh`) against
-the compose stack running the offline demo model: the alerts are the suite's
-synthetic test alerts, and texts such as "fake conclusion" come from the
-deterministic stand-in model, not from Claude.
+These pictures show console v2 on the demo alert set
+(`scripts/demo/alerts.json`, 16 synthetic alerts) in a local compose stack,
+with the tenant's AI closure tier on. The alerts were analysed by DeepSeek
+V4 (open weights) through its hosted API, so the texts are a real model's
+words about synthetic data, not customer data.
 
 | | |
 |---|---|
-| ![Overview](docs/screenshots/02-overview.png) | ![Overview in the light theme](docs/screenshots/02-overview-light.png) |
-| Overview: what needs you now, then the last 24 hours; updated live over the WebSocket | The same page in the light theme (system, light or dark, switched in the top bar) |
-| ![Alert in the side panel](docs/screenshots/04-alert-timeline.png) | ![Escalation queue](docs/screenshots/05-escalations.png) |
-| Alerts queue with one alert open in the side panel: entities and workflow timeline | Escalation queue in SLA order, to claim one by one or in bulk |
-| ![Escalation decision page](docs/screenshots/06-decision.png) | ![Approvals](docs/screenshots/07-approvals.png) |
-| Decision page: the investigation next to the analyst's decision form | Approvals: response actions waiting for a human, with guardrails and blast radius |
+| ![Work queue](docs/screenshots/console-v2-queue.png) | ![Investigation view in the light theme](docs/screenshots/console-v2-investigation-light.png) |
+| Work queue: what needs a person, soonest deadline first, with a preview pane and single-key shortcuts | Investigation view of one alert, here in the light theme (system, light or dark, switched in the top bar) |
+| ![Alerts list with one alert in the side panel](docs/screenshots/console-v2-alert-panel.png) | ![Approvals](docs/screenshots/console-v2-approvals.png) |
+| Alerts list with one alert open in the side panel: the verdict, the proposed response and what the verdict is based on | Approvals: response actions waiting for a person, each with its target, blast radius, reversibility and guardrail result |
+| ![Search and command palette](docs/screenshots/console-v2-palette.png) | |
+| Search and command palette (`Ctrl+K`): pages, alerts by title with their tenant, and commands | |
 
-More pages (sign-in, the alert queue, decided escalations, the actions
-ledger, suppressions, sources, users and API keys, tenant settings, LLM usage
-and the audit log) are in [docs/screenshots](docs/screenshots).
+The narrated product tour and the page-by-page pictures in
+[docs/screenshots](docs/screenshots) (numbered files) were recorded on the
+previous console and are being re-recorded for console v2; until then they
+show the earlier layout. To record the tour again, run
+`scripts/record_tour.mjs`, then `scripts/make_tour_media.sh`.
 
 ## Quickstart (Docker Compose)
 
@@ -486,9 +517,11 @@ enrichment keys, token budget) is set per tenant through
 * **Tenant isolation** in the database (row-level security, non-owner
   runtime role, `SECURITY DEFINER` credential lookups), in Redis keys, in
   workflow checkpoints and in caches.
-* **Least authority for automation**: the model's opinion alone never closes
-  a high or critical alert as benign and never triggers containment without
-  approval; response actions
+* **Least authority for automation**: by default the model's opinion alone
+  never closes a high or critical alert as benign. A tenant admin can opt
+  in to audited AI closure up to high severity; a critical alert and the
+  person-only classes never close on a model's word. The model's opinion
+  never triggers containment without approval; response actions
   pass autonomy policy and guardrails twice and default to dry run.
 * **Prompt-injection defences**: alert data is redacted, size-capped,
   escaped and delimited as untrusted data; output is schema-validated;
@@ -562,6 +595,9 @@ Wazuh alerts of the attack-emulation corpus.
   automation saves no analyst time yet.
 * **Why.** [RUN.md](docs/scorecards/v2/deepseek-v4/RUN.md) traces it to the
   routing gates and to the replay, not to the model.
+* **What it does not cover yet.** It was measured with AI closure off. The
+  closure tier added in 1.3 changes the benign figure by design; the next
+  scorecard measures both rates with the tier on.
 
 The earlier v1 baseline, a local `qwen2.5:7b` on the small hand-written sets,
 is [kept for history](docs/scorecards/v1/qwen2.5-7b/scorecard.md). Read
