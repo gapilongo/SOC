@@ -41,6 +41,7 @@ const DecisionPage = lazy(() => import('../pages/escalations/DecisionPage'));
 const ApprovalsPage = lazy(() => import('../pages/approvals/ApprovalsPage'));
 const SuppressionsPage = lazy(() => import('../pages/SuppressionsPage'));
 const SourcesPage = lazy(() => import('../pages/SourcesPage'));
+const WazuhSetupPage = lazy(() => import('../pages/onboarding/WazuhSetupPage'));
 const IntegrationsPage = lazy(() => import('../pages/integrations/IntegrationsPage'));
 const UsersPage = lazy(() => import('../pages/UsersPage'));
 const TenantSettingsPage = lazy(() => import('../pages/settings/TenantSettingsPage'));
@@ -124,6 +125,8 @@ export const APP_ROUTES: readonly AppRoute[] = [
   { path: '/setup', Page: SetupWizardPage, allowed: can.setup, label: 'Setup' },
   { path: '/pov', Page: PovPage, allowed: can.admin, label: 'Proof of value' },
   { path: '/sources', Page: SourcesPage, allowed: can.admin, nav: { group: 'configure', label: 'Sources', icon: Plug } },
+  // Guided setup of one source type (reached from Sources and Getting started).
+  { path: '/sources/wazuh', Page: WazuhSetupPage, allowed: can.admin, label: 'Connect Wazuh' },
   { path: '/integrations', Page: IntegrationsPage, allowed: can.admin, nav: { group: 'configure', label: 'Integrations', icon: Send } },
   { path: '/users', Page: UsersPage, allowed: can.admin, nav: { group: 'configure', label: 'Users and API keys', icon: KeyRound } },
   { path: '/settings', Page: TenantSettingsPage, allowed: can.admin, nav: { group: 'configure', label: 'Tenant settings', icon: Settings } },

@@ -6277,6 +6277,28 @@
         "title": "GuardrailOut",
         "type": "object"
       },
+      "GuidedCheckOut": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SetupCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ok": {
+            "description": "No check failed and at least one passed.",
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "checks"
+        ],
+        "title": "GuidedCheckOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -9434,6 +9456,53 @@
         "title": "SampleAlertsOut",
         "type": "object"
       },
+      "SetupCheckOut": {
+        "properties": {
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to change, on a failed check.",
+            "title": "Fix"
+          },
+          "id": {
+            "description": "Stable id of the check, e.g. reachable, tls, credentials, index_permission.",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "description": "What was found; never holds a credential.",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "message"
+        ],
+        "title": "SetupCheckOut",
+        "type": "object"
+      },
       "SetupCompleteIn": {
         "additionalProperties": false,
         "properties": {
@@ -12065,6 +12134,84 @@
         "additionalProperties": false,
         "properties": {},
         "title": "VerifyIn",
+        "type": "object"
+      },
+      "WazuhCheckIn": {
+        "additionalProperties": false,
+        "properties": {
+          "pull": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WazuhPullIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "push": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WazuhPushIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WazuhCheckIn",
+        "type": "object"
+      },
+      "WazuhPullIn": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "description": "The source config to check: base_url, and optionally index, time_field, ca_cert_pem.",
+            "title": "Config",
+            "type": "object"
+          },
+          "secret": {
+            "additionalProperties": true,
+            "description": "username and password of the indexer user; used for this check only, never stored or returned.",
+            "title": "Secret",
+            "type": "object"
+          }
+        },
+        "required": [
+          "config",
+          "secret"
+        ],
+        "title": "WazuhPullIn",
+        "type": "object"
+      },
+      "WazuhPushIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 300,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The API key the Wazuh manager sends; checked, never stored.",
+            "title": "Api Key"
+          },
+          "source_id": {
+            "default": "wazuh-push",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "title": "WazuhPushIn",
         "type": "object"
       }
     }
@@ -15412,6 +15559,48 @@
           }
         },
         "summary": "Mark the autonomy policy reviewed",
+        "tags": [
+          "onboarding"
+        ],
+        "x-stability": "internal"
+      }
+    },
+    "/api/v1/onboarding/connectors/wazuh/check": {
+      "post": {
+        "operationId": "check_wazuh_api_v1_onboarding_connectors_wazuh_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WazuhCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guided Wazuh setup: run the connection checks",
         "tags": [
           "onboarding"
         ],

@@ -59,6 +59,7 @@ import type {
   FeedbackRate,
   FindingOut,
   GuardrailOut,
+  GuidedCheckOut,
   IncidentReportOut,
   IntegrationCreateIn,
   IntegrationOut,
@@ -105,6 +106,7 @@ import type {
   RouteOut,
   RoutingOut,
   SampleAlertsOut,
+  SetupCheckOut,
   SetupIn,
   SetupOut,
   SourceCreateIn,
@@ -135,6 +137,7 @@ import type {
   ValueDay,
   ValueMetrics,
   ValueReportOut,
+  WazuhCheckIn,
 } from './types';
 
 type Schemas = components['schemas'];
@@ -229,6 +232,8 @@ export interface ResponseContract {
   RoutingOut: Response<Wire<Schemas['RoutingOut']>, RoutingOut>;
   SampleAlertsOut: Response<Wire<Schemas['SampleAlertsOut']>, SampleAlertsOut>;
   SetupOut: Response<Wire<Schemas['SetupOut']>, SetupOut>;
+  SetupCheckOut: Response<Wire<Schemas['SetupCheckOut']>, SetupCheckOut>;
+  GuidedCheckOut: Response<Wire<Schemas['GuidedCheckOut']>, GuidedCheckOut>;
   ConfiguredModelOut: Response<Wire<Schemas['ConfiguredModelOut']>, ConfiguredModelOut>;
   EnvVarOut: Response<Wire<Schemas['EnvVarOut']>, EnvVarOut>;
   LlmProfileOut: Response<Wire<Schemas['LlmProfileOut']>, LlmProfileOut>;
@@ -275,6 +280,7 @@ export interface RequestContract {
   IntegrationUpdateIn: Request<IntegrationUpdateIn, Schemas['IntegrationUpdateIn']>;
   ProposeSuppressionIn: Request<ProposeSuppressionIn, Schemas['ProposeSuppressionIn']>;
   SetupIn: Request<SetupIn, Schemas['SetupIn']>;
+  WazuhCheckIn: Request<WazuhCheckIn, Schemas['WazuhCheckIn']>;
   SourceCreateIn: Request<SourceCreateIn, Schemas['SourceCreateIn']>;
   SourceUpdateIn: Request<SourceUpdateIn, Schemas['SourceUpdateIn']>;
   SuppressionCreateIn: Request<SuppressionCreateIn, Schemas['SuppressionCreateIn']>;

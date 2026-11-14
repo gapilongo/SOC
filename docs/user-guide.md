@@ -216,6 +216,10 @@ audit.
   checks connectivity; `GET /sources` shows health and the last error.
   Connector configuration keys are documented in
   `lg_sotf.ingestion.sources`.
+* **Wazuh, step by step**: Sources > Connect Wazuh step by step checks the
+  indexer connection (or the manager's push) before the source is saved and
+  says what to change for each failed check. See
+  [onboarding.md](onboarding.md#guided-wazuh-setup).
 
 Every ingest call answers per event (`inserted`, `duplicate`, `rejected` with
 a reason). Duplicates (same source and source alert id) are never processed

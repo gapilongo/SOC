@@ -964,6 +964,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/onboarding/connectors/wazuh/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Guided Wazuh setup: run the connection checks */
+        post: operations["check_wazuh_api_v1_onboarding_connectors_wazuh_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/onboarding/dismiss": {
         parameters: {
             query?: never;
@@ -3858,6 +3875,16 @@ export interface components {
              */
             verdict: "passed" | "blocked";
         };
+        /** GuidedCheckOut */
+        GuidedCheckOut: {
+            /** Checks */
+            checks: components["schemas"]["SetupCheckOut"][];
+            /**
+             * Ok
+             * @description No check failed and at least one passed.
+             */
+            ok: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5019,6 +5046,31 @@ export interface components {
             /** Source Id */
             source_id: string;
         };
+        /** SetupCheckOut */
+        SetupCheckOut: {
+            /**
+             * Fix
+             * @description What to change, on a failed check.
+             */
+            fix?: string | null;
+            /**
+             * Id
+             * @description Stable id of the check, e.g. reachable, tls, credentials, index_permission.
+             */
+            id: string;
+            /**
+             * Message
+             * @description What was found; never holds a credential.
+             */
+            message: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "passed" | "failed" | "skipped";
+            /** Title */
+            title: string;
+        };
         /** SetupCompleteIn */
         SetupCompleteIn: {
             /**
@@ -6030,6 +6082,41 @@ export interface components {
         };
         /** VerifyIn */
         VerifyIn: Record<string, never>;
+        /** WazuhCheckIn */
+        WazuhCheckIn: {
+            pull?: components["schemas"]["WazuhPullIn"] | null;
+            push?: components["schemas"]["WazuhPushIn"] | null;
+        };
+        /** WazuhPullIn */
+        WazuhPullIn: {
+            /**
+             * Config
+             * @description The source config to check: base_url, and optionally index, time_field, ca_cert_pem.
+             */
+            config: {
+                [key: string]: unknown;
+            };
+            /**
+             * Secret
+             * @description username and password of the indexer user; used for this check only, never stored or returned.
+             */
+            secret: {
+                [key: string]: unknown;
+            };
+        };
+        /** WazuhPushIn */
+        WazuhPushIn: {
+            /**
+             * Api Key
+             * @description The API key the Wazuh manager sends; checked, never stored.
+             */
+            api_key?: string | null;
+            /**
+             * Source Id
+             * @default wazuh-push
+             */
+            source_id?: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -7866,6 +7953,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OnboardingStatusOut"];
+                };
+            };
+        };
+    };
+    check_wazuh_api_v1_onboarding_connectors_wazuh_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WazuhCheckIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuidedCheckOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

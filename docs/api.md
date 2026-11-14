@@ -245,6 +245,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET, PATCH | `/tenant/settings` | admin |
 | GET | `/onboarding/status`; POST `/onboarding/sample-alerts`, `/onboarding/autonomy-reviewed`, `/onboarding/dismiss` (docs/onboarding.md) | admin |
 | GET, PUT | `/onboarding/setup`; POST `/onboarding/setup/complete`: the first-run setup wizard (docs/onboarding.md) | platform admin, own account, home tenant |
+| POST | `/onboarding/connectors/wazuh/check`: the guided Wazuh setup checks for an unsaved source; nothing is stored; 20 per tenant per minute; audited (docs/onboarding.md) | admin, not under a grant |
 | POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md), `/platform/shadow/reports/{id}` (docs/evaluation.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | POST | `/tenant/llm/test` (probe the fast and deep model tiers; 6 per tenant per minute; audited) | admin |

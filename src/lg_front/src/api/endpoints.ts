@@ -37,6 +37,7 @@ import type {
   IntegrationCreateIn,
   IntegrationOut,
   IntegrationTestOut,
+  GuidedCheckOut,
   IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
@@ -80,6 +81,7 @@ import type {
   UserOut,
   UserUpdateIn,
   ValueReportOut,
+  WazuhCheckIn,
 } from './types';
 
 export const PAGE_SIZE = 100;
@@ -275,6 +277,9 @@ export const endpoints = {
     api.request<SetupOut>('PUT', '/onboarding/setup', { body, homeTenant: true }),
   completeSetup: (api: ApiClient, skipped = false) =>
     api.post<SetupOut>('/onboarding/setup/complete', { skipped }, { homeTenant: true }),
+  // Guided source setup: the checks run for an unsaved source; credentials in the body are not stored.
+  checkWazuh: (api: ApiClient, body: WazuhCheckIn) =>
+    api.post<GuidedCheckOut>('/onboarding/connectors/wazuh/check', body),
 
   evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
     api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
