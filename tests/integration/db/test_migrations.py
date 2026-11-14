@@ -584,7 +584,7 @@ async def test_0018_tool_outcomes_are_stored_and_mapped_back_on_downgrade(migrat
             conn.execute(insert, (tenant, alert, index, "a" * 64, outcome))
         conn.commit()
     stored = "SELECT step_index, outcome FROM investigation_steps WHERE tenant_id = %s ORDER BY step_index"
-    command.downgrade(cfg, "0019")
+    command.downgrade(cfg, "0020")
     try:
         with _owner(url) as conn:
             assert conn.execute(stored, (tenant,)).fetchall() == [(0, "success"), (1, "success"), (2, "error")]

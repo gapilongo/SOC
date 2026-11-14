@@ -33,6 +33,8 @@ function harness(opts: { token?: string | null; refreshed?: string | null } = {}
     url: 'wss://soc.example/api/v1/ws',
     getToken: () => (opts.token === undefined ? 'tok' : opts.token),
     refreshToken,
+    // The types the registered modules listen to (the shell passes the registry's).
+    isEvent: (type) => type.startsWith('alert.'),
     onEvent: (e) => events.push(e),
     onStatus: (s) => statuses.push(s),
     onResync,

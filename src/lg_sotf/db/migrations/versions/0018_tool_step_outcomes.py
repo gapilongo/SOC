@@ -10,7 +10,7 @@ The downgrade maps the two new values back to what the older code would have wri
 ``empty``, ``error`` for ``failed``) before it restores the narrower constraint.
 
 Revision ID: 0018
-Revises: 0019
+Revises: 0020
 Create Date: 2026-11-14
 """
 
@@ -21,7 +21,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = "0018"
-down_revision: Union[str, None] = "0019"
+down_revision: Union[str, None] = "0020"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

@@ -32,6 +32,10 @@ One pass (:meth:`OutboxDelivery.run_once`):
    ``deferred``), so reactivating the tenant delivers what is still within
    ``max_age_hours``.
 
+A row without an integration (operation ``email``, a break-glass alert to
+one platform admin) is mailed through the install's SMTP and retried the
+same way; none of the integration rules above applies to it.
+
 ``last_error`` is redacted and truncated; it never contains a webhook URL
 or credentials.
 """
@@ -52,7 +56,7 @@ from lg_sotf.db.errors import NotFound
 from lg_sotf.db.repos.integrations import Integration
 from lg_sotf.db.repos.outbox import OutboxEntry
 from lg_sotf.domain.events import make_event
-from lg_sotf.integrations.channels import SmtpFactory, send_notification
+from lg_sotf.integrations.channels import SmtpFactory, send_email, send_notification
 from lg_sotf.integrations.config import IntegrationConfigError, decrypt_secret, rate_limit_per_minute
 from lg_sotf.integrations.events import ui_base_url
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp
@@ -78,6 +82,12 @@ TICKET_SYNCS = Counter(
     "lgsotf_ticket_syncs_total",
     "Linked ticket status polls, by ticketing system and outcome (ok, resolved, error).",
     ["system", "outcome"],
+    registry=REGISTRY,
+)
+UNDELIVERED_SECURITY_ALERTS = Counter(
+    "lgsotf_security_alerts_undelivered_total",
+    "Security alerts mailed to people (a break-glass sign-in) that died undelivered. Page on any increase.",
+    ["event_type"],
     registry=REGISTRY,
 )
 
@@ -167,7 +177,7 @@ class OutboxDelivery:
         async def one(entry: OutboxEntry) -> None:
             async with slots:
                 await self._process(
-                    entry, integrations.get((entry.tenant_id, entry.integration_id)),
+                    entry, integrations.get((entry.tenant_id, entry.integration_id)) if entry.integration_id else None,
                     suspended=entry.tenant_id in suspended,
                 )
 
@@ -190,7 +200,7 @@ class OutboxDelivery:
             if status != "active":
                 suspended.add(tenant_id)
         found: Dict[Tuple[str, UUID], Optional[Integration]] = {}
-        for key in {(e.tenant_id, e.integration_id) for e in entries}:
+        for key in {(e.tenant_id, e.integration_id) for e in entries if e.integration_id is not None}:
             try:
                 found[key] = await self._repos.integrations.get(*key) if exists[key[0]] else None
             except NotFound:
@@ -199,7 +209,7 @@ class OutboxDelivery:
 
     async def _process(self, entry: OutboxEntry, integration: Optional[Integration], *, suspended: bool = False) -> None:
         with bound_context(tenant_id=entry.tenant_id, alert_id=entry.alert_id):
-            kind = integration.kind if integration is not None else "unknown"
+            kind = integration.kind if integration is not None else ("unknown" if entry.integration_id else "email")
             try:
                 outcome = await self.deliver(entry, integration, suspended=suspended)
             except Exception as exc:  # noqa: BLE001 - an unexpected failure is retried like a transient one
@@ -224,6 +234,13 @@ class OutboxDelivery:
             DELIVERIES.labels(kind=kind, outcome=outcome.metric).inc()
             if not recorded:
                 log.warning("integrations.outcome_superseded", kind=kind)
+            elif outcome.status == "dead" and entry.integration_id is None:
+                # Nobody was told (a break-glass sign-in): an error an operator pages on, with its own metric.
+                UNDELIVERED_SECURITY_ALERTS.labels(event_type=entry.event_type).inc()
+                log.error(
+                    "integrations.security_alert_undelivered",
+                    event_type=entry.event_type, attempts=entry.attempts, error=outcome.error,
+                )
             elif outcome.status == "dead":
                 log.warning("integrations.delivery_dead", kind=kind, event_type=entry.event_type, attempts=entry.attempts)
             elif outcome.status == "failed":
@@ -244,6 +261,8 @@ class OutboxDelivery:
 
         ``suspended``: the row's tenant is suspended; the row waits (see the module docs).
         """
+        if entry.integration_id is None:
+            return await self._mail(entry)
         if integration is None or not integration.enabled:
             return Outcome("dead", error="integration disabled or deleted", metric="dead")
         if datetime.now(UTC) - entry.created_at > timedelta(hours=self._cfg.max_age_hours):
@@ -264,6 +283,23 @@ class OutboxDelivery:
         except IntegrationConfigError as exc:
             # The admin may fix the configuration: keep retrying until the attempts run out.
             return self._failure(entry, safe_error(exc), retryable=True)
+        return Outcome("sent", result=result)
+
+    async def _mail(self, entry: OutboxEntry) -> Outcome:
+        """Deliver a row addressed to people, not to an integration (operation ``email``: break-glass alerts).
+
+        Mailed to ``payload.recipients`` through the install's SMTP whatever the tenant's state: there is
+        no integration to disable or delete, and a suspended tenant does not hold a security alert back.
+        Every failure is retried with the normal backoff until ``integrations.max_attempts``, a permanent
+        SMTP answer included: a relay that rejects today may be fixed before the alert is given up.
+        """
+        config = {"recipients": entry.payload.get("recipients"), "subject_prefix": "[LG-SOTF security]"}
+        try:
+            result = await send_email(
+                self._settings, entry.payload, self._base_url, config, smtp_factory=self._smtp_factory
+            )
+        except DeliveryError as exc:
+            return self._failure(entry, safe_error(exc), retryable=True, retry_after=exc.retry_after)
         return Outcome("sent", result=result)
 
     async def _send(self, entry: OutboxEntry, integration: Integration) -> Dict[str, Any]:

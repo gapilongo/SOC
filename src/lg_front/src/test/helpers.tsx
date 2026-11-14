@@ -9,6 +9,8 @@ import type { TokenOut, UserOut } from '../api/types';
 import { SessionProvider } from '../auth/AuthContext';
 import type { Session } from '../auth/session';
 import { AuthStore, type AuthTransport } from '../auth/store';
+import { REGISTRY } from '../app/routes';
+import { ExtensionsProvider } from '../components/Slot';
 import { ToastProvider } from '../components/Toast';
 import { DensityProvider } from '../theme/density';
 import { ThemeProvider } from '../theme/theme';
@@ -87,7 +89,10 @@ export function renderWithSession(ui: ReactElement, session: Session, { route = 
         <ThemeProvider>
           <DensityProvider>
             <ToastProvider>
-              <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+              {/* The registered modules' extension contributions, as App provides them. */}
+              <ExtensionsProvider contributions={REGISTRY.extensions}>
+                <MemoryRouter initialEntries={[route]}>{children}</MemoryRouter>
+              </ExtensionsProvider>
             </ToastProvider>
           </DensityProvider>
         </ThemeProvider>

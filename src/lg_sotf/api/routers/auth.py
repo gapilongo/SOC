@@ -1,5 +1,5 @@
 # ruff: noqa: B008 - FastAPI declares dependencies and parameters as call defaults
-"""``/auth``: login, refresh-token rotation, logout and the current principal.
+"""``/auth``: login, break-glass sign-in, refresh-token rotation, logout and the current principal.
 
 For an account with MFA (or one that policy requires to enroll) a correct
 password answers ``mfa_required: true`` with a short-lived challenge token
@@ -24,6 +24,7 @@ from lg_sotf.api.auth.authenticate import (
     record_failure,
     revoked_key,
 )
+from lg_sotf.api.auth.break_glass import break_glass_sign_in
 from lg_sotf.api.auth.deps import ANY, require
 from lg_sotf.api.auth.principal import Principal
 from lg_sotf.api.auth.service import AuthService, MfaChallenge, invalid_session
@@ -38,15 +39,18 @@ from lg_sotf.api.common import (
 from lg_sotf.api.context import ApiContext, allowed_origins, get_ctx
 from lg_sotf.api.errors import ApiError
 from lg_sotf.api.ratelimit import rate_limited
-from lg_sotf.api.schemas import LoginIn, MeOut, MfaChallengeOut, TokenOut, UserOut
+from lg_sotf.api.schemas import BreakGlassIn, LoginIn, MeOut, MfaChallengeOut, TokenOut, UserOut
 from lg_sotf.observability.logging import get_logger, log_failure
 
 log = get_logger(__name__)
 
 LOGIN_BUCKET = "login"
+BREAK_GLASS_BUCKET = "break-glass-fail"
 REFRESH_BUCKET = "refresh"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+# Mounted only while break-glass is enabled (lg_sotf.api.app.create_app): off, the route does not exist.
+break_glass_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _clear_refresh_cookie(ctx: ApiContext, response: Response) -> None:
@@ -146,6 +150,33 @@ async def login(body: LoginIn, request: Request, response: Response) -> Union[To
         expires_in=session.access.expires_in,
         user=UserOut.model_validate(session.user),
     )
+
+
+@break_glass_router.post(
+    "/break-glass",
+    response_model=TokenOut,
+    summary="Emergency sign-in with the install's sealed credential (every use alerts all platform admins)",
+)
+async def break_glass(body: BreakGlassIn, request: Request) -> TokenOut:
+    # A short platform-admin access token and no refresh cookie (lg_sotf.api.auth.break_glass).
+    ctx = get_ctx(request)
+    # Only failures count, per address (the credential is the same whatever account is named): a
+    # successful use is never refused for earlier successes, and other addresses cannot hold the path.
+    ip = client_ip(request)
+    limit = ctx.settings.api.login_rate_limit_per_minute
+    blocked = await ctx.limiter.blocked(BREAK_GLASS_BUCKET, ip, limit)
+    if blocked is not None:
+        raise rate_limited(blocked)
+    try:
+        user, token = await break_glass_sign_in(
+            ctx, email=body.email, tenant_id=body.tenant, credential=body.credential, reason=body.reason, client_ip=ip
+        )
+    except ApiError as exc:
+        if exc.status_code == 401:
+            await ctx.limiter.hit(BREAK_GLASS_BUCKET, ip, limit)
+            await count_failed_login(ctx, request)
+        raise
+    return TokenOut(access_token=token.token, expires_in=token.expires_in, user=UserOut.model_validate(user))
 
 
 @router.post("/refresh", response_model=TokenOut, summary="Rotate the refresh cookie and get a new access token")
