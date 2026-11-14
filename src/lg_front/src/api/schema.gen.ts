@@ -612,6 +612,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/cases/{case_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One case: its alerts, who or what closed each and why (the case view)
+         * @description One read model for the case page: the case (the escalation ``case_id``), every alert in it with its state
+         *     and who or what closed it and why, the alerts the safety net linked or reopened, the response actions with
+         *     their status and guardrail result, what the alerts share, and one merged timeline. Built from stored data:
+         *     no model is called, nothing is written.
+         *
+         *     ``not_available`` names what the stored data cannot say yet. An alert that waits for its blind-audit label
+         *     shows what its source sent and nothing of the AI's side (``hidden_for_blind_audit``).
+         */
+        get: operations["get_case_api_v1_cases__case_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/dashboard/summary": {
         parameters: {
             query?: never;
@@ -3156,6 +3182,549 @@ export interface components {
              */
             status: "ok" | "missing_permission" | "not_licensed" | "unsupported_cloud" | "error" | "not_enabled" | "unverified";
         };
+        /** Case */
+        Case: {
+            /**
+             * Actions
+             * @description The response actions of the case's alerts, oldest first.
+             */
+            actions: components["schemas"]["CaseAction"][];
+            /**
+             * Active
+             * @description The case still waits for its decision (open, claimed or expired).
+             */
+            active: boolean;
+            /**
+             * Alert Id
+             * @description The alert the case was opened for.
+             */
+            alert_id: string;
+            /**
+             * Alerts
+             * @description Oldest first.
+             */
+            alerts: components["schemas"]["CaseAlert"][];
+            /**
+             * Alerts Truncated
+             * @description The case has more alerts than one response lists.
+             * @default false
+             */
+            alerts_truncated: boolean;
+            /**
+             * Category
+             * @description needs_decision (likely malicious) or needs_review (not proven either way), from the primary alert.
+             */
+            category: ("ai_closed_evidence" | "ai_closed_audit" | "needs_decision" | "needs_review") | null;
+            counts: components["schemas"]["CaseCounts"];
+            decision: components["schemas"]["CaseDecision"] | null;
+            /**
+             * Entities
+             * @description What the case touches: most shared first.
+             */
+            entities: components["schemas"]["CaseEntity"][];
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Id
+             * @description The case key: the id of the escalation.
+             */
+            id: string;
+            /** Not Available */
+            not_available: components["schemas"]["NotAvailable"][];
+            /**
+             * Opened At
+             * Format: date-time
+             */
+            opened_at: string;
+            owner: components["schemas"]["CaseOwner"] | null;
+            /** @description Why the case is with a person. */
+            reason: components["schemas"]["InvestigationReason"] | null;
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Severity
+             * @description The highest severity among the case's alerts.
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
+            /** Sla Deadline */
+            sla_deadline: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "open" | "claimed" | "decided" | "expired" | "cancelled";
+            /** Tenant Id */
+            tenant_id: string;
+            /**
+             * Timeline
+             * @description Oldest first.
+             */
+            timeline: components["schemas"]["CaseTimelineEntry"][];
+            /**
+             * Timeline Truncated
+             * @description Older entries were left out.
+             * @default false
+             */
+            timeline_truncated: boolean;
+            /**
+             * Title
+             * @description That alert's title: data, at most 300 characters.
+             */
+            title: string;
+            /**
+             * Version
+             * @description The version a claim or a decision is recorded against.
+             */
+            version: number;
+        };
+        /**
+         * CaseAction
+         * @description A response action on the ledger for one of the case's alerts.
+         */
+        CaseAction: {
+            /**
+             * Action Id
+             * @description plan: the action on the ledger.
+             */
+            action_id: string | null;
+            /**
+             * Action Type
+             * @enum {string}
+             */
+            action_type: "block_ip" | "block_domain" | "block_url" | "isolate_host" | "terminate_process" | "quarantine_file" | "disable_user" | "reset_password" | "revoke_sessions" | "collect_forensics" | "create_ticket" | "send_alert" | "block_sender" | "purge_message" | "notify_reporter" | "confirm_compromised" | "release_host" | "unblock_ip" | "unblock_domain" | "unblock_url" | "unblock_file" | "unblock_sender" | "enable_user" | "restore_message" | "dismiss_user_risk";
+            /** Alert Id */
+            alert_id: string;
+            /**
+             * Approval Entry
+             * @description preview: its approved_actions entry.
+             */
+            approval_entry: string | null;
+            /**
+             * Can Preapprove
+             * @description preview: your role may pre-approve it.
+             */
+            can_preapprove: boolean | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string | null;
+            guardrail: components["schemas"]["ProposedActionGuardrail"] | null;
+            /** Inverse Action */
+            inverse_action: string | null;
+            /** Irreversible Note */
+            irreversible_note: string | null;
+            /** Reversible */
+            reversible: boolean | null;
+            /**
+             * Risk
+             * @enum {string}
+             */
+            risk: "low" | "medium" | "high" | "critical";
+            /** Role Lock */
+            role_lock: ("admin" | "disabled") | null;
+            /**
+             * Status
+             * @description plan: the action's status; null in a preview.
+             */
+            status: ("proposed" | "awaiting_approval" | "approved" | "rejected" | "executing" | "succeeded" | "failed" | "dry_run" | "blocked") | null;
+            /**
+             * Target
+             * @description The exact target: data, at most 512 characters.
+             */
+            target: string;
+            /**
+             * Without Preapproval
+             * @description preview: what happens to it when nothing is pre-approved.
+             */
+            without_preapproval: ("automatic" | "awaiting_approval" | "blocked") | null;
+        };
+        /** CaseAlert */
+        CaseAlert: {
+            blind_audit: components["schemas"]["CaseBlindAudit"];
+            /**
+             * Category
+             * @description The alert's outcome category, as on the investigation view.
+             */
+            category: ("ai_closed_evidence" | "ai_closed_audit" | "needs_decision" | "needs_review") | null;
+            /** Closed At */
+            closed_at: string | null;
+            /** @description Null while the alert is open. */
+            closed_by: components["schemas"]["CaseClosedBy"] | null;
+            /** Disposition */
+            disposition: ("malicious" | "benign" | "inconclusive") | null;
+            /**
+             * Entities
+             * @description The first value of each entity kind.
+             */
+            entities: components["schemas"]["CaseEntityRef"][];
+            /**
+             * Hidden For Blind Audit
+             * @description The alert waits for its blind-audit label: nothing of the AI's side is given.
+             * @default false
+             */
+            hidden_for_blind_audit: boolean;
+            /** Id */
+            id: string;
+            /** @description role linked: why it was linked, and when. */
+            link: components["schemas"]["CaseLink"] | null;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** @description role reopened: what reopened it. */
+            reopened: components["schemas"]["CaseReopened"] | null;
+            /**
+             * Role
+             * @description primary: the alert the case was opened for. attached: grouped with it, so the decision on the case applies to it. linked: closed by the AI and linked by the safety net; it stays closed. reopened: closed by the AI and reopened by the safety net. withheld: the alert waits for its blind-audit label, so how it joined is withheld with the AI's side.
+             * @enum {string}
+             */
+            role: "primary" | "attached" | "linked" | "reopened" | "withheld";
+            /**
+             * Severity
+             * @enum {string}
+             */
+            severity: "info" | "low" | "medium" | "high" | "critical";
+            /**
+             * State
+             * @description open: with a person. processing: the workflow has not decided yet. closed: closed.
+             * @enum {string}
+             */
+            state: "open" | "processing" | "closed";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "new" | "queued" | "processing" | "waiting_human" | "waiting_approval" | "closed" | "failed";
+            /**
+             * Title
+             * @description As the source sent it: data, at most 300 characters.
+             */
+            title: string;
+            /** @description Why the alert is with a person. Null when it is closed (see closed_by) or processed. */
+            why: components["schemas"]["InvestigationReason"] | null;
+        };
+        /**
+         * CaseBlindAudit
+         * @description The blind audit of an alert the AI closed.
+         */
+        CaseBlindAudit: {
+            /**
+             * Agrees
+             * @description labelled: whether the label agrees with the AI. Null for unsure.
+             */
+            agrees: boolean | null;
+            /** Label */
+            label: ("malicious" | "benign" | "unsure") | null;
+            /** Labelled At */
+            labelled_at: string | null;
+            /**
+             * State
+             * @description not_sampled: no blind audit drew this alert. pending: it waits for its label, so the AI's side is withheld. labelled: an analyst labelled it without seeing the AI's verdict.
+             * @enum {string}
+             */
+            state: "not_sampled" | "pending" | "labelled";
+        };
+        /**
+         * CaseClosedBy
+         * @description Who or what closed an alert, and why.
+         */
+        CaseClosedBy: {
+            /** @description analyst: who decided. */
+            analyst: components["schemas"]["CasePerson"] | null;
+            /** At */
+            at: string | null;
+            /**
+             * Decided In Case Id
+             * @description analyst: the case the decision was recorded on (this one, or another).
+             */
+            decided_in_case_id: string | null;
+            /**
+             * Decision
+             * @description analyst or cached_verdict: the analyst's decision.
+             */
+            decision: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ai" | "suppression_rule" | "cached_verdict" | "analyst";
+            /**
+             * Notes
+             * @description analyst: what they wrote, when the decision was recorded on this case (data). Null otherwise.
+             */
+            notes: string | null;
+            /** @description ai: the rule of the decision policy that closed it (the decide code and its sentence). */
+            policy: components["schemas"]["InvestigationReason"] | null;
+            /** @description The close reason: its code and the same in plain words. */
+            reason: components["schemas"]["InvestigationReason"];
+            /**
+             * Rule Id
+             * @description suppression_rule: the rule.
+             */
+            rule_id: string | null;
+            /**
+             * Rule Name
+             * @description suppression_rule: its name, as data.
+             */
+            rule_name: string | null;
+            /**
+             * Source Alert Id
+             * @description cached_verdict: the alert the analyst decided.
+             */
+            source_alert_id: string | null;
+            /**
+             * Tier
+             * @description ai: the tenant's model-led closure tier as the decide step recorded it. Null when it did not.
+             */
+            tier: ("off" | "auto_full_audit") | null;
+        };
+        /**
+         * CaseClosedByCounts
+         * @description The case's closed alerts by who or what closed them.
+         */
+        CaseClosedByCounts: {
+            /**
+             * Ai Audit
+             * @default 0
+             */
+            ai_audit: number;
+            /**
+             * Ai Evidence
+             * @default 0
+             */
+            ai_evidence: number;
+            /**
+             * Analyst
+             * @default 0
+             */
+            analyst: number;
+            /**
+             * Cached Verdict
+             * @default 0
+             */
+            cached_verdict: number;
+            /**
+             * Suppression Rule
+             * @default 0
+             */
+            suppression_rule: number;
+        };
+        /** CaseCounts */
+        CaseCounts: {
+            /**
+             * Actions Awaiting Approval
+             * @default 0
+             */
+            actions_awaiting_approval: number;
+            /**
+             * Alerts
+             * @description Every alert of the case, also those a truncated list leaves out.
+             */
+            alerts: number;
+            /**
+             * Closed
+             * @default 0
+             */
+            closed: number;
+            /**
+             * @default {
+             *       "ai_audit": 0,
+             *       "ai_evidence": 0,
+             *       "analyst": 0,
+             *       "cached_verdict": 0,
+             *       "suppression_rule": 0
+             *     }
+             */
+            closed_by: components["schemas"]["CaseClosedByCounts"];
+            /**
+             * Linked
+             * @default 0
+             */
+            linked: number;
+            /**
+             * Open
+             * @default 0
+             */
+            open: number;
+            /**
+             * Processing
+             * @default 0
+             */
+            processing: number;
+            /**
+             * Reopened
+             * @default 0
+             */
+            reopened: number;
+            /**
+             * Withheld
+             * @description Alerts that wait for their blind-audit label.
+             * @default 0
+             */
+            withheld: number;
+        };
+        /**
+         * CaseDecision
+         * @description The decision an analyst recorded on the case.
+         */
+        CaseDecision: {
+            /** Decided At */
+            decided_at: string | null;
+            /** @description Null when an MSSP analyst decided under a grant (the audit log names them). */
+            decided_by: components["schemas"]["CasePerson"] | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "true_positive" | "false_positive" | "benign_positive" | "needs_more_info";
+            /**
+             * Notes
+             * @description What the analyst wrote: data, at most 4000 characters.
+             */
+            notes: string | null;
+        };
+        /**
+         * CaseEntity
+         * @description A value the case's alerts name.
+         */
+        CaseEntity: {
+            /**
+             * Alerts
+             * @description How many of the case's alerts name it.
+             */
+            alerts: number;
+            /** Kind */
+            kind: string;
+            /**
+             * Value
+             * @description Data, at most 128 characters.
+             */
+            value: string;
+        };
+        /** CaseEntityRef */
+        CaseEntityRef: {
+            /**
+             * Kind
+             * @description host, user, ip, domain, url, hash, process, command_line or email.
+             */
+            kind: string;
+            /**
+             * Value
+             * @description Data, at most 128 characters.
+             */
+            value: string;
+        };
+        /**
+         * CaseLink
+         * @description The safety net linked this alert to the case: it stays closed.
+         */
+        CaseLink: {
+            /** At */
+            at: string | null;
+            reason: components["schemas"]["InvestigationReason"];
+            /**
+             * Threat Alert Id
+             * @description The alert a model judged a threat.
+             */
+            threat_alert_id: string | null;
+        };
+        /** CaseOwner */
+        CaseOwner: {
+            /** Email */
+            email: string | null;
+            /**
+             * Since
+             * @description When the owner claimed the case.
+             */
+            since: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /**
+         * CasePerson
+         * @description A user of the tenant. ``email`` is null for an account that no longer exists.
+         */
+        CasePerson: {
+            /** Email */
+            email: string | null;
+            /** User Id */
+            user_id: string;
+        };
+        /**
+         * CaseReopened
+         * @description The safety net reopened this alert, which the AI had closed on the model's word.
+         */
+        CaseReopened: {
+            /** At */
+            at: string | null;
+            /** @description person: who confirmed. */
+            by: components["schemas"]["CasePerson"] | null;
+            /**
+             * Confirmed By
+             * @description person: a person's confirmation was recorded directly (a true positive, an approved response action or a blind-audit label). workflow: the run reopened it, after an analyst's true positive it resumed from or a response action it carried out. Null when the timeline no longer has the event.
+             */
+            confirmed_by: ("person" | "workflow") | null;
+            /**
+             * Mode
+             * @description folded: it joined the open case and that case's decision settles it. requeued: a new run reviews it.
+             */
+            mode: ("folded" | "requeued") | null;
+            reason: components["schemas"]["InvestigationReason"];
+            /**
+             * Threat Alert Id
+             * @description The alert whose threat was confirmed.
+             */
+            threat_alert_id: string | null;
+        };
+        /**
+         * CaseTimelineEntry
+         * @description One thing that happened in the case, in plain words.
+         */
+        CaseTimelineEntry: {
+            /**
+             * Actor
+             * @enum {string}
+             */
+            actor: "code" | "model" | "check" | "policy" | "person";
+            /**
+             * Alert Id
+             * @description The alert it happened to; null for the case itself.
+             */
+            alert_id: string | null;
+            /** @description The person, when a person acted. */
+            by: components["schemas"]["CasePerson"] | null;
+            /**
+             * Kind
+             * @description What the entry is about, for filters and tests (case.opened, alert.closed, ...).
+             */
+            kind: string;
+            /**
+             * Produced
+             * @description Counts and vocabulary values only, never alert text.
+             */
+            produced: string | null;
+            /**
+             * Text
+             * @description Fixed text.
+             */
+            text: string;
+            /**
+             * Ts
+             * Format: date-time
+             */
+            ts: string;
+        };
         /** CertificateInfo */
         CertificateInfo: {
             /** Days Left */
@@ -4826,6 +5395,24 @@ export interface components {
             /** Tenant Name */
             tenant_name: string;
             value: components["schemas"]["ValueReport"];
+        };
+        /**
+         * NotAvailable
+         * @description Something the case page shows in the design that the stored data cannot say yet.
+         */
+        NotAvailable: {
+            /**
+             * Field
+             * @description The path of the field that is null or absent.
+             */
+            field: string;
+            /**
+             * Issue
+             * @description The GitHub issue of the story that fills it, when there is one.
+             */
+            issue: number | null;
+            /** Reason */
+            reason: string;
         };
         /** NotCheckedItem */
         NotCheckedItem: {
@@ -7922,6 +8509,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BlindAuditRunSummary"] | components["schemas"]["BlindAuditDraw"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_case_api_v1_cases__case_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                case_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Case"];
                 };
             };
             /** @description Validation Error */

@@ -350,6 +350,39 @@ What an alert, a model or a provider wrote (claim texts, targets, excerpt
 lines, rule names) is returned as data, cut to a stated length, and is
 never put into a sentence.
 
+#### Case view (beta)
+
+`GET /cases/{id}` returns one read model for the case page. A case is the
+escalation with its alerts, and `id` is the escalation's id. It is built
+from stored data only: it calls no model and writes nothing. Any role that
+may read alerts may read it; another tenant's case is `404`.
+`schema_version` is 1.
+
+| Field | What it holds |
+|---|---|
+| `id`, `alert_id`, `title`, `status`, `active`, `version` | The escalation: its id, the alert it was opened for and that alert's title, its status, whether it still waits for its decision (`open`, `claimed` or `expired`), and the version a claim or a decision is recorded against. |
+| `severity`, `category`, `reason` | The highest severity among the alerts; `needs_decision` or `needs_review` from the alert the case was opened for; why the case is with a person, as `{code, sentence}`. |
+| `opened_at`, `sla_deadline`, `owner`, `decision` | `owner`: `{user_id, email, since}`. `decision`: `{decision, notes, decided_by: {user_id, email}, decided_at}`, null until the case is decided. |
+| `alerts` | Oldest first. Each: `{id, title, severity, status, state, role, occurred_at, closed_at, disposition, entities, hidden_for_blind_audit, category, why, closed_by, blind_audit, link, reopened}`. `state` is `open` (with a person), `processing` or `closed`. `role` is `primary` (the alert the case was opened for), `attached` (grouped with it: the decision on the case applies to it), `linked` (closed by the AI and linked by the safety net; it stays closed), `reopened` (closed by the AI and reopened by the safety net) or `withheld` (it waits for its blind-audit label). `why` says why an open alert is with a person. |
+| `alerts[].closed_by` | `{kind: "ai"\|"suppression_rule"\|"cached_verdict"\|"analyst", reason, at, ...}`, null while the alert is open. An analyst close adds `decision`, `analyst` (`{user_id, email}`), `decided_in_case_id` and, when the decision was recorded on this case, `notes`. An AI close adds `policy` (the rule of the decision policy, `{code, sentence}`) and `tier` (the tenant's closure tier as the decide step recorded it; null when it did not). A suppression rule adds `rule_id` and `rule_name`; a cached verdict adds `source_alert_id` and `decision`. |
+| `alerts[].blind_audit` | `{state: "not_sampled"\|"pending"\|"labelled", label, agrees, labelled_at}`. |
+| `alerts[].link`, `alerts[].reopened` | `link`: `{reason, threat_alert_id, at}` for a linked alert. `reopened`: `{reason, threat_alert_id, mode: "folded"\|"requeued", confirmed_by: "person"\|"workflow", by, at}`. `confirmed_by` is `person` when a person's confirmation was recorded directly (a true positive, an approved response action, a blind-audit label) and `workflow` when the run reopened it. |
+| `counts` | `alerts` (every alert of the case), `open`, `processing`, `closed`, `linked`, `reopened`, `withheld`, `closed_by` (`ai_evidence`, `ai_audit`, `suppression_rule`, `cached_verdict`, `analyst`) and `actions_awaiting_approval`. |
+| `entities` | What the case touches: `{kind, value, alerts}`, the value and how many of the case's alerts name it, most shared first. |
+| `actions` | The response actions of the case's alerts, oldest first: the fields of an investigation's planned action (`action_id`, `action_type`, `target`, `risk`, `status`, `reversible`, `guardrail: {verdict, code, reason}`, ...) with `alert_id` and `created_at`. |
+| `timeline` | Oldest first: `{ts, kind, actor: "code"\|"model"\|"check"\|"policy"\|"person", text, produced, alert_id, by}`. The case's opening, claim and decision, and for each alert its arrival and the steps that changed where it stands. The workflow's inner steps are on the alert's investigation view. `timeline_truncated` says when older entries were left out (the newest 300 stay). |
+| `not_available` | `{field, reason, issue}` for what the stored data cannot say yet: a readable case reference, a case summary, which entity a linked alert shares, which confirmation reopened an alert, flagging an alert for audit, a rule's last review, a reason on an approval, asset context. These fields are absent; nothing is estimated in their place. |
+
+A case lists its primary alert and the newest 199 alerts that joined it;
+`alerts_truncated` says when it has more (`counts.alerts` is the full
+number). As on the investigation view, every `sentence` and `text` is fixed
+text, and what an alert, an analyst or a provider wrote (titles, entity
+values, rule names, decision notes, targets) is data, cut to a stated
+length. An alert that waits for its blind-audit label is listed with what
+its source sent (`hidden_for_blind_audit`): no disposition, no `closed_by`,
+no `link`, only its arrival and notes on the timeline, and none of its
+response actions.
+
 ### Escalations and actions
 
 * `GET /escalations` filters: `status`, `level`, `assigned_to` (a user id,

@@ -184,6 +184,26 @@ lines) and saved views are remembered per user in the browser. The queue
 shows the tenant you are acting on. The **Escalations** page remains, with
 grouping by rule and bulk close.
 
+Opening an item leads to its **case page** (`/cases/<id>`). A case is the
+escalation with its alerts: the alert it was opened for, the alerts grouped
+with it, and the alerts the AI closed that the safety net linked to it. The
+page lists them oldest first, each with its state and who or what closed it
+(the AI on approved evidence, the AI on the model's word, a suppression
+rule, an earlier analyst verdict, or an analyst) and the recorded reason:
+the rule of the decision policy and the closure tier for an AI close, its
+blind-audit result, the analyst's decision and note. So "what did the AI
+close on this host while this case was open, and why" is answered on one
+page. Under the alerts: the alerts that were linked and left closed, or
+reopened, with what reopened them; the response actions with their status
+(you approve or reject one that waits right there, by the rules of the
+Approvals page); one timeline of the case and its alerts; and what the
+alerts share. **Review the evidence** opens the investigation view of the
+alert the case was opened for. `J` and `K` move through the alerts and
+`Enter` opens one. The page is the case read model (`GET /cases/{id}`) on
+screen, and it lists as "not yet available" exactly what that read model
+names in `not_available`. The older decision page (`/escalations/<id>`)
+still opens from the Escalations list.
+
 1. **Claim** it so colleagues know you are on it:
    `POST /escalations/{id}/claim` with the escalation's current `version`.
    A `409 conflict` means someone else changed it; re-read and retry.
@@ -216,7 +236,8 @@ grouping by rule and bulk close.
    (false positive) or `N` (`needs_more_info`) chooses the verdict, the bar
    says what it sets in motion, and `Ctrl+Enter` records it and opens the
    next escalation. For `N` the bar asks for a note, because the note is what
-   the new analysis reads.
+   the new analysis reads. The case page has the same bar; it pre-approves
+   no action (tick those on the investigation view).
    Add `notes` and optional `feedback` (`confidence`, `triage_correct`,
    `correlation_helpful`, `analysis_accurate`). Feedback feeds the
    evaluation harness (docs/evaluation.md) and helps tune the platform.

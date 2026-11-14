@@ -22,7 +22,7 @@ import { ListNotice } from '../../../../components/ListNotice';
 import type { VirtualTableApi } from '../../../../components/VirtualTable';
 import { ErrorMessage, FilterChip, SEVERITIES, cx } from '../../../../components/ui';
 import { humanize } from '../../../../lib/format';
-import { escalationHref } from '../../lib/links';
+import { caseHref } from '../../lib/links';
 import { readUserPref, writeUserPref } from '../../../../lib/prefs';
 import { useNow } from '../../../../lib/useNow';
 import { BulkResultPanel, type BulkResult } from '../escalations/BulkActions';
@@ -182,7 +182,7 @@ export default function QueuePage() {
     });
   };
 
-  const open = (row: EscalationOut) => navigate(escalationHref(row));
+  const open = (row: EscalationOut) => navigate(caseHref(row.id));
 
   // Keys. The same letters work on a focused row and anywhere on the page outside a field, a menu or a dialog.
   // They act on the cursor row as the table has it now: focus (and this page's render) follow the cursor a

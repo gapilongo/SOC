@@ -188,7 +188,8 @@ async def _track(
     return TrackCounts(total=total, confirmed=confirmed, window_days=TRACK_WINDOW_DAYS, min_samples=MIN_TRACK_SAMPLES)
 
 
-def _planned(action: ResponseAction, view: Optional[ActionView]) -> ProposedAction:
+def planned_action(action: ResponseAction, view: Optional[ActionView]) -> ProposedAction:
+    """An action on the ledger as the read models show it, with its guardrail result and whether it can be undone."""
     spec = ACTION_CATALOG.get(action.action_type)
     guardrail = view.guardrail if view is not None else None
     return ProposedAction(
@@ -239,7 +240,7 @@ async def proposed_response(
     if actions:
         views = await action_views(repos, settings, alert.tenant_id, actions)
         ordered = sorted(actions, key=lambda a: (a.created_at, str(a.id)))
-        return ProposedResponse(source="plan", actions=[_planned(a, views.get(a.id)) for a in ordered])
+        return ProposedResponse(source="plan", actions=[planned_action(a, views.get(a.id)) for a in ordered])
     if escalation is not None and escalation.alert_id == alert.id and escalation.is_active:
         preview = await response_preview(repos, responses, alert.tenant_id, escalation.id, role=role)
         return ProposedResponse(source="preview", actions=[_previewed(a) for a in preview.actions[:MAX_ACTIONS]])

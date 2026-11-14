@@ -5,7 +5,9 @@
  * alert filters and pagination, the alert timeline, the investigation view
  * (/alerts/:id, opened from the list: axe in both themes, no sideways
  * overflow at 390 px), the work queue by keyboard (20 rows on a screen,
- * both themes, a phone), claiming and deciding the escalation as an analyst
+ * both themes, a phone) and the case page its rows open (who or what closed
+ * each alert, axe in both themes, no sideways overflow at 390 px), claiming
+ * and deciding the escalation as an analyst
  * (the expected response plan names every target before anything is
  * pre-approved, and the decision page passes axe with the plan open),
  * approving its response as an admin until the alert closes, role gating
@@ -456,13 +458,42 @@ test('the work queue: 20 rows on one screen, the keyboard, both themes and a pho
     await setTheme(page, 'dark');
   });
 
-  await test.step('Enter opens the highlighted item', async () => {
+  await test.step('Enter opens the highlighted item: its case page, which passes axe in both themes and on a phone', async () => {
     await expect(grid.getByRole('columnheader', { name: 'Severity' })).toBeVisible();
     await page.keyboard.press('j');
     await expect(rows.nth(1)).toBeFocused();
     const title = (await rows.nth(1).getByRole('link').first().textContent()) ?? '';
     await page.keyboard.press('Enter');
-    await expect(page).toHaveURL(/\/escalations\/[^/?]+$/);
+    await expect(page).toHaveURL(/\/cases\/[^/?]+$/);
+    await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
+    // The case page is the API's read model (GET /cases/{id}): every alert says where it stands or who closed it.
+    const alerts = page.getByRole('region', { name: 'Alerts in this case' });
+    await expect(alerts.locator('tr[data-alert]').first()).toBeVisible();
+    expect(await alerts.locator('tr[data-alert]').count()).toBe(await alerts.locator('tr[data-alert] [data-closed-by]').count());
+    await expect(alerts.locator('tr[data-alert][data-role="primary"]')).toHaveCount(1);
+    for (const name of ['Response', 'Timeline', 'What the case touches']) await expect(page.getByRole('region', { name, exact: true })).toBeVisible();
+    const timeline = page.getByRole('region', { name: 'Timeline', exact: true });
+    await expect(timeline.getByText("The case was opened for a person's decision.")).toBeVisible();
+    await expect(timeline).not.toContainText(/node\.completed|await_analyst|plan_response|execute_actions/);
+    // The decision bar of the investigation view records the decision on the case; J moves through its alerts.
+    await expect(page.getByRole('region', { name: 'Your decision' })).toBeVisible();
+    await page.keyboard.press('j');
+    await expect(alerts.locator('a[data-case-alert]').first()).toBeFocused();
+    await screenshot(page, '05b-case');
+    await assertAccessible(page, 'case page');
+    await setTheme(page, 'light');
+    await assertAccessible(page, 'case page (light theme)');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await assertNoSideScroll(page, 'the case page at 390 px');
+    await assertAccessible(page, 'case page at 390 px (light theme)');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await setTheme(page, 'dark');
+    // Enter on the focused alert is its investigation view, whose case reference leads back here.
+    await alerts.locator('a[data-case-alert]').first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(/\/alerts\/[^/?]+$/);
+    await page.getByRole('navigation', { name: 'Breadcrumb' }).getByRole('link', { name: /^Case / }).click();
+    await expect(page).toHaveURL(/\/cases\/[^/?]+$/);
     await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
   });
 

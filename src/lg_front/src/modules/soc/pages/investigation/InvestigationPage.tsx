@@ -22,19 +22,15 @@
  */
 
 import { useQueryClient } from '@tanstack/react-query';
-import { Clock } from 'lucide-react';
 import { useId, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../../../../api/client';
-import { endpoints } from '../../api/endpoints';
-import { decidedByLabel, escalationConflictNotice, escalationOwner, text } from '../../api/fields';
+import { decidedByLabel, escalationOwner, text } from '../../api/fields';
 import { useTenantLabel } from '../../api/hooks';
-import { afterAlertChange, afterEscalationChange } from '../../api/invalidate';
+import { afterAlertChange } from '../../api/invalidate';
 import type { AlertDetailOut, EscalationOut, InvestigationClaimOut, InvestigationObservationOut, InvestigationOut } from '../../api/types';
 import { useApi, useAuth } from '../../../../auth/AuthContext';
-import { can, escalationDecisionBlockedReason } from '../../../../auth/roles';
-import type { Principal } from '../../../../auth/store';
 import {
   ClaimRow,
   FactChip,
@@ -49,16 +45,16 @@ import {
 } from '../../components/investigation';
 import { useToast } from '../../../../components/Toast';
 import { Button, ErrorMessage, LoadingState, Spinner, cx } from '../../../../components/ui';
-import { formatDateTime } from '../../../../lib/format';
-import { APPROVALS_HREF, alertHref, alertsHref, escalationHref } from '../../lib/links';
+import { formatDateTime, shortId } from '../../../../lib/format';
+import { APPROVALS_HREF, alertHref, alertsHref, caseHref, escalationHref } from '../../lib/links';
 import { asObjectOrNull } from '../../../../lib/json';
-import { slaLabel, slaStatus } from '../../lib/sla';
-import { useNow } from '../../../../lib/useNow';
 import { EvidenceWarning, ResponseActions } from '../alerts/AlertSections';
+import { caseIdOf } from '../alerts/alertSummary';
 import { EvidenceActions } from '../alerts/EvidenceActions';
 import { readEntities, strings } from '../escalations/evidence';
 import { decisionLabel } from '../escalations/labels';
 import { findNextEscalation } from '../escalations/nextEscalation';
+import { SlaChip, blockedReason, useClaim } from './claim';
 import { DecisionDock } from './DecisionDock';
 import { isSingleKey, useKeydown, useSingleKeys } from './keys';
 import { ResponseTable } from './ResponseTable';
@@ -273,61 +269,7 @@ function Claims({
   );
 }
 
-// The header ----------------------------------------------------------------------------
-
-/** The time left to the deadline of an escalation that still waits (its own clock: the page does not re-render every second). */
-function SlaChip({ e }: { e: EscalationOut }) {
-  const now = useNow(1_000);
-  const sla = slaStatus(e.sla_deadline, now, e.created_at);
-  if (sla.state === 'none') return null;
-  return (
-    <span
-      className={cx(
-        'inline-flex min-h-ctl-sm items-center gap-1 whitespace-nowrap rounded-tag bg-raised-2 px-1.5 text-xs tabular-nums',
-        sla.state === 'ok' ? 'text-secondary' : 'font-semibold text-warn',
-      )}
-      title={e.sla_deadline ? `Deadline ${formatDateTime(e.sla_deadline)}` : undefined}
-    >
-      <Clock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-      {slaLabel(sla)}
-    </span>
-  );
-}
-
 // 06: the decision ----------------------------------------------------------------------
-
-/** Why the caller cannot decide this escalation here, or null when they may (after a claim, if it is not theirs yet). */
-function blockedReason(e: EscalationOut, principal: Principal | null): string | null {
-  const general = escalationDecisionBlockedReason(principal, e);
-  if (general) return general;
-  if (e.assigned_to !== principal?.userId && !can.claimEscalation(principal, e)) return 'You cannot claim this escalation.';
-  return null;
-}
-
-function useClaim(e: EscalationOut | undefined) {
-  const api = useApi();
-  const client = useQueryClient();
-  const toast = useToast();
-  const [busy, setBusy] = useState(false);
-  const run = async () => {
-    if (!e) return;
-    setBusy(true);
-    try {
-      await endpoints.claim(api, e.id, e.version);
-      toast.success(e.assigned_to ? 'Escalation taken over.' : 'Escalation claimed.');
-    } catch (err) {
-      const notice = escalationConflictNotice(err, 'it has been reloaded');
-      if (notice) toast.info(notice);
-      else toast.error(err, 'Claim failed');
-    } finally {
-      setBusy(false);
-      void afterEscalationChange(client);
-      // The proposed response is computed for the caller: it is theirs to tick once the claim is.
-      void afterAlertChange(client, e.alert_id);
-    }
-  };
-  return { busy, run: () => void run() };
-}
 
 /** A decision already recorded: who decided what, when, and their note. */
 function DecisionRecord({ e, userId }: { e: EscalationOut; userId: string | null | undefined }) {
@@ -405,6 +347,8 @@ function Investigation({ alertId }: { alertId: string }) {
   const planned = proposed ? response.actions : [];
   const description = text(asObjectOrNull(a.normalized)?.description);
   const mine = Boolean(e && e.assigned_to && e.assigned_to === principal?.userId);
+  // The case the alert is in: its escalation, or the case the safety net linked it to. A blind-audit sample has neither here: the API withholds its summary.
+  const caseId = caseIdOf(a);
 
   const openNext = async () => {
     if (!e) return;
@@ -424,11 +368,20 @@ function Investigation({ alertId }: { alertId: string }) {
         <Link to="/alerts" className="text-secondary hover:underline">
           Alerts
         </Link>
-        {a.case_key && (
+        {caseId ? (
           <>
             <span aria-hidden="true">/</span>
-            <span>Case {a.case_key}</span>
+            <Link to={caseHref(caseId)} className="text-secondary hover:underline" title={caseId}>
+              Case {a.case_key ?? shortId(caseId)}
+            </Link>
           </>
+        ) : (
+          a.case_key && (
+            <>
+              <span aria-hidden="true">/</span>
+              <span>Case {a.case_key}</span>
+            </>
+          )
         )}
         <span aria-hidden="true">/</span>
         <span className="font-mono" title={a.id}>
