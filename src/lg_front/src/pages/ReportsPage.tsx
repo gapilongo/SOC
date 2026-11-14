@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Download, FileText } from 'lucide-react';
 import { useId, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
 import { qk } from '../api/queryKeys';
@@ -14,7 +14,7 @@ import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextF
 import { downloadText } from '../lib/download';
 import { formatDuration, formatInt, formatUsd } from '../lib/format';
 import { BlindAuditTab } from './blindAudit/BlindAuditReport';
-import { SUGGESTION_LABEL, defaultRange, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rateDetail } from '../lib/reports';
+import { SUGGESTION_LABEL, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rangeFromQuery, rateDetail } from '../lib/reports';
 
 type Tab = 'value' | 'accuracy' | 'detections' | 'blind_audit';
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -498,7 +498,8 @@ function key(d: DetectionOut): string {
 export default function ReportsPage() {
   const api = useApi();
   const toast = useToast();
-  const initial = defaultRange();
+  const [query] = useSearchParams();
+  const initial = rangeFromQuery(query);
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [tab, setTab] = useState<Tab>('value');

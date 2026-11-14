@@ -310,6 +310,20 @@ models, routing thresholds or autonomy (docs/evaluation.md). Watch the
 malicious false-negative rate (threats closed without a human) first, then
 the benign auto-close rate (analyst time saved).
 
+### Run a proof of value
+
+**Proof of value** (admins) measures the triage on your own alerts before
+you rely on it. *New proof of value* opens a three-step wizard: name the
+run and choose how many days of history to replay (the backtest), choose
+the length of the shadow period on live alerts, review and start. The
+server then runs the backtest by itself; nothing is typed on a command
+line. The page shows the backtest's result (alerts replayed, confirmed
+threats, how many of them the triage would have closed, with the sample
+size and interval) and links the reports over the shadow period. A run
+only reads: it changes no alert, takes no response action and notifies
+nobody. One run at a time per tenant; *Stop this run* ends it early. See
+docs/pov.md.
+
 ### Reports
 
 **Reports** (every role) shows, for a date range: *Value* (alerts handled

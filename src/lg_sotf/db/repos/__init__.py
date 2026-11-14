@@ -45,6 +45,7 @@ from lg_sotf.db.repos.organisations import (
 )
 from lg_sotf.db.repos.outbox import NewOutboxEntry, OutboxEntry, OutboxRepo
 from lg_sotf.db.repos.platform import PlatformEscalation, PlatformRepo, TenantStats, TenantUsage
+from lg_sotf.db.repos.pov_runs import PovRun, PovRunsRepo
 from lg_sotf.db.repos.refresh_tokens import RefreshToken, RefreshTokensRepo
 from lg_sotf.db.repos.reports import ReportsRepo
 from lg_sotf.db.repos.runs import RunsRepo, StaleRunSweep, WorkflowRun
@@ -94,6 +95,7 @@ class Repositories:
     organisations: OrganisationsRepo
     grants: GrantsRepo
     blind_audit: BlindAuditRepo
+    pov_runs: PovRunsRepo
 
     @classmethod
     def create(cls, db: Database) -> Repositories:
@@ -128,6 +130,7 @@ class Repositories:
             organisations=OrganisationsRepo(db),
             grants=GrantsRepo(db),
             blind_audit=BlindAuditRepo(db),
+            pov_runs=PovRunsRepo(db),
         )
 
 
@@ -170,6 +173,8 @@ __all__ = [
     "NewOutboxEntry",
     "PlatformEscalation",
     "PlatformRepo",
+    "PovRun",
+    "PovRunsRepo",
     "Organisation",
     "OrganisationMember",
     "OrganisationsRepo",
