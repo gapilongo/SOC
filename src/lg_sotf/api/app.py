@@ -28,6 +28,7 @@ from lg_sotf.api.routers import (
     compliance,
     dashboard,
     grants,
+    guided,
     health,
     identity,
     ingest,
@@ -35,6 +36,7 @@ from lg_sotf.api.routers import (
     mfa,
     onboarding,
     platform,
+    pov,
     reports,
     review,
     sources,
@@ -151,6 +153,7 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
         (audit.router, "stable"),
         (platform.router, "beta"),
         (onboarding.router, "internal"),
+        (guided.router, "internal"),
         (compliance.alerts, "beta"),
         (compliance.platform, "beta"),
         (integrations.router, "beta"),
@@ -158,6 +161,7 @@ def api_routers() -> Tuple[Tuple[APIRouter, Stability], ...]:
         (reports.router, "beta"),
         (blind_audit.router, "beta"),
         (blind_audit.report, "beta"),
+        (pov.router, "beta"),
     )
 
 

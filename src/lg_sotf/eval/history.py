@@ -85,6 +85,10 @@ class HistoryBacktestError(RuntimeError):
     """The backtest cannot run (message is safe to print)."""
 
 
+class NoDecidedAlerts(HistoryBacktestError):
+    """The tenant has no analyst-decided alert in the window: nothing to replay."""
+
+
 class ReplayWriteBlocked(RuntimeError):
     """Something tried to open a transaction that could write during a replay."""
 
@@ -411,8 +415,11 @@ async def run_history_backtest(
     now: Optional[datetime] = None,
     before_replay: Optional[Callable[[Dataset], None]] = None,
     secret_box: Optional[SecretBox] = None,
+    until: Optional[datetime] = None,
 ) -> HistoryRun:
     """Replay the tenant's decided alerts of the last ``days`` days (at most ``limit``, oldest first).
+
+    ``until`` leaves out the decisions recorded from that moment on (a proof-of-value run's window).
 
     Opens its own database pool (used read-only) unless ``db`` is given.
     ``before_replay`` sees the selected items before any model call and may
@@ -441,9 +448,9 @@ async def run_history_backtest(
             tenant = await repos.tenants.get(tenant_id)
         except NotFound as exc:
             raise HistoryBacktestError(f"tenant {tenant_id!r} does not exist") from exc
-        decided = await repos.reports.decided_alerts(tenant_id, now - timedelta(days=days), limit=limit)
+        decided = await repos.reports.decided_alerts(tenant_id, now - timedelta(days=days), until=until, limit=limit)
         if not decided:
-            raise HistoryBacktestError(
+            raise NoDecidedAlerts(
                 f"tenant {tenant_id!r} has no analyst-decided alerts in the last {days} days; nothing to replay"
             )
         dataset = history_dataset(tenant_id, days, decided)

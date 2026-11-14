@@ -18,5 +18,6 @@ async def stored_report(repos: Repositories, tenant_id: str, report_id: str) -> 
     if not rows:
         return None
     return build_report(
-        [r.comparison() for r in rows], report_id=report_id, tenant_id=tenant_id, candidate=rows[0].candidate
+        [r.comparison() for r in rows], report_id=report_id, tenant_id=tenant_id, candidate=rows[0].candidate,
+        candidate_host=rows[0].candidate_host,
     )

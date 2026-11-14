@@ -16,6 +16,7 @@ from typing import Any, Dict, Iterator, List, Set, Tuple
 import pytest
 
 from lg_sotf.db.repos import User
+from lg_sotf.domain.pov import plan_windows
 from tests.integration.api._support import TENANT_A, TENANT_B, ApiHarness
 from tests.integration.db._support import make_alert
 
@@ -53,6 +54,9 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
         frame_size=1, items=[(sampled, 1, "benign")], trigger="cli", created_by="seed",
     )
     item = (await api.repos.blind_audit.list_items(TENANT_B)).items[0]
+    pov = await api.repos.pov_runs.create(
+        TENANT_B, "B's proof of value", plan_windows(now, backtest_days=30, shadow_days=14), created_by="seed"
+    )
     return {
         "alert_id": alert_id,
         "escalation_id": escalation.id,
@@ -64,6 +68,7 @@ async def _seed_customer(api: ApiHarness) -> Dict[str, str]:
         "tenant_id": TENANT_B,
         "run_id": "shr_" + "0" * 32,
         "item_id": str(item.id),
+        "pov_run_id": str(pov.id),
         "sampled_alert_id": sampled,
     }
 

@@ -162,6 +162,7 @@ next two partitions ahead and drops expired ones.
 | `investigation_steps` | Investigation trace, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id`, `step_index` (UNIQUE per run), `agent`, `kind` (llm/tool), `prompt_name`, `prompt_hash`, `provider`, `model`, `tool`, `input_hash`, `output_hash` (SHA-256), `result_digest JSONB` (redacted, size-capped), `outcome`, `error_type`, token counts, `latency_ms`, `started_at`. Index (`tenant_id`, `kind`, `input_hash`) for record/replay (docs/compliance.md) |
 | `shadow_effects` | Shadow-mode sink, append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `run_id` (`shadow/...`), `seq` (UNIQUE per run), `boundary`, `operation`, `outcome` (sunk/refused), `detail JSONB` (event and action types, action targets; size-capped). What a shadow run would have done (§8); no API reads it |
 | `shadow_verdicts` | Shadow agreement rows (AI-E1.5b), append-only. `id UUID` PK, `tenant_id`, `alert_id` (cascades with the alert), `report_id` (`shr_<32 hex>`, UNIQUE with the alert), `run_id`, `candidate` (label), then for production (`prod_*`) and the candidate (`cand_*`): `route` (escalate/plan_response/close), `disposition`, `confidence`, `actions TEXT[]` (`action_type:target`, at most 20), `tokens`, `cost_usd`, `latency_ms`; `cand_error` (a failed candidate run), `cand_degraded` (model answers that were unusable or refused, so the rules decided; counted as a failure). Read by `GET /platform/shadow/reports/{id}`; not in the evidence pack |
+| `pov_runs` | Proof-of-value runs (PRD-11.1). `id UUID` PK, `tenant_id`, `name`, the history window `backtest_start`/`backtest_end` and the shadow period `shadow_start`/`shadow_end` (never before the history window ends), `backtest_status` (pending/running/completed/no_data/failed), `backtest_attempts`, `backtest_started_at`, `backtest_finished_at`, `backtest_error`, `backtest_result JSONB` (the evaluation report without its per-alert items; only with `completed`), `created_by`, `created_at`, `cancelled_at`, `cancelled_by`. References no alert. The runtime role inserts a run and sets the cancel columns; the backtest columns are written by the scheduler (owner) through `eval/pov.py`. Read by `GET /pov/runs`; docs/pov.md |
 | `audit_log` | partitioned; `tenant_id`, `id BIGSERIAL`, `ts`, `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `details JSONB`, `prev_hash`, `hash` (sha256 chain per tenant). UPDATE/DELETE blocked by trigger unless `app.bypass_rls='on'` (retention) |
 
 LangGraph checkpoint tables are created by `AsyncPostgresSaver.setup()` in
@@ -338,17 +339,20 @@ Rules:
   function decorated with `@egress` refuses in shadow mode, or records the
   call in the run's sink and returns a stand-in ("would have done X"), or,
   for the local health listener only, runs. Every database transaction of
-  a shadow run is read only, and its connection refuses the statements that
-  would reach past it (`COMMIT`, `SET TRANSACTION`, `NOTIFY`/`pg_notify`,
-  session settings and advisory locks); its Redis client
+  a shadow run comes from a pool of its own, logged in as the SELECT-only
+  shadow role (`database.shadow_url`, `db/shadow_role.py`; no role, no
+  shadow run, and never the runtime pool), and is read only; its connection
+  also refuses the statements that would reach past it (`COMMIT`,
+  `SET TRANSACTION`, `NOTIFY`/`pg_notify`, session settings and advisory
+  locks), as defence in depth; its Redis client
   (`ShadowSafeRedis`) sends reads only. Threat-intelligence lookups answer
   from the cache only (a miss is `skipped`: no provider call, no quota, no
   production rate limit), so a shadow verdict can see fewer
   threat-intelligence answers than production's. LLM use stays on the run
   (never `llm_usage_daily`, which bills the tenant and seeds its budget),
   and metrics are labelled `mode="shadow"`. After the run, the sink is
-  written to `shadow_effects`, the run's only write (`lg-sotf shadow-run` then stores the
-  candidate's verdict beside production's in `shadow_verdicts`, `core/shadow_replay.py`;
+  written to `shadow_effects` by the runtime role, the run's only write (`lg-sotf shadow-run` then stores the
+  candidate's verdict beside production's in `shadow_verdicts`, also by the runtime role, `core/shadow_replay.py`;
   docs/evaluation.md, "Shadow agreement"). `tests/unit/architecture/test_shadow_egress.py`
   finds the egress call sites (HTTP, SMTP, socket, database and Redis
   clients, every Redis write command, WebSocket sends, connector execution,
@@ -398,6 +402,8 @@ Rules:
   mark `summary.llm_budget_exceeded`.
 * Per-model concurrency semaphores (`llm.<tier>.max_concurrency`, default
   `worker.concurrency`; waits exported as `lgsotf_llm_slot_wait_seconds`).
+  Shadow runs take separate slots (`llm.<tier>.shadow_max_concurrency`,
+  default 1), so a live call never waits on a shadow call.
 
 ## 10. API
 

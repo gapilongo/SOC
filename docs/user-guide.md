@@ -216,6 +216,10 @@ audit.
   checks connectivity; `GET /sources` shows health and the last error.
   Connector configuration keys are documented in
   `lg_sotf.ingestion.sources`.
+* **Wazuh, step by step**: Sources > Connect Wazuh step by step checks the
+  indexer connection (or the manager's push) before the source is saved and
+  says what to change for each failed check. See
+  [onboarding.md](onboarding.md#guided-wazuh-setup).
 
 Every ingest call answers per event (`inserted`, `duplicate`, `rejected` with
 a reason). Duplicates (same source and source alert id) are never processed
@@ -306,6 +310,20 @@ Run the evaluation harness on your analysts' decisions before changing
 models, routing thresholds or autonomy (docs/evaluation.md). Watch the
 malicious false-negative rate (threats closed without a human) first, then
 the benign auto-close rate (analyst time saved).
+
+### Run a proof of value
+
+**Proof of value** (admins) measures the triage on your own alerts before
+you rely on it. *New proof of value* opens a three-step wizard: name the
+run and choose how many days of history to replay (the backtest), choose
+the length of the shadow period on live alerts, review and start. The
+server then runs the backtest by itself; nothing is typed on a command
+line. The page shows the backtest's result (alerts replayed, confirmed
+threats, how many of them the triage would have closed, with the sample
+size and interval) and links the reports over the shadow period. A run
+only reads: it changes no alert, takes no response action and notifies
+nobody. One run at a time per tenant; *Stop this run* ends it early. See
+docs/pov.md.
 
 ### Reports
 

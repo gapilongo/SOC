@@ -37,6 +37,7 @@ import type {
   IntegrationCreateIn,
   IntegrationOut,
   IntegrationTestOut,
+  GuidedCheckOut,
   IntegrationUpdateIn,
   JsonObject,
   LlmTestOut,
@@ -48,6 +49,8 @@ import type {
   OnboardingStatusOut,
   Page,
   PlatformEscalationOut,
+  PovRunIn,
+  PovRunOut,
   RecoveryCodesOut,
   ResponseRoutesOut,
   RollbackOut,
@@ -80,6 +83,7 @@ import type {
   UserOut,
   UserUpdateIn,
   ValueReportOut,
+  WazuhCheckIn,
 } from './types';
 
 export const PAGE_SIZE = 100;
@@ -275,6 +279,9 @@ export const endpoints = {
     api.request<SetupOut>('PUT', '/onboarding/setup', { body, homeTenant: true }),
   completeSetup: (api: ApiClient, skipped = false) =>
     api.post<SetupOut>('/onboarding/setup/complete', { skipped }, { homeTenant: true }),
+  // Guided source setup: the checks run for an unsaved source; credentials in the body are not stored.
+  checkWazuh: (api: ApiClient, body: WazuhCheckIn) =>
+    api.post<GuidedCheckOut>('/onboarding/connectors/wazuh/check', body),
 
   evidencePack: (api: ApiClient, id: string, format: 'json' | 'html') =>
     api.get<Blob>(`/alerts/${enc(id)}/evidence`, { query: { format }, responseType: 'blob' }),
@@ -328,6 +335,14 @@ export const endpoints = {
   blindAuditRuns: (api: ApiClient, signal?: AbortSignal) =>
     api.get<Page<BlindAuditRunSummary>>('/blind-audit/runs', { query: { limit: 20 }, signal }),
   sampleBlindAudit: (api: ApiClient, body: BlindAuditSampleIn) => api.post<BlindAuditRunSummary>('/blind-audit/runs', body),
+
+  /** Proof-of-value runs, newest first (without the backtest result). */
+  povRuns: (api: ApiClient, signal?: AbortSignal) => api.get<Page<PovRunOut>>('/pov/runs', { query: { limit: 20 }, signal }),
+  /** One run with its backtest result. */
+  povRun: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<PovRunOut>(`/pov/runs/${enc(id)}`, { signal }),
+  /** Start a proof of value: records the run; the backtest then runs read-only on the server. */
+  createPovRun: (api: ApiClient, body: PovRunIn) => api.post<PovRunOut>('/pov/runs', body),
+  cancelPovRun: (api: ApiClient, id: string) => api.post<PovRunOut>(`/pov/runs/${enc(id)}/cancel`),
 
   /** The self-contained monthly HTML report (to save and print). */
   monthlyReportHtml: (api: ApiClient, month: string) =>

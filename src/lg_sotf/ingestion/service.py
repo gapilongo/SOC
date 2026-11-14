@@ -82,6 +82,8 @@ from lg_sotf.ingestion.errors import (
     UnrecognizedEvent,
 )
 from lg_sotf.ingestion.fingerprint import compute_fingerprint
+from lg_sotf.ingestion.guided import SetupCheck
+from lg_sotf.ingestion.guided.wazuh import check_wazuh_pull
 from lg_sotf.ingestion.llm_fallback import llm_normalize
 from lg_sotf.ingestion.metrics import record_events, record_llm_normalization, record_poll
 from lg_sotf.ingestion.normalizers import EMAIL, NormalizeContext, Normalizer, get_normalizer, resolve_format
@@ -427,6 +429,14 @@ class IngestionService:
         finally:
             if connector is not None:
                 await connector.aclose()
+
+    async def check_wazuh_setup(
+        self, tenant_id: str, config: Mapping[str, Any], credentials: Mapping[str, Any]
+    ) -> List[SetupCheck]:
+        """Guided Wazuh setup: the pull checks for an unsaved source (nothing is stored or cached)."""
+        return await check_wazuh_pull(
+            tenant_id, config, credentials, settings=self._settings, options=self._options, deps=self._deps
+        )
 
     async def validate_source(self, tenant_id: str, source: Source) -> None:
         """Validate a source's configuration and destinations before it is saved (API create/update).

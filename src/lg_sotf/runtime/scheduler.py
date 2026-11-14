@@ -14,6 +14,8 @@ Jobs (each in its own task, never overlapping with itself):
 * ``response_background`` execute scheduler-owned response actions: rollbacks, retries, late approvals,
   deferred and handed-off executions; expire old approvals (:mod:`lg_sotf.services.background`)
 * ``verify_actions`` re-query executed actions to verify them (:mod:`lg_sotf.services.verification`)
+* ``pov_backtests``  run the next waiting proof-of-value backtest, read-only (:mod:`lg_sotf.eval.pov`,
+  handed in by the CLI: that module sits above this one)
 
 The scheduler connects as the schema owner because the sweeps span tenants
 (``system_tx``) and maintenance runs DDL. On a graceful stop running jobs get
@@ -77,6 +79,7 @@ INCOMPLETE_MAINTENANCE_RETRY_S = 60.0
 MAX_UNDISPATCHED = 10_000
 MIN_ORPHAN_SWEEP_INTERVAL_S = 300.0
 DEFAULT_STOP_GRACE_S = 10.0
+POV_BACKTEST_INTERVAL_S = 60.0
 ACTOR_ID = "scheduler"
 
 
@@ -94,6 +97,9 @@ class IngestionLike(Protocol):
 
 
 IngestionFactory = Callable[[], IngestionLike]
+PovBacktestJob = Callable[[], Awaitable[None]]
+# Builds the job from the scheduler's settings, database (owner connection) and secret box.
+PovBacktestFactory = Callable[[Settings, Database, Optional[SecretBox]], PovBacktestJob]
 
 
 @dataclass
@@ -130,6 +136,7 @@ class Scheduler:
         delivery: Optional[OutboxDelivery] = None,
         responses: Optional[ResponseService] = None,
         secret_box: Optional[SecretBox] = None,
+        pov_backtests: Optional[PovBacktestJob] = None,
         clock: Callable[[], float] = time.monotonic,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
@@ -190,6 +197,8 @@ class Scheduler:
                 _Job("outbox_purge", cfg.maintenance_interval_s, self.purge_outbox),
             ):
                 self.jobs[job.name] = job
+        if pov_backtests is not None:
+            self.jobs["pov_backtests"] = _Job("pov_backtests", POV_BACKTEST_INTERVAL_S, pov_backtests)
 
     @property
     def repos(self) -> Repositories:
@@ -662,8 +671,10 @@ class Scheduler:
             log_failure(log, "scheduler.event_publish_failed", exc, level="warning")
 
 
-async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: int) -> None:
-    """Process entry point for ``lg-sotf scheduler``."""
+async def run_scheduler(
+    settings: Settings, *, metrics_host: str, metrics_port: int, pov_backtests: Optional[PovBacktestFactory] = None
+) -> None:
+    """Process entry point for ``lg-sotf scheduler``. ``pov_backtests`` builds the proof-of-value backtest job."""
     from lg_sotf.queue.events import EventBus
     from lg_sotf.queue.redis import create_redis
     from lg_sotf.runtime.health import HealthServer, database_check, redis_check
@@ -688,7 +699,8 @@ async def run_scheduler(settings: Settings, *, metrics_host: str, metrics_port: 
             service: IngestionLike = IngestionService(db, settings, secret_box=box, budget=budget)
             return service
 
-        scheduler = Scheduler(settings, db, redis, ingestion_factory, queue, events, secret_box=box)
+        pov_job = pov_backtests(settings, db, box) if pov_backtests is not None else None
+        scheduler = Scheduler(settings, db, redis, ingestion_factory, queue, events, secret_box=box, pov_backtests=pov_job)
         shutdown = GracefulShutdown(scheduler.request_stop, on_force=cancel_current_task())
         shutdown.install()
         health = HealthServer(

@@ -48,9 +48,8 @@ async def test_unreachable_candidate_cannot_score_full_agreement(
     path = tmp_path / "broken.yaml"  # nothing listens on port 9
     path.write_text("name: broken\nllm:\n  provider: openai_compatible\n  base_url: http://127.0.0.1:9/v1\n" + LLM)
     report = await run_shadow_replay(
-        engine_settings,
-        ShadowRunOptions(tenant_id=TENANT_A, candidate=path, window=timedelta(days=1),
-                         no_shadow_role_acknowledged=True),
+        _allow_local_candidates(engine_settings),
+        ShadowRunOptions(tenant_id=TENANT_A, candidate=path, window=timedelta(days=1)),
     )
     # The escalated alert has no usable candidate verdict: it counts against the candidate and is listed.
     assert report.candidate_failed + report.candidate_degraded >= 1
@@ -61,6 +60,12 @@ async def test_unreachable_candidate_cannot_score_full_agreement(
     assert report.potential_misses.count == 0
     # Production's Redis is untouched by the replay (sound).
     assert sorted(await redis_client.keys("*")) == keys_before
+
+
+def _allow_local_candidates(settings: Settings) -> Settings:
+    """The candidates here are local test servers: on the candidate LLM host allow-list (AI-E1.5c, F6)."""
+    security = settings.security.model_copy(update={"shadow_candidate_llm_hosts": ["127.0.0.1"]})
+    return settings.model_copy(update={"security": security})
 
 
 class _GarbageLLM(BaseHTTPRequestHandler):
@@ -106,9 +111,8 @@ async def test_candidate_whose_model_output_is_unusable_is_reported_as_degraded(
     path = tmp_path / "garbage.yaml"
     path.write_text(f"name: garbage\nllm:\n  provider: openai_compatible\n  base_url: {garbage_llm}\n" + LLM)
     report = await run_shadow_replay(
-        engine_settings,
-        ShadowRunOptions(tenant_id=TENANT_A, candidate=path, window=timedelta(days=1),
-                         no_shadow_role_acknowledged=True),
+        _allow_local_candidates(engine_settings),
+        ShadowRunOptions(tenant_id=TENANT_A, candidate=path, window=timedelta(days=1)),
     )
     assert _GarbageLLM.bodies, "the candidate endpoint was called"
     # The model never produced a usable answer: the rules decided, and the report says so.

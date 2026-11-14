@@ -9,6 +9,7 @@ must do none of that, and must record what it would have done.
 
 from __future__ import annotations
 
+import dataclasses
 import smtplib
 from datetime import UTC, datetime
 from typing import Any, Dict, List
@@ -19,25 +20,30 @@ import pytest
 import redis.asyncio as aioredis
 from asyncpg.exceptions import InvalidCachedStatementError, ReadOnlySQLTransactionError
 
+from lg_sotf.core.retro_reopen import enqueue_requeued, judged_threat
 from lg_sotf.core.shadow import ShadowRunner
 from lg_sotf.core.verdict_cache import VerdictCache
 from lg_sotf.core.workflow import WorkflowEngine
+from lg_sotf.db.errors import ShadowRoleRequired, SystemScopeDenied
 from lg_sotf.db.pool import Database
 from lg_sotf.db.repos import Repositories
 from lg_sotf.db.repos.outbox import NewOutboxEntry, enqueue_on
+from lg_sotf.domain import closure
 from lg_sotf.domain.events import publish_event
 from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.ticketing import JiraClient, TicketDraft
 from lg_sotf.models.trace import NewTraceStep
 from lg_sotf.net.egress import egress_policy
 from lg_sotf.net.http import guarded_client
+from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
 from lg_sotf.queue.events import EventBus
 from lg_sotf.queue.redis import ShadowSafeRedis
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.security.shadow import ShadowEgressRefused, ShadowRun, shadow_scope
 from lg_sotf.services.connectors.dry_run import DryRunConnector
+from lg_sotf.services.folded import settle_folded
 from lg_sotf.settings import Settings
-from tests.integration.db._support import ALL_TABLES, TENANT_A, make_alert
+from tests.integration.db._support import ALL_TABLES, TENANT_A, db_settings, make_alert
 from tests.integration.engine._support import SUSPICIOUS_ENTITIES, RecordingEvents
 from tests.integration.integrations._support import Receiver, add_integration, fake_secret, public_resolver, slack_url
 
@@ -193,7 +199,7 @@ async def test_a_write_no_boundary_diverts_fails_in_shadow_mode(db: Database, re
         async with db.connection() as conn:
             with pytest.raises(ReadOnlySQLTransactionError):
                 await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
-        with pytest.raises(ReadOnlySQLTransactionError):
+        with pytest.raises(SystemScopeDenied):  # the shadow role cannot bypass isolation (AI-E1.5c)
             async with db.system_tx() as conn:
                 await conn.execute("UPDATE tenants SET name = 'changed' WHERE id = $1", TENANT_A)
         # A transaction retried after a stale cached statement is a new transaction: read only too.
@@ -319,3 +325,102 @@ async def test_the_shadow_runner_reads_redis_through_a_write_refusing_client(
         with pytest.raises(ShadowEgressRefused):
             await shadow_redis.delete(key)
     assert await redis_client.get(key) == b"live"
+
+
+async def test_a_shadow_run_refuses_to_start_without_the_shadow_role(
+    engine_factory: Any, repos: Repositories, db: Database, migrated_database_url: str
+) -> None:
+    """AI-E1.5c: no ``database.shadow_url``, no shadow run; it never runs on the runtime role instead."""
+    engine: WorkflowEngine = await engine_factory()
+    alert_id = await make_alert(repos, TENANT_A, title="x", severity="low")
+    runtime_only = Database(db_settings(migrated_database_url, pool_min=0, pool_max=2), application_name="no-shadow")
+    await runtime_only.open()
+    try:
+        deps = dataclasses.replace(engine.node_deps, repos=Repositories.create(runtime_only))
+        with pytest.raises(ShadowRoleRequired, match="database.shadow_url"):
+            await ShadowRunner(deps).run(TENANT_A, alert_id)
+    finally:
+        await runtime_only.close()
+    async with db.tenant_tx(TENANT_A) as conn:
+        assert await conn.fetchval("SELECT count(*) FROM shadow_effects") == 0
+
+
+async def model_closed(repos: Repositories, entities: Dict[str, List[str]]) -> str:
+    """An alert the models closed alone, as decision policy v3 leaves it (close reason ``ai_closed:audit_required``)."""
+    alert_id = await make_alert(repos, TENANT_A, title="Package installed", severity="low",
+                                normalized={"entities": entities})
+    for status in ("queued", "processing", "closed"):
+        await repos.alerts.update_status(TENANT_A, alert_id, status)
+    await repos.alerts.update(TENANT_A, alert_id, disposition="benign",
+                              summary={"close_reason": closure.MODEL_CLOSE_REASON})
+    return alert_id
+
+
+def reopen_counters() -> List[float]:
+    return [counter.labels(path=path)._value.get()
+            for counter in (RETRO_REOPEN_FAILURES, RETRO_REOPENED, RETRO_LINKED)
+            for path in ("workflow", "escalation")]
+
+
+async def test_a_shadow_run_of_a_threat_reopens_nothing_and_enqueues_nothing(
+    engine_factory: Any, engine_settings: Settings, repos: Repositories, db: Database, redis_client: aioredis.Redis,
+) -> None:
+    """Decision policy v3 (FIX-3) in a shadow run: the safety net is recorded, never run.
+
+    Live, the alert below (a model judges it a threat: a response plan, then an escalation) links the related
+    alert the models closed alone to it (AI-E3.15; the control at the end). The shadow run of it
+    links and reopens nothing, enqueues nothing, counts no link, reopen or failure, and only ``shadow_effects`` grows. The two
+    writes of the policy a shadow graph does not reach, the run message of a requeued alert and the settling of a
+    folded one, are refused when called in a shadow run.
+    """
+    settings = engine_settings.model_copy(
+        update={"routing": {**dict(engine_settings.routing or {}), "response_threshold": 0}}
+    )
+    engine: WorkflowEngine = await engine_factory(settings=settings)
+    related = await model_closed(repos, {"hosts": ["ws-042"]})
+    queued = await make_alert(repos, TENANT_A, title="Requeued for review", severity="low")
+    await repos.alerts.update_status(TENANT_A, queued, "queued")
+    folded, case = await model_closed(repos, {"hosts": ["db-01"]}), str(uuid4())
+    await repos.alerts.update_status(TENANT_A, folded, "waiting_human")
+    await repos.alerts.update(TENANT_A, folded, summary={"reopened": {"mode": "folded"}, "escalation_id": case})
+    threat = await make_alert(
+        repos, TENANT_A, title="Possible C2 beacon from workstation", severity="critical",
+        normalized={"entities": SUSPICIOUS_ENTITIES}, raw={"vendor": "edr"},
+    )
+    await seed_stream(redis_client, settings.redis.key_prefix)
+    redis_before, counters = await redis_state(redis_client), reopen_counters()
+    before, folded_before = await snapshot(db, related), await snapshot(db, folded)
+
+    outcome = await ShadowRunner(engine.node_deps).run(TENANT_A, threat)
+
+    # A model judged it a threat, on both workflow paths of the safety net: the response plan and the escalation.
+    assert outcome.state["decision"]["route"] == "plan_response"
+    assert judged_threat(outcome.state.get("triage") or {}, outcome.state.get("analysis") or {})
+    assert outcome.interrupt == {"type": "analyst_decision", "escalation_id": "shadow"}
+    reopens = [(e.operation, e.outcome, e.detail) for e in outcome.effects if e.boundary == "retro_reopen"]
+    assert reopens == [("reopen_counted", "sunk", {"path": "workflow"}), ("reopen_counted", "sunk", {"path": "escalation"})]
+    assert all(e.outcome == "sunk" for e in outcome.effects)
+    # Nothing reopened: no alert change, run, event or audit entry, no run message, no counter moved.
+    after = await snapshot(db, related)
+    assert after["alert"] == before["alert"] and after["alert"]["status"] == "closed"
+    assert after["counts"] == {**before["counts"], "shadow_effects": len(outcome.effects)}
+    assert await redis_state(redis_client) == redis_before
+    assert reopen_counters() == counters
+
+    # Called in a shadow run all the same: the queue refuses the run message, the database the settle.
+    with shadow_scope(ShadowRun("shadow/direct")) as direct:
+        assert await enqueue_requeued(repos, engine.node_deps.queue, TENANT_A, [queued]) == 0
+        with pytest.raises(ReadOnlySQLTransactionError):
+            await settle_folded(repos, TENANT_A, folded, escalation_id=case, decision="true_positive",
+                                decided_by="analyst-1")
+    assert ("queue", "WorkQueue._add", "refused") in [(e.boundary, e.operation, e.outcome) for e in direct.sink.effects]
+    assert await redis_state(redis_client) == redis_before
+    assert await snapshot(db, folded) == {**folded_before, "counts": after["counts"]}
+
+    # Control: live, the same alert links the related alert at its response plan (the run then waits for the
+    # plan's approval, without a case), and that is counted.
+    await engine.run(TENANT_A, threat)
+    linked = await repos.alerts.get(TENANT_A, related)
+    assert linked.status == "closed" and linked.summary.get("reopened") is None
+    assert [(m["threat_alert_id"], m["escalation_id"]) for m in linked.summary["linked"]] == [(threat, None)]
+    assert reopen_counters() == [*counters[:4], counters[4] + 1, counters[5]]

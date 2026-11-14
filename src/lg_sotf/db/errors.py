@@ -34,6 +34,10 @@ class SystemScopeDenied(DatabaseError, PermissionError):
     """
 
 
+class ShadowRoleRequired(DatabaseError):
+    """A shadow run cannot start: ``database.shadow_url`` is unset, or its role could write (AI-E1.5c)."""
+
+
 class InvalidTenantId(DatabaseError, ValueError):
     """A tenant id does not match the allowed format."""
 

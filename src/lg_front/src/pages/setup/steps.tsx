@@ -14,7 +14,7 @@ import { isOneOf, type LlmProfileId, type LlmProfileOut, type SetupOut } from '.
 import { useApi, useAuth } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Banner, Button, DefinitionList, ErrorMessage, StatePill, TextField } from '../../components/ui';
-import { alertsHref } from '../../lib/links';
+import { POV_WIZARD_HREF, WAZUH_SETUP_HREF, alertsHref } from '../../lib/links';
 import { SampleAlertsButton } from '../onboarding/Onboarding';
 import { LlmTestCard } from '../settings/LlmTestCard';
 import { residencyText, useSaveSetup } from './useSetup';
@@ -304,7 +304,15 @@ export function FinishStep({ setup, onFinish, onBack, busy }: { setup: SetupOut;
         ]}
       />
       <p className="mt-4 text-sm text-secondary">
-        Next: connect a real alert source, invite your analysts and start a proof of value on your own alerts. The{' '}
+        Next: connect a real alert source (
+        <Link to={WAZUH_SETUP_HREF} className="text-link underline">
+          Wazuh, step by step
+        </Link>
+        ), invite your analysts and{' '}
+        <Link to={POV_WIZARD_HREF} className="text-link underline">
+          start a proof of value
+        </Link>{' '}
+        on your own alerts. The{' '}
         <Link to="/getting-started" className="text-link underline">
           Getting started
         </Link>{' '}

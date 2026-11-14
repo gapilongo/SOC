@@ -6321,6 +6321,28 @@
         "title": "GuardrailOut",
         "type": "object"
       },
+      "GuidedCheckOut": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/SetupCheckOut"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "ok": {
+            "description": "No check failed and at least one passed.",
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "checks"
+        ],
+        "title": "GuidedCheckOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -8362,6 +8384,33 @@
         "title": "PageOut[PlatformEscalationOut]",
         "type": "object"
       },
+      "PageOut_PovRunOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PovRunOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PageOut[PovRunOut]",
+        "type": "object"
+      },
       "PermissionCheck": {
         "properties": {
           "api": {
@@ -8547,6 +8596,239 @@
           "created_at"
         ],
         "title": "PlatformEscalationOut",
+        "type": "object"
+      },
+      "PovBacktestOut": {
+        "description": "The backtest: analyst-decided alerts of the history window replayed read-only through the pipeline.",
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A completed backtest's evaluation report without its per-alert items (docs/evaluation.md). On the run's own read only.",
+            "title": "Result"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "description": "no_data: no analyst-decided alert in the window, nothing was replayed.",
+            "enum": [
+              "pending",
+              "running",
+              "completed",
+              "no_data",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "status"
+        ],
+        "title": "PovBacktestOut",
+        "type": "object"
+      },
+      "PovRunIn": {
+        "additionalProperties": false,
+        "properties": {
+          "backtest_days": {
+            "default": 90,
+            "description": "History to replay: the alerts analysts decided in this many days before now.",
+            "maximum": 366.0,
+            "minimum": 1.0,
+            "title": "Backtest Days",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "shadow_days": {
+            "default": 14,
+            "description": "The shadow period: this many days of live alerts from now.",
+            "maximum": 90.0,
+            "minimum": 1.0,
+            "title": "Shadow Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "PovRunIn",
+        "type": "object"
+      },
+      "PovRunOut": {
+        "properties": {
+          "backtest": {
+            "$ref": "#/components/schemas/PovBacktestOut"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "cancelled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled By"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "shadow": {
+            "$ref": "#/components/schemas/PovShadowOut"
+          },
+          "status": {
+            "description": "The phase the run is in.",
+            "enum": [
+              "backtest",
+              "shadow",
+              "completed",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "backtest",
+          "shadow",
+          "created_at"
+        ],
+        "title": "PovRunOut",
+        "type": "object"
+      },
+      "PovShadowOut": {
+        "description": "The shadow period: the run observes the live alerts of this window and changes none of them.",
+        "properties": {
+          "reports": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "The tenant's reports over the shadow period: API paths, relative to the API prefix.",
+            "title": "Reports",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "running",
+              "completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "window_end": {
+            "format": "date-time",
+            "title": "Window End",
+            "type": "string"
+          },
+          "window_start": {
+            "format": "date-time",
+            "title": "Window Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "window_start",
+          "window_end",
+          "status",
+          "reports"
+        ],
+        "title": "PovShadowOut",
         "type": "object"
       },
       "PreviewActionOut": {
@@ -9478,6 +9760,53 @@
         "title": "SampleAlertsOut",
         "type": "object"
       },
+      "SetupCheckOut": {
+        "properties": {
+          "fix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What to change, on a failed check.",
+            "title": "Fix"
+          },
+          "id": {
+            "description": "Stable id of the check, e.g. reachable, tls, credentials, index_permission.",
+            "title": "Id",
+            "type": "string"
+          },
+          "message": {
+            "description": "What was found; never holds a credential.",
+            "title": "Message",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "status",
+          "message"
+        ],
+        "title": "SetupCheckOut",
+        "type": "object"
+      },
       "SetupCompleteIn": {
         "additionalProperties": false,
         "properties": {
@@ -9650,6 +9979,18 @@
           },
           "candidate_failures": {
             "$ref": "#/components/schemas/ShadowCaseList"
+          },
+          "candidate_host": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The host the candidate's LLM calls went to (empty: no network); never its key.",
+            "title": "Candidate Host"
           },
           "compared": {
             "description": "Alerts with a production verdict and a usable candidate verdict.",
@@ -12097,6 +12438,84 @@
         "additionalProperties": false,
         "properties": {},
         "title": "VerifyIn",
+        "type": "object"
+      },
+      "WazuhCheckIn": {
+        "additionalProperties": false,
+        "properties": {
+          "pull": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WazuhPullIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "push": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WazuhPushIn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WazuhCheckIn",
+        "type": "object"
+      },
+      "WazuhPullIn": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "description": "The source config to check: base_url, and optionally index, time_field, ca_cert_pem.",
+            "title": "Config",
+            "type": "object"
+          },
+          "secret": {
+            "additionalProperties": true,
+            "description": "username and password of the indexer user; used for this check only, never stored or returned.",
+            "title": "Secret",
+            "type": "object"
+          }
+        },
+        "required": [
+          "config",
+          "secret"
+        ],
+        "title": "WazuhPullIn",
+        "type": "object"
+      },
+      "WazuhPushIn": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "format": "password",
+                "maxLength": 300,
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The API key the Wazuh manager sends; checked, never stored.",
+            "title": "Api Key"
+          },
+          "source_id": {
+            "default": "wazuh-push",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "title": "WazuhPushIn",
         "type": "object"
       }
     }
@@ -15450,6 +15869,48 @@
         "x-stability": "internal"
       }
     },
+    "/api/v1/onboarding/connectors/wazuh/check": {
+      "post": {
+        "operationId": "check_wazuh_api_v1_onboarding_connectors_wazuh_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WazuhCheckIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GuidedCheckOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Guided Wazuh setup: run the connection checks",
+        "tags": [
+          "onboarding"
+        ],
+        "x-stability": "internal"
+      }
+    },
     "/api/v1/onboarding/dismiss": {
       "post": {
         "operationId": "dismiss_api_v1_onboarding_dismiss_post",
@@ -16310,6 +16771,197 @@
         "summary": "Invoicing figures per tenant for a month (JSON or CSV)",
         "tags": [
           "platform"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs": {
+      "get": {
+        "operationId": "list_runs_api_v1_pov_runs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 512,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOut_PovRunOut_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Proof-of-value runs, newest first",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      },
+      "post": {
+        "operationId": "create_run_api_v1_pov_runs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PovRunIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start a proof of value: a read-only backtest over history, then a shadow period",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs/{pov_run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_pov_runs__pov_run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pov_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pov Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "One proof-of-value run with its backtest result",
+        "tags": [
+          "pov"
+        ],
+        "x-stability": "beta"
+      }
+    },
+    "/api/v1/pov/runs/{pov_run_id}/cancel": {
+      "post": {
+        "operationId": "cancel_run_api_v1_pov_runs__pov_run_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pov_run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Pov Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PovRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel a proof-of-value run in progress",
+        "tags": [
+          "pov"
         ],
         "x-stability": "beta"
       }

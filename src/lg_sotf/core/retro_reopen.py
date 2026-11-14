@@ -56,7 +56,9 @@ not selected again; an alert already linked to the threat is linked again
 only to show it in a new case) and tenant-scoped (every query runs in the
 tenant's transaction). The callers count a failure in
 ``lgsotf_retro_reopen_failures_total`` and log it as an error; it never
-fails the threat's own decision.
+fails the threat's own decision. A shadow run runs neither: the call is
+recorded in the run's sink (:func:`reopen_counted`, the one entry point of
+both, is an egress boundary).
 
 IPs are matched whatever their role in the alert (source or destination):
 the canonical alert does not keep the role, and a wider match only links or
@@ -73,6 +75,7 @@ from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.observability.metrics import RETRO_LINKED, RETRO_REOPEN_FAILURES, RETRO_REOPENED
+from lg_sotf.security.shadow import egress, sink
 from lg_sotf.services.folded import FOLDED, REQUEUED, closed_by_models, folded_into
 
 log = get_logger(__name__)
@@ -314,6 +317,8 @@ async def _attach(repos: Repositories, tenant_id: str, escalation_id: Optional[s
     return attached is not None
 
 
+# A shadow run records that the safety net would have run: it links and reopens nothing and counts no failure.
+@egress("retro_reopen", sink(lambda a: [], detail=lambda a: {"path": a["path"]}))
 async def reopen_counted(
     repos: Repositories,
     tenant_id: str,

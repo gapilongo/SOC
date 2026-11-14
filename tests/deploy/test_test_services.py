@@ -37,6 +37,8 @@ def test_the_role_is_plain_and_may_create_the_per_worker_databases() -> None:
     assert statements == [
         "CREATE ROLE soc LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS CREATEDB",
         "CREATE DATABASE soc_test OWNER soc",
+        "CREATE ROLE lgsotf_shadow LOGIN PASSWORD 'ci_only_password' NOSUPERUSER NOBYPASSRLS NOINHERIT",
+        "ALTER ROLE lgsotf_shadow SET default_transaction_read_only = on",
     ]
 
 
