@@ -23,6 +23,7 @@ from lg_sotf.db.repos.outbox import OUTBOX_OPERATIONS, OUTBOX_STATUSES
 from lg_sotf.db.repos.sources import SOURCE_HEALTH
 from lg_sotf.db.repos.tenants import TENANT_STATUSES
 from lg_sotf.db.urls import to_libpq_url
+from lg_sotf.domain.pov import POV_BACKTEST_STATUSES
 from lg_sotf.models import vocabulary as v
 from lg_sotf.models.trace import STEP_KINDS, STEP_OUTCOMES
 from lg_sotf.security.shadow import EFFECT_OUTCOMES
@@ -63,6 +64,7 @@ EXPECTED: Dict[Tuple[str, str], Iterable[str]] = {
     ("blind_audit_items", "ai_class"): v.DISPOSITIONS,
     ("blind_audit_items", "label"): v.AUDIT_LABELS,
     ("shadow_effects", "outcome"): EFFECT_OUTCOMES,
+    ("pov_runs", "backtest_status"): POV_BACKTEST_STATUSES,
     ("shadow_verdicts", "prod_route"): v.ROUTES,
     ("shadow_verdicts", "cand_route"): v.ROUTES,
     ("shadow_verdicts", "prod_disposition"): v.DISPOSITIONS,

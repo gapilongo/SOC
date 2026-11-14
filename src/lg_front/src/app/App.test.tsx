@@ -55,18 +55,20 @@ const DENIED = 'You do not have access to this page';
 
 /**
  * Every static page of the route table (parameterised routes and redirects are covered by their pages' tests;
- * the setup wizard and the proof-of-value page are reached from in-page links, and pages/setup tests their gates).
+ * the setup wizard, the proof-of-value wizard and the guided Wazuh setup are reached from in-page links: their
+ * pages' tests cover the first two, and the gate of the last one is tested below).
  */
-const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !['/actions', '/setup', '/pov'].includes(r.path));
+const LINKED_ONLY = ['/actions', '/setup', '/pov/new', '/sources/wazuh'];
+const PAGES = APP_ROUTES.filter((r) => !r.path.includes(':') && !LINKED_ONLY.includes(r.path));
 
 /** [who, user, acting tenant, how many of the pages they may open] */
 const PRINCIPALS: Array<[string, Partial<UserOut>, string | null, number]> = [
   ['viewer', { role: 'viewer' }, null, 7],
   ['analyst', { role: 'analyst' }, null, 8],
-  ['admin', { role: 'admin' }, null, 15],
-  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 16],
+  ['admin', { role: 'admin' }, null, 16],
+  ['platform admin', { role: 'admin', is_platform_admin: true }, null, 17],
   // No MSSP console, no account security and no blind audit (a person's label) while acting on another tenant.
-  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 13],
+  ['platform admin acting on a tenant', { role: 'admin', is_platform_admin: true }, 'globex', 14],
 ];
 
 describe('route gates and navigation agree', () => {
@@ -92,5 +94,26 @@ describe('route gates and navigation agree', () => {
     }
     expect(visible).toEqual(gated);
     expect(gated).toHaveLength(allowed);
+  });
+});
+
+describe('guided Wazuh setup', () => {
+  it.each([
+    ['analyst', false],
+    ['admin', true],
+  ])('opens for an admin only (%s)', async (role, allowed) => {
+    stubWebSocket();
+    const { api } = fakeApi(() => new Promise(() => undefined));
+    const session = await signedInSession(api, { role: role as UserOut['role'] });
+    renderWithSession(<AppRoutes />, session, { route: '/sources/wazuh' });
+    const main = await screen.findByRole('main');
+    if (allowed) {
+      expect(await within(main).findByRole('heading', { name: 'Connect Wazuh', level: 1 })).toBeInTheDocument();
+      // The page belongs to Sources: that nav entry stays the current one.
+      expect(within(screen.getByRole('navigation', { name: 'Main' })).getByRole('link', { name: 'Sources' })).toBeInTheDocument();
+    } else {
+      expect(await within(main).findByRole('heading', { name: DENIED })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Connect Wazuh' })).not.toBeInTheDocument();
+    }
   });
 });

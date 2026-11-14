@@ -4,6 +4,7 @@ import { OnboardingChecklist, SampleAlertsButton, useDismissOnboarding, useOnboa
 import { useAuth } from '../../../auth/AuthContext';
 import { can } from '../../../auth/roles';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, buttonClass } from '../../../components/ui';
+import { POV_WIZARD_HREF } from '../lib/links';
 
 export default function GettingStartedPage() {
   const q = useOnboardingStatus();
@@ -48,6 +49,17 @@ export default function GettingStartedPage() {
                 stored once however often you send them.
               </p>
               <SampleAlertsButton sent={s.samples_sent} />
+            </div>
+          </Card>
+          <Card title="Then measure it on your own alerts" className="xl:col-start-2">
+            <div className="space-y-3 text-sm text-secondary">
+              <p>
+                A proof of value replays the alerts your analysts already decided, then observes your live alerts for a
+                period. It only reads: no alert is changed and no action is taken.
+              </p>
+              <Link to={POV_WIZARD_HREF} className={buttonClass('secondary', 'sm')}>
+                Start a proof of value
+              </Link>
             </div>
           </Card>
         </div>

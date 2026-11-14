@@ -13,6 +13,14 @@ export function defaultRange(today: Date = new Date()): { from: string; to: stri
   return { from: isoDay(new Date(today.getTime() - 29 * 86_400_000)), to: isoDay(today) };
 }
 
+/** The window a link asks for (`?from=YYYY-MM-DD&to=YYYY-MM-DD`) when it is a valid one, else the default. */
+export function rangeFromQuery(params: URLSearchParams, today: Date = new Date()): { from: string; to: string } {
+  const from = params.get('from') ?? '';
+  const to = params.get('to') ?? '';
+  const day = /^\d{4}-\d{2}-\d{2}$/;
+  return day.test(from) && day.test(to) && rangeError(from, to) === null ? { from, to } : defaultRange(today);
+}
+
 /** `YYYY-MM` of a `YYYY-MM-DD` day (the monthly report of the range's last day). */
 export function monthOf(day: string): string {
   return /^\d{4}-\d{2}/.test(day) ? day.slice(0, 7) : isoDay(new Date()).slice(0, 7);

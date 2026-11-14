@@ -3,7 +3,8 @@
  * the bootstrap admin confirms their account, names the organisation and the
  * first tenant, keeps the EU model profile the wizard preselects and tests the
  * configured model, sends the sample alerts and waits for the first verdict,
- * then finishes on the Overview and follows the proof-of-value link. Every
+ * then finishes on the Overview and follows the proof-of-value link into the
+ * proof-of-value wizard, up to its review step. Every
  * step passes axe, in the dark theme and (the model step) the light one, and
  * the page never scrolls sideways. The time from sign-in to the first verdict
  * is recorded against the 30-minute budget (PRD-13.1); the fresh-database
@@ -102,9 +103,17 @@ test('the setup wizard takes a fresh install to its first triaged alert and the 
   await expect(page.getByRole('link', { name: 'Start setup' })).toHaveCount(0);
   await assertAccessible(page, '/ after setup (390 px)');
   await noSideScroll(page, 'the Overview after setup');
+  // The link opens the proof-of-value wizard. Its steps are walked up to the review; no run is started,
+  // so the scenario can be repeated against the same stack (a tenant has one run in progress at a time).
   await pov.click();
-  await expect(page.getByRole('heading', { name: 'Proof of value', level: 1 })).toBeVisible();
-  await assertAccessible(page, '/pov (390 px)');
+  await expect(page.getByRole('heading', { name: 'New proof of value', level: 1 })).toBeVisible();
+  await checkStep(page, 'Step 1 of 3: History window', '26-pov-history');
+  await page.getByLabel('Name', { exact: true }).fill('E2E proof of value');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await checkStep(page, 'Step 2 of 3: Shadow period', '27-pov-shadow');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
+  await checkStep(page, 'Step 3 of 3: Review and start', '28-pov-review');
+  await expect(page.getByRole('button', { name: 'Start proof of value' })).toBeVisible();
 
   const timing = { budget_s: BUDGET_MS / 1000, time_to_first_triage_s: Number((firstVerdictMs / 1000).toFixed(1)) };
   test.info().annotations.push({ type: 'time_to_first_triage_s', description: String(timing.time_to_first_triage_s) });

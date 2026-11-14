@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pencil, PlugZap, Plus, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 
 import { endpoints } from '../api/endpoints';
 import { afterSourceChange } from '../api/invalidate';
@@ -10,8 +11,9 @@ import { useApi } from '../../../auth/AuthContext';
 import { Badge, StatusBadge } from '../components/Badge';
 import { ConfirmDialog, Modal } from '../../../components/Dialog';
 import { useToast } from '../../../components/Toast';
-import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField, Truncated } from '../../../components/ui';
+import { Button, Checkbox, EmptyState, ErrorMessage, LoadingState, PageHeader, SelectField, TextAreaField, TextField, Truncated, buttonClass } from '../../../components/ui';
 import { formatDateTime, formatRelative } from '../../../lib/format';
+import { WAZUH_SETUP_HREF } from '../lib/links';
 import { parseJsonObject } from '../../../lib/json';
 
 interface FieldSpec {
@@ -371,9 +373,14 @@ export default function SourcesPage() {
         title="Sources"
         description="Where alerts come from. Pull sources are polled by the scheduler; push sources receive events on the ingest webhook."
         actions={
-          <Button variant="primary" onClick={() => setEditing('new')} icon={<Plus className="h-4 w-4" aria-hidden="true" />}>
-            Add source
-          </Button>
+          <>
+            <Link to={WAZUH_SETUP_HREF} className={buttonClass('secondary')}>
+              Connect Wazuh step by step
+            </Link>
+            <Button variant="primary" onClick={() => setEditing('new')} icon={<Plus className="h-4 w-4" aria-hidden="true" />}>
+              Add source
+            </Button>
+          </>
         }
       />
       {q.isPending && <LoadingState label="Loading sources" />}

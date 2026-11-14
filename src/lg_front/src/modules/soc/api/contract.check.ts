@@ -60,6 +60,7 @@ import type {
   FeedbackRate,
   FindingOut,
   GuardrailOut,
+  GuidedCheckOut,
   IncidentReportOut,
   IntegrationCreateIn,
   IntegrationOut,
@@ -85,6 +86,10 @@ import type {
   OnboardingStepOut,
   Page,
   PlatformEscalationOut,
+  PovBacktestOut,
+  PovRunIn,
+  PovRunOut,
+  PovShadowOut,
   PreviewActionOut,
   PreviewConnectorOut,
   PreviewGuardrailOut,
@@ -102,6 +107,7 @@ import type {
   RouteOut,
   RoutingOut,
   SampleAlertsOut,
+  SetupCheckOut,
   SetupIn,
   SetupOut,
   SourceCreateIn,
@@ -130,6 +136,7 @@ import type {
   ValueDay,
   ValueMetrics,
   ValueReportOut,
+  WazuhCheckIn,
 } from './types';
 
 export interface ResponseContract {
@@ -190,6 +197,9 @@ export interface ResponseContract {
   OnboardingStatusOut: Response<Wire<Schemas['OnboardingStatusOut']>, OnboardingStatusOut>;
   OnboardingStepOut: Response<Wire<Schemas['OnboardingStepOut']>, OnboardingStepOut>;
   PlatformEscalationOut: Response<Wire<Schemas['PlatformEscalationOut']>, PlatformEscalationOut>;
+  PovBacktestOut: Response<Wire<Schemas['PovBacktestOut']>, PovBacktestOut>;
+  PovRunOut: Response<Wire<Schemas['PovRunOut']>, PovRunOut>;
+  PovShadowOut: Response<Wire<Schemas['PovShadowOut']>, PovShadowOut>;
   PreviewActionOut: Response<Wire<Schemas['PreviewActionOut']>, PreviewActionOut>;
   PreviewConnectorOut: Response<Wire<Schemas['PreviewConnectorOut']>, PreviewConnectorOut>;
   PreviewGuardrailOut: Response<Wire<Schemas['PreviewGuardrailOut']>, PreviewGuardrailOut>;
@@ -206,6 +216,8 @@ export interface ResponseContract {
   RoutingOut: Response<Wire<Schemas['RoutingOut']>, RoutingOut>;
   SampleAlertsOut: Response<Wire<Schemas['SampleAlertsOut']>, SampleAlertsOut>;
   SetupOut: Response<Wire<Schemas['SetupOut']>, SetupOut>;
+  SetupCheckOut: Response<Wire<Schemas['SetupCheckOut']>, SetupCheckOut>;
+  GuidedCheckOut: Response<Wire<Schemas['GuidedCheckOut']>, GuidedCheckOut>;
   ConfiguredModelOut: Response<Wire<Schemas['ConfiguredModelOut']>, ConfiguredModelOut>;
   EnvVarOut: Response<Wire<Schemas['EnvVarOut']>, EnvVarOut>;
   LlmProfileOut: Response<Wire<Schemas['LlmProfileOut']>, LlmProfileOut>;
@@ -234,6 +246,7 @@ export interface ResponseContract {
   Page_BlindAuditItemOut: Response<Wire<Schemas['PageOut_BlindAuditItemOut_']>, Page<BlindAuditItemOut>>;
   Page_BlindAuditRunSummary: Response<Wire<Schemas['PageOut_BlindAuditRunSummary_']>, Page<BlindAuditRunSummary>>;
   Page_EscalationOut: Response<Wire<Schemas['PageOut_EscalationOut_']>, Page<EscalationOut>>;
+  Page_PovRunOut: Response<Wire<Schemas['PageOut_PovRunOut_']>, Page<PovRunOut>>;
   Page_PlatformEscalationOut: Response<Wire<Schemas['PageOut_PlatformEscalationOut_']>, Page<PlatformEscalationOut>>;
 }
 
@@ -248,8 +261,10 @@ export interface RequestContract {
   FeedbackIn: Request<FeedbackIn, Schemas['FeedbackIn']>;
   IntegrationCreateIn: Request<IntegrationCreateIn, Schemas['IntegrationCreateIn']>;
   IntegrationUpdateIn: Request<IntegrationUpdateIn, Schemas['IntegrationUpdateIn']>;
+  PovRunIn: Request<PovRunIn, Schemas['PovRunIn']>;
   ProposeSuppressionIn: Request<ProposeSuppressionIn, Schemas['ProposeSuppressionIn']>;
   SetupIn: Request<SetupIn, Schemas['SetupIn']>;
+  WazuhCheckIn: Request<WazuhCheckIn, Schemas['WazuhCheckIn']>;
   SourceCreateIn: Request<SourceCreateIn, Schemas['SourceCreateIn']>;
   SourceUpdateIn: Request<SourceUpdateIn, Schemas['SourceUpdateIn']>;
   SuppressionCreateIn: Request<SuppressionCreateIn, Schemas['SuppressionCreateIn']>;

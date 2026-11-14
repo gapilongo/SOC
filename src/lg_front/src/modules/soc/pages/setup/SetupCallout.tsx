@@ -8,7 +8,7 @@ import { ArrowRight, Rocket } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
 
 import { Banner, buttonClass } from '../../../../components/ui';
-import { POV_HREF } from '../../lib/links';
+import { POV_WIZARD_HREF } from '../../lib/links';
 import type { SetupDoneState } from './SetupWizardPage';
 import { useSetup } from './useSetup';
 
@@ -27,7 +27,7 @@ export function SetupCallout() {
         title="Setup complete"
         className="mb-5"
         actions={
-          <Link to={POV_HREF} className={buttonClass('primary', 'sm')}>
+          <Link to={POV_WIZARD_HREF} className={buttonClass('primary', 'sm')}>
             Start a proof of value
             <ArrowRight className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
           </Link>

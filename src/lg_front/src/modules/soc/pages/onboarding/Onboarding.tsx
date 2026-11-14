@@ -15,12 +15,15 @@ import type { OnboardingStatusOut, OnboardingStepOut } from '../../api/types';
 import { useApi } from '../../../../auth/AuthContext';
 import { useToast } from '../../../../components/Toast';
 import { Button, cx } from '../../../../components/ui';
+import { WAZUH_SETUP_HREF } from '../../lib/links';
 
 export interface StepText {
   title: string;
   description: string;
   to: string;
   action: string;
+  /** A second way to do the step, e.g. a guided setup. */
+  guided?: { to: string; action: string };
 }
 
 export const STEP_TEXT: Record<string, StepText> = {
@@ -29,6 +32,7 @@ export const STEP_TEXT: Record<string, StepText> = {
     description: 'Register your SIEM or EDR, or push alerts to the ingest API with an API key.',
     to: '/sources',
     action: 'Open sources',
+    guided: { to: WAZUH_SETUP_HREF, action: 'Connect Wazuh' },
   },
   notifications_configured: {
     title: 'Configure notifications',
@@ -148,12 +152,18 @@ export function OnboardingChecklist({ status }: { status: OnboardingStatusOut })
                   Mark reviewed
                 </Button>
               )}
-              <Link
-                to={text.to}
-                className="rounded-control border border-control px-2.5 py-1 text-xs text-fg hover:bg-raised-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                {text.action}
-              </Link>
+              {[text.guided, text].map(
+                (link) =>
+                  link && (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      className="rounded-control border border-control px-2.5 py-1 text-xs text-fg hover:bg-raised-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus"
+                    >
+                      {link.action}
+                    </Link>
+                  ),
+              )}
             </div>
           </li>
         );

@@ -162,6 +162,8 @@ EXPORT_TABLES: Tuple[ExportTable, ...] = (
     ExportTable("shadow_effects.jsonl", "shadow_effects", "*", _ID_UUID),
     # Shadow agreement reports: production's and a candidate's verdict (routes, planned actions, usage) per alert.
     ExportTable("shadow_verdicts.jsonl", "shadow_verdicts", "*", _ID_UUID),
+    # Proof-of-value runs: the windows, the backtest's status and its stored result (metrics and alert ids).
+    ExportTable("pov_runs.jsonl", "pov_runs", "*", _ID_UUID),
     ExportTable("usage_daily.jsonl", "usage_daily", "*", (("day", "date"),)),
     ExportTable(
         "llm_usage_daily.jsonl", "llm_usage_daily", "*", (("day", "date"), ("model", "text"), ("agent", "text"))

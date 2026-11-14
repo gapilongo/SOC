@@ -245,6 +245,7 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | GET, PATCH | `/tenant/settings` | admin |
 | GET | `/onboarding/status`; POST `/onboarding/sample-alerts`, `/onboarding/autonomy-reviewed`, `/onboarding/dismiss` (docs/onboarding.md) | admin |
 | GET, PUT | `/onboarding/setup`; POST `/onboarding/setup/complete`: the first-run setup wizard (docs/onboarding.md) | platform admin, own account, home tenant |
+| POST | `/onboarding/connectors/wazuh/check`: the guided Wazuh setup checks for an unsaved source; nothing is stored; 20 per tenant per minute; audited (docs/onboarding.md) | admin, not under a grant |
 | POST, GET | `/platform/tenants`; PATCH `/platform/tenants/{id}`; GET `/platform/escalations`, `/platform/usage` (docs/mssp.md), `/platform/shadow/reports/{id}` (docs/evaluation.md) | platform admin |
 | DELETE | `/tenant/verdict-cache` (forget the tenant's cached analyst-benign verdicts; audited) | admin |
 | POST | `/tenant/llm/test` (probe the fast and deep model tiers; 6 per tenant per minute; audited) | admin |
@@ -258,6 +259,8 @@ The tenant's autonomy policy can disable approval of a risk level entirely.
 | POST | `/blind-audit/items/{id}/label` (`malicious`, `benign`, `unsure`; once; reveals the AI verdict) | analyst (user accounts) |
 | GET | `/blind-audit/runs` (sampling runs: window, seed, frame, counts) | viewer / `read` |
 | POST | `/blind-audit/runs` (draw a sample now, server seed; `dry_run` records nothing) | admin, not under an MSSP grant |
+| GET | `/pov/runs`, `/pov/runs/{id}` (proof-of-value runs: status, backtest result, shadow period; docs/pov.md) | viewer / `read` |
+| POST | `/pov/runs` (start a proof of value: a read-only backtest, then a shadow period), `/pov/runs/{id}/cancel` | admin |
 | GET | `/audit`, `/audit/verify` | admin |
 | GET | `/alerts/{id}/evidence?format=json\|html` (case evidence pack; audited) | viewer / `read` |
 | POST | `/alerts/{id}/incident-report` (NIS2 draft; stored on the timeline) | analyst / `write` |

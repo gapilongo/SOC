@@ -61,6 +61,8 @@ describe('query keys', () => {
     expect(qk.reportAccuracy.range('a', 'b')).toEqual(['soc', 'report-accuracy', 'a', 'b']);
     expect(qk.reportDetections.range('a', 'b')).toEqual(['soc', 'report-detections', 'a', 'b']);
     expect(qk.reportMonthly.month('2026-10')).toEqual(['soc', 'report-monthly', '2026-10']);
+    expect(qk.pov.runs).toEqual(['soc', 'pov', 'runs']);
+    expect(qk.pov.run('r-1')).toEqual(['soc', 'pov', 'run', 'r-1']);
     expect(qk.platformTenants.all).toEqual(['soc', 'platform-tenants']);
     expect(qk.platformEscalations.list('')).toEqual(['soc', 'platform-escalations', '']);
     expect(qk.platformUsage.month('2026-10')).toEqual(['soc', 'platform-usage', '2026-10']);

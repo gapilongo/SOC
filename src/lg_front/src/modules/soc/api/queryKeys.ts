@@ -135,6 +135,12 @@ export const qk = {
     item: (id: string) => [NS, 'blind-audit', 'item', id] as const,
     runs: [NS, 'blind-audit', 'runs'] as const,
   },
+  /** Proof-of-value runs: the list and one run with its backtest result. */
+  pov: {
+    all: [NS, 'pov'] as const,
+    runs: [NS, 'pov', 'runs'] as const,
+    run: (id: string) => [NS, 'pov', 'run', id] as const,
+  },
   reportMonthly: {
     all: [NS, 'report-monthly'] as const,
     month: (month: string) => [NS, 'report-monthly', month] as const,

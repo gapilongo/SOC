@@ -6,11 +6,11 @@
  * running model, which is install configuration.
  */
 
-import { Check } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Banner, Button, Card, ErrorMessage, LoadingState, PageHeader, cx } from '../../../../components/ui';
+import { Stepper } from '../../../../components/Stepper';
+import { Banner, Button, Card, ErrorMessage, LoadingState, PageHeader } from '../../../../components/ui';
 import { formatDateTime } from '../../../../lib/format';
 import { AdminStep, FinishStep, ModelStep, OrganisationStep, SamplesStep } from './steps';
 import { useCompleteSetup, useSetup } from './useSetup';
@@ -20,42 +20,6 @@ export const SETUP_STEPS = ['Your account', 'Organisation', 'Language model', 'S
 /** Router state the Overview reads to show the "setup complete" banner once. */
 export interface SetupDoneState {
   setupDone: true;
-}
-
-function Stepper({ current }: { current: number }) {
-  return (
-    <ol aria-label="Setup steps" className="mb-5 flex flex-wrap gap-2">
-      {SETUP_STEPS.map((label, i) => {
-        const done = i < current;
-        const active = i === current;
-        return (
-          <li
-            key={label}
-            aria-current={active ? 'step' : undefined}
-            className={cx(
-              'flex items-center gap-2 rounded-control border px-2.5 py-1 text-xs',
-              active ? 'border-focus bg-raised font-semibold text-fg' : 'border-subtle text-secondary',
-            )}
-          >
-            <span
-              className={cx(
-                'flex h-5 w-5 flex-none items-center justify-center rounded-full border text-xs tabular-nums',
-                done ? 'border-ok-fg text-ok-fg' : 'border-control',
-              )}
-              aria-hidden="true"
-            >
-              {done ? <Check className="h-3 w-3" strokeWidth={2.5} /> : i + 1}
-            </span>
-            {/* Phones show the current step's name only; the others keep theirs for screen readers. */}
-            <span className={active ? undefined : 'sr-only sm:not-sr-only'}>
-              {label}
-              {done && <span className="sr-only"> (done)</span>}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
-  );
 }
 
 export default function SetupWizardPage() {
@@ -105,7 +69,7 @@ export default function SetupWizardPage() {
               them.
             </Banner>
           )}
-          <Stepper current={step} />
+          <Stepper steps={SETUP_STEPS} current={step} label="Setup steps" />
           <Card>
             <h2 ref={heading} tabIndex={-1} className="mb-3 text-base font-semibold text-fg focus:outline-none">
               Step {step + 1} of {SETUP_STEPS.length}: {SETUP_STEPS[step]}
