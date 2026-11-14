@@ -31,8 +31,10 @@ import { lazy } from 'react';
 import { qk } from './api/queryKeys';
 import { can, isTenantOverride } from '../../auth/roles';
 import { defineModule, type Allowed } from '../../core/module';
-import { contribute, SHELL_BANNER, SHELL_HEADER_TENANT } from '../../core/slots';
+import { contribute, SHELL_BANNER } from '../../core/slots';
 import { useNavCount } from './navCounts';
+import { useSocNotices } from './notices';
+import { alertSearch, socCommands } from './search';
 // Not a page: a route that only redirects, so an old link costs no extra download.
 import { LegacyActionsRedirect } from './redirects';
 
@@ -62,7 +64,6 @@ const PovWizardPage = lazy(() => import('./pages/pov/PovWizardPage'));
 const BlindAuditPage = lazy(() => import('./pages/blindAudit/BlindAuditPage'));
 
 // Widgets the SOC renders in the shell's extension points: loaded only for the principals they apply to.
-const TenantSwitcher = lazy(() => import('./pages/platform/TenantSwitcher').then((m) => ({ default: m.TenantSwitcher })));
 const ActingTenantBanner = lazy(() => import('./pages/platform/TenantSwitcher').then((m) => ({ default: m.ActingTenantBanner })));
 
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
@@ -75,15 +76,18 @@ export const soc = defineModule({
   title: 'Security operations',
   entitlement: 'soc',
   permissions: { ...can, signedIn },
-  // The four groups are capability groups: a later service adds its pages to them, or declares its own.
+  // The rail's capability groups (console v2): a later service adds its pages to them, and declares a
+  // service group of its own (`service: true`, between Detect and respond and Assure) for the pages only it has.
+  // `operate` is the id of Work: the pages where a person's work waits.
   navGroups: [
-    { id: 'operate', title: 'Operate', order: 10 },
-    { id: 'report', title: 'Report', order: 20 },
-    { id: 'configure', title: 'Configure', order: 30 },
-    { id: 'platform', title: 'Platform', order: 40 },
+    { id: 'operate', title: 'Work', order: 10 },
+    { id: 'detect', title: 'Detect and respond', order: 20 },
+    { id: 'assure', title: 'Assure', order: 40 },
+    { id: 'configure', title: 'Configure', order: 50 },
+    { id: 'platform', title: 'Platform', order: 60 },
   ],
   routes: [
-    // Operate
+    // Work
     { path: '/', Page: OverviewPage, allowed: can.view, nav: { group: 'operate', label: 'Overview', icon: LayoutDashboard } },
     {
       path: '/escalations',
@@ -118,20 +122,21 @@ export const soc = defineModule({
     },
     // The page's name before it became Approvals: old links and bookmarks redirect.
     { path: '/actions', Page: LegacyActionsRedirect, allowed: can.view },
-    { path: '/alerts', Page: AlertsPage, allowed: can.view, nav: { group: 'operate', label: 'Alerts', icon: Bell } },
+    // Detect and respond
+    { path: '/alerts', Page: AlertsPage, allowed: can.view, nav: { group: 'detect', label: 'Alerts', icon: Bell } },
     // One alert in full: the investigation view (the list's side panel links to it).
     { path: '/alerts/:id', Page: InvestigationPage, allowed: can.view },
-    { path: '/suppressions', Page: SuppressionsPage, allowed: can.view, nav: { group: 'operate', label: 'Suppressions', icon: Filter } },
+    { path: '/suppressions', Page: SuppressionsPage, allowed: can.view, nav: { group: 'detect', label: 'Suppressions', icon: Filter } },
     // Labelling is a person's decision, like deciding an escalation.
-    { path: '/blind-audit', Page: BlindAuditPage, allowed: can.decide, nav: { group: 'operate', label: 'Blind audit', icon: ClipboardCheck } },
-    // Report
-    { path: '/reports', Page: ReportsPage, allowed: can.view, nav: { group: 'report', label: 'Reports', icon: FileText } },
+    { path: '/blind-audit', Page: BlindAuditPage, allowed: can.decide, nav: { group: 'detect', label: 'Blind audit', icon: ClipboardCheck } },
+    // Assure
+    { path: '/reports', Page: ReportsPage, allowed: can.view, nav: { group: 'assure', label: 'Reports', icon: FileText } },
     // Printable report: outside the app shell so only the report prints.
     { path: '/reports/monthly/:month', Page: MonthlyReportPage, allowed: signedIn, shell: false },
-    { path: '/usage', Page: UsagePage, allowed: can.admin, nav: { group: 'report', label: 'LLM usage', icon: BarChart3 } },
-    { path: '/audit', Page: AuditPage, allowed: can.admin, nav: { group: 'report', label: 'Audit log', icon: FileClock } },
+    { path: '/audit', Page: AuditPage, allowed: can.admin, nav: { group: 'assure', label: 'Audit log', icon: FileClock } },
+    { path: '/usage', Page: UsagePage, allowed: can.admin, nav: { group: 'assure', label: 'LLM usage', icon: BarChart3 } },
     // Proof-of-value runs, and the wizard that starts one (reached from the page and from where the setup ends).
-    { path: '/pov', Page: PovPage, allowed: can.admin, nav: { group: 'report', label: 'Proof of value', icon: FlaskConical } },
+    { path: '/pov', Page: PovPage, allowed: can.admin, nav: { group: 'assure', label: 'Proof of value', icon: FlaskConical } },
     { path: '/pov/new', Page: PovWizardPage, allowed: can.admin, label: 'New proof of value' },
     // Configure
     { path: '/getting-started', Page: GettingStartedPage, allowed: can.admin, nav: { group: 'configure', label: 'Getting started', icon: Rocket } },
@@ -156,8 +161,12 @@ export const soc = defineModule({
     'action.updated': [qk.actions.all, qk.dashboard.all],
   },
   extensions: [
-    // Platform admins change tenant from the header; while they act on one, every page says so.
-    contribute(SHELL_HEADER_TENANT, TenantSwitcher, { when: (p) => Boolean(p?.isPlatformAdmin) }),
+    // While a platform admin acts on another tenant (chosen in the shell's scope control), every page says so.
     contribute(SHELL_BANNER, ActingTenantBanner, { when: isTenantOverride }),
   ],
+  // The shell's search field: alerts by title, and links to the pages where a SOC act is confirmed.
+  search: alertSearch,
+  commands: socCommands,
+  // The shell's notifications: deadlines, approvals waiting, a source that stopped.
+  useNotices: useSocNotices,
 });

@@ -14,6 +14,7 @@ import type { QueryKey } from '@tanstack/react-query';
 import type { LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 
+import type { ApiClient } from '../api/client';
 import type { Principal } from '../auth/store';
 import type { Contribution } from './slots';
 
@@ -29,12 +30,65 @@ export interface NavCount {
   meaning: (n: number) => string;
 }
 
-/** A sidebar group. Groups are shared: a module adds items to a group another module declared by using its id. */
+/** A group of the rail. Groups are shared: a module adds items to a group another module declared by using its id. */
 export interface NavGroupDef {
   id: string;
   title: string;
-  /** Position in the sidebar, ascending. */
+  /** Position in the rail, ascending. */
   order: number;
+  /**
+   * A service group: the pages only this module has, under the service's own name ("Vulnerabilities").
+   * When the installation's licence does not include the module, a platform admin sees the group
+   * locked and labelled "Not licensed", and a customer tenant's users do not see it. A group
+   * without the flag is a capability group (Work, Configure): it only ever lists pages that open.
+   */
+  service?: boolean;
+}
+
+/** One record a module's search found (an alert, a finding), for the shell's search field. */
+export interface SearchHit {
+  /** Unique among the module's hits. */
+  id: string;
+  /** One word for the kind of record: "Alert", "Host". */
+  kind: string;
+  title: string;
+  /** What tells this record from its neighbours: severity, state, a reference. */
+  detail?: string;
+  /** The page that shows it. */
+  to: string;
+}
+
+/** A module's search over its own records. The shell calls it with what was typed and lists the hits. */
+export interface ModuleSearch {
+  /** Who may search; the API enforces it. */
+  allowed: Allowed;
+  /** What a hit is, in the plural, for the list heading: "Alerts". */
+  label: string;
+  /** Hits for `query` (trimmed, at least two characters) in the tenant the caller acts on. */
+  find: (api: ApiClient, query: string, signal: AbortSignal) => Promise<readonly SearchHit[]>;
+  /** A page that lists every match, when the module has one: "all alerts with this in the title". */
+  more?: (query: string) => { label: string; to: string };
+}
+
+/**
+ * A command in the shell's search field. A command is a link: it opens the page where the act is
+ * confirmed and has no callback, so nothing a module declares can change data from the search field.
+ */
+export interface ModuleCommand {
+  label: string;
+  to: string;
+  allowed: Allowed;
+}
+
+/** Something that needs an act now: a deadline about to pass, approvals waiting, a source that stopped. */
+export interface Notice {
+  /** Unique among the module's notices. */
+  id: string;
+  kind: 'deadline' | 'approval' | 'source';
+  text: string;
+  detail?: string;
+  /** The page where the act happens. */
+  to: string;
 }
 
 export interface ModuleRoute {
@@ -61,9 +115,11 @@ export interface ModuleManifest {
    * (ARCH-E10.2); until then `moduleEnabled` lets every module through.
    */
   entitlement?: string;
-  /** Sidebar groups this module declares. */
+  /** What the service adds, in a few lines, for the page shown where the licence does not include it. */
+  offers?: readonly string[];
+  /** Rail groups this module declares. */
   navGroups?: readonly NavGroupDef[];
-  /** Pages. Within a nav group, the sidebar follows this order. */
+  /** Pages. Within a nav group, the rail follows this order. */
   routes: readonly ModuleRoute[];
   /**
    * The module's access rules, by name. Route gates are taken from here, so
@@ -77,6 +133,12 @@ export interface ModuleManifest {
   liveEvents?: Readonly<Record<string, readonly QueryKey[]>>;
   /** Components the module renders in extension points owned by the shell or by another module. */
   extensions?: readonly Contribution[];
+  /** The module's records in the shell's search field. */
+  search?: ModuleSearch;
+  /** Commands in the shell's search field: links to the pages where an act is confirmed. */
+  commands?: readonly ModuleCommand[];
+  /** What needs an act now, for the shell's notifications. A hook of the module's API slice, like a nav count. */
+  useNotices?: () => readonly Notice[];
 }
 
 /** Type-checks a manifest where it is written. */

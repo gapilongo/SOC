@@ -9,7 +9,10 @@
  * target before anything is pre-approved, and the decision page passes axe
  * with the plan open), approving its response as an admin until
  * the alert closes, role gating for analyst and viewer, sign-out, and no
- * token in browser storage. The Content-Security-Policy is checked on the
+ * token in browser storage, and the console shell (the rail in its
+ * capability groups, the search field opening a page, an alert and a
+ * command's page, the tenant in the address across a reload, axe in both
+ * themes, no sideways overflow at 390 px). The Content-Security-Policy is checked on the
  * wire and in the browser (no violations on any page), and the main pages
  * pass axe (no serious or critical WCAG 2.2 A or AA violation).
  */
@@ -18,6 +21,7 @@ import { expect, test, type APIRequestContext, type Locator, type Page } from '@
 import {
   API,
   assertAccessible,
+  assertNoSideScroll,
   assertNoTokenInStorage,
   decisionForm,
   escalationQueue,
@@ -30,6 +34,7 @@ import {
   requiredEnv,
   responsePlan,
   screenshot,
+  setTheme,
   signIn,
   signOut,
   statValue,
@@ -127,16 +132,14 @@ async function reviewInvestigationView(page: Page, panel: Locator, title: string
   await screenshot(page, '04b-investigation');
 
   await assertAccessible(page, 'investigation view');
-  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await setTheme(page, 'light');
   await assertAccessible(page, 'investigation view (light theme)');
   // Evidence first: the verdict and the claims can be hidden, and the page still passes.
   await page.getByRole('button', { name: /^Hide the verdict/ }).click();
   await expect(page.getByRole('note')).toContainText('The verdict and the claims are hidden.');
   await assertAccessible(page, 'investigation view with the verdict hidden (light theme)');
   await page.getByRole('button', { name: /^Show the verdict/ }).click();
-  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await setTheme(page, 'dark');
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('heading', { name: title, level: 1 })).toBeVisible();
@@ -382,11 +385,9 @@ async function reviewResponsePlan(page: Page, target: string) {
   await expect(actions.filter({ has: page.locator('code', { hasText: target }) }).first()).toBeVisible();
   await expect(decisionForm(page).getByRole('list', { name: 'Planned actions' })).toHaveCount(0);
   await assertAccessible(page, 'decision page with the response plan open');
-  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await setTheme(page, 'light');
   await assertAccessible(page, 'decision page with the response plan open (light theme)');
-  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await setTheme(page, 'dark');
 
   const mine = actions.filter({ has: page.getByRole('checkbox', { disabled: false }) }).first();
   await expect(mine.locator('code')).toHaveText(/\S/);
@@ -606,17 +607,130 @@ test('main pages render under the CSP (and screenshots for the README)', async (
     await assertAccessible(page, path);
   }
   // The theme switch in the header: the Overview in the light theme passes axe as well.
-  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await setTheme(page, 'light');
   await screenshot(page, '02-overview-light');
   await assertAccessible(page, '/ (light theme)');
-  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await setTheme(page, 'dark');
   // The audit log recorded the analyst's claim and decision and the admin's approval.
   await page.goto('/audit');
   await expect(page.getByText('escalation.claimed').first()).toBeVisible();
   await expect(page.getByText('escalation.decided').first()).toBeVisible();
   await expect(page.getByText('response_action.approved').first()).toBeVisible();
+  await watch.assertClean();
+  await context.close();
+});
+
+/**
+ * The console shell (PRD-2.12): the frame every page lives in. The rail in its capability groups, the
+ * search field (Ctrl+K and `/`) that opens a page, an alert and the page of a command, the tenant as
+ * part of the address (it survives a reload and every link carries it), axe in both themes with each
+ * part open, and no sideways overflow at 390 px.
+ */
+test('the shell: rail navigation, search opens a page, the tenant in the address', async ({ browser }) => {
+  const { context, page, watch } = await newSession(browser);
+  await signIn(page, admin);
+  const nav = page.getByRole('navigation', { name: 'Main' });
+
+  // The rail: the capability groups of console v2, the current page marked, the page named on the tab.
+  for (const group of ['Work', 'Detect and respond', 'Assure', 'Configure', 'Platform']) {
+    await expect(nav.getByRole('list', { name: group, exact: true })).toBeVisible();
+  }
+  await nav.getByRole('link', { name: 'Suppressions' }).click();
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Suppressions' })).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveTitle(/^Suppressions · /);
+
+  // Search: Ctrl+K opens the field with the focus in it; a page is found by name and Enter opens it.
+  await page.keyboard.press('Control+k');
+  const palette = page.getByRole('dialog', { name: 'Search and commands' });
+  const field = palette.getByRole('combobox', { name: 'Search' });
+  await expect(field).toBeFocused();
+  await field.fill('audit log');
+  await expect(palette.getByRole('option').first()).toContainText('Audit log');
+  await assertAccessible(page, 'search and commands');
+  await screenshot(page, '30-search');
+  await page.keyboard.press('Enter');
+  await expect(palette).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Audit log', level: 1 })).toBeVisible();
+
+  // The slash key opens it too. An alert is found by its title and says which tenant it is in.
+  await page.locator('#main').focus();
+  await page.keyboard.press('/');
+  await expect(field).toBeFocused();
+  const tenantName = (await page.getByTestId('tenant-name').first().textContent()) ?? '';
+  await field.fill(`beacon from workstation ws-${run}`);
+  const hit = palette.getByRole('option', { name: BEACON_TITLE });
+  await expect(hit).toContainText(tenantName);
+  await hit.click();
+  await expect(page).toHaveURL(new RegExp(`/alerts/${beaconId}$`));
+  await expect(page.getByRole('heading', { name: BEACON_TITLE, level: 1 })).toBeVisible();
+
+  // A command never runs from the field: it opens the page where the act is confirmed.
+  await page.keyboard.press('Control+k');
+  await field.fill('>suppression');
+  await expect(palette.getByRole('option').first()).toContainText('opens Suppressions, runs nothing');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Suppressions', level: 1 })).toBeVisible();
+
+  // The tenant is part of the address. The field lists the admin's tenant with its id.
+  await page.keyboard.press('Control+k');
+  await field.fill(tenantName);
+  const here = palette.getByRole('option', { name: /you are here/ });
+  const tenantId = /^(\S+) · you are here$/.exec((await here.locator('span').last().textContent()) ?? '')?.[1] ?? '';
+  expect(tenantId, 'the tenant id in the search field').toMatch(/^[a-z0-9][a-z0-9_-]+$/);
+  await page.keyboard.press('Escape');
+  await expect(palette).toHaveCount(0);
+  await page.goto(`/s/${tenantId}/alerts`);
+  await expect(page.getByRole('heading', { name: 'Alerts', level: 1 })).toBeVisible();
+  // Every link carries it, so does a navigation, and a reload keeps it.
+  await expect(nav.getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', `/s/${tenantId}/escalations`);
+  await nav.getByRole('link', { name: 'Escalations' }).click();
+  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/escalations$`));
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/escalations$`));
+  await expect(page.getByTestId('tenant-name').first()).toHaveText(tenantName);
+
+  // Each part of the top bar open, in both themes.
+  const bar = page.getByRole('banner');
+  for (const theme of ['dark', 'light'] as const) {
+    await setTheme(page, theme);
+    await bar.getByRole('button', { name: /^Tenant / }).click();
+    await expect(page.getByRole('dialog', { name: 'Choose the tenant' }).getByRole('option').first()).toBeVisible();
+    await assertAccessible(page, `scope control (${theme} theme)`);
+    await page.keyboard.press('Escape');
+    await bar.getByRole('button', { name: /^Notifications: / }).click();
+    await expect(page.getByRole('dialog', { name: 'Notifications' })).toBeVisible();
+    await assertAccessible(page, `notifications (${theme} theme)`);
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: /^Account: / }).click();
+    await expect(page.getByRole('menu', { name: 'Account' })).toBeVisible();
+    await assertAccessible(page, `account menu (${theme} theme)`);
+    await page.keyboard.press('Escape');
+    await screenshot(page, `31-shell-${theme}`);
+  }
+
+  // A phone: the rail is a menu, the top bar fits, nothing scrolls sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole('heading', { name: 'Escalations', level: 1 })).toBeVisible();
+  await assertNoSideScroll(page, 'the shell at 390 px');
+  await assertAccessible(page, 'the shell at 390 px (light theme)');
+  await bar.getByRole('button', { name: 'Open the menu' }).click();
+  const menu = page.getByRole('dialog', { name: 'Main menu' });
+  await expect(menu.getByRole('link', { name: 'Alerts' })).toBeVisible();
+  await assertAccessible(page, 'the menu at 390 px (light theme)');
+  await screenshot(page, '32-shell-menu-390');
+  await menu.getByRole('link', { name: 'Alerts' }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/s/${tenantId}/alerts$`));
+  await assertNoSideScroll(page, 'the alerts page at 390 px');
+  await page.keyboard.press('Control+k');
+  await expect(field).toBeFocused();
+  await assertNoSideScroll(page, 'the search field at 390 px');
+  await page.keyboard.press('Escape');
+  await setTheme(page, 'dark');
+  await assertAccessible(page, 'the shell at 390 px (dark theme)');
+  await page.setViewportSize({ width: 1440, height: 900 });
   await watch.assertClean();
   await context.close();
 });

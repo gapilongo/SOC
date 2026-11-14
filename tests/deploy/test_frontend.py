@@ -256,7 +256,9 @@ def test_no_token_persistence_in_browser_storage() -> None:
     offenders = [str(p.relative_to(FRONT)) for p in files if p != prefs and re.search(r"\blocalStorage\b", _code(p))]
     assert offenders == [], f"localStorage must not be used outside src/lib/prefs.ts: {offenders}"
     # Its keys are a closed type, so nothing else (a token, a session) can be stored through it.
-    assert re.search(r"export type PrefKey = 'theme' \| 'density';", prefs.read_text()), "prefs.ts keys changed"
+    assert re.search(
+        r"export type PrefKey = 'theme' \| 'density' \| 'keys';", prefs.read_text()
+    ), "prefs.ts keys changed"
     session_users = [p for p in files if "sessionStorage" in _code(p)]
     # Only the OIDC redirect keeps its transient PKCE material there.
     assert [p.name for p in session_users] == ["oidc.ts"]

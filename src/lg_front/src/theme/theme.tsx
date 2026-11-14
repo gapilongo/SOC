@@ -1,6 +1,6 @@
 /**
- * Colour theme: dark (default), light, or "system" (follows the operating
- * system's prefers-color-scheme and its changes). The choice is a display
+ * Colour theme: "system" (the default: follows the operating system's
+ * prefers-color-scheme and its changes), light, or dark. The choice is a display
  * preference kept in localStorage (lib/prefs.ts); the resolved theme is set
  * as `<html data-theme>`, which switches the token values in tokens.css.
  *
@@ -12,14 +12,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 
 import { readPref, writePref } from '../lib/prefs';
 
-export const THEME_PREFERENCES = ['dark', 'light', 'system'] as const;
+/** In the order the shell's theme control steps through them. */
+export const THEME_PREFERENCES = ['system', 'light', 'dark'] as const;
 export type ThemePreference = (typeof THEME_PREFERENCES)[number];
 export type ResolvedTheme = 'dark' | 'light';
 
 const LIGHT_QUERY = '(prefers-color-scheme: light)';
 
 export function parseThemePreference(value: string | null | undefined): ThemePreference {
-  return (THEME_PREFERENCES as readonly string[]).includes(value ?? '') ? (value as ThemePreference) : 'dark';
+  return (THEME_PREFERENCES as readonly string[]).includes(value ?? '') ? (value as ThemePreference) : 'system';
 }
 
 export function resolveTheme(preference: ThemePreference, systemPrefersLight: boolean): ResolvedTheme {

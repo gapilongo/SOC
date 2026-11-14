@@ -35,7 +35,7 @@ dead-lettered (operators handle those).
 Platform admins (an operator-level flag) can additionally create tenants and
 act on another tenant with the `X-Tenant-ID` header; such access is recorded
 in that tenant's audit log, and decisions stay with the tenant's members. The
-web app's MSSP console and header tenant switcher build on this
+web app's MSSP console and the scope control in its top bar build on this
 (docs/mssp.md). New tenant admins find a getting-started checklist and
 sample alerts under Getting started (docs/onboarding.md).
 
@@ -56,6 +56,34 @@ sample alerts under Getting started (docs/onboarding.md).
   and decide escalations you also need a user record in the tenant (an admin
   creates it without a password, or the install provisions it on your first
   sign-in when just-in-time provisioning is on).
+
+## Finding your way around the console
+
+The frame is the same on every page.
+
+* **The rail** on the left lists the pages you may open, in five groups:
+  **Work** (Overview, Escalations, Approvals), **Detect and respond**
+  (Alerts, Suppressions, Blind audit), **Assure** (Reports, Audit log, LLM
+  usage, Proof of value), **Configure** and **Platform**. A number next to a
+  page counts what waits for a person there. You are at the bottom: your
+  menu holds Account security, the row density and Sign out. On a phone the
+  rail opens from the menu button.
+* **The scope** at the left of the top bar names the tenant you are looking
+  at. A platform admin can choose another one there; the tenant is then part
+  of the address (`/s/<tenant>/...`), so a reload, a new tab or a link you
+  share opens the same tenant (docs/mssp.md).
+* **Search** (the field in the top bar, **Ctrl+K**, or **/**) finds a page
+  by its name and an alert by words of its title (the last 30 days), and
+  says which tenant an alert is in. Type **>** to list commands. A command
+  never changes anything from the field: it opens the page where you confirm
+  the act. `/` is a single-key shortcut; the command "Single-key shortcuts:
+  turn off" switches it off, and Ctrl+K always works.
+* **The bell** lists only what needs an act now: escalations past their
+  deadline, a deadline in the next 15 minutes, actions waiting for your
+  approval and, for admins, an alert source that is failing. Each line opens
+  the page where you act. A line leaves when the thing it names is done.
+* **The theme** follows your system setting until you choose Light or Dark
+  with the control at the right of the top bar.
 
 ## Analyst workflows
 

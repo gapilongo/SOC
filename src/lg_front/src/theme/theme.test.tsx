@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DensityToggle, ThemeSwitch } from '../components/ui';
 import { readPref, writePref } from '../lib/prefs';
 import { DensityProvider, parseDensity, useDensity } from './density';
-import { applyTheme, parseThemePreference, resolveTheme, ThemeProvider, useTheme } from './theme';
+import { applyTheme, parseThemePreference, resolveTheme, THEME_PREFERENCES, ThemeProvider, useTheme } from './theme';
 
 /** A controllable prefers-color-scheme: light media query. */
 function mockSystemTheme(light: boolean) {
@@ -50,12 +50,14 @@ afterEach(() => {
 });
 
 describe('theme helpers', () => {
-  it('parses a stored preference, defaulting to dark', () => {
+  it('parses a stored preference, defaulting to the system setting', () => {
     expect(parseThemePreference('light')).toBe('light');
     expect(parseThemePreference('system')).toBe('system');
     expect(parseThemePreference('dark')).toBe('dark');
-    expect(parseThemePreference('purple')).toBe('dark');
-    expect(parseThemePreference(null)).toBe('dark');
+    expect(parseThemePreference('purple')).toBe('system');
+    expect(parseThemePreference(null)).toBe('system');
+    // The order the shell's theme control steps through.
+    expect(THEME_PREFERENCES).toEqual(['system', 'light', 'dark']);
   });
 
   it('resolves "system" from the operating system setting', () => {
@@ -73,15 +75,18 @@ describe('theme helpers', () => {
 });
 
 describe('ThemeProvider and ThemeSwitch', () => {
-  it('defaults to dark without a stored choice', () => {
-    mockSystemTheme(true);
+  it.each([
+    [true, 'light'],
+    [false, 'dark'],
+  ])('follows the system without a stored choice (system light: %s)', (systemLight, theme) => {
+    mockSystemTheme(systemLight);
     render(
       <ThemeProvider>
         <ThemeProbe />
       </ThemeProvider>,
     );
-    expect(screen.getByText('dark/dark')).toBeInTheDocument();
-    expect(document.documentElement.dataset.theme).toBe('dark');
+    expect(screen.getByText(`system/${theme}`)).toBeInTheDocument();
+    expect(document.documentElement.dataset.theme).toBe(theme);
   });
 
   it('switches theme, persists the choice and restores it', async () => {
@@ -94,7 +99,8 @@ describe('ThemeProvider and ThemeSwitch', () => {
     );
     const group = screen.getByRole('group', { name: 'Theme' });
     expect(group).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: 'Dark' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'System' })).toBeChecked();
+    expect(document.documentElement.dataset.theme).toBe('dark');
 
     await userEvent.click(screen.getByRole('radio', { name: 'Light' }));
     expect(document.documentElement.dataset.theme).toBe('light');
@@ -154,9 +160,10 @@ describe('ThemeProvider and ThemeSwitch', () => {
         <ThemeProbe />
       </ThemeProvider>,
     );
-    expect(screen.getByText('dark/dark')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('radio', { name: 'System' }));
+    // No media query: "system" resolves to dark.
     expect(screen.getByText('system/dark')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('radio', { name: 'Light' }));
+    expect(screen.getByText('light/light')).toBeInTheDocument();
     expect(getItem).toHaveBeenCalled();
     expect(setItem).toHaveBeenCalled();
   });

@@ -1,7 +1,7 @@
 import { Activity, LogIn, ShieldCheck } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useHref, useLocation, useNavigate } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
 import type { MfaEnrollOut } from '../api/types';
@@ -11,7 +11,7 @@ import { beginLogin, safeReturnTo } from '../auth/oidc';
 import type { EnrollmentResult, MfaChallenge } from '../auth/store';
 import { CodeField, EnrollmentDetails, RecoveryCodes } from '../components/Mfa';
 import { Button, ErrorMessage, LoadingState, TextField } from '../components/ui';
-import { getConfig } from '../config';
+import { getBrand, getConfig } from '../config';
 
 function loginErrorMessage(err: unknown): unknown {
   if (err instanceof ApiError && err.status === 401 && err.code === 'tenant_required') {
@@ -64,7 +64,7 @@ function Shell({ title, subtitle, children }: { title: string; subtitle: ReactNo
       <main className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2">
           <Activity className="h-7 w-7 text-link" aria-hidden="true" />
-          <span className="text-xl font-semibold text-fg">LG-SOTF</span>
+          <span className="text-xl font-semibold text-fg">{getBrand().name}</span>
         </div>
         <div className="rounded-card border border-subtle bg-raised p-6 shadow-xl">
           <h1 className="mb-1 text-lg font-semibold text-fg">{title}</h1>
@@ -255,6 +255,9 @@ export default function LoginPage() {
   const location = useLocation();
   const oidc = getConfig().oidc;
   const from = safeReturnTo((location.state as { from?: string } | null)?.from);
+  // The whole address of `from`, with the tenant the address names (`/s/<tenant>`): single sign-on leaves
+  // the console and returns to an address without one.
+  const fromAddress = useHref(from);
   const expired = status === 'expired' || new URLSearchParams(location.search).get('reason') === 'expired';
 
   const [email, setEmail] = useState('');
@@ -312,7 +315,7 @@ export default function LoginPage() {
     setError(null);
     setSsoBusy(true);
     try {
-      window.location.assign(await beginLogin(oidc, from));
+      window.location.assign(await beginLogin(oidc, fromAddress));
     } catch (err) {
       setError(err);
       setSsoBusy(false);

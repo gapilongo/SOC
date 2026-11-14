@@ -1,13 +1,23 @@
 /**
  * What the shell derives from the registered modules (src/app/modules.ts):
- * the route table, the sidebar, the live-event mapping and the extension
- * contributions. The shell iterates this and holds no list of its own, so a
- * new module changes nothing here (ADR 0015).
+ * the route table, the rail, the live-event mapping, the extension
+ * contributions, and what each module adds to search and notifications. The
+ * shell iterates this and holds no list of its own, so a new module changes
+ * nothing here (ADR 0015).
  */
 
 import type { QueryKey } from '@tanstack/react-query';
 
-import { moduleEnabled, type Allowed, type ModuleManifest, type ModuleRoute, type NavCount } from '../core/module';
+import {
+  moduleEnabled,
+  type Allowed,
+  type ModuleCommand,
+  type ModuleManifest,
+  type ModuleRoute,
+  type ModuleSearch,
+  type NavCount,
+  type Notice,
+} from '../core/module';
 import type { Contribution } from '../core/slots';
 import type { LucideIcon } from 'lucide-react';
 
@@ -32,8 +42,13 @@ export interface NavItem {
 export interface NavGroup {
   id: string;
   title: string;
+  /** A service group (the pages only one module has): listed locked where the licence does not include it. */
+  service?: boolean;
   items: NavItem[];
 }
+
+/** Something a module adds to the shell, with the module it comes from and that module's entitlement. */
+export type FromModule<T> = T & { module: string; enabled: Allowed };
 
 export interface Registry {
   modules: readonly ModuleManifest[];
@@ -47,6 +62,12 @@ export interface Registry {
   liveKeys: (eventType: string) => readonly QueryKey[];
   /** Every extension contribution, in registration order. */
   extensions: readonly Contribution[];
+  /** The modules' record searches, for the search field. */
+  searches: ReadonlyArray<FromModule<ModuleSearch>>;
+  /** The modules' commands, for the search field: links only. */
+  commands: ReadonlyArray<FromModule<ModuleCommand>>;
+  /** The modules' notice hooks, for the notifications. */
+  notices: ReadonlyArray<FromModule<{ useNotices: () => readonly Notice[] }>>;
 }
 
 /**
@@ -69,11 +90,14 @@ function fail(message: string): never {
 export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
   const ids = new Set<string>();
   const paths = new Map<string, string>();
-  const groupDefs = new Map<string, { id: string; title: string; order: number; index: number }>();
+  const groupDefs = new Map<string, { id: string; title: string; order: number; service?: boolean; index: number }>();
   const routes: AppRoute[] = [];
   const bareRoutes: AppRoute[] = [];
   const live = new Map<string, QueryKey[]>();
   const extensions: Contribution[] = [];
+  const searches: Array<FromModule<ModuleSearch>> = [];
+  const commands: Array<FromModule<ModuleCommand>> = [];
+  const notices: Registry['notices'][number][] = [];
 
   for (const m of modules) {
     if (!/^[a-z][a-z0-9-]*$/.test(m.id)) fail(`"${m.id}" is not a module id (lower-case letters, digits and dashes)`);
@@ -105,19 +129,27 @@ export function buildRegistry(modules: readonly ModuleManifest[]): Registry {
     }
     // A module's contributions follow its entitlement: switched off for a tenant, they render nowhere.
     for (const c of m.extensions ?? []) extensions.push({ ...c, when: (p) => enabled(p) && (c.when?.(p) ?? true) });
+    if (m.search) searches.push({ ...m.search, module: m.id, enabled });
+    for (const c of m.commands ?? []) commands.push({ ...c, module: m.id, enabled });
+    if (m.useNotices) notices.push({ useNotices: m.useNotices, module: m.id, enabled });
+  }
+  // A command is a link to a page of the console: one that leads nowhere is a programming error.
+  for (const c of commands) {
+    if (!paths.has(c.to.split(/[?#]/)[0])) fail(`${c.module}: the command "${c.label}" opens "${c.to}", which is not a page`);
   }
 
   const navGroups = [...groupDefs.values()]
     .sort((a, b) => a.order - b.order || a.index - b.index)
-    .map(({ id, title }) => ({
+    .map(({ id, title, service }) => ({
       id,
       title,
+      service,
       items: routes.flatMap((r): NavItem[] =>
         r.nav?.group === id ? [{ to: r.path, label: r.nav.label, icon: r.nav.icon, allowed: r.allowed, enabled: r.enabled, count: r.nav.count }] : [],
       ),
     }));
 
-  return { modules, routes, bareRoutes, navGroups, liveKeys: (type) => live.get(type) ?? [], extensions };
+  return { modules, routes, bareRoutes, navGroups, liveKeys: (type) => live.get(type) ?? [], extensions, searches, commands, notices };
 }
 
 /** Page name for the breadcrumb and the phone top bar: the route at `pathname` or its closest parent. */

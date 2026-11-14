@@ -251,6 +251,48 @@ describe('AuthStore', () => {
     expect(admin.store.getActingTenant()).toBeNull();
   });
 
+  it("takes the tenant from the address when a platform admin's session starts, and keeps it through refreshes", async () => {
+    const platformAdmin = { role: 'admin' as const, is_platform_admin: true };
+    let address: string | null = 'globex';
+    const transport = fakeTransport({
+      login: vi.fn(async () => token('t', platformAdmin)),
+      refresh: vi.fn(async () => token('t2', platformAdmin)),
+    });
+    // A reload, a new tab or a pasted link: the session is restored at an address that names a tenant.
+    const { store } = makeStore({ transport, addressTenant: () => address });
+    await store.init();
+    expect(store.getActingTenant()).toBe('globex');
+    expect(store.getState().principal).toMatchObject({ tenantId: 'globex', homeTenantId: 'acme' });
+
+    // While the session lasts the store decides (the address follows it); a refresh changes nothing.
+    store.setActingTenant('initech');
+    address = 'globex';
+    await store.refresh();
+    expect(store.getActingTenant()).toBe('initech');
+    store.setActingTenant(null);
+    await store.refresh();
+    expect(store.getActingTenant()).toBeNull();
+
+    // The next session reads the address again.
+    await store.logout();
+    address = 'initech';
+    await store.login('p@acme.test', 'pw', null);
+    expect(store.getActingTenant()).toBe('initech');
+    // The home tenant named in the address is the home tenant, not an override.
+    await store.logout();
+    address = 'acme';
+    await store.login('p@acme.test', 'pw', null);
+    expect(store.getActingTenant()).toBeNull();
+    expect(store.getState().principal?.tenantId).toBe('acme');
+  });
+
+  it('never lets the address move someone who is not a platform admin to another tenant', async () => {
+    const { store } = makeStore({ addressTenant: () => 'globex' });
+    await store.login('a@acme.test', 'pw', null);
+    expect(store.getActingTenant()).toBeNull();
+    expect(store.getState().principal).toMatchObject({ tenantId: 'acme', homeTenantId: 'acme' });
+  });
+
   it('refreshes OIDC sessions through the identity provider, not the cookie endpoint', async () => {
     const transport = fakeTransport();
     const oidc = { refresh: vi.fn(async () => ({ token: 'idp-2', expiresIn: 300, refreshToken: 'rt-2' })) };

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, Lock, LogOut, Rows3 } from 'lucide-react';
+import { Check, Lock, LogOut, Rows3 } from 'lucide-react';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { can } from '../../auth/roles';
 import { cx } from '../../components/ui';
 import { useDensity } from '../../theme/density';
-import { useTheme, type ThemePreference } from '../../theme/theme';
+import { usePopover } from './usePopover';
 
 /** Two letters for the avatar: initials of the e-mail's local part ("m.roux" -> "MR"). */
 export function initials(email: string | null | undefined): string {
@@ -21,30 +21,21 @@ export function roleLabel(role: string | null | undefined, platformAdmin: boolea
   return platformAdmin ? `${base}, platform admin` : base;
 }
 
-const THEMES: Array<{ value: ThemePreference; label: string }> = [
-  { value: 'dark', label: 'Dark theme' },
-  { value: 'light', label: 'Light theme' },
-  { value: 'system', label: 'System theme' },
-];
-
 const ITEM =
-  'flex min-h-9 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-ctl text-fg hover:bg-selected focus:bg-selected focus:outline-none touch:min-h-11';
+  'flex min-h-8 w-full items-center gap-2.5 rounded-control px-2.5 text-left text-ctl text-fg hover:bg-selected focus:bg-selected focus:outline-none touch:min-h-11';
 
 /**
- * The account menu (ARIA menu button): who is signed in, account security,
- * theme, row density and sign out. Keyboard: Enter, Space or Down opens on
- * the first item, Up on the last; Up/Down/Home/End move; Escape closes and
- * returns focus to the button; Tab closes.
+ * The signed-in person at the bottom of the rail, and their menu (ARIA menu
+ * button): account security, row density and sign out. Keyboard: Enter,
+ * Space or Down opens on the first item, Up on the last; Up/Down/Home/End
+ * move; Escape closes and returns focus to the button; Tab closes.
  */
-export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSignOut: () => void }) {
+export function AccountMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSignOut: () => void }) {
   const { principal } = useAuth();
-  const { preference, setPreference } = useTheme();
   const { density, setDensity } = useDensity();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  const { open, setOpen, close, rootRef, buttonRef } = usePopover();
   const [focusAt, setFocusAt] = useState<'first' | 'last'>('first');
-  const rootRef = useRef<HTMLDivElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
@@ -54,11 +45,6 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
     if (!open) return;
     const all = items();
     (focusAt === 'last' ? all[all.length - 1] : all[0])?.focus();
-    const onPointer = (e: PointerEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('pointerdown', onPointer);
-    return () => document.removeEventListener('pointerdown', onPointer);
   }, [open, focusAt]);
 
   if (!principal) return null;
@@ -67,12 +53,8 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
     setFocusAt(at);
     setOpen(true);
   };
-  const close = (refocus = true) => {
-    setOpen(false);
-    if (refocus) buttonRef.current?.focus();
-  };
-  const run = (fn: () => void, refocus = true) => () => {
-    close(refocus);
+  const run = (fn: () => void) => () => {
+    close(false);
     fn();
   };
 
@@ -103,10 +85,6 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
         e.preventDefault();
         move(all.length - 1);
         break;
-      case 'Escape':
-        e.preventDefault();
-        close();
-        break;
       case 'Tab':
         close(false);
         break;
@@ -116,28 +94,28 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
 
   const role = roleLabel(principal.role, principal.isPlatformAdmin);
   const email = principal.email ?? 'Signed in';
-  const avatar = initials(principal.email);
-  const ownAccount = can.account(principal);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative flex-none border-t border-subtle">
       <button
         ref={buttonRef}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        // The visible initials are part of the name (WCAG 2.5.3 Label in Name), so a speech-input
-        // user can say what they see.
-        aria-label={`Account: ${email}, ${role}, initials ${avatar}`}
         onClick={() => (open ? close() : show('first'))}
         onKeyDown={onButtonKey}
-        className="flex h-8 items-center gap-2 rounded-control pl-0.5 pr-1.5 text-fg hover:bg-raised-2 touch:min-h-11"
+        className="flex w-full items-center gap-[9px] px-3.5 py-2.5 text-left hover:bg-raised-2 touch:min-h-11"
       >
-        <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-full bg-selected text-xs font-semibold text-link">
-          {avatar}
+        {/* The visible text is the accessible name (WCAG 2.5.3), after the word that says what the button is. */}
+        <span className="sr-only">Account: </span>
+        <span className="grid h-[26px] w-[26px] flex-none place-items-center rounded-full border border-strong bg-raised-2 text-[10.5px] font-semibold text-fg">
+          {initials(principal.email)}
         </span>
-        <ChevronDown className="h-3.5 w-3.5 text-secondary" strokeWidth={2} aria-hidden="true" />
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate font-medium text-fg">{email}</span>
+          <span className="block truncate text-2xs text-muted">{role}</span>
+        </span>
       </button>
       {open && (
         <div
@@ -147,36 +125,29 @@ export function UserMenu({ tenantLabel, onSignOut }: { tenantLabel: string; onSi
           aria-label="Account"
           tabIndex={-1}
           onKeyDown={onMenuKey}
-          className="absolute right-0 top-full z-50 mt-1 flex w-64 flex-col gap-0.5 rounded-card border border-strong bg-raised-2 p-1.5 shadow-popover"
+          className="absolute bottom-full left-2 z-50 mb-1 flex w-60 flex-col gap-0.5 rounded-[4px] bg-raised p-1.5 shadow-popover"
         >
-          <div className="mb-1 border-b border-strong px-2.5 pb-2.5 pt-2">
+          <div className="mb-1 border-b border-subtle px-2.5 pb-2 pt-1.5">
             <div className="truncate text-ctl font-medium text-fg">{email}</div>
             <div className="truncate text-xs text-secondary">
               {role} · {tenantLabel}
               {principal.method === 'oidc' ? ' · SSO' : ''}
             </div>
           </div>
-          {ownAccount && (
-            <MenuItem icon={<Lock className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />} onSelect={run(() => navigate('/account'), false)}>
+          {can.account(principal) && (
+            <MenuItem icon={<Lock className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />} onSelect={run(() => navigate('/account'))}>
               Account security
             </MenuItem>
           )}
-          <div role="group" aria-label="Theme" className="my-0.5 border-y border-strong py-0.5">
-            {THEMES.map((t) => (
-              <MenuItem key={t.value} role="menuitemradio" checked={preference === t.value} onSelect={() => setPreference(t.value)}>
-                {t.label}
-              </MenuItem>
-            ))}
-          </div>
           <MenuItem
             role="menuitemcheckbox"
             checked={density === 'comfortable'}
-            icon={<Rows3 className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />}
+            icon={<Rows3 className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />}
             onSelect={() => setDensity(density === 'comfortable' ? 'compact' : 'comfortable')}
           >
             Comfortable rows
           </MenuItem>
-          <MenuItem icon={<LogOut className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />} onSelect={run(onSignOut, false)}>
+          <MenuItem icon={<LogOut className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />} onSelect={run(onSignOut)}>
             Sign out
           </MenuItem>
         </div>
@@ -192,9 +163,9 @@ function MenuItem({
   onSelect,
   children,
 }: {
-  role?: 'menuitem' | 'menuitemradio' | 'menuitemcheckbox';
+  role?: 'menuitem' | 'menuitemcheckbox';
   checked?: boolean;
-  icon?: ReactNode;
+  icon: ReactNode;
   onSelect: () => void;
   children: ReactNode;
 }) {
@@ -209,7 +180,7 @@ function MenuItem({
         <span className="flex-none text-secondary">{icon}</span>
       )}
       <span className="flex-1">{children}</span>
-      {checkable && icon && <span className="flex-none text-secondary">{icon}</span>}
+      {checkable && <span className="flex-none text-secondary">{icon}</span>}
     </button>
   );
 }

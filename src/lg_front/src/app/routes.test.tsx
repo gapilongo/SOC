@@ -10,20 +10,22 @@ describe('route table', () => {
     for (const path of paths) expect(path).toMatch(/^\//);
   });
 
-  it('builds the sidebar from the routes with a nav entry, gated like the route', () => {
+  it('builds the rail from the routes with a nav entry, gated like the route', () => {
     const items = NAV_GROUPS.flatMap((g) => g.items);
     const withNav = APP_ROUTES.filter((r) => r.nav);
     expect(items.map((i) => i.to)).toEqual(expect.arrayContaining(withNav.map((r) => r.path)));
     expect(items).toHaveLength(withNav.length);
     for (const item of items) expect(item.allowed).toBe(APP_ROUTES.find((r) => r.path === item.to)?.allowed);
-    expect(NAV_GROUPS.map((g) => g.title)).toEqual(['Operate', 'Report', 'Configure', 'Platform']);
+    expect(NAV_GROUPS.map((g) => g.title)).toEqual(['Work', 'Detect and respond', 'Assure', 'Configure', 'Platform']);
+    // The SOC's groups are capability groups: none is a service group, so none is ever listed locked.
+    expect(NAV_GROUPS.some((g) => g.service)).toBe(false);
   });
 
   it('gates account security with can.account', () => {
     expect(APP_ROUTES.find((r) => r.path === '/account')?.allowed).toBe(can.account);
   });
 
-  it('names pages for the breadcrumb', () => {
+  it('names pages for the browser tab', () => {
     expect(pageLabel('/')).toBe('Overview');
     expect(pageLabel('/approvals')).toBe('Approvals');
     expect(pageLabel('/escalations/esc-1')).toBe('Escalations');
