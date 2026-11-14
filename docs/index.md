@@ -39,7 +39,7 @@
 | [Air-gapped installation](air-gapped.md) | Operators | Moving images, models and the bundle across an air gap and verifying them on arrival |
 | [Performance and sizing](performance.md) | Operators | Load-test results, where scaling stops, and how to size a deployment |
 | [Self-hosting on a PC](self-hosting-pc.md) | Operators | Dev and uat on your own Windows PC (WSL2, Tailscale Funnel), no cloud account |
-| [Evidence facts](evidence-facts.md) | Integrators, engineers | The evidence-fact schema v1: the typed observations verdicts cite, its kinds, SemVer rules and the CI breaking-change check |
+| [Evidence facts](evidence-facts.md) | Integrators, engineers | The evidence-fact schema v1: the typed observations verdicts cite, its kinds, SemVer rules and the CI breaking-change check; the Wazuh evidence tools that produce facts, what they read and their limits |
 | [Evaluation](evaluation.md) | Engineers, detection owners | The `lg-sotf eval` harness, dataset format, metrics, regression gate, using your own and public labelled data |
 | [Scorecards](scorecards/README.md) | Buyers, detection owners | One-page accuracy summaries per model configuration, each rate with its sample size and 95% interval; the first is a local `qwen2.5:7b` |
 | [Reporting](reporting.md) | Tenant admins, buyers | Value, AI-versus-analyst accuracy and detection reports on your own alerts, with confidence intervals; the backtest |

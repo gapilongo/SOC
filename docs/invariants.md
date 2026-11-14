@@ -23,7 +23,7 @@ Threat rows refer to [threat-model.md](threat-model.md).
 | INV-11 | No automatic containment on model-only evidence | enforced | none | TM-WRK-3, TM-EVT-7 |
 | INV-12 | The model never chooses where data is sent | enforced | none | TM-EVT-1, TM-WRK-5 |
 | INV-13 | Autonomy is earned per skill and tenant and lost on any miss | pending (AI-E3.10) | none | TM-WRK-13 |
-| INV-14 | Evidence tools are read-only, templated and capped | pending (INT3.4) | none | TM-EVT-3, TM-EVT-10, TM-EVT-12 |
+| INV-14 | Evidence tools are read-only, templated and capped | enforced | none | TM-EVT-3, TM-EVT-9, TM-EVT-10, TM-EVT-12 |
 
 ## INV-01: Every tenant table has forced row-level security, and the runtime role cannot bypass it
 
@@ -287,12 +287,12 @@ An investigation skill closes alerts for a tenant only once it has earned a clos
 
 ## INV-14: Evidence tools are read-only, templated and capped
 
-An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry and nowhere else. The registry loads only a tool with a read-only risk class (there is no write class), a strict parameter model whose strings and collections are bounded, a row cap, a time cap, a window cap when it reads a time window, and a declared egress. On every call it validates the parameters first. It does not run a tool the calling tenant switched off, whose setting is malformed or whose settings cannot be read, nor a call whose window is longer than the cap. While the tool runs it is held to its time cap and to the one egress boundary it declared: a tool that stays on the platform crosses none, and a third-party tool crosses none live in a shadow run. A result over the row cap is dropped. Every call that passed validation is a trace step with the result's outcome, so a call that failed in any way is never read as a query that found nothing. The Wazuh query templates add a DSL allow-list test (INT3.4).
+An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry and nowhere else. The registry loads only a tool with a read-only risk class (there is no write class), a strict parameter model whose strings and collections are bounded, a row cap, a time cap, a window cap when it reads a time window, and a declared egress. On every call it validates the parameters first. It does not run a tool the calling tenant switched off, whose setting is malformed or whose settings cannot be read, nor a call whose window is longer than the cap. While the tool runs it is held to its time cap and to the one egress boundary it declared: a tool that stays on the platform crosses none, and a third-party tool crosses none live in a shadow run. A result over the row cap is dropped. Every call that passed validation is a trace step with the result's outcome, so a call that failed in any way is never read as a query that found nothing. The Wazuh evidence tools are query templates: a caller gives typed, bounded values, never a query, a field or an index. Every search body is checked against an allow-list before it is run (term, terms and the time range in a filter, counting aggregations, allow-listed fields, fixed row, time and document caps), and a value is only ever the right-hand side of a clause. The one request the indexer client can send is POST _search on the index pattern of the Wazuh source the run's own alert came from, with that source's credentials, through the destination policy; it reads in a shadow run too, as a reviewed read of the tenant's own system. A result is complete only when the indexer finished every search, no cap cut what the fact lists, the window had closed and the index reached back to its start.
 
-* **Status:** pending, delivered by INT3.4
+* **Status:** enforced
 * **Owner epic:** AI-E2
-* **Threats:** TM-EVT-3, TM-EVT-10, TM-EVT-12
-* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`, `src/lg_sotf/security/shadow.py`
+* **Threats:** TM-EVT-3, TM-EVT-9, TM-EVT-10, TM-EVT-12
+* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`, `src/lg_sotf/security/shadow.py`, `src/lg_sotf/tools/wazuh/dsl.py`, `src/lg_sotf/tools/wazuh/templates.py`, `src/lg_sotf/tools/wazuh/indexer.py`, `src/lg_sotf/tools/wazuh/tools.py`, `src/lg_sotf/ingestion/wazuh_indexer.py`
 * **Runtime checks:** none
 * **Proved by:**
   * `tests/unit/tools/test_registry.py::test_a_tool_missing_caps_or_schema_fails_to_load`
@@ -311,3 +311,22 @@ An investigation tool is how a model-steered run reaches data. Every tool runs t
   * `tests/unit/tools/test_registry.py::test_an_empty_result_and_a_failed_call_are_distinguishable`
   * `tests/unit/architecture/test_tool_registry.py::test_enrichment_lookups_are_called_only_through_the_registry`
   * `tests/unit/agents/test_analysis.py::test_ti_lookups_run_through_the_registry`
+  * `tests/unit/tools/test_registry.py::test_a_tool_can_say_its_answer_was_cut_but_never_that_a_full_one_is_whole`
+  * `tests/unit/tools/wazuh/test_templates.py::test_templates_emit_only_allow_listed_dsl`
+  * `tests/unit/tools/wazuh/test_templates.py::test_values_only_reach_term_terms_range`
+  * `tests/unit/tools/wazuh/test_templates.py::test_an_injected_value_cannot_change_the_query_shape`
+  * `tests/unit/tools/wazuh/test_templates.py::test_a_field_or_construct_outside_the_allow_list_is_refused`
+  * `tests/unit/tools/wazuh/test_templates.py::test_a_parameter_outside_its_type_or_bound_is_refused`
+  * `tests/unit/tools/wazuh/test_templates.py::test_every_query_carries_the_tenant_scope`
+  * `tests/unit/tools/wazuh/test_indexer.py::test_the_client_only_posts_a_search_to_the_tenants_index`
+  * `tests/unit/tools/wazuh/test_indexer.py::test_the_destination_policy_holds_for_the_indexer`
+  * `tests/unit/tools/wazuh/test_indexer.py::test_a_shadow_run_reads_the_tenants_indexer_and_the_tool_crosses_no_other_boundary`
+  * `tests/unit/tools/wazuh/test_tools.py::test_the_tools_are_declared_read_only_capped_and_switched_per_tenant`
+  * `tests/unit/tools/wazuh/test_tools.py::test_a_second_tenants_telemetry_is_never_returned`
+  * `tests/unit/tools/wazuh/test_tools.py::test_nothing_found_is_empty_and_never_a_fact`
+  * `tests/unit/tools/wazuh/test_tools.py::test_an_unreachable_or_refusing_indexer_is_failed_never_empty`
+  * `tests/unit/tools/wazuh/test_tools.py::test_a_capped_result_is_not_complete`
+  * `tests/unit/tools/wazuh/test_mappers.py::test_incomplete_results_are_marked`
+  * `tests/unit/tools/wazuh/test_mappers.py::test_a_window_that_has_not_closed_or_is_not_covered_is_marked`
+  * `tests/unit/ingestion/test_wazuh_indexer.py::test_a_call_reaches_the_source_of_its_own_alert_with_that_sources_credentials`
+  * `tests/unit/architecture/test_tool_registry.py::test_the_wazuh_indexer_is_searched_only_by_its_tools`

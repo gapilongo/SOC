@@ -44,6 +44,16 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+def destination_policy(settings: Settings, options: IngestionOptions) -> DestinationPolicy:
+    """Where a source's requests may go: the install's rules (https, private addresses, the allow-list)."""
+    hosts = options.allowed_destination_hosts
+    return DestinationPolicy(
+        require_https=settings.is_production,
+        allow_private=options.allow_private_destinations,
+        allowed_hosts=None if hosts is None else frozenset(hosts),
+    )
+
+
 @dataclass(frozen=True)
 class FetchedPage:
     events: List[Dict[str, Any]]
@@ -100,12 +110,7 @@ class PullConnector(abc.ABC):
                 f"{self.source_type} sources mark or move messages; this install reads sources only "
                 "(ingestion.read_only_sources)"
             )
-        hosts = options.allowed_destination_hosts
-        self.policy = DestinationPolicy(
-            require_https=settings.is_production,
-            allow_private=options.allow_private_destinations,
-            allowed_hosts=None if hosts is None else frozenset(hosts),
-        )
+        self.policy = destination_policy(settings, options)
         self._clients: List[SourceHttpClient] = []
         self._destinations: List[str] = []
 

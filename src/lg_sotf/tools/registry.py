@@ -26,7 +26,9 @@ The caller gets a :class:`ToolResult`, never an exception that fails the workflo
   (refused, unreachable, timed out, over a cap, or the tool's own result says it did not get an answer).
   "No rows" never reads as "nothing happened" when the query did not run.
 * ``complete``: false when the result is ``failed`` or holds as many rows as the row cap, so more may
-  exist. A tool whose cap is one row is a point lookup and its one record is the whole answer.
+  exist. A tool whose cap is one row is a point lookup and its one record is the whole answer. A tool
+  that knows more (``Tool.whole``: its source cut the answer, the time window has not closed, the
+  source's retention does not reach back far enough) can say an answer is incomplete, never the reverse.
 * ``input_hash`` and ``output_hash``: the hashes of the stored trace step
   (``investigation_steps.input_hash`` and ``output_hash``), SHA-256 of the canonical JSON of the request
   and of the recorded output without transport flags (the tool's ``evidence``). The run's trace computes
@@ -325,6 +327,9 @@ class Tool(Generic[P, R]):
     """The time window a call reads, for a tool whose parameters are not ``since`` and ``until``."""
     evidence: Callable[[Any], Any] = _whole
     """``(recorded)``: the recorded output without transport flags (cached, retry hints); this is hashed."""
+    whole: Optional[Callable[[R], bool]] = None
+    """Whether an answer is all there is: false when the tool knows a cap, an open time window or its source's
+    retention cut it. It can only take ``complete`` away: an answer at the row cap is incomplete whatever it says."""
 
 
 AnyTool = Tool[Any, Any]
@@ -342,7 +347,8 @@ class ToolResult(Generic[R]):
     output_hash: str
     """The stored step's output hash: SHA-256 of the canonical JSON of the recorded evidence."""
     complete: bool
-    """False when the call failed, or returned as many rows as the row cap allows (more may exist)."""
+    """False when the call failed, returned as many rows as the row cap allows (more may exist), or the tool
+    says its answer was cut."""
     reason: Optional[str] = None
     """Why the call failed: the registry's refusal reason, or ``reported`` for the tool's own failure answer."""
 
@@ -544,6 +550,7 @@ def _step_outcome(judged: Sequence[Tuple[Outcome, int, Optional[str]]]) -> Tuple
 def _result(tool: AnyTool, ran: _Ran, step: NewTraceStep) -> ToolResult[Any]:
     outcome, rows, reason = _judged(tool, ran)
     complete = outcome != "failed" and (rows < tool.spec.row_cap or tool.spec.row_cap == 1)
+    complete = complete and (tool.whole is None or tool.whole(ran.value))
     return ToolResult(outcome, ran.value, rows, step.input_hash, step.output_hash or "", complete, reason)
 
 
