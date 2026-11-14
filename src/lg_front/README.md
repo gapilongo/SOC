@@ -144,46 +144,90 @@ attempts the header shows "Live updates unavailable" instead of
 
 ## Structure
 
-Layers, from the top (each may import only the layers below it):
+The console is one build made of a thin shell and service modules
+([ADR 0015](../../docs/adr/0015-frontend-module-model.md)). The SOC is the
+first module. Layers, from the top (each may import only the layers below
+it):
 
 ```
 src/main.tsx      entry point: reads /config.js, builds the session and the query client
-src/app/          the app shell: App (providers, public routes), routes.tsx (the route
-                  table: path, page, role gate, nav entry), Layout and shell/ (sidebar,
-                  header, account menu), queryClient
-src/pages/        one folder or file per feature; each route is one lazily loaded chunk.
-                  Data-fetching widgets live with their feature (pages/platform/TenantSwitcher,
-                  pages/onboarding/, pages/settings/LlmTestCard, pages/actions/)
-src/components/   presentational building blocks: ui/ primitives, dialogs (focus trap),
-                  badges, virtualized table, error boundary, route guards, and
-                  investigation/ (the three voices of an investigation: observed, claimed,
-                  decided; the outcome headline; the read model of api/investigation.ts)
-src/api/          shared kernel: HTTP client (error envelope, request ids, refresh on 401),
-src/auth/         types, endpoints, query keys and hooks; auth store, OIDC (PKCE), role
-src/live/         checks; WebSocket client (backoff with jitter, resync); CSV, JSON and
-src/lib/          download helpers, formatting, keyset pagination, visibility-aware
-src/theme/        polling; design tokens, theme and row density
+src/app/          the shell: App (providers, public routes), modules.ts (the registry:
+                  the list of modules), registry.ts and routes.tsx (the route table, the
+                  sidebar, the live-event mapping and the extension contributions, all
+                  derived from the registry), Layout and shell/ (sidebar, header, account
+                  menu), queryClient
+src/pages/        the shell's own pages: sign-in, the OIDC callback, not found
+src/modules/<id>/ one folder per service. index.ts is its manifest (routes with lazy
+                  pages and gates, nav groups and items, nav counts, live events,
+                  extension contributions); api/ is its API slice (types, endpoints,
+                  query keys, invalidation, hooks, contract check); pages/, components/
+                  and lib/ are its own; public.ts is all another module may import.
+                  In the SOC module, components/investigation/ holds the three voices of
+                  an investigation (observed, claimed, decided), the outcome headline
+                  and the other parts that render the read model of api/investigation.ts
+src/components/   presentational building blocks: ui/ primitives (buttons, fields, tabs,
+                  timeline, entity list), dialogs (focus trap), virtualized table, error
+                  boundary, route guards, the extension-point outlet (Slot)
+src/core/         shared kernel: the module contract (module.ts) and extension points
+src/api/          (slots.ts); HTTP client (error envelope, request ids, refresh on 401),
+src/auth/         identity types, GET /auth/me and the contract-check helpers; auth store,
+src/live/         OIDC (PKCE), role checks; WebSocket client (backoff with jitter, resync);
+src/lib/          CSV, JSON and download helpers, formatting, keyset pagination,
+src/theme/        visibility-aware polling; design tokens, theme and row density
+eslint-rules/     the module-boundary lint rule
 docker/           nginx.conf and the start-up entrypoint
 ```
 
-ESLint enforces the boundaries (`no-restricted-imports` in `eslint.config.js`):
+ESLint enforces the boundaries (`eslint.config.js`):
 
-* the shared kernel (`api`, `auth`, `live`, `lib`, `theme`) and `components`
-  never import `pages` or `app`;
+* the shared kernel (`api`, `auth`, `live`, `lib`, `theme`, `core`) and
+  `components` never import `app`, `pages` or a module;
 * the shared kernel never imports `components`;
-* `components` never imports `api/endpoints` or `@tanstack/react-query`: a
-  widget that fetches data belongs to its feature under `pages`.
+* `components` never imports `@tanstack/react-query`: a widget that fetches
+  data belongs to its module;
+* a module imports another module only through its `public.ts`, and never
+  imports the shell;
+* the shell imports a module only in `src/app/modules.ts`, and there only its
+  manifest;
+* a manifest reaches its pages only through `lazy()`.
 
-Tests may cross the boundaries (a page rendered inside the shell, for
+The last three are the local rule `lg-sotf/module-boundary`
+(`eslint-rules/module-boundary.js`); `src/app/boundary.test.ts` holds it in
+place. Tests may cross the boundaries (a page rendered inside the shell, for
 example). `src/main.tsx`, `src/auth/store.ts` and `src/auth/oidc.ts` must not
 move: the deployment tests pin them.
 
+### Adding a service
+
+A service is its folder and one registry line:
+
+1. Create `src/modules/<id>/` with an `index.ts` that exports its manifest
+   (`defineModule`, `src/core/module.ts`). `src/test/scaffold-module/` is the
+   smallest complete example: copy it.
+2. Add the manifest to `MODULES` in `src/app/modules.ts`.
+
+Routes, the sidebar group and items, navigation counts, the route guard, the
+breadcrumb, live events and extension contributions follow from the
+manifest; no other file changes. `src/app/scaffold.test.tsx` proves it by
+doing exactly that with the example module. Then:
+
+* query keys start with the module id (`['<id>', ...]`), and the module's
+  invalidation policies name only its own keys;
+* a cross-link into another service goes through that module's `public.ts`,
+  and a widget shown inside another service's page is a contribution to one
+  of its extension points (`contribute(slot, lazyComponent)`); the owner
+  renders the slot with `SlotOutlet` and does not change;
+* give the folder a floor in `coverage-floors.json`.
+
 ## API types
 
-`src/api/types.ts` holds the API types the app uses, written by hand: names
-and vocabularies stay readable, and response vocabularies are open
-(`Open<T>`: the known values or any other string, so a newer API in a rolling
-deploy does not break the UI). They are held to the API contract:
+The API types the app uses are written by hand: names and vocabularies stay
+readable, and response vocabularies are open (`Open<T>`: the known values or
+any other string, so a newer API in a rolling deploy does not break the UI).
+`src/api/types.ts` holds the ones every module shares (sign-in, MFA,
+`GET /auth/me`, the paging and live-event envelopes); a module's own are in
+its API slice (`src/modules/soc/api/types.ts`). They are held to the API
+contract:
 
 * `npm run gen:api` turns the committed `docs/openapi.json` into
   `src/api/schema.gen.ts` (openapi-typescript, pinned). CI regenerates it and
@@ -191,9 +235,11 @@ deploy does not break the UI). They are held to the API contract:
   document comes with the regenerated file. The API advertises each response
   vocabulary as an enum, so generated fields are string unions; the
   hand-written `Open<T>` types stay open anyway (ADR-0009, tolerant reader).
-* `src/api/contract.check.ts`, compiled by `tsc -b`, requires every response
-  schema to be assignable to its hand-written type (as sent: FastAPI includes
-  every field) and every hand-written request type to be assignable to its
-  schema. A drift fails the type check and names the field. Give a new type
-  a line there.
-* Only `src/api` may import `schema.gen` (ESLint).
+* A `contract.check.ts` next to each `types.ts` (`src/api/` for the kernel,
+  `src/modules/<id>/api/` for a module), compiled by `tsc -b`, requires every
+  response schema to be assignable to its hand-written type (as sent: FastAPI
+  includes every field) and every hand-written request type to be assignable
+  to its schema. A drift fails the type check and names the field. Give a new
+  type a line there.
+* Only `src/api` may import `schema.gen` (ESLint); a module's check reads the
+  schemas through `src/api/contract.ts`.

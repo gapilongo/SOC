@@ -4,8 +4,9 @@ import { forwardRef } from 'react';
 import { useTenantLabel } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { isTenantOverride } from '../../auth/roles';
-import { TenantSwitcher } from '../../pages/platform/TenantSwitcher';
+import { SlotOutlet } from '../../components/Slot';
 import { Button, ThemeSwitch, cx } from '../../components/ui';
+import { SHELL_HEADER_TENANT } from '../../core/slots';
 import { useLive } from '../../live/LiveProvider';
 import { UserMenu } from './UserMenu';
 
@@ -38,7 +39,7 @@ export function LiveIndicator() {
   );
 }
 
-/** The tenant for everyone else: platform admins get the switcher instead. */
+/** The tenant's name, for everyone a module's tenant control does not apply to (platform admins get the switcher). */
 function TenantLabel({ label }: { label: string }) {
   const { principal } = useAuth();
   const override = isTenantOverride(principal);
@@ -54,17 +55,17 @@ function TenantLabel({ label }: { label: string }) {
 }
 
 /**
- * The one header of every page: tenant (switcher for platform admins),
- * breadcrumb (`page`, the current page's name), live status, theme switch and
- * the account menu. On phones a top bar with the menu button and the page
- * name comes first.
+ * The one header of every page: tenant (the `shell.header.tenant` slot: a
+ * module's tenant control, or the plain name), breadcrumb (`page`, the
+ * current page's name), live status, theme switch and the account menu. On
+ * phones a top bar with the menu button and the page name comes first.
  */
 export const Header = forwardRef<
   HTMLButtonElement,
   { page: string | null; menuOpen: boolean; onOpenMenu: () => void; onSignOut: () => void }
 >(function Header({ page, menuOpen, onOpenMenu, onSignOut }, menuButtonRef) {
-  const { principal } = useAuth();
   const tenantLabel = useTenantLabel();
+  const plainTenant = <TenantLabel label={tenantLabel} />;
 
   return (
     <header className="sticky top-0 z-30 bg-canvas/95 backdrop-blur">
@@ -83,7 +84,7 @@ export const Header = forwardRef<
       </div>
       <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 border-b border-subtle px-4 py-2 md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          {principal?.isPlatformAdmin ? <TenantSwitcher label={tenantLabel} /> : <TenantLabel label={tenantLabel} />}
+          <SlotOutlet slot={SHELL_HEADER_TENANT} props={{ label: tenantLabel }} empty={plainTenant} pending={plainTenant} />
           {page && (
             <nav aria-label="Breadcrumb" className="hidden min-w-0 md:block">
               <ol className="flex items-center gap-1.5 text-ctl">

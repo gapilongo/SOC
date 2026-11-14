@@ -8,7 +8,10 @@ export { Banner, Card, PageHeader, type BannerTone, type CardVariant } from './C
 export { CountChip, SEVERITIES, SeverityTag, StatePill, isSeverity, type CountTone, type Severity, type StateTone } from './tags';
 export { FilterChip, type FilterOption } from './FilterChip';
 export { Checkbox, FIELD_CLASS, FieldShell, SelectField, TextAreaField, TextField } from './fields';
+export { EntityChip, EntityList, type EntityGroup, type EntityListLayout } from './Entities';
 export { EmptyState, ErrorMessage, LoadingState, Spinner } from './feedback';
 export { DefinitionList, JsonBlock, Segmented, ToggleGroup, Truncated, type SegmentedOption } from './misc';
 export { DensityToggle, ThemeSwitch } from './preferences';
+export { Timeline, type TimelineEntry, type TimelineVariant } from './Timeline';
+export { TabLinks, Tabs, type TabDef, type TabLinkDef, type TabsVariant } from './Tabs';
 export { VisuallyHidden } from './VisuallyHidden';

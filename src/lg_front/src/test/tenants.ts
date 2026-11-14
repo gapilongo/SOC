@@ -1,4 +1,4 @@
-import type { TenantSummaryOut } from '../api/types';
+import type { TenantSummaryOut } from '../modules/soc/api/types';
 
 /** A `/platform/tenants` row with quiet defaults. */
 export function tenant(id: string, name: string, overrides: Partial<TenantSummaryOut> = {}): TenantSummaryOut {
