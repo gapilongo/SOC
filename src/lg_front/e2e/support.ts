@@ -174,6 +174,11 @@ export function decisionForm(page: Page): Locator {
   return page.getByRole('form', { name: 'Your decision' });
 }
 
+/** The expected response plan of a true positive: on the decision page, under the investigation, outside the form. */
+export function responsePlan(page: Page): Locator {
+  return page.getByRole('region', { name: 'Expected response plan' });
+}
+
 /** A verdict radio of the decision form; its accessible name starts with the verdict, then its hint. */
 export function verdictRadio(page: Page, label: 'True positive' | 'False positive' | 'Benign positive'): Locator {
   return decisionForm(page).getByRole('radio', { name: new RegExp(`^${escapeRegExp(label)}`) });

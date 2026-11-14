@@ -3,7 +3,9 @@
  * security headers and sign-in, provisioning (API key, analyst, viewer),
  * the Overview updating live after alerts arrive through the ingest API,
  * alert filters and pagination, the alert timeline, claiming and deciding
- * the escalation as an analyst, approving its response as an admin until
+ * the escalation as an analyst (the expected response plan names every
+ * target before anything is pre-approved, and the decision page passes axe
+ * with the plan open), approving its response as an admin until
  * the alert closes, role gating for analyst and viewer, sign-out, and no
  * token in browser storage. The Content-Security-Policy is checked on the
  * wire and in the browser (no violations on any page), and the main pages
@@ -24,6 +26,7 @@ import {
   newSession,
   randomPassword,
   requiredEnv,
+  responsePlan,
   screenshot,
   signIn,
   signOut,
@@ -317,15 +320,46 @@ test('an analyst has no administration either', async ({ browser }) => {
 });
 
 /**
+ * With True positive chosen, the expected response plan opens under the
+ * investigation, outside the form: every planned action names what it acts
+ * on (`target`, an entity of the alert, among them), the page passes axe in
+ * both themes with the plan open, and an action is pre-approved only after
+ * its target was read.
+ */
+async function reviewResponsePlan(page: Page, target: string) {
+  await verdictRadio(page, 'True positive').check();
+  const plan = responsePlan(page);
+  const actions = plan.getByRole('list', { name: 'Planned actions' }).getByRole('listitem');
+  await expect(actions.first()).toBeVisible();
+  for (const action of await actions.all()) await expect(action.locator('code')).toHaveText(/\S/);
+  await expect(actions.filter({ has: page.locator('code', { hasText: target }) }).first()).toBeVisible();
+  await expect(decisionForm(page).getByRole('list', { name: 'Planned actions' })).toHaveCount(0);
+  await assertAccessible(page, 'decision page with the response plan open');
+  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await assertAccessible(page, 'decision page with the response plan open (light theme)');
+  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+
+  const mine = actions.filter({ has: page.getByRole('checkbox', { disabled: false }) }).first();
+  await expect(mine.locator('code')).toHaveText(/\S/);
+  await mine.getByRole('checkbox').check();
+  await expect(mine).toContainText('Pre-approved: runs after your decision');
+  await expect(decisionForm(page)).toContainText('1 action is pre-approved.');
+}
+
+/**
  * Viewer gating in the queue and on the decision page, then the analyst
- * claims the escalation from its queue row and records `decision` on its
- * decision page (/escalations/:id).
+ * claims the escalation from its queue row, reviews the response plan a true
+ * positive would start (`planTarget` is an entity it must name) and records
+ * `decision` on its decision page (/escalations/:id).
  */
 async function decideAsAnalyst(
   viewerPage: Page,
   analystPage: Page,
   title: string,
   decision: 'True positive' | 'False positive',
+  planTarget: string,
   shots: boolean,
 ) {
   await test.step('viewer: the escalation is visible but cannot be claimed or decided', async () => {
@@ -356,9 +390,11 @@ async function decideAsAnalyst(
     await expect(page.getByRole('tablist', { name: 'Investigation sections' })).toBeVisible();
     const form = decisionForm(page);
     await expect(form.getByRole('button', { name: 'Record decision' })).toBeDisabled();
+    await reviewResponsePlan(page, planTarget);
     await verdictRadio(page, decision).check();
+    // Only a true positive has a response plan; any other verdict closes it and sends no pre-approval.
+    await expect(responsePlan(page)).toHaveCount(decision === 'True positive' ? 1 : 0);
     await form.getByLabel(/^Notes for the record/).fill(`e2e ${run}: ${decision}.`);
-    if (decision === 'True positive') await expect(form.getByText('Expected response plan')).toBeVisible();
     await form.getByText('Rate the automated triage (optional)').click();
     await form.getByLabel('Triage correct').selectOption('yes');
     if (shots) {
@@ -388,7 +424,7 @@ test('an analyst claims and decides an escalation, and the alert closes', async 
 
   const waiting = await nextRequest(request, escalatedId);
   expect(waiting.status, 'the sign-in alert waits for an analyst').toBe('waiting_human');
-  await decideAsAnalyst(v.page, a.page, ESCALATED_TITLE, 'False positive', true);
+  await decideAsAnalyst(v.page, a.page, ESCALATED_TITLE, 'False positive', `host-0-${run}`, true);
 
   const closed = await waitForAlert(request, apiKey, escalatedId, ['closed']);
   expect(closed.disposition).toBe('benign');
@@ -470,7 +506,7 @@ test('response approval: role gating, the admin approves, the alert closes as ma
   let state = await nextRequest(request, beaconId);
   expect(state.status, 'the C2 alert asks for approval of its planned response').toBe('waiting_approval');
   for (let round = 0; round < 6 && state.status !== 'closed'; round += 1) {
-    if (state.status === 'waiting_human') await decideAsAnalyst(v.page, a.page, BEACON_TITLE, 'True positive', false);
+    if (state.status === 'waiting_human') await decideAsAnalyst(v.page, a.page, BEACON_TITLE, 'True positive', `ws-${run}`, false);
     else await approve();
     state = await nextRequest(request, beaconId);
   }
