@@ -80,7 +80,7 @@ describe('SourcesPage', () => {
     });
     await userEvent.click(await screen.findByRole('button', { name: 'Edit Wazuh prod' }));
     const form = within(screen.getByRole('dialog', { name: 'Edit source Wazuh prod' }));
-    expect(form.getByText('credentials configured')).toBeInTheDocument();
+    expect(form.getByText('Credentials configured')).toBeInTheDocument();
     expect(form.getByLabelText('Password')).toHaveValue('');
     await fill(form.getByLabelText('Name'), 'Wazuh primary');
     await userEvent.click(form.getByRole('button', { name: 'Save changes' }));

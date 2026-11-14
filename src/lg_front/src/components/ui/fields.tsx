@@ -9,12 +9,12 @@ import {
 
 import { cx } from './cx';
 
-/** Shared look of text inputs, selects and text areas: 36 px, 44 px on touch screens. */
+/** Shared look of text inputs, selects, date fields and text areas: 28 px, 44 px on touch screens. */
 export const FIELD_CLASS =
-  'block w-full rounded-control border border-control bg-canvas px-3 text-ctl text-fg placeholder:text-muted ' +
-  'focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-60';
+  'block w-full rounded-control border border-control bg-raised px-2 text-ctl text-fg placeholder:text-muted ' +
+  'focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-55';
 
-const SINGLE_LINE = 'h-9 touch:min-h-11';
+const SINGLE_LINE = 'h-ctl touch:min-h-ctl-touch';
 
 interface FieldShellProps {
   label: ReactNode;
@@ -32,7 +32,7 @@ export function FieldShell({ label, hint, error, className, children }: FieldShe
   const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;
   return (
     <div className={className}>
-      <label htmlFor={id} className="mb-1.5 block text-ctl font-semibold text-fg">
+      <label htmlFor={id} className="mb-1 block text-ctl font-medium text-fg">
         {label}
       </label>
       {children({ id, describedBy })}
@@ -96,7 +96,7 @@ export function TextAreaField({ label, hint, error, wrapperClassName, className,
           id={id}
           aria-describedby={describedBy}
           aria-invalid={error ? true : undefined}
-          className={cx(FIELD_CLASS, 'py-2 font-mono', className)}
+          className={cx(FIELD_CLASS, 'py-1.5 font-mono', className)}
           {...rest}
         />
       )}
@@ -111,7 +111,7 @@ export function Checkbox({ label, hint, className, ...rest }: InputHTMLAttribute
       <input
         id={id}
         type="checkbox"
-        className="mt-0.5 h-4 w-4 flex-none rounded border-control bg-canvas accent-accent"
+        className="mt-0.5 h-4 w-4 flex-none accent-accent"
         aria-describedby={hint ? `${id}-hint` : undefined}
         {...rest}
       />

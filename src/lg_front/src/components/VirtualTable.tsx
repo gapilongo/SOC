@@ -130,18 +130,18 @@ export function VirtualTable<T>({
   };
 
   return (
-    <div className="overflow-hidden rounded-card border border-subtle bg-raised">
+    <div className="border-t border-strong">
       <div className="relative overflow-x-auto">
         <div role="grid" aria-readonly="true" aria-label={label} aria-rowcount={rows.length + 1} style={{ minWidth }}>
           <div role="rowgroup">
             <div
               role="row"
               aria-rowindex={1}
-              className="table-grid grid border-b border-subtle bg-raised text-xs font-semibold uppercase tracking-wide text-muted"
+              className="table-grid grid border-b border-strong bg-canvas font-mono text-2xs font-medium uppercase tracking-label text-muted"
               style={{ gridTemplateColumns: template }}
             >
               {columns.map((c) => (
-                <div role="columnheader" key={c.key} className="px-3 py-2">
+                <div role="columnheader" key={c.key} className="whitespace-nowrap px-2.5 py-2">
                   {c.header}
                 </div>
               ))}
@@ -165,14 +165,15 @@ export function VirtualTable<T>({
                     onClick={() => onOpen?.(row)}
                     onKeyDown={(e) => onKeyDown(e, vi.index, row)}
                     className={cx(
-                      'table-grid absolute left-0 top-0 grid w-full cursor-pointer items-center border-b border-subtle text-sm',
-                      'hover:bg-raised-2 focus:bg-raised-2 focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-focus',
-                      selectedKey === key && 'bg-raised-2',
+                      'table-grid absolute left-0 top-0 grid w-full cursor-pointer items-center border-b border-subtle text-ctl',
+                      'focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-focus',
+                      // The open row is selected and carries the accent bar; the others answer the pointer.
+                      selectedKey === key ? 'bg-selected shadow-bar-accent' : 'hover:bg-raised-2 focus:bg-raised-2',
                     )}
                     style={{ gridTemplateColumns: template, height: vi.size, transform: `translateY(${vi.start}px)` }}
                   >
                     {columns.map((c) => (
-                      <div role="gridcell" key={c.key} className={cx('min-w-0 truncate px-3', c.className)}>
+                      <div role="gridcell" key={c.key} className={cx('min-w-0 truncate px-2.5', c.className)}>
                         {c.render(row)}
                       </div>
                     ))}
@@ -183,7 +184,7 @@ export function VirtualTable<T>({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-between border-t border-subtle px-3 py-2 text-xs text-muted">
+      <div className="flex items-center justify-between py-2 text-xs text-muted">
         <span aria-live="polite">
           {rows.length} {rows.length === 1 ? 'row' : 'rows'} loaded{hasMore ? ', more available' : ''}
         </span>

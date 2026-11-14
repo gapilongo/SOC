@@ -35,8 +35,9 @@ export function QrCode({ rows, label, size = 192 }: { rows: string[]; label: str
       className="rounded bg-white"
       data-testid="mfa-qr"
     >
-      <rect width={dim} height={dim} fill="#ffffff" />
-      <path d={d} fill="#000000" />
+      {/* A QR code is black on white in every theme: scanners need the contrast. */}
+      <rect width={dim} height={dim} className="fill-white" />
+      <path d={d} className="fill-black" />
     </svg>
   );
 }

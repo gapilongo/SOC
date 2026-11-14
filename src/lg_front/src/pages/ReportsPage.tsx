@@ -12,7 +12,7 @@ import { Badge } from '../components/Badge';
 import { useToast } from '../components/Toast';
 import { Button, Card, EmptyState, ErrorMessage, LoadingState, PageHeader, TextField, Truncated, cx } from '../components/ui';
 import { downloadText } from '../lib/download';
-import { formatDuration, formatInt, formatUsd } from '../lib/format';
+import { formatDuration, formatInt, formatUsd, humanize } from '../lib/format';
 import { BlindAuditTab } from './blindAudit/BlindAuditReport';
 import { SUGGESTION_LABEL, feedbackInterval, formatHours, formatInterval, formatPct, formatRate, monthOf, notEnoughData, rangeError, rangeFromQuery, rateDetail } from '../lib/reports';
 
@@ -24,9 +24,10 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'blind_audit', label: 'Blind audit' },
 ];
 
-// Validated categorical pair (dark surface): blue = handled without a human, orange = needed a human.
-const HANDLED_COLOR = '#3987e5';
-const NEEDED_COLOR = '#d95926';
+// The data marks of the design tokens: who closed the alert, the AI (data-1) or a person (data-4).
+// Each bar segment is also a labelled legend entry and a table row, so colour never carries it alone.
+const HANDLED_COLOR = 'rgb(var(--c-data-1))';
+const NEEDED_COLOR = 'rgb(var(--c-data-4))';
 
 export function Tile({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
@@ -132,7 +133,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
           return (
             <g key={d.day}>
               {hHandled > 0 && (
-                <rect x={x} y={base - hHandled} width={barW} height={hHandled} rx={Math.min(4, barW / 2)} fill={HANDLED_COLOR} opacity={hover === null || hover === i ? 1 : 0.6} />
+                <rect x={x} y={base - hHandled} width={barW} height={hHandled} rx={1} fill={HANDLED_COLOR} opacity={hover === null || hover === i ? 1 : 0.6} />
               )}
               {hNeeded > 0 && (
                 <rect
@@ -140,7 +141,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
                   y={base - hHandled - gap - hNeeded}
                   width={barW}
                   height={Math.max(0, hNeeded)}
-                  rx={Math.min(4, barW / 2)}
+                  rx={1}
                   fill={NEEDED_COLOR}
                   opacity={hover === null || hover === i ? 1 : 0.6}
                 />
@@ -155,7 +156,7 @@ export function DailyChart({ days }: { days: ValueDay[] }) {
           );
         })}
       </svg>
-      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-secondary" aria-live="polite">
+      <figcaption className="mt-1 min-h-5 text-xs text-secondary" aria-live="polite">
         {active
           ? `${active.day}: ${formatInt(active.alerts_ingested)} ingested, ${formatInt(active.handled_without_human)} handled without a human, ${formatInt(active.needed_human)} needed a human, ${formatInt(active.in_progress)} in progress`
           : 'Hover a bar for the day. The table below lists every day.'}
@@ -193,7 +194,9 @@ function ValueTab({ from, to }: { from: string; to: string }) {
       {/* With no day there is no table: the chart card above already says so. */}
       {r.days.length > 0 && (
         <Card title="Daily figures">
-          <div className="relative max-h-[28rem] overflow-auto">
+          {/* A scrollable region must be reachable by keyboard (WCAG 2.1.1). */}
+          {/* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex */}
+          <div role="region" aria-label="Daily figures, by day" tabIndex={0} className="relative max-h-[28rem] overflow-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
               <caption className="sr-only">Value report by day</caption>
               <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">
@@ -242,8 +245,8 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
         <tr>
           <th scope="col" className="py-2 pr-3 text-left">Analyst \ AI</th>
           {cols.map((c) => (
-            <th key={c} scope="col" className="py-2 pr-3 text-right capitalize">
-              {c}
+            <th key={c} scope="col" className="py-2 pr-3 text-right">
+              {humanize(c)}
             </th>
           ))}
         </tr>
@@ -251,8 +254,8 @@ export function ConfusionMatrix({ block }: { block: AccuracyBlock }) {
       <tbody>
         {['malicious', 'benign'].map((row) => (
           <tr key={row} className="border-t border-subtle tabular-nums">
-            <th scope="row" className="py-1.5 pr-3 text-left font-normal capitalize text-body">
-              {row}
+            <th scope="row" className="py-1.5 pr-3 text-left font-normal text-body">
+              {humanize(row)}
             </th>
             {cols.map((c) => {
               const n = block.confusion_matrix[row]?.[c] ?? 0;
@@ -457,7 +460,7 @@ function DetectionsTab({ from, to }: { from: string; to: string }) {
                       </td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.auto_closed)}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatInt(d.analyst_false_positive)}</td>
-                      <td className="py-2 pr-3 capitalize text-body">{d.median_severity ?? '-'}</td>
+                      <td className="py-2 pr-3 text-body">{humanize(d.median_severity)}</td>
                       <td className="max-w-[14rem] py-2 pr-3">
                         {d.suggestion ? <Badge tone={d.suggestion === 'candidate_suppression' ? 'info' : 'warn'}>{SUGGESTION_LABEL[d.suggestion]}</Badge> : <span className="text-muted">None</span>}
                         <span className="mt-1 block text-xs text-secondary">{d.reason}</span>
@@ -569,7 +572,7 @@ export default function ReportsPage() {
           </p>
         )}
       </div>
-      <div role="tablist" aria-label="Report" className="mb-4 flex gap-1 border-b border-subtle">
+      <div role="tablist" aria-label="Report" className="mb-4 flex gap-0.5 border-b border-strong">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -582,8 +585,8 @@ export default function ReportsPage() {
             onClick={() => setTab(t.id)}
             onKeyDown={onTabKey}
             className={cx(
-              '-mb-px border-b-2 px-4 py-2 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
-              tab === t.id ? 'border-link text-fg' : 'border-transparent text-secondary hover:text-fg',
+              '-mb-px border-b-2 px-2.5 py-1.5 text-ctl focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === t.id ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {t.label}

@@ -125,7 +125,7 @@ describe('escalation queue rows', () => {
     await renderQueue(items());
     const late = within(await waitFor(() => row('Escalation late')));
     expect(late.getByText(/over/)).toHaveTextContent(/breaching/);
-    expect(late.getByText('high')).toBeInTheDocument();
+    expect(late.getByText('High')).toBeInTheDocument();
     expect(late.getByText('j.doe@acme.example')).toBeInTheDocument();
     expect(late.getByText('42%')).toBeInTheDocument();
     expect(late.getByText('band 20–60')).toBeInTheDocument();

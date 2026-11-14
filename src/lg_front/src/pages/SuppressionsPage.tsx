@@ -199,8 +199,8 @@ export default function SuppressionsPage() {
             aria-pressed={tab === key}
             onClick={() => setTab(key)}
             className={cx(
-              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
-              tab === key ? 'border-link text-fg' : 'border-transparent text-secondary hover:text-fg',
+              '-mb-px border-b-2 px-2.5 py-1.5 text-ctl focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === key ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {label}

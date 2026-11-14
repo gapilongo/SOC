@@ -163,7 +163,7 @@ describe('decision page header and claim state', () => {
     expect(screen.getByText('Escalated because the assessed threat 42% is inside the review band (20–60%).')).toBeInTheDocument();
     expect(screen.getByText(/Grey zone/)).toHaveTextContent('Grey zone · confidence 42% (band 20–60)');
     expect(screen.getByText(/^SLA /)).toHaveTextContent(/over · breaching/);
-    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText('High')).toBeInTheDocument();
     expect(screen.getByText(/Owner:/)).toHaveTextContent('Owner: You');
     expect(screen.getByText(/^Claimed by you/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Alert alert-1' })).toHaveAttribute('href', '/alerts?alert=alert-1');

@@ -65,7 +65,7 @@ export function outcomeLabel(kind: OutcomeKind): string {
 export function OutcomeTag({ kind, className }: { kind: OutcomeKind; className?: string }) {
   const k = KINDS[kind];
   return (
-    <span data-outcome={kind} className={cx('inline-flex items-center gap-1.5 font-mono text-[11.5px] font-semibold uppercase leading-tight tracking-[0.06em] text-fg', className)}>
+    <span data-outcome={kind} className={cx('inline-flex items-center gap-1.5 font-mono text-2xs font-semibold uppercase leading-tight tracking-eyebrow text-fg', className)}>
       <Glyph name={k.glyph} className={k.colour} />
       {k.label}
     </span>
@@ -146,11 +146,11 @@ export function OutcomeHeadline({
           </div>
           {kind === 'investigating' && !summary && (
             <div aria-hidden="true" className="mb-3 flex max-w-[30em] flex-col gap-2">
-              <span className="h-5 w-full animate-pulse rounded-[2px] bg-raised-2" />
-              <span className="h-5 w-2/3 animate-pulse rounded-[2px] bg-raised-2" />
+              <span className="h-5 w-full animate-pulse rounded-tag bg-raised-2" />
+              <span className="h-5 w-2/3 animate-pulse rounded-tag bg-raised-2" />
             </div>
           )}
-          <p className="max-w-[30em] break-words text-xl font-semibold leading-[1.24] tracking-[-0.017em] text-fg [text-wrap:balance] min-[900px]:text-[25px]">{headline}</p>
+          <p className="max-w-[30em] break-words text-xl font-semibold text-fg [text-wrap:balance] min-[900px]:text-headline">{headline}</p>
           {rest && <p className="mt-2.5 max-w-[62em] break-words text-sm text-body">{rest}</p>}
           {(reason || checkLine) && (
             <p className="mt-2.5 max-w-[62em] break-words text-sm text-body">

@@ -7,7 +7,7 @@ import { Link } from 'react-router-dom';
 
 import { readCounts, totalOf } from '../../api/fields';
 import { SEVERITIES, SeverityTag, cx, type StateTone } from '../../components/ui';
-import { formatInt } from '../../lib/format';
+import { formatInt, humanize } from '../../lib/format';
 import { STATUS_STEPS } from './figures';
 
 const STATE_DOT: Record<StateTone, string> = {
@@ -55,7 +55,7 @@ export function SeverityBar({
   const counts = readCounts(raw);
   const total = totalOf(counts);
   return (
-    <section aria-labelledby={id} className="flex flex-col gap-3.5 rounded-card border border-subtle bg-raised p-4 md:p-[18px]">
+    <section aria-labelledby={id} className="flex flex-col gap-3.5 rounded-card border border-subtle bg-raised p-4">
       <PanelHeader id={id} title={title} meta={meta} />
       <div aria-hidden="true" className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-raised-2">
         {total > 0 &&
@@ -93,7 +93,7 @@ export function StatusPipeline({ title, counts: raw, linkFor }: { title: string;
       .map((k) => ({ status: k, label: k.replace(/_/g, ' '), tone: 'neutral' as const })),
   ];
   return (
-    <section aria-labelledby="ov-pipeline" className="flex flex-col gap-3.5 rounded-card border border-subtle bg-raised p-4 md:p-[18px]">
+    <section aria-labelledby="ov-pipeline" className="flex flex-col gap-3.5 rounded-card border border-subtle bg-raised p-4">
       <h2 id="ov-pipeline" className="text-sm font-semibold text-fg">
         {title}
       </h2>
@@ -149,7 +149,7 @@ export function Breakdown({
   const keys = [...order.filter((k) => counts[k]), ...Object.keys(counts).filter((k) => !order.includes(k) && counts[k])];
   const max = Math.max(1, ...keys.map((k) => counts[k]));
   return (
-    <section className="flex flex-col gap-3 rounded-card border border-subtle bg-raised p-4 md:p-[18px]">
+    <section className="flex flex-col gap-3 rounded-card border border-subtle bg-raised p-4">
       <div>
         <h3 className="text-sm font-semibold text-fg">{title}</h3>
         <p className="mt-0.5 text-xs text-muted">{meta}</p>
@@ -169,10 +169,10 @@ export function Breakdown({
           </thead>
           <tbody>
             {keys.map((k) => {
-              const label = k.replace(/_/g, ' ');
+              const label = humanize(k);
               return (
                 <tr key={k}>
-                  <th scope="row" className="w-36 py-1 pr-3 text-left font-normal capitalize text-secondary">
+                  <th scope="row" className="w-36 py-1 pr-3 text-left font-normal text-secondary">
                     {linkFor ? (
                       <Link to={linkFor(k)} className="hover:text-fg hover:underline">
                         {label}

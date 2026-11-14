@@ -49,7 +49,7 @@ describe('UsersPage MFA', () => {
     ];
     const { api, calls } = fakeApi((method, path) => (method === 'GET' && path === '/users' ? people : method === 'GET' ? [] : null));
     renderWithSession(<UsersPage />, await signedInSession(api, { id: 'u-1', role: 'admin' }));
-    expect(await screen.findByTestId('mfa-u-2')).toHaveTextContent('on');
+    expect(await screen.findByTestId('mfa-u-2')).toHaveTextContent('On');
     expect(screen.getByTestId('mfa-u-3')).toHaveTextContent('SSO');
     // No reset for yourself (use Account security) or for accounts without MFA.
     expect(screen.queryByRole('button', { name: 'Reset MFA of me@acme.test' })).not.toBeInTheDocument();

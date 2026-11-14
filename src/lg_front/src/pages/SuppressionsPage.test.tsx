@@ -96,7 +96,7 @@ describe('SuppressionsPage', () => {
     const session = await signedInSession(api, { role: 'analyst' });
     renderWithSession(<SuppressionsPage />, session);
     await userEvent.click(await screen.findByRole('button', { name: 'Suggestions (1)' }));
-    expect(screen.getByText('Suggested')).toBeInTheDocument();
+    expect(screen.getByText('Suggested', { selector: '[data-tone]' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Enable' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Delete rule/ })).not.toBeInTheDocument();
 

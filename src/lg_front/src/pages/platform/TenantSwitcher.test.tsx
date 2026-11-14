@@ -32,7 +32,7 @@ describe('tenant switcher', () => {
     const search = screen.getByRole('combobox', { name: 'Search tenants' });
     expect(await screen.findByText('Globex Corp')).toBeInTheDocument();
     expect(calls.map((c) => c.path)).toEqual(['/platform/tenants']);
-    expect(screen.getByText('suspended')).toBeInTheDocument();
+    expect(screen.getByText('Suspended')).toBeInTheDocument();
 
     fireEvent.change(search, { target: { value: 'glob' } });
     expect(screen.getAllByRole('option')).toHaveLength(1);

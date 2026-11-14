@@ -47,7 +47,7 @@ export function effectOf(verdict: Verdict | null, planned: readonly PreviewActio
 }
 
 const VERDICT_BUTTON =
-  'inline-flex h-11 items-center gap-[7px] rounded-[3px] border px-[11px] text-[13.5px] font-medium min-[900px]:h-9 disabled:cursor-not-allowed disabled:opacity-55';
+  'inline-flex h-ctl-touch items-center gap-1.5 rounded-control border px-2.5 text-ctl font-medium min-[900px]:h-ctl-lg disabled:cursor-not-allowed disabled:opacity-55';
 
 export function DecisionDock({
   escalation,
@@ -154,7 +154,7 @@ export function DecisionDock({
       role="region"
       aria-label="Your decision"
       className={cx(
-        '-mx-4 -mb-6 mt-[22px] grid grid-cols-1 items-center gap-x-3.5 gap-y-2 border-t-2 border-fg bg-raised px-4 pb-4 pt-3 md:-mx-6 md:px-6',
+        '-mx-4 -mb-6 mt-5 grid grid-cols-1 items-center gap-x-3.5 gap-y-2 border-t-2 border-fg bg-raised px-4 pb-4 pt-3 md:-mx-6 md:px-6',
         'min-[900px]:sticky min-[900px]:bottom-0 min-[900px]:z-20 min-[900px]:grid-cols-[auto_minmax(180px,1fr)_auto] min-[900px]:pb-3 min-[900px]:pt-2.5',
       )}
     >
@@ -219,7 +219,7 @@ export function DecisionDock({
             setNote(e.target.value);
             if (noteError && e.target.value.trim()) setNoteError(null);
           }}
-          className="h-11 w-full rounded-[3px] border border-control bg-raised px-2 text-ctl text-fg placeholder:text-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-55 min-[900px]:h-9"
+          className="h-ctl-touch w-full rounded-control border border-control bg-raised px-2 text-ctl text-fg placeholder:text-muted focus:border-focus focus:outline-none focus:ring-1 focus:ring-focus disabled:cursor-not-allowed disabled:opacity-55 min-[900px]:h-9"
         />
         {noteError && (
           <p id={`${noteId}-error`} className="mt-1 text-xs text-danger-fg">
@@ -251,7 +251,7 @@ export function DecisionDock({
           type="button"
           aria-pressed={singleKeys}
           onClick={() => onSingleKeys(!singleKeys)}
-          className="ml-auto hidden rounded-[2px] text-xs text-link underline hover:text-link-hover min-[900px]:inline"
+          className="ml-auto hidden rounded-tag text-xs text-link underline hover:text-link-hover min-[900px]:inline"
         >
           Single-key shortcuts: {singleKeys ? 'on' : 'off'}
         </button>

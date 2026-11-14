@@ -46,11 +46,11 @@ describe('MicrosoftTestReport', () => {
     const table = screen.getByRole('table', { name: 'Capabilities and permissions' });
     const isolation = within(table).getByRole('row', { name: /defender.isolation/ });
     expect(within(isolation).getByText('Missing permission')).toBeInTheDocument();
-    expect(within(isolation).getByText('missing')).toBeInTheDocument();
-    expect(within(isolation).getByText('granted')).toBeInTheDocument();
+    expect(within(isolation).getByText('Missing')).toBeInTheDocument();
+    expect(within(isolation).getByText('Granted')).toBeInTheDocument();
     expect(within(isolation).getByText(/list machines: HTTP 403 Forbidden/)).toBeInTheDocument();
     const account = within(table).getByRole('row', { name: /entra.account/ });
-    expect(within(account).getByText('unknown')).toBeInTheDocument();
+    expect(within(account).getByText('Unknown')).toBeInTheDocument();
     expect(within(account).getByText(/directory role/i)).toBeInTheDocument();
     expect(screen.getByText(/expires .* \(\s*90 days\)/)).toBeInTheDocument();
   });

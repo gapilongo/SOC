@@ -30,7 +30,7 @@ import {
 import { apiError } from '../../test/helpers';
 
 describe('Button', () => {
-  it('renders each variant and size, secondary/36 px by default', () => {
+  it('renders each variant and size, secondary/28 px by default', () => {
     render(
       <>
         <Button>Default</Button>
@@ -46,11 +46,11 @@ describe('Button', () => {
     const def = screen.getByRole('button', { name: 'Default' });
     expect(def).toHaveAttribute('type', 'button');
     expect(def.className).toContain('border-control');
-    expect(def.className).toContain('min-h-9');
-    expect(def.className).toContain('touch:min-h-11');
-    expect(screen.getByRole('button', { name: 'Primary' }).className).toMatch(/min-h-10.*bg-accent/);
-    expect(screen.getByRole('button', { name: 'Quiet' }).className).toContain('min-h-8');
-    expect(screen.getByRole('button', { name: 'Quiet' }).className).toContain('text-link');
+    expect(def).toHaveClass('min-h-ctl');
+    expect(def).toHaveClass('touch:min-h-ctl-touch');
+    expect(screen.getByRole('button', { name: 'Primary' }).className).toMatch(/min-h-ctl-lg.*bg-accent/);
+    expect(screen.getByRole('button', { name: 'Quiet' })).toHaveClass('min-h-ctl-sm');
+    expect(screen.getByRole('button', { name: 'Quiet' })).toHaveClass('text-secondary');
     expect(screen.getByRole('button', { name: 'Delete' }).className).toContain('border-danger');
   });
 
@@ -67,11 +67,11 @@ describe('Button', () => {
         </Button>
       </>,
     );
-    expect(screen.getByRole('button', { name: 'Close' }).className).toContain('w-9');
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveClass('h-ctl', 'w-ctl');
     const busy = screen.getByRole('button', { name: 'Saving' });
     expect(busy).toBeDisabled();
     expect(busy).toHaveAttribute('aria-busy', 'true');
-    expect(screen.getByRole('button', { name: 'Off' }).className).toContain('disabled:opacity-50');
+    expect(screen.getByRole('button', { name: 'Off' }).className).toContain('disabled:opacity-55');
     await userEvent.click(busy);
     await userEvent.click(screen.getByRole('button', { name: 'Off' }));
     expect(onClick).not.toHaveBeenCalled();
@@ -118,16 +118,18 @@ describe('Card, PageHeader and Banner', () => {
     );
     const warning = screen.getByRole('note');
     expect(warning).toHaveAttribute('data-tone', 'warning');
-    expect(warning.className).toContain('shadow-bar-warning');
+    expect(warning).toHaveClass('bg-tint-warn', 'shadow-bar-warning');
     expect(within(warning).getByText('Simulated evidence')).toBeInTheDocument();
     expect(within(warning).getByRole('button', { name: 'Details' })).toBeInTheDocument();
-    expect(screen.getByText('Context only').closest('[data-tone]')?.className).toContain('shadow-bar-info');
-    expect(screen.getByText('Waiting').closest('[data-tone]')?.className).toContain('shadow-bar-attention');
+    expect(screen.getByText('Context only').closest('[data-tone]')?.className).toContain('bg-tint-info');
+    const attention = screen.getByText('Waiting').closest('[data-tone]');
+    expect(attention?.className).toContain('bg-tint-warn');
+    expect(attention?.className).not.toContain('shadow-bar-warning');
   });
 });
 
 describe('severity, state and counts', () => {
-  it('shows severity as a square plus the word', () => {
+  it('shows severity as bars plus the word', () => {
     render(
       <>
         <SeverityTag value="critical" />
@@ -137,18 +139,28 @@ describe('severity, state and counts', () => {
         <SeverityBadge value="low" />
       </>,
     );
-    const critical = screen.getByText('critical');
+    const critical = screen.getByText('Critical');
     expect(critical).toHaveAttribute('data-severity', 'critical');
-    expect(critical.querySelector('[aria-hidden="true"]')?.className).toContain('bg-sev-critical');
-    expect(screen.getByText('weird').querySelector('[aria-hidden="true"]')?.className).toContain('bg-sev-info');
+    expect(critical).toHaveClass('font-semibold', 'text-fg');
+    const criticalBars = critical.querySelector('svg[aria-hidden="true"]');
+    expect(criticalBars).toHaveAttribute('data-bars', '4');
+    expect(criticalBars?.querySelectorAll('rect.fill-sev-critical')).toHaveLength(4);
+    const unknownBars = screen.getByText('Weird').querySelector('svg[aria-hidden="true"]');
+    expect(unknownBars).toHaveAttribute('data-bars', '0');
+    expect(unknownBars?.querySelectorAll('rect.fill-strong')).toHaveLength(4);
     expect(screen.getByText('-')).toBeInTheDocument();
-    expect(screen.getByText(/high\s+risk/)).toBeInTheDocument();
-    expect(screen.getByText('low')).toBeInTheDocument();
+    const high = screen.getByText(/High\s+risk/);
+    expect(high.querySelector('svg')).toHaveAttribute('data-bars', '3');
+    expect(high.querySelectorAll('rect.fill-sev-high')).toHaveLength(3);
+    expect(high.querySelectorAll('rect.fill-strong')).toHaveLength(1);
+    const low = screen.getByText('Low');
+    expect(low.querySelector('svg')).toHaveAttribute('data-bars', '1');
+    expect(low).not.toHaveClass('font-semibold');
     expect(isSeverity('medium')).toBe(true);
     expect(isSeverity('urgent')).toBe(false);
   });
 
-  it('shows states as neutral pills with a coloured dot', () => {
+  it('shows states as a coloured mark plus the state in words', () => {
     render(
       <>
         <StatePill tone="approval">Waiting for approval</StatePill>
@@ -162,13 +174,20 @@ describe('severity, state and counts', () => {
     );
     const pill = screen.getByText('Waiting for approval');
     expect(pill).toHaveAttribute('data-tone', 'approval');
-    expect(pill.className).toContain('bg-raised-2');
-    expect(pill.querySelector('[aria-hidden="true"]')?.className).toContain('bg-state-approval');
-    expect(screen.getByText('waiting human')).toHaveAttribute('data-tone', 'waiting');
-    expect(screen.getByText('mystery state')).toHaveAttribute('data-tone', 'neutral');
-    expect(screen.getByText('malicious')).toHaveAttribute('data-tone', 'bad');
-    expect(screen.getByText('pending')).toBeInTheDocument();
-    expect(screen.getByText('healthy')).toHaveAttribute('data-tone', 'ok');
+    expect(pill.className).not.toContain('bg-raised-2');
+    const mark = pill.querySelector('svg[aria-hidden="true"]');
+    expect(mark).toHaveAttribute('data-glyph', 'approval');
+    expect(mark).toHaveClass('text-state-approval');
+    const waiting = screen.getByText('Waiting human');
+    expect(waiting).toHaveAttribute('data-tone', 'waiting');
+    expect(waiting.querySelector('svg')).toHaveAttribute('data-glyph', 'review');
+    const unknown = screen.getByText('Mystery state');
+    expect(unknown).toHaveAttribute('data-tone', 'neutral');
+    expect(unknown.querySelector('svg')).toHaveAttribute('data-glyph', 'empty');
+    expect(unknown.querySelector('svg')).toHaveClass('text-control');
+    expect(screen.getByText('Malicious')).toHaveAttribute('data-tone', 'bad');
+    expect(screen.getByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('Healthy')).toHaveAttribute('data-tone', 'ok');
     expect(statusTone('awaiting_approval')).toBe('approval');
     // Only the map's own keys count: an inherited property is an unknown status.
     expect(statusTone('toString')).toBe('neutral');
@@ -304,7 +323,7 @@ describe('fields', () => {
     const email = screen.getByLabelText('Email');
     expect(email).toHaveAccessibleDescription('Work address Required');
     expect(email).toHaveAttribute('aria-invalid', 'true');
-    expect(email.className).toContain('h-9');
+    expect(email).toHaveClass('h-ctl');
     expect(screen.getByLabelText('Role').tagName).toBe('SELECT');
     expect(screen.getByLabelText('Notes').tagName).toBe('TEXTAREA');
     expect(screen.getByLabelText('Remember')).toHaveAccessibleDescription('On this device');
@@ -336,10 +355,10 @@ describe('feedback and misc', () => {
         <DefinitionList items={[['Owner', 'Analyst A']]} />
       </>,
     );
-    expect(screen.getByRole('button', { name: 'new' })).toHaveAttribute('aria-pressed', 'true');
-    await userEvent.click(screen.getByRole('button', { name: 'waiting human' }));
+    expect(screen.getByRole('button', { name: 'New' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Waiting human' }));
     expect(onChange).toHaveBeenCalledWith(['new', 'waiting_human']);
-    await userEvent.click(screen.getByRole('button', { name: 'new' }));
+    await userEvent.click(screen.getByRole('button', { name: 'New' }));
     expect(onChange).toHaveBeenLastCalledWith([]);
     expect(screen.getByRole('region', { name: 'Raw' })).toHaveTextContent('"a": 1');
     expect(screen.getByText('Analyst A')).toBeInTheDocument();
@@ -377,9 +396,9 @@ describe('Segmented and button-styled links', () => {
 
   it('gives links the button classes without disabled-state variants', () => {
     expect(buttonClass()).toContain('border-control');
-    expect(buttonClass('primary', 'sm', 'self-start')).toContain('min-h-8');
+    expect(buttonClass('primary', 'sm', 'self-start')).toContain('min-h-ctl-sm');
     expect(buttonClass('primary')).not.toContain('enabled:');
-    expect(buttonClass('quiet')).toContain('text-link');
+    expect(buttonClass('quiet')).toContain('text-secondary');
     expect(buttonClass('destructive')).toContain('text-danger-fg');
   });
 });

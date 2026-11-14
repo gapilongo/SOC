@@ -5,6 +5,7 @@ import type { LlmTierCheckOut } from '../../api/types';
 import { useApi } from '../../auth/AuthContext';
 import { Badge } from '../../components/Badge';
 import { Button, Card, ErrorMessage } from '../../components/ui';
+import { humanize } from '../../lib/format';
 
 /** "1.2 s" / "340 ms": latency as an admin reads it. */
 export function formatLatency(ms: number): string {
@@ -14,8 +15,8 @@ export function formatLatency(ms: number): string {
 function TierRow({ t }: { t: LlmTierCheckOut }) {
   return (
     <tr className="border-t border-subtle align-top">
-      <th scope="row" className="px-3 py-2 font-medium capitalize text-body">
-        {t.tier}
+      <th scope="row" className="px-3 py-2 font-medium text-body">
+        {humanize(t.tier)}
       </th>
       <td className="px-3 py-2 font-mono text-xs text-secondary break-all">{t.model}</td>
       <td className="px-3 py-2">

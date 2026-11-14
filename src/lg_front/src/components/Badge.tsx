@@ -1,12 +1,17 @@
 /**
- * Domain badges on the token primitives: severity is a square plus the word
- * (SeverityTag), workflow states are neutral pills with a coloured dot
+ * Domain badges on the token primitives: severity is four bars plus the word
+ * (SeverityTag), workflow states are a mark plus the state in words
  * (StatePill). Colour never carries the meaning alone: the word is always there.
+ *
+ * Labels are written here, not by CSS: an enum value from the API becomes its
+ * words in sentence case (`humanize`, the one mapping), and a sentence passed
+ * as a label keeps its own capitals ("Needs your input", never "Needs Your Input").
  */
 
 import type { ReactNode } from 'react';
 
 import type { ActionStatus, AlertStatus, Disposition, EscalationStatus } from '../api/types';
+import { humanize } from '../lib/format';
 import { SeverityTag, StatePill, type StateTone } from './ui';
 
 export type Tone = 'neutral' | 'info' | 'good' | 'warn' | 'bad' | 'critical';
@@ -20,11 +25,16 @@ const TONE_STATE: Record<Tone, StateTone> = {
   critical: 'bad',
 };
 
-/** A small labelled pill; the tone picks the dot colour. */
+/** A label starts with a capital; the rest is left as written. */
+function sentence(label: ReactNode): ReactNode {
+  return typeof label === 'string' ? label.replace(/^\p{Ll}/u, (c) => c.toUpperCase()) : label;
+}
+
+/** A small label with a mark; the tone picks the mark. */
 export function Badge({ tone = 'neutral', children, title }: { tone?: Tone; children: ReactNode; title?: string }) {
   return (
-    <StatePill tone={TONE_STATE[tone]} title={title} className="capitalize">
-      {children}
+    <StatePill tone={TONE_STATE[tone]} title={title}>
+      {sentence(children)}
     </StatePill>
   );
 }
@@ -78,20 +88,12 @@ export function SeverityBadge({ value }: { value: string | null | undefined }) {
 
 export function StatusBadge({ value }: { value: string | null | undefined }) {
   if (!value) return <span className="text-muted">-</span>;
-  return (
-    <StatePill tone={statusTone(value)} className="capitalize">
-      {value.replace(/_/g, ' ')}
-    </StatePill>
-  );
+  return <StatePill tone={statusTone(value)}>{humanize(value)}</StatePill>;
 }
 
 export function DispositionBadge({ value }: { value: string | null | undefined }) {
-  if (!value) return <span className="text-muted">pending</span>;
-  return (
-    <StatePill tone={toneOf(DISPOSITION_STATE, value)} className="capitalize">
-      {value}
-    </StatePill>
-  );
+  if (!value) return <span className="text-muted">Pending</span>;
+  return <StatePill tone={toneOf(DISPOSITION_STATE, value)}>{humanize(value)}</StatePill>;
 }
 
 export function RiskBadge({ value }: { value: string | null | undefined }) {

@@ -7,8 +7,8 @@ import { cx } from './cx';
 
 export function Spinner({ label = 'Loading' }: { label?: string }) {
   return (
-    <span role="status" className="inline-flex items-center gap-2 text-sm text-secondary">
-      <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} aria-hidden="true" />
+    <span role="status" className="inline-flex items-center gap-2 text-ctl text-secondary">
+      <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.5} aria-hidden="true" />
       {label}
     </span>
   );
@@ -16,7 +16,7 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
 
 export function LoadingState({ label = 'Loading' }: { label?: string }) {
   return (
-    <div className="flex items-center justify-center py-12">
+    <div className="flex items-center justify-center py-10">
       <Spinner label={label} />
     </div>
   );
@@ -24,10 +24,10 @@ export function LoadingState({ label = 'Loading' }: { label?: string }) {
 
 export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
-      <Inbox className="h-8 w-8 text-muted" strokeWidth={1.75} aria-hidden="true" />
+    <div className="flex flex-col items-center justify-center gap-1.5 py-10 text-center">
+      <Inbox className="h-5 w-5 text-muted" strokeWidth={1.5} aria-hidden="true" />
       <p className="text-sm font-semibold text-fg">{title}</p>
-      {children && <div className="max-w-md text-sm text-secondary">{children}</div>}
+      {children && <div className="max-w-md text-ctl text-secondary">{children}</div>}
     </div>
   );
 }
@@ -36,9 +36,9 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 export function ErrorMessage({ error, onRetry, compact = false }: { error: unknown; onRetry?: () => void; compact?: boolean }) {
   const { message, requestId, details } = describeError(error);
   return (
-    <div role="alert" className={cx('rounded-control border border-danger bg-tint-danger text-sm text-fg', compact ? 'px-3 py-2' : 'p-4')}>
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-danger-fg" strokeWidth={1.75} aria-hidden="true" />
+    <div role="alert" className={cx('rounded-tag bg-tint-danger text-ctl text-fg shadow-bar-warning', compact ? 'px-3 py-2' : 'px-3 py-3')}>
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-danger-fg" strokeWidth={1.5} aria-hidden="true" />
         <div className="min-w-0 flex-1">
           <p>{message}</p>
           {details.length > 0 && (
@@ -55,7 +55,7 @@ export function ErrorMessage({ error, onRetry, compact = false }: { error: unkno
           )}
         </div>
         {onRetry && (
-          <Button size="sm" variant="quiet" onClick={onRetry} icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />}>
+          <Button size="sm" onClick={onRetry} icon={<RefreshCw className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />}>
             Retry
           </Button>
         )}

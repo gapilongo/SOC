@@ -75,7 +75,7 @@ function CostChart({ days }: { days: DayTotal[] }) {
                 y={pad.t + plotH - h}
                 width={barW}
                 height={Math.max(0, h)}
-                rx={Math.min(4, barW / 2)}
+                rx={1}
                 className={hover === i ? 'fill-link' : 'fill-accent'}
               />
               <rect
@@ -96,7 +96,7 @@ function CostChart({ days }: { days: DayTotal[] }) {
           );
         })}
       </svg>
-      <figcaption className="mt-1 min-h-[1.25rem] text-xs text-secondary" aria-live="polite">
+      <figcaption className="mt-1 min-h-5 text-xs text-secondary" aria-live="polite">
         {active ? `${active.day}: ${formatUsd(active.cost)}, ${formatInt(active.calls)} calls, ${formatInt(active.tokens)} tokens` : 'Hover a bar for the day total. The table below lists every row.'}
       </figcaption>
     </figure>
@@ -172,7 +172,9 @@ export default function UsagePage() {
             {q.data.days.length === 0 ? (
               <EmptyState title="No LLM usage in this range" />
             ) : (
-              <div className="relative max-h-[28rem] overflow-auto">
+              // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
+              // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+              <div role="region" aria-label="LLM usage rows" tabIndex={0} className="relative max-h-[28rem] overflow-auto">
                 <table className="w-full min-w-[720px] text-left text-sm">
                   <caption className="sr-only">LLM usage rows</caption>
                   <thead className="sticky top-0 bg-raised text-xs uppercase tracking-wide text-muted">

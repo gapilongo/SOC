@@ -34,7 +34,7 @@ const BY_LABEL: Record<Indicator['by'], string> = { rule: 'rule', model: 'model'
 
 function Panel({ title, eyebrow = false, actions, children, className }: { title: string; eyebrow?: boolean; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section aria-label={title} className={cx('flex flex-col gap-3 rounded-card border border-subtle bg-raised p-4 md:p-[18px]', className)}>
+    <section aria-label={title} className={cx('flex flex-col gap-3 rounded-card border border-subtle bg-raised p-4', className)}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className={eyebrow ? 'eyebrow text-link' : 'text-sm font-semibold text-fg'}>{title}</h2>
         {actions}
@@ -70,7 +70,7 @@ function Indicators({ title, items, dot }: { title: string; items: Indicator[]; 
         {title}
       </h2>
       {items.length ? (
-        <ul className="flex list-disc flex-col gap-1.5 pl-[18px] text-ctl text-body">
+        <ul className="flex list-disc flex-col gap-1.5 pl-4 text-ctl text-body">
           {items.map((i) => (
             <li key={`${i.by}-${i.text}`}>
               {i.text} <span className="text-secondary">({BY_LABEL[i.by]})</span>

@@ -24,7 +24,7 @@ function monthName(month: string): string {
 function PaperTile({ label, value, hint }: { label: string; value: string; hint?: ReactNode }) {
   return (
     <div className="break-inside-avoid rounded-control border border-strong p-3">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-secondary">{label}</div>
+      <div className="text-2xs font-medium uppercase tracking-label text-secondary">{label}</div>
       <div className="text-xl font-semibold tabular-nums text-fg">{value}</div>
       {hint && <div className="text-xs text-secondary">{hint}</div>}
     </div>

@@ -70,7 +70,7 @@ export function Tabs<T extends string>({
       <div
         role="tablist"
         aria-label={label}
-        className="inline-flex max-w-full flex-wrap gap-1 rounded-control border border-strong bg-raised p-[3px]"
+        className="flex max-w-full flex-wrap gap-0.5 border-b border-strong"
       >
         {tabs.map((t, i) => {
           const selected = t.id === value;
@@ -89,8 +89,8 @@ export function Tabs<T extends string>({
               onClick={() => onChange(t.id)}
               onKeyDown={onKeyDown}
               className={cx(
-                'h-8 rounded-tag px-3 text-ctl touch:min-h-11',
-                selected ? 'bg-selected font-semibold text-fg' : 'text-secondary hover:bg-raised-2 hover:text-fg',
+                '-mb-px h-8 border-b-2 px-2.5 text-ctl touch:min-h-11',
+                selected ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
               )}
             >
               {t.label}

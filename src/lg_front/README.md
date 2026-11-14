@@ -178,6 +178,46 @@ Tests may cross the boundaries (a page rendered inside the shell, for
 example). `src/main.tsx`, `src/auth/store.ts` and `src/auth/oidc.ts` must not
 move: the deployment tests pin them.
 
+## Design tokens
+
+The look of the console is the console v2 design (`docs/design/console-v2`):
+a flat sheet, hairlines, small monospace labels, 3 px corners. Every value
+of it is a token in `src/theme/tokens.css`, mapped to Tailwind names in
+`tailwind.config.js`; a page writes no colour and no size of its own.
+
+| Tokens | Tailwind names |
+|---|---|
+| Surfaces, lines, text, accent (read from the `--brand-*` block), severity, state, feedback, the highlighter, data marks | `bg-canvas`, `bg-raised`, `border-subtle`, `border-strong`, `text-fg`, `text-body`, `text-muted`, `bg-accent`, `fill-sev-high`, `text-state-ok`, `bg-tint-warn`, `bg-mark`, `bg-data-1` |
+| Type scale: 11, 12, 13, 14, 15, 18, 20, 22, 25 and 30 px with their line heights | `text-2xs`, `text-xs`, `text-ctl`, `text-sm`, `text-base`, `text-lg`, `text-xl`, `text-2xl`, `text-headline`, `text-display`; `tracking-label`, `tracking-eyebrow` |
+| Corners: 2 px tags, 3 px controls and framed surfaces | `rounded-tag`, `rounded-control`, `rounded-card` |
+| Control heights: 24, 28, 36 px, and 44 px on touch screens | `h-ctl-sm`, `h-ctl`, `h-ctl-lg`, `touch:min-h-ctl-touch` |
+| Row density: 24 px dense, 28 px compact (default), 44 px comfortable | `h-row`; `--row-h` and `--cell-py` follow `<html data-density>`, and `ROW_HEIGHT` in `src/theme/density.tsx` holds the same numbers |
+
+The theme is light on `:root`, dark when the system asks for it, and either
+one when the user picks it (`<html data-theme>`, set by `src/theme/theme.tsx`
+and before the first paint by `public/theme-boot.js`). Fonts are the
+self-hosted Inter and JetBrains Mono files imported in `src/main.tsx`: the
+app makes no request to another origin, so it works on an air-gapped site.
+
+Three checks hold this together:
+
+* `src/theme/tokens.test.ts` computes the WCAG contrast of every token pair
+  the design relies on, in both themes, from `tokens.css` itself (text 4.5:1,
+  controls and marks 3:1), and fails when the two dark blocks differ.
+* `npm run lint` refuses Tailwind palette classes, a raw hex colour and an
+  arbitrary size utility (`h-[34px]`, `text-[13.5px]`, `rounded-[3px]`,
+  `p-[18px]`). Widths, grid templates and breakpoints in square brackets
+  are layout and stay allowed. `src/theme/tokenLint.test.ts` runs ESLint on
+  examples of each. `LEGACY_SIZES` in `eslint.config.js` lists the two files
+  of the layout shell that still carry literal sizes; the list only shrinks.
+* A table cell takes its height and vertical padding from the row density
+  (`index.css`). A table that lays its rows out itself opts out with
+  `data-rows="free"`.
+
+Labels are written by the app, never title-cased by CSS: `humanize` in
+`src/lib/format.ts` turns an enum value of the API into words in sentence
+case, and the badges in `src/components/Badge.tsx` use it.
+
 ## API types
 
 `src/api/types.ts` holds the API types the app uses, written by hand: names

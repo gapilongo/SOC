@@ -29,11 +29,11 @@ describe('LlmTestCard', () => {
     const { api, calls } = fakeApi(() => RESULT);
     renderWithSession(<LlmTestCard />, await signedInSession(api, { role: 'admin' }));
     await userEvent.click(screen.getByRole('button', { name: 'Test model' }));
-    await waitFor(() => expect(screen.getByText('check failed')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Check failed')).toBeInTheDocument());
     expect(calls).toEqual([{ method: 'POST', path: '/tenant/llm/test', body: undefined, query: undefined }]);
     expect(screen.getByText('local/qwen3:8b')).toBeInTheDocument();
     expect(screen.getByText('1.8 s')).toBeInTheDocument();
-    expect(screen.getByText('http error')).toBeInTheDocument();
+    expect(screen.getByText('Http error')).toBeInTheDocument();
     expect(screen.getByText(/pull the model/)).toBeInTheDocument();
   });
 

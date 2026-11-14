@@ -165,7 +165,7 @@ const STATUS_OPTIONS: FilterOption[] = ALERT_STATUSES.map((s) => ({ value: s, la
 function ViewTabs({ view, params, byStatus }: { view: AlertView; params: URLSearchParams; byStatus: Record<string, number> | undefined }) {
   const today = isTodayWindow(params);
   return (
-    <nav aria-label="Alert views" className="relative overflow-x-auto border-b border-subtle">
+    <nav aria-label="Alert views" className="relative overflow-x-auto border-b border-strong">
       <ul className="flex gap-1">
         {ALERT_VIEWS.map((v) => {
           const current = v === view;
@@ -176,8 +176,8 @@ function ViewTabs({ view, params, byStatus }: { view: AlertView; params: URLSear
                 to={viewHref(v, params)}
                 aria-current={current ? 'page' : undefined}
                 className={cx(
-                  '-mb-px inline-flex h-[38px] items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ctl font-medium touch:min-h-11',
-                  current ? 'border-accent text-fg' : 'border-transparent text-secondary hover:text-fg',
+                  '-mb-px inline-flex h-8 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 text-ctl touch:min-h-11',
+                  current ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
                 )}
               >
                 {viewLabel(v, today)}
@@ -199,7 +199,7 @@ function DateField({ label, value, onChange }: { label: string; value: string | 
         type="datetime-local"
         value={isoToLocalInput(value)}
         onChange={(e) => onChange(localInputToIso(e.target.value))}
-        className={cx(FIELD_CLASS, 'h-[34px] w-auto px-2 touch:min-h-11')}
+        className={cx(FIELD_CLASS, 'h-ctl w-auto px-2 touch:min-h-11')}
       />
     </label>
   );
@@ -336,7 +336,7 @@ export default function AlertsPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search titles"
                 aria-describedby="alert-search-hint"
-                className={cx(FIELD_CLASS, 'h-[34px] pl-8 touch:min-h-11')}
+                className={cx(FIELD_CLASS, 'h-ctl pl-8 touch:min-h-11')}
               />
             </label>
             <span id="alert-search-hint" className="sr-only">

@@ -18,7 +18,7 @@ import { approvalRoleFor, can, roleAtLeast } from '../../auth/roles';
 import { OnboardingBanner } from '../onboarding/Onboarding';
 import { SetupCallout } from '../setup/SetupCallout';
 import { Button, Card, ErrorMessage, LoadingState, PageHeader, Segmented, buttonClass, cx } from '../../components/ui';
-import { formatInt, formatRelative, formatUsd } from '../../lib/format';
+import { formatInt, formatRelative, formatUsd, humanize } from '../../lib/format';
 import { alertsHref, escalationQueueHref, APPROVALS_HREF } from '../../lib/links';
 import { formatHours } from '../../lib/reports';
 import { useNow } from '../../lib/useNow';
@@ -131,7 +131,7 @@ function ApprovalsCard({ queue }: { queue: QueueFigures }) {
           <ul className="flex flex-wrap gap-x-4 gap-y-1 text-ctl text-body" aria-label="Pending approvals by risk">
             {risks.map((r) => (
               <li key={r}>
-                <span className="text-secondary"><span className="capitalize">{r}</span> risk</span> <span className="font-semibold tabular-nums text-fg">{formatInt(queue.pendingByRisk[r])}</span>
+                <span className="text-secondary">{humanize(r)} risk</span> <span className="font-semibold tabular-nums text-fg">{formatInt(queue.pendingByRisk[r])}</span>
               </li>
             ))}
           </ul>

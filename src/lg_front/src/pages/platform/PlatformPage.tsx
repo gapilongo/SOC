@@ -42,7 +42,7 @@ export default function PlatformPage() {
         title="MSSP console"
         description="Every tenant at a glance: activity, SLA risk, quotas and usage. Opening a tenant switches the header's tenant context; every request is recorded in that tenant's audit log."
       />
-      <div role="tablist" aria-label="MSSP console" className="mb-4 flex flex-wrap gap-1 border-b border-subtle">
+      <div role="tablist" aria-label="MSSP console" className="mb-4 flex flex-wrap gap-0.5 border-b border-strong">
         {TABS.map((t, i) => (
           <button
             key={t.id}
@@ -55,8 +55,8 @@ export default function PlatformPage() {
             onClick={() => select(t.id)}
             onKeyDown={(e) => onTabKey(e, i)}
             className={cx(
-              '-mb-px border-b-2 px-3 py-2 text-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
-              tab === t.id ? 'border-link font-medium text-fg' : 'border-transparent text-secondary hover:text-fg',
+              '-mb-px border-b-2 px-2.5 py-1.5 text-ctl focus-visible:outline focus-visible:outline-2 focus-visible:outline-focus',
+              tab === t.id ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
             )}
           >
             {t.label}

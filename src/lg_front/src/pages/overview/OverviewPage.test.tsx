@@ -102,7 +102,7 @@ describe('OverviewPage', () => {
     expect(within(now).getByText('4')).toBeInTheDocument();
     expect(within(now).getByText('and 1 more in your queue')).toBeInTheDocument();
     expect(within(now).getByText(/of 2 pending · 1 needs an admin/)).toBeInTheDocument();
-    expect(within(now).getByRole('list', { name: 'Pending approvals by risk' })).toHaveTextContent('high risk 1medium risk 1');
+    expect(within(now).getByRole('list', { name: 'Pending approvals by risk' })).toHaveTextContent('High risk 1Medium risk 1');
     expect(within(now).getByRole('link', { name: 'Review approvals' })).toHaveAttribute('href', '/approvals');
 
     // Window figures: small samples are not shown as rates or means.
@@ -115,7 +115,7 @@ describe('OverviewPage', () => {
 
     expect(screen.getByRole('region', { name: 'Open escalations by severity' })).toHaveTextContent('Right now · 103 open or claimed escalations');
     expect(screen.getByRole('region', { name: 'Alert severity' })).toHaveTextContent('105 alerts ingested in the last 24 hours');
-    expect(screen.getByRole('link', { name: 'high' })).toHaveAttribute('href', '/alerts?severity=high&from=2026-11-05T12%3A00%3A00Z');
+    expect(screen.getByRole('link', { name: 'High' })).toHaveAttribute('href', '/alerts?severity=high&from=2026-11-05T12%3A00%3A00Z');
     expect(screen.getByRole('link', { name: /Waiting for an analyst/ })).toHaveAttribute(
       'href',
       '/alerts?status=waiting_human&from=2026-11-05T12%3A00%3A00Z',
@@ -130,7 +130,7 @@ describe('OverviewPage', () => {
     expect(rows[2]).toHaveTextContent('at risk');
     expect(rows[2]).toHaveTextContent('You');
     expect(rows[3]).toHaveTextContent('n.haddad@acme.example');
-    expect(rows[3]).toHaveTextContent('medium');
+    expect(rows[3]).toHaveTextContent('Medium');
     expect(within(rows[1]).getByRole('link', { name: 'Unusual sign-in pattern' })).toHaveAttribute('href', '/escalations/e-1');
 
     // Analysts see no platform health and do not query the onboarding status.
@@ -152,8 +152,8 @@ describe('OverviewPage', () => {
     const admin = await screen.findByRole('region', { name: 'Platform health · admins only' });
     expect(within(admin).getByText('Queue depth').closest('div')).toHaveTextContent('2Workflow runs waiting to start, right now');
     expect(within(admin).getByText('LLM cost').closest('div')).toHaveTextContent('42,000 tokens in the last 24 hours · deep-model-test');
-    expect(within(admin).getByRole('table', { name: /Worker health/ })).toHaveTextContent('queued');
-    expect(within(admin).getByRole('link', { name: 'benign' })).toHaveAttribute('href', '/alerts?disposition=benign&from=2026-11-05T12%3A00%3A00Z');
+    expect(within(admin).getByRole('table', { name: /Worker health/ })).toHaveTextContent('Queued');
+    expect(within(admin).getByRole('link', { name: 'Benign' })).toHaveAttribute('href', '/alerts?disposition=benign&from=2026-11-05T12%3A00%3A00Z');
     expect(screen.getByRole('link', { name: 'Open the unassigned queue' })).toBeInTheDocument();
     expect(screen.getByText('Nothing waiting for approval.')).toBeInTheDocument();
     expect(screen.queryByText(/needs an admin/)).not.toBeInTheDocument();

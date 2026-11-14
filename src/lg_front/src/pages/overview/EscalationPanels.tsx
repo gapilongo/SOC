@@ -93,7 +93,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
   const next = queue.nextSlaDeadline;
   return (
     <section aria-labelledby="ov-sla" className="overflow-hidden rounded-card border border-subtle bg-raised">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-subtle px-4 py-3 md:px-[18px]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-subtle px-4 py-3 md:px-4">
         <div className="min-w-0">
           <h2 id="ov-sla" className="text-sm font-semibold text-fg">
             Next SLA deadlines
@@ -122,7 +122,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
           <ErrorMessage error={q.error} compact onRetry={() => void q.refetch()} />
         </div>
       )}
-      {q.isSuccess && q.items.length === 0 && <p className="px-4 py-5 text-ctl text-secondary md:px-[18px]">No open escalation. The queue is clear.</p>}
+      {q.isSuccess && q.items.length === 0 && <p className="px-4 py-5 text-ctl text-secondary md:px-4">No open escalation. The queue is clear.</p>}
       {q.items.length > 0 && (
         // A scrollable region must be reachable by keyboard (WCAG 2.1.1).
         // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
@@ -130,7 +130,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
           <table className="w-full min-w-[640px] border-collapse text-ctl">
             <thead>
               <tr className="text-left text-xs text-secondary">
-                <th scope="col" className="px-4 py-2 font-medium md:pl-[18px]">
+                <th scope="col" className="px-4 py-2 font-medium md:pl-4">
                   SLA
                 </th>
                 <th scope="col" className="px-2 py-2 font-medium">
@@ -142,7 +142,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
                 <th scope="col" className="px-2 py-2 font-medium">
                   Level
                 </th>
-                <th scope="col" className="px-4 py-2 font-medium md:pr-[18px]">
+                <th scope="col" className="px-4 py-2 font-medium md:pr-4">
                   Owner
                 </th>
               </tr>
@@ -152,7 +152,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
                 const entities = formatEntities(e.entities_preview, 2);
                 return (
                   <tr key={e.id} className="border-t border-subtle">
-                    <td className="px-4 py-2.5 align-top md:pl-[18px]">
+                    <td className="px-4 py-2.5 align-top md:pl-4">
                       <Sla e={e} now={now} />
                     </td>
                     <td className="px-2 py-2.5 align-top">
@@ -165,7 +165,7 @@ export function NextDeadlines({ queue, now, interval }: { queue: QueueFigures; n
                       {entities && <span className="text-muted"> · {entities}</span>}
                     </td>
                     <td className="px-2 py-2.5 align-top text-secondary">{e.level}</td>
-                    <td className="px-4 py-2.5 align-top md:pr-[18px]">
+                    <td className="px-4 py-2.5 align-top md:pr-4">
                       <OwnerCell e={e} />
                     </td>
                   </tr>
