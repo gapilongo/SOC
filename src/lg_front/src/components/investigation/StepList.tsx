@@ -51,7 +51,7 @@ export function StepList({
               </span>
               <span className="min-w-0 break-words text-body">{step.text}</span>
               {produced && (
-                <span className="col-start-3 break-words font-mono text-[11.5px] leading-normal text-secondary min-[900px]:col-start-auto min-[900px]:text-right">
+                <span className="col-start-3 break-words font-mono text-[11.5px] leading-normal text-secondary min-[900px]:col-start-auto min-[900px]:max-w-[26rem] min-[900px]:text-right">
                   {produced}
                 </span>
               )}

@@ -40,7 +40,8 @@ export function investigationAlert(overrides: Partial<AlertDetailOut> = {}): Ale
           'The download address 203.0.113.50 has no reputation record.',
           'Word started PowerShell directly from an email attachment.',
         ],
-        threat_indicators: ['Two minutes later the same host read LSASS memory.'],
+        // Signals of the rules: codes, not claims.
+        threat_indicators: ['file_hash_present', 'process_execution'],
       },
       decision: { route: 'escalate', reason: 'high severity alerts are closed only by an analyst', code: 'false_positive_review' },
     },

@@ -169,6 +169,7 @@ const MAX_EXCERPT_LINES = 6;
 const MAX_LINE_CHARS = 200;
 const MAX_NOT_CHECKED = 8;
 const MAX_STEP_CHARS = 300;
+const MAX_SIGNALS = 6;
 
 type Rec = Record<string, unknown>;
 
@@ -365,13 +366,17 @@ interface Stated {
   direction: 'malicious' | 'benign' | null;
 }
 
-/** What the analysis stated: its reasoning (direction unknown), then the indicators it and the triage model named. */
+/**
+ * What the model stated: the reasoning of the analysis (direction unknown),
+ * then the indicators the triage model named for and against. The signals of
+ * the rules (`rule_tp`, `rule_fp`, `threat_indicators`) are not claims: code
+ * decided them, and the steps name them.
+ */
 function stated(summary: Rec): Stated[] {
   const analysis = asObjectOrNull(summary.analysis);
   const triage = asObjectOrNull(summary.triage);
   const all: Stated[] = [
     ...strings(analysis?.reasoning).map((t): Stated => ({ text: t, direction: null })),
-    ...strings(analysis?.threat_indicators).map((t): Stated => ({ text: t, direction: 'malicious' })),
     ...strings(triage?.llm_tp).map((t): Stated => ({ text: t, direction: 'malicious' })),
     ...strings(triage?.llm_fp).map((t): Stated => ({ text: t, direction: 'benign' })),
   ];
@@ -470,8 +475,26 @@ function statusCounts(value: unknown): string | null {
 
 type StepWords = Pick<StepOut, 'actor' | 'text'> & { produced?: string | null };
 
+/** The signals the rules raised, as the summary names them (codes such as `file_hash_present`). */
+interface Signals {
+  attack: string[];
+  falsePositive: string[];
+  threat: string[];
+}
+
+function signalsOf(summary: Rec): Signals {
+  const triage = asObjectOrNull(summary.triage);
+  return { attack: strings(triage?.rule_tp), falsePositive: strings(triage?.rule_fp), threat: strings(asObjectOrNull(summary.analysis)?.threat_indicators) };
+}
+
+/** "file hash present, process execution +2 more". */
+function named(codes: string[]): string {
+  const words = codes.slice(0, MAX_SIGNALS).map((c) => clip(c.replace(/_/g, ' '), 60));
+  return codes.length > MAX_SIGNALS ? `${words.join(', ')} +${codes.length - MAX_SIGNALS} more` : words.join(', ');
+}
+
 /** A completed workflow stage in plain words; the stage's engine name never reaches the page. */
-function stageStep(node: string, d: Rec): StepWords | null {
+function stageStep(node: string, d: Rec, signals: Signals): StepWords | null {
   const model = d.llm_used === true;
   switch (node) {
     case 'gate':
@@ -480,7 +503,11 @@ function stageStep(node: string, d: Rec): StepWords | null {
         ? { actor: 'check', text: 'An analyst decided the same alert before: that verdict applies, so no new investigation ran.' }
         : { actor: 'check', text: 'A suppression rule matched: no investigation ran.' };
     case 'triage': {
-      const signs = [count(d.rule_tp) !== null ? plural(d.rule_tp as number, 'sign of an attack', 'signs of an attack') : null, count(d.rule_fp) !== null ? `${d.rule_fp} of a false positive` : null];
+      // The rules' signals by name when the summary has them, else the counts of the event.
+      const signs =
+        signals.attack.length || signals.falsePositive.length
+          ? [signals.attack.length ? `rule signs of an attack: ${named(signals.attack)}` : null, signals.falsePositive.length ? `of a false positive: ${named(signals.falsePositive)}` : null]
+          : [count(d.rule_tp) !== null ? plural(d.rule_tp as number, 'sign of an attack', 'signs of an attack') : null, count(d.rule_fp) !== null ? `${d.rule_fp} of a false positive` : null];
       return {
         actor: model ? 'model' : 'code',
         text: model ? 'Triage: the rules and the model scored the alert.' : 'Triage: the rules scored the alert. No model was used.',
@@ -503,7 +530,7 @@ function stageStep(node: string, d: Rec): StepWords | null {
         text: model
           ? `The model wrote the analysis${lookups !== null ? ` after ${plural(lookups, 'lookup', 'lookups')}` : ''}.`
           : 'The rules wrote the analysis. No model was used.',
-        produced: verdict ? `assessed as ${humanize(verdict).toLowerCase()}` : null,
+        produced: [verdict ? `assessed as ${humanize(verdict).toLowerCase()}` : null, signals.threat.length ? `rule signals: ${named(signals.threat)}` : null].filter(Boolean).join(' · ') || null,
       };
     }
     case 'decide': {
@@ -542,10 +569,10 @@ function stageStep(node: string, d: Rec): StepWords | null {
   }
 }
 
-function eventStep(e: AlertEventOut): StepWords | null {
+function eventStep(e: AlertEventOut, signals: Signals): StepWords | null {
   const d: Rec = asObjectOrNull(e.data) ?? {};
   const actor: StepActor = e.actor_type === 'user' ? 'person' : e.actor_type === 'agent' ? 'model' : 'code';
-  if (e.event_type === 'node.completed') return stageStep(e.node ?? '', d);
+  if (e.event_type === 'node.completed') return stageStep(e.node ?? '', d, signals);
   switch (e.event_type) {
     case 'analyst.decision': {
       const decided = decisionWords(d.decision);
@@ -572,11 +599,12 @@ function eventStep(e: AlertEventOut): StepWords | null {
   }
 }
 
-function stepsOf(events: readonly AlertEventOut[]): StepOut[] {
+function stepsOf(events: readonly AlertEventOut[], summary: Rec): StepOut[] {
+  const signals = signalsOf(summary);
   return [...events]
     .sort((a, b) => a.ts.localeCompare(b.ts) || a.id - b.id)
     .flatMap((e): StepOut[] => {
-      const words = eventStep(e);
+      const words = eventStep(e, signals);
       return words ? [{ ts: e.ts, actor: words.actor, text: clip(words.text, MAX_STEP_CHARS), produced: words.produced ?? null }] : [];
     });
 }
@@ -605,7 +633,7 @@ export function adaptInvestigation({ alert, escalation = null, events = [], prev
     claims: claimsOf(summary, observed),
     observations: observed.map((o) => o.observation),
     not_established: notEstablished(alert, observed),
-    steps: stepsOf(events),
+    steps: stepsOf(events, summary),
     track_record: null,
     response: preview && Array.isArray(preview.actions) ? { actions: preview.actions, generated_at: text(preview.generated_at), dry_run_forced: Boolean(preview.dry_run_forced) } : null,
     not_yet_available: [...ADAPTER_GAPS],

@@ -83,9 +83,10 @@ describe('adaptInvestigation: an alert that waits for an analyst', () => {
       ['2', null, 'unsupported', ['O-02']],
       ['3', null, 'unsupported', []],
       ['4', 'malicious', 'unsupported', []],
-      ['5', 'malicious', 'unsupported', []],
-      ['6', 'benign', 'unsupported', []],
+      ['5', 'benign', 'unsupported', []],
     ]);
+    // What the rules flagged is decided by code: it is never listed as a claim.
+    expect(inv.claims.map((c) => c.text).join(' ')).not.toMatch(/file_hash_present|office_spawns_script_host/);
     expect(inv.claims[0].check_reason).toBeNull();
     expect(inv.claims[1].check_reason).toBe('The lookup it names returned nothing, and nothing found is never counted as proof.');
     expect(inv.claims[2].check_reason).toBe('It names no lookup.');
@@ -103,9 +104,9 @@ describe('adaptInvestigation: an alert that waits for an analyst', () => {
   it('writes the steps in plain words, oldest first, without an engine node name', () => {
     expect(inv.steps.map((s) => [s.actor, s.text, s.produced])).toEqual([
       ['check', 'Checked the suppression rules and earlier analyst verdicts: none applies.', null],
-      ['model', 'Triage: the rules and the model scored the alert.', '1 sign of an attack · 0 of a false positive'],
+      ['model', 'Triage: the rules and the model scored the alert.', 'rule signs of an attack: office spawns script host'],
       ['code', 'Looked for related alerts of this tenant: 2 found.', '3 shared indicators'],
-      ['model', 'The model wrote the analysis after 4 lookups.', 'assessed as malicious'],
+      ['model', 'The model wrote the analysis after 4 lookups.', 'assessed as malicious · rule signals: file hash present, process execution'],
       ['policy', 'Decision policy: send it to an analyst. High severity alerts are closed only by an analyst.', null],
       ['policy', 'Sent to an analyst, level L2.', null],
     ]);
@@ -257,6 +258,12 @@ describe('adaptInvestigation: observations and what is not established', () => {
     const noAnalysis = adaptInvestigation({ alert: investigationAlert({ summary: { ...base.summary, analysis: undefined }, normalized: { entities: { ips } }, findings: [] }) });
     expect(noAnalysis.not_established.not_checked).toEqual([]);
     expect(noAnalysis.claims.map((c) => c.direction)).toEqual(['malicious', 'benign']);
+    // Without the names in the summary, the triage step falls back to the counts of its event.
+    const counted = adaptInvestigation({ alert: investigationAlert({ summary: {} }), events: [event('2026-11-14T10:00:00Z', 'node.completed', 'triage', { rule_tp: 2, rule_fp: 1 })] });
+    expect(counted.steps[0].produced).toBe('2 signs of an attack · 1 of a false positive');
+    const many = { triage: { rule_tp: Array.from({ length: 8 }, (_, i) => `sign_${i}`), rule_fp: ['known_scanner'] } };
+    const listed = adaptInvestigation({ alert: investigationAlert({ summary: many }), events: [event('2026-11-14T10:00:00Z', 'node.completed', 'triage', {})] });
+    expect(listed.steps[0].produced).toBe('rule signs of an attack: sign 0, sign 1, sign 2, sign 3, sign 4, sign 5 +2 more · of a false positive: known scanner');
   });
 
   it('cites the lookups that returned data when a claim names both kinds, states each claim once, and keeps at most twelve', () => {
@@ -272,7 +279,7 @@ describe('adaptInvestigation: observations and what is not established', () => {
 });
 
 describe('adaptInvestigation: steps', () => {
-  const steps = (...events: ReturnType<typeof event>[]) => adaptInvestigation({ alert: investigationAlert(), events }).steps;
+  const steps = (...events: ReturnType<typeof event>[]) => adaptInvestigation({ alert: investigationAlert({ summary: {} }), events }).steps;
   const T = '2026-11-14T10:00:00Z';
 
   it('says what closed an alert at the gate', () => {

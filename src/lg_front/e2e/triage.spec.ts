@@ -122,7 +122,7 @@ async function reviewInvestigationView(page: Page, panel: Locator, title: string
   // The steps are in plain words: the timeline has loaded, and no engine node name is printed.
   const steps = page.getByRole('region', { name: 'What the investigation did' }).locator('li[data-actor]');
   await expect.poll(() => steps.count()).toBeGreaterThanOrEqual(3);
-  await expect(page.getByRole('region', { name: 'What the investigation did' })).not.toContainText(/node\b|await_analyst|plan_response/);
+  await expect(page.getByRole('region', { name: 'What the investigation did' })).not.toContainText(/node\.completed|await_analyst|plan_response|execute_actions/);
   await expect(page.getByRole('complementary', { name: 'Track record of this outcome' })).toBeVisible();
   await screenshot(page, '04b-investigation');
 

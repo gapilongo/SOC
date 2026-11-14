@@ -100,7 +100,7 @@ describe('investigation view: needs your decision, likely malicious', () => {
     expect(screen.getByText('Summary written by the model')).toBeInTheDocument();
     expect(screen.getByText(/^Word ran a hidden, encoded PowerShell command/)).toHaveTextContent('Two minutes later the same host read LSASS memory.');
     expect(screen.getByText('Why it is with you.').parentElement).toHaveTextContent(
-      'Why it is with you. The AI did not close this alert: high severity alerts are closed only by an analyst. 1 of the 6 claims is backed by what the tools returned; 5 cite no fact.',
+      'Why it is with you. The AI did not close this alert: high severity alerts are closed only by an analyst. 1 of the 5 claims is backed by what the tools returned; 4 cite no fact.',
     );
     // The alert's own description comes next, marked as observed.
     expect(screen.getByText('The alert, as Wazuh manager sent it')).toBeInTheDocument();
@@ -313,12 +313,12 @@ describe('investigation view: verdict hidden', () => {
     const { container } = await renderPage();
     const toggle = screen.getByRole('button', { name: /^Hide the verdict/ });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    expect(screen.getByText('assessed as malicious')).toBeInTheDocument();
+    expect(screen.getByText(/^assessed as malicious/)).toBeInTheDocument();
     await user.click(toggle);
     expect(container.querySelector('[data-investigation]')).toHaveAttribute('data-investigation', 'hidden');
     expect(screen.getByRole('button', { name: /^Show the verdict/ })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('note')).toHaveTextContent('The verdict and the claims are hidden.');
-    for (const withheld of [/^Word ran a hidden, encoded PowerShell command/, 'Needs your decision: likely malicious', 'Why it is with you.', 'Backed by O-01', 'Points to malicious', 'assessed as malicious', /^Not yet available: the evidence checker/]) {
+    for (const withheld of [/^Word ran a hidden, encoded PowerShell command/, 'Needs your decision: likely malicious', 'Why it is with you.', 'Backed by O-01', 'Points to malicious', /^assessed as malicious/, /^Not yet available: the evidence checker/]) {
       expect(screen.queryByText(withheld)).not.toBeInTheDocument();
     }
     expect(screen.queryByText(/The script came from cdn-invoice-portal.example/)).not.toBeInTheDocument();
