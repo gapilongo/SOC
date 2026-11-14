@@ -119,7 +119,9 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "clearing, security-tool tampering, ransomware behaviour, persistence through attacker-named objects), "
             "steering text, entities with a recent true positive, an alert normalised by a model or one reopened; "
             "such a close is marked model_closed for audit. When an alert becomes a threat (a response plan, an "
-            "escalation a model judged malicious or suspicious, an analyst true positive, a blind-audit malicious "
+            "escalation a model judged a threat (deep verdict malicious, or fast tier likely_threat or "
+            "confirmed_threat; a merely suspicious one reopens nothing until an analyst confirms it), an analyst "
+            "true positive, a blind-audit malicious "
             "label), every model-closed alert sharing a host, user or IP with it in the previous 24 hours is "
             "reopened: folded into its open case as a related alert, or queued for review without one, and "
             "audited. With the tier off, the default, a model never "
@@ -157,6 +159,8 @@ INVARIANTS: Tuple[Invariant, ...] = (
             "test_an_unmapped_alert_closes_on_the_models_word_but_an_unreadable_wazuh_rule_does_not",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes",
+            "tests/integration/engine/test_retro_reopen.py::"
+            "test_an_escalation_the_models_only_found_suspicious_reopens_nothing",
             "tests/integration/engine/test_retro_reopen.py::"
             "test_a_response_plan_and_the_malicious_close_each_reopen_related_model_closes",
             "tests/integration/engine/test_retro_reopen.py::test_a_reopen_failure_is_counted_not_swallowed",

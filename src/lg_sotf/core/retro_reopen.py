@@ -6,9 +6,11 @@ FIX-1 and FIX-2 (thresholds, campaign check) are gone. Instead, when an alert
 becomes a threat:
 
 * the workflow plans a response for it, or closes it malicious;
-* it is escalated with a model verdict of malicious or suspicious (the deep
-  tier's ``malicious``, the fast tier's ``suspicious``, ``likely_threat`` or
-  ``confirmed_threat``);
+* it is escalated and a model judged it a threat (the deep tier's
+  ``malicious``, the fast tier's ``likely_threat`` or ``confirmed_threat``).
+  The fast tier's ``suspicious`` is a doubt, not a threat: it does not block
+  a model close, so it does not undo one either (#352); that alert goes to an
+  analyst, whose ``true_positive`` reopens the related closes;
 * an analyst decides ``true_positive`` on it;
 * a blind audit labels it ``malicious``;
 
@@ -63,12 +65,13 @@ REOPENED_CLOSE_REASON = "reopened:related_threat"
 ACTIVE_ESCALATION_STATUSES = frozenset({"open", "claimed"})
 MAX_REOPEN = 200
 MAX_ENTITY_VALUES = 50
-#: The model verdicts that make an escalated alert a threat for the safety net.
-THREAT_ASSESSMENTS = frozenset({"suspicious", "likely_threat", "confirmed_threat"})
+#: The fast-tier verdicts that make an escalated alert a threat for the safety net: the same ones that block a
+#: model close. ``suspicious`` is absent on purpose (#352).
+THREAT_ASSESSMENTS = frozenset({"likely_threat", "confirmed_threat"})
 
 
 def judged_threat(triage: Mapping[str, Any], analysis: Mapping[str, Any]) -> bool:
-    """Whether a model judged the alert malicious or suspicious (the escalation path of the safety net)."""
+    """Whether a model judged the alert a threat (the escalation path of the safety net); ``suspicious`` is not one."""
     return analysis.get("verdict") == "malicious" or triage.get("threat_assessment") in THREAT_ASSESSMENTS
 
 
