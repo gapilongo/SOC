@@ -397,9 +397,9 @@ updates are accepted only from origins listed in `api.cors_origins`, and the
 development configuration lists `http://localhost:3000`). The UI opens on
 the Overview (your unassigned and overdue escalations, what you hold, the
 approvals you can act on, then the window's figures); the rail leads to
-the alert queue, escalations to claim and decide, approvals, suppressions
-and reports. Admins also see Getting started, Sources, Integrations, Users
-and API keys, Tenant settings, LLM usage and the Audit log. Ctrl+K opens the
+the work queue (what to claim and decide), approvals, alerts, suppressions
+and reports. Admins also see Getting started, Sources, Integrations, People
+and keys, Tenant settings, AI usage and cost and the Audit log. Ctrl+K opens the
 search field (pages, alerts, commands). The theme follows the system setting
 until you change it with the control in the top bar.
 
