@@ -10,7 +10,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Dict, Optional, Tuple
 
 from lg_sotf.api.auth.mfa import MfaService
+from lg_sotf.api.common import reopen_for_approval
 from lg_sotf.api.context import ApiContext
+from lg_sotf.audit.logger import Actor
 from lg_sotf.db.errors import InvalidTransition, NotFound
 from lg_sotf.db.repos import ResponseAction, User
 from lg_sotf.integrations.http import DeliveryError, IntegrationHttp
@@ -76,6 +78,8 @@ async def decide_from_slack(
                 await enqueue_resumes(ctx.queue, tenant, resumes)
                 acted = await ctx.repos.actions.get(tenant, interaction.action_id)
                 outcome = acted.status
+                if interaction.approve:
+                    await reopen_for_approval(ctx, tenant, acted, Actor("user", str(found.id)))
     except ReviewDenied:
         outcome = "denied"
     except InvalidTransition:

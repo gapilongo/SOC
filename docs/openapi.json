@@ -1215,6 +1215,28 @@
                   }
                 ]
               },
+              "linked": {
+                "items": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "linked_alert_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
               "llm_budget_exceeded": {
                 "type": "boolean"
               },
@@ -2168,6 +2190,28 @@
                     "type": "null"
                   }
                 ]
+              },
+              "linked": {
+                "items": {
+                  "additionalProperties": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "linked_alert_ids": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               "llm_budget_exceeded": {
                 "type": "boolean"

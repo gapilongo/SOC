@@ -33,6 +33,7 @@ from lg_sotf.api.common import (
     invalidate_verdicts,
     one_escalation_out,
     refuse_hidden,
+    reopen_for_approval,
     user_ref,
 )
 from lg_sotf.api.context import ApiContext, get_ctx
@@ -277,6 +278,8 @@ async def _review_action(
     )
     ok, failed = await enqueue_resumes(ctx.queue, principal.tenant_id, requests)
     action = await ctx.repos.actions.get(principal.tenant_id, action_id)
+    if approve:
+        await reopen_for_approval(ctx, principal.tenant_id, action, principal.actor)
     return ApprovalOut(
         action=await one_action_out(ctx, principal.tenant_id, action),
         resumed_alert_ids=[r.alert_id for r in requests],

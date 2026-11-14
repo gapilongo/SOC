@@ -116,6 +116,25 @@ async def test_admin_approves_high_risk_action_from_slack(api: ApiHarness, box: 
     assert outcomes == ["approved", "approved"]  # the replay was refused before it was audited as a click
 
 
+async def test_an_approval_from_slack_reopens_related_model_closes(api: ApiHarness, box: SecretBox) -> None:
+    """AI-E3.15: an approval is a person's confirmation of the threat wherever it is clicked; a rejection is not."""
+    path, ids, _ = await setup(api, box)
+    closed_alert = await add_alert(api.repos, TENANT_A, entities={"hosts": ["ws-042"]})
+    for status in ("queued", "processing", "closed"):
+        await api.repos.alerts.update_status(TENANT_A, closed_alert, status)
+    await api.repos.alerts.update(TENANT_A, closed_alert, disposition="benign",
+                                  summary={"close_reason": "ai_closed:audit_required"})
+
+    assert (await post(api, path, click(ids["create_ticket"], "UADMIN", approve=False), ids["signing"])).status_code == 200
+    assert (await api.repos.alerts.get(TENANT_A, closed_alert)).status == "closed"
+    assert (await post(api, path, click(ids["isolate_host"], "UADMIN"), ids["signing"])).status_code == 200
+    reopened = await api.repos.alerts.get(TENANT_A, closed_alert)
+    assert (reopened.status, reopened.summary["reopened"]["reason"]) == ("queued", "related_threat")
+    admin = await api.repos.users.get_by_email(TENANT_A, "boss@tenant-a.example.com")
+    [entry] = (await api.repos.audit.list(TENANT_A, action="alert.reopened")).items
+    assert admin is not None and (entry.resource_id, entry.actor_id) == (closed_alert, str(admin.id))
+
+
 async def test_same_authorisation_rules_as_the_ui(api: ApiHarness, box: SecretBox) -> None:
     path, ids, _ = await setup(api, box)
     denied = await post(api, path, click(ids["isolate_host"], "UANALYST"), ids["signing"])

@@ -23,9 +23,9 @@ Safety rules enforced here (contract section 8):
   Policy v3 (FIX-3): at that tier the models close every alert the deep
   tier judged benign (info to high severity, any certainty or threat score
   below the response policy) unless a hard block applies; the thresholds,
-  the campaign check and the ``unmapped`` block are gone, and the retro-reopen
-  safety net (:mod:`lg_sotf.core.retro_reopen`) reopens such closes when a
-  related threat appears.
+  the campaign check and the ``unmapped`` block are gone, and the safety net
+  (:mod:`lg_sotf.core.retro_reopen`) links such closes to a related threat a
+  model judged and reopens them when a person confirms one.
 * A response the policy (not an analyst) chose goes to an analyst when an
   action failed or none completed; it closes (disposition ``malicious``)
   once its actions succeeded or ran in the tenant's dry-run mode. Blocked
