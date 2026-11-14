@@ -43,7 +43,10 @@ def test_every_action_is_pinned_to_a_commit_sha() -> None:
 
 def test_container_images_are_pinned_by_digest() -> None:
     wf = workflow()
-    assert re.search(r"@sha256:[0-9a-f]{64}$", wf["env"]["GITLEAKS_IMAGE"])
+    images = {k: v for k, v in wf["env"].items() if k.endswith("_IMAGE")}
+    assert {"GITLEAKS_IMAGE", "OASDIFF_IMAGE", "KUBECONFORM_IMAGE"} <= set(images)
+    for name, ref in images.items():
+        assert re.fullmatch(r"[a-z0-9][\w./-]*:[\w.-]+@sha256:[0-9a-f]{64}", ref), name
     for job in wf["jobs"].values():
         for name, service in job.get("services", {}).items():
             assert re.search(r"@sha256:[0-9a-f]{64}$", service["image"]), name
@@ -148,13 +151,36 @@ def test_api_compat_job_runs_a_pinned_oasdiff_and_blocks_the_build() -> None:
     job = wf["jobs"]["api-compat"]
     assert "continue-on-error" not in job
     assert job["steps"][0]["with"]["fetch-depth"] == 0  # the base branch's document
-    assert re.fullmatch(r"\d+\.\d+\.\d+", wf["env"]["OASDIFF_VERSION"])
-    assert re.fullmatch(r"[0-9a-f]{64}", wf["env"]["OASDIFF_SHA256"])
-    runs = [s.get("run", "") for s in job["steps"]]
-    assert any('"${OASDIFF_SHA256}  /tmp/oasdiff.tgz" | sha256sum -c -' in r for r in runs)
-    assert "python scripts/ci/check_api_compat.py --self-test docs/openapi.json" in runs
-    assert any("check_api_compat.py /tmp/openapi-base.json docs/openapi.json" in r for r in runs)
+    # The image, pinned by digest (no release-asset download); the wrapper defaults to the same pin.
+    assert re.fullmatch(r"tufin/oasdiff:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}", wf["env"]["OASDIFF_IMAGE"])
+    wrapper = REPO_ROOT / "scripts" / "ci" / "oasdiff.sh"
+    assert os.access(wrapper, os.X_OK)
+    assert f'IMAGE="${{OASDIFF_IMAGE:-{wf["env"]["OASDIFF_IMAGE"]}}}"' in wrapper.read_text()
+    steps = job["steps"]
+    runs = [s.get("run", "") for s in steps]
+    assert not any("curl" in r or "releases/download" in r for r in runs)
+    self_test = _step_named(steps, "Self-test (breaking a stable operation fails, breaking a beta one does not)")
+    assert self_test["run"] == "python scripts/ci/check_api_compat.py --self-test docs/openapi.json"
+    assert self_test["env"]["OASDIFF"] == "scripts/ci/oasdiff.sh"
+    against_base = _step_named(steps, "Breaking changes against the base")
+    assert "check_api_compat.py /tmp/openapi-base.json docs/openapi.json" in against_base["run"]
+    assert against_base["env"]["OASDIFF"] == "scripts/ci/oasdiff.sh"
     assert os.access(REPO_ROOT / "scripts" / "ci" / "check_api_compat.py", os.X_OK)
+
+
+def test_helm_job_runs_kubeconform_from_its_pinned_image() -> None:
+    """kubeconform runs from ghcr.io/yannh/kubeconform by digest, with the same flags and CRD schemas."""
+    wf = workflow()
+    image = wf["env"]["KUBECONFORM_IMAGE"]
+    assert re.fullmatch(r"ghcr\.io/yannh/kubeconform:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}", image)
+    steps = wf["jobs"]["helm"]["steps"]
+    runs = [s.get("run", "") for s in steps]
+    assert not any("curl" in r or "releases/download" in r for r in runs)
+    validate = " ".join(_step_named(steps, "Template and validate")["run"].replace("\\\n", " ").split())
+    assert 'docker run --rm -v /tmp:/tmp:ro "${KUBECONFORM_IMAGE}" -strict -summary' in validate
+    assert '-kubernetes-version "${KUBERNETES_VERSION}" -schema-location default' in validate
+    assert "datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" in validate
+    assert validate.endswith("/tmp/default.yaml /tmp/full.yaml")
 
 
 WORKFLOWS = sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml"))

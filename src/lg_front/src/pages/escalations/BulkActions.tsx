@@ -149,7 +149,7 @@ function CloseDialog({ items, onClose, onDone }: { items: EscalationOut[]; onClo
   );
 }
 
-/** The ids `details` of a 422 `not_confirmed_benign` lists. */
+/** The ids `details` of a 422 `not_confirmed_benign` or `no_verdict_key` lists. */
 function unconfirmedIds(err: unknown): string[] {
   if (!(err instanceof ApiError) || !Array.isArray(err.details)) return [];
   return err.details.flatMap((d) => (d && typeof d === 'object' && typeof (d as { escalation_id?: unknown }).escalation_id === 'string' ? [(d as { escalation_id: string }).escalation_id] : []));
@@ -161,6 +161,7 @@ function ProposeDialog({ items, onClose, onDone }: { items: EscalationOut[]; onC
   const titles = titlesOf(items);
   const err = propose.error;
   const unconfirmed = err instanceof ApiError && err.status === 422 && err.code === 'not_confirmed_benign' ? unconfirmedIds(err) : null;
+  const noKey = err instanceof ApiError && err.status === 422 && err.code === 'no_verdict_key' ? unconfirmedIds(err) : null;
 
   const submit = () =>
     propose.mutate(
@@ -189,6 +190,18 @@ function ProposeDialog({ items, onClose, onDone }: { items: EscalationOut[]; onC
             <p>Nothing was created. These have no false-positive or benign-positive decision; deselect them, or decide them first:</p>
             <ul aria-label="Escalations that do not qualify" className="mt-1 list-disc pl-4">
               {(unconfirmed.length ? unconfirmed : items.map((e) => e.id)).map((id) => (
+                <li key={id}>{titles[id] ?? shortId(id)}</li>
+              ))}
+            </ul>
+          </Banner>
+        ) : noKey ? (
+          <Banner tone="warning" role="alert" title="No rule can match these alerts">
+            <p>
+              Nothing was created. A suggested rule matches what ran (process, command line, service or created object); these alerts have
+              none, or are of a kind that is never suppressed (for example credential access or new services). Deselect them:
+            </p>
+            <ul aria-label="Escalations no rule can match" className="mt-1 list-disc pl-4">
+              {(noKey.length ? noKey : items.map((e) => e.id)).map((id) => (
                 <li key={id}>{titles[id] ?? shortId(id)}</li>
               ))}
             </ul>

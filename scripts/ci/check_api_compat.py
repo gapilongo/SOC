@@ -20,8 +20,8 @@ as removing the operation from the stable set.
 
 ``--self-test`` proves the gate on a real document: a breaking change to a
 stable operation must fail, the same change to a beta operation must pass.
-The oasdiff binary is ``$OASDIFF`` or ``oasdiff`` on the PATH (CI pins the
-release and checks its SHA-256). Standard library only.
+The oasdiff binary is ``$OASDIFF`` or ``oasdiff`` on the PATH (CI sets
+``OASDIFF=scripts/ci/oasdiff.sh``: the image pinned by digest). Standard library only.
 """
 
 from __future__ import annotations

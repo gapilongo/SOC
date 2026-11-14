@@ -220,13 +220,17 @@ Graph (compiled once per worker process with `AsyncPostgresSaver`,
 
 ```
 START → gate → triage → correlation → analysis → decide
-gate:        suppression rules / verdict cache (same or lower severity than the
-             analyst decided; never for critical or LLM-normalised alerts) →
+gate:        suppression rules / verdict cache (same verdict key, i.e. same
+             fingerprint and behaviour, decided benign by 2 different
+             analysts at the same or a higher severity in 7 days, no threat
+             since; never for critical, never-close-class or LLM-normalised
+             alerts, which also skip suppression rules) →
              close (benign) | triage
 triage:      rules + fast-tier LLM → close (obvious FP) | correlation
-correlation: indicator sightings + optional LLM → analysis | decide
+correlation: indicator sightings + optional LLM → analysis
+             (decide only for a strongly correlated high/critical alert)
 analysis:    ReAct with deep-tier LLM, bounded steps, early stop
-decide:      policy routing → escalate | plan_response | close
+decide:      policy routing (decision policy v2) → escalate | plan_response | close
 escalate:    create/attach escalation (idempotent) → await_analyst
 await_analyst: interrupt({"escalation_id": ...}) → route on decision:
              true_positive → plan_response ; false_positive/benign → close ;
@@ -256,8 +260,7 @@ Rules:
   message is retried by the queue and eventually dead-lettered. Failures are
   never converted into default scores that drive routing.
 * LLM output alone can never auto-close a high/critical alert or authorise a
-  containment action. Routing to `close` from LLM evidence requires rule
-  corroboration or analyst decision; containment requires tenant autonomy
+  containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.
   (Clarification: "auto-close" here means closing as benign. The decision to
   plan a response is taken from the threat score; rule corroboration gates
@@ -265,6 +268,42 @@ Rules:
   `create_ticket`, which run under autonomy `auto` on any evidence. A
   policy response whose actions complete closes the alert as malicious at
   any severity.)
+* Decision policy v2 (`domain/routing.py` `decide`, `domain/closure.py`):
+  * Every low, medium and info alert is analysed. Correlation is evidence for
+    the analysis model and the summary; it never raises the confidence, so it
+    never moves an alert into the grey zone or to the response policy alone.
+  * The response policy and the grey zone (30 to 70) read the post-analysis
+    assessment: the analysis threat score, or the triage confidence when no
+    analysis ran (a strongly correlated high or critical alert).
+  * A low-threat `benign` verdict closes a lower-severity alert with
+    approved benign evidence (`rule_corroborated_benign`): a rule
+    false-positive signal of triage, which comes only from the detection
+    rule's name, the EICAR hash, a test-environment source, a scanner the
+    tenant declared (as the source of the activity) or an authenticated
+    internal sender. A cached analyst verdict closes earlier, at the gate.
+    The rules' threat score no longer gates a close. Evidence never closes
+    past steering text or a recent true positive, and a scanner or test
+    source never closes a never-close class (`evidence_close_blockers`).
+  * Without such evidence the models close the alert alone (`model_closed`,
+    close reason `ai_closed:audit_required`) only when the tenant's
+    autonomy tier `ai_closure.tier` is `auto_full_audit` (default `off`):
+    decision policy v3 (FIX-3) closes an info to high alert whose deep
+    verdict is `benign` (any certainty, below the response policy) unless
+    the fast tier said `likely_threat` or `confirmed_threat`, it is
+    critical, a never-close class (credential access including the vendor's
+    authentication-failure rules and T1531, `vendor_unknown`, log clearing,
+    tampering, ransomware, named persistence), carries steering text or a
+    recent true positive, was normalised by a model, or was reopened. The
+    `decide` node reads the tier from the tenant's settings at every
+    decision.
+  * Retro-reopen (`core/retro_reopen.py`) replaces the forward gates: a
+    response plan or malicious close, an escalation a model judged
+    malicious or suspicious, an analyst true positive or a blind-audit
+    malicious label reopens every model-closed alert of the tenant that
+    shares a host, user or IP with it and closed in the previous 24 hours:
+    folded into the threat's open escalation (attached, `waiting_human`, no
+    new run or case; the decision on the case settles it), or, without an
+    open case, queued for its own review run; audited `alert.reopened`.
 * Side-effecting nodes (`escalate`, `plan_response`, `execute_actions`) are
   idempotent because nodes may re-run on resume.
 * The graph is versioned (`core/graph.py`: `GRAPH_VERSION`,

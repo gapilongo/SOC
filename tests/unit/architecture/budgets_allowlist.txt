@@ -10,7 +10,6 @@ services/reporting.py	852
 compliance/evidence_html.py::render_evidence_html	171
 db/repos/actions.py::ActionsRepo.transition	94
 db/retention.py::purge_expired	148
-eval/runner.py::run_evaluation	102
 ingestion/email/parser.py::parse_email	93
 integrations/microsoft/http.py::MicrosoftApi._send	118
 mcp/server.py::serve	98

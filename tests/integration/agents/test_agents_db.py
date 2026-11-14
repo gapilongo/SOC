@@ -148,8 +148,9 @@ async def test_tenant_provider_key_from_encrypted_settings(repos: Repositories, 
 
 async def test_verdict_cache_invalidation(redis_client: Any, unique_prefix: str) -> None:
     cache = VerdictCache(redis_client, unique_prefix)
-    assert await cache.put_analyst_benign(TENANT_A, "fp-1", decision="false_positive", alert_id="a1", escalation_id=None)
-    assert (await cache.get(TENANT_A, "fp-1"))["decision"] == "false_positive"
-    assert await cache.invalidate(TENANT_A, "fp-1") is True
-    assert await cache.get(TENANT_A, "fp-1") is None
-    assert await cache.invalidate(TENANT_A, "fp-1") is False
+    assert await cache.put_analyst_benign(TENANT_A, "vk-1", decision="false_positive", alert_id="a1", escalation_id=None)
+    assert (await cache.get(TENANT_A, "vk-1"))["decisions"][0]["decision"] == "false_positive"
+    assert await cache.invalidate(TENANT_A, "vk-1", fingerprint="fp-1") is True
+    record = await cache.get(TENANT_A, "vk-1", fingerprint="fp-1")
+    assert record is not None and record["decisions"] == [] and len(record["threats"]) == 2
+    assert await cache.invalidate(TENANT_A, "vk-1") is False

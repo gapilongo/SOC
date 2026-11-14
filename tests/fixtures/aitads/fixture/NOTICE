@@ -1,0 +1,9 @@
+The files in this directory are excerpts of the AIT Alert Data Set (AIT-ADS), version 1:
+19 alerts of russellmitchell_wazuh.json and shaw_wazuh.json, unmodified, and the rows of labels.csv for
+those two scenarios.
+
+Source: https://zenodo.org/records/8263181
+Licence: Creative Commons Attribution 4.0 International (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/
+Authors: Max Landauer, Florian Skopik, Markus Wurzenberger (AIT Austrian Institute of Technology).
+Cite: Landauer, M., Skopik, F., Wurzenberger, M. (2024): Introducing a New Alert Data Set for Multi-Step
+Attack Analysis. Proceedings of the 17th Cyber Security Experimentation and Test Workshop.

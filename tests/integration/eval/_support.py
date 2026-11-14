@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import dataclasses
 import socket
-from typing import Any, List, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 from urllib.parse import urlsplit
 
 import httpx
 import pytest
 
+from lg_sotf.db.repos import Repositories
+from lg_sotf.domain import closure
+from lg_sotf.eval.dataset import Dataset
+from lg_sotf.eval.results import ItemResult
 from lg_sotf.llm.fake import FakeChatModel
 from lg_sotf.settings import Settings
 
@@ -78,3 +83,42 @@ def block_network_and_model(settings: Settings, monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(FakeChatModel, "with_structured_output", no_model)
     monkeypatch.setattr(FakeChatModel, "_generate", no_model)
     return guard
+
+
+def at_tier(dataset: Dataset, tier: str) -> Dataset:
+    """``dataset`` with its evaluation tenants at the model-led closure ``tier`` (FIX-1)."""
+    tenant_settings = {**dict(dataset.meta.get("tenant_settings") or {}), "ai_closure": {"tier": tier}}
+    return dataclasses.replace(dataset, meta={**dataset.meta, "tenant_settings": tenant_settings})
+
+
+def closures(results: List[ItemResult]) -> Dict[str, int]:
+    """Items automation closed, by label, and how many of them the models closed alone (``model_closed``)."""
+    closed = [r for r in results if r.status == "closed"]
+    return {
+        "benign_closed": sum(r.expected == "benign" for r in closed),
+        "malicious_closed": sum(r.expected == "malicious" for r in closed),
+        "benign_model_closed": sum(r.expected == "benign" and r.decision_code == "model_closed" for r in closed),
+        "malicious_model_closed": sum(r.expected == "malicious" and r.decision_code == "model_closed" for r in closed),
+    }
+
+
+async def v3_closures(repos: Repositories, run: Any) -> Dict[str, List[str]]:
+    """Decision policy v3 (FIX-3): what automation closed in an evaluation run, by label, and what is still closed
+    at the end of the run (after retro-reopen, which later threats in the same run trigger); ``forbidden`` lists the
+    model-led closes INV-03 never allows (a critical alert, a never-close class)."""
+    tenants = run.info["tenants"]
+    out: Dict[str, List[str]] = {k: [] for k in ("benign_closed", "benign_still_closed", "malicious_closed",
+                                                "malicious_still_closed", "forbidden")}
+    for r in run.results:
+        if r.status != "closed" or r.alert_id is None:
+            continue
+        alert = await repos.alerts.get(tenants.get(r.split) or tenants["*"], r.alert_id)
+        label = "malicious" if r.expected == "malicious" else "benign"
+        out[f"{label}_closed"].append(r.item_id)
+        if alert.status == "closed":
+            out[f"{label}_still_closed"].append(r.item_id)
+        if r.decision_code == closure.MODEL_CLOSED:
+            document = {**alert.normalized, "raw": alert.raw}
+            if alert.severity == "critical" or closure.model_close_class(document) is not None:
+                out["forbidden"].append(r.item_id)
+    return out

@@ -114,15 +114,33 @@ def test_fp_signals_come_only_from_trusted_fields() -> None:
 @pytest.mark.parametrize(
     ("kw", "expected"),
     [
-        ({"correlation": {"score": 90, "related_count": 6}}, "decide"),
-        ({"confidence": 10, "correlation": {"score": 0}, "severity": "low"}, "decide"),
-        ({"confidence": 10, "correlation": {"score": 0}, "severity": "high"}, "analysis"),
+        # FIX-1: every alert automation may close is analysed, however strong or weak its correlation.
+        ({"correlation": {"score": 90, "related_count": 6}}, "analysis"),
+        ({"correlation": {"score": 100, "related_count": 20, "burst": True}, "severity": "low"}, "analysis"),
+        ({"correlation": {"score": 100, "related_count": 20}, "severity": "info"}, "analysis"),
+        ({"confidence": 10, "correlation": {"score": 0}, "severity": "low"}, "analysis"),
         ({"confidence": 10, "correlation": {"score": 0, "burst": True}, "severity": "low"}, "analysis"),
         ({"confidence": 50, "correlation": {"score": 40, "related_count": 2}}, "analysis"),
+        # High and critical never close automatically: strong correlation may still skip analysis for them.
+        ({"correlation": {"score": 90, "related_count": 6}, "severity": "high"}, "decide"),
+        ({"correlation": {"score": 90, "related_count": 6}, "severity": "critical"}, "decide"),
+        ({"confidence": 10, "correlation": {"score": 0}, "severity": "high"}, "analysis"),
     ],
 )
 def test_route_after_correlation(kw: Dict[str, Any], expected: str) -> None:
     assert routing.route_after_correlation(state(**kw), T) == expected
+
+
+@pytest.mark.parametrize("severity", ["info", "low", "medium", "high", "critical"])
+def test_correlation_alone_never_plans_a_response(severity: str) -> None:
+    """FIX-1: the strongest correlation neither skips analysis below high nor, for high and critical, lifts the
+    triage confidence (the correlation agent leaves it as triage set it) to the response policy."""
+    strong = {"score": 100, "related_count": 20, "burst": True, "frequency_level": "critical"}
+    s = state(severity=severity, confidence=79, triage=triage(79, 79), correlation=strong)
+    route = routing.route_after_correlation(s, T)
+    assert route == ("decide" if severity in ("high", "critical") else "analysis")
+    if route == "decide":
+        assert routing.decide(s, T, "auto_full_audit").route == "escalate"
 
 
 def test_decide_response_threshold() -> None:
@@ -138,16 +156,39 @@ def test_decide_grey_zone_and_inconclusive_escalate() -> None:
     assert d.route == "escalate"
 
 
-def test_decide_closes_only_with_rule_corroboration() -> None:
+def test_the_grey_zone_reads_the_post_analysis_assessment() -> None:
+    """FIX-1: a benign analysis below the grey zone is not held back by a triage confidence inside it, and an
+    analysis inside it escalates whatever the triage confidence."""
+    benign = state(severity="low", confidence=55, triage=triage(55, 55, rule_fp=1),
+                   analysis={"threat_score": 12, "verdict": "benign"})
+    assert (routing.decide(benign, T).route, routing.decide(benign, T).code) == ("close", "rule_corroborated_benign")
+    in_band = state(severity="low", confidence=10, triage=triage(10, 10, rule_fp=1),
+                    analysis={"threat_score": 45, "verdict": "benign"})
+    assert routing.decide(in_band, T).code == "grey_zone"
+    assert routing.assessed_threat(in_band) == 45 and routing.assessed_threat(state(confidence=33)) == 33
+    digest = routing.routing_digest("grey_zone", routing.assessed_threat(in_band), T)
+    assert digest == {"code": "grey_zone", "confidence": 45, "band": {"min": 30, "max": 70}}
+
+
+def test_decide_closes_only_with_approved_benign_evidence() -> None:
+    """The evidence gate replaces the rules' threat score: a rule false-positive signal (rule name, EICAR, test
+    source, declared tenant context) corroborates a low-threat benign verdict; the model alone does not."""
     corroborated = state(
-        severity="low", confidence=10, analysis={"threat_score": 10, "rule_threat_score": 20, "verdict": "benign"}
+        severity="low", confidence=10, triage=triage(25, 45, rule_fp=1),
+        analysis={"threat_score": 10, "rule_threat_score": 45, "verdict": "benign"},
     )
     d = routing.decide(corroborated, T)
-    assert (d.route, d.disposition) == ("close", "benign")
+    assert (d.route, d.disposition, d.code) == ("close", "benign", "rule_corroborated_benign")
     llm_only = state(
-        severity="low", confidence=10, analysis={"threat_score": 10, "rule_threat_score": 60, "verdict": "benign"}
+        severity="low", confidence=10, triage=triage(10, 10, llm_fp=5),
+        analysis={"threat_score": 10, "rule_threat_score": 5, "verdict": "benign"},
     )
-    assert routing.decide(llm_only, T).route == "escalate"
+    for tier in ("off", None):
+        decision = routing.decide(llm_only, T) if tier is None else routing.decide(llm_only, T, tier)
+        assert (decision.route, decision.code) == ("escalate", "false_positive_review")
+    not_benign = state(severity="low", confidence=10, triage=triage(10, 10, rule_fp=2),
+                       analysis={"threat_score": 10, "verdict": "malicious"})
+    assert routing.decide(not_benign, T).route == "escalate"
 
 
 @pytest.mark.parametrize("severity", ["high", "critical"])

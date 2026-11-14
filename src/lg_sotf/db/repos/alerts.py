@@ -48,7 +48,9 @@ ALERT_TRANSITIONS: Dict[str, FrozenSet[str]] = {
     "processing": frozenset({"waiting_human", "waiting_approval", "closed", "failed"}),
     "waiting_human": frozenset({"processing"}),
     "waiting_approval": frozenset({"processing"}),
-    "closed": frozenset({"queued"}),
+    # closed -> waiting_human: decision policy v3 folds a model-closed alert into a related threat's open case
+    # (lg_sotf.core.retro_reopen).
+    "closed": frozenset({"queued", "waiting_human"}),
     "failed": frozenset({"processing", "queued"}),
 }
 
@@ -516,6 +518,66 @@ class AlertsRepo(Repository):
             acknowledged=row["acknowledged"],
             resolved=row["resolved"],
         )
+
+    async def model_closed_sharing_entities(
+        self,
+        tenant_id: str,
+        *,
+        hosts: Sequence[str],
+        users: Sequence[str],
+        ips: Sequence[str],
+        since: datetime,
+        exclude_alert_id: str,
+        limit: int = 200,
+        conn: Optional[Connection] = None,
+    ) -> List[str]:
+        """Ids of alerts the models closed alone (close reason ``ai_closed:*``) since ``since`` that share a host,
+        user or IP with the given ones, newest first (the retro-reopen of decision policy v3)."""
+        require_aware(since, "since")
+        check_limit(limit, 1_000)
+        if not (hosts or users or ips):
+            return []
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT id FROM alerts
+                WHERE tenant_id = $1 AND status = 'closed' AND id <> $2 AND closed_at >= $3
+                  AND starts_with(summary->>'close_reason', 'ai_closed:')
+                  AND (COALESCE(normalized->'entities'->'hosts', '[]'::jsonb) ?| $4::text[]
+                       OR COALESCE(normalized->'entities'->'users', '[]'::jsonb) ?| $5::text[]
+                       OR COALESCE(normalized->'entities'->'ips', '[]'::jsonb) ?| $6::text[])
+                ORDER BY closed_at DESC, id
+                LIMIT $7
+                """,
+                tenant_id,
+                exclude_alert_id,
+                since,
+                list(hosts),
+                list(users),
+                list(ips),
+                limit,
+            )
+        return [str(r["id"]) for r in rows]
+
+    async def folded_for_threat(
+        self, tenant_id: str, threat_alert_id: str, *, exclude_escalation_id: str, conn: Optional[Connection] = None
+    ) -> List[str]:
+        """Alerts retro-reopen folded for ``threat_alert_id`` that still wait in another case than the given one."""
+        async with self._tenant(tenant_id, conn) as c:
+            rows = await c.fetch(
+                """
+                SELECT id FROM alerts
+                WHERE tenant_id = $1 AND status = 'waiting_human'
+                  AND summary->'reopened'->>'mode' = 'folded'
+                  AND summary->'reopened'->>'threat_alert_id' = $2
+                  AND summary->>'escalation_id' IS DISTINCT FROM $3
+                ORDER BY id LIMIT 200
+                """,
+                tenant_id,
+                threat_alert_id,
+                exclude_escalation_id,
+            )
+        return [str(r["id"]) for r in rows]
 
     # -- recovery sweeps (runtime/orphans.py) ------------------------------------------------------
 

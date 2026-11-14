@@ -89,6 +89,7 @@ class TriageDigest(TypedDict, total=False):
     llm_skipped: Optional[str]
     llm_refusal: LlmRefusal
     threat_assessment: Optional[str]
+    threat_likelihood: Optional[int]
     threat_categories: List[str]
     reasoning: Optional[str]
     phishing: PhishingDigest
@@ -107,6 +108,8 @@ class CorrelationDigest(TypedDict, total=False):
     llm_skipped: Optional[str]
     llm_refusal: LlmRefusal
     related_dispositions: Dict[str, int]
+    related_threats: int
+    related_open_reviews: int
     campaign_indicators: List[str]
 
 
@@ -236,6 +239,8 @@ class AlertSummary(TypedDict, total=False):
     # The outcome (close node).
     verdict: str
     close_reason: str
+    # Decision policy v3 safety net (lg_sotf.core.retro_reopen): why a model-closed alert was reopened.
+    reopened: Dict[str, Optional[str]]
     confidence: Optional[float]
     threat_score: Optional[float]
     decision: Optional[DecisionDigest]

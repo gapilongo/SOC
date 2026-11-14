@@ -23,9 +23,11 @@ What an attached alert inherits from the parent's decision
   for containment: the attached alert's own actions go through the normal
   autonomy policy and per-action approval.
 * ``false_positive`` / ``benign_positive`` close the attached alert (and let
-  the verdict cache learn its fingerprint) only when it is the same detection
-  as the reviewed alert (same fingerprint) and not more severe. Otherwise the
-  alert is *detached*: it gets its own escalation (:meth:`open_detached`,
+  the verdict cache learn it) only when it is the same detection with the
+  same behaviour as the reviewed alert (same verdict key: the fingerprint
+  plus process, command line, service, user and parent process; a shared
+  fingerprint is not enough) and not more severe. Otherwise the alert is
+  *detached*: it gets its own escalation (:meth:`open_detached`,
   ``summary.detached_from`` = the parent) and its run waits for that
   decision, so an alert nobody looked at is never closed as benign.
 
@@ -66,6 +68,7 @@ from lg_sotf.db import Connection, locks
 from lg_sotf.db.repos.escalations import ESCALATION_LEVELS, Escalation
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.events import ESCALATION_CREATED, ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models.vocabulary import SEVERITY_RANK
@@ -301,21 +304,22 @@ def _ticket_detail(args: Arguments) -> Dict[str, Any]:
 def own_review_reason(
     decision: str,
     *,
-    parent_fingerprint: Optional[str],
+    parent_key: Optional[str],
     parent_severity: Optional[str],
-    fingerprint: Optional[str],
+    key: Optional[str],
     severity: Optional[str],
 ) -> Optional[str]:
     """Why an attached alert may not inherit the group's ``decision`` (a :data:`OWN_REVIEW_REASONS` key), or ``None``.
 
     Only benign decisions are restricted: they close the alert and teach the
-    verdict cache its fingerprint, so they apply only to the same detection
-    (equal, non-empty fingerprint) at the same or a lower severity. Unknown
-    severities count as more severe.
+    verdict cache, so they apply only to the same detection and behaviour
+    (equal, non-empty verdict key, :mod:`lg_sotf.domain.verdict_key`; a shared
+    fingerprint is not enough) at the same or a lower severity. Unknown
+    severities count as more severe. The reason code keeps its stored name.
     """
     if decision not in BENIGN_DECISIONS:
         return None
-    if not fingerprint or fingerprint != parent_fingerprint:
+    if not key or key != parent_key:
         return "different_fingerprint"
     if SEVERITY_RANK.get(str(severity), len(SEVERITY_RANK)) > SEVERITY_RANK.get(str(parent_severity), -1):
         return "higher_severity"
@@ -526,7 +530,7 @@ class EscalationService:
         escalation_id: str,
         *,
         decision: str,
-        fingerprint: Optional[str],
+        verdict_key: Optional[str],
         severity: Optional[str],
     ) -> DecisionScope:
         """How the decision on ``escalation_id`` applies to ``alert_id`` (see the module docstring)."""
@@ -538,9 +542,9 @@ class EscalationService:
             parent = await self._repos.alerts.get(tenant_id, esc.alert_id)
             reason = own_review_reason(
                 decision,
-                parent_fingerprint=parent.fingerprint,
+                parent_key=verdict_key_of(parent),
                 parent_severity=parent.severity,
-                fingerprint=fingerprint,
+                key=verdict_key,
                 severity=severity,
             )
         return DecisionScope(esc, inherited=True, parent_alert_id=esc.alert_id, own_review_reason=reason)

@@ -12,6 +12,7 @@ ItemStatus = Literal[
     "error",  # ingestion rejected the event, or the run failed or timed out
 ]
 REVIEW_UNREVIEWED = "unreviewed"
+REVIEW_ORACLE = "oracle"
 PROVENANCE_FIELDS = ("provider", "model", "prompt_name", "prompt_hash")
 
 
@@ -34,7 +35,10 @@ class ItemResult:
     approval, or the analysis verdict (``inconclusive`` without one) for a run
     handed to an analyst. ``review`` is ``unreviewed`` whenever the run
     stopped at an analyst or approval interrupt: the harness records that
-    human review was requested and never invents a decision.
+    human review was requested and never invents a decision. The one
+    exception is the analyst oracle (``lg-sotf eval --oracle``), a labelled
+    measurement mode: it decides from the ground truth, ``review`` is
+    ``oracle``, and ``status`` still says what automation did before it.
     """
 
     item_id: str
@@ -70,6 +74,17 @@ class ItemResult:
     error: Optional[str] = None
     llm_provenance: Dict[str, Dict[str, str]] = field(default_factory=dict)
     """Per agent: the provider, model, prompt name and prompt hash of its latest LLM call."""
+    decision_inputs: Dict[str, Any] = field(default_factory=dict)
+    """What ``decide`` read (scores, verdict, rule evidence), for the offline policy simulator
+    (``lg_sotf.eval.calibration.decision_inputs``); empty when ``decide`` did not run."""
+    close_mechanism: Optional[str] = None
+    """For an item automation closed: what closed it (``lg_sotf.eval.closure.close_mechanism``)."""
+    context: List[str] = field(default_factory=list)
+    """The dataset's declared tenant context this alert touches (``lg_sotf.eval.context``)."""
+    oracle_decisions: List[str] = field(default_factory=list)
+    """With the analyst oracle: the decisions it made for this alert, in order (``lg_sotf.eval.oracle``)."""
+    final_status: Optional[str] = None
+    """With the analyst oracle: the alert's status after its decisions (``status`` stays what automation did)."""
 
     @property
     def scored(self) -> bool:

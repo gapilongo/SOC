@@ -224,3 +224,30 @@ def test_cassettes_reach_the_runner_and_a_missing_replay_directory_exits_2(
     ]
     history = runner.invoke(cli, ["eval", "--from-history", "--tenant", "t1", "--cassettes", str(tmp_path / "rec")])
     assert history.exit_code == 2 and "not to --from-history" in history.output
+
+
+def test_the_oracle_reaches_the_runner_and_needs_one_item_at_a_time(
+    env: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen: List[Any] = []
+
+    async def run(settings: Any, dataset: Any, **kwargs: Any) -> EvalRun:
+        seen.append((kwargs["oracle"], kwargs["accept_suppressions"]))
+        return EvalRun(results=[result("syn-001", "malicious", "waiting_human")], info={"llm_provider": "fake"})
+
+    monkeypatch.setattr(eval_command, "run_evaluation", run)
+    runner = CliRunner()
+    report = tmp_path / "r.json"
+    base = ["eval", "--dataset", str(DATASET), "--limit", "1", "--report", str(report)]
+    assert runner.invoke(cli, [*base, "--oracle", "propose"]).exit_code == 0
+    assert json.loads(report.read_text())["run"]["selection"]["oracle"] == "propose"
+    assert runner.invoke(cli, [*base, "--oracle", "accept"]).exit_code == 0
+    assert runner.invoke(cli, base).exit_code == 0
+    assert "oracle" not in json.loads(report.read_text())["run"]["selection"]
+    assert seen == [(True, False), (True, True), (False, False)]
+    parallel = runner.invoke(cli, [*base, "--oracle", "propose", "--concurrency", "2"])
+    assert parallel.exit_code == 2 and "--concurrency 1" in parallel.output
+    history = runner.invoke(cli, ["eval", "--from-history", "--tenant", "t1", "--oracle", "propose"])
+    assert history.exit_code == 2 and "not to --from-history" in history.output
+    with pytest.raises(eval_command.EvalCommandError, match="--oracle must be one of"):
+        eval_command.check_run_options(eval_command.EvalOptions(dataset="d", report="r", oracle="always"))

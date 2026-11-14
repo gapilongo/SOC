@@ -323,6 +323,29 @@ describe('bulk triage', () => {
     expect(list).not.toHaveTextContent('Escalation e0');
   });
 
+  it('says which escalations no rule can match when a proposal has no verdict key', async () => {
+    const user = userEvent.setup();
+    const { ApiError } = await import('../../api/client');
+    await renderQueue(many(2), {
+      handler: (method, path) => {
+        if (method === 'POST' && path === '/escalations/bulk/propose-suppression') {
+          throw new ApiError({ status: 422, code: 'no_verdict_key', message: 'no', requestId: null, details: [{ escalation_id: 'e1' }] });
+        }
+        return undefined;
+      },
+    });
+    await screen.findByRole('link', { name: 'Escalation e0' });
+    await user.click(screen.getByRole('checkbox', { name: 'Select the escalations shown (at most 50)' }));
+    await user.click(screen.getByRole('button', { name: 'Propose suppression…' }));
+    const dialog = within(screen.getByRole('dialog', { name: 'Propose a suppression rule' }));
+    await user.click(dialog.getByRole('button', { name: 'Propose rule' }));
+    const refused = await dialog.findByRole('alert');
+    expect(refused).toHaveTextContent('No rule can match these alerts');
+    const list = within(refused).getByRole('list', { name: 'Escalations no rule can match' });
+    expect(list).toHaveTextContent('Escalation e1');
+    expect(list).not.toHaveTextContent('Escalation e0');
+  });
+
   it('clears the selection when the filters change', async () => {
     const user = userEvent.setup();
     await renderQueue(many(2));

@@ -244,3 +244,32 @@ def test_regex_rejection_messages_are_stable(pattern: Any, message: str) -> None
     assert str(raised.value) == message
     explained = explain_rule({"title": {"regex": pattern}}, VIEW)
     assert explained.error == message and explained.predicates[0].error == message
+
+
+def test_a_rule_on_the_verdict_key_matches_only_that_behaviour() -> None:
+    """Suggested rules match the verdict key; an alert without one (unreadable event) never matches such a rule."""
+    from types import SimpleNamespace
+
+    from lg_sotf.domain.suppression import matching_rules, stored_alert_view
+    from lg_sotf.domain.verdict_key import verdict_key_of
+
+    def alert(process: str, unmapped: Any = None) -> Any:
+        normalized = {"entities": {"hosts": ["srv-app-02"], "processes": [process]}, "unmapped": unmapped or {}}
+        return SimpleNamespace(id="a", title="New service", severity="low", category=None, source_id="s",
+                               source_alert_id="x", fingerprint="f" * 64, normalized=normalized, raw={})
+
+    edge, psexec = alert("microsoftedgeupdate.exe"), alert("psexesvc.exe")
+    rule = SimpleNamespace(id="r1", name="suggested", match={"verdict_key": verdict_key_of(edge), "severity": "low"})
+    assert matching_rules([rule], [stored_alert_view(edge)]) == [rule]
+    assert matching_rules([rule], [stored_alert_view(psexec)]) == []
+    truncated = stored_alert_view(alert("microsoftedgeupdate.exe", {"_lgsotf_truncated": {"original_bytes": 1}}))
+    assert "verdict_key" not in truncated and matching_rules([rule], [truncated]) == []
+    # The view's own key cannot be supplied through the alert's fields.
+    spoofed = alert("psexesvc.exe")
+    spoofed.normalized["verdict_key"] = verdict_key_of(edge)
+    assert matching_rules([rule], [stored_alert_view(spoofed)]) == []
+    # Any of several views: a rule bounded to low severity matches a high alert's lowest-severity view.
+    high = {**stored_alert_view(edge), "severity": "high"}
+    assert matching_rules([rule], [high]) == [] and matching_rules([rule], [high, {**high, "severity": "low"}]) == [rule]
+    broken = SimpleNamespace(id="r2", name="broken", match={})
+    assert matching_rules([broken, rule], [stored_alert_view(edge)]) == [rule]

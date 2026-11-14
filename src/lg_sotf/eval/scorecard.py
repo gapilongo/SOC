@@ -17,7 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from lg_sotf.domain.rates import RateInterval, format_rate, wilson_interval
+from lg_sotf.domain.rates import RateInterval, format_rate, rate_interval, wilson_interval
+from lg_sotf.eval.closure import closure_summary, malicious_cell
 from lg_sotf.eval.dataset import DISPOSITIONS
 from lg_sotf.eval.metrics import per_class_intervals
 from lg_sotf.eval.results import ItemResult
@@ -89,6 +90,7 @@ def dataset_card(report: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         "dataset": {key: dataset.get(key) for key in ("path", "sha256", "items", "synthetic", "splits")},
         "selection": (report.get("run") or {}).get("selection"),
+        "closure": report.get("closure") or closure_summary(items),
         "scored": len(scored),
         "errors": len(items) - len(scored),
         "malicious_false_negative": proportion(len(missed), len(malicious)),
@@ -276,6 +278,39 @@ def _header(card: Mapping[str, Any]) -> List[str]:
     return lines
 
 
+def _closure_rate(rate: Mapping[str, Any]) -> str:
+    return format_rate(rate_interval(int(rate["k"]), int(rate["n"])))
+
+
+def _closure(cards: Sequence[Mapping[str, Any]]) -> List[str]:
+    """The two headline numbers per dataset, then what closed each item (mechanism) and every closed malicious id."""
+    lines = [
+        "## Headline: closure",
+        "",
+        "Benign closure rate: expected-benign items automation closed as benign (95% Wilson interval). Malicious "
+        "auto-close: expected-malicious items automation closed with any disposition, with the exact one-sided 95% "
+        "upper bound.",
+        "",
+        "| Dataset | Benign closure rate | Malicious auto-close |",
+        "|---|---|---|",
+    ]
+    for card in cards:
+        h = card["closure"]["headline"]
+        lines.append(f"| {_label(card)} | {_closure_rate(h['benign_closure'])} | "
+                     f"{malicious_cell(h['malicious_auto_close'])} |")
+    lines += ["", "| Dataset | Mechanism | Benign closed | Malicious closed |", "|---|---|---|---|"]
+    for card in cards:
+        for row in card["closure"]["by_mechanism"]:
+            lines.append(f"| {_label(card)} | {row['mechanism']} | {_closure_rate(row['benign'])} | {row['malicious']} |")
+    lines.append("")
+    for card in cards:
+        closed = card["closure"].get("malicious_closed") or []
+        if closed:
+            ids = ", ".join(f"`{c['item_id']}` ({c['mechanism'] or 'unknown'})" for c in closed)
+            lines += [f"Malicious closed in {_label(card)}: {ids}.", ""]
+    return lines
+
+
 def _headline(cards: Sequence[Mapping[str, Any]]) -> List[str]:
     lines = [
         "## Malicious false-negative rate",
@@ -378,9 +413,9 @@ def _datasets(cards: Sequence[Mapping[str, Any]]) -> List[str]:
 
 
 def render_scorecard(card: Mapping[str, Any]) -> str:
-    """The scorecard as Markdown: header, headline false-negative rate, automation, per class, cost, limitations."""
+    """The scorecard as Markdown: header, closure headline, false-negative rate, automation, per class, cost."""
     cards = card["datasets"]
-    lines = _header(card) + _headline(cards) + _automation(cards) + _per_class(cards) + _cost(cards)
+    lines = _header(card) + _closure(cards) + _headline(cards) + _automation(cards) + _per_class(cards) + _cost(cards)
     lines += _datasets(cards)
     lines += ["## Limitations", ""] + [f"- {note}" for note in card["limitations"]] + [""]
     return "\n".join(lines)
