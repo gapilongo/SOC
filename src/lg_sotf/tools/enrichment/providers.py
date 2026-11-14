@@ -148,6 +148,8 @@ class _HttpProvider:
     default_base_url = ""
     default_rpm = 60
     default_ttl_s = 3_600.0
+    unknown_is_404 = False
+    """Whether the provider answers HTTP 404 for an indicator it does not know; elsewhere a 404 is a failure."""
 
     def __init__(
         self,
@@ -179,7 +181,7 @@ class _HttpProvider:
         """Common handling for non-200 statuses; None means "parse the body"."""
         if status == 200:
             return None
-        if status == 404:
+        if status == 404 and self.unknown_is_404:
             return EnrichmentResult(self.name, kind, "not_found", "unknown")
         if status == 429:
             return EnrichmentResult.failed(
@@ -200,6 +202,7 @@ class VirusTotalProvider(_HttpProvider):
     default_base_url = "https://www.virustotal.com/api/v3"
     default_rpm = 4  # public API quota; raise it for premium keys
     default_ttl_s = 3_600.0
+    unknown_is_404 = True
 
     def __init__(self, config: Optional[Mapping[str, Any]] = None, **kwargs: Any) -> None:
         super().__init__(config, **kwargs)
@@ -250,9 +253,9 @@ class VirusTotalProvider(_HttpProvider):
         if failed is not None:
             return failed
         attributes = as_mapping(as_mapping(as_mapping(response.body).get("data")).get("attributes"))
-        if not attributes:
-            return EnrichmentResult.failed(self.name, request.kind, "error", "unexpected response shape")
         stats = as_mapping(attributes.get("last_analysis_stats"))
+        if not stats:  # no analysis in the answer: not a verdict of "nothing found"
+            return EnrichmentResult.failed(self.name, request.kind, "error", "unexpected response shape")
         malicious = as_int(stats.get("malicious")) or 0
         suspicious = as_int(stats.get("suspicious")) or 0
         harmless = as_int(stats.get("harmless")) or 0

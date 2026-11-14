@@ -14,7 +14,8 @@ from typing import Any, Dict, Literal, Optional, Tuple, get_args
 from pydantic import BaseModel, ConfigDict
 
 StepKind = Literal["llm", "tool"]
-StepOutcome = Literal["success", "refusal", "invalid_output", "error"]
+StepOutcome = Literal["success", "refusal", "invalid_output", "error", "empty", "failed"]
+"""``empty`` and ``failed`` are tool outcomes (``lg_sotf.tools.registry``): the query matched nothing, or did not run."""
 STEP_KINDS: Tuple[str, ...] = get_args(StepKind)
 STEP_OUTCOMES: Tuple[str, ...] = get_args(StepOutcome)
 

@@ -41,7 +41,9 @@ from lg_sotf.llm.registry import register_prompt
 from lg_sotf.llm.schema import clipped_list, clipped_str, lenient_literal
 from lg_sotf.observability.logging import get_logger
 from lg_sotf.security.redaction import redact_text
-from lg_sotf.tools.enrichment import EnrichmentResult, EnrichmentService
+from lg_sotf.tools.enrichment import EnrichmentResult
+from lg_sotf.tools.enrichment.tools import REPUTATION_FAMILY
+from lg_sotf.tools.registry import ToolRegistry
 
 if TYPE_CHECKING:
     from lg_sotf.agents.base import BaseAgent
@@ -184,7 +186,7 @@ class ReActReasoner:
 
     def __init__(
         self,
-        enrichment: EnrichmentService,
+        tools: ToolRegistry,
         *,
         max_steps: int = 5,
         stable_delta: int = 5,
@@ -197,7 +199,7 @@ class ReActReasoner:
             raise ValueError("stable_delta must be >= 0")
         if time_budget_s is not None and time_budget_s <= 0:
             raise ValueError("time_budget_s must be > 0")
-        self.enrichment = enrichment
+        self.tools = tools
         self.max_steps = max_steps
         self.stable_delta = stable_delta
         self.time_budget_s = time_budget_s
@@ -276,20 +278,13 @@ class ReActReasoner:
 
     async def _observe(self, run: AnalysisRunContext, candidate: Candidate, *, agent: str) -> None:
         ctx = run.agent_ctx
-        results = await ctx.trace.tool(
-            agent,
-            "reputation",
-            {"kind": candidate.kind, "value": candidate.value, "providers": sorted(candidate.providers)},
-            self.enrichment.lookup(
-                ctx.tenant_id,
-                candidate.kind,
-                candidate.value,
-                repos=ctx.repos,
-                exclude_alert_id=ctx.alert_id,
-                providers=candidate.providers,
-            ),
-            lambda found: [r.as_dict() for r in found],
-            lambda rows: [EnrichmentResult.from_dict(candidate.kind, row) for row in rows],
+        # Through the tool registry, one trace step per lookup (named ``reputation``, as before the registry).
+        results = await self.tools.call_family(
+            ctx,
+            REPUTATION_FAMILY,
+            candidate.providers,
+            {"kind": candidate.kind, "value": candidate.value},
+            agent=agent,
         )
-        run.observations.append(Observation(candidate, results))
+        run.observations.append(Observation(candidate, [r.value for r in results]))
         run.lookups += 1
