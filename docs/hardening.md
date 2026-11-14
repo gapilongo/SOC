@@ -114,7 +114,7 @@ when the JWT secret is shorter than 32 bytes, when encryption keys or the
 indicator HMAC key are missing, when a published placeholder secret is used,
 or when CORS is a wildcard, cookies are insecure, the fake model runs
 without `llm.allow_fake`, or the development database password is in the
-URL (`src/lg_sotf/settings.py:513-549`).
+URL (`src/lg_sotf/settings.py:521-557`).
 
 **Check.** Compose: `docker compose -f docker/docker-compose.yml -f
 docker/docker-compose.prod.yml config | grep LG_SOTF_ENVIRONMENT`. Helm:
@@ -197,7 +197,7 @@ reads it from `serviceMonitor.apiBearerTokenSecret`.
 
 **Level:** L1. **Default:** met: `response.dry_run=true`, and autonomy is
 `approval` for low, medium and high risk and `disabled` for critical
-(`src/lg_sotf/settings.py:307-319`).
+(`src/lg_sotf/settings.py:315-327`).
 
 **Rationale.** A misconfigured connector or policy acts on the customer's
 production systems. Dry run records what would happen and sends nothing.
@@ -244,7 +244,7 @@ MFA enforced at the IdP.
 ### HG-APP-9 Shorten the refresh-token lifetime
 
 **Level:** L2. **Default:** operator. Refresh tokens last 14 days
-(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:176`).
+(`auth.refresh_token_ttl_s`, `src/lg_sotf/settings.py:178`).
 
 **Rationale.** A shorter lifetime limits how long a stolen browser session
 stays useful. Per-tenant session policy (idle timeout, absolute lifetime)
