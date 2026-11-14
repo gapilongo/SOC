@@ -1,7 +1,6 @@
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { hashKey, useQueryClient, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { qk } from '../api/queryKeys';
 import type { LiveEvent } from '../api/types';
 import { useAuth, useAuthStore } from '../auth/AuthContext';
 import { wsEndpoint } from '../config';
@@ -44,40 +43,33 @@ export function createLiveBus() {
   };
 }
 
-/** Query key prefixes (first key elements, see api/queryKeys.ts) each event type makes stale. */
-export function keysForEvent(type: LiveEvent['type']): string[] {
-  switch (type) {
-    case 'alert.created':
-    case 'alert.updated':
-      return [qk.alerts.all[0], qk.alert.all[0], qk.dashboard.all[0]];
-    case 'escalation.created':
-    case 'escalation.updated':
-      return [qk.escalations.all[0], qk.escalation.all[0], qk.dashboard.all[0]];
-    case 'action.updated':
-      return [qk.actions.all[0], qk.dashboard.all[0]];
-    default:
-      return [];
-  }
-}
+/**
+ * The query keys (group prefixes) a live event type makes stale; empty for a
+ * type no module listens to. The shell passes the registered modules' mapping
+ * (each module's manifest lists its own keys per event type). An event whose
+ * type maps to no key is dropped at the socket. Pass a stable function: the
+ * provider reconnects when it changes.
+ */
+export type LiveKeys = (eventType: string) => readonly QueryKey[];
 
 /**
- * Coalesces invalidations: each query prefix is refreshed at most once per
- * `windowMs`, so an alert storm does not turn into a request storm. Lists
+ * Coalesces invalidations: each query key prefix is refreshed at most once
+ * per `windowMs`, so an alert storm does not turn into a request storm. Lists
  * holding several pages are only marked stale (one request per list at most;
  * see `invalidateBounded`).
  */
 export function createInvalidator(client: QueryClient, windowMs = 2_000) {
-  const pending = new Set<string>();
+  const pending = new Map<string, QueryKey>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   const flush = () => {
     timer = null;
-    const keys = [...pending];
+    const keys = [...pending.values()];
     pending.clear();
-    for (const key of keys) void invalidateBounded(client, [key]);
+    for (const key of keys) void invalidateBounded(client, key);
   };
   return {
-    add(keys: string[]) {
-      for (const k of keys) pending.add(k);
+    add(keys: readonly QueryKey[]) {
+      for (const k of keys) pending.set(hashKey(k), k);
       if (!timer && pending.size) timer = setTimeout(flush, windowMs);
     },
     cancel() {
@@ -88,7 +80,7 @@ export function createInvalidator(client: QueryClient, windowMs = 2_000) {
   };
 }
 
-export function LiveProvider({ children }: { children: ReactNode }) {
+export function LiveProvider({ keysFor, children }: { keysFor: LiveKeys; children: ReactNode }) {
   const { status: authStatus, actingTenant } = useAuth();
   const store = useAuthStore();
   const client = useQueryClient();
@@ -108,8 +100,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       getToken: store.getToken,
       refreshToken: store.refresh,
       onStatus: setStatus,
+      // Only the event types a module listens to are handed on.
+      isEvent: (type) => keysFor(type).length > 0,
       onEvent: (event) => {
-        inv.add(keysForEvent(event.type));
+        inv.add(keysFor(event.type));
         bus.emit(event);
       },
       onResync: () => {
@@ -125,7 +119,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       socket.stop();
       inv.cancel();
     };
-  }, [authStatus, actingTenant, client, store, bus]);
+  }, [authStatus, actingTenant, client, store, bus, keysFor]);
 
   // Stable while the status holds, so consumers do not re-render per event.
   const value = useMemo(() => ({ status, subscribe: bus.subscribe }), [status, bus]);

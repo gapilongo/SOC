@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { DispositionBadge, RiskBadge, SeverityBadge, StatusBadge, statusTone, Badge } from '../Badge';
+import { DispositionBadge, RiskBadge, SeverityBadge, StatusBadge, statusTone, Badge } from '../../modules/soc/components/Badge';
 import {
   Banner,
   Button,

@@ -4,7 +4,7 @@
  * prototype, as far as today's API can carry it). Synthetic data only.
  */
 
-import type { AlertDetailOut, AlertEventOut, EscalationOut, PreviewActionOut, ResponsePreviewOut } from '../api/types';
+import type { AlertDetailOut, AlertEventOut, EscalationOut, PreviewActionOut, ResponsePreviewOut } from '../modules/soc/api/types';
 
 export const ALERT_ID = 'alert-48213';
 export const ESCALATION_ID = 'esc-1';

@@ -1,6 +1,6 @@
 /** Microsoft capability catalog fixtures (the shape of GET /integrations/microsoft/catalog). */
 
-import type { MicrosoftCapabilityOut } from '../api/types';
+import type { MicrosoftCapabilityOut } from '../modules/soc/api/types';
 
 export const ISOLATION: MicrosoftCapabilityOut = {
   key: 'defender.isolation',

@@ -2,30 +2,25 @@ import { Activity } from 'lucide-react';
 import { useId } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 
-import { useDashboardSummary } from '../../api/hooks';
 import { useAuth } from '../../auth/AuthContext';
 import { CountChip, cx } from '../../components/ui';
-import { usePollInterval } from '../../lib/visibility';
-import { navCounts, navFor, roleNote, type NavGroup } from './nav';
+import { navFor, roleNote, type NavCount, type NavGroup } from './nav';
 
-/** The dashboard window the counts come from (the overview page's default, so the query is shared). */
-const COUNT_WINDOW_HOURS = 24;
-
-/** Nav counts (escalations breaching SLA, approvals waiting on me) from the dashboard summary. */
-export function useNavCounts() {
-  const q = useDashboardSummary(COUNT_WINDOW_HOURS, { refetchInterval: usePollInterval(60_000) });
-  return navCounts(q.data);
+/** A nav item's count chip. The number comes from the hook the item's module supplies; nothing shows without one. */
+function NavCountChip({ count }: { count: NavCount }) {
+  const n = count.useCount();
+  return n === undefined ? null : <CountChip count={n} tone={count.tone} meaning={count.meaning(n)} />;
 }
 
 /**
  * The sidebar: brand, role-filtered groups of links (`groups` is the route
  * table's nav, NAV_GROUPS in app/routes.tsx) (the current page has
- * aria-current="page", set by NavLink), counts with their meaning for screen
- * readers, and a note on the role that explains hidden pages.
+ * aria-current="page", set by NavLink), the modules' counts with their
+ * meaning for screen readers, and a note on the role that explains hidden
+ * pages.
  */
 export function Sidebar({ groups: allGroups, onNavigate }: { groups: readonly NavGroup[]; onNavigate?: () => void }) {
   const { principal } = useAuth();
-  const counts = useNavCounts();
   const idPrefix = useId();
   const groups = navFor(allGroups, principal);
 
@@ -51,7 +46,6 @@ export function Sidebar({ groups: allGroups, onNavigate }: { groups: readonly Na
             {/* eslint-disable-next-line jsx-a11y/no-redundant-roles */}
             <ul role="list" aria-labelledby={headingId} className="flex flex-col gap-0.5">
               {g.items.map(({ to, label, icon: Icon, count }) => {
-                const n = count ? counts[count.field] : undefined;
                 return (
                   <li key={to}>
                     <NavLink
@@ -67,7 +61,7 @@ export function Sidebar({ groups: allGroups, onNavigate }: { groups: readonly Na
                     >
                       <Icon className="h-4 w-4 flex-none" strokeWidth={1.75} aria-hidden="true" />
                       <span className="flex-1">{label}</span>
-                      {count && n !== undefined && <CountChip count={n} tone={count.tone} meaning={count.meaning(n)} />}
+                      {count && <NavCountChip count={count} />}
                     </NavLink>
                   </li>
                 );

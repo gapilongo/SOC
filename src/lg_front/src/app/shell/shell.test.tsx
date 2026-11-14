@@ -11,7 +11,7 @@ import { tenant } from '../../test/tenants';
 import { Layout } from '../Layout';
 import { NAV_GROUPS } from '../routes';
 import { Header, LiveIndicator } from './Header';
-import { navCounts, navFor, roleNote } from './nav';
+import { navFor, roleNote } from './nav';
 import { Sidebar } from './Sidebar';
 import { initials, roleLabel, UserMenu } from './UserMenu';
 
@@ -70,16 +70,6 @@ describe('navigation model', () => {
   it('maps every item to an existing route', () => {
     const items = navFor(NAV_GROUPS, principal({ role: 'admin', isPlatformAdmin: true })).flatMap((g) => g.items);
     expect(Object.fromEntries(items.map((i) => [i.label, i.to]))).toMatchObject({ Overview: '/', Approvals: '/approvals', 'MSSP console': '/platform' });
-  });
-
-  it('reads nav counts defensively from the dashboard summary', () => {
-    expect(navCounts(undefined)).toEqual({});
-    expect(navCounts('nope')).toEqual({});
-    expect(navCounts(DASHBOARD)).toEqual({});
-    expect(navCounts({ ...DASHBOARD, unassigned_breaching: 3, pending_approvals: 1 })).toEqual({ unassigned_breaching: 3, pending_approvals: 1 });
-    expect(navCounts({ unassigned_breaching: 0, pending_approvals: -1 })).toEqual({});
-    expect(navCounts({ unassigned_breaching: '3', pending_approvals: 1.5 })).toEqual({});
-    expect(navCounts({ unassigned_breaching: null })).toEqual({});
   });
 
   it('explains the role under the nav', () => {

@@ -5,6 +5,8 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
+import lgSotf from './eslint-rules/module-boundary.js';
+
 // Syntax bans, grouped so a file-level exemption can drop one group and keep the others
 // (ESLint replaces the whole `no-restricted-syntax` list per file).
 const CACHE_CLEAR = [
@@ -18,17 +20,17 @@ const CACHE_CLEAR = [
 const QUERY_KEY_LITERAL = [
   {
     selector: "Property[key.name='queryKey'][value.type='ArrayExpression']",
-    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+    message: "Build query keys with the module's api/queryKeys.ts (qk), not array literals.",
   },
   {
     selector: "CallExpression[callee.property.name=/^(get|set)QueryData$/][arguments.0.type='ArrayExpression']",
-    message: 'Build query keys with qk from api/queryKeys.ts, not array literals.',
+    message: "Build query keys with the module's api/queryKeys.ts (qk), not array literals.",
   },
 ];
 const INVALIDATE = [
   {
     selector: "CallExpression[callee.property.name='invalidateQueries']",
-    message: 'Use a named policy from api/invalidate.ts (or invalidateBounded from lib/pagination.ts).',
+    message: "Use a named policy from the module's api/invalidate.ts (or invalidateBounded from lib/pagination.ts).",
   },
 ];
 
@@ -55,29 +57,32 @@ const PALETTE = [
   },
 ];
 
-// Layer boundaries (README "Structure", roadmap FE9): app -> pages -> components -> shared kernel
-// (api, auth, live, lib, theme). Imports point down only. Tests are exempt: they compose layers.
+// Layer boundaries (README "Structure", roadmap FE9, ADR 0015): app (the shell) -> modules ->
+// components -> shared kernel (api, auth, live, lib, theme, core). Imports point down only. Tests are
+// exempt: they compose layers. What a module may import from another module, and the shell from a
+// module, is the `lg-sotf/module-boundary` rule (eslint-rules/module-boundary.js).
 const UP_TO_PAGES_OR_APP = {
-  regex: '^(\\.\\./)+(pages|app)(/|$)',
-  message: 'Layer boundary: the shared kernel and components must not import pages or the app shell.',
+  regex: '^(\\.\\./)+(pages|app|modules)(/|$)',
+  message: 'Layer boundary: the shared kernel and components must not import the app shell, its pages or a module.',
 };
-// The generated OpenAPI types (npm run gen:api) are read only by src/api: types.ts stays the app's
-// vocabulary and contract.check.ts holds it to the schema.
+// The generated OpenAPI types (npm run gen:api) are read only by src/api: the hand-written types.ts
+// files stay the app's vocabulary, and each contract.check.ts holds its types to the schema through
+// api/contract.ts.
 const SCHEMA_GEN = {
   regex: '(^|/)api/schema\\.gen$',
-  message: 'Import API types from api/types.ts; only src/api reads the generated schema (contract.check.ts).',
+  message: "Import API types from the module's api/types.ts; only src/api reads the generated schema (a contract check uses api/contract.ts).",
 };
 const DATA_IN_COMPONENTS = {
   regex: '^(\\.\\./)+api/endpoints$',
-  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+  message: 'Components are presentational: a widget that fetches data belongs to its module.',
 };
 const REACT_QUERY_IN_COMPONENTS = {
   name: '@tanstack/react-query',
-  message: 'Components are presentational: a widget that fetches data belongs to its feature under pages/.',
+  message: 'Components are presentational: a widget that fetches data belongs to its module.',
 };
 const UP_TO_COMPONENTS = {
   regex: '^(\\.\\./)+components(/|$)',
-  message: 'Layer boundary: the shared kernel (api, auth, live, lib, theme) must not import components.',
+  message: 'Layer boundary: the shared kernel (api, auth, live, lib, theme, core) must not import components.',
 };
 
 export default tseslint.config(
@@ -92,6 +97,7 @@ export default tseslint.config(
     plugins: {
       'react-hooks': reactHooks,
       'react-refresh': reactRefresh,
+      'lg-sotf': lgSotf,
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
@@ -117,10 +123,11 @@ export default tseslint.config(
       eqeqeq: ['error', 'always'],
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...INVALIDATE, ...PALETTE],
       'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
+      'lg-sotf/module-boundary': 'error',
     },
   },
   {
-    files: ['src/{auth,live,lib,theme}/**/*.{ts,tsx}'],
+    files: ['src/{auth,live,lib,theme,core}/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [UP_TO_PAGES_OR_APP, UP_TO_COMPONENTS, SCHEMA_GEN] }],
     },
@@ -145,8 +152,8 @@ export default tseslint.config(
     },
   },
   {
-    // The owners of invalidation: named policies, and bounded refetch for paged lists and live events.
-    files: ['src/api/invalidate.ts', 'src/lib/pagination.ts'],
+    // The owners of invalidation: each module's named policies, and bounded refetch for paged lists and live events.
+    files: ['src/modules/*/api/invalidate.ts', 'src/lib/pagination.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...CACHE_CLEAR, ...QUERY_KEY_LITERAL, ...PALETTE],
     },
@@ -173,13 +180,14 @@ export default tseslint.config(
       'no-restricted-properties': 'off',
       // Tests build and tear down their own query clients.
       'no-restricted-syntax': 'off',
-      // Tests compose layers (a page inside the shell, a guard around a page), but read API types
-      // from api/types.ts like the app.
+      // Tests compose layers (a page inside the shell, a guard around a page, a module beside
+      // another), but read API types from api/types.ts like the app.
       'no-restricted-imports': ['error', { patterns: [SCHEMA_GEN] }],
+      'lg-sotf/module-boundary': 'off',
     },
   },
   {
-    files: ['vite.config.ts', 'eslint.config.js', 'tailwind.config.js', 'postcss.config.js'],
+    files: ['vite.config.ts', 'eslint.config.js', 'eslint-rules/**/*.js', 'tailwind.config.js', 'postcss.config.js'],
     languageOptions: { globals: { ...globals.node } },
   },
   {

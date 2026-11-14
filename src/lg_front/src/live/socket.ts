@@ -53,6 +53,8 @@ export interface LiveSocketOptions {
   getToken: () => string | null;
   /** Force a new token (after 4401/1008). */
   refreshToken: () => Promise<string | null>;
+  /** Which message types are events to hand to `onEvent` (the types the registered modules listen to). */
+  isEvent: (type: string) => boolean;
   onEvent: (event: LiveEvent) => void;
   onStatus?: (status: LiveStatus) => void;
   /** Called after a reconnect once the server said hello: re-read state. */
@@ -66,7 +68,6 @@ export interface LiveSocketOptions {
 
 const CLOSE_TOKEN_EXPIRED = 4401;
 const CLOSE_POLICY = 1008;
-const EVENT_TYPES = new Set(['alert.created', 'alert.updated', 'escalation.created', 'escalation.updated', 'action.updated']);
 
 export class LiveSocket {
   #opts: Required<Omit<LiveSocketOptions, 'onStatus' | 'onResync'>> & Pick<LiveSocketOptions, 'onStatus' | 'onResync'>;
@@ -187,7 +188,7 @@ export class LiveSocket {
         return;
       }
       if (type === 'ping') return;
-      if (typeof type === 'string' && EVENT_TYPES.has(type)) this.#opts.onEvent(msg as LiveEvent);
+      if (typeof type === 'string' && this.#opts.isEvent(type)) this.#opts.onEvent(msg as LiveEvent);
     };
     socket.onerror = () => {
       // onclose follows and handles the reconnect.
