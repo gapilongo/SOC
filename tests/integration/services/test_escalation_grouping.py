@@ -10,6 +10,7 @@ import pytest
 
 from lg_sotf.db import locks
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.services.escalation import EscalationService, EscalationTicket
 from lg_sotf.settings import Settings
 from tests.integration.db._support import TENANT_A, TENANT_B
@@ -195,11 +196,17 @@ async def test_invalid_grouping_indicator_types_fall_back_to_the_defaults(
     assert policy.grouping.indicator_types == ("ip", "domain", "url", "hash")
 
 
+SVCHOST = "c:\\windows\\system32\\svchost.exe"
+
+
 async def _grouped(
-    repos: Repositories, svc: EscalationService, *, parent_fp: str, child_fp: str, parent_sev: str, child_sev: str
+    repos: Repositories, svc: EscalationService, *, parent_fp: str, child_fp: str, parent_sev: str, child_sev: str,
+    child_process: str = SVCHOST,
 ) -> tuple[str, str, str]:
-    parent = await add_alert(repos, TENANT_A, fingerprint=parent_fp, severity=parent_sev)
-    child = await add_alert(repos, TENANT_A, fingerprint=child_fp, severity=child_sev)
+    parent = await add_alert(repos, TENANT_A, fingerprint=parent_fp, severity=parent_sev,
+                             entities={"processes": [SVCHOST]})
+    child = await add_alert(repos, TENANT_A, fingerprint=child_fp, severity=child_sev,
+                            entities={"processes": [child_process]})
     for alert_id in (parent, child):
         await sight(repos, TENANT_A, alert_id, [("ip", "185.220.101.44")])
     p = await escalate(svc, TENANT_A, parent, severity=parent_sev)
@@ -209,14 +216,16 @@ async def _grouped(
 
 
 @pytest.mark.parametrize(
-    ("decision", "child_fp", "child_sev", "reason"),
+    ("decision", "child_fp", "child_sev", "child_process", "reason"),
     [
-        ("false_positive", "fp-parent", "medium", None),
-        ("benign_positive", "fp-parent", "low", None),
-        ("false_positive", "fp-other", "medium", "different_fingerprint"),
-        ("false_positive", "fp-parent", "high", "higher_severity"),
-        ("true_positive", "fp-other", "critical", None),
-        ("needs_more_info", "fp-other", "critical", None),
+        ("false_positive", "fp-parent", "medium", SVCHOST, None),
+        ("benign_positive", "fp-parent", "low", SVCHOST, None),
+        ("false_positive", "fp-other", "medium", SVCHOST, "different_fingerprint"),
+        # Same fingerprint (rule and entities), another process: not the activity the analyst reviewed.
+        ("false_positive", "fp-parent", "medium", "c:\\windows\\psexesvc.exe", "different_fingerprint"),
+        ("false_positive", "fp-parent", "high", SVCHOST, "higher_severity"),
+        ("true_positive", "fp-other", "critical", SVCHOST, None),
+        ("needs_more_info", "fp-other", "critical", SVCHOST, None),
     ],
 )
 async def test_decision_scope_of_attached_alerts(
@@ -225,15 +234,19 @@ async def test_decision_scope_of_attached_alerts(
     decision: str,
     child_fp: str,
     child_sev: str,
+    child_process: str,
     reason: str | None,
 ) -> None:
     svc = service(repos, make_settings)
     esc_id, parent, child = await _grouped(
-        repos, svc, parent_fp="fp-parent", child_fp=child_fp, parent_sev="medium", child_sev=child_sev
+        repos, svc, parent_fp="fp-parent", child_fp=child_fp, parent_sev="medium", child_sev=child_sev,
+        child_process=child_process,
     )
-    own = await svc.decision_scope(TENANT_A, parent, esc_id, decision=decision, fingerprint="fp-parent", severity="medium")
+    parent_key = verdict_key_of(await repos.alerts.get(TENANT_A, parent))
+    child_key = verdict_key_of(await repos.alerts.get(TENANT_A, child))
+    own = await svc.decision_scope(TENANT_A, parent, esc_id, decision=decision, verdict_key=parent_key, severity="medium")
     assert (own.inherited, own.own_review_reason, own.parent_alert_id) == (False, None, parent)
-    scope = await svc.decision_scope(TENANT_A, child, esc_id, decision=decision, fingerprint=child_fp, severity=child_sev)
+    scope = await svc.decision_scope(TENANT_A, child, esc_id, decision=decision, verdict_key=child_key, severity=child_sev)
     assert scope.inherited and scope.parent_alert_id == parent and scope.escalation.id == esc_id
     assert scope.own_review_reason == reason
 

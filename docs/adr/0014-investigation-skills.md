@@ -1,10 +1,11 @@
 # 0014. Investigate with versioned skills, and earn AI closure per skill and tenant
 
-* Status: proposed (direction decided by the founder on 2026-11-08: option B, "earned AI closure", plus
-  skills and reference material for accuracy; this record is the technical design for review)
+* Status: accepted with Amendment 1 (direction decided by the founder on 2026-11-08, option B plus skills and
+  reference material; on 2026-11-14 the founder made the investigation harness the focus)
 * Date: 2026-11-08
 * Roadmap step: AI-E2, AI-E3, AI-E4 ([build order](../design/investigation-skills-stories.md))
 * Supersedes nothing. Amends the safety invariant INV-03 when AI-E3.8a merges (section 6.2).
+* **Amended on 2026-11-14 by [Amendment 1](#amendment-1-2026-11-14-harness-v1-on-decision-policy-v3): read it first. It changes the closing rule, drops the settle delay and reorders the build.**
 
 Items marked **(uncertain)** are assumptions to confirm while building; each names the story that confirms it.
 
@@ -1013,10 +1014,10 @@ its gate per epic requires before the first T3 story (AI-E2.1) merges.
 | TM-EVT-11 | D | Investigations overload the customer's indexer | Per-tenant concurrency, per-investigation query budget, `timeout` and `terminate_after`, circuit breaker | Planned (AI-E3.3, INT3.4) |
 | TM-EVT-12 | T | A truncated, failed or premature query reads as "nothing happened" | `complete` computed per fact; three-valued predicates fail closed; settle delay; incomplete required evidence escalates | Planned (INT9.3, AI-E3.4) |
 | TM-EVT-13 | I | Case memory or guidance leaks across tenants | Forced RLS (INV-01), reads under `tenant_tx`, no cross-tenant retrieval or embeddings; cross-tenant learning only via aggregated skill releases | Planned (AI-E4.3, AI-E3.9) |
-| TM-WRK-10 | T | A poisoned guidance note (insider, compromised analyst account, or an AI draft) makes attacks close | Only the structured predicate yields facts; no bare wildcard scope; never for high, critical or never-close classes; fact replay rejects notes that close a labelled attack; second-person approval; mandatory expiry; audited | Planned (AI-E3.9) |
-| TM-WRK-11 | T | Skill drift: a skill, prompt or model change widens what closes | Contract hash; `skill-diff` classes with a CI version check; widening caps autonomy at `auto_full_audit`; per-skill corpus gate per PR and nightly; canaries; blind-audit miss estimate per skill | Planned (AI-E3.8a, AI-E3.8b, AI-E3.11) |
-| TM-WRK-12 | E | Autonomy is gained without being earned: miscounted evidence, an analyst rubber-stamping, or a self-approved promotion | Only skill-blind and AI-blind labels count; four-eyes promotion (PRD-8.3); demotion on any miss in the label's transaction; canaries; INV-13 | Planned (AI-E3.10) |
-| TM-WRK-13 | T | An attacker trains the AI with benign-looking repeats so memory vouches for the real attack | Only analyst decisions feed the ledger and case memory; skill closures never do; pattern key includes the command template; memory never proves alone | Planned (AI-E4.3, founder plan step 3) |
+| TM-WRK-11 | T | A poisoned guidance note (insider, compromised analyst account, or an AI draft) makes attacks close | Only the structured predicate yields facts; no bare wildcard scope; never for high, critical or never-close classes; fact replay rejects notes that close a labelled attack; second-person approval; mandatory expiry; audited | Planned (AI-E3.9) |
+| TM-WRK-12 | T | Skill drift: a skill, prompt or model change widens what closes | Contract hash; `skill-diff` classes with a CI version check; widening caps autonomy at `auto_full_audit`; per-skill corpus gate per PR and nightly; canaries; blind-audit miss estimate per skill | Planned (AI-E3.8a, AI-E3.8b, AI-E3.11) |
+| TM-WRK-13 | E | Autonomy is gained without being earned: miscounted evidence, an analyst rubber-stamping, or a self-approved promotion | Only skill-blind and AI-blind labels count; four-eyes promotion (PRD-8.3); demotion on any miss in the label's transaction; canaries; INV-13 | Planned (AI-E3.10) |
+| TM-WRK-14 | T | An attacker trains the AI with benign-looking repeats so memory vouches for the real attack | Only analyst decisions feed the ledger and case memory; skill closures never do; pattern key includes the command template; memory never proves alone | Planned (AI-E4.3, founder plan step 3) |
 
 The OWASP ASI01, ASI02, ASI06 and ATLAS AML.T0070/AML.T0080 rows gain references to these when the
 stories merge.
@@ -1087,3 +1088,68 @@ Stories, acceptance tests, tiers, points and dependencies:
   structured features first.
 * **Autonomy per tenant, not per skill.** One weak family would put every family at risk, and one miss
   would stop everything; per skill keeps the blast radius to one family.
+
+## Amendment 1 (2026-11-14): harness v1 on decision policy v3
+
+**Why.** After this record was written the founder decided "all benign must be closed" (2026-11-09), and
+decision policy v3 shipped (#349, #351, #352): at the tenant tier `auto_full_audit` the models close every
+alert the deep tier judges benign, except critical alerts and the never-close classes; every such close is
+audited, and a related threat reopens it (`lg_sotf.core.retro_reopen`). Measured on dev with a realistic
+mix (73 benign, 3 attacks, DeepSeek): 40 of 73 benign closed before the safety net and 0 attacks closed;
+**27 of 73 benign got an `inconclusive` deep verdict** because the model sees only the alert. The
+investigation harness exists to remove that doubt with evidence. Sections 6.1, 6.3 and step 6 of
+section 10 assumed nothing closes until a skill earns it; that is no longer the product.
+
+**What stays.** Sections 1 to 5 and 8: reviewed skill files, the deterministic router on
+detector-written fields, typed query templates through the tool registry (the model never writes a
+query, a target or a value), typed facts with ids minted by code, the trace store, budgets, the
+deterministic checker, tenant reference material and per-skill scorecards.
+
+**What changes.**
+
+1. **The closing rule is policy v3, and evidence sharpens it** (replaces sections 6.1 and 6.3 for the
+   tier `auto_full_audit`; AI-E3.8a is re-scoped to this):
+   * A benign deep verdict still closes at the tier. When an investigation ran, the close also needs the
+     checker to pass; the close is then recorded as *evidence-backed* (skill id, fact ids).
+   * **A malicious indicator of the skill that is true over the facts is a never-close**, whatever the
+     model says, and the alert goes to an analyst with the facts. This is the structural answer to the
+     look-alikes (the logon success of a password spray, PsExec before `whoami /all`).
+   * A failed check on a benign verdict (uncited claim, unknown fact) escalates. An *unknown* indicator
+     (the tool could not answer) does not block the close: policy v3 already closes without evidence,
+     and blocking on unknown would make an unreachable indexer close fewer alerts than no harness.
+   * Critical alerts, the never-close classes, steering text and a recent true positive are unchanged.
+   * Earned autonomy per (skill x tenant) is kept for one purpose, later: lowering the audit rate of a
+     proven skill from every close to a sample (AI-E3.10). It no longer gates closing.
+2. **No settle delay in v1** (replaces the settle bullet of section 2.3). The investigation runs at once
+   on the telemetry that exists. A fact whose window had not closed is marked `complete: false` and
+   shown as such. What happens after the alert is covered by the retro-reopen, which already reopens a
+   model close when a related threat appears within 24 hours. A deferred, resumed run can come back
+   later if the scorecard shows misses that only later telemetry would catch.
+3. **A default skill, so every Wazuh alert is investigated** (adds to section 2.1). When no family skill
+   matches, the router picks `wazuh.default`: host activity around the alert, prevalence of its main
+   object, and logon fan-out when the alert carries a user or source address. It has no benign proof of
+   its own; it gives the model facts to cite, and its malicious indicators (for example other
+   high-level or never-close-class alerts on the host in the window) block a close. Family skills refine
+   it. Alerts from sources without evidence tools keep today's path.
+4. **A small predicate set first** (narrows section 1.3). Skills use only: `exists`, `count >=`,
+   `distinct >=`, `prevalence_hosts >=`, `first_seen_older_than`, `any_group_in`, `any_technique_in`, and
+   `and` / `or` / `not`, three-valued. More are added with a skill that needs them.
+5. **Build order: a thin slice first, measured after every step** (replaces steps 2 to 6 of section 10).
+   The same two measurements gate each step: the dev run of 100 alerts (realistic mix) and `corpus_v1`
+   with telemetry. A step merges only when benign closed does not drop and attacks closed stays 0.
+
+   | Step | Stories | Exit |
+   |---|---|---|
+   | 1. Foundations | AI-E2.1 registry (#193), AI-E1.10 corpus telemetry and event store (#326), INT9.3 fact schema 1.1 and the facts table (#325) | Reputation lookups run through the registry; the corpus answers tool queries offline and on dev |
+   | 2. Evidence | INT3.4 the four Wazuh templates (#200) | Typed facts from the event store and from the Wazuh lab container |
+   | 3. Investigate | AI-E3.3 executor and budgets with `wazuh.default` (#205), AI-E3.2 fact ledger (#201) | Every Wazuh alert gets facts; the deep verdict cites them; first measurement of `inconclusive` |
+   | 4. Check and block | AI-E3.4 checker (#207), AI-E3.8a policy integration (#330), AI-E3.1a two family skills (#199) | Malicious indicators block closes; evidence-backed closes recorded |
+   | 5. Tenant context | AI-E4.1 context pack (#328), AI-E4.2 prevalence (#327) | Second measurement |
+   | 6. Production | AI-E3.6 tenant flag and shadow promotion (#209), AI-E3.8b per-skill scorecards and CI gate (#329), AI-E5.3 cost per investigation (#230), a real-model run on `adversarial_v2` | A tenant can turn the harness on in shadow, compare, then promote; cost and accuracy per skill are visible |
+   | Later | Case memory (#332), guidance notes (#333), recall canaries (#334), learning loop (#335), audit sampling by earned autonomy (#331), more skills (#220, #228, #336) | |
+
+**Production bar for step 6.** Degrades to today's path when the indexer is unreachable or a budget is
+spent; no tool runs without a declared risk class, schema, egress target and row cap; tool output is
+always rendered as data; per-tenant enablement, with a read-only indexer user; a shadow run performs no
+side effect (INV-09); cost per investigation is metered and capped; the threat-model rows TM-WRK-11 to
+TM-WRK-14 are implemented or explicitly deferred.

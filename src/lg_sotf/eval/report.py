@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from lg_sotf import __version__
 from lg_sotf.domain.rates import RateInterval, format_rate
 from lg_sotf.eval.adversarial import family_lines
+from lg_sotf.eval.closure import closure_summary, context_coverage, headline_lines, render_closure, with_context
 from lg_sotf.eval.dataset import DISPOSITIONS, Dataset
 from lg_sotf.eval.metrics import compute_metrics, metrics_by_family, metrics_by_split
 from lg_sotf.eval.results import PROVENANCE_FIELDS, ItemResult
@@ -41,6 +42,13 @@ UNREVIEWED_NOTE = (
     "Runs that stopped for analyst review or action approval were recorded as 'unreviewed': the "
     "harness never supplies an analyst decision."
 )
+ORACLE_NOTE = (
+    "Analyst oracle: every escalation was decided at once from the dataset's labels (false_positive for benign, "
+    "true_positive for malicious; response actions rejected), through the real decision path, with items in "
+    "event-time order. This measures how much the mechanisms that learn from analysts (verdict cache, entity "
+    "history, suppressions) could close with perfect, instant analysts. An item's status and the rates below "
+    "still count only what automation did before the oracle acted on that item."
+)
 
 
 def build_report(
@@ -51,11 +59,14 @@ def build_report(
     generated_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
     info = dict(run_info or {})
-    notes: List[str] = [HISTORY_NOTE if info.get("mode") == "history" else UNREVIEWED_NOTE]
+    notes: List[str] = [HISTORY_NOTE if info.get("mode") == "history" else ORACLE_NOTE if info.get("oracle")
+                        else UNREVIEWED_NOTE]
     if info.get("llm_provider") == "fake":
         notes.insert(0, FAKE_MODEL_NOTE)
     if dataset.synthetic:
         notes.insert(0, SYNTHETIC_NOTE)
+    context = dataset.tenant_context
+    results = with_context(results, context_coverage(dataset))
     splits = metrics_by_split(results)
     families = metrics_by_family(results)
     report: Dict[str, Any] = {
@@ -72,11 +83,14 @@ def build_report(
         },
         "run": info,
         "notes": notes,
+        "closure": closure_summary(results, has_context=context is not None),
         "metrics": compute_metrics(results),
         "splits": {name: {"metrics": m} for name, m in splits.items()},
         "llm_provenance": provenance_rows(results),
         "items": [r.as_dict() for r in results],
     }
+    if context is not None:
+        report["dataset"]["tenant_context"] = context.declared()
     if families:
         report["dataset"]["families"] = dataset.families()
         report["families"] = {name: {"metrics": m} for name, m in families.items()}
@@ -218,6 +232,10 @@ def _run_lines(report: Mapping[str, Any]) -> List[str]:
     for key in ("llm_provider", "fast_model", "deep_model", "isolation", "tenant_id", "concurrency", "duration_s"):
         if run.get(key) is not None:
             lines.append(f"| {key} | {_escape(run[key])} |")
+    if run.get("oracle"):
+        oracle = run["oracle"]
+        mode = "accept (suggested suppressions enabled)" if oracle.get("accept_suppressions") else "propose"
+        lines.append(f"| analyst oracle | {mode}; {oracle.get('suppressions_enabled', 0)} suppressions enabled |")
     if run.get("tenants"):
         tenants = ", ".join(f"{k}: {v}" for k, v in run["tenants"].items())
         lines.append(f"| tenants | {_escape(tenants)} |")
@@ -249,6 +267,8 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
             lines.append(f"- {_escape(v['message'])}")
         if gate["violations"]:
             lines.append("")
+    if report.get("closure"):
+        lines.extend(render_closure(report["closure"]))
     lines.extend(_headline_lines(report))
     lines.extend(family_lines(report))
     lines.append(
@@ -306,7 +326,9 @@ def render_markdown(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]]
 def summary_lines(report: Mapping[str, Any], gate: Optional[Mapping[str, Any]] = None) -> List[str]:
     """A short plain-text summary for the terminal."""
     m = report["metrics"]
-    out = [
+    closure = report.get("closure")
+    out = [line.replace("**", "").lstrip("- ") for line in headline_lines(closure)] if closure else []
+    out += [
         f"items {m['items']} (scored {m['scored']}, errors {m['errors']})",
         f"malicious false-negative rate {_metric_cell(m, 'malicious_false_negative_rate', _pct)}",
         f"benign auto-close rate {_pct(m['benign_auto_close_rate'])}; escalation rate {_pct(m['escalation_rate'])};"

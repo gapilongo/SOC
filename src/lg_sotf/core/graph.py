@@ -51,7 +51,9 @@ from lg_sotf.core.state import (
     TriageDigest,
 )
 from lg_sotf.domain import routing
+from lg_sotf.domain.closure import REOPENED
 from lg_sotf.domain.routing import RoutingThresholds
+from lg_sotf.domain.verdict_key import verdict_key_of
 
 if TYPE_CHECKING:
     from lg_sotf.db.repos import Alert
@@ -93,6 +95,9 @@ class WorkflowState(TypedDict, total=False):
     alert_id: str
     severity: str
     fingerprint: str
+    # The verdict cache's key (lg_sotf.domain.verdict_key), read from the full alert before it is capped.
+    # None: the alert never uses the cache. Runs started before it existed have no value.
+    verdict_key: Optional[str]
     alert: Dict[str, Any]
     confidence: float
     gate: GateDigest
@@ -137,7 +142,7 @@ MAX_OMITTED_KEYS = 20
 MAX_OMITTED_KEY_CHARS = 64
 OMITTED_RESERVE_CHARS = 1_600
 PROTECTED_ALERT_KEYS = frozenset(
-    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities", "email"}
+    {"id", "title", "severity", "category", "source_id", "occurred_at", "fingerprint", "entities", "email", "reopened"}
 )
 # (items per list, chars per string, keys per mapping, depth), tried in order until entities fit.
 ENTITY_SHRINK_STEPS = (
@@ -163,12 +168,48 @@ def _shrink(value: Any, items: int, chars: int, keys: int, depth: int) -> Any:
     return value
 
 
+#: The vendor rule fields of ``raw.rule`` kept when the raw event is too large for the state (FIX-2 review): the
+#: never-close checks read the Wazuh rule id and groups from there.
+RAW_RULE_KEYS = ("id", "level", "description", "groups", "mitre")
+RAW_OMITTED = "raw event too large for workflow state"
+
+
+RAW_RULE_SUBSET_ITEMS = 20
+#: Set on a kept ``raw.rule`` whose groups list was cut: the never-close checks then cannot see every group, and
+#: the alert resolves to ``vendor_unknown`` (lg_sotf.domain.noise_families), a never-close class.
+GROUPS_TRUNCATED = "groups_truncated"
+
+
+def _groups_cut(rule: Any, keep: int) -> bool:
+    groups = rule.get("groups") if isinstance(rule, Mapping) else None
+    return isinstance(groups, list) and len(groups) > keep
+
+
+def _raw_rule_subset(raw: Any) -> Optional[Dict[str, Any]]:
+    """The small ``raw.rule`` subset kept through the state cap (from the uncapped raw event)."""
+    rule = raw.get("rule") if isinstance(raw, Mapping) else None
+    if not isinstance(rule, Mapping):
+        return None
+    subset = {k: _shrink(rule[k], RAW_RULE_SUBSET_ITEMS, 200, 10, 3) for k in RAW_RULE_KEYS if k in rule}
+    if _groups_cut(rule, RAW_RULE_SUBSET_ITEMS):
+        subset[GROUPS_TRUNCATED] = True
+    return subset or None
+
+
+def _omitted_raw(rule: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    return {"_omitted": RAW_OMITTED, "rule": rule} if rule else {"_omitted": RAW_OMITTED}
+
+
 def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     """Size-cap the canonical alert for graph state: per-field, per-list and total limits.
 
-    ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`. The whole
-    document is bounded by :data:`MAX_ALERT_JSON_CHARS`: first the largest
-    unprotected keys are dropped, then ``entities`` is shrunk step by step
+    ``raw`` is kept only while it fits :data:`MAX_RAW_JSON_CHARS`; otherwise it
+    is replaced by a marker that keeps the small vendor rule subset
+    (``raw.rule``: :data:`RAW_RULE_KEYS`, shortened), which the never-close
+    checks read (an attacker who inflates an event must not hide the rule's
+    groups). The whole document is bounded by :data:`MAX_ALERT_JSON_CHARS`:
+    first the largest unprotected keys are dropped (``raw`` is first reduced
+    to that marker), then ``entities`` is shrunk step by step
     (fewer items, shorter strings) so indicators and response targets
     survive, and only as a last resort are whole entity kinds dropped.
     Every loop removes something, so this always terminates.
@@ -177,13 +218,23 @@ def cap_alert(canonical: Mapping[str, Any]) -> Dict[str, Any]:
     capped: Dict[str, Any] = _cap(dict(canonical))
     capped.pop("_omitted_keys", None)
     omitted: List[str] = []
+    original_raw = canonical.get("raw")
+    original_rule = original_raw.get("rule") if isinstance(original_raw, Mapping) else None
+    rule = _raw_rule_subset(original_raw)
+    kept_rule = capped["raw"].get("rule") if isinstance(capped.get("raw"), dict) else None
+    if isinstance(kept_rule, dict) and _groups_cut(original_rule, MAX_LIST_ITEMS):
+        kept_rule[GROUPS_TRUNCATED] = True  # the per-list cap cut the groups of a raw event that is kept whole
+    reduced = False
     if "raw" in capped and _json_len(capped["raw"]) > MAX_RAW_JSON_CHARS:
-        capped["raw"] = {"_omitted": "raw event too large for workflow state"}
+        capped["raw"], reduced = _omitted_raw(rule), True
     while _json_len(capped) > limit:
         candidates = [k for k in capped if k not in PROTECTED_ALERT_KEYS]
         if not candidates:
             break
         largest = max(candidates, key=lambda k: _json_len(capped[k]))
+        if largest == "raw" and rule is not None and not reduced:
+            capped["raw"], reduced = _omitted_raw(rule), True
+            continue
         capped.pop(largest)
         omitted.append(largest)
     entities = capped.get("entities")
@@ -231,11 +282,18 @@ def initial_state(tenant_id: str, alert: Alert, *, llm_budget_limit: Optional[in
     )
     if "raw" not in canonical:
         canonical["raw"] = alert.raw
+    # Decision policy v3: an alert the safety net reopened (lg_sotf.core.retro_reopen) never closes on the models'
+    # word again. Taken from the stored summary, never from the event; models never see it (MODEL_HIDDEN_ALERT_KEYS).
+    canonical.pop(REOPENED, None)
+    reopened = alert.summary.get(REOPENED) if isinstance(alert.summary, Mapping) else None
+    if reopened:
+        canonical[REOPENED] = {"reason": str(reopened.get("reason")) if isinstance(reopened, Mapping) else "reopened"}
     return {
         "tenant_id": tenant_id,
         "alert_id": alert.id,
         "severity": alert.severity,
         "fingerprint": alert.fingerprint,
+        "verdict_key": verdict_key_of(alert),
         "alert": cap_alert(canonical),
         "confidence": 50,
         "gate": {},

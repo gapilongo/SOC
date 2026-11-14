@@ -60,6 +60,7 @@ from lg_sotf.queue.events import make_event
 from lg_sotf.queue.streams import Message
 from lg_sotf.runtime.shutdown import cancel_and_wait, wait_or_stop
 from lg_sotf.security.redaction import safe_error_text
+from lg_sotf.services.folded import settle_folded
 from lg_sotf.settings import Settings
 
 log = get_logger(__name__)
@@ -489,6 +490,13 @@ class Worker:
             await self._repos.usage.add_processed(msg.tenant_id, msg.alert_id, conn=conn)
 
     async def _handle_unclaimable(self, msg: Message, exc: RunNotClaimable) -> None:
+        payload = msg.payload or {}
+        if exc.reason == "completed" and msg.kind == "resume" and payload.get("type") == "analyst_decision":
+            # An alert retro-reopen folded into a case has no run waiting (lg_sotf.services.folded); idempotent.
+            await settle_folded(
+                self._repos, msg.tenant_id, msg.alert_id, escalation_id=str(payload.get("escalation_id")),
+                decision=str(payload.get("decision")), decided_by=str(payload.get("decided_by") or ""),
+            )
         if exc.reason in TERMINAL_REASONS:
             await self._consumer.ack(msg)
             self.stats.skipped += 1

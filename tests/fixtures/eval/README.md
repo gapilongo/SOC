@@ -61,7 +61,7 @@ JSONL; keep every message synthetic.
 
 | File | Purpose |
 |---|---|
-| `adversarial_v2.jsonl` | 97 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `d3817373d8357ccffa7ff38f58a7bd8d5963a9caf1cdeee248c3d2b921955c1a` |
+| `adversarial_v2.jsonl` | 97 **synthetic** adversarial alerts (AI-E6.1), version 2, sha256 `4dfd1be1a01599fe21f805598aae4963246be28981c4ec9d9b6d744a06da83f1` |
 | `adversarial_v2_thresholds.yaml` | Its gate with the fake LLM: no malicious item of the `adversarial` split closed by automation |
 
 All 97 items are in the gated `adversarial` split, in seven families
@@ -80,7 +80,7 @@ record its new sha256 there and here (a unit test checks both).
 
 | File | Purpose |
 |---|---|
-| `corpus_v1.jsonl.gz` | 520 labelled Wazuh 4.14 alerts (AI-E1.8), gzip-compressed JSONL; sha256 of the JSONL text `3292bf4911d1aa53d9ef2f3f24d863b0d0d66d91c449e3bcb86574e4694a27c9` |
+| `corpus_v1.jsonl.gz` | 520 labelled Wazuh 4.14 alerts (AI-E1.8), gzip-compressed JSONL; sha256 of the JSONL text `42e40657d357939cc4719139cbdc069c8f61a5c0bb3b3ca16f3517165f2e3b69` |
 | `corpus_v1_thresholds.yaml` | Its gate with the fake model (replayed from `cassettes/corpus_v1/`) |
 
 208 malicious alerts (Atomic Red Team tests chained into Caldera-style
@@ -96,6 +96,19 @@ generator change, regenerate, record the cassettes again with
 `make eval-corpus-cassettes` and update the sha256 here and in
 `docs/evaluation.md` ("Attack-emulation corpus v1", which describes the
 contents, the sources and the gate).
+
+The `_meta` line also declares the estate's tenant context
+(`tenant_context`: admin, helpdesk and automation accounts, automation and
+jump hosts, the server patch window, the scanner). The evaluation measures
+it; only the scanner is applied (`tenant_settings`). See `docs/evaluation.md`
+("Declared tenant context").
+
+## AIT-ADS (not committed)
+
+`aitads_v1`, a sample of the public AIT Alert Data Set (CC BY 4.0), is built
+outside the repository by `python -m tests.fixtures.aitads` (loader and a
+19-alert fixture in `tests/fixtures/aitads/`); see `docs/evaluation.md`
+("AIT-ADS").
 
 Use these sets to test the pipeline and its safety policy. Do not quote its
 numbers as detection accuracy. How to evaluate on real labelled data (the

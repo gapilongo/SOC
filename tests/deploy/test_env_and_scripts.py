@@ -265,6 +265,7 @@ def test_only_useful_scripts_remain() -> None:
         "ci/create_test_role.sql",
         "ci/gitleaks-history.ignore",
         "ci/gitleaks.toml",
+        "ci/oasdiff.sh",
         "ci/release_assets.sh",
         "ci/release_train.sh",
         "ci/requirements-nightly.in",

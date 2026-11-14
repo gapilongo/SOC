@@ -509,7 +509,8 @@ make helm-lint     # helm lint --strict (default + full values), helm template, 
 ```
 
 CI (`.github/workflows/ci.yml`, job `helm`) runs the same plus kubeconform with
-CRD schemas for ScaledObject, TriggerAuthentication and ServiceMonitor.
+CRD schemas for ScaledObject, TriggerAuthentication and ServiceMonitor. CI runs
+kubeconform from its container image, pinned by digest (`KUBECONFORM_IMAGE`).
 
 ## 4. Two-role PostgreSQL setup
 

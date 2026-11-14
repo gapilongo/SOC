@@ -285,6 +285,12 @@ response plan (1.6%; 0.6% to 4.6%), and 0 closed.
 
 ### Recommendations (hypotheses, not changed in this PR)
 
+> **Tested in AI-E1.9.** [CALIBRATION.md](CALIBRATION.md) measures each
+> hypothesis offline and records the policy that shipped: event-time
+> correlation in the harness (1), the declared scanner (2), and the benign
+> verdict's precedence (3) with corroboration from the tenant's context (4).
+> The correlation cap (5) was measured and left off.
+
 Each one should be tested against the same corpus, with the same gate:
 0 of 208 malicious closed, no benign response executed. First record this
 configuration's cassettes with `lg-sotf eval --cassettes DIR --cassette-mode

@@ -10,6 +10,8 @@ import pytest
 
 from lg_sotf.db.errors import Conflict, InvalidTransition, NotFound
 from lg_sotf.db.repos import Repositories
+from lg_sotf.domain.suppression import first_matching_rule, stored_alert_view
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.services.escalation import EscalationService
 from lg_sotf.services.response import ResponseService
 from lg_sotf.services.review import ReviewDenied, ReviewError, ReviewService
@@ -25,8 +27,11 @@ async def user(repos: Repositories, role: str, tenant: str = TENANT_A) -> UUID:
     return (await repos.users.create(tenant, f"{role}-{uuid4().hex[:8]}@example.com", role)).id
 
 
-PARENT_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "users": ["jdoe"]}
-ATTACHED_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["srv-db-prod"], "users": ["jdoe"]}
+PARENT_ENTITIES = {"ips": ["185.220.101.44"], "hosts": ["ws-042"], "users": ["jdoe"], "processes": ["beacon.exe"]}
+ATTACHED_ENTITIES = {
+    "ips": ["185.220.101.44"], "hosts": ["srv-db-prod"], "users": ["jdoe"], "processes": ["beacon.exe"],
+}
+SCANNER = {"processes": ["c:\\tools\\nightly-scan.exe"]}
 
 
 async def grouped_escalation(
@@ -123,28 +128,29 @@ async def test_false_positive_creates_a_disabled_suppression_suggestion(
 ) -> None:
     settings = make_settings()
     review = ReviewService(repos, settings)
-    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner", severity="medium")
+    alert_id = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner", severity="medium",
+                               entities=SCANNER)
     ticket = await EscalationService(repos, None, settings).open_or_attach(
         TENANT_A, alert_id, severity="medium", confidence=50, threat_score=20, reason="review"
     )
     analyst = await user(repos, "analyst")
     result = await review.decide(TENANT_A, ticket.id, analyst, "analyst", "false_positive", "scanner", [], ticket.version)
     rule = await repos.suppressions.get(TENANT_A, result.suppression_suggestion_id or "")
+    stored = await repos.alerts.get(TENANT_A, alert_id)
     assert rule.enabled is False and rule.match == {
-        "fingerprint": "fp-noisy-scanner",
+        "verdict_key": verdict_key_of(stored),
         "source_id": "api",
         "severity": {"in": ["info", "low", "medium"]},
     }
     # LLM-W6-05: once enabled, the suggestion never suppresses a more severe alert of that detection.
-    from lg_sotf.domain.suppression import alert_match_view, first_matching_rule
-
     enabled = await repos.suppressions.update(TENANT_A, rule.id, enabled=True)
     for severity, expected in (("medium", True), ("low", True), ("high", False), ("critical", False)):
-        view = alert_match_view(
-            title="Nightly scanner", severity=severity, category=None, source_id="api",
-            source_alert_id="x", fingerprint="fp-noisy-scanner", normalized={},
-        )
+        view = {**stored_alert_view(stored), "severity": severity}
         assert (first_matching_rule([enabled], view) is not None) is expected, severity
+    # Same fingerprint, another process: not the activity the analyst decided (a fingerprint alone matched attacks).
+    other_process = await add_alert(repos, TENANT_A, fingerprint="fp-noisy-scanner", title="Nightly scanner",
+                                    severity="medium", entities={"processes": ["c:\\windows\\psexesvc.exe"]})
+    assert first_matching_rule([enabled], stored_alert_view(await repos.alerts.get(TENANT_A, other_process))) is None
     await repos.suppressions.update(TENANT_A, rule.id, enabled=False)
     assert rule.source_feedback_id == result.feedback_id and rule.created_by == analyst
     assert rule.expires_at is not None
@@ -416,3 +422,34 @@ async def test_an_expired_escalation_can_be_claimed_and_keeps_its_missed_sla(
     for version in (decided.version, decided.version - 1):
         with pytest.raises(InvalidTransition):
             await review.claim(TENANT_A, esc_id, alice, version)
+
+
+async def test_a_confirmed_threat_disables_the_suppression_rules_that_would_close_it(
+    repos: Repositories, make_settings: Callable[..., Settings]
+) -> None:
+    from lg_sotf.audit.logger import Actor, AuditLogger
+    from lg_sotf.services.suppressions import disable_rules_matching
+
+    settings = make_settings()
+    review = ReviewService(repos, settings)
+    benign = await add_alert(repos, TENANT_A, fingerprint="fp-svc", title="New service", severity="low", entities=SCANNER)
+    ticket = await EscalationService(repos, None, settings).open_or_attach(
+        TENANT_A, benign, severity="low", confidence=50, threat_score=20, reason="review"
+    )
+    analyst = await user(repos, "analyst")
+    result = await review.decide(TENANT_A, ticket.id, analyst, "analyst", "false_positive", "", [], ticket.version)
+    suggested = await repos.suppressions.update(TENANT_A, result.suppression_suggestion_id or "", enabled=True)
+    unrelated = await repos.suppressions.create(TENANT_A, "other host", {"entities.hosts": "db-9"}, enabled=True)
+    # The same activity turns out to be an attack, at a higher severity than the rule's bound.
+    attack = await repos.alerts.get(TENANT_A, benign)
+    view = {**stored_alert_view(attack), "severity": "high"}
+    revoked = await disable_rules_matching(
+        repos, AuditLogger(repos), TENANT_A, view, actor=Actor("user", "analyst-1"), alert_id=attack.id
+    )
+    assert revoked == [suggested.id]
+    assert [r.id for r in await repos.suppressions.list_active(TENANT_A)] == [unrelated.id]
+    entries = (await repos.audit.list(TENANT_A, action="suppression.revoked")).items
+    assert [e.resource_id for e in entries] == [suggested.id]
+    assert await disable_rules_matching(
+        repos, AuditLogger(repos), TENANT_A, view, actor=Actor("user", "analyst-1"), alert_id=attack.id
+    ) == []

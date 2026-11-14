@@ -7,7 +7,7 @@ from datetime import timedelta
 from typing import Callable
 
 from lg_sotf.agents.base import AgentContext
-from lg_sotf.agents.correlation.base import MAX_DIGESTS, CorrelationAgent, frequency_level
+from lg_sotf.agents.correlation.base import MAX_DIGESTS, MAX_RELATED, CorrelationAgent, frequency_level
 from lg_sotf.domain.indicators import extract_indicators, is_public_ip
 from lg_sotf.llm.fake import Refuse
 from lg_sotf.settings import Settings
@@ -74,7 +74,9 @@ async def test_one_llm_call_with_the_related_alert_digests(make_settings: Callab
 
     assert len(model.calls) == 1 and result.llm_used and result.burst
     assert result.related_count == 12 and result.campaign_indicators == ["same dropper hash"]
-    assert result.related_dispositions == {"malicious": 1, "benign": 1, "undecided": MAX_DIGESTS - 2}
+    # FIX-1 review: counted over every related alert (12), not only the MAX_DIGESTS shown to the model.
+    assert result.related_dispositions == {"malicious": 1, "benign": 1, "undecided": 10}
+    assert (result.related_open_reviews, result.related_threats) == (10, 0)
     human = texts(model.calls[0].messages)[1]
     payload = json.loads(human.split("<alert_data>\n", 1)[1].rsplit("\n</alert_data>", 1)[0])
     digests = payload["related_alerts"]
@@ -157,7 +159,44 @@ async def test_burst_and_frequency_come_from_sightings(make_settings: Callable[.
     result = await agent.run(ctx, {"entities": {"hashes": ["d41d8cd98f00b204e9800998ecf8427e"]}}, base_confidence=40, now=NOW)
     assert result.burst and result.related_count == 6 and result.llm_used
     assert result.related_alert_ids == [f"r{i}" for i in range(6)]
-    assert result.confidence > 40 and result.score > 0
+    assert result.score > 0
+
+
+async def test_model_closed_and_threat_judged_related_alerts_are_counted_beyond_the_digests(
+    make_settings: Callable[..., Settings],
+) -> None:
+    """FIX-1 review (F3, observation 4): a related alert the models closed alone is shown and counted as
+    ai_closed_unaudited, never benign; one a model judged a threat counts even past the MAX_DIGESTS shown."""
+    settings = make_settings()
+    ai_closed = {"close_reason": "ai_closed:audit_required", "verdict": "benign"}
+    stored = [StoredAlert(id="r0", disposition="benign", summary=ai_closed)]
+    stored += [StoredAlert(id=f"r{i}", disposition="benign", summary={"close_reason": "analyst:false_positive"})
+               for i in range(1, MAX_RELATED - 1)]
+    stored.append(StoredAlert(id=f"r{MAX_RELATED - 1}", status="processing",
+                              summary={"triage": {"threat_assessment": "suspicious"}}))
+    related = [Related(a.id, 1, NOW - timedelta(minutes=30)) for a in stored]
+    model = scripted()
+    agent = CorrelationAgent(settings=settings, model_factory=factory(model), config={"max_correlations": MAX_RELATED})
+    ctx = AgentContext("t1", "a1", settings, repos=fake_repos(alerts=stored, related=related))
+    result = await agent.run(ctx, HASH_ALERT, base_confidence=40, now=NOW)
+    assert result.related_dispositions == {"ai_closed_unaudited": 1, "benign": MAX_RELATED - 2, "undecided": 1}
+    assert (result.related_threats, result.related_open_reviews) == (1, 0)
+    payload = json.loads(texts(model.calls[0].messages)[1].split("<alert_data>\n", 1)[1].rsplit("\n</alert_data>", 1)[0])
+    shown = payload["related_alerts"]
+    assert len(shown) == MAX_DIGESTS and (shown[0]["disposition"], shown[0]["verdict"]) == ("ai_closed_unaudited", None)
+    assert result.digest()["related_threats"] == 1
+
+
+async def test_correlation_is_evidence_and_never_raises_the_confidence(make_settings: Callable[..., Settings]) -> None:
+    """FIX-1: a burst of strongly related alerts is in the digest, but routing's confidence is triage's."""
+    settings = make_settings()
+    related = [Related(f"r{i}", 3, NOW - timedelta(minutes=1)) for i in range(MAX_RELATED)]
+    agent = CorrelationAgent(settings=settings, config={"max_correlations": MAX_RELATED})
+    result = await agent.run(
+        AgentContext("t1", "a1", settings, repos=fake_repos(related=related)), HASH_ALERT, base_confidence=55, now=NOW
+    )
+    assert result.burst and result.related_count == MAX_RELATED and result.score >= 85
+    assert result.confidence == 55 and result.digest()["confidence"] == 55
 
 
 def test_frequency_levels() -> None:

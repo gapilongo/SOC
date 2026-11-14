@@ -31,6 +31,98 @@
         "limit": null,
         "isolation": "splits"
       },
+      "closure": {
+        "headline": {
+          "benign_closure": {
+            "k": 0,
+            "rate": 0.0,
+            "n": 312,
+            "ci_low": 0.0,
+            "ci_high": 0.012163
+          },
+          "malicious_auto_close": {
+            "k": 0,
+            "n": 208,
+            "rate": 0.0,
+            "upper_95": 0.01429933829614205
+          }
+        },
+        "by_mechanism": [
+          {
+            "mechanism": "rules",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "model",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "history",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "cache",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "suppression",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          },
+          {
+            "mechanism": "response",
+            "benign": {
+              "k": 0,
+              "rate": 0.0,
+              "n": 312,
+              "ci_low": 0.0,
+              "ci_high": 0.012163
+            },
+            "malicious": 0,
+            "other": 0
+          }
+        ],
+        "malicious_closed": []
+      },
       "scored": 520,
       "errors": 0,
       "malicious_false_negative": {

@@ -34,6 +34,7 @@ from lg_sotf.db.posture import (
     tables_with_visible_rows,
     tenant_table_security,
 )
+from lg_sotf.domain.closure import AUTONOMY_TIERS, MODEL_CLOSE_TIER
 from lg_sotf.domain.routing import RoutingThresholds, decide, route_after_triage
 from lg_sotf.models.vocabulary import HIGH_SEVERITIES
 from lg_sotf.observability.logging import is_configured
@@ -115,27 +116,46 @@ def check_kill_switch(settings: Settings) -> CheckResult:
     return _result("kill_switch", not problems, detail)
 
 
-def _benign_state(severity: str, rule_threat: int) -> Dict[str, Any]:
-    """A synthetic alert the model calls benign with full confidence, with five false-positive signals."""
-    triage = {"confidence": 0, "rule_confidence": rule_threat, "rule_fp": ["r"] * 5, "llm_fp": ["l"] * 5,
-              "rule_tp": [], "llm_tp": []}
-    analysis = {"threat_score": 0, "rule_threat_score": rule_threat, "verdict": "benign"}
-    return {"severity": severity, "confidence": 0, "triage": triage, "correlation": {}, "analysis": analysis}
+def _benign_state(severity: str, *, evidence: bool = True, tactic: Optional[str] = None) -> Dict[str, Any]:
+    """A synthetic alert both model tiers call benign with full confidence; with ``evidence``, also five
+    rule false-positive signals; with ``tactic``, the detection rule maps it to that ATT&CK tactic."""
+    triage = {"confidence": 0, "rule_confidence": 0, "rule_fp": ["r"] * 5 if evidence else [], "llm_fp": ["l"] * 5,
+              "rule_tp": [], "llm_tp": [], "llm_used": True, "threat_assessment": "benign", "threat_likelihood": 0}
+    analysis = {"threat_score": 0, "rule_threat_score": 0, "verdict": "benign", "certainty": 100, "llm_used": True,
+                "rule_evidence": [], "rule_corroborated": False}
+    alert = {"mitre": {"tactics": [tactic or "Initial Access"], "techniques": [] if tactic else ["T1078"]}}
+    return {"severity": severity, "confidence": 0, "alert": alert, "triage": triage,
+            "correlation": {"related_count": 0, "related_dispositions": {}}, "analysis": analysis}
 
 
 def check_routing_policy(settings: Settings) -> CheckResult:
-    """With this install's thresholds, a benign verdict never closes a high alert, nor an uncorroborated one."""
+    """With this install's thresholds, a benign verdict never closes a critical alert at any autonomy tier nor a
+    high one with the tier ``off`` (policy v3), a model never closes alone with the tier ``off``, and never a
+    never-close class (INV-03)."""
     thresholds = RoutingThresholds.from_settings(settings.routing)
     closed: List[str] = []
     for severity in sorted(HIGH_SEVERITIES):
-        state = _benign_state(severity, rule_threat=0)
-        if route_after_triage(state, thresholds) == "close" or decide(state, thresholds).route == "close":
+        state = _benign_state(severity)
+        tiers = AUTONOMY_TIERS if severity == "critical" else ("off",)
+        if route_after_triage(state, thresholds) == "close" or any(
+            decide(state, thresholds, tier).route == "close" for tier in tiers
+        ):
             closed.append(f"{severity} alert closed on a benign verdict")
-    uncorroborated = _benign_state("low", rule_threat=100)
-    uncorroborated["triage"].update(rule_fp=[], rule_confidence=100)
-    if decide(uncorroborated, thresholds).route == "close":
-        closed.append("low alert closed on the model's verdict without rule corroboration")
-    return _result("routing_policy", not closed, "; ".join(closed) or "a benign model verdict closes no high, critical or uncorroborated alert")
+    if decide(_benign_state("low", evidence=False), thresholds, "off").route == "close":
+        closed.append("low alert closed on the models' verdict with model-led closure off")
+    credential = _benign_state("low", evidence=False, tactic="Credential Access")
+    if decide(credential, thresholds, MODEL_CLOSE_TIER).route == "close":
+        closed.append("credential access alert closed on the models' verdict")
+    corroborated = _benign_state("low")
+    corroborated["analysis"].update(rule_corroborated=True, rule_evidence=["threat_intel_malicious"])
+    if decide(corroborated, thresholds, "off").route == "close":
+        closed.append("low alert closed on benign evidence despite rule evidence of a threat")
+    return _result(
+        "routing_policy",
+        not closed,
+        "; ".join(closed) or "a benign model verdict closes no critical alert, no high alert and nothing else with "
+        "model-led closure off, no never-close class, and no alert with evidence of a threat",
+    )
 
 
 def _synthetic_secrets() -> List[Tuple[str, str, str]]:

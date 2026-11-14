@@ -1,9 +1,10 @@
 """Labelled evaluation datasets (JSONL).
 
 One JSON object per line. An optional first line ``{"_meta": {...}}``
-describes the file (``synthetic``, ``description``, ``version`` and optional
+describes the file (``synthetic``, ``description``, ``version``, optional
 ``tenant_settings`` applied to every evaluation tenant: ``tools.internal_domains``,
-the ``phishing`` section and ``triage.known_scanners``); every other line is an :class:`EvalItem`::
+the ``phishing`` section, ``triage.known_scanners`` and the model-led closure tier
+``ai_closure.tier``); every other line is an :class:`EvalItem`::
 
     {"id": "syn-007",
      "source_type": "crowdstrike",          # canonical | splunk | crowdstrike | sentinel |
@@ -38,12 +39,14 @@ import re
 import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, Dict, Iterable, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Annotated, Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple, Union
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, field_validator, model_validator
 
 from lg_sotf.domain.benign_evidence import TriageSettings
+from lg_sotf.domain.closure import AiClosureSettings
 from lg_sotf.domain.phishing import PhishingSettings
+from lg_sotf.eval.context import TenantContext
 from lg_sotf.models.vocabulary import DISPOSITIONS as DISPOSITIONS
 from lg_sotf.models.vocabulary import Disposition
 from lg_sotf.security.hashing import normalize_indicator
@@ -87,13 +90,15 @@ class EvalTools(BaseModel):
 
 
 class EvalTenantSettings(BaseModel):
-    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile, scanners)."""
+    """``_meta.tenant_settings``: the tenant context a dataset needs (internal domains, phishing profile, scanners)
+    and the model-led closure tier it runs at."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     tools: Optional[EvalTools] = None
     phishing: Optional[PhishingSettings] = None
     triage: Optional[TriageSettings] = None
+    ai_closure: Optional[AiClosureSettings] = None
 
     def patch(self) -> Dict[str, Any]:
         """The tenant settings merge patch (only the sections that were given)."""
@@ -267,6 +272,12 @@ class Dataset:
         return EvalTenantSettings.model_validate(raw).patch() if raw else {}
 
     @property
+    def tenant_context(self) -> Optional[TenantContext]:
+        """``_meta.tenant_context`` (validated when the file was parsed), or None."""
+        raw = self.meta.get("tenant_context")
+        return TenantContext.model_validate(raw) if raw else None
+
+    @property
     def has_tool_fixtures(self) -> bool:
         return any(item.tool_fixtures is not None for item in self.items)
 
@@ -321,6 +332,32 @@ def _check_fixtures(item: EvalItem, seen: Dict[FixtureKey, Tuple[ToolFixture, in
             )
 
 
+def _validated(model: Any, value: Any, name: str, where: str) -> Any:
+    try:
+        return model.model_validate(value)
+    except ValidationError as exc:
+        problems = "; ".join(f"{'.'.join(str(p) for p in e['loc']) or name}: {e['msg']}" for e in exc.errors()[:5])
+        raise DatasetError(f"{where}: invalid _meta.{name} ({problems})") from None
+
+
+def _check_meta(meta: Mapping[str, Any], where: str) -> None:
+    """``tenant_settings`` and ``tenant_context`` are valid, and every configured scanner is a declared one."""
+    settings = None
+    if meta.get("tenant_settings") is not None:
+        settings = _validated(EvalTenantSettings, meta["tenant_settings"], "tenant_settings", where)
+    if meta.get("tenant_context") is None:
+        return
+    context: TenantContext = _validated(TenantContext, meta["tenant_context"], "tenant_context", where)
+    configured = settings.triage.known_scanners if settings is not None and settings.triage is not None else []
+    declared = set(TriageSettings(known_scanners=list(context.scanners)).known_scanners)
+    undeclared = [s for s in configured if s not in declared]
+    if undeclared:
+        raise DatasetError(
+            f"{where}: tenant_settings.triage.known_scanners lists {', '.join(undeclared)}, which "
+            "_meta.tenant_context.scanners does not declare"
+        )
+
+
 def parse_dataset(text: str, *, path: Optional[str] = None) -> Dataset:
     """Parse JSONL text; raises :class:`DatasetError` naming the first bad line."""
     items: List[EvalItem] = []
@@ -346,14 +383,7 @@ def parse_dataset(text: str, *, path: Optional[str] = None) -> Dataset:
             if not isinstance(data["_meta"], dict) or len(data) != 1:
                 raise DatasetError(f"{where}:{lineno}: _meta must be the only key and hold an object")
             meta = dict(data["_meta"])
-            if meta.get("tenant_settings") is not None:
-                try:
-                    EvalTenantSettings.model_validate(meta["tenant_settings"])
-                except ValidationError as exc:
-                    problems = "; ".join(
-                        f"{'.'.join(str(p) for p in e['loc']) or 'tenant_settings'}: {e['msg']}" for e in exc.errors()[:5]
-                    )
-                    raise DatasetError(f"{where}:{lineno}: invalid _meta.tenant_settings ({problems})") from None
+            _check_meta(meta, f"{where}:{lineno}")
             continue
         try:
             item = EvalItem.model_validate(data)

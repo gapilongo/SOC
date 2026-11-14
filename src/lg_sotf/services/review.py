@@ -23,7 +23,7 @@ unless ``reject_remaining=True`` is passed, which explicitly rejects the
 alert's other pending actions.
 
 A ``false_positive`` decision may create a *disabled* suppression rule
-suggestion matching the alert's fingerprint (``source_feedback_id`` links it
+suggestion matching the alert's verdict key (``source_feedback_id`` links it
 to the analyst's feedback); an admin reviews and enables it.
 
 Grouped escalations: the decision is recorded once and every attached alert's
@@ -61,12 +61,14 @@ from lg_sotf.db.repos.escalations import ACTIVE_ESCALATION_STATUSES, DECISIONS, 
 from lg_sotf.domain.events import EventPublisher, publish_event
 from lg_sotf.domain.routing import BENIGN_DECISIONS
 from lg_sotf.domain.suppression import InvalidRule, validate_rule_match
+from lg_sotf.domain.verdict_key import verdict_key_of
 from lg_sotf.integrations.events import ESCALATION_DECIDED
 from lg_sotf.integrations.outbox import enqueue_event
 from lg_sotf.models.vocabulary import REVIEWER_ROLES, ROLES, SEVERITIES, TERMINAL_RUN_STATUSES, WORKFLOW_OWNER
 from lg_sotf.observability.logging import get_logger, log_failure
 from lg_sotf.security.crypto import SecretBox
 from lg_sotf.services.escalation import EscalationService, own_review_reason, resolve_review_policy
+from lg_sotf.services.folded import settle_case
 from lg_sotf.services.response import (
     ACTION_CATALOG,
     ResponseService,
@@ -87,7 +89,7 @@ MAX_APPROVED_ACTIONS = 50
 # Per entry, as the workflow's resume payload accepts it.
 MAX_APPROVED_ENTRY_CHARS = 256
 MAX_ACTION_IDS = 100
-_ALERT_KEYS_SQL = "SELECT id, fingerprint, severity FROM alerts WHERE tenant_id = $1 AND id = ANY($2::text[])"
+_ALERT_KEYS_SQL = "SELECT id, fingerprint, severity, normalized, raw FROM alerts WHERE tenant_id = $1 AND id = ANY($2)"
 # Locks the run row until the approval commits: a reprocess (or the run finishing) waits for it.
 _RUN_FOR_SHARE_SQL = "SELECT status FROM workflow_runs WHERE tenant_id = $1 AND alert_id = $2 FOR SHARE"
 SUPPRESSION_SUGGESTION_DAYS = 90
@@ -333,9 +335,8 @@ class ReviewService:
     ) -> DecisionResult:
         """Record the analyst decision and return one resume message per waiting alert.
 
-        The escalation's own alert and every attached alert are resumed with
-        the decision (what it means for attached alerts is limited, see the
-        module docstring and :attr:`DecisionResult.own_review_alert_ids`).
+        The escalation's own alert and every attached alert are resumed with the decision (limits: module docstring,
+        :attr:`DecisionResult.own_review_alert_ids`); alerts folded into the case (policy v3) are settled instead.
         ``approved_actions`` (``"action_type"`` or ``"action_type:target"``)
         pre-approves actions for the escalation's own alert only and only
         with ``true_positive``; a bare ``"action_type"`` is resolved to that
@@ -366,8 +367,9 @@ class ReviewService:
                 suggest=lambda: self._suggest(tenant.settings, suggest_suppression),
                 now=now,
             )
-        decided = recorded.escalation
-        requests = _resume_requests(escalation_id, decided, request, approved, actor)
+            folded = await settle_case(self._repos, tenant_id, recorded.escalation, request.decision, user_id, conn)
+        decided = recorded.escalation  # folded alerts (policy v3) have no run waiting: settled above, never resumed
+        requests = [r for r in _resume_requests(escalation_id, decided, request, approved, actor) if r.alert_id not in folded]
         for resume in requests:
             await publish_event(
                 self._events, "escalation.updated", tenant_id, resume.alert_id,
@@ -471,19 +473,18 @@ class ReviewService:
         attached = [a for a in escalation.related_alert_ids if a != escalation.alert_id]
         if not attached or decision not in BENIGN_DECISIONS:
             return []
-        rows = {r["id"]: r for r in await conn.fetch(_ALERT_KEYS_SQL, tenant_id, [escalation.alert_id, *attached])}
+        rows = {r["id"]: dict(r) for r in await conn.fetch(_ALERT_KEYS_SQL, tenant_id, [escalation.alert_id, *attached])}
         parent = rows.get(escalation.alert_id)
         out: List[str] = []
         for alert_id in attached:
             row = rows.get(alert_id)
-            reason = own_review_reason(
+            if own_review_reason(
                 decision,
-                parent_fingerprint=parent["fingerprint"] if parent else None,
+                parent_key=verdict_key_of(parent) if parent else None,
                 parent_severity=parent["severity"] if parent else None,
-                fingerprint=row["fingerprint"] if row else None,
+                key=verdict_key_of(row) if row else None,
                 severity=row["severity"] if row else None,
-            )
-            if reason is not None:
+            ) is not None:
                 out.append(alert_id)
         return out
 
@@ -495,17 +496,16 @@ class ReviewService:
     async def _suggest_suppression(
         self, tenant_id: str, escalation: Escalation, feedback_id: str, actor: _Actor, now: datetime, conn: Connection
     ) -> Optional[str]:
-        """A disabled rule matching the alert's fingerprint (and source), for an admin to review and enable."""
+        """A disabled rule matching the alert's verdict key (and source), for an admin to review and enable."""
         alert = await self._repos.alerts.get(tenant_id, escalation.alert_id, conn=conn)
-        if not alert.fingerprint:
+        if not (key := verdict_key_of(alert)):
             return None
-        # Bounded to the severity the analyst judged (and below): a benign medium detection says
-        # nothing about a later critical one with the same fingerprint, which fingerprints do not
-        # distinguish (no severity, command line or process in them).
+        # The same detection and behaviour (verdict key: the fingerprint plus process, command line, service,
+        # user and parent; a fingerprint alone matched attacks), at the severity judged or below.
         decided_rank = SEVERITIES.index(alert.severity) if alert.severity in SEVERITIES else 0
         severities = list(SEVERITIES[: decided_rank + 1])
         match: Dict[str, Any] = {
-            "fingerprint": alert.fingerprint,
+            "verdict_key": key,
             "source_id": alert.source_id,
             "severity": {"in": severities},
         }

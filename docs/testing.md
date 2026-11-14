@@ -68,14 +68,15 @@ starts its own PostgreSQL and Redis from `docker/docker-compose.test.yml`
 Locally: `UPGRADE_NEW_PYTHON=.venv/bin/python scripts/ci/upgrade_rehearsal.sh`
 (`--from <ref>` picks another N-1).
 
-`api-compat` runs `scripts/ci/check_api_compat.py` with a pinned oasdiff
-release (version and SHA-256 in the workflow's `env`). It compares the
+`api-compat` runs `scripts/ci/check_api_compat.py` with oasdiff from its
+container image, pinned by digest (`OASDIFF_IMAGE` in the workflow's `env`,
+run through `scripts/ci/oasdiff.sh`). It compares the
 `docs/openapi.json` of the merge base with this change's: a breaking change
 to a `stable` operation fails the build; changes to `beta` and `internal`
 operations are printed only (see "Stability and deprecation" in
 docs/api.md). A `--self-test` step first proves the gate on the committed
-document. Locally: `OASDIFF=/path/to/oasdiff python scripts/ci/check_api_compat.py
-<base.json> docs/openapi.json`; with `OASDIFF` set,
+document. Locally: `OASDIFF=scripts/ci/oasdiff.sh python scripts/ci/check_api_compat.py
+<base.json> docs/openapi.json` (Docker), or a local oasdiff binary's path; with `OASDIFF` set,
 `tests/unit/api/test_api_stability.py` runs the same checks.
 
 ## The test services
