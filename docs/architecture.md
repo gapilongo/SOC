@@ -266,18 +266,34 @@ Rules:
   `tools/enrichment/tools.py`. A tool is a `ToolSpec` (read-only risk class,
   strict parameter model, row, time and window caps, egress, shadow mode,
   tenant switch) plus six functions: `run`, `rows`, `failed`, `record`,
-  `restore` and `refused`. A declaration that misses a cap or the schema does
-  not load (INV-14). A tenant switches a third-party tool off for itself with
-  `tools.<provider>.enabled: false` in its settings.
+  `restore` and `refused` (and, when needed, `window` and `evidence`). A
+  declaration that misses a cap, or whose parameter model is not strict and
+  bounded, does not load (INV-14). The registry never hands a tool's code
+  out: `ToolRegistry.call` is the only way to run one, and an architecture
+  test fails on a lookup called around it.
+  * The tenant switch fails closed. A third-party tool runs only when
+    `tools.<provider>` is absent from the tenant's settings, or its `enabled`
+    is absent or exactly `true`. Any other value, a setting that is not a
+    mapping, and settings that cannot be read keep the tool off.
+  * A call is refused before the tool runs when its time window is longer
+    than the tool's `window_cap`. While the tool runs it is held to its time
+    cap and may cross only the egress boundary it declared
+    (`security/shadow.py`): a `platform` tool crosses none, and a third-party
+    tool crosses none live in a shadow run.
   * Every call returns a `ToolResult` with a typed outcome: `success` (rows
     came back), `empty` (the query ran and matched nothing) or `failed`
-    (switched off, unreachable, refused, timed out, over the row cap). An
-    empty answer and a failed call are never the same value, so "no rows"
-    cannot be read as "nothing happened" when the query did not run.
-  * The result also carries the SHA-256 of the canonical JSON of the tool's
-    input and of its output. They are the hashes the trace store keeps in
-    `investigation_steps.input_hash` and `output_hash`, computed by the run's
-    trace, never by a model.
+    (refused, timed out, raised, over the row cap, or no answer from the
+    source). "No rows" cannot be read as "nothing happened" when the query
+    did not run. `complete` is false when the result holds as many rows as
+    the row cap, so more may exist.
+  * Every call that passed validation, refused or not, is one step of the
+    investigation trace with the same outcome (`investigation_steps.outcome`
+    gained `empty` and `failed` in migration 0018). The result carries that
+    step's `input_hash` and `output_hash`: SHA-256 of the canonical JSON of
+    the request and of the recorded output without transport flags such as
+    `cached`. The run's trace computes them, never a model. The lookups of
+    one `reputation` step share its hashes, and the step stores the worst of
+    their outcomes.
 * LLM output alone can never auto-close a high/critical alert or authorise a
   containment action (INV-03, INV-11). Containment requires tenant autonomy
   policy `auto` for that risk level *and* guardrails passing.

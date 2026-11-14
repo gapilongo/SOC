@@ -182,13 +182,13 @@ async def test_react_looks_up_candidates_then_finishes(vt_settings: Settings) ->
 async def test_ti_lookups_run_through_the_registry(vt_settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
     """AI-E2.1: threat-intelligence and history lookups are registry calls; the trace keeps its pre-registry shape."""
     ran: List[str] = []
-    capped = ToolRegistry._capped
+    run = ToolRegistry._run
 
-    async def spy(self: ToolRegistry, ctx: Any, tool: Any, params: Any) -> Any:
+    async def spy(self: ToolRegistry, ctx: Any, tool: Any, params: Any, refusal: Any) -> Any:
         ran.append(tool.spec.name)
-        return await capped(self, ctx, tool, params)
+        return await run(self, ctx, tool, params, refusal)
 
-    monkeypatch.setattr(ToolRegistry, "_capped", spy)
+    monkeypatch.setattr(ToolRegistry, "_run", spy)
     model = scripted(InvestigationStep=[step("lookup", "i1"), step("finish", "", threat=90, certainty=85, verdict="malicious")])
     seen: List[httpx.Request] = []
     agent = agent_with(vt_settings, model, seen)
@@ -202,6 +202,8 @@ async def test_ti_lookups_run_through_the_registry(vt_settings: Settings, monkey
     assert [s.tool for s in tools] == ["history"] * 4 + ["reputation"]
     lookup = {"kind": "hash", "value": "44d88612fea8a8f36de82e1278abb02f", "providers": ["virustotal"]}
     assert tools[-1].input_hash == tool_input_hash("reputation", lookup)
+    # The stored steps say what each lookup found: no earlier alert shares the indicators, VirusTotal answered.
+    assert [s.outcome for s in tools] == ["empty"] * 4 + ["success"]
 
 
 async def test_alert_block_is_identical_on_every_step_and_only_tool_data_grows(vt_settings: Settings) -> None:

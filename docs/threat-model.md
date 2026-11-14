@@ -201,12 +201,15 @@ disclosure, **D**enial of service, **E**levation of privilege.
 
 Today the evidence tools are threat-intelligence lookups (VirusTotal and
 AbuseIPDB) and the tenant's own alert history. Each one is declared in the
-tool registry and called through it (`src/lg_sotf/tools/registry.py:1-38`).
-A tool does not load without a read-only risk class, a strict parameter
-model, row, time and window caps and a declared egress. A call validates its
-parameters first, skips a tool the calling tenant switched off, and is
-recorded in the trace. Its result carries a typed outcome (`success`,
-`empty` or `failed`) and the hashes of its input and output. AI-E2 adds
+tool registry and called through it (`src/lg_sotf/tools/registry.py:1-46`).
+A tool does not load without a read-only risk class, a strict and bounded
+parameter model, row, time and window caps and a declared egress. A call
+validates its parameters first. It does not run a tool the calling tenant
+switched off or whose setting cannot be read, nor a window longer than the
+cap. While it runs, the tool is held to its time cap and to the one egress
+boundary it declared. Every call is a trace step, and its result carries
+the step's typed outcome (`success`, `empty` or `failed`), whether it may
+be cut (`complete`) and the hashes of its input and output. AI-E2 adds
 templated, read-only queries against Microsoft and SIEM sources. AI-E3
 adds a planner that never sees raw tool output. [ADR-0014](adr/0014-investigation-skills.md)
 (proposed) adds investigation skills, templated Wazuh indexer queries and
@@ -216,16 +219,16 @@ tenant reference material; rows TM-EVT-8 to TM-EVT-13 are its threats.
 |---|---|---|---|---|
 | TM-EVT-1 | I | Injected text makes the agent send arbitrary values to a third party | Lookup targets restricted to candidate ids built from extracted indicators (`src/lg_sotf/agents/analysis/react.py:24-27`); indicators validated and reduced, private addresses and internal domains never sent (`src/lg_sotf/tools/enrichment/providers.py:1-20`) | In place |
 | TM-EVT-2 | T | Tool output carries instructions (indirect injection through evidence) | Results go in a separate `<tool_data>` block marked as untrusted (`src/lg_sotf/llm/prompting.py:421-427`); the model's reading of a result is never rule evidence | Partial. Quarantined reader producing typed facts planned (AI-E3.2); tool-output injection measured by the adversarial corpus v2 (AI-E6.1) |
-| TM-EVT-3 | E | A tool performs a write or an unbounded query | Every tool runs through the tool registry: there is no write risk class, and a tool without a strict parameter model, row and time caps, a declared egress and a per-tenant switch (third-party tools) does not load; parameters are validated before the call (`src/lg_sotf/tools/registry.py:1-38`, INV-14) | Partial: the registry is in place for today's lookups. Query templates with a DSL allow-list planned (INT3.4); free-form query guard (AI-E6.4) |
-| TM-EVT-4 | I | One tenant's evidence returned to another | Enrichment caches keyed per tenant; history queries under `tenant_tx` | In place. Per-tenant tool credentials planned (AI-E2.1) |
+| TM-EVT-3 | E | A tool performs a write or an unbounded query | Every tool runs through the tool registry and nowhere else (`tests/unit/architecture/test_tool_registry.py:1-12`). There is no write risk class. A tool without a strict, bounded parameter model, row, time and window caps, a declared egress and a per-tenant switch (third-party tools) does not load. On each call the parameters are validated first; the window, time and row caps are enforced; and the tool may cross only the egress boundary it declared, so a tool that stays on the platform reaches no outside connection and no registered write path (`src/lg_sotf/tools/registry.py:1-46`, INV-14) | Partial: in place for today's lookups. A database write that is not behind an egress boundary is stopped by the runtime role and RLS, not by the registry. Query templates with a DSL allow-list planned (INT3.4); free-form query guard (AI-E6.4) |
+| TM-EVT-4 | I | One tenant's evidence returned to another | Enrichment caches keyed per tenant; history queries under `tenant_tx`; the tool switch is read with the run's own tenant id, fails closed on a malformed or unreadable setting, and is never cached from a call without the tenant's settings (INV-14) | In place. Per-tenant credentials for the Microsoft and SIEM tools planned (AI-E2) |
 | TM-EVT-5 | D | Query cost or throttling exhausts a customer's API quota | ReAct step and wall-clock budgets (`src/lg_sotf/agents/analysis/react.py:8-19`) | Partial: per-investigation money budgets planned (AI-E3.3) |
 | TM-EVT-6 | R | An investigation cannot be replayed | Evidence pack with signed digest (`src/lg_sotf/compliance/evidence.py:22`) | Partial: evidence ledger and record/replay cassettes planned (AI-E1.3, AI-E1.4) |
 | TM-EVT-7 | E | Claim from tool output treated as corroboration | Only rule-derived indicators corroborate (`src/lg_sotf/agents/analysis/base.py:15-28`) | In place. Weights for tool-observed facts planned (AI-E3.5) with the critic's citation check (AI-E3.4) |
 | TM-EVT-8 | T | Instructions in Wazuh fields (service name, command line, user or workstation name) steer the planner to a benign hypothesis | Facts rendered as untrusted data; closed action space (optional query ids and hypothesis ids only); a close rests on the deterministic proof and the checker, never on the model's words; a gated `wazuh-field-injection` adversarial family | Planned (INT3.4, AI-E3.4, AI-E3.8b) |
 | TM-EVT-9 | I | An evidence query reads another customer's events on a shared Wazuh cluster | Per-tenant indexer user and DLS role (INT3.2); a mandatory tenant scope filter in every template; a shared source without a scope is refused; negative DLS test per tenant | Planned (INT3.2, INT3.4) |
-| TM-EVT-10 | E | A parameter widens a Wazuh query, or a tool writes | Typed parameters; values only in `term`, `terms` and `range` filters; a DSL allow-list test over every template; `POST _search` only; read-only indexer role; row, time and window caps | Partial: the registry's typed parameters, read-only risk classes and caps are in place (AI-E2.1, INV-14). The Wazuh templates and their allow-list test planned (INT3.4) |
+| TM-EVT-10 | E | A parameter widens a Wazuh query, or a tool writes | Typed parameters; values only in `term`, `terms` and `range` filters; a DSL allow-list test over every template; `POST _search` only; read-only indexer role; row, time and window caps | Partial: the registry's strict, bounded parameters, read-only risk classes, declared egress and enforced row, time and window caps are in place (AI-E2.1, INV-14). The Wazuh templates and their allow-list test planned (INT3.4) |
 | TM-EVT-11 | D | Investigations overload the customer's indexer | Per-tenant concurrency, a per-investigation query budget, `timeout` and `terminate_after` on every query, a circuit breaker | Planned (AI-E3.3, INT3.4) |
-| TM-EVT-12 | T | A truncated, failed or premature query reads as "nothing happened" | `complete` computed per fact (timeouts, failed shards, row caps, cut aggregations, open windows); three-valued predicates fail closed; the settle delay; incomplete required evidence escalates | Partial: every tool result carries a typed outcome, so `empty` (ran, matched nothing) is never `failed` (did not run) (AI-E2.1). The rest planned (INT9.3, AI-E3.4) |
+| TM-EVT-12 | T | A truncated, failed or premature query reads as "nothing happened" | `complete` computed per fact (timeouts, failed shards, row caps, cut aggregations, open windows); three-valued predicates fail closed; the settle delay; incomplete required evidence escalates | Partial: every tool result and its stored trace step carry a typed outcome, so `empty` (ran, matched nothing) is never `failed` (refused, timed out, raised, over a cap, or no answer from the source); a result that holds as many rows as its cap is marked not `complete` (AI-E2.1, INV-14). Per-fact `complete` and the predicates planned (INT9.3, AI-E3.4) |
 | TM-EVT-13 | I | Case memory or guidance notes leak across tenants | Forced RLS (INV-01), reads under `tenant_tx`, no cross-tenant retrieval or embeddings; cross-tenant learning only through aggregated skill releases | Planned (AI-E4.3, AI-E3.9) |
 
 ### 2.9 MCP server
@@ -300,7 +303,7 @@ organisations and grants.
 | ID | Risk | Where it applies | Controls | Status |
 |---|---|---|---|---|
 | ASI01 | Agent Goal Hijack | Alert text and tool output steering triage, analysis or the MCP client | TM-WRK-1, TM-WRK-2, TM-EVT-2, TM-MCP-1, TM-MCP-2. The model cannot close high-severity alerts or contain on its own | In place; measured by the adversarial corpus v2 in CI (AI-E6.1, [evaluation.md](evaluation.md#adversarial-corpus-v2)) |
-| ASI02 | Tool Misuse & Exploitation | Threat-intel lookups, future evidence tools, MCP tools | Candidate-only lookups (TM-EVT-1); tool registry with read-only risk classes, schemas and caps (TM-EVT-3); read-only MCP catalogue; no write tool for decisions | Partial. Tool-output and response-steering families of the adversarial corpus v2 (AI-E6.1) |
+| ASI02 | Tool Misuse & Exploitation | Threat-intel lookups, future evidence tools, MCP tools | Candidate-only lookups (TM-EVT-1); tool registry with read-only risk classes, strict schemas, enforced caps and egress (TM-EVT-3); read-only MCP catalogue; no write tool for decisions | Partial. Tool-output and response-steering families of the adversarial corpus v2 (AI-E6.1) |
 | ASI03 | Identity & Privilege Abuse | API keys held by agents, MSSP operators, platform admins | Scoped keys refused on decisions (TM-API-2); `home_tenant_only` (TM-MSP-3) | Partial: grants (ARCH-E4.1), per-tenant IdP (SEC6.1), WebAuthn for platform admins (SEC6.4) |
 | ASI04 | Agentic Supply Chain Vulnerabilities | LangChain and LangGraph, MCP SDK, model providers, external MCP servers | Pinned dependencies and scanners (TM-CI-2); signed images (TM-CI-1); MCP-in not built | Partial: SBOM/VEX (SEC1.2), Trivy (SEC1.3), dependency admission policy (SEC2.3) |
 | ASI05 | Unexpected Code Execution (RCE) | Model output, normaliser output | The model selects no code path: structured output only (TM-WRK-7); no tool runs code or shell; read-only root filesystem | In place |

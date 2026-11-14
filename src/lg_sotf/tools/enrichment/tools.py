@@ -17,7 +17,7 @@ parameter validation, the per-tenant switch, the time and row caps, and the trac
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING, Any, Callable, Literal, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Literal, Mapping, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,7 +31,6 @@ from lg_sotf.tools.registry import (
     ToolDisabled,
     ToolError,
     ToolRegistry,
-    ToolRowCapExceeded,
     ToolSpec,
 )
 
@@ -45,6 +44,8 @@ HISTORY_TOOL = "platform.history"
 LOOKUP_EGRESS_BOUNDARY = "enrichment_lookup"
 MAX_VALUE_CHARS = 1_024
 """Indicator values are at most 512 characters (``lg_sotf.domain.indicators``); a reduced URL may add a ``/``."""
+MAX_HISTORY_LOOKBACK = timedelta(days=365)
+"""The longest look-back ``HistoryProvider`` accepts."""
 TIME_CAP_GRACE_S = 5.0
 """Above the service's own lookup deadline, which answers first: the cap only stops a hung call."""
 
@@ -66,13 +67,16 @@ class HistoryParams(BaseModel):
 LookupParams = Union[ReputationParams, HistoryParams]
 
 
+REFUSAL_TEXT = {"time_cap": "lookup timed out", "row_cap": "too many rows", "window_cap": "window too long"}
+TRANSPORT_FLAGS = frozenset({"cached", "retry_after_s"})
+"""Parts of a recorded result that say how it travelled, not what the source answered; they are not hashed."""
+
+
 def _refused(provider: str) -> Callable[[LookupParams, ToolError], EnrichmentResult]:
     def answer(params: LookupParams, error: ToolError) -> EnrichmentResult:
-        if isinstance(error, ToolDisabled):
+        if isinstance(error, ToolDisabled):  # switched off, or the tenant's settings could not be read
             return EnrichmentResult.failed(provider, params.kind, "not_configured")
-        if isinstance(error, ToolRowCapExceeded):
-            return EnrichmentResult.failed(provider, params.kind, "error", "too many rows")
-        return EnrichmentResult.failed(provider, params.kind, "error", "lookup timed out")
+        return EnrichmentResult.failed(provider, params.kind, "error", REFUSAL_TEXT.get(error.reason, "lookup failed"))
 
     return answer
 
@@ -84,6 +88,10 @@ def _restore(params: LookupParams, recorded: Mapping[str, Any]) -> EnrichmentRes
 def _failed(result: EnrichmentResult) -> bool:
     """Anything but an answer: skipped, unsupported, not configured, rate limited or an error."""
     return result.status not in ("ok", "not_found")
+
+
+def _evidence(recorded: Mapping[str, Any]) -> Dict[str, Any]:
+    return {key: value for key, value in recorded.items() if key not in TRANSPORT_FLAGS}
 
 
 def _reputation_rows(result: EnrichmentResult) -> int:
@@ -115,10 +123,17 @@ def _reputation(service: EnrichmentService, provider: str, time_cap_s: float) ->
         tenant_setting=provider,
         egress_boundary=LOOKUP_EGRESS_BOUNDARY,
     )
-    return Tool(spec, run, _reputation_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(provider))
+    return Tool(
+        spec, run, _reputation_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(provider), evidence=_evidence
+    )
 
 
 def _history(service: EnrichmentService, time_cap_s: float) -> Tool[HistoryParams, EnrichmentResult]:
+    # The provider's own limits (a provider that does not state them is held to the largest it may have).
+    provider = service.provider(HistoryProvider.name)
+    max_alerts = int(getattr(provider, "max_alerts", MAX_HISTORY_ALERTS))
+    lookback: timedelta = getattr(provider, "lookback", MAX_HISTORY_LOOKBACK)
+
     async def run(ctx: ToolContext, params: HistoryParams) -> EnrichmentResult:
         return await service.history(
             ctx.tenant_id, params.kind, params.value, repos=ctx.repos, exclude_alert_id=ctx.alert_id
@@ -130,22 +145,28 @@ def _history(service: EnrichmentService, time_cap_s: float) -> Tool[HistoryParam
         risk="read_internal",
         params=HistoryParams,
         produces=frozenset({"related_alert"}),
-        row_cap=MAX_HISTORY_ALERTS,  # HistoryProvider reads at most this many earlier alerts
+        row_cap=max_alerts,  # the provider stops reading here: an answer with this many alerts may be cut
         time_cap_s=time_cap_s,
-        window_cap=timedelta(days=365),  # HistoryProvider's longest look-back
+        window_cap=MAX_HISTORY_LOOKBACK,
         egress="platform",
         shadow="live",
         tenant_setting=None,
         trace_name="history",
     )
-    return Tool(spec, run, _history_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name))
+    return Tool(
+        spec, run, _history_rows, _failed, EnrichmentResult.as_dict, _restore, _refused(HistoryProvider.name),
+        window=lambda params: lookback, evidence=_evidence,
+    )
 
 
 def enrichment_tools(service: EnrichmentService) -> ToolRegistry:
     """A registry with the service's lookups; the tenant switch reads the service's cached tenant settings."""
 
-    async def tenant_tools(tenant_id: str, repos: Optional[Repositories]) -> Mapping[str, Any]:
-        return (await service.credentials.tenant_tools(tenant_id, repos)).tools
+    async def tenant_tools(tenant_id: str, repos: Optional[Repositories]) -> Optional[Mapping[str, Any]]:
+        if repos is None:  # the tenant's settings cannot be read: the registry keeps the tool off
+            return None
+        found = await service.credentials.tenant_tools(tenant_id, repos)
+        return found.tools if found.readable else None
 
     registry = ToolRegistry(tenant_tools)
     time_cap_s = min(MAX_TIME_CAP_S, service.lookup_timeout_s + TIME_CAP_GRACE_S)

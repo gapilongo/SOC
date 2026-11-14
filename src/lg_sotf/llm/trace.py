@@ -212,11 +212,6 @@ class TraceRecorder:
         if tape is not None:
             tape.record_llm(step, messages, value, reply, error)
 
-    @staticmethod
-    def tool_hashes(tool: str, request: Mapping[str, Any], recorded: Any) -> Tuple[str, str]:
-        """The input and output hash a tool step stores, for a caller that keeps them with the result."""
-        return tool_input_hash(tool, request), content_hash(recorded)
-
     async def tool(
         self,
         agent: str,
@@ -231,10 +226,32 @@ class TraceRecorder:
         ``restore`` turns a recorded output back into a result: with a tape that replays tools, the
         result comes from the tape and ``call`` is never awaited.
         """
+        result, _ = await self.tool_step(agent, tool, request, call, output, restore)
+        return result
+
+    async def tool_step(
+        self,
+        agent: str,
+        tool: str,
+        request: Mapping[str, Any],
+        call: Awaitable[T],
+        output: Callable[[T], Any],
+        restore: Optional[Callable[[Any], T]] = None,
+        *,
+        outcome: Optional[Callable[[T], Tuple[StepOutcome, Optional[str]]]] = None,
+        evidence: Optional[Callable[[Any], Any]] = None,
+        taped: bool = True,
+    ) -> Tuple[T, NewTraceStep]:
+        """:meth:`tool`, also returning the step it recorded, whose hashes are the trace store's.
+
+        ``outcome`` reads the step's outcome and error type from the result (default: ``success``).
+        ``evidence`` picks the part of the recorded output that is hashed (default: all of it).
+        ``taped=False`` keeps the call off the tape: it is neither recorded there nor replayed from it.
+        """
         started_at = datetime.now(UTC)
         start = time.perf_counter()
         input_hash = tool_input_hash(tool, request)
-        tape = _TAPE.get()
+        tape = _TAPE.get() if taped else None
         replaying = tape is not None and tape.replays_tools
         try:
             if tape is not None and replaying:
@@ -256,14 +273,16 @@ class TraceRecorder:
             raise
         if tape is not None and not replaying:
             tape.record_tool(tool, request, input_hash, recorded)
-        self.add(
-            NewTraceStep(
-                agent=agent[:_MAX_LABEL], kind="tool", tool=tool[:_MAX_LABEL], input_hash=input_hash,
-                output_hash=content_hash(recorded), result_digest=result_digest(recorded), outcome="success",
-                started_at=started_at, latency_ms=round((time.perf_counter() - start) * 1000),
-            )
+        step_outcome, error_type = outcome(result) if outcome is not None else ("success", None)
+        step = NewTraceStep(
+            agent=agent[:_MAX_LABEL], kind="tool", tool=tool[:_MAX_LABEL], input_hash=input_hash,
+            output_hash=content_hash(evidence(recorded) if evidence is not None else recorded),
+            result_digest=result_digest(recorded), outcome=step_outcome,
+            error_type=error_type[:128] if error_type else None,
+            started_at=started_at, latency_ms=round((time.perf_counter() - start) * 1000),
         )
-        return result
+        self.add(step)
+        return result, step
 
 
 __all__ = [

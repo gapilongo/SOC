@@ -271,19 +271,27 @@ An investigation skill closes alerts for a tenant only once it has earned a clos
 
 ## INV-14: Evidence tools are read-only, templated and capped
 
-An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry, which loads only a tool with a parameter model that refuses unknown keys, a row cap, a time cap and a read-only risk class (there is no write class). It validates the parameters before anything runs, does not call a tool the tenant switched off (the switch is read from that tenant's own settings), and records every call in the trace. A tool that sends data to a third party names its egress boundary and answers a shadow run from the cache only. Every result has a typed outcome, so a call that failed is never read as a query that found nothing. The Wazuh query templates add a DSL allow-list test (INT3.4).
+An investigation tool is how a model-steered run reaches data. Every tool runs through the tool registry and nowhere else. The registry loads only a tool with a read-only risk class (there is no write class), a strict parameter model whose strings and collections are bounded, a row cap, a time cap, a window cap when it reads a time window, and a declared egress. On every call it validates the parameters first. It does not run a tool the calling tenant switched off, whose setting is malformed or whose settings cannot be read, nor a call whose window is longer than the cap. While the tool runs it is held to its time cap and to the one egress boundary it declared: a tool that stays on the platform crosses none, and a third-party tool crosses none live in a shadow run. A result over the row cap is dropped. Every call that passed validation is a trace step with the result's outcome, so a call that failed in any way is never read as a query that found nothing. The Wazuh query templates add a DSL allow-list test (INT3.4).
 
 * **Status:** pending, delivered by INT3.4
 * **Owner epic:** AI-E2
 * **Threats:** TM-EVT-3, TM-EVT-10, TM-EVT-12
-* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`
+* **Enforced in:** `src/lg_sotf/tools/registry.py`, `src/lg_sotf/tools/enrichment/tools.py`, `src/lg_sotf/security/shadow.py`
 * **Runtime checks:** none
 * **Proved by:**
   * `tests/unit/tools/test_registry.py::test_a_tool_missing_caps_or_schema_fails_to_load`
-  * `tests/unit/tools/test_registry.py::test_parameters_are_validated_before_the_call`
-  * `tests/unit/tools/test_registry.py::test_a_tool_disabled_for_the_tenant_is_not_called`
-  * `tests/unit/tools/test_registry.py::test_a_tenant_switch_applies_to_that_tenant_only`
+  * `tests/unit/tools/test_registry.py::test_a_params_model_that_is_not_strict_and_bounded_fails_to_load`
   * `tests/unit/tools/test_registry.py::test_no_tool_can_register_a_write_risk_class`
   * `tests/unit/tools/test_registry.py::test_egress_is_declared_and_coherent`
+  * `tests/unit/tools/test_registry.py::test_parameters_are_validated_before_the_call`
+  * `tests/unit/tools/test_registry.py::test_a_tool_disabled_for_the_tenant_is_not_called`
+  * `tests/unit/tools/test_registry.py::test_the_tenant_switch_fails_closed`
+  * `tests/unit/tools/test_registry.py::test_a_tenant_switch_applies_to_that_tenant_only`
+  * `tests/unit/tools/test_registry.py::test_the_window_cap_is_enforced_before_the_call`
+  * `tests/unit/tools/test_registry.py::test_time_and_row_caps_answer_with_the_refusal`
+  * `tests/unit/tools/test_registry.py::test_a_tool_crosses_only_the_egress_boundary_it_declared`
+  * `tests/unit/tools/test_registry.py::test_a_platform_tool_cannot_open_an_outside_connection`
+  * `tests/unit/tools/test_registry.py::test_a_shadow_run_makes_no_third_party_request`
   * `tests/unit/tools/test_registry.py::test_an_empty_result_and_a_failed_call_are_distinguishable`
+  * `tests/unit/architecture/test_tool_registry.py::test_enrichment_lookups_are_called_only_through_the_registry`
   * `tests/unit/agents/test_analysis.py::test_ti_lookups_run_through_the_registry`
