@@ -25,7 +25,7 @@ from lg_sotf.db.repos import Repositories
 from lg_sotf.domain import closure
 from lg_sotf.observability.metrics import RETRO_REOPEN_FAILURES
 from tests.integration.db._support import TENANT_A, TENANT_B, make_alert
-from tests.integration.engine._support import analyst, decide, suspicious_alert
+from tests.integration.engine._support import analyst, decide, suspicious_alert, threat_alert
 
 pytestmark = pytest.mark.integration
 
@@ -53,6 +53,24 @@ async def reopened(repos: Repositories, alert_id: str, mode: str, tenant_id: str
         status, "related_threat", mode, None)
 
 
+async def test_an_escalation_the_models_only_found_suspicious_reopens_nothing(
+    engine: WorkflowEngine, repos: Repositories
+) -> None:
+    """FIX-4: the fast tier's ``suspicious`` with an inconclusive deep verdict is a doubt, not a threat. It does
+    not block a model close (policy v3), so it does not undo one either: the alert goes to an analyst, and only
+    the analyst's ``true_positive`` (or a model that judges it a threat) reopens the related closes."""
+    same_host = await model_closed(repos, {"hosts": ["ws-042"]})
+    doubt = await suspicious_alert(repos)
+    outcome = await engine.run(TENANT_A, doubt)
+    assert outcome.status == "waiting_human"
+    summary = (await repos.alerts.get(TENANT_A, doubt)).summary
+    assert summary["triage"]["threat_assessment"] == "suspicious"
+    assert (summary.get("analysis") or {}).get("verdict") != "malicious"
+    assert not retro_reopen.judged_threat(summary["triage"], summary.get("analysis") or {})
+    closed = await repos.alerts.get(TENANT_A, same_host)
+    assert (closed.status, closed.summary.get("reopened")) == ("closed", None)
+
+
 async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_closes(
     engine: WorkflowEngine, repos: Repositories
 ) -> None:
@@ -63,7 +81,7 @@ async def test_an_escalation_a_model_judged_a_threat_reopens_related_model_close
     stale = await model_closed(repos, {"hosts": ["ws-042"]}, closed_at=datetime.now(UTC) - timedelta(hours=25))
     other_tenant = await model_closed(repos, {"hosts": ["ws-042"]}, tenant_id=TENANT_B)
 
-    threat = await suspicious_alert(repos)
+    threat = await threat_alert(repos)
     outcome = await engine.run(TENANT_A, threat)
     assert outcome.status == "waiting_human"
     triage = (await repos.alerts.get(TENANT_A, threat)).summary["triage"]
