@@ -163,11 +163,12 @@ describe('decision page header and claim state', () => {
     expect(screen.getByText('Escalated because the assessed threat 42% is inside the review band (20–60%).')).toBeInTheDocument();
     expect(screen.getByText(/Grey zone/)).toHaveTextContent('Grey zone · confidence 42% (band 20–60)');
     expect(screen.getByText(/^SLA /)).toHaveTextContent(/over · breaching/);
-    expect(screen.getByText('high')).toBeInTheDocument();
+    expect(screen.getByText('High')).toBeInTheDocument();
     expect(screen.getByText(/Owner:/)).toHaveTextContent('Owner: You');
     expect(screen.getByText(/^Claimed by you/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Alert alert-1' })).toHaveAttribute('href', '/alerts?alert=alert-1');
-    expect(screen.getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', '/escalations?order=sla_deadline');
+    // The way back is the work queue, unless the analyst came from the escalation list.
+    expect(screen.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
   });
 
   it('offers a prominent Claim on an unclaimed escalation; deciding waits for it', async () => {
@@ -225,7 +226,7 @@ describe('decision page header and claim state', () => {
       { route: '/escalations/nope' },
     );
     expect(await screen.findByRole('heading', { name: 'Escalation not found' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Back to the escalation queue' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to the queue' })).toHaveAttribute('href', '/queue');
   });
 });
 
@@ -396,7 +397,7 @@ describe('decision form', () => {
     await user.click(form().getByRole('radio', { name: /^Benign positive/ }));
     await user.click(form().getByRole('button', { name: 'Record and open next' }));
     expect(await screen.findByText('No other escalation is waiting for you.')).toBeInTheDocument();
-    expect(screen.getByTestId('location')).toHaveTextContent(/^\/escalations\?order=sla_deadline$/);
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/queue$/);
   });
 
   it('looks through further pages for the next escalation', async () => {

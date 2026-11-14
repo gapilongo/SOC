@@ -35,7 +35,7 @@ function UsageLine({ label, usage }: { label: string; usage: Usage }) {
   const level = usageLevel(usage);
   return (
     <li className="flex items-start gap-1.5">
-      <span className={cx('mt-[7px] h-1.5 w-1.5 flex-none rounded-full', LEVEL_DOT[level])} aria-hidden="true" />
+      <span className={cx('mt-1.5 h-1.5 w-1.5 flex-none rounded-full', LEVEL_DOT[level])} aria-hidden="true" />
       <span>
         <span className="text-secondary">{label}: </span>
         <span className="tabular-nums">{usageText(usage)}</span>
@@ -132,7 +132,7 @@ export function PendingCard({
             {guardrail && (
               <Item term="Guardrails" span="full">
                 <span className="flex items-start gap-1.5">
-                  <span className={cx('mt-[7px] h-1.5 w-1.5 flex-none rounded-full', blocked ? 'bg-state-bad' : 'bg-state-ok')} aria-hidden="true" />
+                  <span className={cx('mt-1.5 h-1.5 w-1.5 flex-none rounded-full', blocked ? 'bg-state-bad' : 'bg-state-ok')} aria-hidden="true" />
                   <span>
                     <span className={cx('font-medium', blocked ? 'text-danger-fg' : 'text-fg')}>{guardrail.label}</span>
                     <span className="text-secondary"> · {guardrail.detail}</span>

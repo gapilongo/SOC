@@ -1,138 +1,282 @@
 /*
- * Design tokens (docs: the "Design tokens and components" board of the UI redesign).
+ * Design tokens of the console (design: docs/design/console-v2, README section 4).
  *
  * Every colour is an RGB triplet so Tailwind's opacity modifiers work
- * (`bg-raised/60`); tailwind.config.js maps each token to a theme colour of
- * the same name. Dark is the default; `<html data-theme="light">` switches to
- * the light palette (src/theme/theme.tsx sets it, "System" follows
- * prefers-color-scheme). Any element can pin a palette for its subtree with
- * data-theme (the printable monthly report is always light).
+ * (`bg-raised/60`); tailwind.config.js maps each token to a theme name. The
+ * type scale, radii, control heights and row densities are tokens too: a page
+ * never writes a size of its own.
+ *
+ * Themes: light on `:root`; dark when the system asks for it and nothing pins
+ * light; dark again under `[data-theme='dark']`. src/theme/theme.tsx sets
+ * `<html data-theme>` from the user's choice ("System" by default), and any
+ * element can pin a palette for its subtree (the printable monthly report is
+ * always light). The two dark blocks must stay identical (tokens.test.ts).
  *
  * Contrast rules (checked by src/theme/tokens.test.ts against this file):
  *   - text tokens reach 4.5:1 on every surface,
- *   - controls, focus, severity squares and state dots reach 3:1,
+ *   - controls, focus, severity bars, state and outcome marks reach 3:1,
  *   - text on the tinted backgrounds reaches 4.5:1,
  *   - text on the observation surface reaches 4.5:1, its double rule 3:1,
  *     and highlighted text reaches 4.5:1 on the highlighter.
  */
 
-:root,
-[data-theme='dark'] {
-  color-scheme: dark;
+:root {
+  /* Brand: the only colours an MSSP may set. Link and selection are derived from the accent. */
+  --brand-accent: 47 111 228; /* #2F6FE4 */
+  --brand-accent-hover: 37 96 204; /* #2560CC */
+  --brand-on-accent: 255 255 255;
+  --brand-link-light: 29 87 199; /* #1D57C7 */
+  --brand-link-dark: 138 182 255; /* #8AB6FF */
+  --brand-selected-light: 227 235 250; /* #E3EBFA accent at 12% over the canvas */
+  --brand-selected-dark: 26 45 78; /* #1A2D4E accent at 24% over the canvas */
 
-  /* Surfaces */
-  --c-canvas: 10 14 19; /* #0A0E13 */
-  --c-sidebar: 13 18 24; /* #0D1218 */
-  --c-raised: 16 21 28; /* #10151C cards */
-  --c-raised-2: 22 29 39; /* #161D27 hover, banners, chips */
-  --c-selected: 26 36 51; /* #1A2433 */
-  /* What a tool returned (the investigation view): monospace on this surface, never on a card. */
-  --c-observed: 14 17 22; /* #0E1116 */
+  /* Type: self-hosted files only (src/main.tsx); the product ships to air-gapped sites. */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
 
-  /* Lines */
-  --c-subtle: 28 35 45; /* #1C232D */
-  --c-strong: 42 52 66; /* #2A3442 */
-  --c-control: 100 112 132; /* #647084 control borders (3:1) */
+  /* Type scale: size and line height. 11 label, 12 meta, 13 tables and controls, 14 body,
+     15 section title, 18 lead figure, 20 page title, 22 statement, 25 headline, 30 the one big number. */
+  --text-2xs: 11px;
+  --leading-2xs: 14px;
+  --text-xs: 12px;
+  --leading-xs: 16px;
+  --text-ctl: 13px;
+  --leading-ctl: 18px;
+  --text-sm: 14px;
+  --leading-sm: 20px;
+  --text-base: 15px;
+  --leading-base: 20px;
+  --text-lg: 18px;
+  --leading-lg: 24px;
+  --text-xl: 20px;
+  --leading-xl: 24px;
+  --text-2xl: 22px;
+  --leading-2xl: 27px;
+  --text-headline: 25px; /* the verdict of an investigation, as a sentence */
+  --leading-headline: 31px;
+  --text-display: 30px;
+  --leading-display: 34px;
 
-  /* Text */
-  --c-fg: 230 234 240; /* #E6EAF0 primary */
-  --c-body: 196 203 214; /* #C4CBD6 body in cards */
-  --c-secondary: 167 176 190; /* #A7B0BE */
-  --c-muted: 131 141 156; /* #838D9C floor: 4.5:1 on every surface */
-  --c-eyebrow: 135 146 162; /* #8792A2 */
+  /* Corners: 3 px on controls and framed surfaces, 2 px on tags; the sheet itself has none. */
+  --r-tag: 2px;
+  --r-control: 3px;
+  --r-surface: 3px;
 
-  /* Accent: primary buttons, links, focus, AI output */
-  --c-accent: 47 111 228; /* #2F6FE4 */
-  --c-accent-hover: 37 99 212; /* #2563D4 */
-  --c-on-accent: 255 255 255;
-  --c-link: 138 182 255; /* #8AB6FF */
-  --c-link-hover: 181 208 255; /* #B5D0FF */
-  --c-focus: 138 182 255; /* #8AB6FF */
+  /* Control heights: in a table row, the default, the one primary action; 44 px on touch screens. */
+  --ctl-h-sm: 24px;
+  --ctl-h: 28px;
+  --ctl-h-lg: 36px;
+  --ctl-h-touch: 44px;
 
-  /* Severity: square + word, never colour alone */
-  --c-sev-critical: 255 107 112; /* #FF6B70 */
-  --c-sev-high: 255 159 67; /* #FF9F43 */
-  --c-sev-medium: 245 208 76; /* #F5D04C */
-  --c-sev-low: 76 195 217; /* #4CC3D9 */
-  --c-sev-info: 154 164 178; /* #9AA4B2 */
+  /* Row density: dense, compact (default), two lines. `--cell-py` pads a cell that wraps. */
+  --row-h-dense: 24px;
+  --row-h-compact: 28px;
+  --row-h-relaxed: 44px;
+  --row-h: var(--row-h-compact);
+  --cell-py: 6px;
 
-  /* State: neutral pill + coloured dot */
-  --c-state-waiting: 255 176 32; /* #FFB020 waiting for an analyst */
-  --c-state-approval: 169 155 255; /* #A99BFF waiting for approval */
-  --c-state-processing: 138 182 255; /* #8AB6FF */
-  --c-state-ok: 127 217 168; /* #7FD9A8 closed / verified */
-  --c-state-bad: 255 138 142; /* #FF8A8E failed / malicious */
-
-  /* Feedback */
-  --c-danger: 192 85 93; /* #C0555D destructive border */
-  --c-danger-fg: 255 179 182; /* #FFB3B6 destructive / error text */
-  --c-warn: 255 176 32; /* #FFB020 SLA at risk / breaching */
-  --c-warn-fg: 255 213 138; /* #FFD58A text on the warning tint */
-  --c-ok-fg: 157 230 191; /* #9DE6BF */
-  --c-tint-danger: 42 22 25; /* #2A1619 */
-  --c-tint-warn: 39 31 14; /* #271F0E */
-  --c-tint-ok: 15 36 25; /* #0F2419 */
-  --c-tint-info: 20 33 58; /* #14213A */
-
-  /* The highlighter: the decisive characters inside an observation, and nothing else. */
-  --c-mark: 90 71 0; /* #5A4700 */
-  --c-mark-fg: 255 235 176; /* #FFEBB0 */
-
-  --shadow-popover: 0 12px 32px rgb(0 0 0 / 0.45);
+  /* Shell */
+  --rail-w: 220px;
+  --top-h: 48px;
 }
 
+:root[data-density='dense'] {
+  --row-h: var(--row-h-dense);
+  --cell-py: 3px;
+}
+
+:root[data-density='comfortable'] {
+  --row-h: var(--row-h-relaxed);
+  --cell-py: 12px;
+}
+
+:root,
 [data-theme='light'] {
   color-scheme: light;
 
-  --c-canvas: 245 247 250; /* #F5F7FA */
-  --c-sidebar: 237 240 244; /* #EDF0F4 */
-  --c-raised: 255 255 255; /* #FFFFFF */
-  --c-raised-2: 240 242 246; /* #F0F2F6 */
-  --c-selected: 225 234 248; /* #E1EAF8 */
+  /* Surfaces */
+  --c-canvas: 251 252 253; /* #FBFCFD the sheet: content sits on it directly */
+  --c-sidebar: 241 243 246; /* #F1F3F6 */
+  --c-raised: 255 255 255; /* #FFFFFF popovers, dialogs, the decision bar */
+  --c-raised-2: 238 241 245; /* #EEF1F5 hover, chips */
+  --c-selected: var(--brand-selected-light);
+  /* What a tool returned (the investigation view): monospace on this surface, never on a card. */
   --c-observed: 242 244 248; /* #F2F4F8 */
 
-  --c-subtle: 226 230 236; /* #E2E6EC */
+  /* Lines: hairlines carry the structure */
+  --c-subtle: 227 231 237; /* #E3E7ED */
   --c-strong: 203 210 219; /* #CBD2DB */
-  --c-control: 122 133 150; /* #7A8596 */
+  --c-control: 122 133 150; /* #7A8596 control borders (3:1) */
 
-  --c-fg: 14 20 27; /* #0E141B */
-  --c-body: 39 48 60; /* #27303C */
+  /* Text */
+  --c-fg: 14 20 27; /* #0E141B headings, figures, what must be read */
+  --c-body: 39 48 60; /* #27303C running text */
   --c-secondary: 71 82 98; /* #475262 */
-  --c-muted: 92 102 119; /* #5C6677 */
-  --c-eyebrow: 86 97 115; /* #566173 */
+  --c-muted: 92 102 119; /* #5C6677 floor: 4.5:1 on every surface */
 
-  --c-accent: 47 111 228; /* #2F6FE4 */
-  --c-accent-hover: 37 96 204; /* #2560CC */
-  --c-on-accent: 255 255 255;
-  --c-link: 29 87 199; /* #1D57C7 */
+  /* Accent, from the brand: primary buttons, links, focus */
+  --c-accent: var(--brand-accent);
+  --c-accent-hover: var(--brand-accent-hover);
+  --c-on-accent: var(--brand-on-accent);
+  --c-link: var(--brand-link-light);
   --c-link-hover: 20 66 156; /* #14429C */
   /* #8AB6FF is under 3:1 on light surfaces: the light theme uses the link blue. */
-  --c-focus: 29 87 199; /* #1D57C7 */
+  --c-focus: var(--brand-link-light);
 
+  /* Severity: bars plus the word, never colour alone. Never brandable. */
   --c-sev-critical: 212 47 59; /* #D42F3B */
   --c-sev-high: 193 90 0; /* #C15A00 */
   --c-sev-medium: 160 120 0; /* #A07800 */
   --c-sev-low: 11 127 150; /* #0B7F96 */
   --c-sev-info: 107 117 133; /* #6B7585 */
 
-  --c-state-waiting: 178 106 0; /* #B26A00 */
-  --c-state-approval: 106 85 216; /* #6A55D8 */
+  /* State and outcome marks: a coloured mark plus the state in words */
+  --c-state-waiting: 178 106 0; /* #B26A00 waiting for an analyst */
+  --c-state-approval: 106 85 216; /* #6A55D8 waiting for approval */
   --c-state-processing: 29 87 199; /* #1D57C7 */
-  --c-state-ok: 27 133 80; /* #1B8550 */
-  --c-state-bad: 199 52 62; /* #C7343E */
+  --c-state-ok: 27 133 80; /* #1B8550 closed / verified */
+  --c-state-bad: 199 52 62; /* #C7343E failed / malicious */
 
-  --c-danger: 194 51 61; /* #C2333D */
-  --c-danger-fg: 168 35 44; /* #A8232C */
-  --c-warn: 143 86 0; /* #8F5600 */
-  --c-warn-fg: 122 74 0; /* #7A4A00 */
+  /* Feedback */
+  --c-danger: 194 51 61; /* #C2333D destructive border */
+  --c-danger-fg: 168 35 44; /* #A8232C destructive / error text */
+  --c-warn: 143 86 0; /* #8F5600 SLA at risk / breaching */
+  --c-warn-fg: 122 74 0; /* #7A4A00 text on the warning tint */
   --c-ok-fg: 22 107 65; /* #166B41 */
   --c-tint-danger: 252 235 236; /* #FCEBEC */
   --c-tint-warn: 253 243 223; /* #FDF3DF */
   --c-tint-ok: 230 245 236; /* #E6F5EC */
   --c-tint-info: 230 238 251; /* #E6EEFB */
 
+  /* The highlighter: the decisive characters inside an observation, and nothing else. */
   --c-mark: 255 229 138; /* #FFE58A */
   --c-mark-fg: 14 20 27; /* #0E141B */
 
-  --shadow-popover: 0 12px 32px rgb(15 23 42 / 0.16);
+  /* Data marks: who or what closed an alert. Always beside a label, never colour alone. */
+  --c-data-1: 42 120 214; /* #2A78D6 the AI */
+  --c-data-2: 27 175 122; /* #1BAF7A a suppression rule */
+  --c-data-3: 98 80 214; /* #6250D6 an earlier analyst verdict */
+  --c-data-4: 107 117 133; /* #6B7585 a person */
+
+  --shadow-popover: 0 16px 40px rgb(15 23 42 / 0.16), 0 0 0 1px rgb(15 23 42 / 0.06);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --c-canvas: 20 24 30; /* #14181E graphite, not black */
+    --c-sidebar: 15 19 23; /* #0F1317 the rail: the only surface darker than the page */
+    --c-raised: 27 32 40; /* #1B2028 */
+    --c-raised-2: 34 41 53; /* #222935 */
+    --c-selected: var(--brand-selected-dark);
+    --c-observed: 14 17 22; /* #0E1116 recessed */
+
+    --c-subtle: 38 45 56; /* #262D38 */
+    --c-strong: 52 61 75; /* #343D4B */
+    --c-control: 111 123 143; /* #6F7B8F */
+
+    --c-fg: 230 234 240; /* #E6EAF0 */
+    --c-body: 201 208 218; /* #C9D0DA */
+    --c-secondary: 167 176 190; /* #A7B0BE */
+    --c-muted: 142 152 168; /* #8E98A8 */
+
+    --c-accent: var(--brand-accent);
+    --c-accent-hover: var(--brand-accent-hover);
+    --c-on-accent: var(--brand-on-accent);
+    --c-link: var(--brand-link-dark);
+    --c-link-hover: 181 208 255; /* #B5D0FF */
+    --c-focus: var(--brand-link-dark);
+
+    --c-sev-critical: 255 107 112; /* #FF6B70 */
+    --c-sev-high: 255 159 67; /* #FF9F43 */
+    --c-sev-medium: 245 208 76; /* #F5D04C */
+    --c-sev-low: 76 195 217; /* #4CC3D9 */
+    --c-sev-info: 154 164 178; /* #9AA4B2 */
+
+    --c-state-waiting: 255 176 32; /* #FFB020 */
+    --c-state-approval: 169 155 255; /* #A99BFF */
+    --c-state-processing: 138 182 255; /* #8AB6FF */
+    --c-state-ok: 127 217 168; /* #7FD9A8 */
+    --c-state-bad: 255 138 142; /* #FF8A8E */
+
+    --c-danger: 192 85 93; /* #C0555D */
+    --c-danger-fg: 255 179 182; /* #FFB3B6 */
+    --c-warn: 255 176 32; /* #FFB020 */
+    --c-warn-fg: 255 213 138; /* #FFD58A */
+    --c-ok-fg: 157 230 191; /* #9DE6BF */
+    --c-tint-danger: 46 26 29; /* #2E1A1D */
+    --c-tint-warn: 43 35 16; /* #2B2310 */
+    --c-tint-ok: 19 40 29; /* #13281D */
+    --c-tint-info: 24 38 63; /* #18263F */
+
+    --c-mark: 90 71 0; /* #5A4700 */
+    --c-mark-fg: 255 235 176; /* #FFEBB0 */
+
+    --c-data-1: 57 135 229; /* #3987E5 */
+    --c-data-2: 25 158 112; /* #199E70 */
+    --c-data-3: 144 133 233; /* #9085E9 */
+    --c-data-4: 154 164 178; /* #9AA4B2 */
+
+    --shadow-popover: 0 16px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
+  }
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --c-canvas: 20 24 30; /* #14181E graphite, not black */
+  --c-sidebar: 15 19 23; /* #0F1317 the rail: the only surface darker than the page */
+  --c-raised: 27 32 40; /* #1B2028 */
+  --c-raised-2: 34 41 53; /* #222935 */
+  --c-selected: var(--brand-selected-dark);
+  --c-observed: 14 17 22; /* #0E1116 recessed */
+
+  --c-subtle: 38 45 56; /* #262D38 */
+  --c-strong: 52 61 75; /* #343D4B */
+  --c-control: 111 123 143; /* #6F7B8F */
+
+  --c-fg: 230 234 240; /* #E6EAF0 */
+  --c-body: 201 208 218; /* #C9D0DA */
+  --c-secondary: 167 176 190; /* #A7B0BE */
+  --c-muted: 142 152 168; /* #8E98A8 */
+
+  --c-accent: var(--brand-accent);
+  --c-accent-hover: var(--brand-accent-hover);
+  --c-on-accent: var(--brand-on-accent);
+  --c-link: var(--brand-link-dark);
+  --c-link-hover: 181 208 255; /* #B5D0FF */
+  --c-focus: var(--brand-link-dark);
+
+  --c-sev-critical: 255 107 112; /* #FF6B70 */
+  --c-sev-high: 255 159 67; /* #FF9F43 */
+  --c-sev-medium: 245 208 76; /* #F5D04C */
+  --c-sev-low: 76 195 217; /* #4CC3D9 */
+  --c-sev-info: 154 164 178; /* #9AA4B2 */
+
+  --c-state-waiting: 255 176 32; /* #FFB020 */
+  --c-state-approval: 169 155 255; /* #A99BFF */
+  --c-state-processing: 138 182 255; /* #8AB6FF */
+  --c-state-ok: 127 217 168; /* #7FD9A8 */
+  --c-state-bad: 255 138 142; /* #FF8A8E */
+
+  --c-danger: 192 85 93; /* #C0555D */
+  --c-danger-fg: 255 179 182; /* #FFB3B6 */
+  --c-warn: 255 176 32; /* #FFB020 */
+  --c-warn-fg: 255 213 138; /* #FFD58A */
+  --c-ok-fg: 157 230 191; /* #9DE6BF */
+  --c-tint-danger: 46 26 29; /* #2E1A1D */
+  --c-tint-warn: 43 35 16; /* #2B2310 */
+  --c-tint-ok: 19 40 29; /* #13281D */
+  --c-tint-info: 24 38 63; /* #18263F */
+
+  --c-mark: 90 71 0; /* #5A4700 */
+  --c-mark-fg: 255 235 176; /* #FFEBB0 */
+
+  --c-data-1: 57 135 229; /* #3987E5 */
+  --c-data-2: 25 158 112; /* #199E70 */
+  --c-data-3: 144 133 233; /* #9085E9 */
+  --c-data-4: 154 164 178; /* #9AA4B2 */
+
+  --shadow-popover: 0 16px 40px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(255 255 255 / 0.06);
 }

@@ -8,6 +8,7 @@ import { Copy, Download } from 'lucide-react';
 import { forwardRef, useState } from 'react';
 
 import type { MfaEnrollOut } from '../api/types';
+import { getBrand } from '../config';
 import { downloadText } from '../lib/download';
 import { useToast } from './Toast';
 import { Button, TextField } from './ui';
@@ -35,8 +36,9 @@ export function QrCode({ rows, label, size = 192 }: { rows: string[]; label: str
       className="rounded bg-white"
       data-testid="mfa-qr"
     >
-      <rect width={dim} height={dim} fill="#ffffff" />
-      <path d={d} fill="#000000" />
+      {/* A QR code is black on white in every theme: scanners need the contrast. */}
+      <rect width={dim} height={dim} className="fill-white" />
+      <path d={d} className="fill-black" />
     </svg>
   );
 }
@@ -113,7 +115,7 @@ export function RecoveryCodes({ codes, account }: { codes: string[]; account?: s
   const toast = useToast();
   const [copied, setCopied] = useState(false);
   const text = [
-    `LG-SOTF recovery codes${account ? ` for ${account}` : ''}`,
+    `${getBrand().name} recovery codes${account ? ` for ${account}` : ''}`,
     `Generated ${new Date().toISOString()}. Each code works once.`,
     '',
     ...codes,

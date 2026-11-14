@@ -30,7 +30,6 @@ export default {
       body: token('body'),
       secondary: token('secondary'),
       muted: token('muted'),
-      eyebrow: token('eyebrow'),
       accent: { DEFAULT: token('accent'), hover: token('accent-hover') },
       'on-accent': token('on-accent'),
       link: { DEFAULT: token('link'), hover: token('link-hover') },
@@ -58,32 +57,62 @@ export default {
         ok: token('tint-ok'),
         info: token('tint-info'),
       },
+      // Who or what closed an alert: the AI, a suppression rule, an earlier verdict, a person.
+      data: { 1: token('data-1'), 2: token('data-2'), 3: token('data-3'), 4: token('data-4') },
+    },
+    // Corners are tokens: 2 px tags, 3 px controls and framed surfaces. `rounded-full` stays for dots and avatars.
+    borderRadius: {
+      none: '0',
+      DEFAULT: 'var(--r-control)',
+      sm: 'var(--r-tag)',
+      tag: 'var(--r-tag)',
+      control: 'var(--r-control)',
+      card: 'var(--r-surface)',
+      full: '9999px',
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+        sans: ['var(--font-sans)'],
+        mono: ['var(--font-mono)'],
       },
-      // Type scale: 11 eyebrow (2xs), 12 meta (xs), 13 table and controls (ctl), 14 body (sm),
-      // 16 panel title (base), 20 page title (xl), 28 display. Names avoid the colour names
-      // (`text-body` is a colour).
+      // Type scale (tokens.css): 11 label (2xs), 12 meta (xs), 13 tables and controls (ctl), 14 body (sm),
+      // 15 section title (base), 18 lead figure (lg), 20 page title (xl), 22 statement (2xl), 30 display.
+      // Names avoid the colour names (`text-body` is a colour).
       fontSize: {
-        '2xs': ['11px', { lineHeight: '16px' }],
-        ctl: ['13px', { lineHeight: '18px' }],
-        display: ['28px', { lineHeight: '34px', letterSpacing: '-0.01em' }],
+        '2xs': ['var(--text-2xs)', { lineHeight: 'var(--leading-2xs)' }],
+        xs: ['var(--text-xs)', { lineHeight: 'var(--leading-xs)' }],
+        ctl: ['var(--text-ctl)', { lineHeight: 'var(--leading-ctl)' }],
+        sm: ['var(--text-sm)', { lineHeight: 'var(--leading-sm)' }],
+        base: ['var(--text-base)', { lineHeight: 'var(--leading-base)' }],
+        lg: ['var(--text-lg)', { lineHeight: 'var(--leading-lg)', letterSpacing: '-0.01em' }],
+        xl: ['var(--text-xl)', { lineHeight: 'var(--leading-xl)', letterSpacing: '-0.01em' }],
+        '2xl': ['var(--text-2xl)', { lineHeight: 'var(--leading-2xl)', letterSpacing: '-0.015em' }],
+        headline: ['var(--text-headline)', { lineHeight: 'var(--leading-headline)', letterSpacing: '-0.017em' }],
+        display: ['var(--text-display)', { lineHeight: 'var(--leading-display)', letterSpacing: '-0.02em' }],
       },
-      borderRadius: {
-        tag: '6px',
-        control: '8px',
-        card: '12px',
+      // 1.5 px: the ring of a mark (a voice, an open square). 3 px: the double rule on the left of what a tool returned.
+      borderWidth: { 1.5: '1.5px', 3: '3px' },
+      // Labels in capitals are tracked out: 0.05em on tags and column headings, 0.06em on eyebrows.
+      letterSpacing: { label: '0.05em', eyebrow: '0.06em' },
+      // Control heights and row density as sizes: `h-ctl`, `min-h-ctl-touch`, `h-row`, `w-ctl`.
+      spacing: {
+        'ctl-sm': 'var(--ctl-h-sm)',
+        ctl: 'var(--ctl-h)',
+        'ctl-lg': 'var(--ctl-h-lg)',
+        'ctl-touch': 'var(--ctl-h-touch)',
+        row: 'var(--row-h)',
+        'cell-y': 'var(--cell-py)',
+        rail: 'var(--rail-w)',
+        top: 'var(--top-h)',
       },
       boxShadow: {
         popover: 'var(--shadow-popover)',
-        // The 3 px inset bar of attention / approval cards and banners.
-        'bar-attention': 'inset 3px 0 0 rgb(var(--c-state-waiting))',
-        'bar-approval': 'inset 3px 0 0 rgb(var(--c-state-approval))',
-        'bar-warning': 'inset 3px 0 0 rgb(var(--c-state-bad))',
-        'bar-info': 'inset 3px 0 0 rgb(var(--c-link))',
+        // The 2 px inset bar of attention / approval panels and of the current row.
+        'bar-attention': 'inset 2px 0 0 rgb(var(--c-state-waiting))',
+        'bar-approval': 'inset 2px 0 0 rgb(var(--c-state-approval))',
+        'bar-warning': 'inset 2px 0 0 rgb(var(--c-state-bad))',
+        'bar-info': 'inset 2px 0 0 rgb(var(--c-link))',
+        'bar-accent': 'inset 2px 0 0 rgb(var(--c-accent))',
       },
       outlineColor: { DEFAULT: token('focus') },
       ringColor: { DEFAULT: token('focus') },

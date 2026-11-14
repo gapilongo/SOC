@@ -13,10 +13,10 @@ import { observationName, observationSubject } from './Observation';
 function Kind({ glyph, title, count, children }: { glyph: GlyphName; title: string; count: number; children: ReactNode }) {
   return (
     <section data-kind={glyph}>
-      <h3 className="mb-1 mt-3 flex items-center gap-[7px] text-ctl font-semibold text-fg">
+      <h3 className="mb-1 mt-3 flex items-center gap-1.5 text-ctl font-semibold text-fg">
         <Glyph name={glyph} />
         {title}
-        <span className="ml-auto font-mono text-[11.5px] font-medium leading-none text-muted">
+        <span className="ml-auto font-mono text-2xs font-medium leading-none text-muted">
           {count}
           <span className="sr-only"> {count === 1 ? 'item' : 'items'}</span>
         </span>
@@ -32,7 +32,7 @@ function Items({ items }: { items: Array<{ what: string; why?: string | null; so
       {items.map((item, i) => (
         <li
           key={`${item.what}-${i}`}
-          className="relative break-words py-1 pl-[19px] text-ctl text-body before:absolute before:left-[3px] before:top-2.5 before:h-px before:w-[5px] before:bg-control"
+          className="relative break-words py-1 pl-5 text-ctl text-body before:absolute before:left-1 before:top-2.5 before:h-px before:w-1 before:bg-control"
         >
           {item.what}
           {(item.why || item.source) && (
@@ -88,7 +88,7 @@ export function NotEstablished({
           <summary className="flex min-h-6 w-fit cursor-pointer items-center text-link">
             Show the {empty.length} {empty.length === 1 ? 'lookup' : 'lookups'}
           </summary>
-          <ul className="font-mono leading-[1.6] text-body">
+          <ul className="font-mono leading-relaxed text-body">
             {empty.map((item) => (
               <li key={item.id} className="break-words">
                 {item.id}

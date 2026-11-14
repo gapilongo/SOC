@@ -32,8 +32,8 @@ export function writePref(key: PrefKey, value: string): void {
 
 /**
  * Display preferences of one page that each signed-in user keeps separately
- * (the work queue's row density and saved views, the investigation view's
- * single-key shortcuts on or off). The key is closed like
+ * (the work queue's row density and saved views, single-key shortcuts on or
+ * off: lib/singleKeys.ts). The key is closed like
  * `PrefKey`, and the user id is part of the storage key, so two people on one
  * browser do not share them. Not for anything sensitive: a saved view holds
  * filter names only.

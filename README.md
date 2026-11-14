@@ -276,8 +276,8 @@ Full list in the [changelog](CHANGELOG.md).
   of the public API only): a live Overview that puts the analyst's own work
   first, an alert queue with filters and a side panel per alert, an
   escalation queue with a decision page per escalation, approvals,
-  suppressions, reports and tenant administration, in a dark (default),
-  light or system theme. Served by a non-root nginx container under a
+  suppressions, reports and tenant administration, in a light or dark
+  theme that follows the system setting unless the user picks one. Served by a non-root nginx container under a
   strict Content-Security-Policy. Access tokens are kept in memory only.
   Shipped in the compose stack (`PROFILES=frontend`) and the Helm chart
   (`frontend.enabled`).
@@ -318,7 +318,7 @@ deterministic stand-in model, not from Claude.
 | | |
 |---|---|
 | ![Overview](docs/screenshots/02-overview.png) | ![Overview in the light theme](docs/screenshots/02-overview-light.png) |
-| Overview: what needs you now, then the last 24 hours; updated live over the WebSocket | The same page in the light theme (dark, light or system, switched in the header) |
+| Overview: what needs you now, then the last 24 hours; updated live over the WebSocket | The same page in the light theme (system, light or dark, switched in the top bar) |
 | ![Alert in the side panel](docs/screenshots/04-alert-timeline.png) | ![Escalation queue](docs/screenshots/05-escalations.png) |
 | Alerts queue with one alert open in the side panel: entities and workflow timeline | Escalation queue in SLA order, to claim one by one or in bulk |
 | ![Escalation decision page](docs/screenshots/06-decision.png) | ![Approvals](docs/screenshots/07-approvals.png) |
@@ -396,11 +396,12 @@ Open **http://localhost:3000** (use `localhost`, not `127.0.0.1`: live
 updates are accepted only from origins listed in `api.cors_origins`, and the
 development configuration lists `http://localhost:3000`). The UI opens on
 the Overview (your unassigned and overdue escalations, what you hold, the
-approvals you can act on, then the window's figures); the sidebar leads to
-the alert queue, escalations to claim and decide, approvals, suppressions
-and reports. Admins also see Getting started, Sources, Integrations, Users
-and API keys, Tenant settings, LLM usage and the Audit log. The header's
-theme switch picks dark, light or the system setting.
+approvals you can act on, then the window's figures); the rail leads to
+the work queue (what to claim and decide), approvals, alerts, suppressions
+and reports. Admins also see Getting started, Sources, Integrations, People
+and keys, Tenant settings, AI usage and cost and the Audit log. Ctrl+K opens the
+search field (pages, alerts, commands). The theme follows the system setting
+until you change it with the control in the top bar.
 
 Stop with `make down` (keeps data) or `make clean-volumes` (deletes it).
 If you started the UI, pass the profile again (`make down PROFILES=frontend`):

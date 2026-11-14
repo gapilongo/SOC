@@ -161,6 +161,9 @@ export const endpoints = {
 
   alerts: (api: ApiClient, filters: AlertFilters, cursor?: string, signal?: AbortSignal) =>
     api.get<Page<AlertOut>>('/alerts', { query: { ...filters, cursor, limit: PAGE_SIZE }, signal }),
+  /** The newest alerts whose title contains `q` (the shell's search field; the API searches the last 30 days). */
+  alertTitles: (api: ApiClient, q: string, limit: number, signal?: AbortSignal) =>
+    api.get<Page<AlertOut>>('/alerts', { query: { q, limit }, signal }),
   alert: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<AlertDetailOut>(`/alerts/${enc(id)}`, { signal }),
   /** The investigation read model: one shape that explains the AI's decision (404 on an API that predates it). */
   investigation: (api: ApiClient, id: string, signal?: AbortSignal) => api.get<InvestigationOut>(`/alerts/${enc(id)}/investigation`, { signal }),

@@ -10,6 +10,7 @@
  * must pick the module up.
  */
 import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -53,9 +54,13 @@ function stubWebSocket() {
   );
 }
 
-/** The scaffold's own endpoint answers; every other request stays pending (only the shell matters here). */
+/** The scaffold's own endpoints answer; every other request stays pending (only the shell matters here). */
 function api(count = 2) {
-  return fakeApi((_method, p) => (p === '/scaffold/things/count' ? { count } : new Promise(() => undefined)));
+  return fakeApi((_method, p) => {
+    if (p === '/scaffold/things/count') return { count };
+    if (p === '/scaffold/things') return [{ id: 't-1', name: 'A thing called Wilhelmina' }];
+    return new Promise(() => undefined);
+  });
 }
 
 async function open(route: string, role: string) {
@@ -87,26 +92,48 @@ describe('a module is its folder and one registry line', () => {
   });
 
   it('adds its nav group in order, gated like its route', () => {
-    expect(NAV_GROUPS.map((g) => g.title)).toEqual(['Operate', 'Scaffold', 'Report', 'Configure', 'Platform']);
+    expect(NAV_GROUPS.map((g) => g.title)).toEqual(['Work', 'Scaffold', 'Detect and respond', 'Assure', 'Configure', 'Platform']);
     const principal = (role: string) => ({ userId: 'u-1', email: 'x@acme.test', role, tenantId: 'acme', homeTenantId: 'acme', isPlatformAdmin: false, method: 'password' as const });
     const groups = (role: string) => navFor(NAV_GROUPS, principal(role)).map((g) => g.title);
-    expect(groups('analyst')).toEqual(['Operate', 'Scaffold', 'Report']);
-    expect(groups('viewer')).toEqual(['Operate', 'Report']);
+    expect(groups('analyst')).toEqual(['Work', 'Scaffold', 'Detect and respond', 'Assure']);
+    expect(groups('viewer')).toEqual(['Work', 'Detect and respond', 'Assure']);
   });
 
-  it('renders its page inside the shell, with its nav item, count and breadcrumb', async () => {
+  it('renders its page inside the shell, with its nav item, its count and its name on the browser tab', async () => {
     const nav = await open('/scaffold', 'analyst');
     expect(await screen.findByRole('heading', { name: 'Scaffold things', level: 1 }, LAZY)).toBeInTheDocument();
     expect(await screen.findByText('2 waiting.', undefined, LAZY)).toBeInTheDocument();
-    // The sidebar: its own group, the item current, the module's count with its meaning.
+    // The rail: its own group, the item current, the module's count with its meaning.
     const group = within(nav).getByRole('list', { name: 'Scaffold' });
     const link = await within(group).findByRole('link', { name: 'Scaffold things 2 things waiting' }, LAZY);
     expect(link).toHaveAttribute('href', '/scaffold');
     expect(link).toHaveAttribute('aria-current', 'page');
     // The SOC's nav is still there, untouched.
-    expect(within(nav).getByRole('link', { name: 'Escalations' })).toHaveAttribute('href', '/escalations');
-    expect(screen.getByRole('navigation', { name: 'Breadcrumb' })).toHaveTextContent('Scaffold things');
+    expect(within(nav).getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/queue');
+    expect(document.title).toBe('Scaffold things · LG-SOTF');
+    // Licensed: its service group is an ordinary group.
+    expect(within(nav).queryByText('Not licensed')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: DENIED })).not.toBeInTheDocument();
+  });
+
+  it('adds its notice to the notifications and its records and command to the search field', async () => {
+    const user = userEvent.setup();
+    await open('/scaffold', 'analyst');
+    // The module's notice hook, beside the SOC's (which has nothing to report here).
+    await user.click(await screen.findByRole('button', { name: 'Notifications: 1 needs an act' }, LAZY));
+    expect(within(screen.getByRole('dialog', { name: 'Notifications' })).getByRole('link', { name: /2 scaffold things wait/ })).toHaveAttribute('href', '/scaffold');
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Search pages, alerts and things Ctrl K' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Search and commands' }, LAZY);
+    await user.keyboard('wilhelmina');
+    const hit = await within(dialog).findByRole('option', { name: /A thing called Wilhelmina/ }, LAZY);
+    expect(hit).toHaveTextContent('ThingA thing called Wilhelminaacme');
+    await user.clear(within(dialog).getByRole('combobox'));
+    await user.keyboard('>sort');
+    expect(within(dialog).getByRole('option', { name: /Sort the scaffold things/ })).toHaveTextContent('opens Scaffold things, runs nothing');
+    expect(REGISTRY.searches.map((s) => s.module)).toEqual(['soc', 'scaffold']);
+    expect(REGISTRY.notices.map((n) => n.module)).toEqual(['soc', 'scaffold']);
   });
 
   it('is guarded by its own access rule: a viewer gets neither the page nor the nav item', async () => {
@@ -146,6 +173,7 @@ describe('the registry refuses a manifest that cannot work', () => {
     ['an id that is not a folder name', [{ ...scaffold, id: 'Scaffold Module' }], /is not a module id/],
     ['the kernel namespace as an id', [{ ...scaffold, id: 'core' }], /kernel's query-key namespace/],
     ['a live event on another module\'s keys', [soc, { ...scaffold, liveEvents: { 'scaffold.updated': [qk.alerts.all] } }], /not the module's own/],
+    ['a command that opens no page', [{ ...scaffold, commands: [{ label: 'Go nowhere', to: '/nowhere?x=1', allowed: route.allowed }] }], /the command "Go nowhere" opens "\/nowhere\?x=1", which is not a page/],
   ])('%s', (_name, modules, message) => {
     expect(() => buildRegistry(modules)).toThrow(message);
   });
@@ -154,7 +182,7 @@ describe('the registry refuses a manifest that cannot work', () => {
     const registry = buildRegistry([soc, { ...scaffold, navGroups: [], routes: [{ ...route, nav: { ...route.nav!, group: 'operate' } }] }]);
     const operate = registry.navGroups.find((g) => g.id === 'operate');
     expect(operate?.items.at(-1)?.label).toBe('Scaffold things');
-    expect(registry.navGroups.map((g) => g.title)).toEqual(['Operate', 'Report', 'Configure', 'Platform']);
+    expect(registry.navGroups.map((g) => g.title)).toEqual(['Work', 'Detect and respond', 'Assure', 'Configure', 'Platform']);
   });
 });
 

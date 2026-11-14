@@ -82,10 +82,22 @@ export async function signIn(page: Page, who: Credentials): Promise<void> {
 }
 
 export async function signOut(page: Page): Promise<void> {
-  // Sign out lives in the account menu of the header.
+  // Sign out lives in the menu of the person at the bottom of the rail.
   await page.getByRole('button', { name: /^Account: / }).click();
   await page.getByRole('menu', { name: 'Account' }).getByRole('menuitem', { name: 'Sign out' }).click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+}
+
+/**
+ * Choose the theme with the control in the top bar. It is one button that says the current choice
+ * and steps System, Light, Dark, so this presses it until it says `theme`.
+ */
+export async function setTheme(page: Page, theme: 'light' | 'dark'): Promise<void> {
+  const control = page.getByRole('banner').getByRole('button', { name: /^Theme: / });
+  const says = new RegExp(`^Theme: ${theme === 'light' ? 'Light' : 'Dark'} `);
+  for (let presses = 0; presses < 3 && !says.test((await control.getAttribute('aria-label')) ?? ''); presses += 1) await control.click();
+  await expect(control).toHaveAccessibleName(says);
+  await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 }
 
 /** Every value in localStorage and sessionStorage, as `area:key=value`. */

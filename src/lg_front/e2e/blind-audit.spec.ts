@@ -9,7 +9,7 @@
  */
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
-import { API, assertAccessible, ingest, newSession, requiredEnv, screenshot, signIn, waitForAlert, type Credentials } from './support';
+import { API, assertAccessible, ingest, newSession, requiredEnv, screenshot, setTheme, signIn, waitForAlert, type Credentials } from './support';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -140,13 +140,11 @@ test('an admin labels samples with the keyboard and sees the verdict only afterw
   // Light theme and a phone screen.
   await page.goto('/blind-audit');
   await expect(page.getByRole('heading', { name: 'Blind audit', level: 1 })).toBeVisible();
-  await page.getByRole('banner').getByTitle('Light', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  await setTheme(page, 'light');
   // Let the colour transitions settle: axe must read the light theme's final colours.
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
   await assertAccessible(page, '/blind-audit (light theme)');
-  await page.getByRole('banner').getByTitle('Dark', { exact: true }).click();
-  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await setTheme(page, 'dark');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
   await expect(page.getByRole('heading', { name: 'Blind audit', level: 1 })).toBeVisible();

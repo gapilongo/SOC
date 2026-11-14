@@ -54,7 +54,7 @@ describe('module boundary (ESLint)', () => {
     expect(await boundaryErrors('src/app/modules.ts', "import { qk } from '../modules/soc/api/queryKeys';\nexport const x = qk;")).toEqual([
       expect.stringContaining('the shell reaches modules only through the registry'),
     ]);
-    for (const file of ['src/app/shell/Header.tsx', 'src/app/Layout.tsx', 'src/app/routes.tsx', 'src/pages/Login.tsx', 'src/main.tsx']) {
+    for (const file of ['src/app/shell/TopBar.tsx', 'src/app/Layout.tsx', 'src/app/routes.tsx', 'src/pages/Login.tsx', 'src/main.tsx']) {
       const up = path.relative(path.dirname(file), 'src/modules/soc/pages/platform/TenantSwitcher');
       const errors = await boundaryErrors(file, `import { TenantSwitcher } from '${up.startsWith('.') ? up : `./${up}`}';\nexport const x = TenantSwitcher;`);
       expect(errors, file).toEqual([expect.stringContaining('the shell reaches modules only through the registry')]);

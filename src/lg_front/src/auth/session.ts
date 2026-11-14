@@ -4,6 +4,7 @@
 
 import { createApiClient, type ApiClient } from '../api/client';
 import { apiRoot, getConfig } from '../config';
+import { scopeOf } from '../lib/scope';
 import { refreshOidc } from './oidc';
 import { AuthStore } from './store';
 import { createAuthTransport } from './transport';
@@ -31,6 +32,8 @@ export function createSession(fetchImpl?: typeof fetch): Session {
   store = new AuthStore({
     transport: createAuthTransport(api),
     oidc: oidc ? { refresh: (rt) => refreshOidc(oidc, rt, fetchImpl) } : null,
+    // The tenant in the address (`/s/<tenant>/...`): a reload, a new tab or a pasted link keeps it.
+    addressTenant: () => scopeOf(window.location.pathname).tenant,
   });
   return { auth: store, api };
 }

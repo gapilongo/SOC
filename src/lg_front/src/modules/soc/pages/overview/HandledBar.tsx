@@ -25,10 +25,10 @@ const FILL = {
   needed: 'bg-[rgb(var(--c-data-4,var(--c-sev-info)))]',
 } as const;
 
-const HOW = 'text-[12.5px] text-body';
+const HOW = 'text-ctl text-body';
 
 function Swatch({ kind }: { kind: keyof typeof FILL }) {
-  return <span aria-hidden="true" className={cx('mr-[7px] inline-block h-2.5 w-2.5 rounded-[1px]', FILL[kind])} />;
+  return <span aria-hidden="true" className={cx('mr-1.5 inline-block h-2.5 w-2.5 rounded-sm', FILL[kind])} />;
 }
 
 function Share({ value }: { value: number | null }) {
@@ -38,11 +38,11 @@ function Share({ value }: { value: number | null }) {
 function Bar({ split }: { split: HandledSplit }) {
   const label = `${plural(split.finished, 'finished alert', 'finished alerts')}: ${formatInt(split.handled)} closed without a person, ${formatInt(split.needed)} reached a person`;
   return (
-    <div role="img" aria-label={label} className="flex h-[18px] gap-0.5 forced-color-adjust-none">
+    <div role="img" aria-label={label} className="flex h-5 gap-0.5 forced-color-adjust-none">
       {(['handled', 'needed'] as const)
         .filter((kind) => split[kind] > 0)
         .map((kind) => (
-          <span key={kind} data-segment={kind} className={cx('min-w-[3px] rounded-[1px]', FILL[kind])} style={{ flexGrow: split[kind] }} />
+          <span key={kind} data-segment={kind} className={cx('min-w-[3px] rounded-sm', FILL[kind])} style={{ flexGrow: split[kind] }} />
         ))}
     </div>
   );
@@ -84,7 +84,7 @@ export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: st
           </>
         }
       />
-      <p className="mb-3.5 mt-1.5 max-w-[36em] text-balance text-lg font-semibold leading-[1.28] tracking-[-0.014em] text-fg md:text-[21px]">
+      <p className="mb-3.5 mt-1.5 max-w-[36em] text-balance text-lg font-semibold text-fg md:text-2xl">
         {handledStatement(d, split, phrase)}
       </p>
       {d.alerts_total === 0 && (
@@ -93,7 +93,7 @@ export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: st
       {counted && (
         <figure>
           <Bar split={split} />
-          <table className={cx(TABLE, 'mt-2')} aria-labelledby="ov-handled">
+          <table data-rows="free" className={cx(TABLE, 'mt-2')} aria-labelledby="ov-handled">
             <thead className={THEAD}>
               <tr>
                 <th scope="col" className={cx(TH, 'lg:w-[30%]')}>
@@ -115,7 +115,7 @@ export function HandledBar({ d, phrase, isAdmin }: { d: DashboardOut; phrase: st
                 No analyst decided it and no person approved or rejected a response action. The blind audit below is drawn from these closes.
               </Row>
               <tr className={TR} data-row="split">
-                <Cell className="text-secondary lg:pl-[27px]">By AI on evidence, AI on the model&apos;s word, a suppression rule, an earlier analyst verdict</Cell>
+                <Cell className="text-secondary lg:pl-7">By AI on evidence, AI on the model&apos;s word, a suppression rule, an earlier analyst verdict</Cell>
                 <Cell colSpan={2} label="Alerts" className="lg:text-right">
                   <Withheld>not measured yet</Withheld>
                 </Cell>

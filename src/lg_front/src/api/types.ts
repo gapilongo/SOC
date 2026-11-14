@@ -96,6 +96,18 @@ export interface MeOut {
 }
 
 /**
+ * A tenant as the shell's scope control lists it: what `GET /platform/tenants` (platform admins)
+ * says about who it is. The MSSP console's page reads the full row in its own API slice.
+ */
+export interface TenantRef {
+  id: string;
+  name: string;
+  status: Open<'active' | 'suspended'>;
+  /** Escalations waiting for a person, when the API sends the tenant's figures. */
+  stats?: { open_escalations?: number };
+}
+
+/**
  * Live event envelope pushed on /ws. `type` is `<resource>.<change>`; each module's manifest lists the
  * types it listens to (`liveEvents`), and the socket drops the others.
  */

@@ -56,7 +56,7 @@ function Breakdown({
       {keys.length === 0 ? (
         <p className="mt-2 text-ctl text-secondary">{empty}</p>
       ) : (
-        <table className="mt-1.5 w-full text-ctl">
+        <table data-rows="free" className="mt-1.5 w-full text-ctl">
           <caption className="sr-only">
             {title}: {meta}
           </caption>

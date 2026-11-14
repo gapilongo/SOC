@@ -2,8 +2,8 @@
  * Named extension points (ADR 0015).
  *
  * An extension point ("slot") is a place where one part of the console lets
- * modules render something: the shell's tenant control, the space next to an
- * entity on an alert. The owner defines the slot and the props it passes;
+ * modules render something: the notices under the shell's top bar, the space
+ * next to an entity on an alert. The owner defines the slot and the props it passes;
  * a module contributes a component for it in its manifest. With no
  * contribution the slot renders nothing (or the owner's fallback), so the
  * owner's code does not change when a module arrives or is switched off.
@@ -46,12 +46,5 @@ export function contribute<P extends object>(
 
 // Slots owned by the shell ---------------------------------------------------
 
-/**
- * The tenant control at the left of the header. A contribution replaces the
- * plain tenant name for the principals it applies to (the tenant switcher of
- * platform admins). Props: the current tenant's display name.
- */
-export const SHELL_HEADER_TENANT = defineSlot<{ label: string }>('shell.header.tenant');
-
-/** Full-width notices between the header and the page (the acting-tenant banner). */
+/** Full-width notices between the top bar and the page (the acting-tenant banner). */
 export const SHELL_BANNER = defineSlot('shell.banner');

@@ -1,21 +1,24 @@
 /**
- * Table row density: compact by default, "Comfortable" on request. A display
- * preference (lib/prefs.ts) exposed as `<html data-density>`: index.css pads
- * table cells from it, and VirtualTable reads it for its row height.
+ * Table row density: compact by default (28 px, one line), "Comfortable" on
+ * request (44 px, two lines); a dense list (24 px) is the third step of the
+ * design. A display preference (lib/prefs.ts) exposed as `<html data-density>`:
+ * tokens.css sets `--row-h` and the cell padding from it, and VirtualTable
+ * reads the same heights from ROW_HEIGHT (tokens.test.ts keeps them in step).
  */
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 import { readPref, writePref } from '../lib/prefs';
 
-export type Density = 'compact' | 'comfortable';
+export const DENSITIES = ['dense', 'compact', 'comfortable'] as const;
+export type Density = (typeof DENSITIES)[number];
 
 export function parseDensity(value: string | null | undefined): Density {
-  return value === 'comfortable' ? 'comfortable' : 'compact';
+  return (DENSITIES as readonly string[]).includes(value ?? '') ? (value as Density) : 'compact';
 }
 
-/** Row height of the windowed tables (px). */
-export const ROW_HEIGHT: Record<Density, number> = { compact: 44, comfortable: 56 };
+/** Row height of the windowed tables (px): the `--row-h-*` tokens. */
+export const ROW_HEIGHT: Record<Density, number> = { dense: 24, compact: 28, comfortable: 44 };
 
 interface DensityApi {
   density: Density;

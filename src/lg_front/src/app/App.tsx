@@ -1,36 +1,61 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { lazy, Suspense, useEffect, type ReactNode } from 'react';
+import { Route, Routes } from 'react-router-dom';
 
 import { SessionProvider, useAuth, useAuthStore } from '../auth/AuthContext';
 import { bindQueryCacheToSession } from '../auth/cacheBinding';
 import { CALLBACK_PATH } from '../auth/oidc';
 import type { Session } from '../auth/session';
+import type { ModuleManifest } from '../core/module';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { RequireAuth, RequireRole } from '../components/Guards';
 import { ExtensionsProvider } from '../components/Slot';
 import { ToastProvider } from '../components/Toast';
 import { LoadingState } from '../components/ui';
+import { getBrand } from '../config';
 import { LiveProvider } from '../live/LiveProvider';
+import { useBrandAccent } from '../theme/brand';
 import { DensityProvider } from '../theme/density';
 import { ThemeProvider } from '../theme/theme';
 import { Layout } from './Layout';
-import { mayOpen } from './registry';
 import { APP_ROUTES, BARE_ROUTES, REGISTRY, type AppRoute } from './routes';
+import { ScopedRouter } from './ScopedRouter';
 
 // One chunk per route; the signed-in pages come from the registered modules (routes.tsx).
 const LoginPage = lazy(() => import('../pages/Login'));
 const OidcCallbackPage = lazy(() => import('../pages/OidcCallback'));
 const NotFoundPage = lazy(() => import('../pages/NotFound'));
+// Shown only where the licence leaves a service out.
+const NotLicensed = lazy(() => import('./shell/NotLicensed').then((m) => ({ default: m.NotLicensed })));
 
-/** A module's page behind its gate: the tenant has the module and the role allows the page. */
+/** A page of a module the tenant has; otherwise the page that says the service is not licensed. */
+function RequireModule({ route, children }: { route: AppRoute; children: ReactNode }) {
+  const { principal } = useAuth();
+  if (route.enabled(principal)) return <>{children}</>;
+  // The route came from this module's manifest, so the module is in the registry.
+  return <NotLicensed module={REGISTRY.modules.find((m) => m.id === route.module) as ModuleManifest} />;
+}
+
+/** A module's page behind its gates: the tenant has the module, and the role allows the page. */
 function gated(route: AppRoute) {
   const { Page } = route;
   return (
-    <RequireRole allowed={(p) => mayOpen(route, p)}>
-      <Page />
-    </RequireRole>
+    <RequireModule route={route}>
+      <RequireRole allowed={route.allowed}>
+        <Page />
+      </RequireRole>
+    </RequireModule>
   );
+}
+
+/** The brand, applied once: its accent through the design tokens (theme/brand.ts) and its name on the browser tab. */
+function BrandEffects() {
+  const brand = getBrand();
+  useBrandAccent(brand.accent);
+  useEffect(() => {
+    document.title = brand.name;
+  }, [brand.name]);
+  return null;
 }
 
 /** Session lifecycle bound to the page: restore on load, refresh when the tab becomes visible. */
@@ -96,10 +121,11 @@ export function App({ session, queryClient }: { session: Session; queryClient: Q
             <DensityProvider>
               <ToastProvider>
                 <ExtensionsProvider contributions={REGISTRY.extensions}>
-                  <BrowserRouter>
+                  <BrandEffects />
+                  <ScopedRouter>
                     <SessionLifecycle />
                     <AppRoutes />
-                  </BrowserRouter>
+                  </ScopedRouter>
                 </ExtensionsProvider>
               </ToastProvider>
             </DensityProvider>

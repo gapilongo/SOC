@@ -39,12 +39,12 @@ export function Modal({
   const widths = { sm: 'max-w-md', md: 'max-w-xl', lg: 'max-w-3xl', xl: 'max-w-5xl' };
   const panelClass =
     variant === 'drawer'
-      ? cx('fixed inset-y-0 right-0 flex w-full flex-col border-l border-strong bg-raised shadow-2xl', widths[size])
-      : cx('relative mx-4 flex max-h-[90vh] w-full flex-col rounded-card border border-strong bg-raised shadow-2xl', widths[size]);
+      ? cx('fixed inset-y-0 right-0 flex w-full flex-col border-l border-strong bg-raised shadow-popover', widths[size])
+      : cx('relative mx-4 flex max-h-[90vh] w-full flex-col rounded-control bg-raised shadow-popover', widths[size]);
 
   return createPortal(
     <div className={cx('fixed inset-0 z-50 flex', variant === 'dialog' && 'items-center justify-center')}>
-      <div className="absolute inset-0 bg-black/60" aria-hidden="true" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/40" aria-hidden="true" onClick={onClose} />
       <div
         ref={panelRef}
         role="dialog"
@@ -54,21 +54,21 @@ export function Modal({
         tabIndex={-1}
         className={cx(panelClass, 'focus:outline-none')}
       >
-        <header className="flex items-start justify-between gap-3 border-b border-subtle px-5 py-4">
+        <header className="flex items-start justify-between gap-3 border-b border-subtle px-4 py-3">
           <div className="min-w-0">
             <h2 id={titleId} className="break-words text-base font-semibold text-fg">
               {title}
             </h2>
             {description && (
-              <div id={descId} className="mt-1 text-sm text-secondary">
+              <div id={descId} className="mt-0.5 text-ctl text-secondary">
                 {description}
               </div>
             )}
           </div>
-          <Button variant="quiet" size="sm" aria-label="Close" onClick={onClose} icon={<X className="h-4 w-4" aria-hidden="true" />} />
+          <Button variant="quiet" size="sm" aria-label="Close" onClick={onClose} icon={<X className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />} />
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
-        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-subtle px-5 py-3">{footer}</footer>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3.5">{children}</div>
+        {footer && <footer className="flex flex-wrap justify-end gap-2 border-t border-subtle px-4 py-2.5">{footer}</footer>}
       </div>
     </div>,
     document.body,

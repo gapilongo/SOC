@@ -10,14 +10,14 @@ export interface TabDef<T extends string> {
 
 /**
  * How the tabs look:
- * - `segmented`: a bordered group of pills, for sections inside a page (the investigation);
- * - `underline`: a row on a rule with the selected tab underlined, for the views of a whole page.
+ * - `segmented`: one bordered control whose selected segment is inverted, for sections inside a page (the investigation);
+ * - `underline`: a row on a rule with the selected tab underlined in the text colour, for the views of a whole page.
  */
 export type TabsVariant = 'segmented' | 'underline';
 
 const LIST_CLASS: Record<TabsVariant, string> = {
-  segmented: 'inline-flex max-w-full flex-wrap gap-1 rounded-control border border-strong bg-raised p-[3px]',
-  underline: 'flex flex-wrap gap-1 border-b border-subtle',
+  segmented: 'inline-flex max-w-full flex-wrap overflow-hidden rounded-control border border-control bg-raised',
+  underline: 'flex flex-wrap gap-0.5 border-b border-strong',
 };
 
 const PANEL_CLASS: Record<TabsVariant, string> = {
@@ -28,11 +28,14 @@ const PANEL_CLASS: Record<TabsVariant, string> = {
 /** One tab of a variant, selected or not. Shared by `Tabs` and `TabLinks`. */
 function tabClass(variant: TabsVariant, selected: boolean): string {
   if (variant === 'segmented') {
-    return cx('h-8 rounded-tag px-3 text-ctl touch:min-h-11', selected ? 'bg-selected font-semibold text-fg' : 'text-secondary hover:bg-raised-2 hover:text-fg');
+    return cx(
+      'min-h-ctl-sm border-l border-strong px-2.5 text-xs font-medium first:border-l-0 focus-visible:-outline-offset-2 touch:min-h-ctl-touch',
+      selected ? 'bg-fg text-canvas' : 'text-secondary hover:bg-raised-2 hover:text-fg',
+    );
   }
   return cx(
-    '-mb-px inline-flex h-[38px] items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ctl font-medium touch:min-h-11',
-    selected ? 'border-accent text-fg' : 'border-transparent text-secondary hover:text-fg',
+    '-mb-px inline-flex h-8 items-center gap-1.5 whitespace-nowrap border-b-2 px-2.5 text-ctl touch:min-h-ctl-touch',
+    selected ? 'border-fg font-semibold text-fg' : 'border-transparent text-secondary hover:text-fg',
   );
 }
 
@@ -144,8 +147,8 @@ export interface TabLinkDef {
  */
 export function TabLinks({ label, tabs, current, className }: { label: string; tabs: readonly TabLinkDef[]; current: string; className?: string }) {
   return (
-    <nav aria-label={label} className={cx('relative overflow-x-auto border-b border-subtle', className)}>
-      <ul className="flex gap-1">
+    <nav aria-label={label} className={cx('relative overflow-x-auto border-b border-strong', className)}>
+      <ul className="flex gap-0.5">
         {tabs.map((t) => (
           <li key={t.id}>
             <Link to={t.to} aria-current={t.id === current ? 'page' : undefined} className={tabClass('underline', t.id === current)}>

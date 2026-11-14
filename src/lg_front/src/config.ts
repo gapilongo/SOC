@@ -25,12 +25,34 @@ export interface OidcConfig {
   label: string;
 }
 
+/** The product's own name. A brand may show another name; this one stays in "on LG-SOTF" and in technical text. */
+export const PRODUCT_NAME = 'LG-SOTF';
+
+/**
+ * How the console presents itself: a name, a logo and one accent colour. Everything that shows the
+ * console's name reads it here (`getBrand()`), so an MSSP's name appears in the rail, on the sign-in
+ * page and in the browser tab alike. Severity, state and verdict colours are not part of a brand.
+ */
+export interface Brand {
+  name: string;
+  /** The line under the name in the rail. */
+  tagline: string;
+  /** Same-origin path of a logo image (the CSP allows `img-src 'self'`), or null for the built-in mark. */
+  logoUrl: string | null;
+  /** The accent as `#RRGGBB`, or null for the product's own (the values in theme/tokens.css). */
+  accent: string | null;
+}
+
+/** The product's own brand: what the console shows when the configuration names none. */
+export const PRODUCT_BRAND: Brand = { name: PRODUCT_NAME, tagline: 'Security operations', logoUrl: null, accent: null };
+
 export interface RuntimeConfig {
   /** Origin (and optional path prefix) of the API; empty means same origin. No trailing slash. */
   apiBaseUrl: string;
   /** Full WebSocket URL of `/api/v1/ws`; empty derives it from apiBaseUrl or the page origin. */
   wsUrl: string;
   oidc: OidcConfig | null;
+  brand: Brand;
 }
 
 declare global {
@@ -93,6 +115,25 @@ function parseOidc(raw: unknown): OidcConfig | null {
   };
 }
 
+/** `brand` of the runtime configuration: `{ name, logoUrl, accent }`, each optional. */
+function parseBrand(raw: unknown): Brand {
+  if (!raw || typeof raw !== 'object') return PRODUCT_BRAND;
+  const o = raw as Record<string, unknown>;
+  const name = str(o.name);
+  const logoUrl = str(o.logoUrl);
+  const accent = str(o.accent);
+  if (name.length > 40) throw new Error('config.brand.name is longer than 40 characters');
+  if (logoUrl && !/^\/(?!\/)[A-Za-z0-9._~/-]*$/.test(logoUrl)) throw new Error('config.brand.logoUrl must be a path on this site, such as /brand/logo.svg');
+  if (accent && !/^#[0-9a-f]{6}$/i.test(accent)) throw new Error('config.brand.accent must be a colour written as # and six hex digits');
+  return {
+    name: name || PRODUCT_NAME,
+    // Another name runs on the product; the product itself says what it is for.
+    tagline: name && name !== PRODUCT_NAME ? `on ${PRODUCT_NAME}` : PRODUCT_BRAND.tagline,
+    logoUrl: logoUrl || null,
+    accent: accent ? accent.toUpperCase() : null,
+  };
+}
+
 /** Validate the raw `window.__LG_SOTF_CONFIG__` object (missing values fall back to same-origin defaults). */
 export function parseConfig(raw: unknown): RuntimeConfig {
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
@@ -100,6 +141,7 @@ export function parseConfig(raw: unknown): RuntimeConfig {
     apiBaseUrl: httpUrl(str(o.apiBaseUrl), 'apiBaseUrl'),
     wsUrl: wsUrlValue(str(o.wsUrl)),
     oidc: parseOidc(o.oidc),
+    brand: parseBrand(o.brand),
   };
 }
 
@@ -108,6 +150,11 @@ let cached: RuntimeConfig | null = null;
 export function getConfig(): RuntimeConfig {
   if (!cached) cached = parseConfig(typeof window === 'undefined' ? undefined : window.__LG_SOTF_CONFIG__);
   return cached;
+}
+
+/** The console's name, logo and accent (the product's own unless the configuration sets a brand). */
+export function getBrand(): Brand {
+  return getConfig().brand;
 }
 
 export const API_PREFIX = '/api/v1';

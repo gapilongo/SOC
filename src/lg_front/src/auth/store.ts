@@ -24,6 +24,10 @@
  *   challenge token is handed back to the caller (the login page keeps it in
  *   component state, never in storage); it is not a session and grants
  *   nothing but the second step or, for forced enrollment, enrollment.
+ * * The tenant a platform admin acts on is part of the address
+ *   (`/s/<tenant>/...`, lib/scope.ts). A session that starts (a reload, a new
+ *   tab, a pasted link, a sign-in) takes it from there; it is kept nowhere
+ *   else, and it applies to platform admins only.
  */
 
 import { ApiError } from '../api/client';
@@ -100,6 +104,8 @@ export interface AuthStoreDeps {
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
   lock?: LockFn;
+  /** The tenant the address names, or null (lib/scope.ts). Read when a session starts. */
+  addressTenant?: () => string | null;
 }
 
 const MIN_REFRESH_DELAY_MS = 5_000;
@@ -170,6 +176,7 @@ export class AuthStore {
       setTimer: deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms)),
       clearTimer: deps.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>)),
       lock: deps.lock ?? browserLock,
+      addressTenant: deps.addressTenant ?? (() => null),
     };
   }
 
@@ -400,12 +407,15 @@ export class AuthStore {
   #accept(issued: IssuedToken, principal: Principal): void {
     if (this.#state.status !== 'authenticated' || this.#state.principal?.userId !== principal.userId) this.#generation += 1;
     this.#setToken(issued.token, issued.expiresIn);
-    const acting = this.#state.actingTenant;
-    const keepActing = acting && principal.isPlatformAdmin && principal.homeTenantId === this.#state.principal?.homeTenantId;
+    // A session that continues (a refresh) keeps the tenant it acts on; one that starts takes the tenant
+    // the address names. Either way only for a platform admin, and never for the home tenant itself.
+    const continues = this.#state.status === 'authenticated' && principal.homeTenantId === this.#state.principal?.homeTenantId;
+    const wanted = continues ? this.#state.actingTenant : this.#deps.addressTenant();
+    const acting = wanted && principal.isPlatformAdmin && wanted !== principal.homeTenantId ? wanted : null;
     this.#set({
       status: 'authenticated',
-      principal: keepActing ? { ...principal, tenantId: acting } : principal,
-      actingTenant: keepActing ? acting : null,
+      principal: acting ? { ...principal, tenantId: acting } : principal,
+      actingTenant: acting,
     });
   }
 

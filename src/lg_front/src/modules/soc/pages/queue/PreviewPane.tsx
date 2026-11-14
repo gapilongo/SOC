@@ -67,7 +67,7 @@ export function PreviewPane({
 }) {
   const { principal } = useAuth();
   return (
-    <aside aria-label="Preview of the highlighted row" style={{ maxHeight }} className="overflow-y-auto border-l border-strong py-3.5 pl-[18px]">
+    <aside aria-label="Preview of the highlighted row" style={{ maxHeight }} className="overflow-y-auto border-l border-strong py-3.5 pl-4">
       {row ? <Preview e={row} now={now} canClaim={can.claimEscalation(principal, row)} userId={principal?.userId ?? null} onClaim={onClaim} claiming={claiming} /> : <p className="text-ctl text-muted">No row is highlighted.</p>}
     </aside>
   );
@@ -98,8 +98,8 @@ function Preview({ e, now, canClaim, userId, onClaim, claiming }: { e: Escalatio
   ];
   return (
     <>
-      <OutcomeMark outcome={rowOutcome(e)} text="long" className="text-[12.5px]" />
-      <h2 className="mb-0.5 mt-1.5 text-[15px] font-semibold leading-[1.3] text-fg">{title}</h2>
+      <OutcomeMark outcome={rowOutcome(e)} text="long" className="text-ctl" />
+      <h2 className="mb-0.5 mt-1.5 text-base font-semibold leading-tight text-fg">{title}</h2>
       <p className="mb-2.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted">
         <span className="font-mono" title={`Alert ${e.alert_id}`}>
           {shortId(e.alert_id)}
@@ -109,9 +109,9 @@ function Preview({ e, now, canClaim, userId, onClaim, claiming }: { e: Escalatio
         <span aria-hidden="true">·</span>
         <span className={cx(due.state === 'overdue' || due.state === 'soon' ? 'font-semibold text-danger-fg' : undefined)}>{due.label}</span>
       </p>
-      <p className="my-2 text-[14.5px] leading-[1.4] text-fg">{ai?.text ?? reason ?? 'The analysis left no summary.'}</p>
+      <p className="my-2 text-sm leading-snug text-fg">{ai?.text ?? reason ?? 'The analysis left no summary.'}</p>
       {ai?.source && <p className="text-xs text-muted">Written by the {ai.source === 'model' ? 'model' : 'rules'}.</p>}
-      <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-[3px] text-[12.5px]">
+      <dl className="mt-2.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-ctl">
         {facts.map(([label, value]) => (
           <div key={label} className="contents">
             <dt className="text-muted">{label}</dt>

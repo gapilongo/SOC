@@ -17,7 +17,7 @@ const VARIANT: Record<QButtonVariant, string> = {
 /** The classes of a queue button, for a link that looks like one. */
 export function qbuttonClass(variant: QButtonVariant = 'default', className?: string): string {
   return cx(
-    'inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap rounded-[3px] border px-2.5 text-ctl font-medium',
+    'inline-flex h-7 flex-none items-center gap-1.5 whitespace-nowrap rounded-control border px-2.5 text-ctl font-medium',
     'disabled:cursor-not-allowed disabled:opacity-55 touch:min-h-11',
     VARIANT[variant],
     className,
@@ -44,7 +44,7 @@ export function QButton({
 /** A filter that is fixed for now, shown as the design's chip: the name, then its value. */
 export function Chip({ label, value }: { label: string; value: string }) {
   return (
-    <span className="inline-flex h-[22px] items-center gap-[5px] whitespace-nowrap rounded-sm bg-raised-2 px-[7px] text-xs text-secondary">
+    <span className="inline-flex h-ctl-sm items-center gap-1 whitespace-nowrap rounded-tag bg-raised-2 px-1.5 text-xs text-secondary">
       {label} <b className="font-semibold text-fg">{value}</b>
     </span>
   );
@@ -53,7 +53,7 @@ export function Chip({ label, value }: { label: string; value: string }) {
 /** Dense (24 px rows), Compact (28) or Two lines (44). */
 export function DensityControl({ value, onChange }: { value: QueueDensity; onChange: (d: QueueDensity) => void }) {
   return (
-    <div role="group" aria-label="Row density" className="inline-flex overflow-hidden rounded-[3px] border border-control">
+    <div role="group" aria-label="Row density" className="inline-flex h-ctl overflow-hidden rounded-control border border-control touch:h-auto">
       {DENSITIES.map((d, i) => (
         <button
           key={d}
@@ -61,7 +61,7 @@ export function DensityControl({ value, onChange }: { value: QueueDensity; onCha
           aria-pressed={value === d}
           onClick={() => onChange(d)}
           className={cx(
-            'h-[26px] px-[9px] text-xs font-medium focus-visible:-outline-offset-2 touch:min-h-11',
+            'h-full px-2 text-xs font-medium focus-visible:-outline-offset-2 touch:min-h-11',
             i > 0 && 'border-l border-strong',
             value === d ? 'bg-fg text-canvas' : 'bg-raised text-secondary hover:bg-raised-2',
           )}
@@ -75,7 +75,7 @@ export function DensityControl({ value, onChange }: { value: QueueDensity; onCha
 
 /** The keys the queue answers to, under the list. */
 export function Keys({ canAct }: { canAct: boolean }) {
-  const item = 'inline-flex items-center gap-[5px]';
+  const item = 'inline-flex items-center gap-1';
   return (
     <div role="note" aria-label="Keyboard" className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted">
       <span className={item}>
